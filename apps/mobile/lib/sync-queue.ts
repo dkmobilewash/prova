@@ -173,8 +173,25 @@ export async function listRefused(): Promise<RefusedOp[]> {
   }
 }
 
+/** Throws the refused writes away — the person has read why and chosen to
+ * let them go. A kept photo file goes with them; nothing else references it. */
 export async function clearRefused(): Promise<void> {
+  for (const { op } of await listRefused()) {
+    if (op.type === "media:create") discardQueuedPhoto(op.fileUri);
+  }
   await AsyncStorage.removeItem(REFUSED_KEY);
+}
+
+/** Puts the refused writes back on the queue, for when the reason has been
+ * dealt with — the day reopened, or a build that no longer sends a photo
+ * too large for the server to take. A photo whose file is gone cannot be
+ * retried and is dropped. Returns how many went back on. */
+export async function retryRefused(): Promise<number> {
+  const refused = await listRefused();
+  const retryable = refused.filter((r) => r.op.type !== "media:create" || queuedPhotoExists(r.op.fileUri));
+  if (retryable.length > 0) await write([...(await read()), ...retryable.map((r) => r.op)]);
+  await AsyncStorage.removeItem(REFUSED_KEY);
+  return retryable.length;
 }
 
 async function recordRefused(refused: RefusedOp[]): Promise<void> {
@@ -216,8 +233,12 @@ export async function flushQueue(token: string): Promise<void> {
         throw error;
       }
       if (error instanceof api.ApiError && isFinalRefusal(error.status)) {
-        // A photo the server will never take is not worth the phone's disk.
-        if (op.type === "media:create") discardQueuedPhoto(op.fileUri);
+        // The photo file is KEPT. A refusal here is the server saying no to
+        // this request, not proof the picture is worthless — a too-large
+        // upload (413) or a day that got signed are both things somebody
+        // can put right, and the photograph may be the only copy: a camera
+        // shot taken in the app is not in the camera roll. The refused list
+        // is capped, so the disk this holds is bounded.
         refused.push({ op, error: error.message, status: error.status, at: new Date().toISOString() });
         done++;
         continue;

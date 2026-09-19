@@ -26,7 +26,16 @@ function describe(op: PendingOp): string {
  * was already signed, a crew member archived meanwhile. Without this they
  * would look saved on the phone and simply never appear.
  */
-export function RefusedBanner({ refused, onDismiss }: { refused: RefusedOp[]; onDismiss: () => void }) {
+export function RefusedBanner({
+  refused,
+  onDismiss,
+  onRetry,
+}: {
+  refused: RefusedOp[];
+  onDismiss: () => void;
+  /** Puts them back on the queue — the reason may have been dealt with. */
+  onRetry?: () => void;
+}) {
   if (refused.length === 0) return null;
   return (
     <View style={styles.banner}>
@@ -38,9 +47,16 @@ export function RefusedBanner({ refused, onDismiss }: { refused: RefusedOp[]; on
           {describe(r.op)} — {r.error}
         </Text>
       ))}
-      <Pressable onPress={onDismiss} style={styles.dismiss}>
-        <Text style={styles.dismissLabel}>Dismiss</Text>
-      </Pressable>
+      <View style={styles.actions}>
+        {onRetry ? (
+          <Pressable onPress={onRetry} style={styles.dismiss}>
+            <Text style={styles.dismissLabel}>Try again</Text>
+          </Pressable>
+        ) : null}
+        <Pressable onPress={onDismiss} style={styles.dismiss}>
+          <Text style={styles.dismissLabel}>Throw away</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -57,6 +73,7 @@ const styles = StyleSheet.create({
   },
   title: { color: colors.tagRoseInk, fontSize: typography.size.md, fontWeight: typography.weight.bold },
   line: { color: colors.inkBody, fontSize: typography.size.sm },
-  dismiss: { alignSelf: "flex-end", paddingVertical: 4, paddingHorizontal: 8 },
+  actions: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
+  dismiss: { paddingVertical: 4, paddingHorizontal: 8 },
   dismissLabel: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
 });

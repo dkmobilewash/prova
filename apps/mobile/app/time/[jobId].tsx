@@ -205,7 +205,7 @@ export default function TimeScreen() {
     return () => clearInterval(id);
   }, []);
 
-  const { pending, sync, refused, dismissRefused } = useSync(load);
+  const { pending, sync, refused, dismissRefused, retrySetAside } = useSync(load);
 
   /** Close the running interval: compute the worked duration (phone computes
    * DURATION only — pay type is entered, never derived) and enqueue the
@@ -507,7 +507,7 @@ export default function TimeScreen() {
     <View style={styles.screen}>
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <RefusedBanner refused={refused} onDismiss={dismissRefused} />
+      <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
 
       {ratioWarnings.length > 0 ? (
         <View style={styles.ratioBanner}>
