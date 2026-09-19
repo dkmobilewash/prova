@@ -1065,6 +1065,37 @@ scrollback gets broken by whoever didn't scroll far enough.
   from a peer. The check has to be run INSIDE each session, by whoever has
   it open: `grep -rl "ep-little-sea" . --exclude-dir=node_modules
   --exclude-dir=.git`, reporting the HOST only and never the string.
+- **`--shadow-database-url` IS A RESET COMMAND WEARING A DIAGNOSTIC'S
+  NAME, and it was handed a real database.** 2026-09-18, and the most
+  expensive minute of the day: an agent generating migration SQL ran
+  `prisma migrate diff --shadow-database-url <DIRECT_URL from
+  packages/db/.env>`. That URL was ep-icy-hat — Cyrus's dev database, the
+  one he was walking the app against. Prisma DROPS AND RECREATES a shadow
+  database before replaying migrations into it; that is documented
+  behaviour, not a bug. Every company, job and test record went, and
+  `_prisma_migrations` with them — which is why the NEXT symptom was other
+  processes failing with P3005 "database schema is not empty" and a
+  `to_regclass('_prisma_migrations')` of null. Recovery was Neon's
+  point-in-time restore to the minute before.
+
+  Three rules fall out, none optional:
+
+    - A schema-to-schema diff (`--from-schema-datamodel` /
+      `--to-schema-datamodel`) opens NO database connection and is the
+      right way to generate migration SQL. It never needs a shadow URL.
+    - If a command genuinely needs a shadow database, the shadow is a
+      THROWAWAY LOCAL one — never a URL copied out of any `.env`. A
+      connection string's presence in an env file is a statement that
+      something real lives there, which is precisely what disqualifies it.
+    - The db suite (`vitest.db.config.mts`) had SAID "run against a
+      SCRATCH database — never a real one" since it was written, and a
+      comment is not a guard. It now refuses to start against anything
+      that is not localhost or a unix socket: `vitest.db.setup.mts`,
+      backed by `scratchProblem()` in
+      `packages/db/scripts/connection-target.mjs`, tested in
+      `apps/web/lib/db-target.test.ts` against the real endpoints. There
+      is deliberately no env-var escape hatch.
+
 - **`./scripts/preflight.sh` used to die on its first line inside a git
   worktree.** It ran `rm -f .git/index.lock`, but in a worktree `.git` is
   a FILE, not a directory — so that is `ENOTDIR`, which `rm -f` does NOT

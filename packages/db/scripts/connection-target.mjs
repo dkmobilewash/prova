@@ -149,15 +149,45 @@ export function wrongTarget(expected, ...targets) {
 }
 
 /**
- * Everything wrong with a DATABASE_URL / DIRECT_URL pair, worst first.
+ * Is this a database the destructive test suite may touch? Local only.
  *
- * Severity matters here. A mismatch is fatal because it silently splits
- * the schema from the data. `DIRECT_URL` pointing at a pooler is fatal
- * because `prisma migrate` takes session-level advisory locks a pooler
- * cannot hold. `DATABASE_URL` not being pooled is only a warning: it works,
- * it just wastes connections, and failing a deploy over it would be worse
- * than the problem.
+ * Added 2026-09-18, the day `prisma migrate diff --shadow-database-url`
+ * was handed a real Neon endpoint and Prisma did what it documents: it
+ * RESET the shadow database before replaying migrations into it. Cyrus's
+ * dev database (ep-icy-hat) was dropped to nothing in the middle of him
+ * walking the app. The dbtest suite creates and deletes companies, so it
+ * carries the same risk wearing a test runner.
+ *
+ * Require a loopback host and an explicitly test-named database. A socket
+ * override is allowed only when it is an absolute local path. Merely
+ * appending a socket parameter must never whitelist a remote authority.
+ * There is deliberately NO env-var escape hatch: the day somebody needs
+ * one is the day this happens again.
  */
+export function scratchProblem(connectionString, name) {
+  const target = describe(connectionString);
+  if (!target) return `${name} is missing or not a valid connection string, so there is nothing safe to run against.`;
+  const url = new URL(connectionString);
+  if (!["postgres:", "postgresql:"].includes(url.protocol)) {
+    return `${name} must be a PostgreSQL connection string for a local test database.`;
+  }
+  const local =
+    target.host === "localhost" ||
+    target.host === "127.0.0.1" ||
+    target.host === "[::1]";
+  if (!local) return `${name} is not a local database. The db suite creates and DELETES rows; use the scratch recipe in vitest.db.config.mts.`;
+  const hosts = url.searchParams.getAll("host");
+  if (hosts.length > 1 || hosts.some((host) => !host.startsWith("/") || host.startsWith("//")) ||
+      url.searchParams.has("hostaddr") || url.searchParams.has("service")) {
+    return `${name} contains an unsafe host override. Only one absolute local socket path is allowed.`;
+  }
+  if (!target.database || !/^[a-z0-9_]+_(?:test|dbtest)$/.test(target.database)) {
+    return `${name} must name a disposable database ending in _test or _dbtest, not an application database.`;
+  }
+  return null;
+}
+
+/** Validate the application/migration pair without exposing credentials. */
 export function connectionProblems(databaseUrl, directUrl) {
   const problems = [];
   const app = describe(databaseUrl);
