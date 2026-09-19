@@ -214,6 +214,25 @@ export async function createChangeOrder(jobId: string, formData: FormData): Prom
   });
 }
 
+/** "Sep 18, 2026, 6:07 PM MDT" in the job site's own time zone — a GC reads
+ * this on a document, and a UTC timestamp after 6pm Mountain reads as the
+ * NEXT day. UTC, labelled, only when the site's zone isn't known. */
+function siteMoment(at: Date, timeZone: string | null): string {
+  try {
+    return at.toLocaleString("en-US", {
+      timeZone: timeZone ?? "UTC",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    });
+  } catch {
+    return `${at.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  }
+}
+
 /**
  * Starts a DRAFT change order from a logged delay — the sub-side move the
  * delay log exists for. The title and description are the delay's own
@@ -242,7 +261,7 @@ export async function draftChangeOrderFromDelay(delayId: string): Promise<Action
       delay.hoursLost !== null ? `Crew-hours lost: ${Number(delay.hoursLost)}.` : null,
       delay.gcNotifiedHow
         ? `GC notified by ${methodLabel(delay.gcNotifiedHow).toLowerCase()}${delay.gcNotifiedWho ? ` (${delay.gcNotifiedWho})` : ""}${
-            delay.gcNotifiedAt ? ` on ${delay.gcNotifiedAt.toISOString().slice(0, 16).replace("T", " ")} UTC` : ""
+            delay.gcNotifiedAt ? ` on ${siteMoment(delay.gcNotifiedAt, job.siteTimeZone)}` : ""
           }.`
         : "GC not recorded as notified.",
       "",
