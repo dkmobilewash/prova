@@ -85,6 +85,7 @@ model Job {
   crewScheduleDays               CrewScheduleDay[]
   lienDeadlines                  LienDeadline[]
   signatureRequests              SignatureRequest[]
+  docuSignEnvelopes              DocuSignEnvelope[]
   invoices                       Invoice[]
   complianceDocuments            ComplianceDocument[]
   equipment                      Equipment[]
@@ -317,6 +318,7 @@ model ChangeOrder {
   addedLineItems JobLineItem[]             @relation("OriginChangeOrder")
   edits          ChangeOrderLineItemEdit[]
   proposals      ChangeOrderProposal[]
+  docuSignEnvelopes DocuSignEnvelope[]
 
   @@unique([jobId, number])
   @@index([jobId])

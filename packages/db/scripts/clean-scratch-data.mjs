@@ -163,6 +163,7 @@ async function main() {
     closeoutSubmission: prisma.closeoutSubmission.count({ where: { jobId: { in: jobIds } } }),
     closeoutSubmissionCounter: prisma.closeoutSubmissionCounter.count({ where: { jobId: { in: jobIds } } }),
     signatureRequest: prisma.signatureRequest.count({ where: { jobId: { in: jobIds } } }),
+    docuSignEnvelope: prisma.docuSignEnvelope.count({ where: { jobId: { in: jobIds } } }),
     contractDocument: prisma.contractDocument.count({ where: { jobId: { in: jobIds } } }),
     retainageRelease: prisma.retainageRelease.count({ where: { jobId: { in: jobIds } } }),
     estimateVersion: prisma.estimateVersion.count({ where: { jobId: { in: jobIds } } }),
@@ -284,6 +285,9 @@ async function main() {
     await del("closeoutSubmission", () => prisma.closeoutSubmission.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("closeoutSubmissionCounter", () => prisma.closeoutSubmissionCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("signatureRequest", () => prisma.signatureRequest.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // RESTRICT on Job. Its links to ContractDocument and ChangeOrder are SET
+    // NULL, so it can go before or after those; it must go before the job.
+    await del("docuSignEnvelope", () => prisma.docuSignEnvelope.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("contractDocument", () => prisma.contractDocument.deleteMany({ where: { jobId: { in: jobIds } } }));
     // ContractDocumentVersionCounter is RESTRICT on Job and is NOT reached by
     // deleting the contract documents -- it is keyed on jobId, so a job whose

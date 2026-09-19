@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { IntegrationProvider } from "@prova/db";
 import { JOBBER_REQUIRED_ENV } from "@/lib/jobber/setup";
+import { DOCUSIGN_REQUIRED_ENV } from "@/lib/docusign/setup";
 
 /**
  * The one list of providers, and the seam the next phase hooks into.
@@ -42,6 +43,13 @@ export type ProviderImplementation =
    * service is not set up here yet, rather than showing a broken button.
    */
   | { kind: "import"; startHref: string; requiredEnv: readonly string[] }
+  /**
+   * An e-signature service connected per company with OAuth, used from the
+   * documents themselves (the job page's contract and change orders) rather
+   * than from this page. Same `requiredEnv` rule as `import`: without the
+   * keys the card says the service is not set up here.
+   */
+  | { kind: "esign"; startHref: string; requiredEnv: readonly string[] }
   /** Not built. Renders disabled, with no control that implies otherwise. */
   | { kind: "planned" };
 
@@ -138,8 +146,8 @@ export const PROVIDERS: ProviderEntry[] = [
     provider: "DOCUSIGN",
     name: "DocuSign",
     description:
-      "Send subcontracts and change orders for signature through DocuSign. C Stream signs contracts with its own e-sign links today; this would cover every document type.",
-    implementation: { kind: "planned" },
+      "Send contracts, uploaded subcontracts and change orders for signature through your own DocuSign account, from the job page. C Stream's own signing link stays the default; DocuSign is an option beside it. When everyone has signed, the signed copy and DocuSign's certificate are saved on the job.",
+    implementation: { kind: "esign", startHref: "/api/docusign/start", requiredEnv: DOCUSIGN_REQUIRED_ENV },
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
         <path

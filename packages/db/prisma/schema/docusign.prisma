@@ -1,0 +1,140 @@
+// Documents sent for signature through DocuSign.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// DocuSign is an ALTERNATIVE to the built-in e-sign link (SignatureRequest in
+// billing.prisma), never a replacement: the built-in link stays the default
+// on the job page. The connection itself lives on the generic
+// IntegrationConnection row (provider DOCUSIGN) — this file holds only what
+// was sent.
+//
+// It plugs into the SAME records as the built-in route rather than beside
+// them. When an envelope for the contract completes, the signed PDF is
+// recorded as a new ContractDocument version carrying `executedSignedDate`
+// — the executed-subcontract evidence `markJobContracted` already accepts
+// (lib/contract-execution.ts) — so a job signed through DocuSign becomes
+// billable by the same gate, with no third route and no stored flag.
+
+/// What was sent. Decides which document was built and what completion
+/// records.
+enum DocuSignEnvelopeSubject {
+  /// The contract summary the built-in e-sign link renders (the job's
+  /// priced line items), sent as a document instead of a link.
+  CONTRACT_SUMMARY
+  /// An uploaded ContractDocument file (the subcontract PDF or an amendment).
+  CONTRACT_DOCUMENT
+  /// A SUBMITTED change order. Completion stores the signed copy on this row
+  /// and does NOT approve the change order — approving moves the budget and
+  /// stays the contractor's own deliberate step, exactly as a built-in
+  /// e-signature does not contract the job by itself.
+  CHANGE_ORDER
+}
+
+/// DocuSign's own envelope statuses, the five this app tracks. Only ever
+/// moves forward (SENT -> DELIVERED -> one terminal state); a late or
+/// replayed webhook cannot move it back. See lib/docusign/envelope-status.ts.
+enum DocuSignEnvelopeStatus {
+  SENT
+  DELIVERED
+  COMPLETED
+  DECLINED
+  VOIDED
+}
+
+/// One envelope sent through a company's own DocuSign account.
+///
+/// SENT CORRESPONDENCE: it can be voided (at DocuSign, which closes it) and
+/// never deleted. There is no delete action for this model anywhere in the
+/// app, and the cleanup scripts refuse to remove one (NEVER_DELETE in
+/// packages/db/scripts/scratch-scope.mjs).
+///
+/// DATES ARE DOCUSIGN'S, NOT OURS. `sentAt`, `deliveredAt`, `completedAt`,
+/// `declinedAt` and `voidedAt` are copied from the envelope DocuSign returns
+/// (sentDateTime, deliveredDateTime, ...), never stamped with this server's
+/// clock when a webhook happened to arrive. `createdAt`/`updatedAt` are the
+/// stamped audit companions.
+///
+/// NOTHING HERE IS TRUSTED FROM A WEBHOOK BODY. A Connect message only says
+/// "look at envelope X"; the status and dates are then read from DocuSign's
+/// API with the company's own token (lib/docusign/sync.ts).
+model DocuSignEnvelope {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  subject DocuSignEnvelopeSubject
+
+  /// The uploaded file that was sent (CONTRACT_DOCUMENT only). SET NULL if
+  /// that version is later deleted — the envelope is still correspondence
+  /// that happened, and `documentName` still says what it was.
+  contractDocumentId String?
+  contractDocument   ContractDocument? @relation("DocuSignEnvelopeSource", fields: [contractDocumentId], references: [id], onDelete: SetNull)
+
+  /// The change order that was sent (CHANGE_ORDER only). SET NULL for the
+  /// same reason as above.
+  changeOrderId String?
+  changeOrder   ChangeOrder? @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
+
+  /// DocuSign's envelope GUID. Globally unique at DocuSign, so unique here —
+  /// which is also what makes a replayed webhook land on one row only.
+  envelopeId        String @unique
+  /// The DocuSign account it was sent from (userinfo `account_id`). A webhook
+  /// naming a different account for this envelope is ignored.
+  docusignAccountId String
+
+  /// What the recipient was sent, as named in the envelope.
+  documentName String
+  emailSubject String
+  /// [{ name, email }] as sent. Not identity-locked by the database, but no
+  /// action updates it — the recipients of sent correspondence are part of
+  /// what was sent.
+  recipients   Json
+  /// The priced content of a generated document (CONTRACT_SUMMARY,
+  /// CHANGE_ORDER) at the moment it was sent — the same kind of frozen,
+  /// audit-only record as SignatureRequest.snapshot. Null for an uploaded
+  /// file, which is its own record.
+  sentSnapshot Json?
+
+  status DocuSignEnvelopeStatus @default(SENT)
+
+  sentAt       DateTime
+  deliveredAt  DateTime?
+  completedAt  DateTime?
+  declinedAt   DateTime?
+  voidedAt     DateTime?
+  /// DocuSign's `voidedReason`. For a void pressed in this app it is the
+  /// reason the person typed.
+  voidedReason String?
+
+  /// The IANA zone of the person who sent it, captured at send. The one
+  /// date that matters on completion — the day the contract was executed —
+  /// is the calendar day of `completedAt` IN THIS ZONE, so an evening
+  /// signature on the west coast is not recorded as the next day (which is
+  /// what taking the UTC date would do).
+  senderTimeZone String
+
+  /// Where the signed copy and DocuSign's certificate of completion were
+  /// stored (our blob store, under the job's contracts folder). Null until
+  /// the envelope completes and both are stored.
+  signedDocumentUrl String?
+  certificateUrl    String?
+
+  /// The ContractDocument version recorded from the signed copy
+  /// (CONTRACT_SUMMARY and CONTRACT_DOCUMENT). Unique: one envelope records
+  /// one executed version, however many times its completion is delivered.
+  signedContractDocumentId String?           @unique
+  signedContractDocument   ContractDocument? @relation("DocuSignEnvelopeSigned", fields: [signedContractDocumentId], references: [id], onDelete: SetNull)
+
+  sentByUserId String?
+  sentByUser   User?   @relation(fields: [sentByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([jobId])
+  @@index([contractDocumentId])
+  @@index([changeOrderId])
+}

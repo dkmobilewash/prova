@@ -59,6 +59,24 @@ export const settingsIntegrationsWalkthrough: Walkthrough = {
         "When it looks right, press Confirm. Only new ones are added, so running the import again later is safe — it skips everything already here.",
     },
     {
+      anchor: "docusign-not-set-up",
+      title: "DocuSign isn't set up yet",
+      body:
+        "This install doesn't have the DocuSign app keys yet, so there is nothing to press. C Stream's own signing links work without it.",
+    },
+    {
+      anchor: "docusign-connect",
+      title: "Connect DocuSign",
+      body:
+        "Press Connect and sign in to your DocuSign account. After that, contracts and change orders on each job offer Send with DocuSign beside C Stream's own signing link.",
+    },
+    {
+      anchor: "docusign-details",
+      title: "Your DocuSign account",
+      body:
+        "This shows which DocuSign account envelopes are sent from, and whether their status updates arrive by themselves or when you press Refresh.",
+    },
+    {
       anchor: "integrations-storage",
       title: "Where photos are kept",
       body: "This shows where site photos are stored. Nothing to do here unless something looks wrong.",

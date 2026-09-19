@@ -125,6 +125,11 @@ model ContractDocument {
   uploadedByUser   User?    @relation(fields: [uploadedByUserId], references: [id])
   createdAt        DateTime @default(now())
 
+  /// DocuSign envelopes that sent this file, and the one whose completion
+  /// recorded this version. See docusign.prisma.
+  docuSignEnvelopesSent   DocuSignEnvelope[] @relation("DocuSignEnvelopeSource")
+  docuSignEnvelopeSigned  DocuSignEnvelope?  @relation("DocuSignEnvelopeSigned")
+
   @@unique([jobId, versionNumber])
   @@index([jobId])
 }

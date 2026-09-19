@@ -13,6 +13,8 @@ import { JobberControls } from "@/components/JobberControls";
 import { JobberImport } from "@/components/JobberImport";
 import { importCardState, jobberCallbackMessage } from "@/lib/jobber/setup";
 import { integrationEncryptionConfigured } from "@/lib/crypto";
+import { DocuSignControls } from "@/components/DocuSignControls";
+import { docuSignCallbackMessage, docuSignCardState, docuSignSetup } from "@/lib/docusign/setup";
 
 /**
  * Settings → Integrations.
@@ -98,6 +100,8 @@ export default async function IntegrationsPage({
   const query = (await searchParams) ?? {};
   const one = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
   const jobberReturn = jobberCallbackMessage(one(query.jobber), one(query.jobber_detail));
+  const docuSignReturn = docuSignCallbackMessage(one(query.docusign), one(query.docusign_detail));
+  const docuSign = docuSignSetup(process.env);
   const blob = {
     environment: process.env.VERCEL_ENV ?? "local",
     present: Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim()),
@@ -143,6 +147,13 @@ export default async function IntegrationsPage({
           )
         : null;
 
+    // Same rule for an e-sign provider, from its own setup check (which also
+    // insists DOCUSIGN_ENV is exactly demo or production).
+    const esignState =
+      impl.kind === "esign"
+        ? docuSignCardState(docuSign.configured && integrationEncryptionConfigured(), connection?.status)
+        : null;
+
     const isConnected = status === "CONNECTED";
 
     return (
@@ -166,7 +177,7 @@ export default async function IntegrationsPage({
                   <span className="inline-flex items-center rounded-full border border-line-card bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
                     Coming soon
                   </span>
-                ) : importState === "not-set-up" ? (
+                ) : importState === "not-set-up" || esignState === "not-set-up" ? (
                   <span className="inline-flex items-center rounded-full border border-line-card bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
                     Not set up
                   </span>
@@ -189,6 +200,9 @@ export default async function IntegrationsPage({
             )}
             {impl.kind === "import" && importState && (
               <JobberControls state={importState} startHref={impl.startHref} />
+            )}
+            {impl.kind === "esign" && esignState && (
+              <DocuSignControls state={esignState} startHref={impl.startHref} />
             )}
             {impl.kind === "external" && (
               <Link
@@ -229,6 +243,21 @@ export default async function IntegrationsPage({
             </dl>
             <JobberImport />
           </>
+        )}
+
+        {impl.kind === "esign" && esignState === "connected" && connection && (
+          <dl className="mt-4 grid gap-4 border-t border-line-card pt-4 sm:grid-cols-3" data-tour="docusign-details">
+            <DetailRow label="Account" value={connection.externalAccountLabel ?? "—"} />
+            <DetailRow
+              label="Status updates"
+              value={
+                docuSign.webhooks
+                  ? "Automatic — DocuSign tells C Stream when an envelope is opened, signed, declined or voided"
+                  : "Press Refresh on an envelope — automatic updates are not switched on for this install"
+              }
+            />
+            <DetailRow label="Where to send from" value="A job's contract section, its uploaded contract documents, and submitted change orders" />
+          </dl>
         )}
 
         {impl.kind === "builtin" && connection && isConnected && (
@@ -293,6 +322,19 @@ export default async function IntegrationsPage({
           company&rsquo;s data, and a credential is stored encrypted and never shown back here.
         </p>
       </div>
+
+      {docuSignReturn && (
+        <p
+          role="status"
+          className={`mb-4 rounded-md border px-3 py-2 text-sm ${
+            docuSignReturn.ok
+              ? "border-line-card bg-tag-green text-tag-green-ink"
+              : "border-line-card bg-tag-rose text-tag-rose-ink"
+          }`}
+        >
+          {docuSignReturn.text}
+        </p>
+      )}
 
       {jobberReturn && (
         <p

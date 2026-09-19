@@ -37,6 +37,8 @@ import {
 import type { JobStatusValue } from "@/lib/job-status-transitions";
 import { timeEntryWorkerName } from "@/lib/worker-name";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
+import { DocuSignPanel } from "@/components/DocuSignPanel";
+import { loadJobDocuSign } from "@/lib/docusign/views";
 import {
   changeOrderValueDelta,
   pendingChangeOrderExposure,
@@ -697,6 +699,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   );
   const isContractExecuted = contractIsExecuted(contractExecution);
 
+  // Send with DocuSign — an alternative beside the built-in signing link,
+  // never a replacement (lib/docusign/views.ts). Read only when the reader
+  // can see the priced sections it renders in.
+  const docuSign = showsJobMoney ? await loadJobDocuSign(company.id, job.id, timeZone) : null;
+  const docuSignSigner = { name: job.contact.name, email: job.contact.email ?? "" };
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 print:max-w-none print:px-0 print:py-0">
       {/* Contract-style summary — the same JobLineItem rows used as the
@@ -976,6 +984,19 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 </form>
               </div>
             )}
+            {docuSign && (
+              <DocuSignPanel
+                state={docuSign.state}
+                jobId={job.id}
+                subject="CONTRACT_SUMMARY"
+                defaultSigner={docuSignSigner}
+                envelopes={docuSign.contractSummary}
+                canSend={job.status === "ESTIMATE" && !signedSignature}
+                canVoid={currentUser.role === "OWNER"}
+                autoUpdates={docuSign.autoUpdates}
+                sendLabel="Or send the contract with DocuSign"
+              />
+            )}
           </div>
         </section>
         )}
@@ -1023,6 +1044,19 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     >
                       {doc.fileName}
                     </a>
+                    {docuSign && (
+                      <DocuSignPanel
+                        state={docuSign.state}
+                        jobId={job.id}
+                        subject="CONTRACT_DOCUMENT"
+                        subjectId={doc.id}
+                        defaultSigner={docuSignSigner}
+                        envelopes={docuSign.byContractDocument.get(doc.id) ?? []}
+                        canSend={!doc.executedSignedDate}
+                        canVoid={currentUser.role === "OWNER"}
+                        autoUpdates={docuSign.autoUpdates}
+                      />
+                    )}
                   </div>
                   {currentUser.role === "OWNER" && (
                     <RowActions
@@ -2164,6 +2198,18 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             lineItems={changeOrderTargets}
             pendingExposure={money(pendingExposure)}
             pendingUnbookable={pendingUnbookable}
+            docuSign={
+              docuSign
+                ? {
+                    jobId: job.id,
+                    state: docuSign.state,
+                    autoUpdates: docuSign.autoUpdates,
+                    canVoid: currentUser.role === "OWNER",
+                    defaultSigner: docuSignSigner,
+                    byChangeOrder: Object.fromEntries(docuSign.byChangeOrder),
+                  }
+                : undefined
+            }
           />
         )}
 
