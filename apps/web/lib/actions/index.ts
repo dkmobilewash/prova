@@ -59,6 +59,7 @@ export * from "./help";
 export * from "./spreadsheetImport";
 export * from "./jobber";
 export * from "./docusign";
+export * from "./quickbooksImport";
 export * from "./mycoi";
 export * from "./gettingStarted";
 export * from "./procore";

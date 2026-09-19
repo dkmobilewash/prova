@@ -692,6 +692,10 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // and void actions are reached from /jobs/[id], which has no single
   // page capability; they assert VIEW_JOB_COSTS themselves.
   docusign: () => import("./actions/docusign"),
+  // The QuickBooks import's two actions: reachable only from /settings, so
+  // they assert its MANAGE_COMPLIANCE before the owner check and before
+  // anything is read.
+  quickbooksImport: () => import("./actions/quickbooksImport"),
   // Procore: the Integrations card's four (MANAGE_COMPLIANCE, then owner)
   // and the feed refresh on /rfis, /submittals and /drawings (MANAGE_JOBS)
   // — two modules because they sit behind two different doors.
