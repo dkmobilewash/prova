@@ -1896,7 +1896,16 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   >
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span className="text-ink">
-                        {formatCalendarDate(release.releasedAt)}
+                        {/* A releasedAt entered from the date input is a
+                            calendar day at UTC midnight and renders in UTC.
+                            Rows written before 2026-09-19 by the blank-field
+                            default hold the raw INSTANT of the click, and
+                            pushing an instant through UTC formatting prints
+                            a 5pm PT release as the next day — those render
+                            on the reader's own calendar instead. */}
+                        {release.releasedAt.getTime() % 86_400_000 === 0
+                          ? formatCalendarDate(release.releasedAt)
+                          : formatInstant(release.releasedAt, timeZone)}
                       </span>
                       <span className="text-ink-label">{money(Number(release.amount))}</span>
                       {release.note && <span className="text-xs text-ink-muted">— {release.note}</span>}

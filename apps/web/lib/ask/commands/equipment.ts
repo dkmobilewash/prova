@@ -151,7 +151,8 @@ async function executeSend(ctx: CommandContext, payload: ResolvedPayload) {
   );
   if (!result.ok) return { ok: false as const, error: result.error };
   const stay = await prisma.equipmentAssignment.findFirst({
-    where: { equipmentId, jobId, returnedOn: null },
+    // Belt-and-braces: the action proved both sides in-company already.
+    where: { equipmentId, jobId, returnedOn: null, job: { companyId: ctx.companyId } },
     orderBy: { createdAt: "desc" },
     select: { id: true },
   });

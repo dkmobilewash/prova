@@ -50,8 +50,13 @@ describe("log_daily_field_report", () => {
     if (result.kind !== "refuse") throw new Error("unreachable");
     expect(result.href).toBe("/field-reports");
     // The natural key is job + the person's calendar day, at UTC midnight.
+    // The company clause is belt-and-braces on top of findJob's own check.
     expect(fake.prisma.dailyFieldReport.findFirst).toHaveBeenCalledWith({
-      where: { jobId: "job-1", reportDate: new Date("2026-09-08T00:00:00.000Z") },
+      where: {
+        jobId: "job-1",
+        reportDate: new Date("2026-09-08T00:00:00.000Z"),
+        job: { companyId: "co-1" },
+      },
       select: { id: true },
     });
   });

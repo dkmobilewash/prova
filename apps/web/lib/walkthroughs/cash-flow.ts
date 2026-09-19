@@ -9,7 +9,7 @@ export const cashFlowWalkthrough: Walkthrough = {
       anchor: "cash-flow-empty",
       title: "Nothing billed yet",
       body:
-        "Every number on this page comes from invoices, so it stays empty until you bill a job. Invoices are made on the job's own page, in its Billing section.",
+        "Every number on this page comes from invoices, so it stays empty until you bill a job. Invoices are made on the job's own page, in its Invoices section.",
     },
     {
       anchor: "cash-flow-aging",
