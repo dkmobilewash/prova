@@ -119,6 +119,40 @@ export const settingsIntegrationsWalkthrough: Walkthrough = {
         "Choose the GC's project and your job, then press Link. If a GC's company is listed with a note, their Procore admin has to add the C Stream app first.",
     },
     {
+      anchor: "companycam-not-set-up",
+      title: "CompanyCam isn't set up yet",
+      body:
+        "This install doesn't have the CompanyCam app keys yet, so there is nothing to press. Whoever runs C Stream for you adds them.",
+    },
+    {
+      anchor: "companycam-connect",
+      title: "Connect CompanyCam",
+      body:
+        "Press Connect and sign in with your company's CompanyCam account. C Stream only reads — it never changes anything in CompanyCam.",
+    },
+    {
+      anchor: "companycam-links",
+      title: "Which CompanyCam project feeds which job",
+      body:
+        "Each line is a CompanyCam project linked to one of your jobs. Press Import photos on it to pull its photos into that job's gallery.",
+    },
+    {
+      anchor: "companycam-link",
+      title: "Link a project",
+      body: "Press Link a CompanyCam project to a job. C Stream asks CompanyCam which projects your account can see.",
+    },
+    {
+      anchor: "companycam-link-form",
+      title: "Pick the project and your job",
+      body: "Choose the CompanyCam project and your job, then press Link.",
+    },
+    {
+      anchor: "companycam-import",
+      title: "Bring the photos in",
+      body:
+        "Press Import photos. Each one lands in the job's own gallery, captioned and dated by when it was taken. Pressing it again only brings photos that aren't here yet.",
+    },
+    {
       anchor: "integrations-storage",
       title: "Where photos are kept",
       body: "This shows where site photos are stored. Nothing to do here unless something looks wrong.",

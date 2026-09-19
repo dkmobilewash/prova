@@ -1,0 +1,43 @@
+// The crew-schedule calendar feed: a per-person token that turns
+// /api/calendar/<token> into a subscribable ICS calendar.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// WHY A TOKEN AND NOT A SESSION. Apple Calendar, Google Calendar and
+// Outlook subscribe to a bare URL and poll it with no cookies and no
+// login — the token in the path is the whole of the authentication,
+// exactly the position Contact.portalToken and SignatureRequest.token are
+// in. So it is generated the same way, by `linkToken()` in
+// apps/web/lib/tokens.ts (randomBytes(24), 192 bits), and the schema
+// deliberately gives it NO @default: a create that forgets to supply one
+// fails to compile rather than silently minting a guessable id
+// (billing.prisma's SignatureRequest.token records that scar).
+model CalendarFeedToken {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Whose feed this is. The feed serves the company-wide schedule —
+  /// exactly what /schedule shows every signed-in member — but the token
+  /// belongs to ONE person so it can be revoked without breaking anyone
+  /// else's subscription, and so a person leaving the company kills their
+  /// feed. CASCADE: a token is a credential, not a record, and it must not
+  /// outlive the account it authenticates.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The whole of the authentication. Supplied by linkToken(), never a
+  /// default. Regenerating REPLACES this value on the same row, which is
+  /// the revocation: the old URL stops matching anything and 404s exactly
+  /// like a token that never existed (lib/access-tokens.ts explains why a
+  /// dead link never learns which kind of dead it is).
+  token String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One feed per person per company: regenerate rotates the row's token
+  /// rather than accumulating dead rows.
+  @@unique([companyId, userId])
+  @@index([companyId])
+}

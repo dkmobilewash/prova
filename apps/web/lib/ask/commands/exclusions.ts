@@ -79,6 +79,8 @@ export const notYetRegistered: Exclusion[] = [
   // project list, and the refresh is a button on the page it refreshes.
   { action: "procore.*", reason: ADMIN + " Linking a GC's Procore project to a job: picked from Procore's own live list, so it is page only." },
   { action: "procoreFeed.*", reason: "Refresh from Procore is a button on the page whose GC records it re-reads; nothing to resolve by name." },
+  { action: "companycam.*", reason: ADMIN + " Linking a CompanyCam project to a job and importing its photos: picked from CompanyCam's own live list and pressed a batch at a time, so it is page only." },
+  { action: "calendarFeed.*", reason: "Creating or regenerating the caller's own calendar-subscription link — a credential, not work on a record, and there is nothing to resolve by name. Never a command." },
   { action: "jobber.*", reason: ADMIN + " Connecting to and importing from Jobber: an OAuth sign-in and a preview a person reads before confirming, so it is page only." },
   { action: "docusign.*", reason: ADMIN + " Sending a contract for signature through DocuSign, voiding one, or connecting the account: correspondence to a GC with a signer's name and email read on the page before it goes, and an OAuth sign-in, so it is page only." },
   { action: "mycoi.*", reason: ADMIN + " Importing certificates from a myCOI export: a pasted file and a preview a person reads before confirming, so it is page only." },
