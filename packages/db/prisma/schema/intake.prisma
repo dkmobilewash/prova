@@ -108,6 +108,21 @@ model DocumentIntake {
   uploadedByUserId String?
   uploadedBy       User?   @relation("DocumentIntakeUploadedBy", fields: [uploadedByUserId], references: [id])
 
+  /// PROVENANCE FOR A ROW THAT ARRIVED BY EMAIL, all three null for a row
+  /// somebody dropped in by hand (`uploadedByUserId` is the provenance
+  /// there). `emailFrom`/`emailSubject` are DISPLAY ONLY — the table shows
+  /// who forwarded a thing and under what subject line so a person can
+  /// recognise it, and nothing routes, files or trusts on either: a From
+  /// header is whatever the sender typed. What IS trusted is the token in
+  /// the recipient address, which only this app issues.
+  emailFrom    String?
+  emailSubject String?
+  /// The provider's id for the received email, one per email across its
+  /// attachments. It is the replay guard: a webhook redelivered with a
+  /// valid signature finds rows already carrying this id and writes
+  /// nothing, the same job `providerEventId` does for delivery events.
+  emailMessageId String?
+
   createdAt DateTime @default(now())
 
   /// The tray's own query: this company, newest first, usually filtered to
@@ -118,6 +133,10 @@ model DocumentIntake {
   @@index([companyId, status, createdAt])
   /// "What came in on this job" — the only other way anyone reaches these.
   @@index([jobId])
+  /// The replay guard's own lookup: "has this email already been recorded
+  /// for this company". Not unique — one email with three attachments is
+  /// three rows sharing the id.
+  @@index([companyId, emailMessageId])
 }
 
 /// Where a document can be filed. The SAME TEN as `IntakeKind` in

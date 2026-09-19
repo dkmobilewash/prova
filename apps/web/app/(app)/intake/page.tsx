@@ -3,7 +3,9 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { IntakeDropZone } from "@/components/IntakeDropZone";
+import { IntakeForwardBox } from "@/components/IntakeForwardBox";
 import { IntakeTable, type IntakeRow } from "@/components/IntakeTable";
+import { ensureIntakeEmailToken, intakeEmailAddress, intakeInboundDomain } from "@/lib/intake/inbound";
 import { countIntake, intakeSummarySentence } from "@/lib/intake/review";
 import { applyLearning, describeLearning, learnFromCorrections } from "@/lib/intake/learn";
 import { toJobOption } from "@/components/jobLabels";
@@ -63,6 +65,17 @@ export default async function IntakePage() {
   if (!allowed) return <NoAccess capability="MANAGE_JOBS" />;
   const { company } = context;
 
+  // The forward-by-email address. The domain is per-install configuration;
+  // without it there is no address to show and the section is absent — an
+  // address that bounces teaches people the feature is broken. The token is
+  // backfilled by migration for companies that existed and minted here,
+  // idempotently, for ones created since (a conditional write that a second
+  // concurrent open loses harmlessly).
+  const inboundDomain = intakeInboundDomain(process.env);
+  const forwardAddress = inboundDomain
+    ? intakeEmailAddress(await ensureIntakeEmailToken(company.id), inboundDomain)
+    : null;
+
   const [jobs, tray, trayTotal, filed, dismissed, decisions] = await Promise.all([
     prisma.job.findMany({
       where: { companyId: company.id },
@@ -92,6 +105,8 @@ export default async function IntakePage() {
         jobHint: true,
         jobId: true,
         status: true,
+        emailFrom: true,
+        emailSubject: true,
       },
     }),
     prisma.documentIntake.count({ where: { companyId: company.id, status: "PROPOSED" } }),
@@ -173,6 +188,10 @@ export default async function IntakePage() {
       <section className="mb-8" data-tour="intake-drop">
         <IntakeDropZone companyId={company.id} />
       </section>
+
+      {forwardAddress && (
+        <IntakeForwardBox address={forwardAddress} isOwner={context.role === "OWNER"} />
+      )}
 
       {/* WHAT IT LEARNED, said out loud. Cyrus asked for this by name, and
           it is the half that makes the rest acceptable: a screen that

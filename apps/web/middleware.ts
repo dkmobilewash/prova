@@ -122,6 +122,13 @@ const isProtectedRoute = createRouteMatcher([
 // signature over the raw body, and fails closed when no secret is set — an
 // unverified "delivered" is worse than no event, because the whole value of
 // the log is that a delivered in it means something.
+// /api/intake/inbound/resend is deliberately NOT protected here either —
+// same reasoning as /api/messages/webhook, and the same provider: inbound
+// email events have no Clerk session. The route verifies the svix signature
+// over the raw body with its OWN secret (RESEND_INBOUND_WEBHOOK_SECRET, a
+// different webhook endpoint in Resend than the delivery one) and fails
+// closed with 503 when it is unset. /api/intake/upload above stays
+// protected: that is a person's browser, and it has a session.
 // /api/notifications/digest is deliberately NOT protected here either. It
 // is the nightly alert-digest run, and a scheduler has no Clerk session any
 // more than a webhook provider does. That route authenticates the request
