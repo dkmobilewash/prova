@@ -9,6 +9,7 @@ import { dateFromDay, importTooLarge, TOO_LARGE_MESSAGE } from "@/lib/spreadshee
 import {
   planPayrollRegisterImport,
   REGISTER_FIELD_LIST,
+  type RegisterDeductionsDetail,
   type RegisterField,
   type RegisterOverrides,
 } from "@/lib/payroll-register-import";
@@ -110,6 +111,7 @@ export async function importPayrollRegister(formData: FormData): Promise<ImportR
           netCents: true,
           hours: true,
           payDate: true,
+          deductionsDetail: true,
         },
       });
       const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -125,6 +127,7 @@ export async function importPayrollRegister(formData: FormData): Promise<ImportR
           netCents: entry.netCents,
           hours: entry.hours === null ? null : String(entry.hours),
           payDate: entry.payDate ? iso(entry.payDate) : null,
+          deductionsDetail: (entry.deductionsDetail as RegisterDeductionsDetail) ?? null,
         })),
         overrides,
       );

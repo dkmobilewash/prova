@@ -477,7 +477,24 @@ export default async function Wh347Page({
                               See {worker.name}&apos;s first line — one paycheck.
                             </span>
                           ) : worker.deductions != null ? (
-                            <div>{money(worker.deductions.total)}</div>
+                            <>
+                              <div>{money(worker.deductions.total)}</div>
+                              {/* The form's own 8a/8b/8c breakdown. A null sub-figure
+                                  prints nothing rather than $0.00 — the register did
+                                  not itemise it, which is a different claim from
+                                  itemising a zero. */}
+                              {worker.deductions.fica != null && (
+                                <div className="text-[9px]">FICA {money(worker.deductions.fica)}</div>
+                              )}
+                              {worker.deductions.withholdingTax != null && (
+                                <div className="text-[9px]">
+                                  W/H {money(worker.deductions.withholdingTax)}
+                                </div>
+                              )}
+                              {worker.deductions.other != null && (
+                                <div className="text-[9px]">Other {money(worker.deductions.other)}</div>
+                              )}
+                            </>
                           ) : (
                             <Missing>
                               Not on the imported register for this week. Import it at Settings →

@@ -246,6 +246,16 @@ function indexCrew(crew: RegisterCrew[]): CrewIndex {
 /* The plan                                                            */
 /* ------------------------------------------------------------------ */
 
+/** The itemised deductions a register row may carry. Absent keys mean "the
+ * register did not say", never zero. Shared between a freshly-planned row
+ * and a stored one, so the two can be compared structurally. */
+export type RegisterDeductionsDetail = {
+  ficaCents?: number;
+  federalTaxCents?: number;
+  stateTaxCents?: number;
+  otherCents?: number;
+} | null;
+
 export type RegisterRow = {
   line: number;
   crewMemberId: string;
@@ -259,12 +269,7 @@ export type RegisterRow = {
   grossCents: number;
   deductionsCents: number;
   netCents: number;
-  deductionsDetail: {
-    ficaCents?: number;
-    federalTaxCents?: number;
-    stateTaxCents?: number;
-    otherCents?: number;
-  } | null;
+  deductionsDetail: RegisterDeductionsDetail;
   /** True when no total-deductions column existed and the total is
    * gross − net. The preview says so; the row stores the number either way. */
   deductionsDerived: boolean;
@@ -283,6 +288,7 @@ export type ExistingRegisterEntry = {
   netCents: number;
   hours: string | null;
   payDate: string | null;
+  deductionsDetail: RegisterDeductionsDetail;
 };
 
 export type RegisterPlan = {
@@ -305,6 +311,16 @@ export type RegisterPlan = {
 export type RegisterOverrides = Partial<Record<RegisterField, number | null>>;
 
 const WHOLE_SSN = /^\d{3}[-\s]\d{2}[-\s]\d{4}$/;
+
+/** A whole SSN with no separators at all — "123456789" typed straight
+ * through, or a dash lost to a spreadsheet re-save. `WHOLE_SSN` above
+ * requires the 3-2-4 grouping, so this catches what it cannot. Same
+ * shape as the crew importer's own `looksLikeSsn`, which applies this
+ * form to its employee-number column; here it runs across every column
+ * the sweep already covers, because "a whole SSN anywhere in the row" is
+ * the claim this sweep makes and a bare nine digits IS a whole SSN
+ * without punctuation. */
+const BARE_NINE_DIGIT_SSN = /^\d{9}$/;
 
 const NO_TEXT: RowProblem = { line: 1, message: "Nothing to import." };
 
@@ -335,6 +351,31 @@ function headerScore(cells: string[]): number {
 /** UTC day difference, for the weekly-period note. */
 function daySpan(startDay: string, endDay: string): number {
   return Math.round((dateFromDay(endDay).getTime() - dateFromDay(startDay).getTime()) / 86_400_000);
+}
+
+/** Same hours, read two different ways: a fresh register cell keeps
+ * whatever the file printed ("40.00"), a stored row comes back off a
+ * Prisma Decimal, which drops trailing zeros ("40.00" -> "40"). Compared
+ * NUMERICALLY so the two representations of one number agree — a string
+ * compare made every re-import of an unchanged "40.00" read as changed. */
+function sameHours(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  return Number(a) === Number(b);
+}
+
+/** Same itemised split, key by key. Absent keys mean "the register did not
+ * say" on both sides — `?? null` treats a missing key and an explicit
+ * absence the same way, so a row that never had a federal-tax column does
+ * not read as "changed" against a stored row that also never had one. */
+function sameDeductionsDetail(a: RegisterDeductionsDetail, b: RegisterDeductionsDetail): boolean {
+  if (a === null || b === null) return a === b;
+  const keys: (keyof NonNullable<RegisterDeductionsDetail>)[] = [
+    "ficaCents",
+    "federalTaxCents",
+    "stateTaxCents",
+    "otherCents",
+  ];
+  return keys.every((k) => (a[k] ?? null) === (b[k] ?? null));
 }
 
 export function planPayrollRegisterImport(
@@ -435,7 +476,10 @@ export function planPayrollRegisterImport(
     );
     const named = nameCell || "This row";
     const last4 = parseLast4(at("ssnLast4"));
-    const strayWholeSsn = cells.some((cell) => WHOLE_SSN.test(clean(cell)));
+    const strayWholeSsn = cells.some((cell) => {
+      const c = clean(cell);
+      return WHOLE_SSN.test(c) || BARE_NINE_DIGIT_SSN.test(c);
+    });
     if (!last4.ok || strayWholeSsn) {
       problems.push({
         line,
@@ -693,8 +737,19 @@ export function planPayrollRegisterImport(
     if (held.deductionsCents !== row.deductionsCents)
       changes.push(`deductions ${dollars(held.deductionsCents)} → ${dollars(row.deductionsCents)}`);
     if (held.netCents !== row.netCents) changes.push(`net ${dollars(held.netCents)} → ${dollars(row.netCents)}`);
-    if ((held.hours ?? null) !== (row.hours ?? null)) changes.push("hours");
+    // Numeric, not string: the stored value comes back off a Prisma
+    // Decimal, which drops trailing zeros ("40.00" -> "40"), while a
+    // freshly-read register cell keeps whatever the file printed. Compared
+    // as strings, "40.00" against "40" reads as changed on every single
+    // re-import of an unchanged register.
+    if (!sameHours(held.hours ?? null, row.hours ?? null)) changes.push("hours");
     if ((held.payDate ?? null) !== (row.payDate ?? null)) changes.push("pay date");
+    // The itemised split can change while the total does not — a
+    // corrected register that re-categorises the same total deductions
+    // between withholding and other. Missing this meant the stored
+    // breakdown could go stale forever once the total first matched.
+    if (!sameDeductionsDetail(held.deductionsDetail ?? null, row.deductionsDetail ?? null))
+      changes.push("deductions breakdown");
     if (changes.length === 0 && !row.last4ToRecord) {
       plan.unchanged.push({
         line: row.line,

@@ -6,7 +6,7 @@ import { SpreadsheetImport } from "@/components/SpreadsheetImport";
 import { MyCoiImport } from "@/components/MyCoiImport";
 import { PayrollRegisterImport } from "@/components/PayrollRegisterImport";
 import { toIsoDate } from "@/lib/compliance-expiry";
-import type { ExistingRegisterEntry } from "@/lib/payroll-register-import";
+import type { ExistingRegisterEntry, RegisterDeductionsDetail } from "@/lib/payroll-register-import";
 
 /** Prisma's Date fields, as the pure planner wants them: YYYY-MM-DD. */
 function toRegisterEntry(row: {
@@ -18,6 +18,7 @@ function toRegisterEntry(row: {
   netCents: number;
   hours: unknown;
   payDate: Date | null;
+  deductionsDetail: unknown;
 }): ExistingRegisterEntry {
   return {
     crewMemberId: row.crewMemberId,
@@ -28,6 +29,7 @@ function toRegisterEntry(row: {
     netCents: row.netCents,
     hours: row.hours === null ? null : String(row.hours),
     payDate: row.payDate ? toIsoDate(row.payDate) : null,
+    deductionsDetail: (row.deductionsDetail as RegisterDeductionsDetail) ?? null,
   };
 }
 
@@ -100,6 +102,7 @@ export default async function ImportPage() {
           netCents: true,
           hours: true,
           payDate: true,
+          deductionsDetail: true,
         },
       }),
     ]);
@@ -165,6 +168,7 @@ export default async function ImportPage() {
         netCents: true,
         hours: true,
         payDate: true,
+        deductionsDetail: true,
       },
     }),
   ]);

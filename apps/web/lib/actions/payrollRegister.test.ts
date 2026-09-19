@@ -180,6 +180,58 @@ describe("importPayrollRegister", () => {
     expect(entries()).toHaveLength(1);
   });
 
+  it("reads as unchanged when the stored hours are the Decimal-stripped form of the register's own cell", async () => {
+    // Simulates what a real Prisma Decimal round-trip produces: "40.00"
+    // stored, read back as "40" (decimal.js drops trailing zeros). The
+    // register itself still prints "40.00" — a string compare would call
+    // this changed on every import.
+    db.seed("payrollRegisterEntry", {
+      id: "existing_1",
+      companyId: "co_A",
+      crewMemberId: "crew_maria",
+      periodStart: new Date("2026-08-23T00:00:00.000Z"),
+      periodEnd: new Date("2026-08-29T00:00:00.000Z"),
+      grossCents: 100000,
+      deductionsCents: 20000,
+      netCents: 80000,
+      hours: "40",
+      payDate: null,
+      deductionsDetail: null,
+    });
+    const withHours = [
+      "Employee,Period start,Period end,Gross,Net,Hours",
+      "Maria Lopez,2026-08-23,2026-08-29,1000.00,800.00,40.00",
+    ].join("\n");
+    const result = await importPayrollRegister(form(withHours));
+    expect(result).toMatchObject({ ok: true, value: { created: 0, updated: 0, unchanged: 1 } });
+    expect(entries()).toHaveLength(1);
+  });
+
+  it("re-imports as an UPDATE when the itemised deductions breakdown changes, even though the total matches", async () => {
+    db.seed("payrollRegisterEntry", {
+      id: "existing_1",
+      companyId: "co_A",
+      crewMemberId: "crew_maria",
+      periodStart: new Date("2026-08-23T00:00:00.000Z"),
+      periodEnd: new Date("2026-08-29T00:00:00.000Z"),
+      grossCents: 100000,
+      deductionsCents: 20000,
+      netCents: 80000,
+      hours: null,
+      payDate: null,
+      // Same total as the incoming register (200.00), all filed as "other".
+      deductionsDetail: { otherCents: 20000 },
+    });
+    const recategorised = [
+      "Employee,Period start,Period end,Gross,Net,Total deductions,Federal tax,Other deductions",
+      "Maria Lopez,2026-08-23,2026-08-29,1000.00,800.00,200.00,150.00,50.00",
+    ].join("\n");
+    const result = await importPayrollRegister(form(recategorised));
+    expect(result).toMatchObject({ ok: true, value: { created: 0, updated: 1 } });
+    const updated = entries().find((e) => e.id === "existing_1");
+    expect(updated?.deductionsDetail).toEqual({ federalTaxCents: 15000, otherCents: 5000 });
+  });
+
   it("refuses a row carrying a whole SSN anywhere in it, end to end, and writes nothing from that row", async () => {
     const withSsn = [
       "Employee,Period start,Period end,Gross,Net,Last 4 of SSN",

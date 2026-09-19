@@ -207,6 +207,20 @@ describe("Social Security numbers", () => {
     expect(plan.problems[0].message).not.toContain("123-45-6789");
   });
 
+  it("refuses a bare nine-digit SSN with no separators, in an unmapped column", () => {
+    // A dash lost to a spreadsheet re-save, or typed straight through —
+    // WHOLE_SSN alone requires the 3-2-4 grouping and misses this. Same
+    // 9-digit form the crew importer's looksLikeSsn already refuses.
+    const text = [
+      row("Employee", "Period start", "Period end", "Gross", "Net", "Notes"),
+      row("Maria Lopez", "2026-08-23", "2026-08-29", "1000.00", "800.00", "123456789"),
+    ].join("\n");
+    const plan = planPayrollRegisterImport(text, CREW, []);
+    expect(plan.create).toEqual([]);
+    expect(plan.problems).toHaveLength(1);
+    expect(plan.problems[0].message).not.toContain("123456789");
+  });
+
   it("accepts exactly four digits as a last-4, and records it once for the crew member", () => {
     const text = [
       row("Employee", "Period start", "Period end", "Gross", "Net", "Last 4 of SSN"),
@@ -328,12 +342,69 @@ describe("re-import: create vs update vs unchanged", () => {
         netCents: 80000,
         hours: null,
         payDate: null,
+        deductionsDetail: null,
       },
     ];
     const plan = planPayrollRegisterImport(text, CREW, existing);
     expect(plan.create).toEqual([]);
     expect(plan.update).toEqual([]);
     expect(plan.unchanged).toHaveLength(1);
+  });
+
+  it("still reads as unchanged when the stored hours dropped a trailing zero a Prisma Decimal strips", () => {
+    // decimal.js normalises "40.00" -> "40" on the round trip through the
+    // database. A held row of "40" against a freshly-read register cell of
+    // "40.00" must compare EQUAL, or every re-import of a register that
+    // prints two decimal places reads as changed forever.
+    const withHours = [
+      row("Employee", "Period start", "Period end", "Gross", "Net", "Hours"),
+      row("Maria Lopez", "2026-08-23", "2026-08-29", "1000.00", "800.00", "40.00"),
+    ].join("\n");
+    const existing: ExistingRegisterEntry[] = [
+      {
+        crewMemberId: "crew_maria",
+        periodStart: "2026-08-23",
+        periodEnd: "2026-08-29",
+        grossCents: 100000,
+        deductionsCents: 20000,
+        netCents: 80000,
+        hours: "40",
+        payDate: null,
+        deductionsDetail: null,
+      },
+    ];
+    const plan = planPayrollRegisterImport(withHours, CREW, existing);
+    expect(plan.create).toEqual([]);
+    expect(plan.update).toEqual([]);
+    expect(plan.unchanged).toHaveLength(1);
+  });
+
+  it("plans an update when the itemised deductions breakdown changes, even though the total does not", () => {
+    // A corrected register that re-categorises the same total deductions
+    // between withholding and other must not read as unchanged just
+    // because deductionsCents matches.
+    const withBreakdown = [
+      row("Employee", "Period start", "Period end", "Gross", "Net", "Total deductions", "Federal tax", "Other deductions"),
+      row("Maria Lopez", "2026-08-23", "2026-08-29", "1000.00", "800.00", "200.00", "150.00", "50.00"),
+    ].join("\n");
+    const existing: ExistingRegisterEntry[] = [
+      {
+        crewMemberId: "crew_maria",
+        periodStart: "2026-08-23",
+        periodEnd: "2026-08-29",
+        grossCents: 100000,
+        deductionsCents: 20000,
+        netCents: 80000,
+        hours: null,
+        payDate: null,
+        // Same total (20000), different split: was all "other" last time.
+        deductionsDetail: { otherCents: 20000 },
+      },
+    ];
+    const plan = planPayrollRegisterImport(withBreakdown, CREW, existing);
+    expect(plan.create).toEqual([]);
+    expect(plan.update).toHaveLength(1);
+    expect(plan.update[0].changed).toMatch(/deductions breakdown/);
   });
 
   it("plans an update, not a duplicate create, when the same person+period comes back with different figures", () => {
@@ -347,6 +418,7 @@ describe("re-import: create vs update vs unchanged", () => {
         netCents: 72000,
         hours: null,
         payDate: null,
+        deductionsDetail: null,
       },
     ];
     const plan = planPayrollRegisterImport(text, CREW, existing);
