@@ -1,6 +1,6 @@
-import crypto from "node:crypto";
 import { prisma } from "@prova/db";
 import { mapResendEventType } from "@prova/integrations";
+import { verifyResendSignature } from "@/lib/resend-webhook";
 
 /** Delivery events from the email provider.
  *
@@ -22,31 +22,9 @@ type ResendWebhookBody = {
   data?: { email_id?: string; bounce?: { message?: string }; reason?: string };
 };
 
-/** Svix-style signature check, which is what Resend uses.
- *
- * Compares with a timing-safe equality — a plain === on a signature leaks
- * how much of it was right, one byte at a time. */
-function verify(secret: string, id: string, timestamp: string, body: string, header: string): boolean {
-  const base = `${secret.startsWith("whsec_") ? secret.slice(6) : secret}`;
-  let key: Buffer;
-  try {
-    key = Buffer.from(base, "base64");
-  } catch {
-    return false;
-  }
-
-  const expected = crypto.createHmac("sha256", key).update(`${id}.${timestamp}.${body}`).digest("base64");
-
-  // The header carries a space-separated list of versioned signatures, so a
-  // provider can rotate keys without a flag day. Any one matching is enough.
-  for (const part of header.split(" ")) {
-    const value = part.includes(",") ? part.slice(part.indexOf(",") + 1) : part;
-    const a = Buffer.from(value);
-    const b = Buffer.from(expected);
-    if (a.length === b.length && crypto.timingSafeEqual(a, b)) return true;
-  }
-  return false;
-}
+// The svix-style signature check used to live here as a local `verify`.
+// It moved VERBATIM to lib/resend-webhook.ts when the inbound intake route
+// became its second caller — one copy, two routes.
 
 export async function POST(request: Request) {
   const secret = process.env.RESEND_WEBHOOK_SECRET?.trim();
@@ -74,7 +52,7 @@ export async function POST(request: Request) {
     return new Response("Stale or invalid timestamp", { status: 400 });
   }
 
-  if (!verify(secret, id, timestamp, raw, signature)) {
+  if (!verifyResendSignature(secret, id, timestamp, raw, signature)) {
     return new Response("Bad signature", { status: 401 });
   }
 

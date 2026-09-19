@@ -28,6 +28,15 @@ model Company {
   /// in this schema with no source to derive it from.
   isProvaOperator Boolean @default(false)
 
+  /// The unguessable half of this company's inbound intake address:
+  /// `docs-<token>@<INTAKE_INBOUND_DOMAIN>`. The token IS the routing — an
+  /// email to an address whose token matches no row is dropped — so it is
+  /// random (32 hex chars, 128 bits), unique, and regenerable by the owner
+  /// if it leaks. Nullable because companies predate it; the migration
+  /// backfills existing rows and `/intake` fills a null lazily, so a company
+  /// created after the migration gets one the first time the tray is opened.
+  intakeEmailToken String? @unique
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
