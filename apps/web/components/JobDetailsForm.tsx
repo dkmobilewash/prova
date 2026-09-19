@@ -78,7 +78,12 @@ export function JobDetailsForm({
 
         <label className={label}>
           Client
-          <select name="contactId" defaultValue={contactId} disabled={!isEstimate} className={input}>
+          {/* A disabled select is left out of the submitted form, so on a
+              contracted job the client never reached the action and every
+              save failed with "A job needs a client." The hidden field
+              carries it; the action still refuses a change once contracted. */}
+          {!isEstimate && <input type="hidden" name="contactId" value={contactId} />}
+          <select name={isEstimate ? "contactId" : undefined} defaultValue={contactId} disabled={!isEstimate} className={input}>
             {contacts.map((contact) => (
               <option key={contact.id} value={contact.id}>
                 {contact.name}
