@@ -1,27 +1,40 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition } from "react";
-import { importClients, importCrew, importJobs } from "@/lib/actions";
+import { importClients, importCrew, importJobs, importPhaseCodes } from "@/lib/actions";
 import {
+  CLIENT_COLUMNS,
+  CLIENT_FIELD_OPTIONS,
   CONTACT_TYPE_WORDS,
+  CREW_COLUMNS,
+  CREW_FIELD_OPTIONS,
   IMPORT_TEMPLATES,
+  JOB_COLUMNS,
+  JOB_FIELD_OPTIONS,
   JOB_STATUS_WORDS,
   MAX_IMPORT_ROWS,
   MAX_IMPORT_BYTES,
+  PHASE_CODE_COLUMNS,
+  PHASE_CODE_FIELD_OPTIONS,
   TOO_LARGE_MESSAGE,
   crewName,
   importTooLarge,
+  mapColumns,
   planClientImport,
   planCrewImport,
   planJobImport,
+  planPhaseCodeImport,
   type ExistingCrew,
   type ExistingJob,
   type ExistingMatch,
+  type FieldOption,
   type ImportKind,
   type JobClient,
   type JobPlanRow,
   type RowProblem,
 } from "@/lib/spreadsheet-import";
+import { applyColumnMapping, headerOf, type ColumnMapping } from "@/lib/import-mapping";
+import { matchPreset, presetMapping } from "@/lib/import-presets";
 
 /**
  * Paste or upload a spreadsheet, see exactly what will happen, then confirm.
@@ -42,7 +55,8 @@ import {
 type Props =
   | { kind: "clients"; existingContactNames: string[] }
   | { kind: "jobs"; existingContactNames: string[]; existingJobs: ExistingJob[] }
-  | { kind: "crew"; existingCrew: ExistingCrew[] };
+  | { kind: "crew"; existingCrew: ExistingCrew[] }
+  | { kind: "costCodes"; existingPhaseCodeCodes: string[] };
 
 type Result = { ok: true; message: string } | { ok: false; message: string };
 
@@ -50,6 +64,24 @@ const COPY: Record<ImportKind, { title: string; button: string; noun: [string, s
   clients: { title: "Clients", button: "Import clients", noun: ["client", "clients"] },
   jobs: { title: "Jobs", button: "Import jobs", noun: ["job", "jobs"] },
   crew: { title: "Crew", button: "Import crew", noun: ["crew member", "crew members"] },
+  costCodes: { title: "Cost codes", button: "Import cost codes", noun: ["cost code", "cost codes"] },
+};
+
+/** The alias table each kind guesses a mapping from, and the labelled
+ * field list its mapping UI offers — one place tying `ImportKind` to the
+ * two tables lib/spreadsheet-import.ts keeps beside each kind's parser. */
+const ALIASES: Record<ImportKind, Record<string, readonly string[]>> = {
+  clients: CLIENT_COLUMNS,
+  jobs: JOB_COLUMNS,
+  crew: CREW_COLUMNS,
+  costCodes: PHASE_CODE_COLUMNS,
+};
+
+const FIELD_OPTIONS: Record<ImportKind, FieldOption<string>[]> = {
+  clients: CLIENT_FIELD_OPTIONS,
+  jobs: JOB_FIELD_OPTIONS,
+  crew: CREW_FIELD_OPTIONS,
+  costCodes: PHASE_CODE_FIELD_OPTIONS,
 };
 
 const inputClass =
@@ -100,6 +132,24 @@ function ColumnHelp({ kind }: { kind: ImportKind }) {
           A job&apos;s value in C Stream is the sum of its line items, so it is built on the job
           page, not typed in here. A value, amount or price column in your file is left out and
           named in the preview.
+        </p>
+      </>
+    );
+  }
+  if (kind === "costCodes") {
+    return (
+      <>
+        <ul className="mb-3 flex flex-col gap-1 text-xs text-ink-body">
+          <Row name="Code">required. As your company writes it — 04112.</Row>
+          <Row name="Name">required, or a Description column. What it is, in your words.</Row>
+          <Row name="Unit">optional — SF, LF, EA, HR.</Row>
+        </ul>
+        <p className="mb-3 rounded-md border border-line-card bg-canvas px-3 py-2 text-xs text-ink-body">
+          <span className="font-medium text-ink-label">Brought in as phase codes.</span> A code
+          already in C Stream is left alone, matched exactly (not case-folded — 04112 and 04112-A
+          stay different codes, the same way the database tells them apart). Nothing is ever
+          deleted here: retiring a code you no longer use is done on{" "}
+          <span className="text-ink-label">Phase codes</span>, one at a time, after the import.
         </p>
       </>
     );

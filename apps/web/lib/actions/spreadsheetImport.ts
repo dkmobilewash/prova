@@ -12,6 +12,7 @@ import {
   planClientImport,
   planCrewImport,
   planJobImport,
+  planPhaseCodeImport,
 } from "@/lib/spreadsheet-import";
 import { IMPORT_COLLIDED, IMPORT_TX_OPTIONS, isWriteConflict } from "@/lib/import-shared";
 import { isUniqueConstraintError, ownerRefusal, type ActionResultWith } from "./shared";
@@ -273,6 +274,60 @@ export async function importCrew(formData: FormData): Promise<ImportResult> {
     if (isUniqueConstraintError(err)) {
       return fail(
         "One of those employee numbers was given to someone else on your crew list while this was saving, so nothing was saved. Check the preview and confirm again.",
+      );
+    }
+    throw err;
+  }
+}
+
+/** Cost codes -> PhaseCode. Same guard shape as the three above; the
+ * capability is MANAGE_COMPLIANCE, the one that already owns creating a
+ * phase code by hand on /phase-codes (lib/actions/phase-codes.ts). */
+export async function importPhaseCodes(formData: FormData): Promise<ImportResult> {
+  const context = await requireCompanyContext();
+  const refusal = ownerRefusal(context, "Only the account owner can import cost codes.");
+  if (refusal) return refusal;
+  if (!can(context, "MANAGE_COMPLIANCE")) {
+    return fail("Adding cost codes isn't part of your job function. Ask the account owner.");
+  }
+  const text = textFrom(formData);
+  if (typeof text !== "string") return text;
+  const companyId = context.company.id;
+
+  try {
+    const summary = await prisma.$transaction(async (tx) => {
+      const existing = await tx.phaseCode.findMany({ where: { companyId }, select: { code: true } });
+      const plan = planPhaseCodeImport(
+        text,
+        existing.map((row) => row.code),
+      );
+      if (plan.create.length > 0) {
+        await tx.phaseCode.createMany({
+          data: plan.create.map((row) => ({
+            companyId,
+            code: row.code,
+            name: row.name,
+            unit: row.unit,
+          })),
+        });
+      }
+      return {
+        created: plan.create.length,
+        alreadyThere: plan.existing.length,
+        skipped: plan.problems.length,
+        message: sentence(plan.create.length, "cost code", "cost codes", plan.existing.length, plan.problems.length),
+      };
+    }, TX_OPTIONS);
+
+    revalidatePath("/settings/import");
+    revalidatePath("/phase-codes");
+    revalidatePath("/settings");
+    return { ok: true, value: summary };
+  } catch (err) {
+    if (isWriteConflict(err)) return fail(COLLIDED);
+    if (isUniqueConstraintError(err)) {
+      return fail(
+        "One of those codes was added by someone else on your account while this was saving, so nothing was saved. Check the preview and confirm again.",
       );
     }
     throw err;
