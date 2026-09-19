@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as api from "./api";
-import { discardQueuedPhoto, queuedPhotoExists } from "./photo-store";
+import { discardQueuedPhoto, queuedPhotoExists, uploadQueuedPhoto } from "./photo-store";
 import type { FieldReportFields } from "./types";
 
 const KEY = "prova.field-queue";
@@ -336,20 +336,37 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
       if (!queuedPhotoExists(op.fileUri)) {
         throw new api.ApiError("The photo file is no longer on this phone", 410);
       }
-      const form = new FormData();
-      form.append("file", { uri: op.fileUri, name: op.fileName, type: op.mimeType } as unknown as Blob);
-      form.append("capturedAt", op.capturedAt);
-      form.append("clientOperationId", op.clientOperationId);
-      if (op.caption) form.append("caption", op.caption);
-      if (op.capturedLatitude !== undefined) form.append("capturedLatitude", String(op.capturedLatitude));
-      if (op.capturedLongitude !== undefined) form.append("capturedLongitude", String(op.capturedLongitude));
+      const parameters: Record<string, string> = {
+        capturedAt: op.capturedAt,
+        clientOperationId: op.clientOperationId,
+      };
+      if (op.caption) parameters.caption = op.caption;
+      if (op.capturedLatitude !== undefined) parameters.capturedLatitude = String(op.capturedLatitude);
+      if (op.capturedLongitude !== undefined) parameters.capturedLongitude = String(op.capturedLongitude);
       if (op.capturedAccuracyMeters !== undefined) {
-        form.append("capturedAccuracyMeters", String(op.capturedAccuracyMeters));
+        parameters.capturedAccuracyMeters = String(op.capturedAccuracyMeters);
       }
-      if (op.dailyFieldReportId) form.append("dailyFieldReportId", op.dailyFieldReportId);
-      if (op.punchListItemId) form.append("punchListItemId", op.punchListItemId);
-      for (const tagId of op.tagIds ?? []) form.append("tagIds", tagId);
-      await api.uploadMedia(op.jobId, form, token);
+      if (op.dailyFieldReportId) parameters.dailyFieldReportId = op.dailyFieldReportId;
+      if (op.punchListItemId) parameters.punchListItemId = op.punchListItemId;
+      // One value per field in a native multipart upload, so several tags
+      // travel comma-separated; the route splits them.
+      if (op.tagIds?.length) parameters.tagIds = op.tagIds.join(",");
+      const result = await uploadQueuedPhoto(
+        op.fileUri,
+        api.mediaUploadUrl(op.jobId),
+        token,
+        op.mimeType,
+        parameters,
+      );
+      if (result.status >= 400) {
+        let message = `Upload failed (${result.status})`;
+        try {
+          message = (JSON.parse(result.body) as { error?: string }).error ?? message;
+        } catch {
+          // A non-JSON body (a proxy error page): keep the status sentence.
+        }
+        throw new api.ApiError(message, result.status);
+      }
       discardQueuedPhoto(op.fileUri);
       return;
     }

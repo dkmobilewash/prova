@@ -14,7 +14,6 @@ import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
 import { enqueue } from "@/lib/sync-queue";
-import { useReloadWhenShown } from "@/lib/use-reload-when-shown";
 import { useSync } from "@/lib/use-sync";
 import type { TmTicket } from "@/lib/types";
 
@@ -49,9 +48,6 @@ export default function TicketScreen() {
     }
   };
 
-  // On first show, on every return to this screen, and when the app comes
-  // back from the background — so rows changed elsewhere don't linger.
-  useReloadWhenShown(load);
 
   const { pending, sync, refused, dismissRefused } = useSync(load);
 
