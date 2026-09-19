@@ -90,6 +90,11 @@ const isProtectedRoute = createRouteMatcher([
   "/internal(.*)",
 ]);
 
+// /pilot is deliberately NOT protected here, the same way /portal, /esign,
+// /privacy and /terms are not: it is the public early-tester page handed to
+// WWCCA members, and a sign-up page you must sign in to read recruits
+// nobody. It reads no database and renders the same for everyone.
+//
 // /api/integrations/webhooks/[provider] is deliberately NOT protected here.
 // A provider's servers have no Clerk session, so requiring one would reject
 // every real delivery. That route is written on the assumption that anyone
