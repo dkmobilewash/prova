@@ -61,3 +61,19 @@ describe("EstimateNotice", () => {
     expect(source).toContain('{plan.kind === "jobs" && <EstimateNotice rows={plan.create} />}');
   });
 });
+
+describe("column mapping — a person's own pick always wins over a guess", () => {
+  // There is no DOM test environment in this repo (vitest.config.mts runs
+  // "node") to click a <select> and watch state change, so this pins the
+  // one line the guarantee actually lives on — the spread ORDER in
+  // `effectiveMapping`, where `overrides` (this person's choices) must be
+  // spread LAST, after `baseMapping` (the preset or word-matching guess).
+  // Reversed, a person's explicit "Not in this file" (undefined) would be
+  // silently overwritten by the guess it was meant to clear, and nothing
+  // downstream — the plan, the preview table, Confirm — could tell.
+  it("spreads overrides after baseMapping, not before", () => {
+    const source = readFileSync(new URL("./SpreadsheetImport.tsx", import.meta.url), "utf8");
+    expect(source).toContain("{ ...baseMapping, ...overrides }");
+    expect(source).not.toContain("{ ...overrides, ...baseMapping }");
+  });
+});

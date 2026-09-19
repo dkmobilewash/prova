@@ -53,6 +53,10 @@ const TABLES: Record<string, Row[]> = {
     { companyId: "co_A", legalFirstName: "Maria", legalMiddleName: null, legalLastName: "Lopez", employeeNumber: null },
     { companyId: "co_B", legalFirstName: "John", legalMiddleName: null, legalLastName: "Smith", employeeNumber: "E-1" },
   ],
+  phaseCode: [
+    { companyId: "co_A", code: "04112" },
+    { companyId: "co_B", code: "ZZ-999" },
+  ],
 };
 
 function fakeModel(name: string) {
@@ -69,6 +73,7 @@ vi.mock("@prova/db", () => ({
     contact: fakeModel("contact"),
     job: fakeModel("job"),
     crewMember: fakeModel("crewMember"),
+    phaseCode: fakeModel("phaseCode"),
     vendor: fakeModel("vendor"),
     complianceDocument: fakeModel("complianceDocument"),
     contactPerson: fakeModel("contactPerson"),
@@ -122,15 +127,16 @@ describe("/settings/import", () => {
     expect(state.coiProps).toEqual([]);
   });
 
-  it("gives the owner all three imports, fed only this company's records", async () => {
+  it("gives the owner all four imports, fed only this company's records", async () => {
     await render();
-    expect(state.props.map((p) => p.kind)).toEqual(["clients", "jobs", "crew"]);
+    expect(state.props.map((p) => p.kind)).toEqual(["clients", "jobs", "crew", "costCodes"]);
     const payload = JSON.stringify(state.props);
     expect(payload).toContain("Acme Builders");
     expect(payload).toContain("Tower");
     expect(payload).toContain("Maria");
     expect(payload).toContain("Priya Shah");
-    for (const theirs of ["Zenith GC", "Harbor", "John", "Smith", "E-1", "Wei Chen"]) {
+    expect(payload).toContain("04112");
+    for (const theirs of ["Zenith GC", "Harbor", "John", "Smith", "E-1", "Wei Chen", "ZZ-999"]) {
       expect(payload).not.toContain(theirs);
     }
   });
