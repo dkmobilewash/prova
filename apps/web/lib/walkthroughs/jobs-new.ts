@@ -21,7 +21,7 @@ export const newJobWalkthrough: Walkthrough = {
       anchor: "new-job-client",
       title: "Who it is for",
       body:
-        "Pick the contractor or client from the list. If they are not in it yet, press “+ Add a new GC” and type their name.",
+        "Pick the contractor or client from the list. If they are not in it yet, press “+ Add a new GC” and type their name. With no GCs on your account yet, this box has no list to pick from — it shows “No GCs on your account yet — this one will be the first” instead.",
     },
     {
       anchor: "new-job-create",

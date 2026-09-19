@@ -172,7 +172,7 @@ export const FULL_TOUR: TourStop[] = [
       {
         anchor: "punch-add",
         title: "What still needs fixing",
-        body: "Walk the job and add one item at a time, like “touch-up paint, hallway”. Tick each off when it is done.",
+        body: "Walk the job and add one item at a time, like “touch-up paint, hallway”. Tick each off when it is done. With no jobs yet, this box says punch list items attach to a job, and there aren't any yet.",
       },
       {
         anchor: "punch-open",
@@ -211,7 +211,7 @@ export const FULL_TOUR: TourStop[] = [
       {
         anchor: "cash-flow-empty",
         title: "Invoices start on the job",
-        body: "You bill from a job's own page, in its Billing section. Everything you bill then shows up here: who owes you, how late, and what should arrive when.",
+        body: "You bill from a job's own page, in its Invoices section. Everything you bill then shows up here: who owes you, how late, and what should arrive when.",
       },
       {
         anchor: "cash-flow-aging",
@@ -228,7 +228,7 @@ export const FULL_TOUR: TourStop[] = [
       {
         anchor: "integrations-intro",
         title: "Bring your work in",
-        body: "Connect Jobber to bring your clients, jobs and open quotes across, and QuickBooks for the books. Connecting never lets one company see another's data.",
+        body: "Connect Jobber, where it's set up on this install, to bring your clients, jobs and open quotes across — and QuickBooks for the books. Connecting never lets one company see another's data.",
       },
       {
         anchor: "integrations-list",

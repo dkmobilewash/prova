@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { viewerToday } from "@/lib/viewerToday";
 import { prisma } from "@prova/db";
 import { reopenBlockers } from "@/lib/change-order";
 import { causeLabel, formatMinutes, methodLabel, partyLabel } from "@/lib/delays-core";
@@ -79,22 +80,18 @@ function nullableDecimal(formData: FormData, key: string): string | null {
   }
 }
 
-/** Dates are stored at UTC midnight so comparisons are between calendar
- * days, not instants — same rule as RFIs, submittals and the safety log. */
-function utcMidnight(date: Date) {
-  return new Date(`${date.toISOString().slice(0, 10)}T00:00:00.000Z`);
-}
-
 /**
  * Entered, not stamped. A change order logged after the fact has to record
  * the date it actually went to the GC — stamping `now()` would make every
  * backfilled PCO look same-day and turn the turnaround evidence into
- * fiction. Blank falls back to today, which is the honest default for one
- * being sent right now.
+ * fiction. Blank falls back to today ON THE VIEWER'S CALENDAR, which is
+ * the honest default for one being sent right now — the UTC day of the
+ * click is already tomorrow for any US user after ~5pm, and a decision
+ * dated the wrong day sits on a contract document.
  */
-function enteredDate(formData: FormData, key: string): Date {
+async function enteredDate(formData: FormData, key: string): Promise<Date> {
   const raw = text(formData, key);
-  if (!raw) return utcMidnight(new Date());
+  if (!raw) return new Date(`${await viewerToday()}T00:00:00.000Z`);
   const date = new Date(`${raw}T00:00:00.000Z`);
   if (Number.isNaN(date.getTime())) throw new InputError("That date isn't a real date.");
   return date;
@@ -448,7 +445,7 @@ export async function submitChangeOrder(
 
     await prisma.changeOrder.update({
       where: { id: changeOrderId },
-      data: { status: "SUBMITTED", submittedOn: enteredDate(formData, "submittedOn") },
+      data: { status: "SUBMITTED", submittedOn: await enteredDate(formData, "submittedOn") },
     });
 
     revalidatePath(`/jobs/${changeOrder.jobId}`);
@@ -482,7 +479,7 @@ export async function approveChangeOrder(
       throw new InputError(`CO #${changeOrder.number} has already been applied to the budget.`);
     }
 
-    const decidedOn = enteredDate(formData, "decidedOn");
+    const decidedOn = await enteredDate(formData, "decidedOn");
     if (changeOrder.submittedOn && decidedOn < changeOrder.submittedOn) {
       throw new InputError("A change order can't be answered before it was sent.");
     }
@@ -621,7 +618,7 @@ export async function rejectChangeOrder(
       );
     }
 
-    const decidedOn = enteredDate(formData, "decidedOn");
+    const decidedOn = await enteredDate(formData, "decidedOn");
     if (changeOrder.submittedOn && decidedOn < changeOrder.submittedOn) {
       throw new InputError("A change order can't be answered before it was sent.");
     }
@@ -660,7 +657,7 @@ export async function voidChangeOrder(
       where: { id: changeOrderId },
       data: {
         status: "VOID",
-        decidedOn: enteredDate(formData, "decidedOn"),
+        decidedOn: await enteredDate(formData, "decidedOn"),
         decisionNotes: text(formData, "decisionNotes") || null,
       },
     });

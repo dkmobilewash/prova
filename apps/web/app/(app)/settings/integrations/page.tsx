@@ -505,7 +505,13 @@ export default async function IntegrationsPage({
           question it answers — "does THIS environment have its own store" —
           has no other screen, and the alternative is reading a build log.
           The store id is not a secret: it is the first label of every photo
-          URL the app already renders. The token is never shown. */}
+          URL the app already renders. The token is never shown.
+
+          OPERATOR-ONLY, same flag that gates /sales and /internal/usage:
+          the question is asked by whoever runs the deployment, and "Store
+          id: —" plus advice to compare a preview against the live app is
+          server plumbing to a contractor reading their own settings. */}
+      {company.isProvaOperator && (
       <section className="mt-8" data-storage="photos" data-tour="integrations-storage">
         <Card>
           <h2 className="text-sm font-semibold text-ink">Photo storage</h2>
@@ -524,6 +530,7 @@ export default async function IntegrationsPage({
           </dl>
         </Card>
       </section>
+      )}
     </div>
   );
 }

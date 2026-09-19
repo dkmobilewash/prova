@@ -51,6 +51,12 @@ export type IntakeRow = {
   jobHint: string | null;
   jobId: string | null;
   status: string;
+  /** Provenance for a row that arrived by forwarded email; both null for a
+   * drag-and-drop. DISPLAY ONLY — a From header is whatever the sender
+   * typed, so it is shown for a person to recognise the row by and trusted
+   * for nothing. Optional so older callers and fixtures stay valid. */
+  emailFrom?: string | null;
+  emailSubject?: string | null;
 };
 
 /**
@@ -187,6 +193,12 @@ export function IntakeTable({ rows, jobs }: { rows: IntakeRow[]; jobs: IntakeJob
                       {formatIntakeSize(row.byteSize)}
                       {row.revisionHint ? ` · ${row.revisionHint}` : ""}
                     </p>
+                    {row.emailFrom && (
+                      <p className="mt-0.5 text-xs text-ink-muted">
+                        Emailed in by {row.emailFrom}
+                        {row.emailSubject ? ` — “${row.emailSubject}”` : ""}
+                      </p>
+                    )}
                   </td>
 
                   <td className="px-3 py-3">

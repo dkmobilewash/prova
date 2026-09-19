@@ -8,6 +8,7 @@ import type {
   LineItem,
   MaterialOrder,
   Media,
+  MediaTag,
   PunchListItem,
   RatioWarning,
   SafetyIncident,
@@ -281,6 +282,10 @@ export async function uploadMedia(jobId: string, formData: FormData, token: stri
     throw new ApiError(data?.error ?? `Upload failed (${res.status})`, res.status);
   }
   return data as Media;
+}
+
+export async function listMediaTags(token: string): Promise<MediaTag[]> {
+  return request(`/api/v1/media-tags`, { token });
 }
 
 export async function listPunchListItems(jobId: string, token: string): Promise<PunchListItem[]> {

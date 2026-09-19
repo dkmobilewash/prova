@@ -160,7 +160,7 @@ async function resolveLogTimeEntry(ctx: CommandContext, input: CommandInput): Pr
   };
 }
 
-async function executeLogTimeEntry(_ctx: CommandContext, payload: ResolvedPayload) {
+async function executeLogTimeEntry(ctx: CommandContext, payload: ResolvedPayload) {
   const jobId = str(payload, "jobId");
   const jobName = str(payload, "jobName");
   const employeeUserId = str(payload, "employeeUserId");
@@ -176,7 +176,8 @@ async function executeLogTimeEntry(_ctx: CommandContext, payload: ResolvedPayloa
   );
   if (!result.ok) return { ok: false as const, error: result.error };
   const row = await prisma.timeEntry.findFirst({
-    where: { jobId, employeeUserId, date: utcMidnight(date) },
+    // Belt-and-braces: logTimeEntry already asserted the job in-company.
+    where: { jobId, employeeUserId, date: utcMidnight(date), job: { companyId: ctx.companyId } },
     orderBy: { createdAt: "desc" },
     select: { id: true },
   });

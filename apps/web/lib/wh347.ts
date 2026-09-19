@@ -86,6 +86,7 @@ export type Wh347BlockingField =
   | "payrollNumber"
   | "projectLocation"
   | "contractNumber"
+  | "hoursOutsideWeek"
   | "statementOfCompliance";
 
 /** Human sentences, not labels. Printed where the field would have gone
@@ -110,6 +111,8 @@ export const WH347_BLOCKING_FIELD_REASON: Record<Wh347BlockingField, string> = {
   projectLocation:
     "The header wants the project's location. A job records a name but no address.",
   contractNumber: "The header wants the project or contract number. A job does not record one.",
+  hoursOutsideWeek:
+    "Hours were logged on dates outside this week's seven columns, so the grid cannot show them. A filing that leaves them out understates the week — fix the entries' dates, then reprint.",
   statementOfCompliance:
     "Page 2 is signed under penalty of perjury and names how fringes were paid. It is not built yet.",
 };
@@ -190,6 +193,11 @@ export interface Wh347Form {
   days: Date[];
   workers: Wh347WorkerLine[];
   totalHours: number;
+  /** Hours whose date misses the seven-day grid entirely. Zero whenever
+   * the query window and the grid agree, which is every day the window is
+   * correct — and the one day it is not, this is the number that stops
+   * the filing instead of vanishing from it. */
+  hoursOutsideWeek: number;
   /** Every distinct blocking field across the header and all workers,
    * deduplicated, in a stable order. */
   blocking: Wh347BlockingField[];
@@ -333,22 +341,43 @@ export function buildWh347(input: Wh347BuildInput): Wh347Form {
   // Keyed by worker AND classification: a worker who ran two crafts in one
   // week occupies two lines on the form, because column 3 is per line and
   // the rate follows the classification. Collapsing them would print one
-  // rate against hours paid at two.
-  const lines = new Map<string, Wh347WorkerLine & { sortName: string }>();
+  // rate against hours paid at two. A schedule that changes effective
+  // MID-WEEK splits the line the same way (see below): column 6 is per
+  // line, and one line printing one rate against a gross computed at two
+  // is a mutual inconsistency on a signed form.
+  const lines = new Map<string, Wh347WorkerLine & { sortName: string; sortRate: number }>();
+  // The schedule the first entry of each worker::craft resolved. A later
+  // entry resolving a DIFFERENT schedule gets its own line; an entry
+  // resolving NO schedule stays on the base line and poisons its money
+  // columns, exactly as before — the split is only ever between two real
+  // rates, never a way to quarantine underivable days into a side line.
+  const baseSchedule = new Map<string, FringeRateScheduleInput | null>();
+  let hoursOutsideWeek = 0;
 
   for (const entry of input.entries) {
     const craftKey = entry.craftClassificationId ?? "untagged";
-    const key = `${entry.employeeUserId}::${craftKey}`;
     const dayIndex = days.findIndex((d) => sameUtcDay(d, entry.date));
     // An entry outside the seven days cannot be placed in a column. The
-    // query is windowed so this should be unreachable; dropping it
-    // silently is how hours vanish from a filing, so it is counted.
-    if (dayIndex === -1) continue;
+    // query is windowed so this should be unreachable — and dropping it
+    // silently is how hours vanish from a filing, so it is counted into
+    // hoursOutsideWeek, which blocks the form below.
+    if (dayIndex === -1) {
+      hoursOutsideWeek += entry.hours;
+      continue;
+    }
 
     const schedules = entry.craftClassificationId
       ? (input.fringeSchedulesByCraft.get(entry.craftClassificationId) ?? [])
       : [];
     const schedule = findEffectiveFringeRateSchedule(schedules, entry.date);
+
+    const baseKey = `${entry.employeeUserId}::${craftKey}`;
+    if (!baseSchedule.has(baseKey)) baseSchedule.set(baseKey, schedule);
+    const first = baseSchedule.get(baseKey) ?? null;
+    const key =
+      schedule !== null && first !== null && schedule !== first
+        ? `${baseKey}::rate${schedules.indexOf(schedule)}`
+        : baseKey;
 
     let line = lines.get(key);
     if (!line) {
@@ -363,6 +392,9 @@ export function buildWh347(input: Wh347BuildInput): Wh347Form {
       line = {
         employeeUserId: entry.employeeUserId,
         sortName: name.label,
+        // Orders a mid-week split earlier-effective first, so the printed
+        // form does not reshuffle with the query's row order.
+        sortRate: schedule ? schedule.effectiveFrom.getTime() : 0,
         name: name.label,
         classification: entry.craftLabel ?? "Not tagged",
         hoursRows: [],
@@ -410,8 +442,13 @@ export function buildWh347(input: Wh347BuildInput): Wh347Form {
   }
 
   const workers = [...lines.values()]
-    .sort((a, b) => a.sortName.localeCompare(b.sortName) || a.classification.localeCompare(b.classification))
-    .map(({ sortName: _sortName, ...line }) => ({
+    .sort(
+      (a, b) =>
+        a.sortName.localeCompare(b.sortName) ||
+        a.classification.localeCompare(b.classification) ||
+        a.sortRate - b.sortRate,
+    )
+    .map(({ sortName: _sortName, sortRate: _sortRate, ...line }) => ({
       ...line,
       hoursRows: [...line.hoursRows].sort(
         (a, b) => ROW_ORDER.indexOf(a.payType) - ROW_ORDER.indexOf(b.payType),
@@ -432,6 +469,7 @@ export function buildWh347(input: Wh347BuildInput): Wh347Form {
   if (header.payrollNumber == null) blocking.add("payrollNumber");
   if (!header.projectLocation) blocking.add("projectLocation");
   if (!header.contractNumber) blocking.add("contractNumber");
+  if (hoursOutsideWeek > 0) blocking.add("hoursOutsideWeek");
   // Page 2 does not exist yet, so no week can be filed regardless of the
   // grid. Stated here rather than left for the reader to notice.
   blocking.add("statementOfCompliance");
@@ -448,6 +486,7 @@ export function buildWh347(input: Wh347BuildInput): Wh347Form {
     "grossEarned",
     "deductions",
     "netWages",
+    "hoursOutsideWeek",
     "statementOfCompliance",
   ];
 
@@ -455,6 +494,7 @@ export function buildWh347(input: Wh347BuildInput): Wh347Form {
     header,
     days,
     workers,
+    hoursOutsideWeek,
     totalHours: workers.reduce((sum, w) => sum + w.totalHours, 0),
     blocking: ORDER.filter((f) => blocking.has(f)),
     fileable: blocking.size === 0,

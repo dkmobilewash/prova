@@ -46,6 +46,8 @@ export type FieldReport = {
   manpowerLine?: string | null;
   /** "Signed" / "Approved" when the day is signed and so locked. */
   lockedLabel?: string | null;
+  /** Photos taken on the phone with "Attach to today's report" on. */
+  photoCount?: number;
 };
 
 /** Date only, formatted from the stored UTC-midnight value. Using UTC here
@@ -316,6 +318,11 @@ export function DailyFieldReports({
                       </p>
                     )}
                     {report.delays && <p className="text-amber-400">Delays: {report.delays}</p>}
+                    {report.photoCount ? (
+                      <p className="mt-1 text-ink-body">
+                        {report.photoCount} {report.photoCount === 1 ? "photo" : "photos"} attached — see Site photos below
+                      </p>
+                    ) : null}
                     {report.filedByName && (
                       <p className="mt-1 text-xs text-ink-body">filed by {report.filedByName}</p>
                     )}
