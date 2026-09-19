@@ -260,7 +260,19 @@ describe("what the hundred reach, and what they do not", () => {
    * nobody's most-asked question touches is worth knowing about. It is not
    * automatically wrong — some of these are written from a screen and
    * reached by tapping rather than by asking. */
-  const NOT_REACHED: Record<string, string> = {};
+  const NOT_REACHED: Record<string, string> = {
+    // This census IS the hundred questions a contractor asks about their
+    // OWN JOBS AND MONEY — every entry is a business question, per the
+    // module doc comment above ("what a plastering contractor says on a
+    // Tuesday"). Not one of the hundred asks how to operate the software.
+    // app_help answers exactly that different class of question — "how do
+    // I log a backcharge", never "what is on the backcharge log" — and is
+    // covered by its own cases in eval/cases.ts (the help-* ids) and
+    // directly in appHelp.test.ts, rather than by force-fitting a how-to
+    // question into a census curated around the business.
+    app_help:
+      "Out of scope for this census by kind, not by gap — see eval/cases.ts's help-* ids and appHelp.test.ts.",
+  };
 
   it("reaches every tool and command, or says why not", () => {
     const reached = new Set(TOP_QUESTIONS.flatMap((q) => (q.route.kind === "gap" ? [] : claimed(q))));

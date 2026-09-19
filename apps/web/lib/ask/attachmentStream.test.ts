@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * to hand it.
  */
 
-type Captured = { attachment?: unknown; context?: string; question: string };
+type Captured = { attachment?: unknown; context?: string; question: string; webSearch?: boolean };
 let captured: Captured | null = null;
 const research = vi.fn();
 const recordAskUsage = vi.fn(async () => {});
@@ -100,5 +100,16 @@ describe("an attached file", () => {
     await run({ question: "what's overdue?" });
     expect(captured?.attachment).toBeUndefined();
     expect(captured?.context ?? "").not.toContain("THE ATTACHED FILE");
+  });
+});
+
+describe("web search", () => {
+  it("is offered on every question — the flag streamAnswer hands the provider loop", async () => {
+    // askWebSearchTool's own max_uses clamp is packages/integrations'
+    // (webSearch.test.ts, imported directly since this file mocks the
+    // whole package); what belongs to answer.ts is that it turns the
+    // option ON at all, which is what this pins.
+    await run({ question: "what OSHA form do we file for a recordable injury?" });
+    expect(captured?.webSearch).toBe(true);
   });
 });

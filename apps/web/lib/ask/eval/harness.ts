@@ -53,6 +53,44 @@ export async function firstRound(c: EvalCase): Promise<Call[]> {
   return calls;
 }
 
+/**
+ * Like `firstRound`, offering Anthropic's server-side web search alongside
+ * the app's own tools. A SEPARATE function rather than a flag on
+ * `firstRound`: every other case in EVAL_CASES must keep costing exactly
+ * what it costs today, so offering the search tool is opt-in per case
+ * rather than something a shared default could quietly turn on everywhere.
+ *
+ * Nothing reaches `execute` for a server-side search — the model runs it
+ * itself and the result comes back inside the SAME response — so what a
+ * "web_search" case is graded on is `usage.webSearches`, read off the
+ * `usage` event the loop yields once per question (packages/integrations/
+ * src/ask.ts's `tally`, from `response.usage.server_tool_use.
+ * web_search_requests`). A client tool call, if the model makes one
+ * instead or as well, is still recorded in `calls` exactly as
+ * `firstRound` records it.
+ */
+export async function firstRoundWebSearch(c: EvalCase): Promise<{ calls: Call[]; webSearches: number }> {
+  const calls: Call[] = [];
+  let webSearches = 0;
+  const events = streamToolConversation<{ stop: true }>({
+    system: SYSTEM_PROMPT,
+    context: accessContext(c.principal),
+    question: c.question,
+    tools: offeredTools(c.principal),
+    webSearch: true,
+    execute: async (name, input) => {
+      calls.push({ name, input: (input ?? {}) as Record<string, unknown> });
+      return { content: "recorded by the eval", halt: { stop: true } };
+    },
+    maxPasses: 1,
+  });
+  for await (const event of events) {
+    if (event.type === "error" && event.reason === "api") throw new Error(`Anthropic API error on case ${c.id}`);
+    if (event.type === "usage") webSearches = event.usage.webSearches ?? 0;
+  }
+  return { calls, webSearches };
+}
+
 function inputMatches(expected: Record<string, string> | undefined, actual: Record<string, unknown>): string | null {
   for (const [key, wanted] of Object.entries(expected ?? {})) {
     const value = actual[key];
@@ -63,12 +101,20 @@ function inputMatches(expected: Record<string, string> | undefined, actual: Reco
   return null;
 }
 
-export function grade(c: EvalCase, calls: Call[]): Verdict {
+export function grade(c: EvalCase, calls: Call[], webSearches = 0): Verdict {
   const names = calls.map((call) => call.name);
   const commands = names.filter(isCommandName);
   const describe = `round called [${names.join(", ") || "nothing"}]`;
   const expected = c.expect;
   switch (expected.kind) {
+    case "web_search":
+      return webSearches > 0
+        ? { id: c.id, pass: true, note: `${describe}; ${webSearches} web search(es)` }
+        : { id: c.id, pass: false, note: `${describe}; expected a web search, none made` };
+    case "no_web_search":
+      return webSearches === 0
+        ? { id: c.id, pass: true, note: describe }
+        : { id: c.id, pass: false, note: `${describe}; expected no web search, made ${webSearches}` };
     case "tool": {
       const wanted = expected.name;
       const hit = calls.find((call) => call.name === wanted);
