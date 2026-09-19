@@ -46,7 +46,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // this is the component that already holds the company context. The
     // Sidebar renders them verbatim; every number is computed in
     // lib/moneyRail.ts and nowhere else.
-    getMoneyRailStages(company.id),
+    //
+    // Gated like MetricBar below, and for the same written-down reason:
+    // the Sidebar is a client component, so whatever is passed here is
+    // serialized to the browser for EVERY principal — found by the
+    // 2026-09-19 security audit painting company-wide bid, contract and
+    // retainage dollars on a FIELD user's rail, the one job function
+    // lib/permissions.ts deliberately strips of all money. No capability
+    // means no figures: the rail renders its headings without them, and
+    // the queries never run.
+    can(principal, "VIEW_COMPANY_FINANCIALS") ? getMoneyRailStages(company.id) : Promise.resolve([]),
   ]);
   return (
     // h-screen with the content column scrolling inside it, so the metric

@@ -58,3 +58,23 @@ describe("pages that render job money", () => {
     expect(source).toContain("rows={showsBilling ? today.receivables : []}");
   });
 });
+
+describe("the app layout's Money Rail figures", () => {
+  // The Sidebar is a client component: anything handed to it is serialized
+  // to the browser for every principal, whether or not it is painted. The
+  // 2026-09-19 audit found the five company-wide dollar figures reaching a
+  // FIELD user's rail; the layout now loads them only for a principal who
+  // holds VIEW_COMPANY_FINANCIALS, same as MetricBar ten lines below.
+  const source = read("app/(app)/layout.tsx");
+
+  it("loads the stages only behind VIEW_COMPANY_FINANCIALS", () => {
+    expect(source).toMatch(
+      /can\(principal, "VIEW_COMPANY_FINANCIALS"\)\s*\? getMoneyRailStages\(company\.id\)\s*: Promise\.resolve\(\[\]\)/,
+    );
+  });
+
+  it("never calls getMoneyRailStages ungated", () => {
+    const calls = source.match(/getMoneyRailStages\(/g) ?? [];
+    expect(calls).toHaveLength(1);
+  });
+});
