@@ -129,3 +129,102 @@ jobs:
 
       - name: Database tests
         run: pnpm test:db
+
+  # Real-browser E2E: the ten screens a pilot tester actually touches,
+  # covering exactly what the ~5,000 happy-dom unit tests structurally
+  # cannot — happy-dom does no layout, so phone-width breakage, an
+  # off-screen panel or the walkthrough tour's on-screen containment are
+  # invisible to it (see apps/web/e2e/playwright.config.ts's own
+  # docstring, and CLAUDE.md's "Cancel inherits the delete pixel" entry,
+  # found only because someone finally measured in real Chromium).
+  #
+  # Modeled on dbtest above: separate job because it needs Postgres, which
+  # the fast lint/typecheck/build job deliberately does not wait on.
+  #
+  # AUTH: no application-code bypass anywhere in this suite. Every
+  # authenticated spec signs in through Clerk's own official testing
+  # helper (@clerk/testing/playwright's clerkSetup/clerk.signIn) against
+  # real Clerk test users on the DEVELOPMENT instance — see
+  # apps/web/e2e/global-setup.ts and lib/signIn.ts. That needs real
+  # DEVELOPMENT Clerk keys as repository secrets, named E2E_ rather than
+  # after any existing secret so they can never be confused with a
+  # production key, the same discipline this file already uses for
+  # DEMO_DATABASE_URL/DEMO_DIRECT_URL. THIS JOB FAILS LOUDLY, not silently,
+  # until E2E_CLERK_PUBLISHABLE_KEY and E2E_CLERK_SECRET_KEY are added —
+  # see the PR that introduced this job for who owns adding them.
+  e2e:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: prova
+          POSTGRES_PASSWORD: prova
+          # Must end in _test or _dbtest — apps/web/e2e/lib/assertScratchDatabase.ts
+          # (packages/db/scripts/connection-target.mjs's scratchProblem())
+          # refuses anything else, on purpose, with no override.
+          POSTGRES_DB: prova_e2e_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U prova"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      DIRECT_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY }}
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: "/sign-in"
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: "/sign-up"
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL: "/dashboard"
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL: "/dashboard"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Apply migrations to the scratch database
+        run: pnpm --filter @prova/db exec prisma migrate deploy --schema prisma/schema
+
+      - name: Fail loudly if the Clerk test secrets are missing
+        run: |
+          set -e
+          if [ -z "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" ] || [ -z "$CLERK_SECRET_KEY" ]; then
+            echo "::error::E2E_CLERK_PUBLISHABLE_KEY / E2E_CLERK_SECRET_KEY repository secrets are not set." >&2
+            echo "This job needs the DEVELOPMENT Clerk instance's own keys to sign in real test users — see apps/web/e2e/global-setup.ts." >&2
+            exit 1
+          fi
+
+      - name: Install Playwright's chromium browser
+        run: pnpm --filter @prova/web exec playwright install --with-deps chromium
+
+      - name: Build
+        run: pnpm --filter @prova/web run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      - name: E2E tests
+        run: pnpm --filter @prova/web run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
