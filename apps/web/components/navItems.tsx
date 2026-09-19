@@ -713,12 +713,18 @@ export const NAV_FOOTER: NavItem[] = [item("/settings/integrations"), item("/set
  * button to a page that only refuses is a door that will not open. */
 const OWNER_ONLY_FOOTER = new Set(["/settings/integrations"]);
 
+/** Whether this person gets a door to `href` from the app: its capability,
+ * plus the owner-only pages above. The footer uses it, and so does the
+ * full tour (lib/walkthroughs/full-tour.ts), which drops a stop the viewer
+ * could not open rather than walk them to a refusal. */
+export function canOpen(user: Principal, href: string): boolean {
+  return canReach(user, href) && (!OWNER_ONLY_FOOTER.has(href) || user.role === "OWNER");
+}
+
 /** The footer items this person can reach — same rule as navGroupsFor,
  * plus the owner-only pages above. */
 export function navFooterFor(user: Principal): NavItem[] {
-  return NAV_FOOTER.filter(
-    (entry) => canReach(user, entry.href) && (!OWNER_ONLY_FOOTER.has(entry.href) || user.role === "OWNER"),
-  );
+  return NAV_FOOTER.filter((entry) => canOpen(user, entry.href));
 }
 
 /** Which footer item is the current page: the LONGEST matching href, so

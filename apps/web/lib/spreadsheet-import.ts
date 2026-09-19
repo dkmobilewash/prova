@@ -60,7 +60,7 @@ export function nameKey(value: string): string {
 }
 
 /** A cell's text with the edges trimmed and inner runs of spaces collapsed. */
-function clean(value: string | undefined): string {
+export function clean(value: string | undefined): string {
   return (value ?? "").trim().replace(/\s+/g, " ");
 }
 
@@ -78,7 +78,7 @@ function normaliseHeader(value: string): string {
  * Fields are tried in the order the alias table declares them and a column
  * is only ever given to one field, so an alias two fields share goes to
  * the first. */
-function mapColumns<F extends string>(header: string[], aliases: Record<F, readonly string[]>) {
+export function mapColumns<F extends string>(header: string[], aliases: Record<F, readonly string[]>) {
   const normalised = header.map(normaliseHeader);
   const mapping: Partial<Record<F, number>> = {};
   const used = new Set<number>();
@@ -100,17 +100,17 @@ function mapColumns<F extends string>(header: string[], aliases: Record<F, reado
 
 type Records = { header: string[]; body: { line: number; cells: string[] }[] } | null;
 
-function readRecords(text: string): Records {
+export function readRecords(text: string): Records {
   const records = parseCsvRecords(text);
   if (records.length === 0) return null;
   return { header: records[0].cells, body: records.slice(1) };
 }
 
-const NOTHING_TO_IMPORT: RowProblem = { line: 1, message: "Nothing to import." };
+export const NOTHING_TO_IMPORT: RowProblem = { line: 1, message: "Nothing to import." };
 
 /** The catalog importer's cap, applied the same way: readable rows past
  * the limit are left out, and the first one left out is named. */
-function applyCap<R extends { line: number }>(rows: R[], problems: RowProblem[]): R[] {
+export function applyCap<R extends { line: number }>(rows: R[], problems: RowProblem[]): R[] {
   if (rows.length <= MAX_IMPORT_ROWS) return rows;
   problems.push({
     line: rows[MAX_IMPORT_ROWS].line,

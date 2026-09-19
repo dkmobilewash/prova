@@ -18,6 +18,7 @@ import {
   submittedLockedFieldChanges,
   timeEntryCorrectionUpdateData,
 } from "@/lib/time-entry-correction";
+import { isDayLockError, liveSignoff, lockedDayMessage } from "@/lib/timesheet-signoff";
 
 /**
  * Every page that reads a job's hours.
@@ -117,20 +118,33 @@ export async function logTimeEntry(jobId: string, formData: FormData): Promise<A
     );
   }
 
-  await prisma.timeEntry.create({
-    data: {
-      jobId,
-      lineItemId,
-      employeeUserId,
-      craftClassificationId,
-      date,
-      hours: hoursRaw,
-      payType,
-      perDiemAmount,
-      travelPayAmount,
-      note,
-    },
-  });
+  // A signed day is locked until the office reopens it (TimesheetSignoff).
+  const live = await liveSignoff(jobId, date);
+  if (live) {
+    return actionFail(lockedDayMessage(date, live));
+  }
+
+  try {
+    await prisma.timeEntry.create({
+      data: {
+        jobId,
+        lineItemId,
+        employeeUserId,
+        craftClassificationId,
+        date,
+        hours: hoursRaw,
+        payType,
+        perDiemAmount,
+        travelPayAmount,
+        note,
+      },
+    });
+  } catch (error) {
+    // Signed between the check above and the write; the day-lock trigger
+    // refused it.
+    if (isDayLockError(error)) return actionFail(`That day was just signed, so its hours are locked.`);
+    throw error;
+  }
 
   revalidateJobLabor(jobId);
   return actionOk;
@@ -179,6 +193,11 @@ export async function updateTimeEntry(timeEntryId: string, formData: FormData): 
   // tenancy the same way.
   await assertJobInCompany(timeEntry.jobId, company.id);
 
+  const live = await liveSignoff(timeEntry.jobId, timeEntry.date);
+  if (live) {
+    return actionFail(lockedDayMessage(timeEntry.date, live));
+  }
+
   const lockedChanges = submittedLockedFieldChanges(formData, timeEntry);
   if (lockedChanges.length > 0) {
     return actionFail(
@@ -199,14 +218,19 @@ export async function updateTimeEntry(timeEntryId: string, formData: FormData): 
     : null;
   const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
 
-  await prisma.timeEntry.update({
-    where: { id: timeEntry.id },
-    data: timeEntryCorrectionUpdateData(
-      { ...figures.value, lineItemId, craftClassificationId },
-      user.id,
-      new Date(),
-    ),
-  });
+  try {
+    await prisma.timeEntry.update({
+      where: { id: timeEntry.id },
+      data: timeEntryCorrectionUpdateData(
+        { ...figures.value, lineItemId, craftClassificationId },
+        user.id,
+        new Date(),
+      ),
+    });
+  } catch (error) {
+    if (isDayLockError(error)) return actionFail("That day was just signed, so its hours are locked.");
+    throw error;
+  }
 
   revalidateJobLabor(timeEntry.jobId);
   return actionOk;
@@ -324,6 +348,12 @@ export async function deleteTimeEntry(jobId: string, timeEntryId: string) {
   const timeEntry = await prisma.timeEntry.findUnique({ where: { id: timeEntryId } });
   if (!timeEntry || timeEntry.jobId !== jobId) {
     throw new Error("Time entry not found on this job");
+  }
+  // The row hides Remove on a signed day, so reaching this is a race with a
+  // signature; the day-lock trigger would refuse the delete anyway.
+  const live = await liveSignoff(jobId, timeEntry.date);
+  if (live) {
+    throw new Error(lockedDayMessage(timeEntry.date, live));
   }
 
   await prisma.timeEntry.delete({ where: { id: timeEntryId } });

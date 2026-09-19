@@ -461,3 +461,176 @@ model ApprenticeRatioRule {
   @@index([unionLocalId])
   @@index([companyId])
 }
+
+/// A foreman's signature on one job's hours for one day, and the office's
+/// approval of it — the step that turns typed hours into a payroll record.
+///
+/// THE DAY'S STATE IS DERIVED, NEVER STORED (CLAUDE.md: derived state is never
+/// stored). The newest sign-off for (jobId, date) with `reopenedAt` NULL is the
+/// live one: no live sign-off = OPEN; live and `approvedAt` NULL = SUBMITTED;
+/// live and approved = APPROVED. There is no status column to disagree with
+/// the timestamps.
+///
+/// APPEND-ONLY. Reopening does not delete or un-sign anything: it stamps
+/// `reopenedAt` on the row, which leaves it in the history, and the next
+/// signature is a NEW row. A partial unique index in the migration allows only
+/// one live (un-reopened) sign-off per job per day. A BEFORE UPDATE trigger,
+/// `prova_timesheet_signoff_lock`, refuses any change to what was signed and
+/// lets `approvedAt` and `reopenedAt` be set once each.
+///
+/// WHILE A DAY HAS A LIVE SIGN-OFF, ITS HOURS ARE LOCKED. The trigger
+/// `prova_time_entry_day_lock` on TimeEntry refuses an INSERT, UPDATE or
+/// DELETE of an entry on a signed day. The API and the actions check first so
+/// that people see a sentence; the trigger is the rule. Cleanup scripts delete
+/// sign-offs BEFORE time entries for exactly that reason.
+model TimesheetSignoff {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// The day signed for. UTC midnight, the same as TimeEntry.date.
+  date DateTime
+
+  /// The printed name under the signature.
+  signerName     String
+  /// The drawn signature: an SVG path in exactly one shape, `M<x> <y>` and
+  /// `L<x> <y>` in whole pixels on a 320x160 box. The server refuses anything
+  /// else, so a signature can never carry markup into a page that draws it.
+  signaturePath  String
+  signedByUserId String?
+  signedByUser   User?    @relation("TimesheetSignoffSignedBy", fields: [signedByUserId], references: [id])
+  signedAt       DateTime
+
+  /// What the signature covered, counted at signing: the number of entries
+  /// and their total hours. Nothing can change under a live sign-off, so
+  /// these can only disagree with the entries after a reopen — which is
+  /// exactly when you want to know what was signed originally.
+  entryCount Int
+  totalHours Decimal @db.Decimal(7, 2)
+
+  /// The day's crew by craft at signing, from its TimeEntry rows:
+  /// `{ headcount, hours, byCraft: [{ craft, headcount, hours }] }`.
+  manpower       Json?
+  /// The daily report and its delays as they stood at signing — work
+  /// performed, weather, other trades, and each DelayEvent. Null when no
+  /// report had been filed. Nothing can change under a live sign-off, so
+  /// this only differs from the live rows after a reopen, which is exactly
+  /// when you want to know what was signed.
+  reportSnapshot Json?
+
+  approvedAt       DateTime?
+  approvedByUserId String?
+  approvedByUser   User?     @relation("TimesheetSignoffApprovedBy", fields: [approvedByUserId], references: [id])
+
+  reopenedAt       DateTime?
+  reopenedByUserId String?
+  reopenedByUser   User?     @relation("TimesheetSignoffReopenedBy", fields: [reopenedByUserId], references: [id])
+  reopenReason     String?
+
+  /// Idempotency key from the phone, so a retried offline POST replays
+  /// instead of signing twice.
+  clientOperationId String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([companyId, clientOperationId])
+  @@index([companyId])
+  @@index([jobId, date])
+  @@index([signedByUserId])
+  @@index([approvedByUserId])
+  @@index([reopenedByUserId])
+}
+
+enum DelayCause {
+  WEATHER
+  GC_SCHEDULE
+  OTHER_TRADE
+  MATERIAL
+  INSPECTION
+  DESIGN_RFI
+  SITE_ACCESS
+  EQUIPMENT
+  OTHER
+}
+
+enum DelayResponsibleParty {
+  GC
+  OWNER
+  OTHER_TRADE
+  SUPPLIER
+  OURSELVES
+  NOBODY
+}
+
+enum NotificationMethod {
+  PHONE
+  EMAIL
+  TEXT
+  IN_PERSON
+  MEETING
+  OTHER
+}
+
+/// One thing that cost the crew time on one job on one day — the record a
+/// delay claim or a change order is argued from months later.
+///
+/// Replaces the free-text DailyFieldReport.delays. Keyed on (jobId, date)
+/// rather than on a report, so a delay can be logged before the day's report
+/// exists, and it is locked by the same day sign-off as the hours and the
+/// report (`prova_delay_event_day_lock`). The one change that trigger lets
+/// through on a signed day is `changeOrderId`: drafting a change order from a
+/// delay is exactly what the office does after the day is signed.
+model DelayEvent {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// The day it happened. UTC midnight, like every date that matters.
+  date DateTime
+
+  cause            DelayCause
+  responsibleParty DelayResponsibleParty
+  /// "Acme Electric", "the GC's super" — who, in words, when the category
+  /// is not enough.
+  responsibleName  String?
+
+  /// Minutes after midnight, site time. Optional: a delay is often known
+  /// only as "most of the morning".
+  startMinute Int?
+  endMinute   Int?
+
+  workersAffected Int?
+  /// Crew-hours lost. Entered, or worked out from workers x (end - start)
+  /// when those are given and this is left blank.
+  hoursLost       Decimal? @db.Decimal(7, 2)
+
+  description String
+
+  /// Whether, how, when and to whom the GC was told. Null method = not yet.
+  gcNotifiedHow NotificationMethod?
+  gcNotifiedWho String?
+  gcNotifiedAt  DateTime?
+
+  /// The change order drafted from this delay, if one was.
+  changeOrderId String?
+  changeOrder   ChangeOrder? @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
+
+  loggedByUserId String?
+  loggedBy       User?   @relation("DelayEventLoggedBy", fields: [loggedByUserId], references: [id])
+
+  /// Idempotency key from the phone.
+  clientOperationId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, clientOperationId])
+  @@index([companyId])
+  @@index([jobId, date])
+  @@index([changeOrderId])
+  @@index([loggedByUserId])
+}

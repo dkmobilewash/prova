@@ -1,18 +1,26 @@
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
+import { ArchiveCrewButton } from "@/components/ArchiveCrewButton";
 import { CancelInviteButton } from "@/components/CancelInviteButton";
 import { InviteTeamMemberForm } from "@/components/InviteTeamMemberForm";
 import { JobFunctionPicker } from "@/components/JobFunctionPicker";
 import { TeamMemberActions } from "@/components/TeamMemberActions";
 import { capabilityCount, jobFunctionLabel } from "@/components/permissionLabels";
+import { crewMemberName } from "@/lib/worker-name";
 
 export default async function TeamPage() {
   const { company, ...currentUser } = await requireCompanyContext();
   const isOwner = currentUser.role === "OWNER";
 
-  const [members, invites] = await Promise.all([
+  const [members, invites, crew, archivedCrewCount] = await Promise.all([
     prisma.user.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
     prisma.invite.findMany({ where: { companyId: company.id }, orderBy: { createdAt: "asc" } }),
+    prisma.crewMember.findMany({
+      where: { companyId: company.id, archivedAt: null },
+      select: { id: true, legalFirstName: true, legalMiddleName: true, legalLastName: true, employeeNumber: true },
+      orderBy: [{ legalLastName: "asc" }, { legalFirstName: "asc" }],
+    }),
+    prisma.crewMember.count({ where: { companyId: company.id, archivedAt: { not: null } } }),
   ]);
 
   return (
@@ -65,6 +73,41 @@ export default async function TeamPage() {
           ))}
         </ul>
       </section>
+
+      {/* Crew members: people whose hours are logged but who have no login.
+          Added from Settings → Import; archived here when they leave. */}
+      {(crew.length > 0 || archivedCrewCount > 0) && (
+        <section className="mb-10">
+          <h2 className="mb-1 text-sm font-semibold text-ink-label">Crew members</h2>
+          <p className="mb-3 text-sm text-ink-muted">
+            People whose hours are logged from the phone but who don&apos;t sign in. Archiving takes
+            someone off the crew; their hours and their name on past payrolls stay as they are.
+          </p>
+          {crew.length > 0 ? (
+            <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+              {crew.map((member) => (
+                <li key={member.id} className="flex items-center justify-between gap-3 p-4">
+                  <div className="min-w-0">
+                    <p className="text-sm text-ink">{crewMemberName(member).label}</p>
+                    {member.employeeNumber && (
+                      <p className="text-xs text-ink-muted">Employee #{member.employeeNumber}</p>
+                    )}
+                  </div>
+                  {isOwner ? <ArchiveCrewButton crewMemberId={member.id} /> : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-ink-muted">Everyone on the crew has been archived.</p>
+          )}
+          {archivedCrewCount > 0 && (
+            <p className="mt-2 text-xs text-ink-muted">
+              {archivedCrewCount} archived {archivedCrewCount === 1 ? "crew member is" : "crew members are"} kept
+              for payroll history.
+            </p>
+          )}
+        </section>
+      )}
 
       {isOwner && (
         <>

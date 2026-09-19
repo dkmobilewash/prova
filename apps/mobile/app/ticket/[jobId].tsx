@@ -1,16 +1,20 @@
 import { useAuth } from "@clerk/expo";
 import { useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { DateField } from "@/components/DateField";
 import { Field } from "@/components/Field";
 import { List } from "@/components/List";
+import { RefusedBanner } from "@/components/RefusedBanner";
 import { Sheet } from "@/components/Sheet";
+import { SignaturePad } from "@/components/SignaturePad";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
 import { enqueue } from "@/lib/sync-queue";
+import { useReloadWhenShown } from "@/lib/use-reload-when-shown";
 import { useSync } from "@/lib/use-sync";
 import type { TmTicket } from "@/lib/types";
 
@@ -32,6 +36,7 @@ export default function TicketScreen() {
   const [workDate, setWorkDate] = useState(localToday());
   const [workDescription, setWorkDescription] = useState("");
   const [signerName, setSignerName] = useState("");
+  const [signaturePath, setSignaturePath] = useState<string | null>(null);
 
   const load = async () => {
     const token = await getToken();
@@ -44,28 +49,30 @@ export default function TicketScreen() {
     }
   };
 
-  useEffect(() => {
-    (async () => {
-      await load();
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId]);
+  // On first show, on every return to this screen, and when the app comes
+  // back from the background — so rows changed elsewhere don't linger.
+  useReloadWhenShown(load);
 
-  const { pending, sync } = useSync(load);
+  const { pending, sync, refused, dismissRefused } = useSync(load);
+
+  const canSubmit = !!workDate && !!workDescription.trim() && !!signerName.trim() && signaturePath !== null;
 
   const submit = async () => {
-    if (!jobId || !workDate || !workDescription.trim() || !signerName.trim()) return;
-    setWorkDescription("");
-    setSignerName("");
-    setShowForm(false);
-    await enqueue({
-      type: "ticket:create",
+    if (!jobId || !canSubmit || !signaturePath) return;
+    const op = {
+      type: "ticket:create" as const,
       jobId,
       clientOperationId: uuid(),
       workDate,
       workDescription: workDescription.trim(),
       signerName: signerName.trim(),
-    });
+      signaturePath,
+    };
+    setWorkDescription("");
+    setSignerName("");
+    setSignaturePath(null);
+    setShowForm(false);
+    await enqueue(op);
     await sync();
   };
 
@@ -73,6 +80,7 @@ export default function TicketScreen() {
     <View style={styles.screen}>
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <RefusedBanner refused={refused} onDismiss={dismissRefused} />
       <List
         data={tickets}
         keyExtractor={(item) => item.id}
@@ -80,7 +88,10 @@ export default function TicketScreen() {
           <Card>
             <View style={styles.head}>
               <Text style={styles.date}>{item.workDate}</Text>
-              <Text style={styles.signer}>Signed: {item.signerName}</Text>
+              <Text style={styles.signer}>
+                Signed: {item.signerName}
+                {item.hasSignature === false ? " (typed)" : ""}
+              </Text>
             </View>
             <Text style={styles.description}>{item.workDescription}</Text>
             {item.snapshot ? (
@@ -107,8 +118,9 @@ export default function TicketScreen() {
         title="New T&M ticket"
         primaryLabel="Sign & save"
         onPrimary={submit}
+        primaryDisabled={!canSubmit}
       >
-        <Field label="Date" placeholder="YYYY-MM-DD" value={workDate} onChangeText={setWorkDate} />
+        <DateField label="Date" value={workDate} onChange={setWorkDate} max={localToday()} />
         <Field
           label="What was done"
           placeholder="Describe the extra work"
@@ -118,10 +130,12 @@ export default function TicketScreen() {
         />
         <Field
           label="Client's name"
-          placeholder="Their typed name is the signature"
+          placeholder="Printed under their signature"
           value={signerName}
           onChangeText={setSignerName}
         />
+        <Text style={styles.label}>Client&rsquo;s signature</Text>
+        <SignaturePad key={showForm ? "open" : "closed"} onChange={setSignaturePath} />
       </Sheet>
     </View>
   );
@@ -135,6 +149,7 @@ const styles = StyleSheet.create({
   date: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
   signer: { color: colors.inkMuted, fontSize: typography.size.sm },
   description: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
+  label: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
   summary: { color: colors.inkMuted, fontSize: typography.size.sm, marginTop: 4 },
   footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
 });

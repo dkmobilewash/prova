@@ -75,6 +75,46 @@ export const settingsIntegrationsWalkthrough: Walkthrough = {
       title: "Your DocuSign account",
       body:
         "This shows which DocuSign account envelopes are sent from, and whether their status updates arrive by themselves or when you press Refresh.",
+      anchor: "mycoi-import-link",
+      title: "Bring in myCOI",
+      body:
+        "Press Import a myCOI export to bring your vendors' insurance in from a file you export from myCOI. You check it before anything is saved.",
+    },
+    {
+      anchor: "mycoi-live-api",
+      title: "Why there is no Connect button",
+      body:
+        "myCOI does not offer a live connection to other apps without an agreement with them, so for now it comes in as a file. This line says so, so nobody waits for a sync that isn't there.",
+    },
+    {
+      anchor: "procore-not-set-up",
+      title: "Procore isn't set up yet",
+      body:
+        "This install doesn't have the Procore app keys yet, so there is nothing to press. Whoever runs C Stream for you adds them.",
+    },
+    {
+      anchor: "procore-connect",
+      title: "Connect Procore",
+      body:
+        "Press Connect and sign in with your own Procore login, the one your GCs invite to their projects. C Stream only reads, never changes anything there.",
+    },
+    {
+      anchor: "procore-links",
+      title: "Which GC project feeds which job",
+      body:
+        "Each line is a GC's Procore project linked to one of your jobs. Its drawings, RFIs and submittals show on that job's pages.",
+    },
+    {
+      anchor: "procore-link",
+      title: "Link a project",
+      body:
+        "Press Link a Procore project to a job. C Stream asks Procore which projects you can see.",
+    },
+    {
+      anchor: "procore-link-form",
+      title: "Pick the project and your job",
+      body:
+        "Choose the GC's project and your job, then press Link. If a GC's company is listed with a note, their Procore admin has to add the C Stream app first.",
     },
     {
       anchor: "integrations-storage",

@@ -692,6 +692,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // and void actions are reached from /jobs/[id], which has no single
   // page capability; they assert VIEW_JOB_COSTS themselves.
   docusign: () => import("./actions/docusign"),
+  // Procore: the Integrations card's four (MANAGE_COMPLIANCE, then owner)
+  // and the feed refresh on /rfis, /submittals and /drawings (MANAGE_JOBS)
+  // — two modules because they sit behind two different doors.
+  procore: () => import("./actions/procore"),
+  procoreFeed: () => import("./actions/procoreFeed"),
   safety: () => import("./actions/safety"),
   certifications: () => import("./actions/certifications"),
   punchLists: () => import("./actions/punchLists"),

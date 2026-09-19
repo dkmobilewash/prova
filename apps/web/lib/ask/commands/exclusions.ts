@@ -74,8 +74,13 @@ export const notYetRegistered: Exclusion[] = [
   // which rows have problems — before anything is written. A command that
   // confirmed one would skip the only step the screen exists for.
   { action: "spreadsheetImport.*", reason: ADMIN + " Bulk import from a pasted file: the preview is the human judgement, so it is page only." },
+  // Procore: linking is an OAuth-backed owner decision made against a live
+  // project list, and the refresh is a button on the page it refreshes.
+  { action: "procore.*", reason: ADMIN + " Linking a GC's Procore project to a job: picked from Procore's own live list, so it is page only." },
+  { action: "procoreFeed.*", reason: "Refresh from Procore is a button on the page whose GC records it re-reads; nothing to resolve by name." },
   { action: "jobber.*", reason: ADMIN + " Connecting to and importing from Jobber: an OAuth sign-in and a preview a person reads before confirming, so it is page only." },
   { action: "docusign.*", reason: ADMIN + " Sending a contract for signature through DocuSign, voiding one, or connecting the account: correspondence to a GC with a signer's name and email read on the page before it goes, and an OAuth sign-in, so it is page only." },
+  { action: "mycoi.*", reason: ADMIN + " Importing certificates from a myCOI export: a pasted file and a preview a person reads before confirming, so it is page only." },
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },

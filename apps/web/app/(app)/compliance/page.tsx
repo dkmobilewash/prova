@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { ComplianceUploadForm } from "@/components/ComplianceUploadForm";
+import { EmptyState } from "@/components/EmptyState";
 import { ComplianceDocumentRow } from "@/components/ComplianceDocumentRow";
 import { RenewalAlerts } from "@/components/RenewalAlerts";
 import { renewalSourcesForCompany } from "@/lib/renewals";
@@ -12,6 +14,7 @@ import { toJobOption } from "@/components/jobLabels";
 import { ExperienceModRates } from "@/components/ExperienceModRates";
 import { loadExperienceModRates } from "@/lib/emr-query";
 import { emrStanding } from "@/lib/emr";
+import { supersededCoiIds } from "@/lib/coi-standing";
 
 export default async function CompliancePage() {
   const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
@@ -40,6 +43,10 @@ export default async function CompliancePage() {
   // is worse than either being wrong (settings/page.tsx:66).
   const today = serverToday();
   const renewals = renewalAlerts(renewalSources, today);
+  // Which COI rows a renewal of the same line has replaced — the same
+  // derivation the alerts above use (lib/renewals.ts), so a row can never
+  // read "Expired" here while the alerts treat it as renewed.
+  const superseded = supersededCoiIds(documents.filter((doc) => doc.type === "CERTIFICATE_OF_INSURANCE"));
 
   // A SECOND today, for a DIFFERENT fact, and deliberately so. Which mod rate
   // is in force is decided by the exact day, and on New Year's Eve evening in
@@ -82,12 +89,49 @@ export default async function CompliancePage() {
       <section className="mb-8 rounded-lg border border-line-card bg-surface p-4" data-tour="compliance-upload">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Upload a document</h2>
         <ComplianceUploadForm companyId={company.id} jobs={jobs.map(toJobOption)} />
+        {currentUser.role === "OWNER" && (
+          <p className="mt-3 text-xs text-ink-body" data-tour="compliance-mycoi">
+            Track your subs&apos; insurance in myCOI?{" "}
+            <Link href="/settings/import#mycoi" className="text-link hover:text-link-hover">
+              Import a myCOI export
+            </Link>{" "}
+            instead of uploading certificates one at a time.
+          </p>
+        )}
       </section>
 
       <section>
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Documents</h2>
         {documents.length === 0 ? (
-          <p className="text-ink-body" data-tour="compliance-empty">No compliance documents yet.</p>
+          <EmptyState
+            data-tour="compliance-empty"
+            title="No documents yet"
+            purpose={
+              <p>
+                The paperwork a client, builder or lender asks you for — certificates of insurance
+                and lien waivers above all — kept in one place with the job it belongs to, so you
+                can send it the same day instead of digging through email.
+              </p>
+            }
+            actions={[
+              { label: "Upload a document", opens: "compliance-upload" },
+              { label: "Record your insurance and licence dates", href: "/settings" },
+            ]}
+            sources={
+              <p>
+                Documents you upload here. Your policies, licences and bonds are entered once in
+                Settings, and anything expiring shows in the list at the top of this page and on
+                Alerts.
+              </p>
+            }
+            example={{
+              rows: [
+                { title: "Certificate of insurance — general liability", tag: "Received", detail: "Company-wide", meta: "expires Mar 1" },
+                { title: "Conditional lien waiver, progress payment 2", tag: "Received", detail: "Smith kitchen remodel", meta: "Sep 5" },
+                { title: "Unconditional lien waiver, final", tag: "Pending", detail: "Oak Ave addition", meta: "asked Sep 12" },
+              ],
+            }}
+          />
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="compliance-documents">
             {documents.map((doc) => (
@@ -110,6 +154,8 @@ export default async function CompliancePage() {
                   fileName: doc.fileName,
                   aiExtracted: doc.aiExtracted,
                   jobName: doc.job?.name ?? null,
+                  coverageType: doc.coverageType,
+                  superseded: superseded.has(doc.id),
                 }}
               />
             ))}

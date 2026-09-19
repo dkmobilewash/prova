@@ -12,12 +12,27 @@ import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { TakeoffForm } from "@/components/TakeoffForm";
 import { DailyFieldReports } from "@/components/DailyFieldReports";
+import { DelayLog } from "@/components/DelayLog";
+import { refreshReportWeather } from "@/lib/report-weather";
+import { loadManpower, manpowerLine } from "@/lib/manpower";
+import { weatherLine, type DayWeather } from "@/lib/weather";
+import {
+  DELAY_CAUSES,
+  NOTIFICATION_METHODS,
+  RESPONSIBLE_PARTIES,
+  causeLabel,
+  formatMinutes,
+  methodLabel,
+  partyLabel,
+} from "@/lib/delays-core";
 import { JobMediaSection } from "@/components/JobMediaSection";
 import { PayApplications, StatusForm } from "@/components/PayApplications";
 import { AddCostEntryForm } from "@/components/AddCostEntryForm";
 import { LogPaymentForm } from "@/components/LogPaymentForm";
 import { LogTimeEntryForm } from "@/components/LogTimeEntryForm";
 import { TimeEntryRow } from "@/components/TimeEntryRow";
+import { TimesheetSignoffs } from "@/components/TimesheetSignoffs";
+import { SignatureImage } from "@/components/SignatureImage";
 import { PushPaymentToQuickBooks } from "@/components/PushPaymentToQuickBooks";
 import { PushInvoiceToQuickBooks } from "@/components/PushInvoiceToQuickBooks";
 import { pushBlockers } from "@/lib/quickbooks-sync";
@@ -255,6 +270,20 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           // corrected, which is most of them.
           lastCorrectedByUser: true,
         },
+      },
+      // Every sign-off, live and reopened, for the history under Field time
+      // entries. The lock itself is read separately below — this list is
+      // capped and the lock must not be.
+      timesheetSignoffs: {
+        orderBy: [{ date: "desc" }, { signedAt: "desc" }],
+        take: 60,
+        include: { signedByUser: true, approvedByUser: true, reopenedByUser: true },
+      },
+      tmTickets: { orderBy: { workDate: "desc" }, take: 20 },
+      delayEvents: {
+        orderBy: [{ date: "desc" }, { createdAt: "asc" }],
+        take: 100,
+        include: { changeOrder: { select: { number: true } } },
       },
       dispatchSlips: {
         orderBy: { dispatchDate: "desc" },
@@ -638,6 +667,25 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const revokeSignatureRequestWithId = (requestId: string) => revokeSignatureRequest.bind(null, requestId);
   const createInvoiceWithId = createInvoice.bind(null, job.id);
   const deleteTimeEntryWithId = (timeEntryId: string) => deleteTimeEntry.bind(null, job.id, timeEntryId);
+  // Days with a live timesheet sign-off: their hours are locked (the database
+  // refuses a change; the rows below just stop offering one). Uncapped, unlike
+  // the history list, so an old signed day never shows an Edit that fails.
+  const lockedTimeDays = new Map(
+    (
+      await prisma.timesheetSignoff.findMany({
+        where: { jobId: job.id, reopenedAt: null },
+        select: { date: true, approvedAt: true },
+      })
+    ).map((s) => [s.date.toISOString().slice(0, 10), s.approvedAt ? "Approved" : "Signed"]),
+  );
+  // Daily reports: the weather from the site address (filled in or brought
+  // up to date here, a few reports per load), and the crew from each day's
+  // time entries — neither is typed.
+  const reportWeather = await refreshReportWeather(job, job.dailyFieldReports);
+  const reportManpower = await loadManpower(
+    job.id,
+    job.dailyFieldReports.map((r) => r.reportDate),
+  );
   const deleteDispatchSlipWithId = (dispatchSlipId: string) => deleteDispatchSlip.bind(null, job.id, dispatchSlipId);
   const deletePrevailingWageDeterminationWithId = (determinationId: string) =>
     deletePrevailingWageDetermination.bind(null, job.id, determinationId);
@@ -754,6 +802,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             contacts={jobDetailContacts}
             isEstimate={job.status === "ESTIMATE"}
             canRemove={currentUser.role === "OWNER"}
+            siteAddress={job.siteAddress ?? job.projectLocation}
+            siteStatus={job.siteAddress === null ? "none" : job.siteLatitude !== null ? "found" : "notFound"}
           />
           {/* A bid started from the Ask box: location, due date and the web
               facts the person kept. Renders nothing for any other job. */}
@@ -1345,6 +1395,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                             : ""
                         }`
                       : null,
+                    lockedLabel: lockedTimeDays.get(entry.date.toISOString().slice(0, 10)) ?? null,
                   }}
                   lineItems={job.lineItems.map((item) => ({ id: item.id, description: item.description }))}
                   craftOptions={timeEntryCraftOptions}
@@ -1365,7 +1416,73 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             lineItems={job.lineItems}
             craftOptions={timeEntryCraftOptions}
           />
+
+          <h3 className="mb-1 mt-6 text-base font-semibold text-ink">Timesheet sign-off</h3>
+          <p className="mb-3 text-sm text-ink-muted">
+            The foreman signs each day&rsquo;s hours on the phone. A signed day is locked; approving it
+            makes it payroll. Reopen a day to fix it — the old signature and your reason stay on the record.
+          </p>
+          <TimesheetSignoffs
+            canApprove={can(principal, "MANAGE_COMPLIANCE")}
+            rows={job.timesheetSignoffs.map((signoff) => ({
+              id: signoff.id,
+              dateLabel: formatCalendarDate(signoff.date),
+              state: signoff.reopenedAt ? "REOPENED" : signoff.approvedAt ? "APPROVED" : "SUBMITTED",
+              signerName: signoff.signerName,
+              signedLabel: `Signed ${formatInstant(signoff.signedAt, timeZone)}${
+                signoff.signedByUser ? ` from ${signoff.signedByUser.name ?? signoff.signedByUser.email}'s phone` : ""
+              }`,
+              entryCount: signoff.entryCount,
+              totalHours: String(Number(signoff.totalHours)),
+              signaturePath: signoff.signaturePath,
+              approvedLabel: signoff.approvedAt
+                ? `${formatInstant(signoff.approvedAt, timeZone)}${
+                    signoff.approvedByUser ? ` by ${signoff.approvedByUser.name ?? signoff.approvedByUser.email}` : ""
+                  }`
+                : null,
+              reopenedLabel: signoff.reopenedAt
+                ? `${formatInstant(signoff.reopenedAt, timeZone)}${
+                    signoff.reopenedByUser ? ` by ${signoff.reopenedByUser.name ?? signoff.reopenedByUser.email}` : ""
+                  }`
+                : null,
+              reopenReason: signoff.reopenReason,
+            }))}
+          />
         </section>
+
+        {showsField && (
+          <section className="mb-10">
+            <h2 className="mb-1 text-lg font-semibold text-ink">T&amp;M tickets</h2>
+            <p className="mb-3 text-sm text-ink-muted">
+              Extra work signed for on site from the phone, with what the day&rsquo;s labor and materials were
+              when it was signed.
+            </p>
+            {job.tmTickets.length === 0 ? (
+              <p className="text-sm text-ink-muted">No T&amp;M tickets on this job yet.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {job.tmTickets.map((ticket) => (
+                  <li
+                    key={ticket.id}
+                    className="flex flex-wrap items-start gap-3 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
+                  >
+                    {ticket.signaturePath ? (
+                      <SignatureImage path={ticket.signaturePath} label={`Signature of ${ticket.signerName}`} />
+                    ) : null}
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span className="text-slate-100">{formatCalendarDate(ticket.workDate)}</span>
+                      <span className="text-slate-300">{ticket.workDescription}</span>
+                      <span className="text-xs text-slate-500">
+                        Signed by {ticket.signerName}, {formatInstant(ticket.signedAt, timeZone)}
+                        {ticket.signaturePath ? "" : " (typed name — signed before the phone took drawn signatures)"}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
 
         <section className="mb-10">
           <h2 className="mb-1 text-lg font-semibold text-ink">Union hiring-hall dispatch</h2>
@@ -2217,16 +2334,62 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         <DailyFieldReports
           jobId={job.id}
           canDelete={currentUser.role === "OWNER"}
-          reports={job.dailyFieldReports.map((report) => ({
-            id: report.id,
-            reportDate: report.reportDate.toISOString(),
-            crewPresent: report.crewPresent,
-            workPerformed: report.workPerformed,
-            weather: report.weather,
-            delays: report.delays,
-            filedByName: report.filedBy?.name ?? null,
-          }))}
-        />
+          siteNote={
+            job.siteLatitude === null
+              ? job.siteAddress
+                ? "Weather can't be filled in: the site address above wasn't found on a map. Try a street address or \"City, ST\"."
+                : "Add the job's site address above and each report fills in the day's weather automatically."
+              : null
+          }
+          reports={job.dailyFieldReports.map((report) => {
+            const auto = (reportWeather.get(report.id) ?? report.weatherAuto) as DayWeather | null;
+            const day = report.reportDate.toISOString().slice(0, 10);
+            return {
+              id: report.id,
+              reportDate: report.reportDate.toISOString(),
+              crewPresent: report.crewPresent,
+              workPerformed: report.workPerformed,
+              weather: report.weather,
+              delays: report.delays,
+              filedByName: report.filedBy?.name ?? null,
+              weatherAutoLine: auto ? weatherLine(auto) : null,
+              weatherAutoKind: auto?.kind ?? null,
+              manpowerLine: manpowerLine(reportManpower.get(day) ?? { headcount: 0, hours: 0, byCraft: [] }),
+              lockedLabel: lockedTimeDays.get(day) ?? null,
+            };
+          })}
+        >
+          <DelayLog
+            jobId={job.id}
+            causes={DELAY_CAUSES}
+            parties={RESPONSIBLE_PARTIES}
+            methods={NOTIFICATION_METHODS}
+            canDraftChangeOrder={job.status !== "ESTIMATE"}
+            delays={job.delayEvents.map((d) => ({
+              id: d.id,
+              dateLabel: formatCalendarDate(d.date),
+              causeLabel: causeLabel(d.cause),
+              responsibleLabel: partyLabel(d.responsibleParty),
+              responsibleName: d.responsibleName,
+              start: formatMinutes(d.startMinute),
+              end: formatMinutes(d.endMinute),
+              workersAffected: d.workersAffected,
+              hoursLost: d.hoursLost === null ? null : String(Number(d.hoursLost)),
+              description: d.description,
+              notifiedLabel: d.gcNotifiedHow
+                ? [
+                    methodLabel(d.gcNotifiedHow),
+                    d.gcNotifiedWho,
+                    d.gcNotifiedAt ? formatInstant(d.gcNotifiedAt, timeZone) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : null,
+              changeOrderLabel: d.changeOrder ? `CO #${d.changeOrder.number}` : null,
+              lockedLabel: lockedTimeDays.get(d.date.toISOString().slice(0, 10)) ?? null,
+            }))}
+          />
+        </DailyFieldReports>
 
         {showsField && (
           <JobMediaSection

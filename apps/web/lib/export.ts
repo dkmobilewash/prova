@@ -267,10 +267,22 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     key: "field-reports",
     model: "dailyFieldReport",
     label: "Daily field reports",
-    note: "Crew, work performed, weather and delays — the daily record a delay claim rests on.",
+    note: "Work performed, other trades on site, site conditions, the automatic weather, and older reports' typed delays — the daily record a delay claim rests on.",
     columns: [
       "id", "jobId", "reportDate", "crewPresent", "workPerformed", "weather",
-      "delays", "filedByUserId", "createdAt", "updatedAt",
+      "weatherAuto", "delays", "filedByUserId", "createdAt", "updatedAt",
+    ],
+    scope: byCompany,
+  },
+  {
+    key: "delays",
+    model: "delayEvent",
+    label: "Delays",
+    note: "Each delay logged on a job: cause, who caused it, times, workers and crew-hours lost, and who at the GC was told, how and when.",
+    columns: [
+      "id", "jobId", "date", "cause", "responsibleParty", "responsibleName", "startMinute", "endMinute",
+      "workersAffected", "hoursLost", "description", "gcNotifiedHow", "gcNotifiedWho", "gcNotifiedAt",
+      "changeOrderId", "loggedByUserId", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -496,6 +508,15 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     models: ["TmTicket"],
   },
   {
+    key: "timesheet-signoffs",
+    title: "Timesheet sign-offs",
+    detail:
+      "Which days' hours a foreman signed on the phone, the drawn signature, and when the " +
+      "office approved or reopened them. The hours themselves are in the time entries above; " +
+      "the signatures are in the app, not in this file.",
+    models: ["TimesheetSignoff"],
+  },
+  {
     key: "messages",
     title: "Messages sent from the app",
     detail:
@@ -588,6 +609,8 @@ export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
   QuickBooksEntityLink: "integration plumbing — our id against QuickBooks' id for the same record",
   QuickBooksSyncAttempt: "sync log — each attempt to post a record to QuickBooks",
   IntegrationSyncLog: "sync log — each run of an integration, and what it moved",
+  ProcoreProjectLink: "integration plumbing — which GC Procore project feeds which job, meaningless without that Procore login",
+  ProcoreItem: "a cached copy of the GC's own Procore records — theirs, kept in Procore, not this company's",
   NotificationDispatch: "notification record — which alert was sent to whom, not the thing it was about",
   AlertAcknowledgement: "notification record — who dismissed or snoozed an alert",
   DeviceToken: "notification record — a phone's push address, and a credential in its own right",

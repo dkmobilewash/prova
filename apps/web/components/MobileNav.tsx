@@ -90,13 +90,15 @@ export function MobileNav({
           >
             <div className="flex items-start justify-between gap-2 border-b border-neutral-800 px-5 py-4">
               <div className="flex min-w-0 flex-col gap-0.5">
-                <Image
-                  src="/brand/cstream-wordmark.png"
-                  alt="C Stream"
-                  width={120}
-                  height={24}
-                  className="h-5 w-auto"
-                />
+                <Link href="/dashboard" aria-label="C Stream — go to the dashboard" className="w-fit">
+                  <Image
+                    src="/brand/cstream-wordmark.png"
+                    alt=""
+                    width={120}
+                    height={24}
+                    className="h-5 w-auto"
+                  />
+                </Link>
                 <span className="truncate text-xs text-neutral-400">{companyName}</span>
               </div>
               <button

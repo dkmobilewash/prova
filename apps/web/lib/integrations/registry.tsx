@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import type { IntegrationProvider } from "@prova/db";
 import { JOBBER_REQUIRED_ENV } from "@/lib/jobber/setup";
 import { DOCUSIGN_REQUIRED_ENV } from "@/lib/docusign/setup";
+import { MYCOI_API_UNAVAILABLE } from "@/lib/mycoi/api";
+import { PROCORE_REQUIRED_ENV } from "@/lib/procore/setup";
 
 /**
  * The one list of providers, and the seam the next phase hooks into.
@@ -50,6 +52,22 @@ export type ProviderImplementation =
    * keys the card says the service is not set up here.
    */
   | { kind: "esign"; startHref: string; requiredEnv: readonly string[] }
+   * A provider whose live API is not available to us, but whose customers
+   * can EXPORT a file that C Stream imports — the path that works today.
+   * The card links to that import and says, in `liveApi`, why there is no
+   * Connect button. Never rendered as "Connected": there is no connection,
+   * and pretending the file import is one would be the untrue card this
+   * union exists to prevent.
+   */
+  | { kind: "file-import"; importHref: string; importLabel: string; liveApi: string }
+  /**
+   * A standing READ-ONLY feed from someone else's system into this
+   * company's jobs: OAuth connect, then the owner links an outside project
+   * to a job and its records show on that job's pages. Same `requiredEnv`
+   * rule as `import` — missing keys mean "not set up here", never a dead
+   * button.
+   */
+  | { kind: "feed"; startHref: string; requiredEnv: readonly string[] }
   /** Not built. Renders disabled, with no control that implies otherwise. */
   | { kind: "planned" };
 
@@ -165,8 +183,8 @@ export const PROVIDERS: ProviderEntry[] = [
     provider: "PROCORE",
     name: "Procore",
     description:
-      "A read-only feed from a GC's Procore project, so drawings, RFIs and submittals arrive without being re-keyed. Read-only by intent: the GC's project is theirs, not ours to write to.",
-    implementation: { kind: "planned" },
+      "Sign in with your own Procore login and link a GC's Procore project to your job. The GC's current drawings, RFIs and submittals then show on your Drawings, RFIs and Submittals pages, marked as theirs, with a link back to Procore. Read-only: C Stream never changes anything in the GC's project.",
+    implementation: { kind: "feed", startHref: "/api/procore/start", requiredEnv: PROCORE_REQUIRED_ENV },
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
         <path d="M10 3.2 16.5 7v6L10 16.8 3.5 13V7L10 3.2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
@@ -178,8 +196,13 @@ export const PROVIDERS: ProviderEntry[] = [
     provider: "MYCOI",
     name: "myCOI",
     description:
-      "Certificate-of-insurance verification for vendors and subs, so an expired COI is caught before somebody is on site under it rather than after.",
-    implementation: { kind: "planned" },
+      "Your vendors' and subs' certificates of insurance, from a myCOI export. Each line of cover lands on Compliance with its expiry date, shows beside the vendor, and warns you before it runs out — so an expired COI is caught before somebody is on site under it rather than after.",
+    implementation: {
+      kind: "file-import",
+      importHref: "/settings/import#mycoi",
+      importLabel: "Import a myCOI export",
+      liveApi: MYCOI_API_UNAVAILABLE,
+    },
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
         <path d="M10 3.2 15.5 5.4v4.3c0 3-2.2 5.6-5.5 7-3.3-1.4-5.5-4-5.5-7V5.4L10 3.2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />

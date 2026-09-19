@@ -163,11 +163,31 @@ model DailyFieldReport {
   /// Free text rather than a link to JobAssignment. On a real site the crew
   /// that showed up rarely matches the roster exactly, and forcing it to
   /// would make people record the roster instead of the truth.
+  ///
+  /// Since 2026-09-18 the screens label this "Other trades / visitors on
+  /// site": the crew itself is now read from that day's TimeEntry rows (by
+  /// craft), so nobody retypes who worked. Kept, not renamed — every older
+  /// report's text is still here and still means what it said.
   crewPresent   String?
   workPerformed String
+  /// The foreman's own note on site conditions ("mud at the east gate").
+  /// The weather itself is `weatherAuto`.
   weather       String?
+  /// Weather for the job site on this day, fetched from Open-Meteo using the
+  /// job's site coordinates — never typed. `{ kind: "forecast" | "observed",
+  /// source, fetchedAt, tempHighF, tempLowF, precipIn, windMaxMph, code,
+  /// summary }`. A forecast is replaced by the observed day once the day is
+  /// over (Fieldwire's pattern). That replacement is the ONE change the day
+  /// lock lets through on a signed day: it is an outside fact, not something
+  /// the foreman signed for. Null when the job has no site coordinates.
+  weatherAuto   Json?
   /// Anything that cost time: late delivery, another trade in the way,
   /// inspection no-show. Blank means the day ran clean.
+  ///
+  /// SUPERSEDED 2026-09-18 by DelayEvent (labor.prisma): one row per delay
+  /// with a cause, a responsible party, times, crew-hours lost and who at
+  /// the GC was told. No screen offers this text box any more; older
+  /// reports keep and still show what was typed here.
   delays        String?
 
   /// Offline sync fields. Null for web writes — a phone stamps these, the
@@ -217,10 +237,16 @@ model TmTicket {
   /// rationale as SignatureRequest.snapshot.
   snapshot Json
 
-  /// The on-site signature — a typed name + timestamp (the same shape as the
-  /// client e-sign SignatureRequest; no raster).
+  /// The on-site signer's printed name. Until 2026-09-18 this WAS the
+  /// signature — a typed name and a timestamp.
   signerName String
   signedAt   DateTime
+
+  /// The drawn signature, when there is one: the same SVG path shape as
+  /// TimesheetSignoff.signaturePath (`M`/`L` whole-pixel points on 320x160),
+  /// refused by the server in any other shape. NULL on every ticket signed
+  /// before the phone could draw one.
+  signaturePath String?
 
   createdByUserId String?
   createdBy       User?   @relation(fields: [createdByUserId], references: [id])
