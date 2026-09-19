@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { regenerateIntakeEmailAddress } from "@/lib/actions";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 /**
  * "Forward documents to…" — the company's own inbound address, on the tray
@@ -18,16 +19,35 @@ import { regenerateIntakeEmailAddress } from "@/lib/actions";
  * not fallen back to — on the clipboard API failing (http, ancient
  * browser), the address is still selectable text right there.
  *
- * REGENERATE IS OWNER-ONLY AND TWO-STEP. The server enforces owner (the
- * action refuses anyone else); `isOwner` here only decides whether to show
- * the button, the same cosmetic-versus-boundary split every list page uses.
- * The confirm is an inline armed state, never `window.confirm`, and the
- * armed copy says the real cost: everyone forwarding to the old address
- * starts bouncing.
+ * REGENERATE IS OWNER-ONLY AND TWO-STEP, through the shared
+ * `<RowActions>`/`<ConfirmDelete>` — not a hand-rolled armed `useState`.
+ * The armed-delete census (`rowActionsCensus.test.ts`) caught exactly that
+ * the first time this component was written: `const [armed, setArmed] =
+ * useState(false)` matches its `(?:onfirm|rmed)` pattern, because it is the
+ * same mechanism issue #152 catalogued twenty times over — a hand-rolled
+ * arm/disarm that a later sibling button can sit next to unguarded. This is
+ * not literally a delete, but it drops a live credential the same way
+ * `IntegrationControls`' disconnect does (that file is the reference this
+ * one now follows), so it gets the same two-step treatment. The cluster is
+ * left-aligned (no `shrink-0`), so `pinned` stays at its default "start":
+ * Cancel keeps the first slot, which is the one this row's buttons vacate.
+ * `label="New address"` is 11 characters, under the 12-char ceiling
+ * `rowActionsCensus.test.ts` enforces so the armed pair still covers the
+ * pixels the button it replaced.
+ *
+ * The server enforces owner (`ownerRefusal` inside the action refuses
+ * anyone else); `isOwner` here only decides whether the control renders at
+ * all, the same cosmetic-versus-boundary split every list page uses.
+ *
+ * `key={address}` on the `<RowActions>` is what disarms it on success:
+ * the action revalidates `/intake` and the new address arrives by prop, the
+ * key changes, and React remounts the cluster fresh rather than leaving it
+ * stuck armed with a disabled confirm. On failure the address — and so the
+ * key — does not change, so the row stays armed with the error shown and
+ * only Cancel live, which is `ConfirmDelete`'s documented retry shape.
  */
 export function IntakeForwardBox({ address, isOwner }: { address: string; isOwner: boolean }) {
   const [copied, setCopied] = useState(false);
-  const [armed, setArmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -48,7 +68,6 @@ export function IntakeForwardBox({ address, isOwner }: { address: string; isOwne
     setNote(null);
     startTransition(async () => {
       const result = await regenerateIntakeEmailAddress();
-      setArmed(false);
       if (result.ok) {
         // The page revalidates and the new address arrives by prop; the
         // note says what just happened so the change is not silent.
@@ -71,57 +90,49 @@ export function IntakeForwardBox({ address, isOwner }: { address: string; isOwne
         with this address can use it — it is yours, not public.
       </p>
       <div className="flex flex-wrap items-center gap-2">
+        {/* The address itself is display text, not an action, so it stays
+            outside <RowActions> — only its two BUTTONS are the row's
+            actions, and only those hide while the regenerate control is
+            armed. Losing sight of the address you are about to replace
+            while confirming would be its own small hazard. */}
         <code className="select-all rounded border border-line-card bg-surface-muted px-2 py-1 text-sm text-ink" data-testid="intake-forward-address">
           {address}
         </code>
-        <button
-          type="button"
-          onClick={copy}
-          className="rounded border border-line-card px-3 py-1 text-sm text-ink hover:bg-surface-muted"
+        <RowActions
+          key={address}
+          className="flex flex-wrap items-center gap-2"
+          destructive={
+            isOwner ? (
+              <ConfirmDelete
+                label="New address"
+                confirmLabel="Replace it"
+                pendingLabel="Replacing…"
+                describe="Everyone still forwarding to the current address starts bouncing. Do this only if the address has leaked or is collecting junk."
+                pending={pending}
+                onConfirm={regenerate}
+                armedClassName="flex flex-wrap items-center gap-2"
+                hint={
+                  <span className="text-xs text-ink-muted">
+                    Replaces this address. Anything still being forwarded to the current one will
+                    stop arriving.
+                  </span>
+                }
+                deleteClassName="rounded border border-line-card px-3 py-1 text-sm text-ink-muted hover:bg-surface-muted disabled:opacity-50"
+                cancelClassName="rounded border border-line-card px-3 py-1 text-sm text-ink hover:bg-surface"
+                confirmClassName="rounded border border-red-500 px-3 py-1 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+              />
+            ) : undefined
+          }
         >
-          {copied ? "Copied" : "Copy address"}
-        </button>
-        {isOwner && !armed && (
           <button
             type="button"
-            onClick={() => setArmed(true)}
-            className="rounded border border-line-card px-3 py-1 text-sm text-ink-muted hover:bg-surface-muted"
+            onClick={copy}
+            className="rounded border border-line-card px-3 py-1 text-sm text-ink hover:bg-surface-muted"
           >
-            Get a new address
+            {copied ? "Copied" : "Copy address"}
           </button>
-        )}
+        </RowActions>
       </div>
-      {isOwner && armed && (
-        <div className="mt-3 rounded border border-line-card bg-surface-muted p-3">
-          <p className="mb-2 text-sm text-ink-body">
-            Replace this address? Anything still being forwarded to the current one will stop
-            arriving, and everyone using it needs the new address. Do this if the address has
-            leaked or is collecting junk.
-          </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setArmed(false)}
-              disabled={pending}
-              className="rounded border border-line-card px-3 py-1 text-sm text-ink hover:bg-surface"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={regenerate}
-              // Disabled while in flight — the action is not idempotent
-              // (each click would mint another token) and this app has a
-              // standing scar from live buttons through slow round trips
-              // (#19).
-              disabled={pending}
-              className="rounded border border-red-500 px-3 py-1 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
-            >
-              {pending ? "Replacing…" : "Yes, replace the address"}
-            </button>
-          </div>
-        </div>
-      )}
       {note && <p className="mt-2 text-sm text-ink-body">{note}</p>}
       {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
     </section>

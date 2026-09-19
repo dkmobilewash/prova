@@ -187,6 +187,25 @@ describe("handleResendInbound — refusals before anything is read", () => {
     expect(deps.db.documentIntake.create).not.toHaveBeenCalled();
   });
 
+  it("401 when only the signature header is missing (id and timestamp present)", async () => {
+    const deps = depsFor();
+    const body = payloadFor();
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const request = new Request("https://app.example/api/intake/inbound/resend", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "svix-id": "msg_test_1",
+        "svix-timestamp": timestamp,
+        // svix-signature deliberately omitted
+      },
+      body,
+    });
+    const response = await handleResendInbound(request, deps);
+    expect(response.status).toBe(401);
+    expect(deps.db.documentIntake.create).not.toHaveBeenCalled();
+  });
+
   it("401 on a bad signature", async () => {
     const deps = depsFor();
     const wrongSecret = `whsec_${Buffer.from("a-completely-different-key-here!").toString("base64")}`;
