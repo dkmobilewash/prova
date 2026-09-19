@@ -24,6 +24,19 @@ import {
   VALUE_QUALIFIER,
   groupIntoBands,
 } from "@/components/changeOrderStates";
+import { DocuSignPanel, type DocuSignEnvelopeView } from "@/components/DocuSignPanel";
+import type { DocuSignCardState } from "@/lib/docusign/setup";
+
+/** "Send with DocuSign" on a submitted change order — optional, and absent
+ * when the page has nothing to say about DocuSign. See DocuSignPanel. */
+export type ChangeOrderDocuSign = {
+  jobId: string;
+  state: DocuSignCardState;
+  autoUpdates: boolean;
+  canVoid: boolean;
+  defaultSigner: { name: string; email: string };
+  byChangeOrder: Record<string, DocuSignEnvelopeView[]>;
+};
 
 const inputClass =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -487,7 +500,16 @@ function DraftActions({ changeOrder }: { changeOrder: ChangeOrderView }) {
   );
 }
 
-function ChangeOrderCard({ co, lineItems }: { co: ChangeOrderView; lineItems: LineItemChoice[] }) {
+function ChangeOrderCard({
+  co,
+  lineItems,
+  docuSign,
+}: {
+  co: ChangeOrderView;
+  lineItems: LineItemChoice[];
+  docuSign?: ChangeOrderDocuSign;
+}) {
+  const envelopes = docuSign?.byChangeOrder[co.id] ?? [];
   return (
     <li className="rounded-md border border-line-card bg-surface p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -567,6 +589,21 @@ function ChangeOrderCard({ co, lineItems }: { co: ChangeOrderView; lineItems: Li
 
       {co.status === "SUBMITTED" && <Decision changeOrder={co} />}
 
+      {docuSign && (co.status === "SUBMITTED" || envelopes.length > 0) && (
+        <DocuSignPanel
+          state={docuSign.state}
+          jobId={docuSign.jobId}
+          subject="CHANGE_ORDER"
+          subjectId={co.id}
+          defaultSigner={docuSign.defaultSigner}
+          envelopes={envelopes}
+          canSend={co.status === "SUBMITTED"}
+          canVoid={docuSign.canVoid}
+          autoUpdates={docuSign.autoUpdates}
+          sendLabel="Get the GC's signature with DocuSign"
+        />
+      )}
+
       {co.status === "APPROVED" && <Correction changeOrder={co} />}
     </li>
   );
@@ -578,6 +615,7 @@ export function ChangeOrders({
   lineItems,
   pendingExposure,
   pendingUnbookable,
+  docuSign,
 }: {
   jobId: string;
   changeOrders: ChangeOrderView[];
@@ -588,6 +626,8 @@ export function ChangeOrders({
    * (#105 finding 5) — reported so the exposure figure reads as a floor
    * rather than a silently-shrunk total. */
   pendingUnbookable?: number;
+  /** Send-with-DocuSign on submitted change orders. Omitted, nothing renders. */
+  docuSign?: ChangeOrderDocuSign;
 }) {
   const pendingCount = changeOrders.filter((co) => co.status === "SUBMITTED").length;
   const { groups, unbanded } = groupIntoBands(changeOrders);
@@ -672,7 +712,7 @@ export function ChangeOrders({
               </header>
               <ul className="flex flex-col gap-3">
                 {items.map((co) => (
-                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} />
+                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} docuSign={docuSign} />
                 ))}
               </ul>
             </section>
@@ -694,7 +734,7 @@ export function ChangeOrders({
               </header>
               <ul className="flex flex-col gap-3">
                 {unbanded.map((co) => (
-                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} />
+                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} docuSign={docuSign} />
                 ))}
               </ul>
             </section>

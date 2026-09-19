@@ -154,6 +154,9 @@ export const NEVER_DELETE = [
   "SafetyIncident",
   "ContractDocument",
   "SignatureRequest",
+  // An envelope sent through DocuSign is correspondence that reached a GC's
+  // inbox. It is voided at DocuSign, never deleted here.
+  "DocuSignEnvelope",
   "ComplianceDocument",
   "OutboundMessage",
 ];

@@ -687,6 +687,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // /settings/integrations, so they assert its MANAGE_COMPLIANCE before
   // the owner check and before anything is read.
   jobber: () => import("./actions/jobber"),
+  // DocuSign: disconnect is reachable only from /settings/integrations, so
+  // it asserts MANAGE_COMPLIANCE before the owner check. The send, refresh
+  // and void actions are reached from /jobs/[id], which has no single
+  // page capability; they assert VIEW_JOB_COSTS themselves.
+  docusign: () => import("./actions/docusign"),
   // The QuickBooks import's two actions: reachable only from /settings, so
   // they assert its MANAGE_COMPLIANCE before the owner check and before
   // anything is read.

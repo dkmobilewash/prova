@@ -38,8 +38,16 @@ import type { IntegrationProvider } from "@prova/db";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Mirrors the IntegrationProvider enum. A path outside it is a bad URL. */
-const PROVIDERS = ["SANDBOX", "QUICKBOOKS", "DOCUSIGN", "PROCORE", "MYCOI"] as const;
+/**
+ * The providers this route accepts. A path outside it is a bad URL.
+ *
+ * DOCUSIGN IS NOT HERE ANY MORE, on purpose. It has a signature scheme, so
+ * it has its own route, /api/docusign/connect, which verifies the HMAC
+ * before reading anything (lib/docusign/connect-handler.ts). Leaving it
+ * accepted here as well would keep an unverified second door open for the
+ * one provider that now has a verified one — so /webhooks/docusign 404s.
+ */
+const PROVIDERS = ["SANDBOX", "QUICKBOOKS", "PROCORE", "MYCOI"] as const;
 
 function asProvider(value: string): IntegrationProvider | null {
   const upper = value.toUpperCase();

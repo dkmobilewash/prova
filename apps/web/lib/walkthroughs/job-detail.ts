@@ -47,6 +47,30 @@ export const jobDetailWalkthrough: Walkthrough = {
         "When the price further down is ready, press Create signing link and send the link to your client. They read the price and sign it on their phone or computer — no account needed.",
     },
     {
+      anchor: "docusign-connect-hint",
+      title: "Prefer DocuSign?",
+      body:
+        "C Stream's own signing link is the default. If your GC wants DocuSign, the account owner connects it once on Settings → Integrations, and a Send with DocuSign button appears here.",
+    },
+    {
+      anchor: "docusign-send",
+      title: "Send with DocuSign",
+      body:
+        "Instead of the link, press this to send the contract through your DocuSign account. Check the signer's name and email, then press Send for signature. It works the same on an uploaded subcontract and on a submitted change order.",
+    },
+    {
+      anchor: "docusign-envelope",
+      title: "Where it stands",
+      body:
+        "Each envelope says whether it was sent, opened, signed, declined or voided, with DocuSign's own times. Once everyone signs, the signed copy and DocuSign's certificate are saved here, and a signed contract counts as executed.",
+    },
+    {
+      anchor: "docusign-refresh",
+      title: "Check now",
+      body:
+        "Press Refresh to ask DocuSign where the envelope stands right now. The account owner can Void an envelope that went to the wrong person — it is cancelled at DocuSign, and the record stays here.",
+    },
+    {
       anchor: "job-time",
       title: "Hours worked",
       body:

@@ -446,8 +446,8 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     detail:
       "The uploaded files themselves are not something a CSV or a JSON file can hold — " +
       "they stay in storage. Neither are the rows that index them: job photos and their " +
-      "annotations, drawing sets and revisions, contract documents, signature requests " +
-      "and anything filed through document intake.",
+      "annotations, drawing sets and revisions, contract documents, signature requests, " +
+      "envelopes sent through DocuSign and anything filed through document intake.",
     models: [
       "JobMedia",
       "JobMediaAnnotation",
@@ -457,6 +457,7 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "DrawingRevision",
       "ContractDocument",
       "SignatureRequest",
+      "DocuSignEnvelope",
       "DocumentIntake",
     ],
   },

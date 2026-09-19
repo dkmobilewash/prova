@@ -1539,6 +1539,10 @@ async function undo(companyId) {
     await del("signatureRequest", () =>
       prisma.signatureRequest.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    // RESTRICT on Job; its ContractDocument/ChangeOrder links are SET NULL.
+    await del("docuSignEnvelope", () =>
+      prisma.docuSignEnvelope.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     await del("retainageRelease", () =>
       prisma.retainageRelease.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
