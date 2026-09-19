@@ -12,6 +12,7 @@ import {
   scheduledWorkerName,
 } from "@/lib/crew-schedule-query";
 import { CrewScheduleBoard, type ScheduleDay } from "@/components/CrewScheduleBoard";
+import { CalendarSubscribe } from "@/components/CalendarSubscribe";
 import { toJobOption } from "@/components/jobLabels";
 
 function formatDate(date: Date) {
@@ -38,7 +39,7 @@ export default async function SchedulePage() {
   const today = serverToday();
   const canWrite = can(user, "MANAGE_FIELD");
 
-  const [scheduled, unscheduled, upcoming, missing, people, crew, crafts] = await Promise.all([
+  const [scheduled, unscheduled, upcoming, missing, people, crew, crafts, feedToken] = await Promise.all([
     prisma.job.findMany({
       where: { companyId: company.id, startDate: { not: null } },
       orderBy: { startDate: "asc" },
@@ -67,6 +68,13 @@ export default async function SchedulePage() {
       where: { companyId: company.id },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
+    }),
+    // This viewer's own calendar-feed token, if they've made one. The
+    // token string going to this person's browser is by design — it is
+    // THEIR credential, shown so they can paste it into a calendar app.
+    prisma.calendarFeedToken.findUnique({
+      where: { companyId_userId: { companyId: company.id, userId: user.id } },
+      select: { token: true },
     }),
   ]);
 
@@ -136,6 +144,10 @@ export default async function SchedulePage() {
         canWrite={canWrite && workers.length > 0 && scheduled.length + unscheduled.length > 0}
       />
 
+      {/* Below the board, above the start-date list: the feed serves what
+          the board shows, so its control lives next to it. */}
+      <CalendarSubscribe token={feedToken?.token ?? null} />
+
       <section className="mb-10" data-tour="schedule-start-dates">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Job start dates</h2>
         {scheduled.length === 0 ? (
@@ -147,8 +159,14 @@ export default async function SchedulePage() {
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {scheduled.map((job) => (
               <li key={job.id} className="p-4">
-                <Link href={`/jobs/${job.id}`} className="flex items-center justify-between gap-3">
-                  <div>
+                {/* Stacks below sm: a nowrap date range beside a name
+                    column left ~140px for the name at 375px. Same
+                    max-sm pattern as the field rows (#89). */}
+                <Link
+                  href={`/jobs/${job.id}`}
+                  className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                >
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-ink">{job.name}</p>
                       <StatusBadge status={job.status} />
@@ -160,7 +178,7 @@ export default async function SchedulePage() {
                       </p>
                     )}
                   </div>
-                  <p className="whitespace-nowrap text-sm text-ink-label">
+                  <p className="text-sm text-ink-label sm:whitespace-nowrap">
                     {formatDate(job.startDate!)}
                     {job.endDate ? ` – ${formatDate(job.endDate)}` : ""}
                   </p>
@@ -183,7 +201,12 @@ export default async function SchedulePage() {
           <ul className="divide-y divide-slate-800 rounded-lg border border-line-card bg-surface">
             {unscheduled.map((job) => (
               <li key={job.id} className="p-4">
-                <Link href={`/jobs/${job.id}`} className="flex items-center justify-between gap-3">
+                {/* Name + status pill + GC name forced onto one ~295px
+                    line was the audit's phone finding; stack below sm. */}
+                <Link
+                  href={`/jobs/${job.id}`}
+                  className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                >
                   <div className="flex items-center gap-2">
                     <p className="font-medium text-ink">{job.name}</p>
                     <StatusBadge status={job.status} />

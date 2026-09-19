@@ -129,7 +129,10 @@ export type ToolName =
   | "contact_lookup"
   | "job_overview"
   // The dashboard's getting-started card, for a brand-new account.
-  | "getting_started";
+  | "getting_started"
+  // "How do I…", from the app's own registered page walkthroughs — never
+  // a fact about this company's data. See lib/ask/appHelp.ts.
+  | "app_help";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -292,6 +295,20 @@ const oneJob = {
     jobName: {
       type: "string",
       description: "The job to summarise, as the person named it, e.g. 'Riverside'. Required: ask which job if they did not say.",
+    },
+  },
+};
+
+/** app_help: what the person wants to do, in their own words. No enum —
+ * this is matched against free text in the app's own walkthroughs
+ * (lib/ask/appHelp.ts), not against a fixed list of topics. */
+const appHelpFilter = {
+  type: "object" as const,
+  properties: {
+    topic: {
+      type: "string",
+      description:
+        "What the person wants to do or find, in their own words — 'log a backcharge', 'add a punch list item', 'connect QuickBooks'. Matched against the app's own page walkthroughs; not a fact about this company's data.",
     },
   },
 };
@@ -636,9 +653,13 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "team_roster",
-    // /team, which lib/permissions.test.ts records as open — a roster of
-    // who works here is not a tier.
-    capability: null,
+    // MANAGE_FIELD, matching /certifications exactly — this tool's answer
+    // is mostly that page: certifications on file and what is missing on
+    // them. It was null for a while on the primary citation's reasoning
+    // (/team is open, "a roster of who works here is not a tier") and the
+    // secondary citation never came up, which tools.test.ts recorded as
+    // "the one worth fixing". Fixed 2026-09-19.
+    capability: "MANAGE_FIELD",
     description:
       "Everyone with an account on this company: name, email, role, job function, which craft classifications they have actually worked under, how many certifications are on file, and what is missing on them. THERE IS NO PER-PERSON PAY RATE IN THIS APP AND THIS DOES NOT REPORT ONE — a rate belongs to a craft classification and the fringe schedule in force on a given date, which is why job_labor_cost prices an hour rather than a person. What it does report is the blanks that break paperwork downstream: no name on an account is a blank in the name column of a WH-347, and hours with no craft are a blank in the classification column and are invisible to the ratio review.",
     input_schema: noInput,
@@ -714,6 +735,20 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "The Getting started checklist from the dashboard — the same steps, for this company and for THIS person: name the company, add the first job, bring in a spreadsheet or Jobber (optional), add the crew, put someone on the schedule, log the first day on site, connect QuickBooks (optional). Each step comes back done or not, what it means in the card's own words, its page, and `askCanDo` when a confirm-card command can do it for this person. Steps this person cannot do are left out, exactly as on their card — never call those done. Call this for 'help me finish getting started', 'what's left to set up', 'walk me through setup', or 'complete the get-started list', from ANY page. Answer by saying what is done in one line, then one bullet per OPEN step: when `askCanDo` is set, offer to do it and ask for exactly its `needsFromPerson` (call that command only once they have given it, one per question); otherwise give the step's page to do it there. Renaming the company, inviting people, importing a spreadsheet or Jobber, and connecting QuickBooks are done on their pages — never claim to have done them. `hiddenOnDashboard` true means they hid the card; mention it only if asked where the card went.",
     input_schema: noInput,
+  },
+  {
+    name: "app_help",
+    // No single page: the pages this tool may name are filtered per person
+    // INSIDE the handler (reachableWalkthroughs, the same rule canReach()
+    // states for the nav), not by this field. A FIELD member asking "how
+    // do I" must never be taught a billing page's own steps just because
+    // this tool has no one page to gate on — that is exactly the mistake
+    // `capability` on every other tool here exists to prevent, at the
+    // level this tool actually varies.
+    capability: null,
+    description:
+      "How to DO something inside the app, from its own registered 'Walk me through this page' walkthroughs — never a fact about this company's data. Answers 'how do I log a backcharge', 'where do I add a punch list item', 'how do I connect QuickBooks'. Cites the page and quotes its own steps. Filtered to pages this person can actually open — a page they cannot reach is never named, and never invents a step the app does not have. NOT for a question about the company's own records — a number, a list, a status, an amount: use the tool that reads that data instead, never this one. If nothing in the app's own walkthroughs matches, say so rather than guessing at a page.",
+    input_schema: appHelpFilter,
   },
 ];
 

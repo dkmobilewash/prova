@@ -155,8 +155,8 @@ export default async function BidsPage({
             ask="Northside Builders invited us to bid the Oak Ave addition, due October 3"
             sources={
               <p>
-                A bid is logged on the page of whoever asked for the price — a builder, a developer
-                or a homeowner — under Bid invitations. Open the contact, or add them first.
+                A bid is logged on the page of whoever asked for the price — a GC, a developer
+                or a construction manager — under Bid invitations. Open the contact, or add them first.
               </p>
             }
             example={{

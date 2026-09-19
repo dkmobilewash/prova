@@ -190,9 +190,9 @@ export default async function RfisPage({
           title="No RFIs yet"
           purpose={
             <p>
-              A written question to the builder, architect or homeowner when the plans do not
-              answer it — &ldquo;which tile goes in the hall bath?&rdquo;, &ldquo;can we move this
-              wall six inches?&rdquo; — with the date you asked and the date they answered. When a
+              A written question to the GC or architect when the plans do not answer it —
+              &ldquo;which wall type at the corridor tie-in?&rdquo;, &ldquo;can we move this stud
+              line six inches?&rdquo; — with the date you asked and the date they answered. When a
               late answer holds up the job, this is the proof.
             </p>
           }

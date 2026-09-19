@@ -75,6 +75,9 @@ import { gettingStartedChecklist, type GettingStartedStepId } from "@/lib/gettin
 import { loadGettingStartedCounts } from "@/lib/getting-started-counts";
 import { GETTING_STARTED_HIDDEN_COOKIE, isGettingStartedHidden } from "@/lib/getting-started-cookie";
 import { matchesJobName, TOOLS, type ToolName, type ToolResult } from "./tools";
+import { reachableWalkthroughs, searchAppHelp } from "./appHelp";
+import { capabilityForRoute } from "@/lib/permissions";
+import { WALKTHROUGHS } from "@/lib/walkthroughs";
 
 /**
  * What each tool actually reads.
@@ -102,6 +105,8 @@ type Input = {
   stage?: string;
   /** contact_lookup's name — a company OR a person, as the person said it. */
   name?: string;
+  /** app_help's own words for what the person wants to do. */
+  topic?: string;
 };
 
 const iso = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : null);
@@ -193,6 +198,7 @@ export const HANDLERS: Record<
   contact_lookup: contactLookup,
   job_overview: jobOverview,
   getting_started: gettingStarted,
+  app_help: appHelp,
 };
 
 /**
@@ -935,7 +941,15 @@ async function receivables(companyId: string): Promise<ToolResult> {
       { label: "Today", href: "/dashboard" },
     ],
     unavailable:
-      outstanding.length === 0 ? "Every invoice raised has been paid in full." : undefined,
+      // "Every invoice raised has been paid in full" is true of a company
+      // that has raised none — and absurd on a first morning. The same
+      // split ReceivablesPanel already makes: the count distinguishes the
+      // two, the outstanding list cannot.
+      outstanding.length === 0
+        ? invoices.length === 0
+          ? "No invoices raised yet. Once a job is billed, what each GC still owes shows up here, longest overdue first."
+          : "Every invoice raised has been paid in full."
+        : undefined,
   };
 }
 
@@ -4001,4 +4015,68 @@ async function readGettingStartedHidden(companyId: string): Promise<boolean | nu
   } catch {
     return null;
   }
+}
+
+/** How many pages a "how do I" question can hand back. A person asking how
+ * to do one thing wants one answer; more than a handful reads as the
+ * search having failed to narrow, not as being thorough. */
+const APP_HELP_MAX_RESULTS = 3;
+
+/**
+ * "How do I…" — searched against the app's OWN registered "Walk me through
+ * this page" walkthroughs (lib/ask/appHelp.ts), never against anything the
+ * model makes up. NEVER reads the database: this is app content, not
+ * company data, which is also why it takes no jobName and no other filter
+ * a data tool would.
+ *
+ * CAPABILITY FILTERING HAPPENS HERE, NOT ON THE TOOL. `capability` on this
+ * tool's own registry entry is null — it is offered to everyone — because
+ * WHICH pages it may name varies by person, the same fact `needs_attention`
+ * and `getting_started` are shaped around above. `reachableWalkthroughs` is
+ * the guard: a FIELD member is never handed a billing page's own steps,
+ * because a page cited here that the person cannot open would teach a step
+ * they hit a refusal trying to follow. Without an actor, this treats the
+ * asker as reaching only what needs no capability at all — the narrowest
+ * read, never the widest, the same rule `contactLookup` states above for a
+ * missing actor.
+ */
+async function appHelp(_companyId: string, input: Input, actor?: ToolActor): Promise<ToolResult> {
+  // The literal fallback citation for the two cases with nothing else to
+  // point at — no topic given, or nothing matched. `/dashboard` carries no
+  // ROUTE_CAPABILITY entry, so it is open to whoever this tool is offered
+  // to, which is everyone (`capability: null` in tools.ts).
+  const citations = [{ label: "Help", href: "/dashboard" }];
+  const topic = input.topic?.trim();
+  if (!topic) {
+    return {
+      data: null,
+      citations,
+      unavailable: "Say what you're trying to do, in a few words — 'log a backcharge', 'add a punch item'.",
+    };
+  }
+
+  const reachable = actor
+    ? reachableWalkthroughs(actor.principal)
+    : WALKTHROUGHS.filter((walkthrough) => capabilityForRoute(walkthrough.route) === null);
+  const matches = searchAppHelp(topic, reachable).slice(0, APP_HELP_MAX_RESULTS);
+
+  if (matches.length === 0) {
+    return {
+      data: { pages: [] },
+      citations,
+      unavailable: `Nothing in the app's own walkthroughs matches "${topic}". Say what page or task you mean, in a few different words.`,
+    };
+  }
+
+  return {
+    data: {
+      pages: matches.map((match) => ({
+        page: match.title,
+        route: match.route,
+        steps: match.steps,
+      })),
+    },
+    summary: { pagesFound: matches.length },
+    citations: matches.map((match) => ({ label: match.title, href: match.route })),
+  };
 }

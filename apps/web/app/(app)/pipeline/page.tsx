@@ -90,7 +90,7 @@ export default async function PipelinePage() {
             caption: "What the pipeline looks like after a few months of bids. Not your data — nothing here is saved.",
             rows: [
               { title: "Northside Builders", detail: "9 invitations · won 4 · 44%", meta: "$186,000 won" },
-              { title: "Jane Smith (homeowner)", detail: "2 invitations · won 1", meta: "$18,200 won" },
+              { title: "Crestview Development (owner's rep)", detail: "2 invitations · won 1", meta: "$18,200 won" },
               { title: "Waiting on us: Oak Ave addition", tag: "Due Oct 3", detail: "Northside Builders", meta: "5 days left" },
             ],
           }}

@@ -87,6 +87,12 @@ export type AskUsageTotals = {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  /** Server-side web searches across every pass, read off
+   * `usage.server_tool_use.web_search_requests` — each one bills on top of
+   * tokens, which is why it is counted apart from them. Optional so the
+   * type stays additive: callers that never enable `webSearch` (and every
+   * older recorded total) simply have none. */
+  webSearches?: number;
 };
 
 /** What the caller can render while the answer is being built.
@@ -155,6 +161,13 @@ export type AskConversationOptions<H = never> = {
   tools: AskToolDefinition[];
   /** Runs one tool. Supplied by the caller already bound to a company. */
   execute: (name: string, input: unknown, meta: AskToolCallMeta) => Promise<AskToolOutcome<H>>;
+  /** Offer Anthropic's server-side web search alongside the app's tools,
+   * capped at ASK_WEB_SEARCH_MAX_USES searches for the whole question. Off
+   * by default: the evals and tests that replay this loop must not spend
+   * searches, and the app turns it on in one place (answer.ts), where the
+   * system prompt carries the rules for what a search may and may not be
+   * used for. */
+  webSearch?: boolean;
   /** API calls, not tool calls: a turn asking for four tools at once costs
    * one. Guards against a confused loop, not against breadth. */
   maxPasses?: number;
@@ -169,6 +182,31 @@ export type AskConversationOptions<H = never> = {
 export const ASK_DEFAULT_MODEL = "claude-opus-5";
 const DEFAULT_MODEL = ASK_DEFAULT_MODEL;
 const DEFAULT_MAX_PASSES = 6;
+
+/**
+ * Web searches one question may spend, total. A ceiling on money rather
+ * than a tuning knob — each search bills on top of tokens — and it is the
+ * same figure research.ts caps its own searches at. Ask questions are
+ * themselves bounded per person per hour (apps/web/lib/ask/usage.ts), so
+ * the worst case is this number times that limit.
+ */
+export const ASK_WEB_SEARCH_MAX_USES = 3;
+
+/**
+ * The server-side web search tool, as the Ask loop offers it. The same
+ * `web_search_20250305` variant research.ts already runs in production —
+ * the installed SDK's types are the constraint, and this is the one they
+ * carry. `maxUses` is CLAMPED to the ceiling rather than trusted: a caller
+ * asking for more than ASK_WEB_SEARCH_MAX_USES gets the ceiling, so no
+ * call site can quietly raise the spend.
+ */
+export function askWebSearchTool(maxUses: number = ASK_WEB_SEARCH_MAX_USES): Anthropic.WebSearchTool20250305 {
+  return {
+    type: "web_search_20250305",
+    name: "web_search",
+    max_uses: Math.max(1, Math.min(maxUses, ASK_WEB_SEARCH_MAX_USES)),
+  };
+}
 
 export function anthropicIsConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY?.trim());
@@ -212,6 +250,7 @@ function tally(total: AskUsageTotals, usage: Partial<Anthropic.Usage> | undefine
   total.outputTokens += usage?.output_tokens ?? 0;
   total.cacheReadTokens += usage?.cache_read_input_tokens ?? 0;
   total.cacheWriteTokens += usage?.cache_creation_input_tokens ?? 0;
+  total.webSearches = (total.webSearches ?? 0) + (usage?.server_tool_use?.web_search_requests ?? 0);
 }
 
 /** The `type` inside the API's error body ("authentication_error",
@@ -250,7 +289,13 @@ export async function* streamToolConversation<H = never>(
   // what the model can see when it makes its next call.
   const toolUseIdsInContext: string[] = [];
   const maxPasses = options.maxPasses ?? DEFAULT_MAX_PASSES;
-  const usage: AskUsageTotals = { passes: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  const usage: AskUsageTotals = { passes: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, webSearches: 0 };
+
+  // The web tool goes LAST, after the app's own tools, so the client tool
+  // list keeps its byte order for the prompt cache and the server tool is
+  // one appended block. Built once: the tool set must be identical on
+  // every pass of a question, or the cached prefix dies on pass two.
+  const tools = options.webSearch ? [...options.tools, askWebSearchTool()] : options.tools;
 
   // A breakpoint on the first system block covers everything before it in
   // the prefix, which is the tool list. The optional second block varies
@@ -284,7 +329,7 @@ export async function* streamToolConversation<H = never>(
         // database, but the prompt is re-processed on every one of those
         // passes and does not need to be.
         system,
-        tools: options.tools,
+        tools,
         messages,
       });
 
@@ -306,6 +351,15 @@ export async function* streamToolConversation<H = never>(
         yield { type: "usage", usage };
         yield { type: "error", reason: "refusal" };
         return;
+      }
+
+      // A long SERVER-tool turn (web search) can pause mid-turn; the
+      // documented move is to send the assistant turn back unchanged and
+      // let it carry on. research.ts handles this the same way. It costs a
+      // pass, which is the bound working rather than a bug.
+      if (response.stop_reason === "pause_turn") {
+        messages.push({ role: "assistant", content: response.content });
+        continue;
       }
 
       if (response.stop_reason === "tool_use") {

@@ -1,7 +1,9 @@
+import { headers } from "next/headers";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { ArchiveCrewButton } from "@/components/ArchiveCrewButton";
 import { CancelInviteButton } from "@/components/CancelInviteButton";
+import { CopyLinkButton } from "@/components/CopyLinkButton";
 import { InviteTeamMemberForm } from "@/components/InviteTeamMemberForm";
 import { JobFunctionPicker } from "@/components/JobFunctionPicker";
 import { TeamMemberActions } from "@/components/TeamMemberActions";
@@ -22,6 +24,13 @@ export default async function TeamPage() {
     }),
     prisma.crewMember.count({ where: { companyId: company.id, archivedAt: { not: null } } }),
   ]);
+
+  // The sign-up link the invite hint tells the owner to share. Built from
+  // the request's own headers, same as the portal links on /contacts/[id] —
+  // a brand-new owner does not know the sign-up URL, and a hint that names
+  // a link without showing one is an email the teammate waits for forever.
+  const headerList = await headers();
+  const signUpUrl = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}/sign-up`;
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
@@ -115,9 +124,15 @@ export default async function TeamPage() {
             <h2 className="mb-3 text-sm font-semibold text-ink-label">Invite a teammate</h2>
             <InviteTeamMemberForm />
             <p className="mt-2 text-xs text-ink-muted">
-              This doesn&apos;t send an email — share the sign-up link with them yourself. When they
-              sign up with this email, they&apos;ll join your company automatically.
+              This doesn&apos;t send an email — share the sign-up link below with them yourself. When
+              they sign up with this email, they&apos;ll join your company automatically.
             </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <p className="break-all rounded-md bg-canvas px-3 py-2 font-mono text-xs text-link">
+                {signUpUrl}
+              </p>
+              <CopyLinkButton url={signUpUrl} />
+            </div>
           </section>
 
           {invites.length > 0 && (

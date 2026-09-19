@@ -289,8 +289,6 @@ const CITATION_CAPABILITY_GAPS: Record<string, string> = {
     "As receivables above — same tool family, same secondary citation.",
   "unbilled_change_orders /cash-flow":
     "Declares VIEW_JOB_COSTS; /cash-flow is VIEW_COMPANY_FINANCIALS. Its primary citation /jobs is open.",
-  "team_roster /certifications":
-    "THE ONE WORTH FIXING RATHER THAN RECORDING. capability is null, so this is offered to EVERY signed-in member, and it reports certifications-on-file and what is missing on them — summarised from a page guarded by MANAGE_FIELD. Its author reasoned about the primary citation (/team, open, 'a roster of who works here is not a tier') and the secondary one never came up. Counts and gaps only, not certificate records, which is why this is recorded rather than treated as a live breach. Diego's call: gate the tool, or drop the /certifications citation.",
 };
 
 describe("what a tool cites, and whether its asker could open it", () => {

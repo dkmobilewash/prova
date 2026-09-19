@@ -68,10 +68,14 @@ export function AskLauncher() {
         <div
           role="dialog"
           aria-label="Ask C Stream"
-          // Right-anchored so it never runs off the edge from a top-right
-          // button, and width-capped rather than full-bleed: this is a
-          // question box, not a takeover.
-          className="absolute right-0 z-50 mt-2 w-[min(34rem,calc(100vw-2rem))] rounded-lg border border-line-card bg-surface p-4 shadow-2xl"
+          // Viewport-FIXED, the same pattern as HelpButton beside it, and
+          // width-capped rather than full-bleed: this is a question box,
+          // not a takeover. It was `absolute right-0` off the ~44px button
+          // for a while, which anchored the panel's RIGHT edge to the
+          // button rather than the screen — at 375px the 343px panel's
+          // left side hung well off-screen, clipping the input and the
+          // proposal preview on every page.
+          className="fixed right-2 top-14 z-50 max-h-[calc(100dvh-4.5rem)] w-[min(34rem,calc(100vw-1rem))] overflow-y-auto rounded-lg border border-line-card bg-surface p-4 shadow-2xl sm:right-4"
         >
           <AskPanel />
         </div>

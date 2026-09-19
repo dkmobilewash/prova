@@ -18,7 +18,8 @@ import {
 // reason — the five document uploads needed the same three checks — so this
 // import follows them rather than reaching through their old home.
 import { isBlobStorageUrl, isOurBlobStoreUrl } from "@/lib/blob-urls";
-import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
+import { newIntakeEmailToken } from "@/lib/intake/inbound";
+import { actionFail as fail, actionOk as ok, ownerRefusal, type ActionResult } from "./shared";
 
 /**
  * Document intake: recording what was dropped in, and filing it once a
@@ -376,6 +377,44 @@ export async function dismissIntakeRow(id: string): Promise<ActionResult> {
   if (row.status !== "PROPOSED") return fail("That document has already been dealt with");
 
   await prisma.documentIntake.update({ where: { id: row.id }, data: { status: "DISMISSED" } });
+  revalidatePath("/intake");
+  return ok;
+}
+
+/**
+ * A new inbound address, because the old one leaked.
+ *
+ * The token IS the authorisation to put files in this company's tray, so a
+ * forwarded chain that exposed it, a departed employee who knows it, or an
+ * address that has started collecting junk are all the same problem with
+ * the same fix: issue a new token. The write REPLACES the column, so the
+ * old address stops routing in the same statement that the new one starts —
+ * there is no window where both work, and nothing to clean up.
+ *
+ * OWNER-ONLY, via `ownerRefusal` rather than `assertOwner` because this
+ * action promises ActionResult and production redacts a thrown message.
+ * MANAGE_JOBS holders can SEE the address and forward to it; changing it
+ * breaks every saved contact and forwarding rule in the company, which is
+ * the shape of thing this app reserves for the owner. The UI arms a
+ * two-step confirm on top for the same reason.
+ *
+ * Nothing already in the tray changes: rows carry their provenance and
+ * their blobs, and only future routing is affected.
+ */
+export async function regenerateIntakeEmailAddress(): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+  const refusal = ownerRefusal(
+    context,
+    "Only the account owner can change the intake email address — everyone forwarding to it would need the new one",
+  );
+  if (refusal) return refusal;
+
+  await prisma.company.update({
+    where: { id: context.companyId },
+    data: { intakeEmailToken: newIntakeEmailToken() },
+  });
+
   revalidatePath("/intake");
   return ok;
 }

@@ -701,6 +701,10 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // — two modules because they sit behind two different doors.
   procore: () => import("./actions/procore"),
   procoreFeed: () => import("./actions/procoreFeed"),
+  // CompanyCam: the Integrations card's five (MANAGE_COMPLIANCE, then
+  // owner) — the same door as Procore's, reachable only from
+  // /settings/integrations.
+  companycam: () => import("./actions/companycam"),
   safety: () => import("./actions/safety"),
   certifications: () => import("./actions/certifications"),
   punchLists: () => import("./actions/punchLists"),

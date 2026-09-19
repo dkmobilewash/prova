@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EVAL_CASES } from "./cases";
-import { firstRound, grade, reportVerdicts, requireApiKey, type Verdict } from "./harness";
+import { firstRound, firstRoundWebSearch, grade, reportVerdicts, requireApiKey, type Verdict } from "./harness";
 
 /**
  * The routing eval, against the real model. `pnpm ask:eval` from
@@ -28,7 +28,18 @@ const verdicts: Verdict[] = [];
 describe("routing", () => {
   for (const c of EVAL_CASES) {
     it(`${c.id}: ${c.question}`, async () => {
-      const verdict = grade(c, await firstRound(c));
+      // The two web-search kinds need the tool OFFERED, which the ordinary
+      // round does not do — every other case must keep costing exactly
+      // what it costs today, so this is opt-in per case rather than a
+      // shared default. See firstRoundWebSearch's own comment.
+      const usesWebSearch = c.expect.kind === "web_search" || c.expect.kind === "no_web_search";
+      let verdict: Verdict;
+      if (usesWebSearch) {
+        const { calls, webSearches } = await firstRoundWebSearch(c);
+        verdict = grade(c, calls, webSearches);
+      } else {
+        verdict = grade(c, await firstRound(c));
+      }
       verdicts.push(verdict);
       expect(verdict.pass, verdict.note).toBe(true);
     });
