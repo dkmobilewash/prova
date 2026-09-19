@@ -45,6 +45,10 @@ const TABLES: Record<string, Row[]> = {
     { companyId: "co_A", name: "Tower", contact: { name: "Acme Builders" } },
     { companyId: "co_B", name: "Harbor", contact: { name: "Zenith GC" } },
   ],
+  contactPerson: [
+    { companyId: "co_A", name: "Priya Shah", contact: { name: "Acme Builders" } },
+    { companyId: "co_B", name: "Wei Chen", contact: { name: "Zenith GC" } },
+  ],
   crewMember: [
     { companyId: "co_A", legalFirstName: "Maria", legalMiddleName: null, legalLastName: "Lopez", employeeNumber: null },
     { companyId: "co_B", legalFirstName: "John", legalMiddleName: null, legalLastName: "Smith", employeeNumber: "E-1" },
@@ -67,6 +71,7 @@ vi.mock("@prova/db", () => ({
     crewMember: fakeModel("crewMember"),
     vendor: fakeModel("vendor"),
     complianceDocument: fakeModel("complianceDocument"),
+    contactPerson: fakeModel("contactPerson"),
   },
   Prisma: {},
 }));
@@ -124,7 +129,8 @@ describe("/settings/import", () => {
     expect(payload).toContain("Acme Builders");
     expect(payload).toContain("Tower");
     expect(payload).toContain("Maria");
-    for (const theirs of ["Zenith GC", "Harbor", "John", "Smith", "E-1"]) {
+    expect(payload).toContain("Priya Shah");
+    for (const theirs of ["Zenith GC", "Harbor", "John", "Smith", "E-1", "Wei Chen"]) {
       expect(payload).not.toContain(theirs);
     }
   });

@@ -500,7 +500,7 @@ export type JobPlan = {
 export type ExistingJob = { name: string; clientName: string };
 
 function jobKey(name: string, clientName: string) {
-  return `${nameKey(name)} ${nameKey(clientName)}`;
+  return `${nameKey(name)} ${nameKey(clientName)}`;
 }
 
 export function planJobImport(
@@ -770,7 +770,7 @@ export function crewName(person: {
 }
 
 function crewKey(person: Parameters<typeof crewName>[0]) {
-  return [person.legalFirstName, person.legalMiddleName ?? "", person.legalLastName].map(nameKey).join(" ");
+  return [person.legalFirstName, person.legalMiddleName ?? "", person.legalLastName].map(nameKey).join(" ");
 }
 
 export function planCrewImport(text: string, existingCrew: ExistingCrew[]): CrewPlan {
