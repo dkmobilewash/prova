@@ -47,6 +47,18 @@ export const notYetRegistered: Exclusion[] = [
   // click away on every page and the words have to be theirs.
   { action: "help.*", reason: "Reaching a person is the one thing the assistant must not do on their behalf: the question has to be in their words, and a model-composed one arrives claiming to be. Never a command." },
 
+  // The same refusal, one layer down. `requestHelp` builds the message and
+  // hands it to `messages.sendSupportEmail`, which exists so the help path
+  // can skip the composer's capability gate and sending ceiling without
+  // those becoming something a caller can opt out of. Excluding `help.*`
+  // and leaving the action it delegates to open would be excluding the
+  // front door and not the corridor behind it.
+  // Named bare rather than `messages.sendSupportEmail`: the coverage suite
+  // matches exact exclusions against the action name and wildcards against
+  // the module, so a dotted exact entry names an action that does not
+  // exist and fails as one.
+  { action: "sendSupportEmail", reason: "The send behind `requestHelp`, and excluded for the same reason: a help request the model composed is not the person's question. Never a command." },
+
   // Diego's lane, later phases.
   { action: "changeOrders.*", reason: "Change orders move contract value a sent pay application may depend on (T5 decisions, T3 drafts); a later phase." },
   { action: "backcharges.*", reason: MONEY },

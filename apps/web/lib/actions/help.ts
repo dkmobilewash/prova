@@ -11,7 +11,7 @@ import {
   safePagePath,
 } from "@/lib/help-request";
 import { actionFail as fail, type ActionResult } from "./shared";
-import { sendOutboundEmail } from "./messages";
+import { sendSupportEmail } from "./messages";
 
 /**
  * "Ask us" — the one thing this product promised on paper and had no way to
@@ -67,8 +67,12 @@ export async function requestHelp(formData: FormData): Promise<ActionResult> {
       })
     : null;
 
+  // `toAddress` and `relatedType` are deliberately NOT set here.
+  // `sendSupportEmail` reads the destination from configuration itself and
+  // overwrites whatever arrives, so that it is safe as an exported action
+  // regardless of who posts to it. Setting them here would read as though
+  // this caller chose them, which is the opposite of the guarantee.
   const outbound = new FormData();
-  outbound.set("toAddress", channel.to);
   outbound.set("subject", helpSubject({ companyName: company.name, pagePath }));
   outbound.set(
     "body",
@@ -80,12 +84,9 @@ export async function requestHelp(formData: FormData): Promise<ActionResult> {
       askedBy: { name: user.name, email: user.email },
     }),
   );
-  // Renders as "· about a help request" on /messages via relatedLabel's
-  // SCREAMING_SNAKE fallback, which already produces exactly that.
-  outbound.set("relatedType", "HELP_REQUEST");
   if (job) outbound.set("jobId", job.id);
 
-  const result = await sendOutboundEmail(outbound);
+  const result = await sendSupportEmail(outbound);
   if (result.ok) return result;
 
   // Its error already says what the provider or the network did. What it

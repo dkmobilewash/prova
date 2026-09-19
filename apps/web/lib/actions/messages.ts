@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { looksLikeEmail, readEmailConfig, sendEmail } from "@prova/integrations";
+import { can } from "@/lib/permissions";
+import { helpChannelFromEnv } from "@/lib/help-config";
+import { emailAllowance, HELP_RELATED_TYPE } from "@/lib/outbound-email";
 import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
 import { failureEventType, reachedProvider } from "@/components/messageLabels";
 
@@ -67,9 +70,20 @@ async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult>
  * unconfirmed" that never went. That is the right way round. An
  * overstated send surfaces as stale after a day and a person checks it; an
  * understated one is evidence that no longer exists.
+ *
+ * NOT EXPORTED, and that is the whole of the access control below it.
+ * Every export of a `"use server"` file is an HTTP endpoint with a stable
+ * id that answers whoever posts to it, so an exemption expressed as an
+ * argument — `deliverEmail(formData, { skipLimits: true })` — would be an
+ * exemption the browser can claim. Module-private is the only kind a
+ * caller cannot forge, which is why the two guarded entry points below
+ * are the file's surface and this is not.
  */
-export async function sendOutboundEmail(formData: FormData): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+async function deliverEmail(
+  context: Awaited<ReturnType<typeof requireCompanyContext>>,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { company, ...user } = context;
   return runAction(async () => {
     const toAddress = required(formData, "toAddress", "Recipient");
     if (!looksLikeEmail(toAddress)) {
@@ -196,6 +210,75 @@ export async function sendOutboundEmail(formData: FormData): Promise<ActionResul
     revalidatePath("/messages");
     return ok;
   });
+}
+
+/**
+ * Sends one email to an address the sender chose. The composer's action.
+ *
+ * TWO GUARDS, and they stop different people, which is why neither one
+ * alone was enough:
+ *
+ *   - MANAGE_JOBS keeps a member whose job function does not include
+ *     writing to GCs from writing to GCs as the company. Today that is
+ *     exactly ACCOUNTING and PAYROLL_COMPLIANCE, because an unset job
+ *     function still grants everything and an OWNER always holds
+ *     everything (`capabilitiesFor`). So it takes nothing from any
+ *     existing account that has not deliberately narrowed somebody.
+ *   - `emailAllowance` is what bounds a STRANGER. A `/pilot` signup owns
+ *     their own new company and therefore passes every capability check
+ *     there is; the ceiling is the only thing standing between them and
+ *     our sending reputation. See lib/outbound-email.ts.
+ *
+ * Both RETURN their refusal rather than throwing, because production
+ * redacts a thrown Server Action message to an opaque digest and "you've
+ * hit your sending limit" is precisely the sentence that has to arrive.
+ * That is the rule `requireCapabilityForAction` states for itself: modules
+ * in this style check `can()` and return.
+ */
+export async function sendOutboundEmail(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+
+  if (!can(context, "MANAGE_JOBS")) {
+    return fail(
+      "Your job function doesn't include sending email for the company. An owner can change that in Settings.",
+    );
+  }
+
+  const allowance = await emailAllowance(context.company.id, context.id);
+  if (!allowance.ok) return fail(allowance.error);
+
+  return deliverEmail(context, formData);
+}
+
+/**
+ * Sends one help request to us. Every signed-in person, always.
+ *
+ * SEPARATE FROM THE COMPOSER ON PURPOSE. Gating the shared send on
+ * MANAGE_JOBS would have taken "Help → Ask a person" away from ACCOUNTING
+ * and PAYROLL_COMPLIANCE, and a support channel that silently excludes
+ * two job functions is worse than no gate at all — the people most likely
+ * to hit a permissions wall would be the ones who cannot report it. The
+ * ceiling is skipped for the same reason: somebody who has run out of
+ * ordinary sends must still be able to tell us so.
+ *
+ * SAFE BY CONSTRUCTION RATHER THAN BY TRUST. This is an exported action,
+ * so it answers whoever posts to it — including someone who posts a
+ * `toAddress` of their own hoping to borrow the exemption. It therefore
+ * reads the destination from configuration itself and overwrites whatever
+ * arrived, so the only address this endpoint can ever reach is our own
+ * support inbox. An exemption that cannot be pointed at a third party is
+ * not a spam vector, whoever calls it.
+ */
+export async function sendSupportEmail(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+
+  const channel = helpChannelFromEnv();
+  if (channel.kind !== "send") return fail(channel.reason);
+
+  formData.set("toAddress", channel.to);
+  formData.set("relatedType", HELP_RELATED_TYPE);
+
+  return deliverEmail(context, formData);
 }
 
 /** Removes a message and its events. Owner only.
