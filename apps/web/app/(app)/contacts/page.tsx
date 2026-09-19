@@ -68,8 +68,8 @@ export default async function ContactsPage({
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
       <h1 className="mb-2 text-xl font-semibold text-ink">Contacts</h1>
       <p className="mb-6 text-sm text-ink-body">
-        Everyone you do work for or buy from — homeowners and clients, general contractors,
-        developers, suppliers and subs — with their jobs, their people and your history with them.
+        Everyone you do work for or buy from — general contractors, developers, architects,
+        suppliers and subs — with their jobs, their people and your history with them.
       </p>
 
       <div className="mb-6" data-tour="contacts-add">
@@ -82,7 +82,7 @@ export default async function ContactsPage({
           title="No contacts yet"
           purpose={
             <p>
-              Your client list. Add the homeowners, builders and suppliers you work with, and each
+              Your client list. Add the GCs, developers and suppliers you work with, and each
               one gets a page with their phone and email, their people, every job you have done for
               them, and the calls you have logged.
             </p>

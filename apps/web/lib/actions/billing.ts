@@ -7,6 +7,7 @@ import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uplo
 import { isSignatureLinkDead } from "@/lib/access-tokens";
 import { linkToken } from "@/lib/tokens";
 import { requireCompanyContext } from "@/lib/auth";
+import { viewerToday } from "@/lib/viewerToday";
 import { money as formatMoney } from "@/lib/money";
 import { prisma, Prisma } from "@prova/db";
 import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
@@ -672,7 +673,14 @@ export async function createRetainageRelease(jobId: string, formData: FormData) 
 
   const amount = decimalFromForm(formData, "amount");
   const releasedRaw = String(formData.get("releasedAt") ?? "").trim();
-  const releasedAt = releasedRaw ? new Date(releasedRaw) : new Date();
+  // Blank falls back to TODAY on the viewer's calendar at UTC midnight,
+  // never `new Date()` — that stored the raw instant of the click, which
+  // the job page then rendered through UTC so a release logged 5pm PT
+  // printed as the NEXT day, on a date that feeds closeout and lien
+  // timing conversations. Entered, not stamped.
+  const releasedAt = releasedRaw
+    ? new Date(releasedRaw)
+    : new Date(`${await viewerToday()}T00:00:00.000Z`);
   const note = String(formData.get("note") ?? "").trim();
 
   const result = await createRetainageReleaseRecord(company.id, jobId, {

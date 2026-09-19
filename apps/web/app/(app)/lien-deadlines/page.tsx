@@ -50,7 +50,9 @@ export default async function LienDeadlinesPage() {
         served.
       </p>
 
-      <dl className="mb-8 grid grid-cols-3 gap-3" data-tour="lien-totals">
+      {/* One column on a phone: three tiles across 375px left ~60px
+          per tile for labels like "Due in the next 14 days". */}
+      <dl className="mb-8 grid gap-3 sm:grid-cols-3" data-tour="lien-totals">
         <div
           className={`rounded-lg border p-4 ${
             summary.overdueUnserved > 0 ? "border-bar-rose bg-tag-rose" : "border-line-card bg-surface"

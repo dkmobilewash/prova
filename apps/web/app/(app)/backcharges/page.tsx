@@ -157,8 +157,9 @@ export default async function BackchargesPage({
 
       <p className="mb-4 text-xs text-ink-muted">
         These figures are a log of what the GC has charged us, not a deduction from any pay
-        application — nothing here changes an invoice, a contract value or a WIP number. Netting an
-        accepted backcharge against billing is real work that hasn&apos;t been built.
+        application — nothing here changes an invoice, a contract value or a WIP number. An
+        accepted backcharge is not netted against billing automatically; if the GC deducts it,
+        adjust the invoice yourself.
       </p>
 
       {jobs.length > 0 && (
