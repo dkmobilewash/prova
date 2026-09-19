@@ -34,11 +34,17 @@ import { defineConfig, devices } from "@playwright/test";
 // unless the nearest package.json says "type": "module" (apps/web's
 // doesn't), and import.meta throws a SyntaxError under that loader.
 const repoRoot = path.resolve(__dirname, "../../..");
+const webRoot = path.resolve(__dirname, "..");
 const PORT = 3100;
 
 export default defineConfig({
   testDir: "./specs",
   globalSetup: "./global-setup.ts",
+  // Explicit, not Playwright's default (relative to this config file) —
+  // pinned to apps/web/ so .gitignore's two entries and the CI job's
+  // "Upload Playwright report" step path agree with where this actually
+  // writes, instead of three places quietly assuming the same default.
+  outputDir: path.join(webRoot, "test-results"),
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   // Each spec signs in as one of four fixed personas and none of them
@@ -49,7 +55,10 @@ export default defineConfig({
   // is to delete it (per the task's own discipline rule), not to raise it.
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 2 : undefined,
-  reporter: process.env.CI ? [["html", { open: "never" }], ["list"]] : "list",
+  // The HTML report always writes, CI or not — a local failure deserves
+  // the same "open the report" instruction as a CI one, rather than a
+  // click-list step that only works in one of the two places it's given.
+  reporter: [["html", { open: "never", outputFolder: path.join(webRoot, "playwright-report") }], ["list"]],
   timeout: 30_000,
   expect: { timeout: 10_000 },
   use: {
