@@ -92,7 +92,14 @@ export type Media = {
   capturedLatitude: number | null;
   capturedLongitude: number | null;
   capturedAccuracyMeters: number | null;
+  /** What it was taken for, when the person said so at the shutter. */
+  dailyFieldReportId?: string | null;
+  punchListItemId?: string | null;
+  tags?: { id: string; name: string }[];
 };
+
+/** One of the company's photo tags, offered at the shutter. */
+export type MediaTag = { id: string; name: string };
 
 export type ToolboxTalk = {
   id: string;

@@ -142,6 +142,9 @@ model PunchListItem {
   @@unique([companyId, clientOperationId])
   @@index([companyId])
   @@index([jobId])
+
+  /// Photos of this item — before and after — attached at the shutter.
+  media JobMedia[]
 }
 
 /// One record per job per day: who was on site, what got done, weather and
@@ -214,6 +217,9 @@ model DailyFieldReport {
   @@unique([companyId, clientOperationId])
   @@index([companyId])
   @@index([jobId])
+
+  /// Photos taken for this day, attached at the shutter from the phone.
+  media JobMedia[]
 }
 
 /// A time-and-materials ticket: the extra work done on a day, the labor and

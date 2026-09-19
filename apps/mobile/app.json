@@ -10,7 +10,20 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "C Stream records where a site photo was taken, so a photo is evidence of where the work was."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "C Stream uses the camera to take site photos, stamped with the time and place they were taken.",
+          "photosPermission": "C Stream adds photos from your library to a job."
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": true,
