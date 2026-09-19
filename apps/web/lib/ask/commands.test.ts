@@ -279,6 +279,27 @@ describe("who is offered what", () => {
     expect(field).toContain("crew_assignments");
     expect(toolsFor(OWNER).length).toBe(TOOLS.length);
   });
+
+  // The behaviour half of team_roster's gate, 2026-09-19. The census below
+  // says what it DECLARES; this says who actually stops being offered it,
+  // which is the part that was traded away and the part worth a test.
+  //
+  // It answered for everyone until #310's citation guard showed it
+  // summarising /certifications, a MANAGE_FIELD page. Gating it costs the
+  // two functions that hold no MANAGE_FIELD.
+  it("offers team_roster to the field, and no longer to estimating or accounting", () => {
+    expect(toolsFor(FIELD).map((t) => t.name)).toContain("team_roster");
+    expect(toolsFor(OWNER).map((t) => t.name)).toContain("team_roster");
+    expect(toolsFor(ESTIMATOR).map((t) => t.name)).not.toContain("team_roster");
+    expect(toolsFor(ACCOUNTING).map((t) => t.name)).not.toContain("team_roster");
+
+    // A member with no job function set keeps everything — rule 2 in
+    // lib/permissions.ts, "nobody loses anything by this feature shipping".
+    // Gating a tool must not quietly become the exception to that.
+    expect(toolsFor({ role: "MEMBER", jobFunction: null }).map((t) => t.name)).toContain(
+      "team_roster",
+    );
+  });
 });
 
 describe("read-tool capabilities match the pages they cite", () => {
@@ -382,10 +403,12 @@ describe("read-tool capabilities match the pages they cite", () => {
     // money branch, same as change orders.
     estimate_detail: "VIEW_JOB_COSTS",
     document_intake: ROUTE_CAPABILITY["/intake"],
-    // /team is on the open list: "The roster. Everyone should be able to see
-    // who they work with; changing it is owner-only in the actions." This
-    // tool reads and never changes, so it takes the page's gate.
-    team_roster: null,
+    // NOT /team's gate, though /team is on the open list and this tool does
+    // read it. It ALSO summarises /certifications, which is MANAGE_FIELD,
+    // and a tool takes the gate of the strictest page it reads from. It was
+    // null until 2026-09-19; #310's citation guard found the disagreement
+    // and Diego chose to gate the tool rather than drop the citation.
+    team_roster: ROUTE_CAPABILITY["/certifications"],
     // Dispatch slips are union paperwork and render on /union-compliance.
     dispatch_slips: ROUTE_CAPABILITY["/union-compliance"],
     // The EMR is recorded and shown on /compliance, beside the certificates

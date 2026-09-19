@@ -636,9 +636,29 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "team_roster",
-    // /team, which lib/permissions.test.ts records as open — a roster of
-    // who works here is not a tier.
-    capability: null,
+    // MANAGE_FIELD, and this is the one citation-vs-capability disagreement
+    // #310's guard found that was worth FIXING rather than recording.
+    //
+    // It was `null`, on the reasoning that /team is open — "a roster of who
+    // works here is not a tier". That is true of the roster and not of what
+    // this tool returns. It also reports how many certifications are on file
+    // and what is missing on them, summarised from /certifications, which
+    // MANAGE_FIELD guards. One tool, two cited pages, and the gate had been
+    // set from the gentler one because the author reasoned about the primary
+    // citation and the secondary never came up.
+    //
+    // The rule that follows, and it is the general one: A TOOL TAKES THE
+    // GATE OF THE STRICTEST PAGE IT READS FROM, not the page its author had
+    // in mind. Diego's call, 2026-09-19.
+    //
+    // The cost, named because it is a real loss rather than a cleanup:
+    // ESTIMATOR and ACCOUNTING hold no MANAGE_FIELD, so neither can ask who
+    // is on the books any more. OWNER, an unset job function,
+    // PROJECT_MANAGER, FIELD and PAYROLL_COMPLIANCE keep it. Dropping the
+    // /certifications citation instead would have kept the tool open and
+    // left it summarising a guarded page, which is the trade that was
+    // declined.
+    capability: "MANAGE_FIELD",
     description:
       "Everyone with an account on this company: name, email, role, job function, which craft classifications they have actually worked under, how many certifications are on file, and what is missing on them. THERE IS NO PER-PERSON PAY RATE IN THIS APP AND THIS DOES NOT REPORT ONE — a rate belongs to a craft classification and the fringe schedule in force on a given date, which is why job_labor_cost prices an hour rather than a person. What it does report is the blanks that break paperwork downstream: no name on an account is a blank in the name column of a WH-347, and hours with no craft are a blank in the classification column and are invisible to the ratio review.",
     input_schema: noInput,
