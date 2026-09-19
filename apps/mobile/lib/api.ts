@@ -268,6 +268,13 @@ export async function listMedia(jobId: string, token: string): Promise<Media[]> 
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/media`, { token });
 }
 
+/** Where a photo is posted. The phone's queue uploads through the file
+ * system's native multipart task (lib/photo-store.ts), which needs the URL
+ * rather than a fetch call. */
+export function mediaUploadUrl(jobId: string): string {
+  return `${BASE_URL}/api/v1/jobs/${encodeURIComponent(jobId)}/media`;
+}
+
 /** Uploads a file as multipart form data. The `request` helper sends JSON,
  * so this is a separate path — the body is a FormData, and fetch sets the
  * multipart Content-Type (with boundary) itself. */

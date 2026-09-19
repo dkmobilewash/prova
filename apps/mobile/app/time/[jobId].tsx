@@ -33,7 +33,6 @@ import {
 } from "@/lib/crew-entry";
 import { uuid } from "@/lib/id";
 import { enqueue, queuedOperationIds, type CreateOp } from "@/lib/sync-queue";
-import { useReloadWhenShown } from "@/lib/use-reload-when-shown";
 import { useSync } from "@/lib/use-sync";
 import type {
   Craft,
@@ -199,9 +198,6 @@ export default function TimeScreen() {
     })();
   }, []);
 
-  // On first show, on every return to this screen, and when the app comes
-  // back from the background — so rows changed elsewhere don't linger.
-  useReloadWhenShown(load);
 
   // Tick the elapsed clock once a minute.
   useEffect(() => {

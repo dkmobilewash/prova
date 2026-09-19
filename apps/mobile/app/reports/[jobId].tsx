@@ -16,7 +16,6 @@ import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
 import { colors, typography } from "@/lib/theme";
 import type { DelayRow, FieldReportRow } from "@/lib/types";
 import { useFieldReports } from "@/lib/use-field-reports";
-import { useReloadWhenShown } from "@/lib/use-reload-when-shown";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 import { useSync } from "@/lib/use-sync";
 
@@ -89,7 +88,6 @@ export default function ReportsScreen() {
     await refresh();
     await loadDelays();
   }, [refresh, loadDelays]);
-  useReloadWhenShown(reloadAll);
   const { sync, refused, dismissRefused } = useSync(reloadAll);
 
   // New report
