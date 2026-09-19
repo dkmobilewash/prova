@@ -75,6 +75,8 @@ export const settingsIntegrationsWalkthrough: Walkthrough = {
       title: "Your DocuSign account",
       body:
         "This shows which DocuSign account envelopes are sent from, and whether their status updates arrive by themselves or when you press Refresh.",
+    },
+    {
       anchor: "mycoi-import-link",
       title: "Bring in myCOI",
       body:

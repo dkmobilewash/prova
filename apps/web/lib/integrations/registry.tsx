@@ -52,6 +52,7 @@ export type ProviderImplementation =
    * keys the card says the service is not set up here.
    */
   | { kind: "esign"; startHref: string; requiredEnv: readonly string[] }
+  /**
    * A provider whose live API is not available to us, but whose customers
    * can EXPORT a file that C Stream imports — the path that works today.
    * The card links to that import and says, in `liveApi`, why there is no
