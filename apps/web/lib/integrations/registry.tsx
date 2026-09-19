@@ -4,6 +4,7 @@ import { JOBBER_REQUIRED_ENV } from "@/lib/jobber/setup";
 import { DOCUSIGN_REQUIRED_ENV } from "@/lib/docusign/setup";
 import { MYCOI_API_UNAVAILABLE } from "@/lib/mycoi/api";
 import { PROCORE_REQUIRED_ENV } from "@/lib/procore/setup";
+import { COMPANYCAM_REQUIRED_ENV } from "@/lib/companycam/setup";
 
 /**
  * The one list of providers, and the seam the next phase hooks into.
@@ -69,6 +70,14 @@ export type ProviderImplementation =
    * button.
    */
   | { kind: "feed"; startHref: string; requiredEnv: readonly string[] }
+  /**
+   * The same OAuth-connect shape as `feed` — a per-company connection, then
+   * the owner links an outside project to a job — but the records are
+   * PHOTOS pulled into this app's own gallery on an explicit press rather
+   * than a standing read shown live from the other system. Its own kind
+   * because the card underneath it is an Import button, not a refresh.
+   */
+  | { kind: "photo-import"; startHref: string; requiredEnv: readonly string[] }
   /** Not built. Renders disabled, with no control that implies otherwise. */
   | { kind: "planned" };
 
@@ -190,6 +199,28 @@ export const PROVIDERS: ProviderEntry[] = [
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
         <path d="M10 3.2 16.5 7v6L10 16.8 3.5 13V7L10 3.2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
         <path d="M10 9.6 16.5 7M10 9.6V16.8M10 9.6 3.5 7" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    provider: "COMPANYCAM",
+    name: "CompanyCam",
+    description:
+      "Sign in with your own CompanyCam account and link a CompanyCam project to your job. Press Import photos to pull them into that job's gallery — captioned, dated by when they were taken, and marked as imported. Read-only: C Stream never changes anything in CompanyCam, and importing again only brings photos that aren't here yet.",
+    implementation: {
+      kind: "photo-import",
+      startHref: "/api/companycam/start",
+      requiredEnv: COMPANYCAM_REQUIRED_ENV,
+    },
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
+        <path
+          d="M4 7.5a1.5 1.5 0 0 1 1.5-1.5h1.1l.7-1.2A1 1 0 0 1 8.2 4.3h3.6a1 1 0 0 1 .9.5l.7 1.2h1.1A1.5 1.5 0 0 1 16 7.5v6A1.5 1.5 0 0 1 14.5 15h-9A1.5 1.5 0 0 1 4 13.5v-6Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <circle cx="10" cy="10" r="2.3" stroke="currentColor" strokeWidth="1.4" />
       </svg>
     ),
   },
