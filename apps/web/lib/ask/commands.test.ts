@@ -405,6 +405,11 @@ describe("read-tool capabilities match the pages they cite", () => {
     // /dashboard is open; the checklist's steps are filtered per person by
     // lib/getting-started.ts, the card's own function.
     getting_started: null,
+    // No one page: WHICH walkthroughs this tool may name is filtered per
+    // person inside the handler (reachableWalkthroughs), against each
+    // matched page's own ROUTE_CAPABILITY — the same rule this file states
+    // for every other row, applied per result instead of once for the tool.
+    app_help: null,
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {

@@ -183,6 +183,15 @@ export async function recordAskUsage(record: AskUsageRecord): Promise<void> {
     outputTokens: usage.outputTokens,
     cacheReadTokens: usage.cacheReadTokens,
     cacheWriteTokens: usage.cacheWriteTokens,
+    // Web searches bill per search on top of tokens. LOGGED AND NOT STORED,
+    // deliberately: no AskUsage column fits a search count and this table's
+    // own rule is that a new figure must not force a migration — the token
+    // columns are token counts, `passes` is model calls, and abusing either
+    // would corrupt what /settings/assistant reports. The runtime log is
+    // the record until somebody decides a column is worth a migration; the
+    // SPEND stays bounded either way, at ASK_WEB_SEARCH_MAX_USES per
+    // question times the row limits above.
+    webSearches: usage.webSearches ?? 0,
   });
   try {
     await prisma.askUsage.create({

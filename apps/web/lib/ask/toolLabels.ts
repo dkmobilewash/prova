@@ -54,6 +54,7 @@ const LABELS: Record<ToolName, string> = {
   dispatch_slips: "dispatch slips",
   experience_mod_rate: "your mod rate",
   lien_deadlines: "your lien deadlines",
+  app_help: "how to do that",
 };
 
 export function toolLabel(name: ToolName): string {
