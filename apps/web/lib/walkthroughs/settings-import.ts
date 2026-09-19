@@ -18,6 +18,12 @@ export const settingsImportWalkthrough: Walkthrough = {
         "If your clients and jobs are in Jobber, you don't need a spreadsheet. Press Connect it instead to bring them straight across.",
     },
     {
+      anchor: "import-quickbooks",
+      title: "Using QuickBooks?",
+      body:
+        "If your customers, vendors and products are in QuickBooks Online, press Import from QuickBooks to bring them straight across. It only reads QuickBooks.",
+    },
+    {
       anchor: "import-clients",
       title: "Start with clients",
       body:

@@ -24,6 +24,7 @@ import { CompanyProfileForm } from "@/components/CompanyProfileForm";
 import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
 import { QuickBooksReconcile } from "@/components/QuickBooksReconcile";
+import { QuickBooksImport } from "@/components/QuickBooksImport";
 import {
   classifyRenewal,
   renewalTiming,
@@ -248,8 +249,9 @@ export default async function SettingsPage({
         <Link href="/settings/import" className="text-link hover:text-link-hover">
           Import from a spreadsheet
         </Link>{" "}
-        — bring in your clients, jobs and crew from Excel, Google Sheets or QuickBooks, with a
-        preview before anything is saved.
+        — bring in your clients, jobs and crew from Excel, Google Sheets or a QuickBooks export,
+        with a preview before anything is saved. With QuickBooks Online connected, the QuickBooks
+        section below can bring your customers, vendors and products in directly.
       </p>
 
       {qb === "connected" && (
@@ -287,6 +289,15 @@ export default async function SettingsPage({
           landed. It does not pull edits made in QuickBooks back into C Stream, and does not
           pretend to — a sync that quietly loses an edit is worse than one that never claimed
           to carry it.
+        </p>
+        {/* The one exception, and it is not a sync: a one-time import of the
+            contractor's customers, vendors and products when they start, so
+            a new company is not typed in by hand. Read-only toward
+            QuickBooks — see lib/actions/quickbooksImport.ts. */}
+        <p className="mb-4 text-sm text-ink-body">
+          Starting out? Once it is connected you can also bring your QuickBooks customers, vendors
+          and products and services into C Stream, once, with a preview first. That only reads
+          QuickBooks.
         </p>
 
         {connection ? (
@@ -329,6 +340,19 @@ export default async function SettingsPage({
               <QuickBooksTestConnectionButton />
             </RowActions>
 
+            {/* Its own anchor so /settings/import and the getting-started
+                step can link straight to it. */}
+            <div id="quickbooks-import" className="mt-6 scroll-mt-6 border-t border-line-row pt-4">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-body">
+                Bring in what you already have
+              </h3>
+              <p className="mb-3 text-xs text-ink-muted">
+                Customers become clients, vendors become vendors, and products and services become
+                catalog entries. Read-only: nothing in QuickBooks is changed.
+              </p>
+              <QuickBooksImport />
+            </div>
+
             <div className="mt-6 border-t border-line-row pt-4">
               <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-body">
                 Chart of accounts
@@ -367,12 +391,18 @@ export default async function SettingsPage({
           // A plain link (not next/link, so it's never hover-prefetched, and
           // not a Server Action form — see app/api/quickbooks/start/route.ts
           // for why this needs to be a real GET navigation).
-          <a
-            href="/api/quickbooks/start"
-            className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
-          >
-            Connect QuickBooks
-          </a>
+          <div id="quickbooks-import" className="scroll-mt-6">
+            <a
+              href="/api/quickbooks/start"
+              className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
+            >
+              Connect QuickBooks
+            </a>
+            <p className="mt-2 text-xs text-ink-muted" data-tour="qbo-import-connect-first">
+              Want to bring your QuickBooks customers, vendors and products in? Connect first — an
+              Import from QuickBooks button appears here once you are back.
+            </p>
+          </div>
         )}
       </section>
 

@@ -678,3 +678,241 @@ export async function getInvoicesByIds(
 
   return found;
 }
+
+/* ------------------------------------------------------------------ */
+/* Reading for the onboarding import                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Reading a contractor's customers, vendors and products/services so a new
+ * C Stream company can start from what is already in QuickBooks
+ * (apps/web/lib/quickbooks-import.ts plans it, lib/actions/quickbooksImport.ts
+ * writes it).
+ *
+ * READ-ONLY, AND BY CONSTRUCTION RATHER THAN BY PROMISE. Every call below
+ * goes through `accountingRequest` with method GET — the query endpoint —
+ * and nothing here takes a payload. Nothing in the import path imports a
+ * function from the "Writing to QuickBooks" section above; the import's
+ * tests fail if an accounting-API request from it is anything but a GET.
+ *
+ * DATA MINIMISATION AT THE BOUNDARY. `select *` returns whole records, and a
+ * Vendor record carries a (masked) tax id and 1099 flags. The raw record is
+ * mapped here into a small shape holding only the fields the import uses,
+ * so nothing else can leak further in by accident — the tax id never
+ * leaves this function.
+ *
+ * PAGING. Intuit's query language pages with STARTPOSITION (1-based) and
+ * MAXRESULTS (at most 1000). A page shorter than asked for is the last
+ * one. Ordered by a sortable field (see SORT_FIELD) so paging is stable.
+ * MAXRESULTS is always sent: left out, Intuit returns 100 rows, and a page
+ * of 100 against an asked-for 1000 would read as the last page.
+ * `select * from Customer` leaves inactive (deleted) records out by
+ * default, which is what an onboarding import wants.
+ */
+
+/** Intuit's own ceiling on MAXRESULTS. */
+export const QUICKBOOKS_QUERY_PAGE_MAX = 1000;
+
+export interface QuickBooksAddress {
+  line1: string | null;
+  line2: string | null;
+  line3: string | null;
+  city: string | null;
+  region: string | null;
+  postalCode: string | null;
+}
+
+/** A customer or a vendor, reduced to what the import reads. */
+export interface QuickBooksImportParty {
+  id: string;
+  displayName: string | null;
+  companyName: string | null;
+  givenName: string | null;
+  familyName: string | null;
+  email: string | null;
+  phone: string | null;
+  mobile: string | null;
+  billAddress: QuickBooksAddress | null;
+  shipAddress: QuickBooksAddress | null;
+  /** Customers only: a sub-customer, which QuickBooks uses for jobs. */
+  parentName: string | null;
+  isSubCustomer: boolean;
+}
+
+export interface QuickBooksImportItem {
+  id: string;
+  name: string | null;
+  fullyQualifiedName: string | null;
+  /** Service | Inventory | NonInventory | Group | Category, as Intuit spells it. */
+  type: string | null;
+  unitPrice: number | null;
+  purchaseCost: number | null;
+}
+
+export interface QuickBooksReadResult<T> {
+  rows: T[];
+  /** More records exist past `limit` — the caller says so rather than
+   * pretending the account was read in full. */
+  truncated: boolean;
+}
+
+type RawAddress = {
+  Line1?: string;
+  Line2?: string;
+  Line3?: string;
+  City?: string;
+  CountrySubDivisionCode?: string;
+  PostalCode?: string;
+};
+
+type RawParty = {
+  Id: string;
+  DisplayName?: string;
+  CompanyName?: string;
+  GivenName?: string;
+  FamilyName?: string;
+  PrimaryEmailAddr?: { Address?: string };
+  PrimaryPhone?: { FreeFormNumber?: string };
+  Mobile?: { FreeFormNumber?: string };
+  BillAddr?: RawAddress;
+  ShipAddr?: RawAddress;
+  Job?: boolean;
+  ParentRef?: { value?: string; name?: string };
+};
+
+type RawItem = {
+  Id: string;
+  Name?: string;
+  FullyQualifiedName?: string;
+  Type?: string;
+  UnitPrice?: number;
+  PurchaseCost?: number;
+};
+
+function text(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function money(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function address(raw: RawAddress | undefined): QuickBooksAddress | null {
+  if (!raw) return null;
+  const mapped: QuickBooksAddress = {
+    line1: text(raw.Line1),
+    line2: text(raw.Line2),
+    line3: text(raw.Line3),
+    city: text(raw.City),
+    region: text(raw.CountrySubDivisionCode),
+    postalCode: text(raw.PostalCode),
+  };
+  return Object.values(mapped).some(Boolean) ? mapped : null;
+}
+
+function party(raw: RawParty): QuickBooksImportParty {
+  return {
+    id: String(raw.Id),
+    displayName: text(raw.DisplayName),
+    companyName: text(raw.CompanyName),
+    givenName: text(raw.GivenName),
+    familyName: text(raw.FamilyName),
+    email: text(raw.PrimaryEmailAddr?.Address),
+    phone: text(raw.PrimaryPhone?.FreeFormNumber),
+    mobile: text(raw.Mobile?.FreeFormNumber),
+    billAddress: address(raw.BillAddr),
+    shipAddress: address(raw.ShipAddr),
+    parentName: text(raw.ParentRef?.name),
+    isSubCustomer: raw.Job === true || Boolean(raw.ParentRef?.value),
+  };
+}
+
+function item(raw: RawItem): QuickBooksImportItem {
+  return {
+    id: String(raw.Id),
+    name: text(raw.Name),
+    fullyQualifiedName: text(raw.FullyQualifiedName),
+    type: text(raw.Type),
+    unitPrice: money(raw.UnitPrice),
+    purchaseCost: money(raw.PurchaseCost),
+  };
+}
+
+export interface QuickBooksReadOptions {
+  /** Records per request; clamped to Intuit's 1000. */
+  pageSize?: number;
+  /** Most records read in one import. */
+  limit?: number;
+}
+
+/**
+ * What each read is ordered by, so paging is stable while the account is
+ * read. Not `Id`: Intuit's entity reference marks Id filterable but NOT
+ * sortable, and these three are marked sortable. Display names are unique
+ * per list in QuickBooks, so neither order has ties to shuffle.
+ */
+const SORT_FIELD = { Customer: "DisplayName", Vendor: "DisplayName", Item: "Name" } as const;
+
+/** One entity, every page, up to `limit`. GET only. */
+async function readEveryPage<Raw>(
+  realmId: string,
+  accessToken: string,
+  entity: "Customer" | "Vendor" | "Item",
+  options: QuickBooksReadOptions,
+): Promise<QuickBooksReadResult<Raw>> {
+  const pageSize = Math.max(1, Math.min(options.pageSize ?? QUICKBOOKS_QUERY_PAGE_MAX, QUICKBOOKS_QUERY_PAGE_MAX));
+  const limit = Math.max(1, options.limit ?? 5000);
+  const rows: Raw[] = [];
+
+  const page = async (start: number, max: number): Promise<Raw[]> => {
+    const query = encodeURIComponent(
+      `select * from ${entity} ORDERBY ${SORT_FIELD[entity]} STARTPOSITION ${start} MAXRESULTS ${max}`,
+    );
+    const body = await accountingRequest<{ QueryResponse?: Record<string, unknown> }>(
+      realmId,
+      accessToken,
+      `/query?query=${query}`,
+    );
+    const found = body.QueryResponse?.[entity];
+    return Array.isArray(found) ? (found as Raw[]) : [];
+  };
+
+  for (let start = 1; rows.length < limit; ) {
+    const max = Math.min(pageSize, limit - rows.length);
+    const got = await page(start, max);
+    rows.push(...got);
+    if (got.length < max) return { rows, truncated: false };
+    start += got.length;
+  }
+  // Exactly at the limit: one record past it says whether there is more,
+  // so an account of exactly `limit` records is not reported as cut short.
+  const beyond = await page(limit + 1, 1);
+  return { rows, truncated: beyond.length > 0 };
+}
+
+export async function readCustomersForImport(
+  realmId: string,
+  accessToken: string,
+  options: QuickBooksReadOptions = {},
+): Promise<QuickBooksReadResult<QuickBooksImportParty>> {
+  const read = await readEveryPage<RawParty>(realmId, accessToken, "Customer", options);
+  return { rows: read.rows.map(party), truncated: read.truncated };
+}
+
+export async function readVendorsForImport(
+  realmId: string,
+  accessToken: string,
+  options: QuickBooksReadOptions = {},
+): Promise<QuickBooksReadResult<QuickBooksImportParty>> {
+  const read = await readEveryPage<RawParty>(realmId, accessToken, "Vendor", options);
+  return { rows: read.rows.map(party), truncated: read.truncated };
+}
+
+export async function readItemsForImport(
+  realmId: string,
+  accessToken: string,
+  options: QuickBooksReadOptions = {},
+): Promise<QuickBooksReadResult<QuickBooksImportItem>> {
+  const read = await readEveryPage<RawItem>(realmId, accessToken, "Item", options);
+  return { rows: read.rows.map(item), truncated: read.truncated };
+}

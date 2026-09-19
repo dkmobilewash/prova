@@ -27,7 +27,8 @@ function clientNote(client: JobberJobClient): string {
   return client.kind === "existing" ? "your client" : "new client — added";
 }
 
-function Counts({
+/** Also used by the QuickBooks import (QuickBooksImport.tsx). */
+export function Counts({
   created,
   existing,
   problems,
@@ -48,7 +49,8 @@ function Counts({
   );
 }
 
-function LeftOutList({ items }: { items: LeftOut[] }) {
+/** Also used by the QuickBooks import (QuickBooksImport.tsx). */
+export function LeftOutList({ items }: { items: LeftOut[] }) {
   if (items.length === 0) return null;
   return (
     <details className="mt-3 rounded-md border border-line-row px-3 py-2 text-xs text-ink-body">
