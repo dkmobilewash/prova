@@ -2,6 +2,7 @@ import type {
   CreateFieldReportInput,
   Craft,
   CrewMember,
+  DelayRow,
   FieldReportRow,
   Job,
   LineItem,
@@ -208,6 +209,30 @@ export async function createSignoff(
     token,
     body: input,
   });
+}
+
+export async function listDelays(jobId: string, token: string): Promise<DelayRow[]> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/delays`, { token });
+}
+
+export type CreateDelayInput = {
+  date: string;
+  cause: string;
+  responsibleParty: string;
+  responsibleName?: string;
+  startTime?: string;
+  endTime?: string;
+  workersAffected?: string;
+  hoursLost?: string;
+  description: string;
+  gcNotifiedHow?: string;
+  gcNotifiedWho?: string;
+  gcNotifiedAt?: string;
+  clientOperationId?: string;
+};
+
+export async function createDelay(jobId: string, input: CreateDelayInput, token: string): Promise<DelayRow> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/delays`, { method: "POST", token, body: input });
 }
 
 export async function listVendors(token: string): Promise<Vendor[]> {

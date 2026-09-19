@@ -16,6 +16,34 @@ export type FieldReportRow = {
   clientUpdatedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Filled in by the server from the job's site address; absent on a row
+   * the phone just queued. */
+  weatherLine?: string | null;
+  weatherKind?: "forecast" | "observed" | null;
+  /** The day's crew from its time entries. */
+  manpowerLine?: string | null;
+  /** Set when the day is signed (so the report is locked). */
+  lockState?: "SUBMITTED" | "APPROVED" | null;
+};
+
+/** One logged delay, as GET /api/v1/jobs/[id]/delays returns it. */
+export type DelayRow = {
+  id: string;
+  date: string;
+  cause: string;
+  causeLabel: string;
+  responsibleParty: string;
+  responsibleLabel: string;
+  responsibleName: string | null;
+  start: string | null;
+  end: string | null;
+  workersAffected: number | null;
+  hoursLost: string | null;
+  description: string;
+  gcNotifiedHow: string | null;
+  gcNotifiedWho: string | null;
+  gcNotifiedAt: string | null;
+  changeOrderId: string | null;
 };
 
 export type FieldReportFields = {

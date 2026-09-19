@@ -8,6 +8,10 @@ function describe(op: PendingOp): string {
       return `${op.hours}h on ${op.date}`;
     case "signoff:create":
       return `Signature for ${op.date}`;
+    case "delay:create":
+      return `Delay on ${op.date}`;
+    case "field-report:create":
+      return `Report for ${op.reportDate}`;
     case "ticket:create":
       return `T&M ticket for ${op.workDate}`;
     default:

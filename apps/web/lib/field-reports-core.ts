@@ -11,6 +11,14 @@
 
 import { prisma } from "@prova/db";
 import { isUniqueConstraintError, type ActionResultWith } from "@/lib/actions/shared";
+import { refreshReportWeather } from "@/lib/report-weather";
+import { liveSignoff, lockedDayMessage } from "@/lib/timesheet-signoff";
+
+/** True for the refusal the DailyFieldReport day-lock trigger raises — a day
+ * signed between the app's own check and the write. */
+export function isReportDayLockError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("DailyFieldReport day is signed and locked");
+}
 
 /** Deleting a filed daily report had NO guard of any kind — not owner,
  * not capability — while every other delete in this folder has at least
@@ -68,7 +76,11 @@ export type FieldReportFields = {
   workPerformed: string;
   crewPresent: string | null;
   weather: string | null;
-  delays: string | null;
+  /** Absent unless the caller sent it. The free-text delays box is
+   * superseded by DelayEvent and no screen sends it any more; an edit that
+   * does not mention it must leave an older report's typed delays alone,
+   * not blank them. */
+  delays?: string | null;
 };
 
 export function fieldReportFields(input: {
@@ -83,7 +95,7 @@ export function fieldReportFields(input: {
     workPerformed,
     crewPresent: asString(input.crewPresent) || null,
     weather: asString(input.weather) || null,
-    delays: asString(input.delays) || null,
+    ...(input.delays !== undefined ? { delays: asString(input.delays) || null } : {}),
   };
 }
 
@@ -117,6 +129,7 @@ type FieldReportDbRow = {
   workPerformed: string;
   weather: string | null;
   delays: string | null;
+  weatherAuto: unknown;
   filedByUserId: string | null;
   clientId: string | null;
   clientUpdatedAt: Date | null;
@@ -132,6 +145,8 @@ export type FieldReportRow = {
   workPerformed: string;
   weather: string | null;
   delays: string | null;
+  /** The automatic site weather (lib/weather.ts DayWeather), or null. */
+  weatherAuto: unknown;
   filedByUserId: string | null;
   clientId: string | null;
   clientUpdatedAt: string | null;
@@ -151,6 +166,7 @@ function toFieldReportRow(row: FieldReportDbRow): FieldReportRow {
     workPerformed: row.workPerformed,
     weather: row.weather,
     delays: row.delays,
+    weatherAuto: row.weatherAuto ?? null,
     filedByUserId: row.filedByUserId,
     clientId: row.clientId,
     clientUpdatedAt: row.clientUpdatedAt ? row.clientUpdatedAt.toISOString() : null,
@@ -192,10 +208,14 @@ export async function createFieldReport(
       if (existing) return { ok: true, value: { report: toFieldReportRow(existing), created: false } };
     }
 
+    const reportDate = reportDateFromString(input.reportDate);
+    const live = await liveSignoff(input.jobId, reportDate);
+    if (live) return { ok: false, error: lockedDayMessage(reportDate, live) };
+
     const data = {
       companyId: company.id,
       jobId: input.jobId,
-      reportDate: reportDateFromString(input.reportDate),
+      reportDate,
       filedByUserId,
       ...fieldReportFields(input),
       clientId,
@@ -205,8 +225,12 @@ export async function createFieldReport(
 
     try {
       const created = await prisma.dailyFieldReport.create({ data });
-      return { ok: true, value: { report: toFieldReportRow(created), created: true } };
+      const weather = await refreshReportWeather(job, [created], 1);
+      const row = toFieldReportRow(created);
+      if (weather.has(created.id)) row.weatherAuto = weather.get(created.id);
+      return { ok: true, value: { report: row, created: true } };
     } catch (error) {
+      if (isReportDayLockError(error)) return { ok: false, error: "That day was just signed, so its report is locked." };
       // P2002 = a unique constraint fired. Checked by `code`, NOT by an
       // instanceof against the Prisma error class — that instanceof is
       // false at runtime here (measured 2026-08-28). See
@@ -268,14 +292,23 @@ export async function updateFieldReport(
       return { ok: true, value: { applied: false, report: toFieldReportRow(report) } };
     }
 
-    const updated = await prisma.dailyFieldReport.update({
-      where: { id: reportId },
-      data: {
-        ...fieldReportFields(input),
-        ...(clientId ? { clientId } : {}),
-        ...(clientUpdatedAt ? { clientUpdatedAt } : {}),
-      },
-    });
+    const live = await liveSignoff(report.jobId, report.reportDate);
+    if (live) return { ok: false, error: lockedDayMessage(report.reportDate, live) };
+
+    let updated;
+    try {
+      updated = await prisma.dailyFieldReport.update({
+        where: { id: reportId },
+        data: {
+          ...fieldReportFields(input),
+          ...(clientId ? { clientId } : {}),
+          ...(clientUpdatedAt ? { clientUpdatedAt } : {}),
+        },
+      });
+    } catch (error) {
+      if (isReportDayLockError(error)) return { ok: false, error: "That day was just signed, so its report is locked." };
+      throw error;
+    }
 
     return { ok: true, value: { applied: true, report: toFieldReportRow(updated) } };
   } catch (error) {
@@ -299,6 +332,14 @@ export async function listFieldReportsForJob(
     where: { companyId: company.id, jobId },
     orderBy: { reportDate: "desc" },
   });
+  const weather = await refreshReportWeather(job, rows);
 
-  return { ok: true, value: rows.map(toFieldReportRow) };
+  return {
+    ok: true,
+    value: rows.map((r) => {
+      const row = toFieldReportRow(r);
+      if (weather.has(r.id)) row.weatherAuto = weather.get(r.id);
+      return row;
+    }),
+  };
 }

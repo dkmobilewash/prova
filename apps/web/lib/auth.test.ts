@@ -41,6 +41,9 @@ let clerkUser: {
 
 /** The userId `auth()` reports for a mobile call (null = no bearer token). */
 let apiUserId: string | null = null;
+/** How many times the backend Clerk lookup ran — the round trip a known
+ * phone user must not pay on every request. */
+let getUserCalls = 0;
 /** The backend User `clerkClient().users.getUser()` returns for that id. */
 let backendUser: {
   id: string;
@@ -59,7 +62,10 @@ vi.mock("@clerk/nextjs/server", () => ({
   auth: async () => ({ userId: apiUserId }),
   clerkClient: async () => ({
     users: {
-      getUser: async () => backendUser,
+      getUser: async () => {
+        getUserCalls += 1;
+        return backendUser;
+      },
     },
   }),
 }));
@@ -182,5 +188,17 @@ describe("requireApiContext — the mobile path", () => {
       role: "OWNER",
       clerkId: "clerk_owner",
     });
+  });
+
+  it("answers a user it already knows from the database, without asking Clerk again", async () => {
+    signInViaApi("owner@example.com", true);
+    const first = await requireApiContext();
+    getUserCalls = 0;
+
+    const again = await requireApiContext();
+
+    expect(getUserCalls).toBe(0);
+    expect(again?.id).toBe(first?.id);
+    expect(again).toMatchObject({ clerkId: "clerk_owner", company: expect.anything() });
   });
 });
