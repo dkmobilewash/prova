@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { Icon } from "@/components/Icon";
 import { Field } from "@/components/Field";
 import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
@@ -191,7 +192,7 @@ export default function PunchListScreen() {
                 }
               >
                 <View style={[styles.box, status !== "OPEN" && styles.boxDone]}>
-                  {status !== "OPEN" ? <Text style={styles.check}>✓</Text> : null}
+                  {status !== "OPEN" ? <Icon name="check" size={18} color={colors.brandInk} /> : null}
                 </View>
                 <View style={styles.itemBody}>
                   <Text style={[styles.description, status === "VERIFIED" && styles.descriptionDone]}>
@@ -290,7 +291,6 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   boxDone: { backgroundColor: colors.brand, borderColor: colors.brand },
-  check: { color: colors.brandInk, fontSize: 18, fontWeight: typography.weight.bold, lineHeight: 22 },
   description: { color: colors.ink, fontSize: typography.size.md },
   descriptionDone: { color: colors.inkMuted, textDecorationLine: "line-through" },
   meta: { color: colors.inkMuted, fontSize: typography.size.sm },

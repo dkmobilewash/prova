@@ -36,6 +36,21 @@ moving between them stops costing back-read-tap and Back still means
 control is a scrolling strip of small targets, which is worse than the menu
 it replaced. Safety, Materials and T&M stay as rows on the job screen.
 
+**The emoji are gone.** They were never icons: they render in Apple's own
+colours, so they ignored the palette entirely and glowed against the dark
+canvas the phone had just been given; they sit at whatever weight the
+system font hands them; and 🏗️ beside ⏱️ beside 📦 reads as a keyboard
+rather than a product. Every one is an Ionicon now — the set iOS's own
+idiom was drawn from — outline when a tab is idle and filled when it is
+selected, which is the platform convention rather than a preference.
+
+The names are the app's own vocabulary (`report`, `punch`, `materials`)
+and resolve in one file, for the same reason colours do: a screen that
+names a glyph directly is a screen that can disagree with another about
+what "photos" looks like. `icon-names.test.ts` checks every name against
+the font's own glyph map, because a misspelt glyph renders an empty box —
+no throw, no warning, and nothing a typecheck can see.
+
 Smaller, and it had been wrong since the second tab existed: iOS labels the
 Back button with the previous screen's title, so a photo screen opened from
 Home offered "Jobs". It says "Back" now, which is true from all five tabs.
