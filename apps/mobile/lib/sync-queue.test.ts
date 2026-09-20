@@ -123,6 +123,39 @@ describe("two flushes at once", () => {
   });
 });
 
+describe("two taps on the same item", () => {
+  it("sends both, in order — a tick and an untick are two facts, not one", async () => {
+    // Ticked then unticked, which is what a thumb does on a small row. The
+    // queue must not collapse them: the server has to see the same sequence
+    // the person performed, or the final state is a coin toss decided by
+    // which write happened to survive.
+    await enqueue({ type: "punch-list:status", jobId: "job_1", itemId: "item_9", status: "READY_FOR_REVIEW" });
+    await enqueue({ type: "punch-list:status", jobId: "job_1", itemId: "item_9", status: "OPEN" });
+
+    await flushQueue("token");
+
+    expect(sent).toEqual(["status:item_9:READY_FOR_REVIEW", "status:item_9:OPEN"]);
+    expect(await pendingCount()).toBe(0);
+  });
+
+  it("sends both even when the second tap lands mid-flush", async () => {
+    await enqueue({ type: "punch-list:create", jobId: "job_1", clientOperationId: "op_1", description: "Grid" });
+    duringSend = async () => {
+      await enqueue({ type: "punch-list:status", jobId: "job_1", itemId: "item_9", status: "READY_FOR_REVIEW" });
+      await enqueue({ type: "punch-list:status", jobId: "job_1", itemId: "item_9", status: "OPEN" });
+    };
+
+    await flushQueue("token");
+    await flushQueue("token");
+
+    expect(sent).toEqual([
+      "create:Grid",
+      "status:item_9:READY_FOR_REVIEW",
+      "status:item_9:OPEN",
+    ]);
+  });
+});
+
 describe("what the queue does with a failure", () => {
   it("keeps a write the network never carried", async () => {
     await enqueue({ type: "punch-list:status", jobId: "job_1", itemId: "item_9", status: "READY_FOR_REVIEW" });
