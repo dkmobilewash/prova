@@ -193,6 +193,17 @@ describe("canReach", () => {
 
 const APP_DIR = resolve(__dirname, "../app/(app)");
 
+/** Every route's page.tsx, by its route-pattern form — filled in by
+ * `pageRoutes` below as it walks. Reading it back by RECONSTRUCTING the
+ * path from the route string (`join(APP_DIR, route.slice(1), "page.tsx")`)
+ * used to work only because no route lived inside a nested `(group)` — a
+ * `(group)` folder vanishes from the route string but not from the real
+ * path, so a route one group deep would resolve to a file that does not
+ * exist. `/jobs/[id]/(tabs)/estimate` is the first such route; this map
+ * is keyed exactly the way the walk found the file, so it needs no
+ * assumption about how deep a group nests. */
+const routeFile = new Map<string, string>();
+
 /** Every route Next.js serves under `(app)`, in its route-pattern form —
  * `(group)` folders vanish from the URL, `[id]` folders stay as written
  * so a route can be named unambiguously here. */
@@ -203,7 +214,9 @@ function pageRoutes(dir: string, prefix = "", acc: string[] = []): string[] {
       const segment = /^\(.*\)$/.test(entry) ? "" : `/${entry}`;
       pageRoutes(full, prefix + segment, acc);
     } else if (entry === "page.tsx") {
-      acc.push(prefix === "" ? "/" : prefix);
+      const route = prefix === "" ? "/" : prefix;
+      acc.push(route);
+      routeFile.set(route, full);
     }
   }
   return acc;
@@ -211,8 +224,11 @@ function pageRoutes(dir: string, prefix = "", acc: string[] = []): string[] {
 
 const ROUTES = pageRoutes(APP_DIR).sort();
 
-const sourceFor = (route: string) =>
-  readFileSync(join(APP_DIR, route === "/" ? "" : route.slice(1), "page.tsx"), "utf8");
+const sourceFor = (route: string) => {
+  const file = routeFile.get(route);
+  if (!file) throw new Error(`no page.tsx found for route ${route}`);
+  return readFileSync(file, "utf8");
+};
 
 /**
  * Guarded, but not reachable from the nav, so ROUTE_CAPABILITY — which
@@ -268,6 +284,17 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // links this — it is reached from the job's photo section and from
   // `/photos`, the way wh-347 is reached from certified payroll.
   "/jobs/[id]/photo-report": "MANAGE_FIELD",
+
+  // The job page's rebuild into tabs, 2026-09-20 — see
+  // `app/(app)/jobs/[id]/(tabs)/layout.tsx`'s doc comment. Photos is the
+  // one new tab that IS entirely one capability's content AND can be
+  // hard-gated safely: `lib/action-capability-guards.test.ts` proves the
+  // job-media actions behind it are independently guarded on MANAGE_FIELD
+  // already (they are also reachable from the already-guarded top-level
+  // `/photos`). Estimate, Billing and Retainage are NOT here — see their
+  // own page.tsx doc comments for why a hard gate on those three would
+  // claim a boundary their Server Actions do not enforce.
+  "/jobs/[id]/photos": "MANAGE_FIELD",
 };
 
 /**
@@ -306,6 +333,18 @@ const OPEN_ROUTES: Record<string, string> = {
   "/jobs/new/[jobId]/items":
     "Steps 2 and 3 of the bid-creation stepper that begins at /jobs/new — reached only via createJob's own redirect to the job it just made, never linked from the nav. Same reason as /jobs/new and /jobs/[id]: the job record underneath it must stay open to every function, and this page withholds its own money (line items, catalog prices) in-page behind VIEW_JOB_COSTS, exactly the way jobs/[id]'s estimate section does.",
   "/jobs/new/[jobId]/review": "The stepper's last step, same reason as /jobs/new/[jobId]/items beside it — a summary of what the previous two steps already saved, gated the same way.",
+  "/jobs/[id]/crew":
+    "Same reason as /jobs/[id]: field time entries and timesheet sign-off carried no capability check in the monolith either (only the T&M tickets sub-section withholds on MANAGE_FIELD, in-page), so a hard route gate here would be a NEW restriction, not a preserved one.",
+  "/jobs/[id]/compliance":
+    "Same reason as /jobs/[id]/crew — the prevailing wage determination section carried no capability check in the monolith. Open to anyone who can open the job.",
+  "/jobs/[id]/field-reports":
+    "Same reason as /jobs/[id]/crew — `<DailyFieldReports>` and the delay log inside it were never gated in the monolith, unlike the photo gallery next to them (`/jobs/[id]/photos`, which IS guarded).",
+  "/jobs/[id]/estimate":
+    "Withholds its content on VIEW_JOB_COSTS in-page, same as /jobs/[id] itself — deliberately NOT a hard requireCapability gate. lib/action-capability-guards.test.ts found that the line-item/cost-entry/change-order actions this tab calls are reachable only from the monolith's open /jobs/[id] and are not independently guarded on VIEW_JOB_COSTS, so a hard wall here would claim a boundary the action layer does not back up. Reported as an issue for Diego's lane (job costing/estimating) rather than fixed in this layout PR.",
+  "/jobs/[id]/billing":
+    "Same reasoning as /jobs/[id]/estimate: withholds on MANAGE_BILLING in-page rather than a hard gate, because createInvoice/deletePayment/the QuickBooks push actions this tab calls are not independently guarded either. Reported as an issue for Diego's lane (billing/AIA).",
+  "/jobs/[id]/retainage":
+    "Same reasoning as /jobs/[id]/billing beside it: withholds on MANAGE_BILLING in-page — updateJobRetainageTerms/createRetainageRelease/deleteRetainageRelease are not independently guarded. Reported as an issue for Diego's lane (retainage).",
   "/jobs": "A bare redirect to /dashboard. Guarding a redirect claims a protection it redirects straight past.",
   "/estimating": "A bare redirect to /dashboard?status=ESTIMATE. Same reason as /jobs.",
   "/settings/export":

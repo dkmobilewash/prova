@@ -78,7 +78,13 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
     "One invoice's snapshot, fed to calculatePaymentReliability so a retainage-bearing invoice can settle. Per-invoice by necessity; never a total. Arrived with #288.",
   "lib/today-dashboard.ts":
     "TWO per-invoice reads, both arrived with #288: the receivables tile nets it out of `outstanding` via arBalanceFor, and the GC reliability column passes it to calculatePaymentReliability. The COMPANY-WIDE retainage figure on this page is still loadRetainageHeld and is asserted below — these are per-invoice rows, never summed into a total here.",
-  "app/(app)/jobs/[id]/page.tsx": "One job's own retainage panel.",
+  // jobs/[id]/page.tsx was one file until 2026-09-20, when the job page
+  // was rebuilt into eight routes (app/(app)/jobs/[id]/(tabs)/…, see that
+  // layout's own doc comment) so each section could fetch only its own
+  // data. Its retainage reads split into three, all per-job:
+  "app/(app)/jobs/[id]/(tabs)/retainage/page.tsx": "The Retainage tab itself — same calculateRetainageSummary call the old page made, now with its own targeted query.",
+  "app/(app)/jobs/[id]/(tabs)/billing/page.tsx": "Per-invoice retainageWithheld, printed on each invoice row in the Billing tab — never summed into a total here.",
+  "lib/jobs/job-summary.ts": "The always-visible summary header's retainage-held figure — the same calculateRetainageSummary call, over a leaner per-job query shared by every tab.",
   "lib/pay-application-query.ts":
     "Assembles one pay application. PR #156 moved this out of the page so the G702 arithmetic could be tested without a database; the page now renders what this returns.",
   "lib/pay-application-query.test.ts": "Pins that assembly, including the removed-line close-out.",
