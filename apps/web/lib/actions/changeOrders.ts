@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { viewerToday } from "@/lib/viewerToday";
 import { prisma } from "@prova/db";
 import { reopenBlockers } from "@/lib/change-order";
@@ -183,6 +184,32 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
   }
 }
 
+/**
+ * A change order moves the contract value, so every write here answers to
+ * VIEW_JOB_COSTS — the capability `/jobs/[id]/estimate`, the only page
+ * that reaches them, already withholds its whole body on. That page
+ * refuses a reader by rendering a sentence; it did nothing about these
+ * endpoints, which answer whoever posts to them. Issue #383.
+ *
+ * Thrown as an `InputError` rather than returned, because that is how
+ * every other expected "no" in this file travels: `runAction` turns it
+ * into `{ ok: false, error }` at the boundary, so the sentence reaches the
+ * person instead of being redacted the way a plain throw would be.
+ *
+ * ONE ACTION HERE IS DELIBERATELY NOT GATED — `draftChangeOrderFromDelay`,
+ * and the absence is a decision rather than an omission. Its only door is
+ * `/jobs/[id]/field-reports`, which withholds nothing from anyone: the
+ * foreman who logs the delay is the person who should turn it into a
+ * draft, and FIELD holds no VIEW_JOB_COSTS. It creates a DRAFT and
+ * nothing more — by this file's own rule nothing before APPROVED touches
+ * JobLineItem, so no contract value moves — and every step that would
+ * move one (propose, submit, approve, revise) is gated above. Gating the
+ * draft would delete the feature for exactly the people it was built for
+ * while protecting a number it cannot change.
+ */
+const JOB_COSTS_ONLY =
+  "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
+
 /* ------------------------------------------------------------------ */
 /* Building a draft                                                    */
 /* ------------------------------------------------------------------ */
@@ -193,7 +220,9 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
  */
 export async function createChangeOrder(jobId: string, formData: FormData): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const job = await requireJob(jobId, company.id);
     requireEditableViaChangeOrder(job);
 
@@ -299,7 +328,9 @@ export async function proposeAddedScope(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
     assertDraft(changeOrder);
 
@@ -334,7 +365,9 @@ export async function proposeLineItemChange(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
     assertDraft(changeOrder);
 
@@ -372,7 +405,9 @@ export async function proposeScopeRemoval(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
     assertDraft(changeOrder);
 
@@ -397,7 +432,9 @@ export async function proposeScopeRemoval(
 
 export async function removeProposal(proposalId: string): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const proposal = await prisma.changeOrderProposal.findUnique({
       where: { id: proposalId },
       include: { changeOrder: { include: { job: true } } },
@@ -416,7 +453,9 @@ export async function removeProposal(proposalId: string): Promise<ActionResult> 
  * voidChangeOrder. */
 export async function deleteChangeOrderDraft(changeOrderId: string): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
     assertDraft(changeOrder);
 
@@ -435,7 +474,9 @@ export async function submitChangeOrder(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
     assertDraft(changeOrder);
 
@@ -465,7 +506,9 @@ export async function approveChangeOrder(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
 
     if (changeOrder.status !== "SUBMITTED") {
@@ -609,7 +652,9 @@ export async function rejectChangeOrder(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
 
     if (changeOrder.status !== "SUBMITTED") {
@@ -646,7 +691,9 @@ export async function voidChangeOrder(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
 
     if (changeOrder.status !== "DRAFT" && changeOrder.status !== "SUBMITTED") {
@@ -686,7 +733,9 @@ export async function reopenChangeOrder(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
 
     if (changeOrder.status !== "APPROVED") {
@@ -761,7 +810,9 @@ export async function reviseChangeOrder(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const original = await assertChangeOrder(changeOrderId, company.id);
 
     if (original.status !== "APPROVED") {

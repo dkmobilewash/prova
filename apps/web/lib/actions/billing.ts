@@ -7,6 +7,7 @@ import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uplo
 import { isSignatureLinkDead } from "@/lib/access-tokens";
 import { linkToken } from "@/lib/tokens";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { viewerToday } from "@/lib/viewerToday";
 import { money as formatMoney } from "@/lib/money";
 import { prisma, Prisma } from "@prova/db";
@@ -39,6 +40,29 @@ import {
   nullableDecimalFromForm,
   type ActionResultWith,
 } from "./shared";
+
+/**
+ * The refusals, in the house voice (lib/actions/payrollRegister.ts): the
+ * person reading this has done nothing wrong, so it says what the thing is
+ * and who can change it rather than "forbidden".
+ *
+ * Two of them, because the money on a job is withheld by two different
+ * capabilities and the actions here answer to both. `/jobs/[id]/billing`
+ * and `/jobs/[id]/retainage` withhold their whole tab on MANAGE_BILLING;
+ * `/jobs/[id]/estimate` withholds on VIEW_JOB_COSTS. Each action asserts
+ * the capability of the tab it is posted from — issue #383.
+ *
+ * WHY THE GUARD IS NEEDED AT ALL, since the tabs already withhold: a tab
+ * that renders a sentence instead of a form stops a READER. A Server
+ * Action is a separate HTTP endpoint with a stable id and it answers
+ * whoever posts to it, so the withheld tab was never a boundary for the
+ * WRITER. lib/action-capability-guards.test.ts could not see this until
+ * it learned to read a soft gate, and reported green over all of it.
+ */
+const BILLING_ONLY =
+  "Invoices and payments aren't part of your job function. The account owner sets who sees what, on the Team page.";
+const JOB_COSTS_ONLY =
+  "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 /**
  * Creates a client-signing link for a job's contract. Only while ESTIMATE —
@@ -305,7 +329,15 @@ export async function revokeClientPortalAccess(contactId: string) {
  * refusal, as it always did, because the job page posts to it as a plain
  * form action with no place to render a returned sentence. */
 export async function createInvoice(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // Throws rather than returning a failure, matching this action's own
+  // existing contract (`throw new Error(result.error)` below): the tab
+  // posts to it as a plain form action with nowhere to render a returned
+  // sentence. Production redacts the message, so what a refused person
+  // sees is the error boundary — but the invoice is not created, which is
+  // the property that matters here.
+  if (!can(context, "MANAGE_BILLING")) throw new Error(BILLING_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   const description = String(formData.get("description") ?? "").trim();
@@ -338,7 +370,9 @@ export async function createInvoice(jobId: string, formData: FormData) {
  * throws shows the user an opaque digest while the $140,000 application
  * they were trying to submit is simply not created, with no explanation. */
 export async function submitPayApplication(jobId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
 
   if (job.status === "ESTIMATE") {
@@ -484,7 +518,9 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
 /** Sets this job's retainage rate and expected substantial-completion
  * date. Only affects future invoices -- see Invoice.retainageWithheld. */
 export async function updateJobRetainageTerms(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) throw new Error(BILLING_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   const retainagePercent = nullableDecimalFromForm(formData, "retainagePercent");
@@ -511,7 +547,9 @@ async function assertInvoiceInCompany(invoiceId: string, companyId: string) {
  * schema.prisma for why this is a plain field rather than derived from
  * payment totals. */
 export async function updateInvoiceStatus(jobId: string, invoiceId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) throw new Error(BILLING_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
   const invoice = await assertInvoiceInCompany(invoiceId, company.id);
   if (invoice.jobId !== jobId) {
@@ -542,7 +580,12 @@ export async function updateInvoiceStatus(jobId: string, invoiceId: string, form
  * where the repo says otherwise. Cash actually received is derived from
  * `amount - feeAmount` at read time and never stored. */
 export async function logPayment(jobId: string, invoiceId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // The Ask command `log_payment` calls straight into this action and
+  // already declares MANAGE_BILLING (lib/ask/commands/billing.ts), so this
+  // makes the two agree rather than adding a rule to one of them.
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
   const invoice = await assertInvoiceInCompany(invoiceId, company.id);
   if (invoice.jobId !== jobId) {
@@ -641,7 +684,9 @@ export async function logPayment(jobId: string, invoiceId: string, formData: For
 
 /** Removes a mistaken payment entry. */
 export async function deletePayment(jobId: string, paymentId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) throw new Error(BILLING_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   const payment = await prisma.payment.findUnique({
@@ -669,7 +714,9 @@ export async function deletePayment(jobId: string, paymentId: string) {
  * the form still accepts a release above the balance held (the core says
  * why that is deliberate) and never compares against a balance it showed. */
 export async function createRetainageRelease(jobId: string, formData: FormData) {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) throw new Error(BILLING_ONLY);
+  const { company, ...user } = context;
 
   const amount = decimalFromForm(formData, "amount");
   const releasedRaw = String(formData.get("releasedAt") ?? "").trim();
@@ -695,7 +742,9 @@ export async function createRetainageRelease(jobId: string, formData: FormData) 
 }
 
 export async function deleteRetainageRelease(jobId: string, releaseId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) throw new Error(BILLING_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   const release = await prisma.retainageRelease.findUnique({ where: { id: releaseId } });
@@ -784,7 +833,15 @@ export async function testQuickBooksConnection(): Promise<QuickBooksCompanyInfo>
 export async function generateJobWipNarrative(
   jobId: string,
 ): Promise<ActionResultWith<string>> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // VIEW_JOB_COSTS, not MANAGE_BILLING: this button lives on the Estimate
+  // tab, which withholds on VIEW_JOB_COSTS, and the narrative it writes IS
+  // the job's cost and margin position in prose.
+  // Written out rather than through `actionFail`, whose return type is
+  // `ActionResult` and does not narrow to this action's
+  // `ActionResultWith<string>`.
+  if (!can(context, "VIEW_JOB_COSTS")) return { ok: false as const, error: JOB_COSTS_ONLY };
+  const { company, ...user } = context;
   const job = await assertJobInCompany(jobId, company.id);
 
   const lineItems = await prisma.jobLineItem.findMany({
