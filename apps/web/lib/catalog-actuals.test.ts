@@ -699,6 +699,54 @@ describe("a line that counts its labor twice is not evidence (#287 review)", () 
     expect(result.actualUnitCost).toBeNull();
   });
 
+  it("counts an allowance-only line as costed — dollars, not hours, again", () => {
+    // THE SAME WORD, TWENTY LINES UP. `hasAnyCost` decided "is there labor
+    // here?" by asking about HOURS, while `hasAmbiguousLaborCost` had just
+    // been corrected to ask about DOLLARS.
+    //
+    // A per-diem or travel day is a TimeEntry with no hours on it, so a line
+    // whose only labor is allowance money and which has no CostEntry rows
+    // read as having no cost at all. It did not merely drop out of the
+    // sample — it never entered `costedAnywhere`, so it reached none of the
+    // three exclusion counts either and NOTHING ON SCREEN said a word. That
+    // is exactly the silent disappearance `hasAnyCost`'s own docstring warns
+    // about.
+    const allowanceOnly = selfPerformedLine({
+      quantity: 1000,
+      costEntryTotal: 0,
+      costEntryCount: 0,
+      laborCost: 900,
+      laborHours: 0,
+    });
+    const result = catalogActuals([allowanceOnly, allowanceOnly], 5);
+
+    expect(result.linesWithCosts).toBe(2);
+    expect(result.actualUnitCost).toBeCloseTo(0.9, 10);
+    expect(result.laborCost).toBe(1800);
+  });
+
+  it("still sees a line whose hours could not be priced, so it can be REPORTED as excluded", () => {
+    // The regression guard on the fix above, and the reason it is an OR
+    // rather than a swap. An unpriced line carries hours and NO dollars, so
+    // a `hasAnyCost` rewritten to ask only about dollars would drop it out of
+    // `costedAnywhere` — and a line that never enters cannot be counted as
+    // excluded. The caveat this branch added would silently go to zero while
+    // looking like there was nothing to report.
+    const unpricedOnly = selfPerformedLine({
+      quantity: 1000,
+      costEntryTotal: 0,
+      costEntryCount: 0,
+      laborCost: 0,
+      laborHours: 40,
+      unpricedLaborHours: 40,
+    });
+    const result = catalogActuals([unpricedOnly, unpricedOnly], 5);
+
+    expect(result.linesExcludedUnpricedHours).toBe(2);
+    expect(result.linesWithCosts).toBe(0);
+    expect(result.actualUnitCost).toBeNull();
+  });
+
   it("reports every costed line under exactly one heading", () => {
     const result = catalogActuals(
       [

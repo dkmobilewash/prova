@@ -115,3 +115,37 @@ deleted the census assertion under test, which no test can catch by
 construction. The real coverage for that rule is the production-code pair —
 removing `category: true` from the page's query and from the write action's —
 and both were caught.
+
+**Round three, and it was the same word twenty lines up.** Diego found
+`hasAnyCost` still deciding "is there labor here?" by asking about HOURS,
+while `hasAmbiguousLaborCost` had just been corrected to ask about DOLLARS —
+two functions in one file disagreeing about what counts as labor. A line whose
+only labor is per-diem or allowance money, with no CostEntry rows, read as
+having no cost at all. Worse than excluded: it never entered `costedAnywhere`,
+so it reached none of the three exclusion counts either and nothing on screen
+said a word — the exact silent disappearance that function's own docstring
+warns about.
+
+**The fix is an OR, not a swap, and that distinction is itself tested.** A
+straight hours-to-dollars swap would have broken the other half: an unpriced
+line carries hours and no dollars, so dropping the hours clause would take it
+out of `costedAnywhere`, and a line that never enters cannot be counted as
+excluded. `linesExcludedUnpricedHours` would have quietly gone to zero while
+looking like there was nothing to report. Both clauses are load-bearing and
+each has its own test; mutation P2 is the naive swap and it goes red on the
+regression guard.
+
+**The predicted third copy does not exist, and that is a result rather than a
+shrug.** Every remaining hours predicate in the app was read: `isFullyPriced`,
+`laborHourCoverage` in wip.ts, the phase-code rollup's accumulation and its two
+page renders, the union-compliance and apprentice-ratio checks, and
+`fringe-remittance`'s fully-uncomputed row test. All of them are genuinely
+asking about HOURS, and `laborHourCoverage` is documented as an hours ratio on
+purpose — the unpriced dollars are precisely what nobody can compute.
+
+One ADJACENT finding, not fixed here and filed instead: Ask's `labor_cost`
+handler builds its own `burdenedLaborCost` and never adds per diem or travel
+pay, so it will quote a lower labor figure than /jobs/[id] shows for the same
+job. Defensible on the word "burdened" and a real disagreement between
+surfaces either way; it is a judgment call in the AI lane, so it is an issue
+rather than a silent edit inside a PR already under review.

@@ -121,9 +121,29 @@ export function isFinishedForActuals(line: CatalogSourcedLine): boolean {
  * answer changed with #287 and a caller that still answered it the old way
  * (cost entries only) would silently drop every self-performed line out of
  * the sample — the jobs whose costs this loop most needs to learn from.
+ *
+ * THREE CLAUSES, AND IT IS AN OR RATHER THAN A SWAP. This asked about hours
+ * alone for the labor half, which made it the second place in this file to
+ * use HOURS as the proxy for "is there labor here?" when the question is
+ * DOLLARS — the same defect as the first draft of `hasAmbiguousLaborCost`
+ * below, twenty lines apart, found in review. A per-diem or travel day is a
+ * TimeEntry with no hours on it, so a line whose only labor is allowance
+ * money and which carries no CostEntry rows read as having no cost at all.
+ *
+ * That was worse than being excluded. A line that never enters
+ * `costedAnywhere` reaches none of the three exclusion counts either, so it
+ * vanished with nothing on screen to say so — the exact silent disappearance
+ * the paragraph above warns about.
+ *
+ * The hours clause STAYS, and that is the half a straight swap would have
+ * broken: an unpriced line carries hours and no dollars, so dropping it here
+ * would take it out of `costedAnywhere` — and a line that never enters cannot
+ * be counted as excluded. `linesExcludedUnpricedHours` would have quietly
+ * gone to zero while looking like there was nothing to report. Both clauses
+ * are load-bearing and each has its own test.
  */
 export function hasAnyCost(line: CatalogSourcedLine): boolean {
-  return line.costEntryCount > 0 || line.laborHours > 0;
+  return line.costEntryCount > 0 || line.laborHours > 0 || line.laborCost > 0;
 }
 
 /** Whether every hour on this line could be priced. A line with hours no
