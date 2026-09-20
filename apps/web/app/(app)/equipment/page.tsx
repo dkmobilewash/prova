@@ -12,6 +12,7 @@ import {
   utilisation,
 } from "@/components/equipmentDeployment";
 import { toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
 
 export const dynamic = "force-dynamic";
 
@@ -47,9 +48,15 @@ export default async function EquipmentPage() {
   // placeholder name made every picker seven identical rows.
   const jobOptions = jobs.map(toJobOption);
 
-  // Dates are stored and rendered at UTC midnight, so "today" is the UTC
-  // date. The user's own calendar date is only ever a form default.
-  const today = new Date().toISOString().slice(0, 10);
+  // The VIEWER'S calendar day, never the server's UTC clock. The stored
+  // dates are plain calendar days ("went out on the 5th"), and the send-out
+  // form below defaults to localToday() — the viewer's own day. Judging
+  // those against the server's UTC day meant that for a few hours each
+  // evening (west of UTC) a machine dispatched minutes ago read "out 1 day",
+  // and east of UTC a machine already gone read "due out today". Issue #173,
+  // the same producer/consumer clock split as #155: the day the page judges
+  // against must be the day the form offered.
+  const today = await viewerToday();
   const windowStart = new Date(Date.parse(`${today}T00:00:00.000Z`) - WINDOW_DAYS * 86_400_000)
     .toISOString()
     .slice(0, 10);
