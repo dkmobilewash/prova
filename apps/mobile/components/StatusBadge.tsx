@@ -2,8 +2,10 @@ import { StyleSheet, Text, View } from "react-native";
 import { colors, typography } from "@/lib/theme";
 
 /**
- * Job status (and integration state) as a tag — a light ground under a dark
- * saturated ink, so the meaning survives on a sunlit white canvas.
+ * Job status (and integration state) as a tag — a dark ground under a light
+ * ink, the same pairs the web uses, so a chip means the same thing on both.
+ * `CONTRACTED` is the one that keeps a light ground: the brand yellow fill
+ * with dark ink, which is the web's "In progress" chip.
  */
 const STYLES: Record<string, { bg: string; ink: string }> = {
   ESTIMATE: { bg: colors.tagSlate, ink: colors.tagSlateInk },
