@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:db": "vitest run --config vitest.db.config.mts",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "ask:eval": "vitest run --config vitest.eval.config.mts"
   },
   "dependencies": {
@@ -24,7 +25,10 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@clerk/backend": "2.33.6",
+    "@clerk/testing": "2.2.36",
     "@eslint/eslintrc": "^3.2.0",
+    "@playwright/test": "1.63.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
