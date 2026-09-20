@@ -264,3 +264,38 @@ export type PunchListItem = {
    * fix" prompt is asking about. */
   photoCount: number;
 };
+
+export type DrawingRevisionRow = {
+  id: string;
+  label: string;
+  issuedOn: string;
+  receivedOn: string | null;
+  description: string | null;
+  fileUrl: string | null;
+  fileName: string | null;
+};
+
+export type DrawingSetRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  revisions: DrawingRevisionRow[];
+  /** The revision that governs — latest ISSUED, received or not. */
+  currentRevisionId: string | null;
+  /** …and it has not reached site. The state worth carrying on a phone:
+   * the crew is building from the one before it. */
+  currentNotReceived: boolean;
+  latestReceivedRevisionId: string | null;
+};
+
+export type ScheduleRow = {
+  id: string;
+  workDate: string;
+  workerName: string;
+  workerKind: "user" | "crew";
+  workerId: string;
+  craftLabel: string | null;
+  /** Null for a day that has not happened yet — where `false` would read
+   * as an accusation rather than a fact. */
+  hoursLogged: boolean | null;
+};

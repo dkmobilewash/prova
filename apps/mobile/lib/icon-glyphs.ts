@@ -32,6 +32,8 @@ export const ICON_GLYPHS = {
   materials: ["cube-outline", "cube"],
   punch: ["checkbox-outline", "checkbox"],
   ticket: ["receipt-outline", "receipt"],
+  drawings: ["map-outline", "map"],
+  schedule: ["calendar-outline", "calendar"],
 
   /** The tick inside a checkbox. Both halves are the same glyph: it is
    * already inside a filled box, so a second weight would say nothing. */

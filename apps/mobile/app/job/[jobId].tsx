@@ -17,6 +17,8 @@ const FEATURES = [
   { icon: "materials", title: "Materials", subtitle: "Vendors and orders", path: "materials" },
   { icon: "punch", title: "Punch list", subtitle: "What's left to fix", path: "punch-list" },
   { icon: "ticket", title: "T&M ticket", subtitle: "Signed time & materials", path: "ticket" },
+  { icon: "drawings", title: "Drawings", subtitle: "Which revision governs", path: "drawings" },
+  { icon: "schedule", title: "Schedule", subtitle: "Who's on, and who never logged", path: "schedule" },
 ] as const;
 
 /** The hub for one job: the job's name and status, then every field feature

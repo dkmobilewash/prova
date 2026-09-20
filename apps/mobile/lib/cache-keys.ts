@@ -22,6 +22,8 @@ export const cacheKeys = {
   materials: (jobId: string) => `materials.${jobId}`,
   safety: (jobId: string) => `safety.${jobId}`,
   tickets: (jobId: string) => `tickets.${jobId}`,
+  drawings: (jobId: string) => `drawings.${jobId}`,
+  schedule: (jobId: string) => `schedule.${jobId}`,
 } as const;
 
 /** The per-job sections the prefetch fills. `jobs` is not here: it is not
@@ -34,4 +36,6 @@ export const JOB_SECTION_KEYS = [
   cacheKeys.materials,
   cacheKeys.safety,
   cacheKeys.tickets,
+  cacheKeys.drawings,
+  cacheKeys.schedule,
 ] as const;

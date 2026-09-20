@@ -41,3 +41,29 @@ fetched four lists raw, so offline it rendered a day of zeros — "no
 photos today" is a claim, and it was wrong every time the fetch failed —
 and the punch list was still on its own older copy of the policy rather
 than the shared one.
+
+**Drawings and the schedule reach the phone at all**, which they never had
+— `DrawingSet`/`DrawingRevision` and `CrewScheduleDay` were web-only, with
+no `/api/v1` route between them and a foreman.
+
+Drawings answer the question that is actually asked in front of a wall:
+**is what I am holding still current, and do we even have the current
+one?** The governing revision is the latest ISSUED, received or not, and
+when those differ the set says so and names what the crew is actually
+working to. Derived on read, never stored — a "current" flag somebody
+forgot to move would be precisely the failure it claims to prevent.
+
+**There are no SHEETS in this product.** The teardown asks for a per-sheet
+download badge; a set here has revisions, and a revision may carry one
+file. So keeping a drawing is per REVISION, and it is deliberate rather
+than automatic: rows are cached behind your back because they are cheap,
+and a drawing file is megabytes on somebody's cellular plan. A held file
+says so on its row, opens with no signal at all, and the screen totals
+what it is using.
+
+The schedule carries the plan and the gap in one list. `CrewScheduleDay`
+has no `attended` column on purpose, so "worked it" is derived from
+whether hours exist — a planned day with no hours against it IS the
+missing timecard, and it now shows up on the morning it still costs
+nothing to chase. A future day says nothing, because `false` there would
+read as an accusation.

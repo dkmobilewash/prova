@@ -36,6 +36,11 @@ export async function prefetchJob(jobId: string, token: string): Promise<number>
       incidents: await api.listIncidents(jobId, token),
     })],
     [cacheKeys.tickets(jobId), () => api.listTmTickets(jobId, token)],
+    // Drawings and the schedule are READ-ONLY and are exactly what a
+    // phone is opened for once signal has gone: which revision governs,
+    // and who is on site tomorrow.
+    [cacheKeys.drawings(jobId), () => api.listDrawings(jobId, token)],
+    [cacheKeys.schedule(jobId), () => api.listSchedule(jobId, token)],
   ];
 
   let filled = 0;
@@ -63,4 +68,6 @@ export const PREFETCHED_KEYS = [
   cacheKeys.materials,
   cacheKeys.safety,
   cacheKeys.tickets,
+  cacheKeys.drawings,
+  cacheKeys.schedule,
 ] as const;
