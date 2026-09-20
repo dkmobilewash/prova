@@ -15,9 +15,10 @@ const ACCENT_BAR: Record<Accent, string> = {
 };
 
 /**
- * A surface — white on white, hairline border, no shadow. `accent` draws a
- * 4px bar down the left edge, for summary tiles only (a colour on
- * everything is a colour that says nothing).
+ * A surface — #1a1a1a on the #0f0f0f canvas, hairline border, no shadow,
+ * exactly as the web draws a card. `accent` draws a 4px bar down the left
+ * edge, for summary tiles only (a colour on everything is a colour that
+ * says nothing).
  */
 export function Card({
   accent,
