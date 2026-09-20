@@ -55,7 +55,45 @@ that matches nothing fails loudly instead of certifying an empty question.
 that stopped being true. Corrected here rather than in a docs-only PR,
 because the code it describes is in this change.
 
-26 mutations run, 26 verdicts returned. 23 were caught first time; **3
+**Added after Diego's review, and the review question was the better one.**
+He accepted that the ledger double-count is correct on /jobs/[id] and asked a
+narrower question: should a line carrying BOTH priced hours and a
+LABOR-category cost entry count at face value in what the CATALOG *learns*?
+
+No — it is excluded, with its own named count, and here is the argument. The
+ledger rule exists because nothing can tell a duplicate from two real costs,
+and refusing to show money somebody logged would be worse. That reasoning is
+about DISPLAY. The catalog is not a display; it is a sample the app learns a
+rate from and then writes into the number that prices the next bid. The
+question stops being "is this money real?" and becomes "is this line legible
+as a unit cost?" — and a line where the same labor may appear twice is not.
+
+Which makes it the third member of a family this file already had, not a new
+rule: an unfinished job's cost is real but is not a unit cost; unpriced hours
+are real hours but are not dollars; ambiguous labor is real money that is not
+a legible rate. All three are now excluded and NAMED on screen.
+
+The asymmetry that settles it is the direction of the error. Exclusion is
+visible and recoverable — the badge says why, and recategorising the entry
+fixes it. A doubled figure banked into the catalog is silent, compounds on
+every reprice, and biases bids HIGH, which is the opposite direction from the
+#287 bug this branch shipped with. Losing money on work you won at least shows
+up in job costing; losing work you never won leaves no trace at all, so nobody
+goes looking for a cause.
+
+Deliberately narrow: neither half alone triggers it. A contractor who tracks
+labor purely as cost entries is perfectly legible, and so is one who only logs
+hours. And the predicate is written in DOLLARS (`laborCost > 0`), not hours —
+a mutation swapping it to `laborHours > 0` survived the first battery, and the
+case that kills it is a per-diem-only day: a TimeEntry with no hours still
+carries allowance money, so a line can hold labor dollars and zero labor hours.
+
+The stale-doc half of the review generalised too. Diego caught
+`packages/db/prisma/schema/jobs.prisma` still carrying the sentence corrected
+in ARCHITECTURE.md. Grepping for it found a THIRD copy at ARCHITECTURE.md:81,
+which nobody had named. All three now say the same true thing.
+
+26 mutations run in the first pass, 26 verdicts returned. 23 were caught first time; **3
 survived, and they were the most useful result of the exercise.** Two were
 one bug in my own census — it looked for the string `TIME_ENTRY_COST_SELECT`
 anywhere in a file, and deleting the `timeEntries:` line from a query leaves
@@ -70,3 +108,10 @@ NOT VERIFIED, and it is the gap that matters: nothing here was clicked against
 a database with real hours on it. There is no Postgres in this session, so the
 dbtest suite is unrun on my side — CI runs it. The click-list in the PR is
 what still has to be done by hand.
+
+A further 14 mutations for the review round, 14 verdicts returned, 13 caught.
+The one that survived (N10) was an invalid mutation rather than a gap: it
+deleted the census assertion under test, which no test can catch by
+construction. The real coverage for that rule is the production-code pair —
+removing `category: true` from the page's query and from the write action's —
+and both were caught.

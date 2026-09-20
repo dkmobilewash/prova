@@ -42,6 +42,21 @@ export type CatalogSourcedLine = {
    * that two callers cannot answer it differently. */
   costEntryCount: number;
   /**
+   * The LABOR-category slice of `costEntryTotal`.
+   *
+   * `CostCategory` has a LABOR member, so a contractor can record crew cost
+   * as a cost entry AND log the same crew's hours — which this repo now
+   * actively encourages, between the QuickBooks import, the spreadsheet
+   * importer's accounting presets and the payroll-register import. That is
+   * the normal configuration, not an edge case.
+   *
+   * Kept apart from the total so `hasAmbiguousLaborCost` below can ask
+   * whether this line's labor may be in the figure twice. Nothing subtracts
+   * it: see that predicate for why the answer is to stop LEARNING from the
+   * line rather than to guess which half is the duplicate.
+   */
+  laborCostEntryTotal: number;
+  /**
    * Burdened labor booked to THIS line — base wage plus fringes over the
    * TimeEntry rows that name it, from lib/labor-job-cost.ts, which is the
    * same arithmetic /jobs/[id] and the WH-347 use.
@@ -117,6 +132,53 @@ export function isFullyPriced(line: CatalogSourcedLine): boolean {
   return line.unpricedLaborHours === 0;
 }
 
+/** The `CostCategory` member that overlaps with logged hours. A string rather
+ * than the Prisma enum so this file stays pure and testable without the
+ * client; `catalogSourcedLine` is the only thing that maps a row onto it. */
+export const LABOR_COST_CATEGORY = "LABOR";
+
+/**
+ * Whether this line's labor might be counted twice.
+ *
+ * THE LEDGER RULE DOES NOT TRANSFER HERE. `lineItemCostToDate` adds logged
+ * hours to manual cost entries and lets a duplicate stand, deliberately —
+ * on /jobs/[id] that is a ledger, nothing can tell a duplicate from two real
+ * costs, and hiding money somebody entered would be worse than showing it
+ * twice.
+ *
+ * The catalog is not a ledger. It is a SAMPLE the app learns a unit cost
+ * from and then WRITES into `defaultBudgetedUnitCost`, which prices every
+ * future bid and grounds every AI draft. The question stops being "is this
+ * money real?" and becomes "is this line interpretable as a unit cost?" — and
+ * a line carrying both priced hours and LABOR-category cost entries is not.
+ * It is either two genuine labor costs (own crew plus a labor-only sub
+ * invoice) or the same labor entered twice, and nothing in the schema
+ * distinguishes them.
+ *
+ * So this is the third member of a family this file already has, not a new
+ * rule: an unfinished job's cost is real but is not a unit cost; unpriced
+ * hours are real hours but are not dollars; ambiguous labor is real money
+ * that is not a legible rate. All three are excluded and NAMED.
+ *
+ * The asymmetry that settles it. Excluding is visible and recoverable — the
+ * badge says why, and recategorising the entry or finishing another job
+ * fixes it. A doubled figure written into the catalog is silent, compounds on
+ * every reprice, and biases bids HIGH, in the opposite direction from the
+ * #287 bug this shipped with. Losing money on work you won is at least
+ * visible in the job costing; losing work you never won leaves no trace at
+ * all, so nobody goes looking for the cause.
+ *
+ * Deliberately NOT triggered by either half alone. A contractor who tracks
+ * labor purely as cost entries is perfectly legible, and so is one who only
+ * logs hours; it is the OVERLAP that cannot be read. `laborCost > 0` rather
+ * than `laborHours > 0` for the same reason: hours no schedule could price
+ * contributed no dollars, so there is nothing to double — and that line is
+ * already excluded by `isFullyPriced` above.
+ */
+export function hasAmbiguousLaborCost(line: CatalogSourcedLine): boolean {
+  return line.laborCostEntryTotal > 0 && line.laborCost > 0;
+}
+
 /** Everything booked against the line: manual cost entries plus the crew's
  * burdened time. ADDED, never substituted — a company that logs hours AND
  * types a manual "labor" cost entry double-counts, and that is correct here:
@@ -152,6 +214,14 @@ export type CatalogActuals = {
    * craft" and is fixable this afternoon.
    */
   linesExcludedUnpricedHours: number;
+  /**
+   * Costed, finished, fully-priced lines left out because their labor may be
+   * in the figure twice — see `hasAmbiguousLaborCost`.
+   *
+   * The third of three exclusions, and the one whose fix is quickest: change
+   * the cost entry's category, or delete it if the hours already cover it.
+   */
+  linesExcludedDoubleCountedLabor: number;
   /** Total cost across those lines, over total quantity. Null when nothing
    * has been costed, or when the quantities sum to zero. */
   actualUnitCost: number | null;
@@ -197,9 +267,17 @@ export const CATALOG_MIN_SAMPLE = 2;
  * rather than a saving. (`lineItemCostToDate`, which serves the WIP surfaces,
  * takes the job's whole list because those callers already hold it.)
  */
+/** A CostEntry as the catalog needs it: the amount, and the CATEGORY, which
+ * is what makes double-counted labor visible at all. `CostEntryCostRow` in
+ * lib/labor-job-cost.ts deliberately stays amount-only — the WIP ledger does
+ * not ask this question. */
+export interface CatalogCostEntryRow extends CostEntryCostRow {
+  category: string;
+}
+
 export interface CatalogLineRow {
   quantity: DecimalLike;
-  costEntries: readonly CostEntryCostRow[];
+  costEntries: readonly CatalogCostEntryRow[];
   timeEntries: readonly TimeEntryCostRow[];
   job: { status: string };
 }
@@ -222,6 +300,9 @@ export function catalogSourcedLine(
     quantity: Number(row.quantity),
     costEntryTotal: row.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
     costEntryCount: row.costEntries.length,
+    laborCostEntryTotal: row.costEntries
+      .filter((cost) => cost.category === LABOR_COST_CATEGORY)
+      .reduce((sum, cost) => sum + Number(cost.amount), 0),
     laborCost: labor.total,
     laborHours: labor.pricedHours + labor.unpricedHours,
     unpricedLaborHours: labor.unpricedHours,
@@ -244,7 +325,12 @@ export function catalogActuals(
   // #287: and only a line whose hours could all be PRICED. An unfinished job
   // and unpriced hours are filtered in that order, and reported as two
   // separate counts, so a line that is both is named once rather than twice.
-  const costed = finished.filter(isFullyPriced);
+  const priced = finished.filter(isFullyPriced);
+  // #287 review: and only a line whose labor is legible. Filtered LAST and
+  // counted against the previous stage, so a line that is several of these at
+  // once is reported under exactly one heading rather than inflating every
+  // caveat on screen.
+  const costed = priced.filter((line) => !hasAmbiguousLaborCost(line));
   const totalQuantity = costed.reduce((sum, line) => sum + line.quantity, 0);
   const totalCost = costed.reduce((sum, line) => sum + lineTotalCost(line), 0);
   const laborCost = costed.reduce((sum, line) => sum + line.laborCost, 0);
@@ -263,7 +349,8 @@ export function catalogActuals(
   return {
     linesWithCosts: costed.length,
     linesExcludedUnfinished: costedAnywhere.length - finished.length,
-    linesExcludedUnpricedHours: finished.length - costed.length,
+    linesExcludedUnpricedHours: finished.length - priced.length,
+    linesExcludedDoubleCountedLabor: priced.length - costed.length,
     actualUnitCost,
     laborCost,
     costEntryTotal,
@@ -320,6 +407,7 @@ export function repriceDecision(
   if (actuals.actualUnitCost === null) {
     const unfinished = actuals.linesExcludedUnfinished;
     const unpriced = actuals.linesExcludedUnpricedHours;
+    const doubled = actuals.linesExcludedDoubleCountedLabor;
 
     // Unpriced hours are named FIRST when both apply, because they are the
     // only one of the two the reader can act on today. "No finished job has
@@ -331,6 +419,15 @@ export function repriceDecision(
         error: `Nothing to re-price from: ${unpriced} finished ${
           unpriced === 1 ? "line has hours" : "lines have hours"
         } with no wage rate behind them, so what the work cost isn't known. Add a fringe rate schedule covering the craft and dates those hours were worked, then try again.`,
+      };
+    }
+
+    if (doubled > 0) {
+      return {
+        ok: false,
+        error: `Nothing to re-price from: ${doubled} finished ${
+          doubled === 1 ? "line has" : "lines have"
+        } both logged hours and a cost entry categorised Labor, so the crew's time may be counted twice and what the work really cost isn't clear. Recategorise the cost entry, or remove it if the logged hours already cover that labor, then try again.`,
       };
     }
 

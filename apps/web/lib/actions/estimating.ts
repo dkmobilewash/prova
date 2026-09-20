@@ -309,7 +309,11 @@ export async function updateCatalogDefaultsFromActuals(entryId: string, formData
           where: { isDeleted: false },
           select: {
             quantity: true,
-            costEntries: { select: { amount: true } },
+            // `category` is load-bearing, not decoration: it is the only thing
+            // that can tell a LABOR cost entry sitting beside logged hours from
+            // a material one. Without it every line reads as unambiguous and
+            // `hasAmbiguousLaborCost` can never fire.
+            costEntries: { select: { amount: true, category: true } },
             // #287: the crew's hours are most of a self-performed line's
             // cost. Without this the figure written below is materials-only,
             // and since it can only ever be LOW, every click walks the

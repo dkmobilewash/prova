@@ -202,6 +202,19 @@ describe("the job-cost census", () => {
     expect(missing).toEqual([]);
   });
 
+  it("has every catalog caller select the cost-entry CATEGORY", () => {
+    // `hasAmbiguousLaborCost` compares `category` against "LABOR". A caller
+    // that calls catalogSourcedLine but never selects the column hands it
+    // `undefined` on every row, so the predicate is false everywhere and the
+    // guard silently never fires — a check answering a question nobody asked,
+    // which is the shape this whole file exists to prevent. Structural, so a
+    // mention in a comment or an import cannot satisfy it.
+    const missing = catalogCallers
+      .filter((f) => !/category\s*:\s*true/.test(f.code))
+      .map((f) => f.path);
+    expect(missing).toEqual([]);
+  });
+
   it("has every caller account for hours that name no line item", () => {
     // TimeEntry.lineItemId is nullable and the log form's line-item select
     // defaults to "No specific line", so a caller that only sums the

@@ -58,7 +58,11 @@ function ActualsLine({
   if (actuals.actualUnitCost === null) {
     return (
       <p className="mt-1 text-xs text-ink-muted">
-        {actuals.linesExcludedUnpricedHours > 0
+        {actuals.linesExcludedDoubleCountedLabor > 0
+          ? `${actuals.linesExcludedDoubleCountedLabor} finished ${
+              actuals.linesExcludedDoubleCountedLabor === 1 ? "line has" : "lines have"
+            } both logged hours and a cost entry categorised Labor, so that time may be counted twice and what the work cost isn't clear. Recategorise the cost entry, or remove it if the hours already cover that labor.`
+          : actuals.linesExcludedUnpricedHours > 0
           ? `${actuals.linesExcludedUnpricedHours} finished ${
               actuals.linesExcludedUnpricedHours === 1 ? "line has hours" : "lines have hours"
             } with no wage rate behind them, so what the work cost isn't known. Add a fringe rate schedule for that craft and dates to compare this entry's default against actuals.`
@@ -104,6 +108,18 @@ function ActualsLine({
           hours have no wage rate behind them.
         </p>
       )}
+      {/* The third exclusion, and the quickest to fix: the line has logged
+          hours AND a cost entry categorised Labor, so its labor may be in the
+          figure twice. Learning from it would bias this template HIGH, which
+          loses work silently — see hasAmbiguousLaborCost. */}
+      {actuals.linesExcludedDoubleCountedLabor > 0 && (
+        <p className="text-xs text-tag-amber-ink">
+          {actuals.linesExcludedDoubleCountedLabor} further finished{" "}
+          {actuals.linesExcludedDoubleCountedLabor === 1 ? "line is" : "lines are"} left out — they
+          have both logged hours and a cost entry categorised Labor, so that time may be counted
+          twice.
+        </p>
+      )}
       {actuals.isFlagged && (
         <form
           action={updateCatalogDefaultsFromActuals.bind(null, entry.id)}
@@ -146,7 +162,11 @@ export default async function CatalogPage() {
           where: { isDeleted: false },
           select: {
             quantity: true,
-            costEntries: { select: { amount: true } },
+            // `category` is load-bearing, not decoration: it is the only thing
+            // that can tell a LABOR cost entry sitting beside logged hours from
+            // a material one. Without it every line reads as unambiguous and
+            // `hasAmbiguousLaborCost` can never fire.
+            costEntries: { select: { amount: true, category: true } },
             // #287: on a self-performed line the crew's hours ARE the cost,
             // and a line with no cost entries at all was not merely
             // understated here — it dropped out of the sample entirely.

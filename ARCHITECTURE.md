@@ -77,12 +77,16 @@ A single `JobLineItem` row is simultaneously:
   life.
 - **A job-costing line** — actual cost vs. estimated cost is tracked via
   `CostEntry` rows that reference a `JobLineItem` (one per real expense —
-  a receipt, a labor entry), the same way `ChangeOrder` references it.
-  Actual cost is `SUM(costEntries.amount)`, computed, never stored as a
-  duplicate field on the line item. A single `actualCost` column was
-  considered and rejected: it can't tell you *what* it's made of, and a
-  contractor needs the breakdown (materials vs. labor vs. subcontractor),
-  not just a number.
+  a receipt, a subcontractor invoice), the same way `ChangeOrder`
+  references it, **plus** the burdened labor on the `TimeEntry` rows that
+  name the line. Both computed at read time, never stored as a duplicate
+  field. This bullet said actual cost was `SUM(costEntries.amount)` alone
+  until issue #287, which left it understated by most of a self-performed
+  job — see the `CostEntry` section below for the full rule. A single
+  `actualCost` column was considered and rejected, and the reason has only
+  got stronger: it can't tell you *what* it's made of, and a contractor
+  needs the breakdown (materials vs. labor vs. subcontractor), not just a
+  number.
 
 There is no transformation step where an "estimate" becomes a "contract"
 or a "budget." They were never different things.
