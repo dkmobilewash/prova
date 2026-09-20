@@ -2,21 +2,22 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useEffect } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { setCurrentJob } from "@/lib/current-job";
+import { Icon } from "@/components/Icon";
 import { Row } from "@/components/Row";
 import { StatusBadge } from "@/components/StatusBadge";
 import { colors, typography } from "@/lib/theme";
 
-// One row per field feature. Icons are emoji (the app's existing tab
-// language) so there is no icon asset to add and keep in sync.
+// One row per field feature. Icon names are the app's own vocabulary and
+// resolve in lib/icon-glyphs.ts — never a glyph name here.
 const FEATURES = [
-  { icon: "📋", title: "Field reports", subtitle: "Daily reports, queued offline", path: "reports" },
-  { icon: "📸", title: "Photos", subtitle: "Site photos and videos", path: "photos" },
-  { icon: "🦺", title: "Safety", subtitle: "Toolbox talks and incidents", path: "safety" },
-  { icon: "⏱️", title: "Time", subtitle: "Log the day's hours", path: "time" },
-  { icon: "📦", title: "Materials", subtitle: "Vendors and orders", path: "materials" },
-  { icon: "✅", title: "Punch list", subtitle: "What's left to fix", path: "punch-list" },
-  { icon: "📝", title: "T&M ticket", subtitle: "Signed time & materials", path: "ticket" },
-];
+  { icon: "report", title: "Field reports", subtitle: "Daily reports, queued offline", path: "reports" },
+  { icon: "photos", title: "Photos", subtitle: "Site photos and videos", path: "photos" },
+  { icon: "safety", title: "Safety", subtitle: "Toolbox talks and incidents", path: "safety" },
+  { icon: "time", title: "Time", subtitle: "Log the day's hours", path: "time" },
+  { icon: "materials", title: "Materials", subtitle: "Vendors and orders", path: "materials" },
+  { icon: "punch", title: "Punch list", subtitle: "What's left to fix", path: "punch-list" },
+  { icon: "ticket", title: "T&M ticket", subtitle: "Signed time & materials", path: "ticket" },
+] as const;
 
 /** The hub for one job: the job's name and status, then every field feature
  * as a large tappable row. The jobs list now lands here instead of dropping
@@ -49,7 +50,7 @@ export default function JobHubScreen() {
           <View key={feature.path}>
             {i > 0 ? <View style={styles.divider} /> : null}
             <Row
-              icon={<Text style={styles.icon}>{feature.icon}</Text>}
+              icon={<Icon name={feature.icon} />}
               title={feature.title}
               subtitle={feature.subtitle}
               onPress={() => router.push(`/${feature.path}/${jobId}`)}
@@ -78,5 +79,4 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   divider: { height: 1, backgroundColor: colors.lineRow, marginLeft: 56 },
-  icon: { fontSize: 22 },
 });

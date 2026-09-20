@@ -2,6 +2,7 @@ import { useAuth } from "@clerk/expo";
 import { Redirect, router } from "expo-router";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { CurrentJobBar } from "@/components/CurrentJobBar";
+import { Icon } from "@/components/Icon";
 import { Row } from "@/components/Row";
 import { colors, typography } from "@/lib/theme";
 import { useCurrentJob } from "@/lib/use-current-job";
@@ -15,14 +16,14 @@ import { useCurrentJob } from "@/lib/use-current-job";
  * when both hands have been busy for an hour.
  */
 const THINGS = [
-  { icon: "📋", title: "Field report", subtitle: "What got done today", path: "reports" },
-  { icon: "📸", title: "Photo", subtitle: "Stamped with time and place", path: "photos" },
-  { icon: "⏱️", title: "Time", subtitle: "Hours for the crew", path: "time" },
-  { icon: "✅", title: "Punch item", subtitle: "Something that needs fixing", path: "punch-list" },
-  { icon: "🦺", title: "Safety", subtitle: "Toolbox talk or an incident", path: "safety" },
-  { icon: "📦", title: "Material order", subtitle: "What to get on site", path: "materials" },
-  { icon: "📝", title: "T&M ticket", subtitle: "Signed time and materials", path: "ticket" },
-];
+  { icon: "report", title: "Field report", subtitle: "What got done today", path: "reports" },
+  { icon: "photos", title: "Photo", subtitle: "Stamped with time and place", path: "photos" },
+  { icon: "time", title: "Time", subtitle: "Hours for the crew", path: "time" },
+  { icon: "punch", title: "Punch item", subtitle: "Something that needs fixing", path: "punch-list" },
+  { icon: "safety", title: "Safety", subtitle: "Toolbox talk or an incident", path: "safety" },
+  { icon: "materials", title: "Material order", subtitle: "What to get on site", path: "materials" },
+  { icon: "ticket", title: "T&M ticket", subtitle: "Signed time and materials", path: "ticket" },
+] as const;
 
 export default function CreateScreen() {
   const { isLoaded, isSignedIn } = useAuth();
@@ -46,7 +47,7 @@ export default function CreateScreen() {
               <View key={thing.path}>
                 {i > 0 ? <View style={styles.divider} /> : null}
                 <Row
-                  icon={<Text style={styles.icon}>{thing.icon}</Text>}
+                  icon={<Icon name={thing.icon} />}
                   title={thing.title}
                   subtitle={thing.subtitle}
                   onPress={() => router.push(`/${thing.path}/${job.id}`)}
@@ -73,5 +74,4 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   divider: { height: 1, backgroundColor: colors.lineRow, marginLeft: 56 },
-  icon: { fontSize: 22 },
 });

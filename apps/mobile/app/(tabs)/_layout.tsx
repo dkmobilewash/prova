@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router";
-import { Text } from "react-native";
 import { usePushRegistration } from "@/lib/use-push-registration";
+import { Icon } from "@/components/Icon";
 import { colors, typography } from "@/lib/theme";
 
 /**
@@ -52,35 +52,35 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>🏠</Text>,
+          tabBarIcon: ({ color, focused }) => <Icon name="home" color={color} filled={focused} size={24} />,
         }}
       />
       <Tabs.Screen
         name="jobs"
         options={{
           title: "Jobs",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>🏗️</Text>,
+          tabBarIcon: ({ color, focused }) => <Icon name="jobs" color={color} filled={focused} size={24} />,
         }}
       />
       <Tabs.Screen
         name="create"
         options={{
           title: "Create",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 22 }}>＋</Text>,
+          tabBarIcon: ({ color, focused }) => <Icon name="create" color={color} filled={focused} size={24} />,
         }}
       />
       <Tabs.Screen
         name="camera"
         options={{
           title: "Camera",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>📸</Text>,
+          tabBarIcon: ({ color, focused }) => <Icon name="camera" color={color} filled={focused} size={24} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: "Settings",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>⚙️</Text>,
+          tabBarIcon: ({ color, focused }) => <Icon name="settings" color={color} filled={focused} size={24} />,
         }}
       />
     </Tabs>
