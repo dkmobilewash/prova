@@ -576,13 +576,19 @@ async function main() {
     ["Corridor 2-02: touch-up paint at return air grille", false, null],
   ];
   for (const [description, isDone, doneAt] of punch) {
+    // `isDone` in the table above is now the demo's shorthand for "the
+    // crew has been back to it": READY_FOR_REVIEW, waiting on somebody to
+    // agree. The columns it used to write were dropped by
+    // 20260920030000_punch_item_verification, and a state without its
+    // stamp is refused by a CHECK constraint, so the date goes in
+    // `readyAt` where the app reads it.
     await prisma.punchListItem.create({
       data: {
         companyId: company.id,
         jobId: riverside.id,
         description,
-        isDone,
-        completedAt: doneAt === null ? null : day(doneAt),
+        status: isDone ? "READY_FOR_REVIEW" : "OPEN",
+        readyAt: isDone ? day(doneAt ?? -1) : null,
         raisedByUserId: user?.id ?? null,
       },
     });

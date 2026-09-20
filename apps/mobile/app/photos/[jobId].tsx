@@ -58,7 +58,11 @@ type Shot = {
 };
 
 export default function PhotosScreen() {
-  const { jobId } = useLocalSearchParams<{ jobId: string }>();
+  // `punchListItemId` arrives when the punch list sent us here to
+  // photograph a specific fix, so the attachment is already chosen by the
+  // time the sheet opens — the prompt that offered it would be a lie if it
+  // dropped you on an empty picker.
+  const { jobId, punchListItemId } = useLocalSearchParams<{ jobId: string; punchListItemId?: string }>();
   const getToken = useStableGetToken();
   const [media, setMedia] = useState<Media[]>([]);
   const [tags, setTags] = useState<MediaTag[]>([]);
@@ -87,7 +91,7 @@ export default function PhotosScreen() {
       ),
       api.listMediaTags(token).then(setTags, () => setTags([])),
       api.listPunchListItems(jobId, token).then(
-        (items) => setPunchItems(items.filter((i) => !i.isDone)),
+        (items) => setPunchItems(items.filter((i) => i.status === "OPEN")),
         () => setPunchItems([]),
       ),
       api.listFieldReports(jobId, token).then(
@@ -108,7 +112,7 @@ export default function PhotosScreen() {
   const [caption, setCaption] = useState("");
   const [pickedTags, setPickedTags] = useState<string[]>([]);
   const [attachReport, setAttachReport] = useState(true);
-  const [punchItemId, setPunchItemId] = useState<string | null>(null);
+  const [punchItemId, setPunchItemId] = useState<string | null>(punchListItemId ?? null);
   // ViewShot's own ref: `capture()` on it returns the stamped file's uri.
   const stampRef = useRef<ViewShotRef>(null);
 

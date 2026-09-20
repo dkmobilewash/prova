@@ -19,6 +19,12 @@ const AREA: Record<Capability, string> = {
   MANAGE_COMPLIANCE: "compliance records",
   MANAGE_FIELD: "field operations",
   MANAGE_JOBS: "job records",
+  // Never reached by this component — VERIFY_PUNCH_ITEMS gates two buttons
+  // on a page the same person is meant to use, not the page itself (see
+  // SECTION_ONLY in lib/permissions.test.ts). The entry exists because the
+  // map is exhaustive over Capability, which is what makes adding one
+  // without deciding this impossible.
+  VERIFY_PUNCH_ITEMS: "punch list sign-off",
 };
 
 export function NoAccess({ capability }: { capability: Capability }) {

@@ -68,13 +68,13 @@ describe("createPunchListItems against a real database", () => {
     const rows = await prisma.punchListItem.findMany({
       where: { companyId, jobId },
       orderBy: { createdAt: "asc" },
-      select: { id: true, description: true, isDone: true, completedAt: true, raisedByUserId: true },
+      select: { id: true, description: true, status: true, readyAt: true, raisedByUserId: true },
     });
     expect(rows.map((row) => row.description)).toEqual(THREE);
     expect(rows.map((row) => row.id)).toEqual(result.value.items.map((item) => item.id));
     for (const row of rows) {
-      expect(row.isDone).toBe(false);
-      expect(row.completedAt).toBeNull();
+      expect(row.status).toBe("OPEN");
+      expect(row.readyAt).toBeNull();
       expect(row.raisedByUserId).toBe(userId);
     }
   });

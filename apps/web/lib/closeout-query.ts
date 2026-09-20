@@ -72,7 +72,15 @@ export async function loadCloseoutJobs(
       // retainage to the billing lane; readiness only needs to know they
       // exist, and an open punch item holds closeout open whether or not
       // anyone ticked "punch list sign-off".
-      punchListItems: { where: { isDone: false }, select: { id: true } },
+      // `status: OPEN` is what `isDone: false` meant before
+      // 20260920030000 dropped that column — the crew having said an item
+      // is fixed counted as done then and counts as done here, so this
+      // blocks on exactly the items it always blocked on. Whether an item
+      // waiting on a VERIFICATION should also block a closeout package is
+      // a real decision about when a job may close, and it belongs to
+      // whoever owns closeout rather than to the migration that made it
+      // askable.
+      punchListItems: { where: { status: "OPEN" }, select: { id: true } },
       invoices: { select: { retainageWithheld: true } },
       retainageReleases: { select: { amount: true } },
       substantialCompletionDate: true,

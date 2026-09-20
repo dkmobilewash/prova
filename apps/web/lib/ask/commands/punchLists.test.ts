@@ -173,7 +173,7 @@ describe("add_punch_items", () => {
     ]);
     // The open-items query is this job's open rows only.
     expect(fake.prisma.punchListItem.findMany).toHaveBeenCalledWith({
-      where: { companyId: "co-1", jobId: "job-1", isDone: false },
+      where: { companyId: "co-1", jobId: "job-1", status: "OPEN" },
       select: { description: true },
     });
   });

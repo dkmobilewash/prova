@@ -73,6 +73,21 @@ export type CreateOp =
       jobId: string;
       clientOperationId: string;
       description: string;
+      area?: string;
+    }
+  | {
+      /** Marking an item fixed, or taking that back.
+       *
+       * This used to be a direct API call from the screen, which is why
+       * closing an item with no signal failed with an error and left the
+       * box unticked — the one thing a punch list has to survive is a
+       * basement. Replaying it is safe without any idempotency key of its
+       * own: setting a status twice lands on the same row, unlike a create.
+       */
+      type: "punch-list:status";
+      jobId: string;
+      itemId: string;
+      status: "OPEN" | "READY_FOR_REVIEW";
     }
   | {
       type: "ticket:create";
@@ -331,7 +346,14 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
       );
       return;
     case "punch-list:create":
-      await api.createPunchListItem(op.jobId, { description: op.description, clientOperationId: op.clientOperationId }, token);
+      await api.createPunchListItem(
+        op.jobId,
+        { description: op.description, area: op.area, clientOperationId: op.clientOperationId },
+        token,
+      );
+      return;
+    case "punch-list:status":
+      await api.setPunchListItemStatus(op.jobId, op.itemId, op.status, token);
       return;
     case "ticket:create":
       await api.createTmTicket(

@@ -247,9 +247,20 @@ export type MaterialOrder = {
   vendorName: string;
 };
 
+export type PunchItemStatus = "OPEN" | "READY_FOR_REVIEW" | "VERIFIED";
+
 export type PunchListItem = {
   id: string;
   description: string;
-  isDone: boolean;
-  completedAt: string | null;
+  /** Three states, not two. The middle one — we say it is fixed, nobody
+   * has checked yet — is the one a foreman needs to see, and a tick box
+   * cannot show it. `isDone` and `completedAt` were dropped from the
+   * server's row and from this type together. */
+  status: PunchItemStatus;
+  area: string | null;
+  dueOn: string | null;
+  assignedName: string | null;
+  /** Photos attached to this item. Zero is what the "add a photo of the
+   * fix" prompt is asking about. */
+  photoCount: number;
 };
