@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@clerk/expo";
 import * as api from "./api";
+import { cacheKeys } from "./cache-keys";
+import { cachedRead, staleNote } from "./cached-read";
 import { getClientId } from "./client-id";
 import { uuid } from "./id";
 import { enqueue, flushQueue, pendingCount } from "./sync-queue";
@@ -18,16 +20,25 @@ export function useFieldReports(jobId: string) {
   const [pending, setPending] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The line saying these came off the phone, or null when fresh;
+   * "nothing" when there was no signal and nothing cached. */
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
 
   const refresh = useCallback(async () => {
     const token = await getToken();
     if (!token) return;
     setLoading(true);
     try {
-      setReports(await api.listFieldReports(jobId, token));
+      // Yesterday's report is what somebody checks before writing today's,
+      // and with no signal this list was empty with an error over it.
+      const result = await cachedRead(cacheKeys.reports(jobId), () => api.listFieldReports(jobId, token));
       setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load reports");
+      if (result.from === "nothing") {
+        setOffline("nothing");
+        return;
+      }
+      setReports(result.value);
+      setOffline(staleNote(result));
     } finally {
       setLoading(false);
     }
@@ -104,5 +115,5 @@ export function useFieldReports(jobId: string) {
     [sync],
   );
 
-  return { reports, pending, loading, error, refresh, create, update, sync };
+  return { reports, pending, loading, error, offline, refresh, create, update, sync };
 }

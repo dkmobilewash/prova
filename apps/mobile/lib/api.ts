@@ -9,7 +9,9 @@ import type {
   MaterialOrder,
   Media,
   MediaTag,
+  DrawingSetRow,
   PunchListItem,
+  ScheduleRow,
   RatioWarning,
   SafetyIncident,
   TimeEntry,
@@ -328,4 +330,20 @@ export async function setPunchListItemStatus(
     token,
     body: { status },
   });
+}
+
+export async function listDrawings(jobId: string, token: string): Promise<DrawingSetRow[]> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/drawings`, { token });
+}
+
+/** The schedule for a window of days. Omitting the dates gets the
+ * server's default: a week either side of today, which is what a phone
+ * wants — the plan ahead and the gaps behind. */
+export async function listSchedule(
+  jobId: string,
+  token: string,
+  window?: { from: string; to: string },
+): Promise<ScheduleRow[]> {
+  const query = window ? `?from=${window.from}&to=${window.to}` : "";
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/schedule${query}`, { token });
 }

@@ -1,7 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Image, PixelRatio, StyleSheet, Text, View } from "react-native";
 import ViewShot, { type ViewShotRef } from "react-native-view-shot";
 import { Button } from "@/components/Button";
@@ -26,6 +26,10 @@ import {
 } from "@/lib/photo-stamp";
 import { keepForUpload } from "@/lib/photo-store";
 import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
+import { JobSections } from "@/components/JobSections";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, staleNote } from "@/lib/cached-read";
+import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import type { Media, MediaTag, PunchListItem } from "@/lib/types";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
@@ -62,7 +66,15 @@ export default function PhotosScreen() {
   // photograph a specific fix, so the attachment is already chosen by the
   // time the sheet opens — the prompt that offered it would be a lie if it
   // dropped you on an empty picker.
-  const { jobId, punchListItemId } = useLocalSearchParams<{ jobId: string; punchListItemId?: string }>();
+  // `open=camera` arrives from the Camera tab, which is a doorway rather
+  // than a screen of its own — the capture, the GPS fix, the stamping and
+  // the upload queue all live here, and a second copy of that would be a
+  // second copy of the stamp.
+  const { jobId, punchListItemId, open } = useLocalSearchParams<{
+    jobId: string;
+    punchListItemId?: string;
+    open?: string;
+  }>();
   const getToken = useStableGetToken();
   const [media, setMedia] = useState<Media[]>([]);
   const [tags, setTags] = useState<MediaTag[]>([]);
@@ -70,6 +82,7 @@ export default function PhotosScreen() {
   const [todaysReportId, setTodaysReportId] = useState<string | null>(null);
   const [jobName, setJobName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   // Photos taken on this phone that have not gone up yet.
@@ -80,15 +93,20 @@ export default function PhotosScreen() {
     if (!token || !jobId) return;
     const today = dayFromClockIn(new Date().toISOString());
     await Promise.allSettled([
-      api.listMedia(jobId, token).then(
-        async (m) => {
-          setMedia(m);
-          setError(null);
-          const queued = await queuedOperationIds();
-          setPending((rows) => rows.filter((r) => queued.has(r.clientOperationId)));
-        },
-        (e) => setError(e instanceof Error ? e.message : "Failed to load photos"),
-      ),
+      // The ROWS are cached, not the pictures: a job's photos are tens of
+      // megabytes, and what a foreman needs off-signal is which ones were
+      // taken and when, not to re-view them on a 5-inch screen.
+      cachedRead(cacheKeys.photos(jobId), () => api.listMedia(jobId, token)).then(async (result) => {
+        setError(null);
+        if (result.from === "nothing") {
+          setOffline("nothing");
+          return;
+        }
+        setMedia(result.value);
+        setOffline(staleNote(result));
+        const queued = await queuedOperationIds();
+        setPending((rows) => rows.filter((r) => queued.has(r.clientOperationId)));
+      }),
       api.listMediaTags(token).then(setTags, () => setTags([])),
       api.listPunchListItems(jobId, token).then(
         (items) => setPunchItems(items.filter((i) => i.status === "OPEN")),
@@ -172,6 +190,17 @@ export default function PhotosScreen() {
     );
   };
 
+  /** Fires once per arrival from the Camera tab. A ref rather than a
+   * dependency, because the shutter must not reopen when this screen
+   * re-renders — which it does on every queue flush. */
+  const cameraOpened = useRef(false);
+  useEffect(() => {
+    if (open !== "camera" || cameraOpened.current) return;
+    cameraOpened.current = true;
+    void takePhoto();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   const pickFromLibrary = async () => {
     await afterPick(
       await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.7, exif: true }),
@@ -233,7 +262,9 @@ export default function PhotosScreen() {
 
   return (
     <View style={styles.screen}>
+      <JobSections jobId={jobId} active="photos" />
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <OfflineNote state={offline} />
       {busy ? <Text style={styles.busy}>{busy}</Text> : null}
       <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
 

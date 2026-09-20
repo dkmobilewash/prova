@@ -13,6 +13,8 @@ import * as api from "@/lib/api";
 import { dayFromClockIn } from "@/lib/clock-session";
 import { uuid } from "@/lib/id";
 import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
+import { JobSections } from "@/components/JobSections";
+import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import type { DelayRow, FieldReportRow } from "@/lib/types";
 import { useFieldReports } from "@/lib/use-field-reports";
@@ -65,7 +67,7 @@ function daysOf(reports: FieldReportRow[], delays: DelayRow[]): Day[] {
 export default function ReportsScreen() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const getToken = useStableGetToken();
-  const { reports, pending, error, create, refresh } = useFieldReports(jobId ?? "");
+  const { reports, pending, error, offline, create, refresh } = useFieldReports(jobId ?? "");
   const [delays, setDelays] = useState<DelayRow[]>([]);
   // Delays logged on this phone that the server hasn't returned yet — shown
   // at once as "Syncing…" rather than appearing seconds after Save.
@@ -202,8 +204,10 @@ export default function ReportsScreen() {
 
   return (
     <View style={styles.screen}>
+      <JobSections jobId={jobId} active="reports" />
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <OfflineNote state={offline} />
       <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
 
       <List

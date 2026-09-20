@@ -35,6 +35,10 @@ const screenOptions = {
   },
   headerShadowVisible: false,
   contentStyle: { backgroundColor: colors.canvas },
+  // iOS labels Back with the PREVIOUS screen's title, which was fine when
+  // there was one tab to come from and misleading now: a photo screen
+  // opened from Home offered "Jobs". "Back" is true from all five tabs.
+  headerBackTitle: "Back",
 } as const;
 
 export default function RootLayout() {
@@ -44,10 +48,8 @@ export default function RootLayout() {
           status bar text disappeared into it. */}
       <StatusBar style="light" />
       <Stack screenOptions={screenOptions}>
-        {/* The title is never shown (the tabs draw their own header), but iOS
-            uses it as the back-button label on every screen pushed from here —
-            without it that label read "(tabs)". */}
-        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: "Jobs" }} />
+        {/* The title is never shown — the tabs draw their own headers. */}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: "Home" }} />
         <Stack.Screen name="sign-in" options={{ title: "Sign in" }} />
         <Stack.Screen name="job/[jobId]" options={{ title: "Job" }} />
         <Stack.Screen name="reports/[jobId]" options={{ title: "Field reports" }} />
@@ -57,6 +59,8 @@ export default function RootLayout() {
         <Stack.Screen name="materials/[jobId]" options={{ title: "Materials" }} />
         <Stack.Screen name="punch-list/[jobId]" options={{ title: "Punch list" }} />
         <Stack.Screen name="ticket/[jobId]" options={{ title: "T&M ticket" }} />
+        <Stack.Screen name="drawings/[jobId]" options={{ title: "Drawings" }} />
+        <Stack.Screen name="schedule/[jobId]" options={{ title: "Schedule" }} />
       </Stack>
     </ClerkProvider>
   );
