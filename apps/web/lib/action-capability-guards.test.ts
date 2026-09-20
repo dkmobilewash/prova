@@ -139,14 +139,22 @@ const WEB = resolve(__dirname, "..");
 const APP_DIR = join(WEB, "app/(app)");
 const ACTIONS_DIR = join(WEB, "lib/actions");
 
-/** Every route Next.js serves under `(app)`, in route-pattern form.
+/** Every route Next.js serves under `(app)`, in route-pattern form, and
+ * the real file each one is served from.
  *
  * Deliberately a second, independent copy of the walk in
  * lib/permissions.test.ts rather than a shared helper. These two files
  * make different claims and a bug in one walk should not be able to
  * silence both — and each one guards its own walk below, because a walk
  * that quietly finds nothing is the most dangerous way for a check like
- * this to fail. */
+ * this to fail.
+ *
+ * The file is recorded AS FOUND rather than reconstructed from the route
+ * string afterward: a `(group)` folder vanishes from the route but not
+ * from the real path, so a route living inside one — `/jobs/[id]/estimate`
+ * is the first, under `(tabs)` — would resolve to a file that does not
+ * exist if the path were rebuilt from the route alone. */
+const routeFile = new Map<string, string>();
 function pageRoutes(dir: string, prefix = "", acc: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
@@ -154,15 +162,20 @@ function pageRoutes(dir: string, prefix = "", acc: string[] = []): string[] {
       const segment = /^\(.*\)$/.test(entry) ? "" : `/${entry}`;
       pageRoutes(full, prefix + segment, acc);
     } else if (entry === "page.tsx") {
-      acc.push(prefix === "" ? "/" : prefix);
+      const route = prefix === "" ? "/" : prefix;
+      acc.push(route);
+      routeFile.set(route, full);
     }
   }
   return acc;
 }
 
 const ROUTES = pageRoutes(APP_DIR).sort();
-const pageFile = (route: string) =>
-  join(APP_DIR, route === "/" ? "" : route.slice(1), "page.tsx");
+const pageFile = (route: string) => {
+  const file = routeFile.get(route);
+  if (!file) throw new Error(`no page.tsx found for route ${route}`);
+  return file;
+};
 
 /** Which module defines each exported Server Action, read from the source
  * of every action module — so an action that MOVES between modules is

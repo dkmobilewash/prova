@@ -19,7 +19,6 @@ import { describe, expect, it } from "vitest";
  */
 
 const PAGES: { path: string; flags: string[] }[] = [
-  { path: "app/(app)/jobs/[id]/page.tsx", flags: ["showsJobMoney", "showsBilling"] },
   { path: "app/(app)/dashboard/page.tsx", flags: ["showsJobMoney", "showsBilling"] },
   { path: "app/(app)/contacts/[id]/page.tsx", flags: ["showsJobMoney", "showsBilling", "showsEstimating"] },
 ];
@@ -56,6 +55,60 @@ describe("pages that render job money", () => {
     // failure this whole pass exists to close.
     const source = read("app/(app)/dashboard/page.tsx");
     expect(source).toContain("rows={showsBilling ? today.receivables : []}");
+  });
+});
+
+describe("the job page's tabs (rebuilt 2026-09-20 out of one monolith)", () => {
+  // `jobs/[id]/page.tsx` used to derive showsJobMoney/showsBilling once and
+  // pass it to every section on one page. That page is now eight routes —
+  // app/(app)/jobs/[id]/(tabs)/{page,estimate,crew,compliance,billing,
+  // retainage,field-reports,photos}.tsx plus their shared layout — so the
+  // single-file check above cannot apply to it. What replaces it: the
+  // derivation itself lives in exactly ONE place now (lib/jobs/job-access.ts),
+  // and every route that shows money either reads its flags from there or
+  // calls requireCapability directly (permissions.test.ts already proves
+  // each of those routes enforces the right one) — never from a role string.
+  const derivation = read("lib/jobs/job-access.ts");
+
+  it("derives every job-page money flag from the capability map, not a role string, in one place", () => {
+    expect(derivation).toContain('from "@/lib/permissions"');
+    expect(derivation).toMatch(/\bcan\(/);
+    expect(derivation).toContain("jobFunction: currentUser.jobFunction");
+  });
+
+  // Estimate, Billing and Retainage SOFT-withhold (a flag, like Overview)
+  // rather than hard-gate: lib/action-capability-guards.test.ts found their
+  // Server Actions are not independently guarded on the capability, so a
+  // requireCapability wall would claim a boundary the action layer does
+  // not enforce — see each page's own doc comment. permissions.test.ts
+  // records the same call in OPEN_ROUTES.
+  const OPEN_TABS = [
+    { path: "app/(app)/jobs/[id]/(tabs)/layout.tsx", flags: ["showsJobMoney", "showsBilling"] },
+    { path: "app/(app)/jobs/[id]/(tabs)/page.tsx", flags: ["showsJobMoney"] },
+    { path: "app/(app)/jobs/[id]/(tabs)/estimate/page.tsx", flags: ["showsJobMoney"] },
+    { path: "app/(app)/jobs/[id]/(tabs)/billing/page.tsx", flags: ["showsBilling"] },
+    { path: "app/(app)/jobs/[id]/(tabs)/retainage/page.tsx", flags: ["showsBilling"] },
+  ];
+
+  for (const tab of OPEN_TABS) {
+    it(`${tab.path} reads its money flags from the shared derivation`, () => {
+      const source = read(tab.path);
+      expect(source).toMatch(/from "@\/lib\/jobs\/job-access"/);
+      for (const flag of tab.flags) expect(source).toContain(flag);
+    });
+  }
+
+  // Photos is the one tab that IS entirely one capability's content AND
+  // can be hard-gated safely — its job-media actions are independently
+  // guarded already (also reachable from the already-guarded top-level
+  // /photos). permissions.test.ts proves it calls requireCapability with
+  // the right capability and renders <NoAccess>; this asserts the piece
+  // that guard belongs to — lib/authz's requireCapability, never a role
+  // check standing in for it.
+  it("app/(app)/jobs/[id]/(tabs)/photos/page.tsx gates on the capability map via requireCapability", () => {
+    const source = read("app/(app)/jobs/[id]/(tabs)/photos/page.tsx");
+    expect(source).toMatch(/from "@\/lib\/authz"/);
+    expect(source).toMatch(/requireCapability\(/);
   });
 });
 

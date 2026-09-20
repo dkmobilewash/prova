@@ -18,6 +18,11 @@ import { contactsWalkthrough } from "./contacts";
 import { dashboardWalkthrough } from "./dashboard";
 import { fieldReportsWalkthrough } from "./field-reports";
 import { jobDetailWalkthrough } from "./job-detail";
+import { jobDetailEstimateWalkthrough } from "./job-detail-estimate";
+import { jobDetailCrewWalkthrough } from "./job-detail-crew";
+import { jobDetailBillingWalkthrough } from "./job-detail-billing";
+import { jobDetailFieldReportsWalkthrough } from "./job-detail-field-reports";
+import { jobDetailPhotosWalkthrough } from "./job-detail-photos";
 import { newJobWalkthrough } from "./jobs-new";
 import { pipelineWalkthrough } from "./pipeline";
 import { punchListsWalkthrough } from "./punch-lists";
@@ -53,6 +58,11 @@ export const WALKTHROUGHS: Walkthrough[] = [
   dashboardWalkthrough,
   newJobWalkthrough,
   jobDetailWalkthrough,
+  jobDetailEstimateWalkthrough,
+  jobDetailCrewWalkthrough,
+  jobDetailBillingWalkthrough,
+  jobDetailFieldReportsWalkthrough,
+  jobDetailPhotosWalkthrough,
   scheduleWalkthrough,
   pipelineWalkthrough,
   contactsWalkthrough,
