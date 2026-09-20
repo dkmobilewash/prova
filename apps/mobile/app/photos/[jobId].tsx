@@ -31,15 +31,21 @@ import type { Media, MediaTag, PunchListItem } from "@/lib/types";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 import { useSync } from "@/lib/use-sync";
 
-/** The photo is stamped at this width in PIXELS; the height follows the
- * picture. Big enough that the stamp is readable when a GC opens it full
- * screen, small enough to go up over a site connection.
+/** The photo is stamped and stored at this width in PIXELS. Big enough that
+ * the stamp is readable when a GC opens it full screen, small enough to go
+ * up over a site connection.
  *
- * The capture is asked for in POINTS, which the screen's density multiplies:
- * asking for 1200 on a 3x phone produced a 3600px, 3.6MB file on production,
- * which is most of the platform's 4.5MB request cap for one photo. */
+ * WHAT DECIDES THE OUTPUT SIZE is the rendered view's size in POINTS times
+ * the screen's density — `ViewShot`'s own width/height options did nothing
+ * here (measured on production: asked for 1200, stored 3600x4800, 3.6MB,
+ * most of the platform's 4.5MB request cap). So the whole stamp layout is
+ * laid out at `STAMP_WIDTH / density` points, and everything in it — the
+ * padding, the type — is scaled by the same factor, which lands the capture
+ * at STAMP_WIDTH pixels on any phone with the stamp the same size relative
+ * to the picture. */
 const STAMP_WIDTH = 1200;
-const captureWidth = () => Math.round(STAMP_WIDTH / PixelRatio.get());
+/** Points per pixel on this screen: 1/3 on a 3x phone. */
+const pointScale = () => 1 / PixelRatio.get();
 
 type Shot = {
   uri: string;
@@ -213,7 +219,12 @@ export default function PhotosScreen() {
   const toggleTag = (id: string) =>
     setPickedTags((current) => (current.includes(id) ? current.filter((t) => t !== id) : [...current, id]));
 
-  const stampHeight = shot ? Math.round((shot.height / shot.width) * STAMP_WIDTH) : STAMP_WIDTH;
+  // In points, so the capture comes out at STAMP_WIDTH pixels.
+  const layoutWidth = Math.round(STAMP_WIDTH * pointScale());
+  const layoutHeight = shot ? Math.round((shot.height / shot.width) * layoutWidth) : layoutWidth;
+  /** Points per stamp pixel: everything inside the stamp is written in the
+   * pixel sizes it should come out at, then scaled by this. */
+  const stampScale = layoutWidth / STAMP_WIDTH;
   const lines = shot ? stampLines({ jobName: jobName || "This job", capturedAt: shot.capturedAt, location: shot.location }) : [];
 
   return (
@@ -282,24 +293,27 @@ export default function PhotosScreen() {
           a view with display:none or zero opacity has nothing to capture. */}
       {shot ? (
         <View style={styles.offscreen} pointerEvents="none">
-          {/* `width`/`height` pin the OUTPUT size. Without them the capture
-              comes out at the screen's pixel density — a 3600px, 2.7MB file
-              measured on an iPhone — which is a lot to push up a site
-              connection for a photo nobody will view that large. */}
           <ViewShot
             ref={stampRef}
-            options={{
-              format: "jpg",
-              quality: 0.85,
-              width: captureWidth(),
-              height: Math.round(captureWidth() * (stampHeight / STAMP_WIDTH)),
-            }}
-            style={{ width: STAMP_WIDTH, height: stampHeight }}
+            options={{ format: "jpg", quality: 0.85 }}
+            style={{ width: layoutWidth, height: layoutHeight }}
           >
-            <Image source={{ uri: shot.uri }} style={{ width: STAMP_WIDTH, height: stampHeight }} resizeMode="cover" />
-            <View style={styles.stamp}>
+            <Image source={{ uri: shot.uri }} style={{ width: layoutWidth, height: layoutHeight }} resizeMode="cover" />
+            <View
+              style={[
+                styles.stamp,
+                { paddingVertical: 18 * stampScale, paddingHorizontal: 24 * stampScale },
+              ]}
+            >
               {lines.map((line, i) => (
-                <Text key={i} style={[styles.stampText, i === 0 && styles.stampTitle]}>
+                <Text
+                  key={i}
+                  style={[
+                    styles.stampText,
+                    { fontSize: 34 * stampScale, lineHeight: 44 * stampScale },
+                    i === 0 && styles.stampTitle,
+                  ]}
+                >
                   {line}
                 </Text>
               ))}
@@ -387,9 +401,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: "rgba(0,0,0,0.55)",
-    paddingVertical: 18,
-    paddingHorizontal: 24,
   },
-  stampText: { color: "#ffffff", fontSize: 34, lineHeight: 44 },
+  stampText: { color: "#ffffff" },
   stampTitle: { fontWeight: "700" },
 });
