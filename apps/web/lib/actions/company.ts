@@ -21,6 +21,7 @@ import {
 } from "./shared";
 import { normalizeEin, normalizeWebsite } from "@/lib/company-profile";
 import { can } from "@/lib/permissions";
+import { CONTRACTING_RELATIONSHIPS } from "@/lib/businessScope";
 
 /** The job-function refusal for the company record, worded the way
  * `closeoutSubmissions.ts` words its own: the person reading it has done
@@ -469,4 +470,147 @@ export async function deleteCompanyLocation(locationId: string) {
   await prisma.companyLocation.delete({ where: { id: locationId } });
 
   revalidatePath("/settings");
+}
+
+/** "Is this a yes/no field" parser for the two boolean onboarding answers.
+ * A radio group posts the literal strings "true"/"false" — see
+ * BusinessScopeFields.tsx — never a checkbox, because a checkbox's absent
+ * value and its "unanswered" state are the same wire format and this
+ * question needs to tell "no" apart from "not answered yet". */
+function requiredBoolean(formData: FormData, key: string, label: string): boolean {
+  const raw = text(formData, key);
+  if (raw !== "true" && raw !== "false") {
+    throw new InputError(`${label} needs a yes or no`);
+  }
+  return raw === "true";
+}
+
+/**
+ * The three onboarding questions (issue: onboarding questions) — set once
+ * right after signup and editable afterward from Settings, same action
+ * either way, matching this codebase's one-`*Fields`-component-for-both
+ * rule (`BusinessScopeFields.tsx` is that shared component).
+ *
+ * See lib/businessScope.ts for what these answers mean and drive; this
+ * action only validates and writes them. All three are REQUIRED here —
+ * this is the "Save" path, reached by submitting the form with a full set
+ * of answers. Leaving the questions unanswered goes through
+ * `skipBusinessScopeQuestions` below instead, which is a different action
+ * on purpose: this one is not the place a partial answer quietly becomes
+ * three nulls.
+ *
+ * TWO GUARDS, IN THIS ORDER — the same order and the same reason
+ * `updateCompanyProfile` gives above. `/settings` (the only page that can
+ * reach this action; the onboarding prompt is mounted in the shared layout,
+ * not a page, and reaches no capability-guarded door) demands
+ * MANAGE_COMPLIANCE, so that is checked first, because it is the broader
+ * fact about the person. OWNER-ONLY second: these answers decide what the
+ * WHOLE COMPANY's nav shows, not just the caller's own screen, so letting a
+ * member set them would be one person choosing the menu for everyone on
+ * the team. `ownerRefusal`, not `assertOwner` — this action's declared type
+ * promises a readable `{ ok: false, error }`, and production redacts a
+ * thrown message to a digest.
+ */
+export async function saveBusinessScope(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPLIANCE_ONLY);
+
+    const refusal = ownerRefusal(
+      context,
+      "Only the account owner can set this — it decides what the whole team's menu shows.",
+    );
+    if (refusal) return refusal;
+
+    const contractingRelationship = enumFromForm(
+      formData,
+      "contractingRelationship",
+      CONTRACTING_RELATIONSHIPS,
+    );
+    const doesPublicWork = requiredBoolean(formData, "doesPublicWork", "Public / prevailing-wage work");
+    const filesMonthlyPayApps = requiredBoolean(
+      formData,
+      "filesMonthlyPayApps",
+      "The monthly pay-application question",
+    );
+
+    await prisma.company.update({
+      where: { id: context.company.id },
+      data: {
+        contractingRelationship,
+        doesPublicWork,
+        filesMonthlyPayApps,
+        businessScopeAskedAt: new Date(),
+      },
+    });
+
+    revalidatePath("/settings");
+    return ok;
+  });
+}
+
+/**
+ * "Skip" on the onboarding prompt. Records that the prompt was shown and
+ * answered — one way or another — so it never asks again, WITHOUT setting
+ * any of the three answers. Per `hasNoScopeAnswers` in lib/businessScope.ts
+ * that combination means "show everything," which is the explicit rule
+ * this feature is built on: skipping must never hide anything.
+ *
+ * Same two guards as saveBusinessScope, for the same reason, even though
+ * today only the onboarding prompt calls this and that prompt is mounted
+ * in the shared layout rather than behind any one guarded page: a stable
+ * endpoint answers whoever posts to it, guarded page or not, and a
+ * non-owner posting to it directly should be refused for the SAME reason
+ * saveBusinessScope refuses one, not a different one. In normal use this
+ * should never fire — a non-owner never sees the prompt at all
+ * (app/(app)/layout.tsx only mounts it for the account owner).
+ */
+export async function skipBusinessScopeQuestions(): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPLIANCE_ONLY);
+
+  const refusal = ownerRefusal(
+    context,
+    "Only the account owner can dismiss this — ask them, or open Settings once they have.",
+  );
+  if (refusal) return refusal;
+
+  await prisma.company.update({
+    where: { id: context.company.id },
+    data: { businessScopeAskedAt: new Date() },
+  });
+
+  revalidatePath("/settings");
+  return ok;
+}
+
+/**
+ * "Not sure — show me everything again," from Settings. Nulls all three
+ * answers and deliberately leaves `businessScopeAskedAt` alone: the prompt
+ * already ran once, so it must not come back, but the nav goes straight
+ * back to showing every group — the same state as a company that never
+ * answered at all, because `hasNoScopeAnswers` cannot tell the two apart
+ * and is not supposed to.
+ *
+ * Same two guards as saveBusinessScope, in the same order, for the same
+ * reason — this is the other half of the same Settings form.
+ */
+export async function clearBusinessScope(): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPLIANCE_ONLY);
+
+  const refusal = ownerRefusal(context, "Only the account owner can change this.");
+  if (refusal) return refusal;
+
+  await prisma.company.update({
+    where: { id: context.company.id },
+    data: {
+      contractingRelationship: null,
+      doesPublicWork: null,
+      filesMonthlyPayApps: null,
+    },
+  });
+
+  revalidatePath("/settings");
+  return ok;
 }

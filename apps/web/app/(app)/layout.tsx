@@ -9,6 +9,8 @@ import { can, type Principal } from "@/lib/permissions";
 import { viewerToday } from "@/lib/viewerToday";
 import { TimeZoneCookie } from "@/components/TimeZoneCookie";
 import { FullTour } from "@/components/FullTour";
+import { CompanySetupPrompt } from "@/components/CompanySetupPrompt";
+import type { BusinessScopeAnswers } from "@/lib/businessScope";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { company, ...currentUser } = await requireCompanyContext();
@@ -26,6 +28,26 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // being one page: a flag named after one of the two it gates is a
   // comment that disagrees with the code.
   const showsInternal = company.isProvaOperator && currentUser.role === "OWNER";
+
+  // The three onboarding questions' answers, straight off the Company row —
+  // see lib/businessScope.ts. Passed to both nav surfaces below so a route
+  // hidden by them can never disagree between the desktop rail and the
+  // mobile drawer, same reasoning as showsInternal just above.
+  const businessScope: BusinessScopeAnswers = {
+    contractingRelationship: company.contractingRelationship,
+    doesPublicWork: company.doesPublicWork,
+    filesMonthlyPayApps: company.filesMonthlyPayApps,
+  };
+  // Shown once, and only to the person who can actually answer it: a
+  // non-owner has no capability to change what the answers below already
+  // decided (saveBusinessScope refuses them), so showing them a prompt
+  // they cannot act on would be a door that does not open. Null means
+  // "never asked" — true of a brand-new company on its very first page
+  // load, and also true of every company that existed before this shipped,
+  // which is why an existing company sees this ONCE rather than never: the
+  // absence of an answer and the absence of the "have you been asked yet"
+  // stamp are deliberately the same column, not two.
+  const showsCompanySetupPrompt = currentUser.role === "OWNER" && company.businessScopeAskedAt === null;
 
   // The reader's own calendar day, not the server's UTC one. At 18:00 in
   // Los Angeles the UTC date is already tomorrow, so this badge counted a
@@ -73,10 +95,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* "Take the full tour": renders nothing until someone starts it.
           Here rather than on a page because it moves between pages. */}
       <FullTour principal={principal} />
+      {/* The three onboarding questions. Renders nothing once answered,
+          skipped, or for anyone but the owner — see showsCompanySetupPrompt
+          above. */}
+      <CompanySetupPrompt show={showsCompanySetupPrompt} />
       <Sidebar
         companyName={company.name}
         principal={principal}
         showsInternal={showsInternal}
+        businessScope={businessScope}
         stages={moneyRailStages}
       />
       <div className="flex min-w-0 flex-1 flex-col">
@@ -85,6 +112,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           alertCount={alertCount}
           principal={principal}
           showsInternal={showsInternal}
+          businessScope={businessScope}
         />
         {/* No background of its own: each page brings its own ground, so a
             page still written against the dark theme keeps it and a

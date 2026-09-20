@@ -22,6 +22,8 @@ import { CompanyLicenses } from "@/components/CompanyLicenses";
 import { PhaseCodes } from "@/components/PhaseCodes";
 import { CompanyProfileForm } from "@/components/CompanyProfileForm";
 import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
+import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsForm";
+import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
 import { QuickBooksReconcile } from "@/components/QuickBooksReconcile";
 import { QuickBooksImport } from "@/components/QuickBooksImport";
@@ -205,6 +207,15 @@ export default async function SettingsPage({
     website: company.website,
   };
 
+  // Picked field by field for the same reason companyProfile above is —
+  // this crosses into a client component and has no business carrying
+  // `isProvaOperator` or the timestamps with it.
+  const businessScope: BusinessScopeAnswers = {
+    contractingRelationship: company.contractingRelationship,
+    doesPublicWork: company.doesPublicWork,
+    filesMonthlyPayApps: company.filesMonthlyPayApps,
+  };
+
   // Whether THIS install has QuickBooks' own client id/secret/redirect URI
   // — never a hardcoded "QuickBooks is live" claim, which is exactly the
   // kind of thing that rots the day someone sets or removes a key and
@@ -300,6 +311,21 @@ export default async function SettingsPage({
           this company reads.
         </p>
         <CompanyProfileForm company={companyProfile} gaps={companyProfileGaps(companyProfile)} />
+      </section>
+
+      {/* What your business needs on screen — the three onboarding
+          questions, answered once at signup (or skipped) and changeable
+          here at any time. See lib/businessScope.ts: this only changes
+          what the rail shows, never what a direct link, a search or Ask
+          can reach. */}
+      <section id="setup" className="mb-10">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Set up for your work</h2>
+        <p className="mb-4 text-sm text-ink-body">
+          Retainage, prevailing wage, certified payroll and a few other menus only apply to some
+          businesses. Answer these and the menu only shows what yours needs — nothing is removed for
+          good: search and Ask can still reach anything, and you can change these any time.
+        </p>
+        <BusinessScopeSettingsForm scope={businessScope} isOwner={currentUser.role === "OWNER"} />
       </section>
 
       <section className="mb-10" data-tour="settings-quickbooks">

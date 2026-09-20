@@ -9,6 +9,7 @@ import { activeGroupHeading, activeFooterHref, navFooterFor, navGroupsFor } from
 import { money } from "@/lib/money";
 import type { Principal } from "@/lib/permissions";
 import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
+import type { BusinessScopeAnswers } from "@/lib/businessScope";
 
 /**
  * The Money Rail: a 240px nav column whose group headings carry the five
@@ -199,19 +200,23 @@ export function Sidebar({
   companyName,
   principal,
   showsInternal = false,
+  businessScope,
   stages,
 }: {
   companyName: string;
   principal: Principal;
   /** Prova's own operating company only -- see Company.isProvaOperator. */
   showsInternal?: boolean;
+  /** The three onboarding questions' answers, or undefined for "hide
+   * nothing" — see navGroupsFor in navItems.tsx. */
+  businessScope?: BusinessScopeAnswers;
   /** The five money-pipeline figures, loaded server-side by the layout
    * with getMoneyRailStages. Never computed here. */
   stages: MoneyRailStage[];
 }) {
   // Filtered here rather than in the layout so the desktop rail and
   // the mobile drawer run the same function on the same input.
-  const groups = navGroupsFor(principal, { showsInternal });
+  const groups = navGroupsFor(principal, { showsInternal, businessScope });
   const footer = navFooterFor(principal);
   const pathname = usePathname();
   const activeFooter = activeFooterHref(footer, pathname);
