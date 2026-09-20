@@ -1113,6 +1113,47 @@ scrollback gets broken by whoever didn't scroll far enough.
   that one line, it is this — run `typecheck`, `lint`, `test` and `build`
   individually rather than hunting it.
 
+- **A DROP AND THE DEPLOY THAT STOPS READING THE COLUMN DO NOT LAND
+  TOGETHER, AND THE GAP IS A PRODUCTION OUTAGE.** 2026-09-20, #378. The
+  migration dropped `PunchListItem.isDone` and `completedAt`; the code that
+  had stopped reading them shipped in the same PR. Both true, and still
+  broken: `migrate.yml` fires on merge and finishes in seconds, while
+  Vercel is still BUILDING the commit that removes the reads. For about two
+  and a half minutes the LIVE build was the old one, selecting a column
+  that no longer existed.
+
+  Measured rather than feared, which is the only reason the size of it is
+  known: columns dropped 07:44:33Z, deploy READY ~07:46, and Vercel's
+  runtime errors for that window are exactly one —
+  `P2022: The column PunchListItem.isDone does not exist`, route
+  `/punch-lists`, one user, and the user was the agent that pushed it. A
+  quiet Sunday morning is the whole reason this cost nothing.
+
+  **The rule this file already had did not cover it.** "Additive
+  migrations only unless you've pinged first" reads as being about losing
+  DATA — and the ping happened, and no data was lost. The hazard is the
+  window, not the drop: an additive migration is invisible to the old
+  build, and a destructive one is fatal to it. Pinging does not shorten the
+  window by a second.
+
+  So, for any column, table or enum value the running code reads:
+
+    1. **PR one takes the reads away** and ships. The column stays.
+    2. **PR two drops it**, once the deploy that stopped reading it is
+       live. Nothing in the gap can break, because nothing reads it.
+
+  Two PRs, and the second one is three lines. That ordering — expand, then
+  contract — is what makes `preflight.sh`'s destructive check survivable
+  advice rather than a speed bump: it refuses the push and says to ping,
+  which is right, but the answer to the ping is "split it", not "override
+  it and merge faster".
+
+  `PREFLIGHT_ALLOW_DESTRUCTIVE=1` remains the deliberate override and is
+  still the right escape hatch for the contract step, when the column is
+  genuinely unread by the deployed build. It was used here for a drop whose
+  reads were removed in the same commit, which is exactly the case it
+  should not have been used for.
+
 - **A fresh worktree has NO `node_modules`, and that is how unverified
   work piles up.** `pnpm install --frozen-lockfile` takes seconds and
   nothing works without it — so an agent that skips it cannot typecheck,
