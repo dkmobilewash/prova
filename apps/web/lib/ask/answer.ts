@@ -47,8 +47,24 @@ import {
   toolsFor,
   TOOLS,
   type Citation,
+  type ItemLink,
   type ToolName,
 } from "./tools";
+
+/** How many "go here" buttons an answer may carry.
+ *
+ * The cap is the point, and it is deliberately far below what a tool may
+ * return: `needs_attention` hands back up to ATTENTION_ROWS (25) rows.
+ * Without a cap, "what needs my attention" on a busy company renders the
+ * whole alert page as a stack of buttons under a three-line answer, and
+ * the item that is nine days overdue is somewhere in the middle of it —
+ * which is the alert page again, rendered worse.
+ *
+ * Six because the answer above it is prose a person reads: buttons are
+ * for the handful it actually named. The handler returns them in the
+ * order it wants them read, most urgent first, so truncating keeps the
+ * ones that matter rather than an arbitrary slice. */
+const MAX_ITEM_LINKS = 6;
 
 /**
  * The model call behind Ask.
@@ -306,7 +322,7 @@ export type AskStreamEvent =
   | { type: "answering" }
   | { type: "reset" }
   | { type: "text"; delta: string }
-  | { type: "done"; citations: AskCitation[]; toolsUsed: ToolName[] }
+  | { type: "done"; citations: AskCitation[]; links: ItemLink[]; toolsUsed: ToolName[] }
   | { type: "error"; error: string }
   | AskHalt;
 
@@ -594,6 +610,13 @@ export async function* streamAnswer(
   const loopCtx: CommandContext = { ...ctx, research };
 
   const citations: AskCitation[] = [];
+  /* Per-record destinations, collected exactly as citations are and capped
+   * the same way a tool's rows are capped. A dozen buttons under an answer
+   * is not more useful than three — it is the alert list again, rendered
+   * worse, and it buries the one that matters. The cap is applied at the
+   * end rather than here so that dedupe runs against everything collected,
+   * not against the first N. */
+  const links: ItemLink[] = [];
   const toolsUsed: ToolName[] = [];
   // Set synchronously, before the first await in a command's branch, so a
   // batch of two commands running under Promise.all yields one proposal
@@ -691,6 +714,17 @@ export async function* streamAnswer(
           citations.push(citation);
         }
       }
+      // Same dedupe rule as citations, and it does real work here rather
+      // than being defensive: several alerts legitimately point at one
+      // page (three closeout items are all `/closeout`), and three buttons
+      // reading the same destination is noise. First label wins, because
+      // the handler returns them in the order it wants them read —
+      // most urgent first.
+      for (const link of result.links ?? []) {
+        if (!links.some((existing) => existing.href === link.href)) {
+          links.push(link);
+        }
+      }
       if (result.unavailable) {
         return { content: JSON.stringify({ unavailable: result.unavailable }) };
       }
@@ -743,6 +777,11 @@ export async function* streamAnswer(
         yield {
           type: "done",
           citations: toolsUsed.length ? citations : [],
+          // Same condition as citations, for the same reason: a refusal or
+          // a clarifying question ran no tool, so it has no record to send
+          // anyone to, and a button under one would be pointing at
+          // something the answer never looked at.
+          links: toolsUsed.length ? links.slice(0, MAX_ITEM_LINKS) : [],
           toolsUsed,
         };
         return;
