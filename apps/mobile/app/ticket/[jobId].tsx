@@ -14,7 +14,6 @@ import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
 import { enqueue } from "@/lib/sync-queue";
-import { useReloadWhenShown } from "@/lib/use-reload-when-shown";
 import { useSync } from "@/lib/use-sync";
 import type { TmTicket } from "@/lib/types";
 
@@ -49,11 +48,8 @@ export default function TicketScreen() {
     }
   };
 
-  // On first show, on every return to this screen, and when the app comes
-  // back from the background — so rows changed elsewhere don't linger.
-  useReloadWhenShown(load);
 
-  const { pending, sync, refused, dismissRefused } = useSync(load);
+  const { pending, sync, refused, dismissRefused, retrySetAside } = useSync(load);
 
   const canSubmit = !!workDate && !!workDescription.trim() && !!signerName.trim() && signaturePath !== null;
 
@@ -80,7 +76,7 @@ export default function TicketScreen() {
     <View style={styles.screen}>
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <RefusedBanner refused={refused} onDismiss={dismissRefused} />
+      <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
       <List
         data={tickets}
         keyExtractor={(item) => item.id}

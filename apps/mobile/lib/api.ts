@@ -268,6 +268,13 @@ export async function listMedia(jobId: string, token: string): Promise<Media[]> 
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/media`, { token });
 }
 
+/** Where a photo is posted. The phone's queue uploads through the file
+ * system's native multipart task (lib/photo-store.ts), which needs the URL
+ * rather than a fetch call. */
+export function mediaUploadUrl(jobId: string): string {
+  return `${BASE_URL}/api/v1/jobs/${encodeURIComponent(jobId)}/media`;
+}
+
 /** Uploads a file as multipart form data. The `request` helper sends JSON,
  * so this is a separate path — the body is a FormData, and fetch sets the
  * multipart Content-Type (with boundary) itself. */
@@ -294,7 +301,7 @@ export async function listPunchListItems(jobId: string, token: string): Promise<
 
 export async function createPunchListItem(
   jobId: string,
-  input: { description: string; clientOperationId?: string },
+  input: { description: string; area?: string; clientOperationId?: string },
   token: string,
 ): Promise<PunchListItem> {
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/punch-list`, {
@@ -304,15 +311,21 @@ export async function createPunchListItem(
   });
 }
 
-export async function setPunchListItemDone(
+/**
+ * Moving an item between OPEN and READY_FOR_REVIEW.
+ *
+ * VERIFIED is not reachable from the phone on purpose — see the route's own
+ * comment. Whoever fixed it says it is ready; somebody else agrees.
+ */
+export async function setPunchListItemStatus(
   jobId: string,
   itemId: string,
-  isDone: boolean,
+  status: "OPEN" | "READY_FOR_REVIEW",
   token: string,
 ): Promise<PunchListItem> {
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/punch-list/${encodeURIComponent(itemId)}`, {
     method: "PATCH",
     token,
-    body: { isDone },
+    body: { status },
   });
 }

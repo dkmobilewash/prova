@@ -181,6 +181,11 @@ const NUMBERED_TABLES: Record<string, { accessor: string; helper: string }> = {
   RfiCounter: { accessor: "rfi", helper: "issueRfiNumber" },
   SafetyCaseCounter: { accessor: "safetyIncident", helper: "issueCaseNumber" },
   SubmittalCounter: { accessor: "submittal", helper: "issueSubmittalNumber" },
+  // The WH-347 payroll number, per job per certified-payroll week — the
+  // form's "Payroll No." is sequential per project, and the DOL reads the
+  // sequence for missing weeks, which is exactly the reissue-and-renumber
+  // failure the counter rule exists to prevent.
+  Wh347PayrollCounter: { accessor: "wh347PayrollNumber", helper: "issueWh347PayrollNumber" },
 };
 
 /** `tx.contractDocument.create(` but never

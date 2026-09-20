@@ -51,7 +51,9 @@ model Company {
   integrationConnections    IntegrationConnection[]
   docuSignEnvelopes         DocuSignEnvelope[]
   procoreProjectLinks       ProcoreProjectLink[]
+  accProjectLinks           AccProjectLink[]
   companycamProjectLinks    CompanyCamProjectLink[]
+  bluebeamStudioSessions    BluebeamStudioSession[]
   calendarFeedTokens        CalendarFeedToken[]
   complianceDocuments       ComplianceDocument[]
   licenses                  CompanyLicense[]
@@ -106,6 +108,7 @@ model Company {
   salesStageChanges         SalesStageChange[]
   equipmentAssignments      EquipmentAssignment[]
   crewMembers               CrewMember[]
+  payrollRegisterEntries    PayrollRegisterEntry[]
   crewScheduleDays          CrewScheduleDay[]
   workerCrafts              WorkerCraft[]
   experienceModRates        ExperienceModRate[]
@@ -172,6 +175,7 @@ model User {
   crewScheduleDays                     CrewScheduleDay[]      @relation("CrewScheduleDayUser")
   crewScheduleDaysCreated              CrewScheduleDay[]      @relation("CrewScheduleDayCreatedBy")
   companycamLinksCreated               CompanyCamProjectLink[] @relation("CompanyCamLinkedBy")
+  bluebeamSessionsLinked                BluebeamStudioSession[] @relation("BluebeamLinkedBy")
   calendarFeedTokens                   CalendarFeedToken[]
   workerCrafts                         WorkerCraft[]
   experienceModRatesCreated            ExperienceModRate[]    @relation("ExperienceModRateCreatedBy")
@@ -194,6 +198,10 @@ model User {
   uploadedPrevailingWageDeterminations PrevailingWageDetermination[]
   createdRetainageReleases             RetainageRelease[]
   raisedPunchListItems                 PunchListItem[]
+  assignedPunchListItems               PunchListItem[]               @relation("PunchItemAssignedUser")
+  readiedPunchListItems                PunchListItem[]               @relation("PunchItemReadyBy")
+  verifiedPunchListItems               PunchListItem[]               @relation("PunchItemVerifiedBy")
+  reopenedPunchListItems               PunchListItem[]               @relation("PunchItemReopenedBy")
   createdTmTickets                     TmTicket[]
   signedTimesheets                     TimesheetSignoff[]            @relation("TimesheetSignoffSignedBy")
   approvedTimesheets                   TimesheetSignoff[]            @relation("TimesheetSignoffApprovedBy")

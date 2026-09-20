@@ -4,7 +4,9 @@ import { JOBBER_REQUIRED_ENV } from "@/lib/jobber/setup";
 import { DOCUSIGN_REQUIRED_ENV } from "@/lib/docusign/setup";
 import { MYCOI_API_UNAVAILABLE } from "@/lib/mycoi/api";
 import { PROCORE_REQUIRED_ENV } from "@/lib/procore/setup";
+import { ACC_REQUIRED_ENV } from "@/lib/acc/setup";
 import { COMPANYCAM_REQUIRED_ENV } from "@/lib/companycam/setup";
+import { BLUEBEAM_REQUIRED_ENV } from "@/lib/bluebeam/setup";
 
 /**
  * The one list of providers, and the seam the next phase hooks into.
@@ -78,6 +80,16 @@ export type ProviderImplementation =
    * because the card underneath it is an Import button, not a refresh.
    */
   | { kind: "photo-import"; startHref: string; requiredEnv: readonly string[] }
+  /**
+   * A per-job OAuth-connected exchange, PUSH and a limited PULL: the owner
+   * links a job to a freshly-created Studio Session at the provider, an
+   * arbitrary file can be pushed into it, and a press reads back a status
+   * summary (never the file's content or any quantity). Its own kind
+   * because unlike `feed`/`photo-import` there is nothing to "pick" — the
+   * provider does not list existing resources to link, it creates one —
+   * and unlike `esign` there is no single document lifecycle to track.
+   */
+  | { kind: "studio"; startHref: string; requiredEnv: readonly string[] }
   /** Not built. Renders disabled, with no control that implies otherwise. */
   | { kind: "planned" };
 
@@ -203,6 +215,19 @@ export const PROVIDERS: ProviderEntry[] = [
     ),
   },
   {
+    provider: "ACC",
+    name: "Autodesk Construction Cloud",
+    description:
+      "Sign in with your own Autodesk Construction Cloud login and link a GC's ACC project to your job. The GC's RFIs and submittals then show on your RFIs and Submittals pages, marked as theirs, with a link back to ACC. Read-only: C Stream never changes anything in the GC's project.",
+    implementation: { kind: "feed", startHref: "/api/acc/start", requiredEnv: ACC_REQUIRED_ENV },
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
+        <rect x="3.5" y="3.5" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M6.5 13V7.5L10 13V7.5M13.5 7.5v5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     provider: "COMPANYCAM",
     name: "CompanyCam",
     description:
@@ -239,6 +264,19 @@ export const PROVIDERS: ProviderEntry[] = [
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
         <path d="M10 3.2 15.5 5.4v4.3c0 3-2.2 5.6-5.5 7-3.3-1.4-5.5-4-5.5-7V5.4L10 3.2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
         <path d="m7.5 10 1.8 1.8 3.4-3.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    provider: "BLUEBEAM",
+    name: "Bluebeam",
+    description:
+      "Link a job to a fresh Bluebeam Studio Session under your own account, push a PDF drawing set or spec section into it, and read back how many markups have come in and their status. Bluebeam's public API does not expose markup geometry or takeoff quantities — those stay in Revu — so this is document exchange and status, not automatic estimating.",
+    implementation: { kind: "studio", startHref: "/api/bluebeam/start", requiredEnv: BLUEBEAM_REQUIRED_ENV },
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
+        <rect x="3.5" y="3.5" width="13" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M6.5 13 9 8.5l2 3 1-1.5 1.5 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   },

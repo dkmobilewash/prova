@@ -128,7 +128,7 @@ export function calculateBurdenedLaborCost(
 /** What Prisma hands back for a Decimal column, or a plain number. The three
  * call sites all do `Number(...)` on these; doing it here instead is what
  * lets the job page's edit be one expression. */
-type DecimalLike = number | string | { toString(): string };
+export type DecimalLike = number | string | { toString(): string };
 
 function num(value: DecimalLike | null | undefined): number {
   if (value == null) return 0;
@@ -194,11 +194,33 @@ export function lineItemCostToDate(
   schedulesByCraft: ReadonlyMap<string, FringeRateScheduleInput[]>,
 ): LineItemCostToDate {
   const manualCost = costEntries.reduce((sum, entry) => sum + num(entry.amount), 0);
-  const labor = calculateBurdenedLaborCost(
-    jobTimeEntries.filter((entry) => entry.lineItemId === lineItemId).map(toPlainEntry),
+  const labor = laborCostForRows(
+    jobTimeEntries.filter((entry) => entry.lineItemId === lineItemId),
     schedulesByCraft,
   );
   return { actualCostToDate: manualCost + labor.total, labor };
+}
+
+/**
+ * Burdened labor over TimeEntry ROWS a caller has already narrowed.
+ *
+ * The same arithmetic as everything above -- this is the entry point for a
+ * caller whose query already scopes the entries, rather than one holding a
+ * whole job's list to filter. /catalog and `updateCatalogDefaultsFromActuals`
+ * read `JobLineItem.timeEntries` directly, because a catalog entry's lines
+ * are scattered across many jobs and fetching each whole job to throw most of
+ * it away would be a query shape, not a saving.
+ *
+ * It exists so that those two call sites cannot grow a SECOND costing rule.
+ * Issue #287 was never bad arithmetic; it was correct arithmetic that nothing
+ * called, and the way that recurs is a new surface writing its own sum.
+ */
+export function laborCostForRows(
+  rows: readonly TimeEntryCostRow[],
+  schedulesByCraft: ReadonlyMap<string, FringeRateScheduleInput[]>,
+): WipLaborCost {
+  if (rows.length === 0) return NO_LABOR_COST;
+  return calculateBurdenedLaborCost(rows.map(toPlainEntry), schedulesByCraft);
 }
 
 /**

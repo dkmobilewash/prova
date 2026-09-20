@@ -701,10 +701,19 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // — two modules because they sit behind two different doors.
   procore: () => import("./actions/procore"),
   procoreFeed: () => import("./actions/procoreFeed"),
+  // ACC (Autodesk Construction Cloud): same two-door shape as Procore's —
+  // the Integrations card's four (MANAGE_COMPLIANCE, then owner) and the
+  // feed refresh on /rfis and /submittals (MANAGE_JOBS).
+  acc: () => import("./actions/acc"),
+  accFeed: () => import("./actions/accFeed"),
   // CompanyCam: the Integrations card's five (MANAGE_COMPLIANCE, then
   // owner) — the same door as Procore's, reachable only from
   // /settings/integrations.
   companycam: () => import("./actions/companycam"),
+  // Bluebeam: the Integrations card's five (MANAGE_COMPLIANCE, then
+  // owner) — the same door as CompanyCam's, reachable only from
+  // /settings/integrations.
+  bluebeam: () => import("./actions/bluebeam"),
   safety: () => import("./actions/safety"),
   certifications: () => import("./actions/certifications"),
   punchLists: () => import("./actions/punchLists"),
@@ -731,6 +740,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // Lien deadlines — every write reachable only from /lien-deadlines, which
   // demands MANAGE_BILLING, and every one asserts it before any query.
   lienDeadlines: () => import("./actions/lienDeadlines"),
+  // The payroll register import and issuing a WH-347 payroll number —
+  // both MANAGE_COMPLIANCE, deliberately NOT owner-only like the bulk
+  // spreadsheet importers beside the register import on /settings/import.
+  // See lib/actions/payrollRegister.ts's own doc comment for why.
+  payrollRegister: () => import("./actions/payrollRegister"),
   // Phase codes — the company's own cost-coding vocabulary. All three
   // writes are reachable only from /settings, which demands
   // MANAGE_COMPLIANCE, so the walk puts all three in MUST_ASSERT and every

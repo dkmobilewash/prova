@@ -18,10 +18,16 @@ import { docuSignCallbackMessage, docuSignCardState, docuSignSetup } from "@/lib
 import { ProcoreControls } from "@/components/ProcoreControls";
 import { ProcoreLinks } from "@/components/ProcoreLinks";
 import { feedCardState, procoreCallbackMessage } from "@/lib/procore/setup";
+import { ACCControls } from "@/components/ACCControls";
+import { ACCLinks } from "@/components/ACCLinks";
+import { accCallbackMessage } from "@/lib/acc/setup";
 import { CompanyCamControls } from "@/components/CompanyCamControls";
 import { CompanyCamLinks } from "@/components/CompanyCamLinks";
 import { companyCamCardState, companyCamCallbackMessage } from "@/lib/companycam/setup";
 import { toJobOption, jobPickerLabel } from "@/components/jobLabels";
+import { BluebeamControls } from "@/components/BluebeamControls";
+import { BluebeamLinks } from "@/components/BluebeamLinks";
+import { bluebeamCardState, bluebeamCallbackMessage, bluebeamSetup } from "@/lib/bluebeam/setup";
 
 /**
  * Settings → Integrations.
@@ -75,7 +81,7 @@ export default async function IntegrationsPage({
     );
   }
 
-  const [connections, quickBooks, procoreLinks, companyCamLinks, jobsForLinking] = await Promise.all([
+  const [connections, quickBooks, procoreLinks, accLinks, companyCamLinks, bluebeamLinks, jobsForLinking] = await Promise.all([
     prisma.integrationConnection.findMany({
       where: { companyId: company.id },
       // Named columns, not `include`. The encrypted envelopes are not in the
@@ -114,6 +120,22 @@ export default async function IntegrationsPage({
         job: { select: { name: true } },
       },
     }),
+    // The ACC card's linked projects. Scoped to the session's company; no
+    // credential is in this select because none is on this table.
+    prisma.accProjectLink.findMany({
+      where: { companyId: company.id },
+      orderBy: { linkedAt: "asc" },
+      select: {
+        id: true,
+        jobId: true,
+        accProjectName: true,
+        accAccountName: true,
+        lastRefreshedAt: true,
+        lastRefreshStatus: true,
+        lastRefreshMessage: true,
+        job: { select: { name: true } },
+      },
+    }),
     // The CompanyCam card's linked projects. Scoped to the session's
     // company; no credential is in this select because none is on this
     // table.
@@ -127,6 +149,21 @@ export default async function IntegrationsPage({
         lastImportedAt: true,
         lastImportStatus: true,
         lastImportMessage: true,
+        job: { select: { name: true } },
+      },
+    }),
+    // The Bluebeam card's linked jobs. Scoped to the session's company; no
+    // credential is in this select because none is on this table.
+    prisma.bluebeamStudioSession.findMany({
+      where: { companyId: company.id },
+      orderBy: { linkedAt: "asc" },
+      select: {
+        id: true,
+        jobId: true,
+        bluebeamSessionName: true,
+        lastSyncedAt: true,
+        lastSyncStatus: true,
+        lastSyncMessage: true,
         job: { select: { name: true } },
       },
     }),
@@ -147,7 +184,10 @@ export default async function IntegrationsPage({
   const docuSignReturn = docuSignCallbackMessage(one(query.docusign), one(query.docusign_detail));
   const docuSign = docuSignSetup(process.env);
   const procoreReturn = procoreCallbackMessage(one(query.procore), one(query.procore_detail));
+  const accReturn = accCallbackMessage(one(query.acc), one(query.acc_detail));
   const companyCamReturn = companyCamCallbackMessage(one(query.companycam), one(query.companycam_detail));
+  const bluebeamReturn = bluebeamCallbackMessage(one(query.bluebeam), one(query.bluebeam_detail));
+  const bluebeam = bluebeamSetup(process.env);
   const blob = {
     environment: process.env.VERCEL_ENV ?? "local",
     present: Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim()),
@@ -204,6 +244,10 @@ export default async function IntegrationsPage({
         ? docuSignCardState(docuSign.configured && integrationEncryptionConfigured(), connection?.status)
         : null;
 
+    // Same rule for the Bluebeam card, from its own setup check.
+    const studioState =
+      impl.kind === "studio" ? bluebeamCardState(bluebeam.configured && integrationEncryptionConfigured(), connection?.status) : null;
+
     const isConnected = status === "CONNECTED";
 
     return (
@@ -231,7 +275,7 @@ export default async function IntegrationsPage({
                   <span className="inline-flex items-center rounded-full border border-line-card bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
                     File import
                   </span>
-                ) : importState === "not-set-up" || esignState === "not-set-up" || companycamState === "not-set-up" ? (
+                ) : importState === "not-set-up" || esignState === "not-set-up" || companycamState === "not-set-up" || studioState === "not-set-up" ? (
                   <span className="inline-flex items-center rounded-full border border-line-card bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
                     Not set up
                   </span>
@@ -272,11 +316,17 @@ export default async function IntegrationsPage({
                 {impl.importLabel}
               </Link>
             )}
-            {impl.kind === "feed" && importState && (
+            {impl.kind === "feed" && importState && entry.provider === "PROCORE" && (
               <ProcoreControls state={importState} startHref={impl.startHref} />
+            )}
+            {impl.kind === "feed" && importState && entry.provider === "ACC" && (
+              <ACCControls state={importState} startHref={impl.startHref} />
             )}
             {impl.kind === "photo-import" && companycamState && (
               <CompanyCamControls state={companycamState} startHref={impl.startHref} />
+            )}
+            {impl.kind === "studio" && studioState && (
+              <BluebeamControls state={studioState} startHref={impl.startHref} />
             )}
             {impl.kind === "external" && (
               <Link
@@ -334,7 +384,7 @@ export default async function IntegrationsPage({
           </dl>
         )}
 
-        {impl.kind === "feed" && importState === "connected" && connection && (
+        {impl.kind === "feed" && importState === "connected" && connection && entry.provider === "PROCORE" && (
           <>
             <dl className="mt-4 grid gap-4 border-t border-line-card pt-4 sm:grid-cols-3">
               <DetailRow label="Procore login" value={connection.externalAccountLabel ?? "—"} />
@@ -358,6 +408,30 @@ export default async function IntegrationsPage({
           </>
         )}
 
+        {impl.kind === "feed" && importState === "connected" && connection && entry.provider === "ACC" && (
+          <>
+            <dl className="mt-4 grid gap-4 border-t border-line-card pt-4 sm:grid-cols-3">
+              <DetailRow label="ACC login" value={connection.externalAccountLabel ?? "—"} />
+              <DetailRow label="Linked projects" value={String(accLinks.length)} />
+              <DetailRow label="Direction" value="ACC → C Stream only" />
+            </dl>
+            <ACCLinks
+              links={accLinks.map((link) => ({
+                id: link.id,
+                jobName: link.job.name,
+                accProjectName: link.accProjectName,
+                accAccountName: link.accAccountName,
+                lastRefreshedLabel: link.lastRefreshedAt ? relativeTime(link.lastRefreshedAt, now) : "never",
+                lastRefreshOk: link.lastRefreshStatus ? link.lastRefreshStatus === "SUCCESS" : null,
+                lastRefreshMessage: link.lastRefreshMessage,
+              }))}
+              jobs={jobsForLinking
+                .filter((job) => !accLinks.some((link) => link.jobId === job.id))
+                .map((job) => ({ id: job.id, label: jobPickerLabel(toJobOption(job)) }))}
+            />
+          </>
+        )}
+
         {impl.kind === "photo-import" && companycamState === "connected" && connection && (
           <>
             <dl className="mt-4 grid gap-4 border-t border-line-card pt-4 sm:grid-cols-3">
@@ -376,6 +450,30 @@ export default async function IntegrationsPage({
               }))}
               jobs={jobsForLinking
                 .filter((job) => !companyCamLinks.some((link) => link.jobId === job.id))
+                .map((job) => ({ id: job.id, label: jobPickerLabel(toJobOption(job)) }))}
+            />
+          </>
+        )}
+
+        {impl.kind === "studio" && studioState === "connected" && connection && (
+          <>
+            <dl className="mt-4 grid gap-4 border-t border-line-card pt-4 sm:grid-cols-3" data-tour="bluebeam-details">
+              <DetailRow label="Account" value={connection.externalAccountLabel ?? "—"} />
+              <DetailRow label="Linked jobs" value={String(bluebeamLinks.length)} />
+              <DetailRow label="What syncs back" value="File count and markup status only — no geometry, no quantities" />
+            </dl>
+            <BluebeamLinks
+              links={bluebeamLinks.map((link) => ({
+                id: link.id,
+                jobId: link.jobId,
+                jobName: link.job.name,
+                bluebeamSessionName: link.bluebeamSessionName,
+                lastSyncedLabel: link.lastSyncedAt ? relativeTime(link.lastSyncedAt, now) : "never",
+                lastSyncOk: link.lastSyncStatus ? link.lastSyncStatus === "SUCCESS" : null,
+                lastSyncMessage: link.lastSyncMessage,
+              }))}
+              jobs={jobsForLinking
+                .filter((job) => !bluebeamLinks.some((link) => link.jobId === job.id))
                 .map((job) => ({ id: job.id, label: jobPickerLabel(toJobOption(job)) }))}
             />
           </>
@@ -470,6 +568,19 @@ export default async function IntegrationsPage({
         </p>
       )}
 
+      {accReturn && (
+        <p
+          role="status"
+          className={`mb-4 rounded-md border px-3 py-2 text-sm ${
+            accReturn.ok
+              ? "border-line-card bg-tag-green text-tag-green-ink"
+              : "border-line-card bg-tag-rose text-tag-rose-ink"
+          }`}
+        >
+          {accReturn.text}
+        </p>
+      )}
+
       {companyCamReturn && (
         <p
           role="status"
@@ -480,6 +591,19 @@ export default async function IntegrationsPage({
           }`}
         >
           {companyCamReturn.text}
+        </p>
+      )}
+
+      {bluebeamReturn && (
+        <p
+          role="status"
+          className={`mb-4 rounded-md border px-3 py-2 text-sm ${
+            bluebeamReturn.ok
+              ? "border-line-card bg-tag-green text-tag-green-ink"
+              : "border-line-card bg-tag-rose text-tag-rose-ink"
+          }`}
+        >
+          {bluebeamReturn.text}
         </p>
       )}
 

@@ -576,13 +576,19 @@ async function main() {
     ["Corridor 2-02: touch-up paint at return air grille", false, null],
   ];
   for (const [description, isDone, doneAt] of punch) {
+    // `isDone` in the table above is now the demo's shorthand for "the
+    // crew has been back to it": READY_FOR_REVIEW, waiting on somebody to
+    // agree. The columns it used to write were dropped by
+    // 20260920030000_punch_item_verification, and a state without its
+    // stamp is refused by a CHECK constraint, so the date goes in
+    // `readyAt` where the app reads it.
     await prisma.punchListItem.create({
       data: {
         companyId: company.id,
         jobId: riverside.id,
         description,
-        isDone,
-        completedAt: doneAt === null ? null : day(doneAt),
+        status: isDone ? "READY_FOR_REVIEW" : "OPEN",
+        readyAt: isDone ? day(doneAt ?? -1) : null,
         raisedByUserId: user?.id ?? null,
       },
     });
@@ -1449,9 +1455,16 @@ async function undo(companyId) {
     await del("lienDeadline", () => prisma.lienDeadline.deleteMany({ where: { jobId: { in: jobIds } } }));
     // Cascades to its cached ProcoreItem rows. Nothing in Procore changes.
     await del("procoreProjectLink", () => prisma.procoreProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // Cascades to its cached AccItem rows. Same shape as ProcoreProjectLink
+    // — nothing in ACC changes.
+    await del("accProjectLink", () => prisma.accProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
     // CASCADE on Job, same shape as ProcoreProjectLink — the link is a
     // pointer at CompanyCam, not evidence. Nothing in CompanyCam changes.
     await del("companyCamProjectLink", () => prisma.companyCamProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // CASCADE on Job, same shape as ProcoreProjectLink and
+    // CompanyCamProjectLink — the link is a pointer at Bluebeam, not
+    // evidence. Nothing in Bluebeam changes.
+    await del("bluebeamStudioSession", () => prisma.bluebeamStudioSession.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("timeEntry", () => prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("safetyIncident", () =>
       prisma.safetyIncident.deleteMany({ where: { jobId: { in: jobIds } } }),
@@ -1557,6 +1570,14 @@ async function undo(companyId) {
     // blocks the job delete on its own.
     await del("estimateVersionCounter", () =>
       prisma.estimateVersionCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    // WH-347 payroll numbers and their per-job counter -- the #227 shape:
+    // jobId-keyed RESTRICT children nothing else's delete reaches.
+    await del("wh347PayrollNumber", () =>
+      prisma.wh347PayrollNumber.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("wh347PayrollCounter", () =>
+      prisma.wh347PayrollCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
     await del("dispatchSlip", () =>
       prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }),

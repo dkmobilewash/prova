@@ -79,11 +79,22 @@ export const notYetRegistered: Exclusion[] = [
   // project list, and the refresh is a button on the page it refreshes.
   { action: "procore.*", reason: ADMIN + " Linking a GC's Procore project to a job: picked from Procore's own live list, so it is page only." },
   { action: "procoreFeed.*", reason: "Refresh from Procore is a button on the page whose GC records it re-reads; nothing to resolve by name." },
+  // ACC (Autodesk Construction Cloud): same shape as Procore's, same reason.
+  { action: "acc.*", reason: ADMIN + " Linking a GC's ACC project to a job: picked from Autodesk's own live list, so it is page only." },
+  { action: "accFeed.*", reason: "Refresh from ACC is a button on the page whose GC records it re-reads; nothing to resolve by name." },
   { action: "companycam.*", reason: ADMIN + " Linking a CompanyCam project to a job and importing its photos: picked from CompanyCam's own live list and pressed a batch at a time, so it is page only." },
+  { action: "bluebeam.*", reason: ADMIN + " Linking a job to a new Bluebeam Studio Session, pushing a local PDF file, or connecting the account: an OAuth sign-in and a file picked from the caller's own computer, so it is page only." },
   { action: "calendarFeed.*", reason: "Creating or regenerating the caller's own calendar-subscription link — a credential, not work on a record, and there is nothing to resolve by name. Never a command." },
   { action: "jobber.*", reason: ADMIN + " Connecting to and importing from Jobber: an OAuth sign-in and a preview a person reads before confirming, so it is page only." },
   { action: "docusign.*", reason: ADMIN + " Sending a contract for signature through DocuSign, voiding one, or connecting the account: correspondence to a GC with a signer's name and email read on the page before it goes, and an OAuth sign-in, so it is page only." },
   { action: "mycoi.*", reason: ADMIN + " Importing certificates from a myCOI export: a pasted file and a preview a person reads before confirming, so it is page only." },
+  // NOT ADMIN-prefixed, unlike the imports above: importPayrollRegister and
+  // issuePayrollNumber are gated on MANAGE_COMPLIANCE, not owner. Still
+  // page-only — a pasted register and a preview a person reads before
+  // confirming, and the numbers on it land on a WH-347 signed under
+  // penalty of perjury. Issuing a payroll number is a button on the page
+  // whose sequence it advances; nothing to resolve by name.
+  { action: "payrollRegister.*", reason: "A pasted payroll register and a preview a person reads before confirming; the deductions and net wages it writes land on a WH-347 signed under penalty of perjury, so it is page only." },
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },

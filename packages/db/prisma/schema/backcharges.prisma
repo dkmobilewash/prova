@@ -129,6 +129,13 @@ model Backcharge {
   loggedByUserId String?
   loggedByUser   User?   @relation(fields: [loggedByUserId], references: [id])
 
+  /// Punch items offered as evidence for or against this deduction — the
+  /// dated, photographed record of what was actually wrong and who caused
+  /// it. Nothing here changes `claimedAmount` or any other figure: netting
+  /// a backcharge against a pay application is still billing-lane work
+  /// this model deliberately does not do.
+  punchListItems PunchListItem[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

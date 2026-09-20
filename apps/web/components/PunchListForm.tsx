@@ -5,6 +5,11 @@ import Link from "next/link";
 import { createPunchListItem } from "@/lib/actions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
+import {
+  EMPTY_PUNCH_ITEM_FIELDS,
+  PunchItemFields,
+  type PunchListPeople,
+} from "@/components/PunchItemFields";
 
 // 16px, not the 14px inherited from the `text-sm` label: iOS Safari zooms the
 // whole page when a focused input is under 16px, and the foreman then has to
@@ -25,9 +30,11 @@ export type { JobOption };
 export function PunchListForm({
   jobs,
   defaultJobId,
+  people,
 }: {
   jobs: JobOption[];
   defaultJobId?: string;
+  people: PunchListPeople;
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +124,11 @@ export function PunchListForm({
           className={inputClass}
         />
       </label>
+
+      {/* Where, when and who — on the create form because a walkthrough is
+          where those are known. Whose fault it is is NOT here: that is a
+          question weeks later, when the GC deducts for it. */}
+      <PunchItemFields people={people} values={EMPTY_PUNCH_ITEM_FIELDS} showBlame={false} />
 
       {/* role="alert" so the reason is announced rather than only drawn —
           the person who just submitted is usually still looking at the

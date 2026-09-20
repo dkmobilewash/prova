@@ -2,7 +2,7 @@ import { useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { useCallback, useRef, useState } from "react";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Image, PixelRatio, StyleSheet, Text, View } from "react-native";
 import ViewShot, { type ViewShotRef } from "react-native-view-shot";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -28,14 +28,24 @@ import { keepForUpload } from "@/lib/photo-store";
 import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
 import { colors, typography } from "@/lib/theme";
 import type { Media, MediaTag, PunchListItem } from "@/lib/types";
-import { useReloadWhenShown } from "@/lib/use-reload-when-shown";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 import { useSync } from "@/lib/use-sync";
 
-/** The photo is stamped at this width; the height follows the picture. Big
- * enough that the stamp is readable when a GC opens it full screen, small
- * enough to go up over a site connection. */
+/** The photo is stamped and stored at this width in PIXELS. Big enough that
+ * the stamp is readable when a GC opens it full screen, small enough to go
+ * up over a site connection.
+ *
+ * WHAT DECIDES THE OUTPUT SIZE is the rendered view's size in POINTS times
+ * the screen's density — `ViewShot`'s own width/height options did nothing
+ * here (measured on production: asked for 1200, stored 3600x4800, 3.6MB,
+ * most of the platform's 4.5MB request cap). So the whole stamp layout is
+ * laid out at `STAMP_WIDTH / density` points, and everything in it — the
+ * padding, the type — is scaled by the same factor, which lands the capture
+ * at STAMP_WIDTH pixels on any phone with the stamp the same size relative
+ * to the picture. */
 const STAMP_WIDTH = 1200;
+/** Points per pixel on this screen: 1/3 on a 3x phone. */
+const pointScale = () => 1 / PixelRatio.get();
 
 type Shot = {
   uri: string;
@@ -48,7 +58,11 @@ type Shot = {
 };
 
 export default function PhotosScreen() {
-  const { jobId } = useLocalSearchParams<{ jobId: string }>();
+  // `punchListItemId` arrives when the punch list sent us here to
+  // photograph a specific fix, so the attachment is already chosen by the
+  // time the sheet opens — the prompt that offered it would be a lie if it
+  // dropped you on an empty picker.
+  const { jobId, punchListItemId } = useLocalSearchParams<{ jobId: string; punchListItemId?: string }>();
   const getToken = useStableGetToken();
   const [media, setMedia] = useState<Media[]>([]);
   const [tags, setTags] = useState<MediaTag[]>([]);
@@ -77,7 +91,7 @@ export default function PhotosScreen() {
       ),
       api.listMediaTags(token).then(setTags, () => setTags([])),
       api.listPunchListItems(jobId, token).then(
-        (items) => setPunchItems(items.filter((i) => !i.isDone)),
+        (items) => setPunchItems(items.filter((i) => i.status === "OPEN")),
         () => setPunchItems([]),
       ),
       api.listFieldReports(jobId, token).then(
@@ -91,15 +105,14 @@ export default function PhotosScreen() {
     ]);
   }, [getToken, jobId]);
 
-  useReloadWhenShown(load);
-  const { sync, refused, dismissRefused } = useSync(load);
+  const { sync, refused, dismissRefused, retrySetAside } = useSync(load);
 
   // The details sheet, opened once a photo has been taken or picked.
   const [shot, setShot] = useState<Shot | null>(null);
   const [caption, setCaption] = useState("");
   const [pickedTags, setPickedTags] = useState<string[]>([]);
   const [attachReport, setAttachReport] = useState(true);
-  const [punchItemId, setPunchItemId] = useState<string | null>(null);
+  const [punchItemId, setPunchItemId] = useState<string | null>(punchListItemId ?? null);
   // ViewShot's own ref: `capture()` on it returns the stamped file's uri.
   const stampRef = useRef<ViewShotRef>(null);
 
@@ -210,14 +223,19 @@ export default function PhotosScreen() {
   const toggleTag = (id: string) =>
     setPickedTags((current) => (current.includes(id) ? current.filter((t) => t !== id) : [...current, id]));
 
-  const stampHeight = shot ? Math.round((shot.height / shot.width) * STAMP_WIDTH) : STAMP_WIDTH;
+  // In points, so the capture comes out at STAMP_WIDTH pixels.
+  const layoutWidth = Math.round(STAMP_WIDTH * pointScale());
+  const layoutHeight = shot ? Math.round((shot.height / shot.width) * layoutWidth) : layoutWidth;
+  /** Points per stamp pixel: everything inside the stamp is written in the
+   * pixel sizes it should come out at, then scaled by this. */
+  const stampScale = layoutWidth / STAMP_WIDTH;
   const lines = shot ? stampLines({ jobName: jobName || "This job", capturedAt: shot.capturedAt, location: shot.location }) : [];
 
   return (
     <View style={styles.screen}>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {busy ? <Text style={styles.busy}>{busy}</Text> : null}
-      <RefusedBanner refused={refused} onDismiss={dismissRefused} />
+      <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
 
       <List
         data={[
@@ -279,11 +297,27 @@ export default function PhotosScreen() {
           a view with display:none or zero opacity has nothing to capture. */}
       {shot ? (
         <View style={styles.offscreen} pointerEvents="none">
-          <ViewShot ref={stampRef} style={{ width: STAMP_WIDTH, height: stampHeight }}>
-            <Image source={{ uri: shot.uri }} style={{ width: STAMP_WIDTH, height: stampHeight }} resizeMode="cover" />
-            <View style={styles.stamp}>
+          <ViewShot
+            ref={stampRef}
+            options={{ format: "jpg", quality: 0.85 }}
+            style={{ width: layoutWidth, height: layoutHeight }}
+          >
+            <Image source={{ uri: shot.uri }} style={{ width: layoutWidth, height: layoutHeight }} resizeMode="cover" />
+            <View
+              style={[
+                styles.stamp,
+                { paddingVertical: 18 * stampScale, paddingHorizontal: 24 * stampScale },
+              ]}
+            >
               {lines.map((line, i) => (
-                <Text key={i} style={[styles.stampText, i === 0 && styles.stampTitle]}>
+                <Text
+                  key={i}
+                  style={[
+                    styles.stampText,
+                    { fontSize: 34 * stampScale, lineHeight: 44 * stampScale },
+                    i === 0 && styles.stampTitle,
+                  ]}
+                >
                   {line}
                 </Text>
               ))}
@@ -371,9 +405,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: "rgba(0,0,0,0.55)",
-    paddingVertical: 18,
-    paddingHorizontal: 24,
   },
-  stampText: { color: "#ffffff", fontSize: 34, lineHeight: 44 },
+  stampText: { color: "#ffffff" },
   stampTitle: { fontWeight: "700" },
 });

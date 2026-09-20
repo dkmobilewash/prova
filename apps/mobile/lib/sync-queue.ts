@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as api from "./api";
-import { discardQueuedPhoto, queuedPhotoExists } from "./photo-store";
+import { discardQueuedPhoto, queuedPhotoExists, uploadQueuedPhoto } from "./photo-store";
 import type { FieldReportFields } from "./types";
 
 const KEY = "prova.field-queue";
@@ -73,6 +73,21 @@ export type CreateOp =
       jobId: string;
       clientOperationId: string;
       description: string;
+      area?: string;
+    }
+  | {
+      /** Marking an item fixed, or taking that back.
+       *
+       * This used to be a direct API call from the screen, which is why
+       * closing an item with no signal failed with an error and left the
+       * box unticked — the one thing a punch list has to survive is a
+       * basement. Replaying it is safe without any idempotency key of its
+       * own: setting a status twice lands on the same row, unlike a create.
+       */
+      type: "punch-list:status";
+      jobId: string;
+      itemId: string;
+      status: "OPEN" | "READY_FOR_REVIEW";
     }
   | {
       type: "ticket:create";
@@ -173,8 +188,25 @@ export async function listRefused(): Promise<RefusedOp[]> {
   }
 }
 
+/** Throws the refused writes away — the person has read why and chosen to
+ * let them go. A kept photo file goes with them; nothing else references it. */
 export async function clearRefused(): Promise<void> {
+  for (const { op } of await listRefused()) {
+    if (op.type === "media:create") discardQueuedPhoto(op.fileUri);
+  }
   await AsyncStorage.removeItem(REFUSED_KEY);
+}
+
+/** Puts the refused writes back on the queue, for when the reason has been
+ * dealt with — the day reopened, or a build that no longer sends a photo
+ * too large for the server to take. A photo whose file is gone cannot be
+ * retried and is dropped. Returns how many went back on. */
+export async function retryRefused(): Promise<number> {
+  const refused = await listRefused();
+  const retryable = refused.filter((r) => r.op.type !== "media:create" || queuedPhotoExists(r.op.fileUri));
+  if (retryable.length > 0) await write([...(await read()), ...retryable.map((r) => r.op)]);
+  await AsyncStorage.removeItem(REFUSED_KEY);
+  return retryable.length;
 }
 
 async function recordRefused(refused: RefusedOp[]): Promise<void> {
@@ -216,8 +248,12 @@ export async function flushQueue(token: string): Promise<void> {
         throw error;
       }
       if (error instanceof api.ApiError && isFinalRefusal(error.status)) {
-        // A photo the server will never take is not worth the phone's disk.
-        if (op.type === "media:create") discardQueuedPhoto(op.fileUri);
+        // The photo file is KEPT. A refusal here is the server saying no to
+        // this request, not proof the picture is worthless — a too-large
+        // upload (413) or a day that got signed are both things somebody
+        // can put right, and the photograph may be the only copy: a camera
+        // shot taken in the app is not in the camera roll. The refused list
+        // is capped, so the disk this holds is bounded.
         refused.push({ op, error: error.message, status: error.status, at: new Date().toISOString() });
         done++;
         continue;
@@ -310,7 +346,14 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
       );
       return;
     case "punch-list:create":
-      await api.createPunchListItem(op.jobId, { description: op.description, clientOperationId: op.clientOperationId }, token);
+      await api.createPunchListItem(
+        op.jobId,
+        { description: op.description, area: op.area, clientOperationId: op.clientOperationId },
+        token,
+      );
+      return;
+    case "punch-list:status":
+      await api.setPunchListItemStatus(op.jobId, op.itemId, op.status, token);
       return;
     case "ticket:create":
       await api.createTmTicket(
@@ -336,20 +379,37 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
       if (!queuedPhotoExists(op.fileUri)) {
         throw new api.ApiError("The photo file is no longer on this phone", 410);
       }
-      const form = new FormData();
-      form.append("file", { uri: op.fileUri, name: op.fileName, type: op.mimeType } as unknown as Blob);
-      form.append("capturedAt", op.capturedAt);
-      form.append("clientOperationId", op.clientOperationId);
-      if (op.caption) form.append("caption", op.caption);
-      if (op.capturedLatitude !== undefined) form.append("capturedLatitude", String(op.capturedLatitude));
-      if (op.capturedLongitude !== undefined) form.append("capturedLongitude", String(op.capturedLongitude));
+      const parameters: Record<string, string> = {
+        capturedAt: op.capturedAt,
+        clientOperationId: op.clientOperationId,
+      };
+      if (op.caption) parameters.caption = op.caption;
+      if (op.capturedLatitude !== undefined) parameters.capturedLatitude = String(op.capturedLatitude);
+      if (op.capturedLongitude !== undefined) parameters.capturedLongitude = String(op.capturedLongitude);
       if (op.capturedAccuracyMeters !== undefined) {
-        form.append("capturedAccuracyMeters", String(op.capturedAccuracyMeters));
+        parameters.capturedAccuracyMeters = String(op.capturedAccuracyMeters);
       }
-      if (op.dailyFieldReportId) form.append("dailyFieldReportId", op.dailyFieldReportId);
-      if (op.punchListItemId) form.append("punchListItemId", op.punchListItemId);
-      for (const tagId of op.tagIds ?? []) form.append("tagIds", tagId);
-      await api.uploadMedia(op.jobId, form, token);
+      if (op.dailyFieldReportId) parameters.dailyFieldReportId = op.dailyFieldReportId;
+      if (op.punchListItemId) parameters.punchListItemId = op.punchListItemId;
+      // One value per field in a native multipart upload, so several tags
+      // travel comma-separated; the route splits them.
+      if (op.tagIds?.length) parameters.tagIds = op.tagIds.join(",");
+      const result = await uploadQueuedPhoto(
+        op.fileUri,
+        api.mediaUploadUrl(op.jobId),
+        token,
+        op.mimeType,
+        parameters,
+      );
+      if (result.status >= 400) {
+        let message = `Upload failed (${result.status})`;
+        try {
+          message = (JSON.parse(result.body) as { error?: string }).error ?? message;
+        } catch {
+          // A non-JSON body (a proxy error page): keep the status sentence.
+        }
+        throw new api.ApiError(message, result.status);
+      }
       discardQueuedPhoto(op.fileUri);
       return;
     }

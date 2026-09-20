@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  phaseCodeRollupLine,
   rollUpPhaseCodes,
   type PhaseCodeMeta,
   type PhaseCodeRollupLine,
@@ -30,6 +31,7 @@ const line = (over: Partial<PhaseCodeRollupLine> = {}): PhaseCodeRollupLine => (
   jobId: "job_a",
   budgetedCost: 0,
   actualCost: 0,
+  unpricedLaborHours: 0,
   ...over,
 });
 
@@ -285,5 +287,130 @@ describe("the uncoded row when everything is coded", () => {
     expect(rollup.uncoded.budgetedCost).toBe(0);
     expect(rollup.uncoded.actualCost).toBe(0);
     expect(rollup.uncoded.variance).toBe(0);
+  });
+});
+
+describe("hours nobody could price are named, not averaged in at zero (#287)", () => {
+  // `actualCost` on a line now includes burdened labor (lib/labor-job-cost.ts).
+  // When no FringeRateSchedule covers an entry's craft and date, labor-cost.ts
+  // returns null rather than guessing a wage — so those hours add NO dollars,
+  // and $0 of labor is indistinguishable from cheap labor inside a variance.
+  //
+  // A cost code is exactly where that misreads worst: `tracksLabor` is a
+  // column on PhaseCode, so a phase flagged as tracking labor could report a
+  // handsome underrun built entirely out of hours nobody had a rate for.
+
+  it("carries unpriced hours up to the phase row and the totals", () => {
+    const rollup = rollUpPhaseCodes(
+      [PLYWOOD],
+      [
+        line({ phaseCodeId: PLYWOOD.id, budgetedCost: 10_000, actualCost: 4_000, unpricedLaborHours: 120 }),
+        line({ phaseCodeId: PLYWOOD.id, budgetedCost: 5_000, actualCost: 2_000 }),
+      ],
+    );
+
+    expect(rollup.rows[0].unpricedLaborHours).toBe(120);
+    expect(rollup.totals.unpricedLaborHours).toBe(120);
+    // The variance still reads as a $9,000 underrun. That is the number the
+    // caveat exists to qualify, so it must NOT be silently adjusted.
+    expect(rollup.rows[0].variance).toBe(9_000);
+  });
+
+  it("reports unpriced hours on uncoded work too", () => {
+    const rollup = rollUpPhaseCodes(
+      [PLYWOOD],
+      [line({ phaseCodeId: null, budgetedCost: 1_000, actualCost: 0, unpricedLaborHours: 8 })],
+    );
+    expect(rollup.uncoded.unpricedLaborHours).toBe(8);
+    expect(rollup.totals.unpricedLaborHours).toBe(8);
+  });
+
+  it("reports zero when every hour was priced", () => {
+    const rollup = rollUpPhaseCodes(
+      [PLYWOOD],
+      [line({ phaseCodeId: PLYWOOD.id, budgetedCost: 100, actualCost: 90 })],
+    );
+    expect(rollup.rows[0].unpricedLaborHours).toBe(0);
+    expect(rollup.totals.unpricedLaborHours).toBe(0);
+  });
+});
+
+describe("phaseCodeRollupLine: turning a row into a costed line (#287)", () => {
+  const CARPENTER = "craft_carpenter";
+  const schedules = new Map([
+    [
+      CARPENTER,
+      [
+        {
+          baseWage: 40,
+          pensionRate: 5,
+          vacationRate: 3,
+          healthWelfareRate: 2,
+          trainingRate: 0,
+          effectiveFrom: new Date("2026-01-01T00:00:00Z"),
+          effectiveTo: null,
+        },
+      ],
+    ],
+  ]);
+
+  const entry = (over: Record<string, unknown> = {}) => ({
+    lineItemId: "li_1",
+    craftClassificationId: CARPENTER,
+    date: new Date("2026-06-01T00:00:00Z"),
+    hours: 10,
+    payType: "STRAIGHT" as const,
+    perDiemAmount: null,
+    travelPayAmount: null,
+    ...over,
+  });
+
+  const row = (over: Record<string, unknown> = {}) => ({
+    phaseCodeId: "pc_plywood",
+    jobId: "job_a",
+    quantity: 100,
+    budgetedUnitCost: 30,
+    costEntries: [{ amount: 400 }],
+    timeEntries: [entry()],
+    ...over,
+  });
+
+  it("adds burdened labor to the manual cost entries", () => {
+    // Hand-worked: $40 base + $10 of fringes = $50/hr burdened, 10 hours =
+    // $500 of labor, on top of $400 of booked material. $900, not $400.
+    const line = phaseCodeRollupLine(row(), schedules);
+    expect(line.actualCost).toBe(900);
+    expect(line.unpricedLaborHours).toBe(0);
+  });
+
+  it("still multiplies the budget out of the two Decimals", () => {
+    expect(phaseCodeRollupLine(row(), schedules).budgetedCost).toBe(3_000);
+  });
+
+  it("keeps null budgeted cost as null, never as zero", () => {
+    expect(phaseCodeRollupLine(row({ budgetedUnitCost: null }), schedules).budgetedCost).toBeNull();
+  });
+
+  it("adds no dollars for hours no schedule covers, and counts them", () => {
+    // A craft with no schedule in the map: labor-cost.ts refuses to guess a
+    // wage, so the hours cost nothing AND say so.
+    const line = phaseCodeRollupLine(
+      row({ timeEntries: [entry({ craftClassificationId: "craft_unknown", hours: 12 })] }),
+      schedules,
+    );
+    expect(line.actualCost).toBe(400);
+    expect(line.unpricedLaborHours).toBe(12);
+  });
+
+  it("costs a line with hours and no cost entries at all", () => {
+    // The self-performed shape: the crew's time IS the cost.
+    const line = phaseCodeRollupLine(row({ costEntries: [] }), schedules);
+    expect(line.actualCost).toBe(500);
+  });
+
+  it("leaves a line with no hours exactly as it was", () => {
+    const line = phaseCodeRollupLine(row({ timeEntries: [] }), schedules);
+    expect(line.actualCost).toBe(400);
+    expect(line.unpricedLaborHours).toBe(0);
   });
 });

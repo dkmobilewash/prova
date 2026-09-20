@@ -69,10 +69,12 @@ const RFIS = [
   { companyId: "co-2", status: "SENT", number: 9, subject: "Leak", sentOn: day("2026-09-01"), dueBy: null, job: { name: "Riverside", contact: { name: "Other GC" } } },
   { companyId: "co-2", status: "SENT", number: 10, subject: "Leak 2", sentOn: day("2026-09-01"), dueBy: null, job: { name: "Riverside", contact: { name: "Other GC" } } },
 ];
+// `status: "OPEN"` is what these rows carried as `isDone: false` until
+// 20260920030000 dropped that column — the same set, said once.
 const PUNCH = [
-  { companyId: "co-1", isDone: false, description: "Patch 2B", createdAt: day("2026-09-10"), job: { name: "Riverside" }, raisedBy: null },
-  { companyId: "co-1", isDone: false, description: "Patch 3A", createdAt: day("2026-09-10"), job: { name: "Riverside" }, raisedBy: null },
-  { companyId: "co-2", isDone: false, description: "Other", createdAt: day("2026-09-10"), job: { name: "Riverside" }, raisedBy: null },
+  { companyId: "co-1", status: "OPEN", description: "Patch 2B", createdAt: day("2026-09-10"), job: { name: "Riverside" }, raisedBy: null },
+  { companyId: "co-1", status: "OPEN", description: "Patch 3A", createdAt: day("2026-09-10"), job: { name: "Riverside" }, raisedBy: null },
+  { companyId: "co-2", status: "OPEN", description: "Other", createdAt: day("2026-09-10"), job: { name: "Riverside" }, raisedBy: null },
 ];
 
 const reads: Record<string, number> = {};
