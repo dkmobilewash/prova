@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { prisma } from "@prova/db";
+import { Prisma, prisma } from "@prova/db";
 
 export const dynamic = "force-dynamic";
 
@@ -85,7 +85,20 @@ export async function POST(
   const description = String(input.description ?? "").trim();
   if (!description) return jsonError("Description is required", 400);
 
-  // Idempotent create: a retried offline POST replays instead of duplicating.
+  /**
+   * Idempotent create: a retried offline POST replays instead of
+   * duplicating.
+   *
+   * THE READ IS NOT THE GUARANTEE — the unique index is. Two requests
+   * carrying the same key can both pass this check before either inserts,
+   * and production did exactly that on 2026-09-20: the phone flushed its
+   * queue twice at once and the second insert came back
+   * `P2002: Unique constraint failed on (companyId, clientOperationId)`,
+   * a 500 for a request whose whole purpose was to be safely repeatable.
+   * The phone no longer runs two flushes at once, and this no longer
+   * depends on it not doing so: a collision below is read back as the
+   * replay it always was.
+   */
   const clientOperationId = String(input.clientOperationId ?? "").trim() || undefined;
   if (clientOperationId) {
     const existing = await prisma.punchListItem.findUnique({
@@ -100,16 +113,27 @@ export async function POST(
   // in a stairwell.
   const area = String(input.area ?? "").trim() || null;
 
-  const item = await prisma.punchListItem.create({
-    data: {
-      companyId: context.companyId,
-      jobId: job.id,
-      description,
-      area,
-      raisedByUserId: context.id,
-      clientOperationId,
-    },
-  });
-
-  return NextResponse.json(toJson(item), { status: 201 });
+  try {
+    const item = await prisma.punchListItem.create({
+      data: {
+        companyId: context.companyId,
+        jobId: job.id,
+        description,
+        area,
+        raisedByUserId: context.id,
+        clientOperationId,
+      },
+    });
+    return NextResponse.json(toJson(item), { status: 201 });
+  } catch (error) {
+    // The other half of the replay, for the request that lost the race.
+    // Anything else is a real failure and is rethrown.
+    if (clientOperationId && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      const existing = await prisma.punchListItem.findUnique({
+        where: { companyId_clientOperationId: { companyId: context.companyId, clientOperationId } },
+      });
+      if (existing) return NextResponse.json(toJson(existing), { status: 200 });
+    }
+    throw error;
+  }
 }

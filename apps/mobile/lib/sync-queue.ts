@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as api from "./api";
+import { uuid } from "./id";
 import { discardQueuedPhoto, queuedPhotoExists, uploadQueuedPhoto } from "./photo-store";
 import type { FieldReportFields } from "./types";
 
@@ -140,23 +141,46 @@ export type UpdateOp = {
 
 export type PendingOp = CreateOp | UpdateOp;
 
-async function read(): Promise<PendingOp[]> {
+/** A queued write and its own local id.
+ *
+ * The id is not the idempotency key — `clientOperationId` is that, and it
+ * is what the SERVER dedupes on. `opId` is how this device tells one
+ * QUEUE ENTRY from another, which is what a flush needs to take exactly
+ * the writes it sent off the queue and leave everything else alone. A
+ * status change carries no clientOperationId at all (setting a status
+ * twice lands on the same row), so identity could not be borrowed from it.
+ */
+export type QueuedOp = PendingOp & { opId: string };
+
+async function read(): Promise<QueuedOp[]> {
   const raw = await AsyncStorage.getItem(KEY);
   if (!raw) return [];
   try {
-    return JSON.parse(raw) as PendingOp[];
+    const ops = JSON.parse(raw) as (PendingOp & { opId?: string })[];
+    // A queue written by a build that predates `opId` — give each entry one
+    // so the rest of this file can rely on identity. Deterministic within
+    // this snapshot; `ensureIds` persists them before anything is sent.
+    return ops.map((op, index) => ({ ...op, opId: op.opId ?? `legacy-${index}` }) as QueuedOp);
   } catch {
     return [];
   }
 }
 
-async function write(ops: PendingOp[]): Promise<void> {
+async function write(ops: QueuedOp[]): Promise<void> {
   await AsyncStorage.setItem(KEY, JSON.stringify(ops));
+}
+
+/** Persists ids for anything queued by an older build, once, before a
+ * flush starts reasoning about which entry is which. */
+async function ensureIds(): Promise<void> {
+  const ops = await read();
+  if (!ops.some((op) => op.opId.startsWith("legacy-"))) return;
+  await write(ops.map((op) => (op.opId.startsWith("legacy-") ? { ...op, opId: uuid() } : op)));
 }
 
 export async function enqueue(op: PendingOp): Promise<void> {
   const ops = await read();
-  ops.push(op);
+  ops.push({ ...op, opId: uuid() } as QueuedOp);
   await write(ops);
 }
 
@@ -204,7 +228,11 @@ export async function clearRefused(): Promise<void> {
 export async function retryRefused(): Promise<number> {
   const refused = await listRefused();
   const retryable = refused.filter((r) => r.op.type !== "media:create" || queuedPhotoExists(r.op.fileUri));
-  if (retryable.length > 0) await write([...(await read()), ...retryable.map((r) => r.op)]);
+  // A fresh `opId` per entry: it is going back on the queue as a new entry,
+  // and the one it had was consumed by the flush that set it aside.
+  if (retryable.length > 0) {
+    await write([...(await read()), ...retryable.map((r) => ({ ...r.op, opId: uuid() }) as QueuedOp)]);
+  }
   await AsyncStorage.removeItem(REFUSED_KEY);
   return retryable.length;
 }
@@ -223,6 +251,43 @@ export function isFinalRefusal(status: number): boolean {
   return status >= 400 && status < 500 && status !== 401 && status !== 408 && status !== 429;
 }
 
+/** ONE flush at a time, and callers that arrive mid-flush ride the one
+ * already running rather than starting a second.
+ *
+ * Two flushes used to be ordinary: the screen flushes when it gains focus,
+ * when the app comes back to the foreground, and after every create, so
+ * two of those landing together sent the same write twice. Production
+ * logged the second as a 500 — `P2002` on `(companyId, clientOperationId)`
+ * — because the server's idempotency check is a read followed by an
+ * insert, and both callers passed the read before either inserted.
+ *
+ * A caller that arrives while a flush is in flight also sets `again`, so
+ * whatever it queued is not left sitting until the next focus event. */
+let inFlight: Promise<void> | null = null;
+let again = false;
+
+/** Bounded so a queue that cannot drain — no signal, a 5xx — cannot spin
+ * the radio in a loop. Anything left waits for the next focus or
+ * foreground, which is seconds away in practice. */
+const MAX_PASSES = 3;
+
+export async function flushQueue(token: string): Promise<void> {
+  if (inFlight) {
+    again = true;
+    return inFlight;
+  }
+  inFlight = (async () => {
+    for (let pass = 0; pass < MAX_PASSES; pass++) {
+      again = false;
+      await drain(token);
+      if (!again || (await pendingCount()) === 0) return;
+    }
+  })().finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
 /** Drains the queue in order. Every create carries a clientOperationId, so
  * a retried POST replays idempotently; the field-report update carries
  * clientUpdatedAt, so last-write-wins drops a stale edit.
@@ -232,19 +297,29 @@ export function isFinalRefusal(status: number): boolean {
  * like a day that is already signed — the write is taken off the queue and
  * recorded in the refused list, so it cannot hold every later write behind
  * it forever. On anything else (offline, 5xx) it stops and leaves the rest
- * queued for the next attempt. */
-export async function flushQueue(token: string): Promise<void> {
+ * queued for the next attempt.
+ *
+ * WHAT IT TAKES OFF THE QUEUE IS THE WRITES IT ACTUALLY HANDLED, BY ID.
+ * It used to write back `ops.slice(done)` — the snapshot it read when it
+ * started, minus what it had sent. Anything enqueued while it was in
+ * flight was inside the part that got overwritten, so a tap during a flush
+ * was deleted without ever being sent and without any refusal to show for
+ * it. That is how a punch item marked ready in Airplane Mode on
+ * 2026-09-20 disappeared: "Pending sync: 1" one moment, nothing the next,
+ * and the server had never heard of it. */
+async function drain(token: string): Promise<void> {
+  await ensureIds();
   const ops = await read();
-  let done = 0;
+  const handled = new Set<string>();
   const refused: RefusedOp[] = [];
   for (const op of ops) {
     try {
       await runOp(op, token);
-      done++;
+      handled.add(op.opId);
     } catch (error) {
       if (error instanceof api.ApiError && error.status === 401) {
         await recordRefused(refused);
-        if (done > 0) await write(ops.slice(done));
+        await removeHandled(handled);
         throw error;
       }
       if (error instanceof api.ApiError && isFinalRefusal(error.status)) {
@@ -255,14 +330,23 @@ export async function flushQueue(token: string): Promise<void> {
         // shot taken in the app is not in the camera roll. The refused list
         // is capped, so the disk this holds is bounded.
         refused.push({ op, error: error.message, status: error.status, at: new Date().toISOString() });
-        done++;
+        handled.add(op.opId);
         continue;
       }
       break;
     }
   }
   await recordRefused(refused);
-  if (done > 0) await write(ops.slice(done));
+  await removeHandled(handled);
+}
+
+/** Takes exactly the handled writes off the CURRENT queue, re-read rather
+ * than remembered, so a write added while this flush was running survives
+ * it. */
+async function removeHandled(handled: Set<string>): Promise<void> {
+  if (handled.size === 0) return;
+  const current = await read();
+  await write(current.filter((op) => !handled.has(op.opId)));
 }
 
 async function runOp(op: PendingOp, token: string): Promise<void> {
