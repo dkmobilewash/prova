@@ -701,6 +701,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // — two modules because they sit behind two different doors.
   procore: () => import("./actions/procore"),
   procoreFeed: () => import("./actions/procoreFeed"),
+  // ACC (Autodesk Construction Cloud): same two-door shape as Procore's —
+  // the Integrations card's four (MANAGE_COMPLIANCE, then owner) and the
+  // feed refresh on /rfis and /submittals (MANAGE_JOBS).
+  acc: () => import("./actions/acc"),
+  accFeed: () => import("./actions/accFeed"),
   // CompanyCam: the Integrations card's five (MANAGE_COMPLIANCE, then
   // owner) — the same door as Procore's, reachable only from
   // /settings/integrations.

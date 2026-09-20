@@ -81,7 +81,7 @@ const LABELLED_PICKERS: Record<string, number> = {
   "app/(app)/punch-lists/page.tsx": 1,
   "app/(app)/rfis/page.tsx": 1,
   "app/(app)/submittals/page.tsx": 1,
-  "app/(app)/settings/integrations/page.tsx": 2,
+  "app/(app)/settings/integrations/page.tsx": 3,
 };
 
 /**
@@ -201,7 +201,11 @@ describe("the job-picker census", () => {
     // does this project import into" picker, the same shape as Procore's
     // and on the same page — /settings/integrations now calls the helper
     // twice, once per card.
-    expect(expected).toEqual(28);
+    //
+    // 28 -> 29 on 2026-09-19: the ACC (Autodesk Construction Cloud) card's
+    // own "which of your jobs does this GC project feed" picker — same
+    // shape as Procore's, on the same page, a third call to the helper.
+    expect(expected).toEqual(29);
     expect(actual).toEqual(expected);
   });
 

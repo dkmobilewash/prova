@@ -18,6 +18,9 @@ import { docuSignCallbackMessage, docuSignCardState, docuSignSetup } from "@/lib
 import { ProcoreControls } from "@/components/ProcoreControls";
 import { ProcoreLinks } from "@/components/ProcoreLinks";
 import { feedCardState, procoreCallbackMessage } from "@/lib/procore/setup";
+import { ACCControls } from "@/components/ACCControls";
+import { ACCLinks } from "@/components/ACCLinks";
+import { accCallbackMessage } from "@/lib/acc/setup";
 import { CompanyCamControls } from "@/components/CompanyCamControls";
 import { CompanyCamLinks } from "@/components/CompanyCamLinks";
 import { companyCamCardState, companyCamCallbackMessage } from "@/lib/companycam/setup";
@@ -75,7 +78,7 @@ export default async function IntegrationsPage({
     );
   }
 
-  const [connections, quickBooks, procoreLinks, companyCamLinks, jobsForLinking] = await Promise.all([
+  const [connections, quickBooks, procoreLinks, accLinks, companyCamLinks, jobsForLinking] = await Promise.all([
     prisma.integrationConnection.findMany({
       where: { companyId: company.id },
       // Named columns, not `include`. The encrypted envelopes are not in the
@@ -108,6 +111,22 @@ export default async function IntegrationsPage({
         jobId: true,
         procoreProjectName: true,
         procoreCompanyName: true,
+        lastRefreshedAt: true,
+        lastRefreshStatus: true,
+        lastRefreshMessage: true,
+        job: { select: { name: true } },
+      },
+    }),
+    // The ACC card's linked projects. Scoped to the session's company; no
+    // credential is in this select because none is on this table.
+    prisma.accProjectLink.findMany({
+      where: { companyId: company.id },
+      orderBy: { linkedAt: "asc" },
+      select: {
+        id: true,
+        jobId: true,
+        accProjectName: true,
+        accAccountName: true,
         lastRefreshedAt: true,
         lastRefreshStatus: true,
         lastRefreshMessage: true,
@@ -147,6 +166,7 @@ export default async function IntegrationsPage({
   const docuSignReturn = docuSignCallbackMessage(one(query.docusign), one(query.docusign_detail));
   const docuSign = docuSignSetup(process.env);
   const procoreReturn = procoreCallbackMessage(one(query.procore), one(query.procore_detail));
+  const accReturn = accCallbackMessage(one(query.acc), one(query.acc_detail));
   const companyCamReturn = companyCamCallbackMessage(one(query.companycam), one(query.companycam_detail));
   const blob = {
     environment: process.env.VERCEL_ENV ?? "local",
@@ -272,8 +292,11 @@ export default async function IntegrationsPage({
                 {impl.importLabel}
               </Link>
             )}
-            {impl.kind === "feed" && importState && (
+            {impl.kind === "feed" && importState && entry.provider === "PROCORE" && (
               <ProcoreControls state={importState} startHref={impl.startHref} />
+            )}
+            {impl.kind === "feed" && importState && entry.provider === "ACC" && (
+              <ACCControls state={importState} startHref={impl.startHref} />
             )}
             {impl.kind === "photo-import" && companycamState && (
               <CompanyCamControls state={companycamState} startHref={impl.startHref} />
@@ -334,7 +357,7 @@ export default async function IntegrationsPage({
           </dl>
         )}
 
-        {impl.kind === "feed" && importState === "connected" && connection && (
+        {impl.kind === "feed" && importState === "connected" && connection && entry.provider === "PROCORE" && (
           <>
             <dl className="mt-4 grid gap-4 border-t border-line-card pt-4 sm:grid-cols-3">
               <DetailRow label="Procore login" value={connection.externalAccountLabel ?? "—"} />
@@ -353,6 +376,30 @@ export default async function IntegrationsPage({
               }))}
               jobs={jobsForLinking
                 .filter((job) => !procoreLinks.some((link) => link.jobId === job.id))
+                .map((job) => ({ id: job.id, label: jobPickerLabel(toJobOption(job)) }))}
+            />
+          </>
+        )}
+
+        {impl.kind === "feed" && importState === "connected" && connection && entry.provider === "ACC" && (
+          <>
+            <dl className="mt-4 grid gap-4 border-t border-line-card pt-4 sm:grid-cols-3">
+              <DetailRow label="ACC login" value={connection.externalAccountLabel ?? "—"} />
+              <DetailRow label="Linked projects" value={String(accLinks.length)} />
+              <DetailRow label="Direction" value="ACC → C Stream only" />
+            </dl>
+            <ACCLinks
+              links={accLinks.map((link) => ({
+                id: link.id,
+                jobName: link.job.name,
+                accProjectName: link.accProjectName,
+                accAccountName: link.accAccountName,
+                lastRefreshedLabel: link.lastRefreshedAt ? relativeTime(link.lastRefreshedAt, now) : "never",
+                lastRefreshOk: link.lastRefreshStatus ? link.lastRefreshStatus === "SUCCESS" : null,
+                lastRefreshMessage: link.lastRefreshMessage,
+              }))}
+              jobs={jobsForLinking
+                .filter((job) => !accLinks.some((link) => link.jobId === job.id))
                 .map((job) => ({ id: job.id, label: jobPickerLabel(toJobOption(job)) }))}
             />
           </>
@@ -467,6 +514,19 @@ export default async function IntegrationsPage({
           }`}
         >
           {procoreReturn.text}
+        </p>
+      )}
+
+      {accReturn && (
+        <p
+          role="status"
+          className={`mb-4 rounded-md border px-3 py-2 text-sm ${
+            accReturn.ok
+              ? "border-line-card bg-tag-green text-tag-green-ink"
+              : "border-line-card bg-tag-rose text-tag-rose-ink"
+          }`}
+        >
+          {accReturn.text}
         </p>
       )}
 

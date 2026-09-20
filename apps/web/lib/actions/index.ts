@@ -65,5 +65,7 @@ export * from "./mycoi";
 export * from "./gettingStarted";
 export * from "./procore";
 export * from "./procoreFeed";
+export * from "./acc";
+export * from "./accFeed";
 export * from "./companycam";
 export * from "./calendarFeed";

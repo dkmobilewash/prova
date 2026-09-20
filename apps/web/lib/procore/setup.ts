@@ -25,14 +25,15 @@ export function procoreSetup(env: Env): { configured: boolean; missing: string[]
   return { configured: missing.length === 0, missing };
 }
 
-export type FeedCardState = "not-set-up" | "connect" | "connected" | "reconnect";
-
-export function feedCardState(configured: boolean, status: string | null | undefined): FeedCardState {
-  if (!configured) return "not-set-up";
-  if (status === "CONNECTED") return "connected";
-  if (status === "NEEDS_REAUTH" || status === "ERROR") return "reconnect";
-  return "connect";
-}
+/**
+ * Moved to lib/integrations/feedCardState.ts 2026-09-19 when ACC needed the
+ * identical decision — nothing in it was Procore-specific. Re-exported here
+ * so this stays a one-line change: procore/setup.test.ts's
+ * `import { feedCardState } from "./setup"` and the Integrations page's
+ * `import { feedCardState } from "@/lib/procore/setup"` both keep working
+ * unchanged.
+ */
+export { feedCardState, type FeedCardState } from "@/lib/integrations/feedCardState";
 
 /** `?procore=error&procore_detail=…` as a sentence. The detail is a fixed
  * code set by the callback, never text from Procore or the URL. */

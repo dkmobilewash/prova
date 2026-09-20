@@ -13,6 +13,7 @@ import { rfisStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { viewerToday } from "@/lib/viewerToday";
 import { ProcoreFeedSection, loadProcoreFeed } from "@/components/ProcoreFeedSection";
+import { ACCFeedSection, loadAccFeed } from "@/components/ACCFeedSection";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as the safety log
  * and daily field reports. Local rendering shows the previous day to
@@ -133,6 +134,8 @@ export default async function RfisPage({
   // The GC's records from Procore, if this company links any (see
   // components/ProcoreFeedSection.tsx).
   const procoreFeed = await loadProcoreFeed(company.id, "RFI", activeJob);
+  // Same, from Autodesk Construction Cloud (see components/ACCFeedSection.tsx).
+  const accFeed = await loadAccFeed(company.id, "RFI", activeJob);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -233,6 +236,8 @@ export default async function RfisPage({
       {/* The GC's records from Procore: a separate section, never merged
           into this company's own log above. */}
       <ProcoreFeedSection feed={procoreFeed} />
+      {/* Same, from Autodesk Construction Cloud. */}
+      <ACCFeedSection feed={accFeed} />
     </div>
   );
 }
