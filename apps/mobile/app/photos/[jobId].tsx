@@ -2,7 +2,7 @@ import { useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { useCallback, useRef, useState } from "react";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Image, PixelRatio, StyleSheet, Text, View } from "react-native";
 import ViewShot, { type ViewShotRef } from "react-native-view-shot";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -31,10 +31,15 @@ import type { Media, MediaTag, PunchListItem } from "@/lib/types";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 import { useSync } from "@/lib/use-sync";
 
-/** The photo is stamped at this width; the height follows the picture. Big
- * enough that the stamp is readable when a GC opens it full screen, small
- * enough to go up over a site connection. */
+/** The photo is stamped at this width in PIXELS; the height follows the
+ * picture. Big enough that the stamp is readable when a GC opens it full
+ * screen, small enough to go up over a site connection.
+ *
+ * The capture is asked for in POINTS, which the screen's density multiplies:
+ * asking for 1200 on a 3x phone produced a 3600px, 3.6MB file on production,
+ * which is most of the platform's 4.5MB request cap for one photo. */
 const STAMP_WIDTH = 1200;
+const captureWidth = () => Math.round(STAMP_WIDTH / PixelRatio.get());
 
 type Shot = {
   uri: string;
@@ -283,7 +288,12 @@ export default function PhotosScreen() {
               connection for a photo nobody will view that large. */}
           <ViewShot
             ref={stampRef}
-            options={{ format: "jpg", quality: 0.9, width: STAMP_WIDTH, height: stampHeight }}
+            options={{
+              format: "jpg",
+              quality: 0.85,
+              width: captureWidth(),
+              height: Math.round(captureWidth() * (stampHeight / STAMP_WIDTH)),
+            }}
             style={{ width: STAMP_WIDTH, height: stampHeight }}
           >
             <Image source={{ uri: shot.uri }} style={{ width: STAMP_WIDTH, height: stampHeight }} resizeMode="cover" />
