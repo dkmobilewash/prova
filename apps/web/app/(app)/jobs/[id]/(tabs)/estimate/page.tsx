@@ -59,18 +59,19 @@ const rowConfirmClass =
  * the hard `requireCapability` wall — but their Server Actions are
  * independently guarded (Photos' job-media actions are also reachable
  * from the already-guarded top-level `/photos`, so they had to be).
- * `lib/action-capability-guards.test.ts` found that the actions THIS tab
- * calls — line items, cost entries, change orders — are not: they were
- * reachable only from the old monolith's `/jobs/[id]`, which stays open
- * on purpose (see `lib/permissions.ts`'s `ROUTE_CAPABILITY` comment), so
- * nothing ever required them to assert VIEW_JOB_COSTS themselves. A hard
- * route guard here would CLAIM a boundary the action layer does not back
- * up — worse than no guard, because it looks enforced and isn't (the
- * exact shape `lib/authz.ts`'s own doc comment warns about). So this
- * route withholds its content the same way the monolith did, which is
- * the same security posture as before: not tightened, not loosened.
- * Reported as issue (see the PR) for Diego's lane, which owns these
- * actions, rather than fixed here — out of scope for a layout PR.
+ * `lib/action-capability-guards.test.ts` found that this tab's own
+ * actions are not: they were reachable only from the old monolith's
+ * `/jobs/[id]`, which stays open on purpose (see `lib/permissions.ts`'s
+ * `ROUTE_CAPABILITY` comment), so nothing ever required them to assert
+ * VIEW_JOB_COSTS themselves. A hard route guard here would CLAIM a
+ * boundary the action layer does not back up — worse than no guard,
+ * because it looks enforced and isn't (the exact shape `lib/authz.ts`'s
+ * own doc comment warns about). So this route withholds its content the
+ * same way the monolith did, which is the same security posture as
+ * before: not tightened, not loosened. Tracked in issue #383 (Diego's
+ * lane, which owns these actions) rather than fixed here — out of scope
+ * for a layout PR, and the issue's own detail is held privately since it
+ * names exactly what is unguarded on a public repo.
  */
 export default async function JobEstimatePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

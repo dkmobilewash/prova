@@ -41,15 +41,15 @@ not copied per page). Photos hard-gates on MANAGE_FIELD
 (`requireCapability`/`<NoAccess>`, same as `certified-payroll` already
 does) because its job-media actions are independently guarded — proven by
 `lib/action-capability-guards.test.ts`, which also found something real:
-Estimate/Billing/Retainage's write actions (line items, cost entries,
-change orders, invoices, retainage releases) are NOT independently
+Estimate/Billing/Retainage's own write actions are NOT independently
 guarded on VIEW_JOB_COSTS/MANAGE_BILLING — only ever reachable from the
 monolith's deliberately-open `/jobs/[id]`, so nothing ever required them
 to self-guard. Hard-gating those three tabs would have CLAIMED a boundary
 the action layer does not enforce, which is worse than no gate. So they
 soft-withhold instead — identical security posture to before, not
-loosened, not tightened — and the gap is reported as a GitHub issue for
-Diego's lane (job costing/billing) rather than patched inside a layout PR.
+loosened, not tightened — and the gap is tracked in issue #383 (Diego's
+lane) rather than patched inside a layout PR. That issue's own detail is
+held privately since it names exactly what is unguarded on a public repo.
 
 **The walkthrough tour survives the split.** `jobDetailWalkthrough` (17
 steps, one route) is now six walkthroughs, one per route that has

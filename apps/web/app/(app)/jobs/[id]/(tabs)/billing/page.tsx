@@ -26,13 +26,14 @@ const rowConfirmClass =
  * Billing — invoices, payments and pay applications. Withheld on
  * MANAGE_BILLING exactly like the monolith's own `!isEstimateStage &&
  * showsBilling` — a SOFT gate, same reasoning as the Estimate tab's own
- * doc comment: `lib/action-capability-guards.test.ts` found that
- * `createInvoice`, `deletePayment` and the rest of billing's write
- * actions are not independently guarded on MANAGE_BILLING (only reachable
- * from the monolith's open `/jobs/[id]` before this rebuild), so a hard
- * `requireCapability`/`<NoAccess>` wall here would claim a boundary the
- * action layer does not enforce. Reported as an issue for Diego's lane
- * rather than fixed in a layout PR.
+ * doc comment: `lib/action-capability-guards.test.ts` found that this
+ * tab's write actions are not independently guarded on MANAGE_BILLING
+ * (only reachable from the monolith's open `/jobs/[id]` before this
+ * rebuild), so a hard `requireCapability`/`<NoAccess>` wall here would
+ * claim a boundary the action layer does not enforce. Tracked in issue
+ * #383 (Diego's lane) rather than fixed in a layout PR; the issue's own
+ * detail is held privately since it names exactly what is unguarded on a
+ * public repo.
  */
 export default async function JobBillingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

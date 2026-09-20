@@ -4,27 +4,6 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can, type Principal } from "@/lib/permissions";
 
 /**
- * The one check every `/jobs/[id]/*` route needs before its own
- * section-specific query: is this job real, does it belong to the
- * caller's company, and who is the caller.
- *
- * Deliberately minimal — `select` names only what every route needs
- * (existence, ownership, name/status for a heading) rather than the old
- * monolith's one `prisma.job.findUnique` with every relation on it. Each
- * route below layers its OWN targeted query on top of this for whatever
- * that section actually renders — the fetch a reader without a given
- * capability never pays for is the same fetch this whole rebuild exists
- * to stop running on every page load.
- *
- * `/jobs`, `/jobs/new` and `/jobs/[id]` stay open to any company member
- * (see `lib/permissions.ts`'s `ROUTE_CAPABILITY` comment) — this never
- * throws for lack of a capability, only for the job not existing or not
- * being this company's. Capability withholding happens per SECTION,
- * exactly as it did in the monolith; routes that are entirely one
- * capability's content (Estimate, Billing, Retainage, Photos) call
- * `requireCapability` themselves on top of this.
- */
-/**
  * The tenant-isolation half both `requireJob` and `requireJobGivenContext`
  * need: a job that either does not exist or belongs to a DIFFERENT
  * company is `notFound()`, never returned. One function so a mutation in
@@ -42,6 +21,35 @@ async function jobInCompanyOrNotFound(id: string, companyId: string) {
   return job;
 }
 
+/**
+ * The one check every `/jobs/[id]/*` route needs before its own
+ * section-specific query: is this job real, does it belong to the
+ * caller's company, and who is the caller.
+ *
+ * Deliberately minimal — `select` names only what every route needs
+ * (existence, ownership, name/status for a heading) rather than the old
+ * monolith's one `prisma.job.findUnique` with every relation on it. Each
+ * route below layers its OWN targeted query on top of this for whatever
+ * that section actually renders — the fetch a reader without a given
+ * capability never pays for is the same fetch this whole rebuild exists
+ * to stop running on every page load.
+ *
+ * `/jobs`, `/jobs/new` and `/jobs/[id]` stay open to any company member
+ * (see `lib/permissions.ts`'s `ROUTE_CAPABILITY` comment) — this never
+ * throws for lack of a capability, only for the job not existing or not
+ * being this company's.
+ *
+ * USED BY SIX of the eight tabs — Overview, Estimate, Crew & time,
+ * Compliance, Billing, Retainage, Field reports — every one of them
+ * EXCEPT Photos. Those six withhold their money/field sections with a
+ * flag from `jobCapabilities()` below and an early return in the page
+ * itself, the same section-level withholding the monolith did. That is
+ * NOT a `requireCapability` wall: it hides content, it does not refuse
+ * the route, and Estimate/Billing/Retainage say so explicitly in their
+ * own file's doc comment, with the reason (issue #383) their Server
+ * Actions cannot back up a hard gate yet. Photos is the one tab that DOES
+ * hard-gate, via `requireJobGivenContext` below, not this function.
+ */
 export async function requireJob(id: string) {
   const context = await requireCompanyContext();
   const { company, ...currentUser } = context;
@@ -75,9 +83,12 @@ export function jobCapabilities(principal: Principal): JobCapabilities {
 }
 
 /**
- * The job-existence half of a HARD-gated route (Estimate, Billing,
- * Retainage, Photos) — used AFTER the page has already called
- * `requireCapability(...)` and checked `allowed` itself.
+ * The job-existence half of the one HARD-gated tab — Photos, and as of
+ * this writing ONLY Photos. `certified-payroll/page.tsx` and
+ * `pay-applications/[invoiceId]/page.tsx` (the two pre-existing sibling
+ * routes under `/jobs/[id]/`) use the same shape. Estimate, Billing and
+ * Retainage do NOT call this — they soft-withhold via `requireJob` and
+ * `jobCapabilities` above instead, and say why in their own file.
  *
  * Deliberately NOT a wrapper around `requireCapability` the way
  * `requireJob` above is a self-contained helper: `lib/permissions.test.ts`
@@ -85,9 +96,11 @@ export function jobCapabilities(principal: Principal): JobCapabilities {
  * `requireCapability("<capability>")` and `<NoAccess capability="…" />`
  * IN THE PAGE FILE ITSELF (it reads `page.tsx`'s own source, never
  * follows an import) — hiding the call inside a shared helper would make
- * a real guard invisible to that census. So each hard-gated page calls
+ * a real guard invisible to that census. So a hard-gated page calls
  * `requireCapability` directly, exactly like `certified-payroll/page.tsx`
- * already does, and only the job lookup that follows is shared here.
+ * already does, and only the job lookup that follows is shared here. If a
+ * second tab earns a hard gate later (see issue #383), it joins Photos as
+ * a caller of this function — the function itself does not change.
  */
 export async function requireJobGivenContext(
   id: string,

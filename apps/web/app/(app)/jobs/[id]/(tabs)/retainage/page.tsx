@@ -19,11 +19,12 @@ const rowConfirmClass =
  * Retainage — its own tab, its own fixed slot in the old monolith's
  * ordering (CLAUDE.md: "Retainage → Field Reports → Pay Apps"). Withheld
  * on MANAGE_BILLING, same as Billing — a SOFT gate, same reasoning as
- * that tab's own doc comment: `updateJobRetainageTerms`,
- * `createRetainageRelease` and `deleteRetainageRelease` are not
+ * that tab's own doc comment: this tab's write actions are not
  * independently guarded on MANAGE_BILLING either, so a hard route wall
- * would claim a boundary the action layer does not enforce. Reported as
- * an issue for Diego's lane rather than fixed in a layout PR.
+ * would claim a boundary the action layer does not enforce. Tracked in
+ * issue #383 (Diego's lane) rather than fixed in a layout PR; the
+ * issue's own detail is held privately since it names exactly what is
+ * unguarded on a public repo.
  */
 export default async function JobRetainagePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

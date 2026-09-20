@@ -340,11 +340,11 @@ const OPEN_ROUTES: Record<string, string> = {
   "/jobs/[id]/field-reports":
     "Same reason as /jobs/[id]/crew — `<DailyFieldReports>` and the delay log inside it were never gated in the monolith, unlike the photo gallery next to them (`/jobs/[id]/photos`, which IS guarded).",
   "/jobs/[id]/estimate":
-    "Withholds its content on VIEW_JOB_COSTS in-page, same as /jobs/[id] itself — deliberately NOT a hard requireCapability gate. lib/action-capability-guards.test.ts found that the line-item/cost-entry/change-order actions this tab calls are reachable only from the monolith's open /jobs/[id] and are not independently guarded on VIEW_JOB_COSTS, so a hard wall here would claim a boundary the action layer does not back up. Reported as an issue for Diego's lane (job costing/estimating) rather than fixed in this layout PR.",
+    "Withholds its content on VIEW_JOB_COSTS in-page, same as /jobs/[id] itself — deliberately NOT a hard requireCapability gate. lib/action-capability-guards.test.ts found that this tab's own actions are reachable only from the monolith's open /jobs/[id] and are not independently guarded on VIEW_JOB_COSTS, so a hard wall here would claim a boundary the action layer does not back up. Tracked in issue #383 (Diego's lane) rather than fixed in this layout PR; the issue's own detail is held privately since it names exactly what is unguarded on a public repo.",
   "/jobs/[id]/billing":
-    "Same reasoning as /jobs/[id]/estimate: withholds on MANAGE_BILLING in-page rather than a hard gate, because createInvoice/deletePayment/the QuickBooks push actions this tab calls are not independently guarded either. Reported as an issue for Diego's lane (billing/AIA).",
+    "Same reasoning as /jobs/[id]/estimate, same issue #383: withholds on MANAGE_BILLING in-page rather than a hard gate, because this tab's write actions are not independently guarded either.",
   "/jobs/[id]/retainage":
-    "Same reasoning as /jobs/[id]/billing beside it: withholds on MANAGE_BILLING in-page — updateJobRetainageTerms/createRetainageRelease/deleteRetainageRelease are not independently guarded. Reported as an issue for Diego's lane (retainage).",
+    "Same reasoning as /jobs/[id]/billing beside it, same issue #383: withholds on MANAGE_BILLING in-page — its write actions are not independently guarded.",
   "/jobs": "A bare redirect to /dashboard. Guarding a redirect claims a protection it redirects straight past.",
   "/estimating": "A bare redirect to /dashboard?status=ESTIMATE. Same reason as /jobs.",
   "/settings/export":
