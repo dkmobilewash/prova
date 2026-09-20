@@ -6,6 +6,8 @@ import { PunchListForm } from "@/components/PunchListForm";
 import { EmptyState } from "@/components/EmptyState";
 import { PunchListRow } from "@/components/PunchListRow";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+import { can } from "@/lib/permissions";
+import type { PunchListPeople } from "@/components/PunchItemFields";
 
 export default async function PunchListsPage({
   searchParams,
@@ -36,14 +38,73 @@ export default async function PunchListsPage({
     where: {
       companyId: company.id,
       ...(activeJob ? { jobId: activeJob } : {}),
-      ...(showDone ? {} : { isDone: false }),
+      // "Completed" means VERIFIED here, not "the crew says so": an item
+      // waiting on a sign-off is exactly what this page is for, and hiding
+      // it behind "show completed" would bury the state the split added.
+      ...(showDone ? {} : { status: { not: "VERIFIED" } }),
     },
-    orderBy: [{ isDone: "asc" }, { createdAt: "asc" }],
-    include: { job: true, raisedBy: true },
+    orderBy: [{ status: "asc" }, { createdAt: "asc" }],
+    include: {
+      job: true,
+      raisedBy: true,
+      assignedUser: { select: { name: true } },
+      assignedCrewMember: { select: { legalFirstName: true, legalLastName: true } },
+      readyByUser: { select: { name: true } },
+      verifiedByUser: { select: { name: true } },
+      // The photo prompt's input. A count, not the photos: this page never
+      // renders them, and Gap 3's capture is what attaches one.
+      _count: { select: { media: true } },
+    },
   });
 
+  // Who an item can be handed to, and what it can be evidence for. Crew
+  // first in the picker because they are who actually fixes these.
+  const [teamUsers, crew, backcharges] = await Promise.all([
+    prisma.user.findMany({
+      where: { companyId: company.id },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, email: true },
+    }),
+    prisma.crewMember.findMany({
+      where: { companyId: company.id, archivedAt: null },
+      orderBy: [{ legalLastName: "asc" }, { legalFirstName: "asc" }],
+      select: { id: true, legalFirstName: true, legalLastName: true },
+    }),
+    // Scoped to the filtered job when there is one. With no job filter the
+    // picker would otherwise offer deductions from every job at once, and
+    // the action refuses a backcharge from a different job anyway.
+    activeJob
+      ? prisma.backcharge.findMany({
+          where: { companyId: company.id, jobId: activeJob },
+          orderBy: { number: "desc" },
+          select: { id: true, number: true, description: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const people: PunchListPeople = {
+    users: teamUsers.map((u) => ({ id: u.id, name: u.name ?? u.email })),
+    crew: crew.map((c) => ({ id: c.id, name: `${c.legalFirstName} ${c.legalLastName}` })),
+    backcharges: backcharges.map((b) => ({
+      id: b.id,
+      label: `#${b.number} — ${b.description.slice(0, 60)}`,
+    })),
+  };
+
+  // Computed once on the server: "overdue" derived per row in the browser
+  // would answer in the reader's timezone, and every date here is UTC.
+  const today = new Date();
+  const canVerify = can(context, "VERIFY_PUNCH_ITEMS");
+
   const openCount = await prisma.punchListItem.count({
-    where: { companyId: company.id, isDone: false, ...(activeJob ? { jobId: activeJob } : {}) },
+    where: { companyId: company.id, status: "OPEN", ...(activeJob ? { jobId: activeJob } : {}) },
+  });
+
+  /** Waiting on somebody to agree. The number this feature exists to make
+   * visible — before the split it was inside "done" and nobody could see
+   * how much of the list nobody had checked. */
+  const awaitingCount = await prisma.punchListItem.count({
+    where: { companyId: company.id, status: "READY_FOR_REVIEW", ...(activeJob ? { jobId: activeJob } : {}) },
   });
 
   // Whether this company has EVER had a punch item, not whether the current
@@ -79,7 +140,7 @@ export default async function PunchListsPage({
 
       <section className="mb-8 rounded-lg border border-line-card bg-surface p-4" data-tour="punch-add">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Add an item</h2>
-        <PunchListForm jobs={jobOptions} defaultJobId={activeJob ?? undefined} />
+        <PunchListForm jobs={jobOptions} defaultJobId={activeJob ?? undefined} people={people} />
       </section>
 
       {jobOptions.length > 0 && (
@@ -98,13 +159,14 @@ export default async function PunchListsPage({
       <section data-tour="punch-open">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ink-label">
-            {openCount} open{activeJob ? " on this job" : ""}
+            {openCount} open{awaitingCount > 0 ? `, ${awaitingCount} waiting to be verified` : ""}
+            {activeJob ? " on this job" : ""}
           </h2>
           <Link
             href={filterHref({ show: showDone ? null : "all" })}
             className="inline-flex min-h-11 items-center text-sm text-link"
           >
-            {showDone ? "Hide completed" : "Show completed"}
+            {showDone ? "Hide verified" : "Show verified"}
           </Link>
         </div>
 
@@ -133,7 +195,7 @@ export default async function PunchListsPage({
               rows: [
                 { title: "Touch up paint behind the fridge", detail: "Smith kitchen remodel · raised by Mike", meta: "open" },
                 { title: "Pantry door rubs at the top", detail: "Smith kitchen remodel · raised by the GC's super", meta: "open" },
-                { title: "Outlet cover missing by the island", detail: "Smith kitchen remodel", meta: "done Sep 12" },
+                { title: "Outlet cover missing by the island", detail: "Smith kitchen remodel", meta: "verified Sep 12" },
               ],
             }}
           />
@@ -151,13 +213,32 @@ export default async function PunchListsPage({
                 canDelete={currentUser.role === "OWNER"}
                 jobs={jobOptions}
                 showJob={!activeJob}
+                canVerify={canVerify}
+                people={people}
+                today={today}
                 item={{
                   id: item.id,
                   description: item.description,
                   jobId: item.jobId,
                   jobName: item.job.name,
-                  isDone: item.isDone,
+                  status: item.status,
+                  area: item.area,
+                  dueOn: item.dueOn,
+                  assignedUserId: item.assignedUserId,
+                  assignedCrewMemberId: item.assignedCrewMemberId,
+                  assignedName: item.assignedName,
+                  assignedUserName: item.assignedUser?.name ?? null,
+                  assignedCrewMemberName: item.assignedCrewMember
+                    ? `${item.assignedCrewMember.legalFirstName} ${item.assignedCrewMember.legalLastName}`
+                    : null,
+                  causedByOthers: item.causedByOthers,
+                  responsibleParty: item.responsibleParty,
+                  backchargeId: item.backchargeId,
                   raisedByName: item.raisedBy?.name ?? null,
+                  readyByName: item.readyByUser?.name ?? null,
+                  verifiedByName: item.verifiedByUser?.name ?? null,
+                  reopenReason: item.reopenReason,
+                  photoCount: item._count.media,
                 }}
               />
             ))}

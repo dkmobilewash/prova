@@ -195,6 +195,10 @@ model User {
   uploadedPrevailingWageDeterminations PrevailingWageDetermination[]
   createdRetainageReleases             RetainageRelease[]
   raisedPunchListItems                 PunchListItem[]
+  assignedPunchListItems               PunchListItem[]               @relation("PunchItemAssignedUser")
+  readiedPunchListItems                PunchListItem[]               @relation("PunchItemReadyBy")
+  verifiedPunchListItems               PunchListItem[]               @relation("PunchItemVerifiedBy")
+  reopenedPunchListItems               PunchListItem[]               @relation("PunchItemReopenedBy")
   createdTmTickets                     TmTicket[]
   signedTimesheets                     TimesheetSignoff[]            @relation("TimesheetSignoffSignedBy")
   approvedTimesheets                   TimesheetSignoff[]            @relation("TimesheetSignoffApprovedBy")

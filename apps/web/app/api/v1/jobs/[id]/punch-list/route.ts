@@ -12,17 +12,34 @@ function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
 }
 
+/** The shape the phone reads.
+ *
+ * `isDone` is still here and still means what it meant — the trigger keeps
+ * it in lockstep with `status` — because a build of the app is already
+ * installed on somebody's phone and a response that dropped it would break
+ * a screen nobody has updated yet. New fields are additive for the same
+ * reason. */
 function toJson(i: {
   id: string;
   description: string;
+  status: string;
   isDone: boolean;
   completedAt: Date | null;
+  area: string | null;
+  dueOn: Date | null;
+  assignedName: string | null;
+  photoCount?: number;
 }) {
   return {
     id: i.id,
     description: i.description,
+    status: i.status,
     isDone: i.isDone,
     completedAt: i.completedAt ? i.completedAt.toISOString() : null,
+    area: i.area,
+    dueOn: i.dueOn ? i.dueOn.toISOString() : null,
+    assignedName: i.assignedName,
+    photoCount: i.photoCount ?? 0,
   };
 }
 
@@ -40,9 +57,10 @@ export async function GET(
   const items = await prisma.punchListItem.findMany({
     where: { jobId: id },
     orderBy: { createdAt: "asc" },
+    include: { _count: { select: { media: true } } },
   });
 
-  return NextResponse.json(items.map(toJson));
+  return NextResponse.json(items.map((i) => toJson({ ...i, photoCount: i._count.media })));
 }
 
 export async function POST(
@@ -77,8 +95,21 @@ export async function POST(
     if (existing) return NextResponse.json(toJson(existing), { status: 200 });
   }
 
+  // Where it is, typed on the phone standing in front of it. The phone
+  // does not assign people or set due dates — those are a desk decision,
+  // and a picker of every crew member is not a control for a 5-inch screen
+  // in a stairwell.
+  const area = String(input.area ?? "").trim() || null;
+
   const item = await prisma.punchListItem.create({
-    data: { companyId: context.companyId, jobId: job.id, description, raisedByUserId: context.id, clientOperationId },
+    data: {
+      companyId: context.companyId,
+      jobId: job.id,
+      description,
+      area,
+      raisedByUserId: context.id,
+      clientOperationId,
+    },
   });
 
   return NextResponse.json(toJson(item), { status: 201 });

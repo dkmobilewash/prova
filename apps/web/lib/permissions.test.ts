@@ -402,7 +402,15 @@ describe("every route the app serves has an access decision", () => {
     // rather than skipped silently: it gates SECTIONS — margin on the job
     // page, cost on the dashboard and the contact page — and no page is
     // only job cost. Its enforcement is lib/page-money-guards.test.ts.
-    const SECTION_ONLY: Capability[] = ["VIEW_JOB_COSTS"];
+    //
+    // VERIFY_PUNCH_ITEMS is the second, and for the same shape of reason:
+    // it gates two BUTTONS on /punch-lists — verify, and send back — on a
+    // page a foreman is otherwise meant to use all day. Gating the route
+    // with it would lock the crew out of the list they raise items on,
+    // which is the opposite of what the split is for. Its enforcement is
+    // the actions themselves (`verifyPunchListItem`, `reopenPunchListItem`
+    // in lib/actions/punchLists.ts) and lib/actions/punchLists.test.ts.
+    const SECTION_ONLY: Capability[] = ["VIEW_JOB_COSTS", "VERIFY_PUNCH_ITEMS"];
     const used = new Set<Capability>([
       ...Object.values(ROUTE_CAPABILITY),
       ...Object.values(PAGE_ONLY_CAPABILITY),

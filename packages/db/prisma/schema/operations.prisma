@@ -108,6 +108,24 @@ model Equipment {
   @@index([assignedJobId])
 }
 
+/// Where an item sits between somebody raising it and somebody checking it.
+///
+/// READY_FOR_REVIEW is the crew saying they fixed it. VERIFIED is somebody
+/// who did NOT do the work agreeing that they did. That gap is the whole
+/// point: on a real job the GC's punch walk and our own closeout are two
+/// different sign-offs, and a single checkbox makes the person who did the
+/// work the only witness that it was done. `VERIFY_PUNCH_ITEMS` is the
+/// capability the FIELD job function deliberately does not hold.
+///
+/// An item can go back to OPEN from either state, and doing so requires a
+/// reason — see `reopenReason`. That is the row that survives an argument
+/// about whether something was ever really fixed.
+enum PunchItemStatus {
+  OPEN
+  READY_FOR_REVIEW
+  VERIFIED
+}
+
 /// A punch list item — something that has to be fixed or finished before a
 /// job closes out. `JobStatus` runs ESTIMATE → COMPLETE with nothing
 /// tracking what's outstanding in between, so today a job is marked
@@ -127,10 +145,97 @@ model PunchListItem {
   raisedByUserId String?
   raisedBy       User?   @relation(fields: [raisedByUserId], references: [id])
 
-  /// Denormalised rather than derived from completedAt: "done" is the thing
-  /// people filter and count on, and a boolean keeps that query trivial.
+  status PunchItemStatus @default(OPEN)
+
+  /// `isDone` and `completedAt` are DERIVED FROM `status` and are kept that
+  /// way by a trigger (`prova_punch_item_status_sync`), which overwrites
+  /// whatever a writer puts in them on every insert and update.
+  ///
+  /// CLAUDE.md's rule is that derived state is never stored, and the honest
+  /// version of this change deletes both columns. They stay because six
+  /// readers outside this lane — closeout readiness, the export, the Ask
+  /// commands, the phone — count on `isDone`, and a destructive migration
+  /// against real data to save two columns is not a trade worth making
+  /// unannounced. The trigger buys the property the rule is actually
+  /// about: they cannot disagree with `status`, because nothing app-side
+  /// decides them.
+  ///
+  /// `isDone` stays TRUE for READY_FOR_REVIEW as well as VERIFIED, which is
+  /// exactly what it meant before this change — ticking the box was the
+  /// crew saying it was fixed. Closeout readiness therefore counts the same
+  /// items it counted yesterday. Tightening it to VERIFIED is a real
+  /// decision about when a job may close, in somebody else's lane, and it
+  /// is not smuggled in here.
   isDone      Boolean   @default(false)
   completedAt DateTime?
+
+  /// Where on the job it is: "Level 3 corridor", "Unit 214 bath". Free text
+  /// on purpose — a room schedule this app does not have is what a picker
+  /// would need, and an area nobody can type is an area nobody records.
+  area String?
+
+  /// When it has to be fixed by. Entered, never stamped, and nullable:
+  /// most items have no date until the GC gives the list one.
+  dueOn DateTime?
+
+  /// Who is fixing it, in three mutually exclusive shapes — at most one is
+  /// ever set, enforced by a CHECK constraint in the migration.
+  ///
+  /// Most people who fix punch items do not have a login, which is why a
+  /// relation to `User` alone would leave this field permanently empty:
+  /// `assignedCrewMember` covers the people on our own payroll and
+  /// `assignedName` covers a sub, a day hire or "Mike's guy" — the name
+  /// somebody would have written on a paper list anyway.
+  assignedUserId String?
+  assignedUser   User?   @relation("PunchItemAssignedUser", fields: [assignedUserId], references: [id])
+
+  assignedCrewMemberId String?
+  assignedCrewMember   CrewMember? @relation(fields: [assignedCrewMemberId], references: [id])
+
+  assignedName String?
+
+  /// When the crew said it was fixed, and who said so.
+  readyAt     DateTime?
+  readyByUserId String?
+  readyByUser   User?   @relation("PunchItemReadyBy", fields: [readyByUserId], references: [id])
+
+  /// When somebody else agreed, and who. A VERIFIED row without these is
+  /// refused by a CHECK constraint — a status with no witness is the thing
+  /// this split exists to prevent.
+  verifiedAt     DateTime?
+  verifiedByUserId String?
+  verifiedByUser   User?   @relation("PunchItemVerifiedBy", fields: [verifiedByUserId], references: [id])
+
+  /// Sending one back, and why. The reason is required by the action, not
+  /// by the column — an item reopened before this shipped has none, and a
+  /// NOT NULL here would have to invent one.
+  reopenedAt     DateTime?
+  reopenedByUserId String?
+  reopenedByUser   User?   @relation("PunchItemReopenedBy", fields: [reopenedByUserId], references: [id])
+  reopenReason   String?
+
+  /// This one is not our scope: somebody else damaged or blocked our work
+  /// and we are being asked to put it right anyway. Two columns rather than
+  /// one because "who" is the question a deduction turns on, and free text
+  /// makes "what do other trades cost us a year" unanswerable.
+  ///
+  /// `DelayResponsibleParty` is reused rather than copied: the delay log
+  /// asks the same question with the same answers, and a second enum whose
+  /// values drift from the first is how one report ends up unable to add
+  /// up the other.
+  causedByOthers   Boolean                @default(false)
+  responsibleParty DelayResponsibleParty?
+
+  /// The backcharge this item is evidence for, if the GC has issued one.
+  ///
+  /// Evidence, not money: nothing here changes a figure on the backcharge.
+  /// When the GC deducts for work another trade damaged, the dispute is won
+  /// or lost on the photos and the dates attached to items like this one,
+  /// and until now there was no way to put the two side by side.
+  /// SET NULL rather than cascade — deleting a backcharge must not take the
+  /// punch item with it.
+  backchargeId String?
+  backcharge   Backcharge? @relation(fields: [backchargeId], references: [id], onDelete: SetNull)
 
   /// Idempotency key from the phone, so a retried offline POST replays
   /// instead of duplicating. Null for web writes.
@@ -142,6 +247,10 @@ model PunchListItem {
   @@unique([companyId, clientOperationId])
   @@index([companyId])
   @@index([jobId])
+  @@index([jobId, status])
+  @@index([assignedUserId])
+  @@index([assignedCrewMemberId])
+  @@index([backchargeId])
 
   /// Photos of this item — before and after — attached at the shutter.
   media JobMedia[]

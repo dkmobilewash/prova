@@ -22,6 +22,7 @@ export const CAPABILITY_LABELS: Record<Capability, string> = {
   MANAGE_COMPLIANCE: "compliance",
   MANAGE_FIELD: "field work",
   MANAGE_JOBS: "job correspondence",
+  VERIFY_PUNCH_ITEMS: "punch list sign-off",
 };
 
 export function refusalFor(capability: Capability): string {

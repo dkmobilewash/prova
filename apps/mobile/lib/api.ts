@@ -301,7 +301,7 @@ export async function listPunchListItems(jobId: string, token: string): Promise<
 
 export async function createPunchListItem(
   jobId: string,
-  input: { description: string; clientOperationId?: string },
+  input: { description: string; area?: string; clientOperationId?: string },
   token: string,
 ): Promise<PunchListItem> {
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/punch-list`, {
@@ -311,15 +311,21 @@ export async function createPunchListItem(
   });
 }
 
-export async function setPunchListItemDone(
+/**
+ * Moving an item between OPEN and READY_FOR_REVIEW.
+ *
+ * VERIFIED is not reachable from the phone on purpose — see the route's own
+ * comment. Whoever fixed it says it is ready; somebody else agrees.
+ */
+export async function setPunchListItemStatus(
   jobId: string,
   itemId: string,
-  isDone: boolean,
+  status: "OPEN" | "READY_FOR_REVIEW",
   token: string,
 ): Promise<PunchListItem> {
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/punch-list/${encodeURIComponent(itemId)}`, {
     method: "PATCH",
     token,
-    body: { isDone },
+    body: { status },
   });
 }

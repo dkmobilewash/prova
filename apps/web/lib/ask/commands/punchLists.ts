@@ -214,8 +214,18 @@ export const punchListExclusions: Exclusion[] = [
     reason: "Rewords or moves the item being looked at, on its own row; a page edit rather than a command.",
   },
   {
-    action: "setPunchListItemDone",
-    reason: "Checking an item off is one reversible tap on its row; a card would be slower than the tap it replaces.",
+    action: "markPunchListItemReady",
+    reason: "Saying an item is fixed is one reversible tap on its row; a card would be slower than the tap it replaces.",
+  },
+  {
+    action: "verifyPunchListItem",
+    reason:
+      "A sign-off is a person looking at the work, not a sentence typed into a box. A card that verified items would be exactly the rubber stamp the Ready/Verified split exists to prevent.",
+  },
+  {
+    action: "reopenPunchListItem",
+    reason:
+      "Sending one back needs the reason typed against that specific item; the row's own form asks for it where the item is on screen.",
   },
   { action: "deletePunchListItem", reason: "T5: deletes are never commands; the row's own two-step delete is the only path." },
 ];

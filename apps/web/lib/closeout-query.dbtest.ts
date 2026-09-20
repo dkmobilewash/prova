@@ -107,9 +107,16 @@ describe("closeout readiness, composed from real rows", () => {
   });
 
   it("returns to ready when the punch item is done", async () => {
+    // `isDone` is derived from `status` by a trigger now
+    // (20260920030000_punch_item_verification), so writing the boolean
+    // directly no longer changes anything — it is overwritten on the way
+    // in. READY_FOR_REVIEW is what ticking the old box meant, and this is
+    // the assertion that closeout readiness counts the same items it
+    // counted before that migration: `closeout-query.ts` still reads
+    // `isDone: false` and is unchanged.
     await prisma.punchListItem.updateMany({
       where: { jobId },
-      data: { isDone: true, completedAt: utc("2026-09-02") },
+      data: { status: "READY_FOR_REVIEW", readyAt: utc("2026-09-02") },
     });
     expect((await job()).readiness.stage).toBe("READY_TO_SUBMIT");
   });
