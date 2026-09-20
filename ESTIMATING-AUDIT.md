@@ -340,54 +340,102 @@ next, per rule 1 of the working agreement.
 
 ## What I would build, in order
 
-Cheapest-first within each tier, and each one is a finished clickable
-capability rather than a slice.
+**Revised 2026-09-20 against `ESTIMATING-MARKET.md`**, a browser survey of
+eight takeoff/estimating products. Read that file's first paragraph before
+this section: nothing in it was verified from inside this repo, so it is
+good enough to decide a build order from and not good enough to put in a
+product claim. The previous version of this section is in `git log` — three
+things moved, and the reasons are recorded here rather than in the diff.
 
-**Tier 1 — the bid is a document with a price on it.**
+**What the market survey changed:**
 
-1. **Markup and a bid summary.** Cost → markup → price, per line and at
-   the bid level, with a company default and a per-job override, and a
-   summary band showing total cost, total price, gross margin $ and %.
-   This is the missing number, it touches no existing arithmetic if the
-   markup writes THROUGH to `unitPrice` rather than beside it, and it makes
-   every other estimating figure mean something.
-2. **Bid due dates that chase.** A `BID_DUE` alert kind plus a due-date
-   badge on the estimate rows. `Job.bidDueDate` already exists and already
-   holds the data; this is a read, an alert and a badge.
-3. **Link the bid invitation to the job.** `BidInvitation.jobId`, nullable,
-   no backfill. Then `bidAmount` can default from the estimate total and
+1. **`defaultLaborHours` moved from last to first.** Every surveyed product
+   that is an estimating tool rather than a measuring tool stores the rate
+   PER UNIT — Sage as hours-per-unit or units-per-hour, Procore as
+   `Quantity × Labor(hrs) × Difficulty`, Quick Bid as Qty/Hr-Day, STACK as
+   a Coverage Rate. Not one stores a flat per-line figure. The open
+   question in `changelog.d/cyrus-catalog-labor-hours-meaning.md` now has
+   one-sided evidence, and everything else in labor estimating waits behind
+   it.
+2. **Inclusions and exclusions moved up.** Only Procore models them as
+   structured objects. Quick Bid — the incumbent in our trade — has merge
+   fields for alternates and unit prices and NONE for exclusions; they are
+   static text you retype into a Word template. Five products have nothing
+   at all. It is the widest open gap in the survey and the cheapest thing
+   on this list to build.
+3. **Drawing measurement came OFF the list entirely.** Five independent
+   sources agree that AI plan reading returns a wall centerline and stops:
+   wall height is in the sections, wall type is in the partition schedule,
+   and no product joins them. Building a PDF canvas would be the most
+   expensive thing here and would not answer our user's question.
+
+**Tier 1 — the two decisions everything else waits on.**
+
+1. **Settle `defaultLaborHours` and make it a production rate.** Per unit,
+   with a precision that can hold 0.012 hrs/SF (`Decimal(8, 2)` cannot),
+   plus a separate adjustment factor for height, access and occupied
+   conditions — Sage's Productivity Adjustment and Procore's Difficulty are
+   the same idea and both keep the base rate clean. Fix whichever of the
+   two writers is wrong. **Announce the migration in Slack before the
+   push.** `estimateBurdenedLaborCost` already works and starts earning the
+   moment this lands.
+2. **Markup and a bid summary.** Build it as an ORDERED STACK of typed
+   adjustments per cost type, not one percentage field — that is the shape
+   all four reference designs share, with overhead entering the cost base
+   before profit and bond computed last on the marked-up total. Make
+   markup-on-cost vs margin-on-price an explicit per-bid setting the way
+   Quick Bid does, rather than an assumption nobody can see.
+
+**Tier 2 — the bid becomes a document.**
+
+3. **Inclusions / exclusions / clarifications / alternates / unit prices**
+   as structured, reusable, versioned objects, rendered on
+   `ContractSummary` so they ride the signing link and the print view. A
+   company-level library of standard exclusions is the half that saves the
+   retyping.
+4. **Bid due dates that chase.** A `BID_DUE` alert kind and a due-date
+   badge on the estimate rows. `Job.bidDueDate` already holds the data;
+   this is a read, an alert and a badge.
+5. **Link the bid invitation to the job.** `BidInvitation.jobId`, nullable,
+   no backfill, so `bidAmount` can default from the estimate total and two
    disagreeing numbers become visible instead of silent.
 
-**Tier 2 — the estimate stops being retyped.**
+**Tier 3 — the estimate stops being retyped.**
 
-4. **Inclusions / exclusions / clarifications on the estimate**, rendered
-   on `ContractSummary` so they ride the signing link and the print view.
-   This is the sub's actual bid letter and it is currently nowhere.
-5. **A takeoff that persists and re-runs.** Store the dimensions; editing
-   them re-derives the lines instead of duplicating them. Carries the
-   catalog link through so takeoff quantities arrive PRICED.
-6. **Duplicate an estimate** from a previous job, and compare two estimate
+6. **Assemblies, keyed on wall type.** One named partition type that
+   expands to board, studs, track, tape and finish at a stated height. This
+   depends on 1, and it is the layer the AI products cannot reach: they
+   detect the centerline, and the schedule-to-assembly join is unclaimed in
+   all eight.
+7. **A takeoff that persists and re-runs.** Store the dimensions rather
+   than discarding them, so a changed wall height is an edit instead of a
+   second set of lines. Revision handling is unsolved across the whole
+   market — every product ships a manual visual diff — and we have the easy
+   version of the problem precisely because we have no PDF canvas.
+8. **Duplicate an estimate** from a previous job; compare two estimate
    versions with totals.
 
-**Tier 3 — the decision that unblocks labor.**
+**Tier 4 — the things the market left open.**
 
-7. **Settle `defaultLaborHours`.** Decide per-unit vs flat, migrate the
-   column if per-unit (it needs more than two decimals), fix whichever
-   writer is wrong, and announce the migration in Slack before the push.
-   Then the catalog can hold production rates, and
-   `estimateBurdenedLaborCost` — which already works — starts pricing the
-   risk that actually sinks these jobs.
-8. **Assemblies in the catalog**: one "wall type" that expands to board,
-   studs, track, tape, finish. This is what turns the price book from a
-   line list into an estimating system, and it depends on 7.
+9. **Vendor quote → line item budgeted cost.** Structured supplier-quote
+   ingestion is absent from every product surveyed except Sage's Bid Grid,
+   and a wall-and-ceiling sub prices board, stud and grid off negotiated
+   quotes rather than a national index. `VendorPriceQuote` already exists
+   and nothing reads it.
+10. **Starter trade content for the five trade scopes.** Every product that
+    ships assemblies ships them unpriced, a PlanSwift user needed a month
+    to build theirs, and no surveyed product is documented as shipping
+    wall-and-ceiling content. The honest competitive claim is "usable on
+    day one without a database build", and this is the missing third of it
+    — the catalog already builds itself from real lines, and
+    `catalog-actuals` already feeds real costs back.
+11. **Bid-vs-actual across jobs**, by GC, trade scope and estimator.
+12. Takeoff math for the other four trade scopes.
 
-**Tier 4 — learning from what was bid.**
+**Explicitly not building:** PDF measurement, scale calibration, or AI plan
+reading. See `ESTIMATING-MARKET.md`.
 
-9. **Bid-vs-actual across jobs**, by GC, trade scope and estimator.
-10. Takeoff math for the other four trade scopes.
-11. Vendor quote → line item budgeted cost.
-
-Nothing above needs a new page. Items 1, 4, 5 and 6 all land in the
+Nothing above needs a new page. Items 2, 3, 7 and 8 all land in the
 `isEstimateStage` branch of `jobs/[id]/page.tsx`, which is already the
 estimate and is already Diego's lane — and per CLAUDE.md that file has
 fixed section slots with nothing in the file marking them, so read that
