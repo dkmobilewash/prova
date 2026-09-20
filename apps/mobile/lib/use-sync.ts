@@ -1,7 +1,7 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
-import { clearRefused, flushQueue, listRefused, pendingCount, type RefusedOp } from "./sync-queue";
+import { clearRefused, flushQueue, listRefused, pendingCount, retryRefused, type RefusedOp } from "./sync-queue";
 import { useStableGetToken } from "./use-stable-get-token";
 
 /** The shared offline plumbing for a screen that queues writes: flush the
@@ -63,5 +63,12 @@ export function useSync(refresh: () => Promise<void>) {
     setRefused([]);
   }, []);
 
-  return { pending, sync, refused, dismissRefused };
+  /** Puts the refused writes back on the queue and flushes. */
+  const retrySetAside = useCallback(async () => {
+    await retryRefused();
+    setRefused([]);
+    await latestSync.current();
+  }, []);
+
+  return { pending, sync, refused, dismissRefused, retrySetAside };
 }

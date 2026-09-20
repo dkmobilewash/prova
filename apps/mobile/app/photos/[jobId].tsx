@@ -90,7 +90,7 @@ export default function PhotosScreen() {
     ]);
   }, [getToken, jobId]);
 
-  const { sync, refused, dismissRefused } = useSync(load);
+  const { sync, refused, dismissRefused, retrySetAside } = useSync(load);
 
   // The details sheet, opened once a photo has been taken or picked.
   const [shot, setShot] = useState<Shot | null>(null);
@@ -215,7 +215,7 @@ export default function PhotosScreen() {
     <View style={styles.screen}>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {busy ? <Text style={styles.busy}>{busy}</Text> : null}
-      <RefusedBanner refused={refused} onDismiss={dismissRefused} />
+      <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
 
       <List
         data={[

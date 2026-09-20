@@ -88,7 +88,7 @@ export default function ReportsScreen() {
     await refresh();
     await loadDelays();
   }, [refresh, loadDelays]);
-  const { sync, refused, dismissRefused } = useSync(reloadAll);
+  const { sync, refused, dismissRefused, retrySetAside } = useSync(reloadAll);
 
   // New report
   const [showReport, setShowReport] = useState(false);
@@ -204,7 +204,7 @@ export default function ReportsScreen() {
     <View style={styles.screen}>
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <RefusedBanner refused={refused} onDismiss={dismissRefused} />
+      <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
 
       <List
         data={daysOf(reports, [...delays, ...optimisticDelays])}

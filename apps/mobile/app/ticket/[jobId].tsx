@@ -49,7 +49,7 @@ export default function TicketScreen() {
   };
 
 
-  const { pending, sync, refused, dismissRefused } = useSync(load);
+  const { pending, sync, refused, dismissRefused, retrySetAside } = useSync(load);
 
   const canSubmit = !!workDate && !!workDescription.trim() && !!signerName.trim() && signaturePath !== null;
 
@@ -76,7 +76,7 @@ export default function TicketScreen() {
     <View style={styles.screen}>
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <RefusedBanner refused={refused} onDismiss={dismissRefused} />
+      <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
       <List
         data={tickets}
         keyExtractor={(item) => item.id}
