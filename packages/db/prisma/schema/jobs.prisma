@@ -97,6 +97,7 @@ model Job {
   crewScheduleDays               CrewScheduleDay[]
   lienDeadlines                  LienDeadline[]
   procoreProjectLink             ProcoreProjectLink?
+  accProjectLink                 AccProjectLink?
   companycamProjectLink          CompanyCamProjectLink?
   bluebeamStudioSession          BluebeamStudioSession?
   signatureRequests              SignatureRequest[]

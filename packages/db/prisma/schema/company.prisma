@@ -51,6 +51,7 @@ model Company {
   integrationConnections    IntegrationConnection[]
   docuSignEnvelopes         DocuSignEnvelope[]
   procoreProjectLinks       ProcoreProjectLink[]
+  accProjectLinks           AccProjectLink[]
   companycamProjectLinks    CompanyCamProjectLink[]
   bluebeamStudioSessions    BluebeamStudioSession[]
   calendarFeedTokens        CalendarFeedToken[]

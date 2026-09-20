@@ -119,6 +119,35 @@ export const settingsIntegrationsWalkthrough: Walkthrough = {
         "Choose the GC's project and your job, then press Link. If a GC's company is listed with a note, their Procore admin has to add the C Stream app first.",
     },
     {
+      anchor: "acc-not-set-up",
+      title: "ACC isn't set up yet",
+      body:
+        "This install doesn't have the Autodesk Construction Cloud app keys yet, so there is nothing to press. Whoever runs C Stream for you adds them.",
+    },
+    {
+      anchor: "acc-connect",
+      title: "Connect Autodesk Construction Cloud",
+      body:
+        "Press Connect and sign in with your own ACC login, the one your GCs invite to their projects. C Stream only reads, never changes anything there.",
+    },
+    {
+      anchor: "acc-links",
+      title: "Which GC project feeds which job",
+      body:
+        "Each line is a GC's ACC project linked to one of your jobs. Its RFIs and submittals show on that job's pages.",
+    },
+    {
+      anchor: "acc-link",
+      title: "Link a project",
+      body: "Press Link an ACC project to a job. C Stream asks Autodesk which projects you can see.",
+    },
+    {
+      anchor: "acc-link-form",
+      title: "Pick the project and your job",
+      body:
+        "Choose the GC's project and your job, then press Link. If an account is listed with a note, their ACC account admin has to add the C Stream app first.",
+    },
+    {
       anchor: "companycam-not-set-up",
       title: "CompanyCam isn't set up yet",
       body:

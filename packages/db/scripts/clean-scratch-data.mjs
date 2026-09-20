@@ -231,6 +231,9 @@ async function main() {
     await del("lienDeadline", () => prisma.lienDeadline.deleteMany({ where: { jobId: { in: jobIds } } }));
     // Cascades to its cached ProcoreItem rows. Nothing in Procore changes.
     await del("procoreProjectLink", () => prisma.procoreProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // Cascades to its cached AccItem rows. Same shape as ProcoreProjectLink
+    // — nothing in ACC changes.
+    await del("accProjectLink", () => prisma.accProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
     // CASCADE on Job, same shape as ProcoreProjectLink — the link is a
     // pointer at CompanyCam, not evidence. Nothing in CompanyCam changes.
     await del("companyCamProjectLink", () => prisma.companyCamProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));

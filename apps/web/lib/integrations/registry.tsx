@@ -4,6 +4,7 @@ import { JOBBER_REQUIRED_ENV } from "@/lib/jobber/setup";
 import { DOCUSIGN_REQUIRED_ENV } from "@/lib/docusign/setup";
 import { MYCOI_API_UNAVAILABLE } from "@/lib/mycoi/api";
 import { PROCORE_REQUIRED_ENV } from "@/lib/procore/setup";
+import { ACC_REQUIRED_ENV } from "@/lib/acc/setup";
 import { COMPANYCAM_REQUIRED_ENV } from "@/lib/companycam/setup";
 import { BLUEBEAM_REQUIRED_ENV } from "@/lib/bluebeam/setup";
 
@@ -210,6 +211,19 @@ export const PROVIDERS: ProviderEntry[] = [
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
         <path d="M10 3.2 16.5 7v6L10 16.8 3.5 13V7L10 3.2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
         <path d="M10 9.6 16.5 7M10 9.6V16.8M10 9.6 3.5 7" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    provider: "ACC",
+    name: "Autodesk Construction Cloud",
+    description:
+      "Sign in with your own Autodesk Construction Cloud login and link a GC's ACC project to your job. The GC's RFIs and submittals then show on your RFIs and Submittals pages, marked as theirs, with a link back to ACC. Read-only: C Stream never changes anything in the GC's project.",
+    implementation: { kind: "feed", startHref: "/api/acc/start", requiredEnv: ACC_REQUIRED_ENV },
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
+        <rect x="3.5" y="3.5" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M6.5 13V7.5L10 13V7.5M13.5 7.5v5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   },

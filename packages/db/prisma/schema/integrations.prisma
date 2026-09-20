@@ -35,6 +35,9 @@ enum IntegrationProvider {
   /// A one-way, read-only import of a CompanyCam project's photos into a
   /// job's gallery. See companycam.prisma for the link.
   COMPANYCAM
+  /// A read-only feed of a GC's Autodesk Construction Cloud project's RFIs
+  /// and submittals into one job. Same shape as PROCORE. See acc.prisma.
+  ACC
   /// A per-job Bluebeam Studio Session: push a PDF in, read markup status
   /// back. See bluebeam.prisma for the link.
   BLUEBEAM
