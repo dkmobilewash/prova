@@ -1,5 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
+import { useEffect } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { setCurrentJob } from "@/lib/current-job";
 import { Row } from "@/components/Row";
 import { StatusBadge } from "@/components/StatusBadge";
 import { colors, typography } from "@/lib/theme";
@@ -26,6 +28,14 @@ export default function JobHubScreen() {
     name?: string;
     status?: string;
   }>();
+
+  // Opening a job is how you choose one. The jobs list sets this too, but
+  // a notification or a link lands here without passing through it, and
+  // Home, Create and Camera would otherwise still be pointing at whatever
+  // job you were on last week.
+  useEffect(() => {
+    if (jobId) void setCurrentJob({ id: jobId, name: name ?? "Job", status: status ?? null });
+  }, [jobId, name, status]);
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>

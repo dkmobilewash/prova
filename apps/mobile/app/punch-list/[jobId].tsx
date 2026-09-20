@@ -6,6 +6,7 @@ import { Card } from "@/components/Card";
 import { Field } from "@/components/Field";
 import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
+import { JobSections } from "@/components/JobSections";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -146,6 +147,7 @@ export default function PunchListScreen() {
 
   return (
     <View style={styles.screen}>
+      <JobSections jobId={jobId} active="punch-list" />
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {loadedFrom && loadedFrom !== "nothing" ? <Text style={styles.stale}>{loadedFrom}</Text> : null}

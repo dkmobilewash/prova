@@ -13,6 +13,7 @@ import * as api from "@/lib/api";
 import { dayFromClockIn } from "@/lib/clock-session";
 import { uuid } from "@/lib/id";
 import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
+import { JobSections } from "@/components/JobSections";
 import { colors, typography } from "@/lib/theme";
 import type { DelayRow, FieldReportRow } from "@/lib/types";
 import { useFieldReports } from "@/lib/use-field-reports";
@@ -202,6 +203,7 @@ export default function ReportsScreen() {
 
   return (
     <View style={styles.screen}>
+      <JobSections jobId={jobId} active="reports" />
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />

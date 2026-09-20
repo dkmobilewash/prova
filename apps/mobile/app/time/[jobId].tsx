@@ -11,6 +11,7 @@ import { List } from "@/components/List";
 import { RefusedBanner } from "@/components/RefusedBanner";
 import { Sheet } from "@/components/Sheet";
 import { SignaturePad } from "@/components/SignaturePad";
+import { JobSections } from "@/components/JobSections";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import {
@@ -505,6 +506,7 @@ export default function TimeScreen() {
 
   return (
     <View style={styles.screen}>
+      <JobSections jobId={jobId} active="time" />
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
