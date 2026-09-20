@@ -1,5 +1,7 @@
 import { prisma } from "@prova/db";
+import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "./fringe-schedules-query";
 import {
+  phaseCodeRollupLine,
   rollUpPhaseCodes,
   type PhaseCodeMeta,
   type PhaseCodeRollup,
@@ -33,7 +35,7 @@ import {
  *     left would report a variance nobody could reconcile.
  */
 export async function loadPhaseCodeRollup(companyId: string): Promise<PhaseCodeRollup> {
-  const [phases, lineItems] = await Promise.all([
+  const [phases, lineItems, fringeSchedulesByCraft] = await Promise.all([
     prisma.phaseCode.findMany({
       where: { companyId },
       orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
@@ -49,8 +51,15 @@ export async function loadPhaseCodeRollup(companyId: string): Promise<PhaseCodeR
         quantity: true,
         budgetedUnitCost: true,
         costEntries: { select: { amount: true } },
+        // #287. A cost code's whole purpose is budget-versus-actual on a
+        // category of work, and `PhaseCode.tracksLabor` says some of these
+        // categories ARE labor — so an actual column fed by cost entries
+        // alone reported a labor phase spending nothing and reported it as
+        // an underrun.
+        timeEntries: { select: TIME_ENTRY_COST_SELECT },
       },
     }),
+    loadFringeSchedulesByCraft(companyId),
   ]);
 
   const meta: PhaseCodeMeta[] = phases.map((phase) => ({
@@ -63,13 +72,13 @@ export async function loadPhaseCodeRollup(companyId: string): Promise<PhaseCodeR
     sortOrder: phase.sortOrder,
   }));
 
-  const lines: PhaseCodeRollupLine[] = lineItems.map((item) => ({
-    phaseCodeId: item.phaseCodeId,
-    jobId: item.jobId,
-    budgetedCost:
-      item.budgetedUnitCost === null ? null : Number(item.quantity) * Number(item.budgetedUnitCost),
-    actualCost: item.costEntries.reduce((sum, entry) => sum + Number(entry.amount), 0),
-  }));
+  // One expression, because the composition that matters — manual cost plus
+  // burdened labor, and the hours nobody could price — is `phaseCodeRollupLine`
+  // in the pure file next door, where a unit test can reach it. See its
+  // docstring for why that one step crossed the split.
+  const lines: PhaseCodeRollupLine[] = lineItems.map((item) =>
+    phaseCodeRollupLine(item, fringeSchedulesByCraft),
+  );
 
   return rollUpPhaseCodes(meta, lines);
 }
