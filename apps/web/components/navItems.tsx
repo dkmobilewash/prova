@@ -584,6 +584,7 @@ export type NavGroup = {
 };
 
 import { canReach, type Principal } from "@/lib/permissions";
+import { isHiddenByBusinessScope, type BusinessScopeAnswers } from "@/lib/businessScope";
 
 const byHref = new Map(NAV_ITEMS.map((item) => [item.href, item]));
 const item = (href: string): NavItem => {
@@ -790,13 +791,33 @@ const INTERNAL_NAV_GROUP: NavGroup = {
  * the same reason NAV_GROUPS itself is shared: a filter applied in one and
  * forgotten in the other is a feature that exists on a phone and not on a
  * laptop.
+ *
+ * `businessScope` ANDs a second, unrelated filter onto the same list —
+ * lib/businessScope.ts's `isHiddenByBusinessScope`, the three onboarding
+ * questions' effect on the rail. Kept as a second predicate rather than
+ * folded into `canReach` on purpose: `canReach` answers a PERMISSION
+ * question (lib/permissions.ts, a security boundary once requireCapability
+ * enforces it on the page) and this answers a DISPLAY question about one
+ * company's shape (never enforced anywhere — a hidden route still renders,
+ * still turns up in search, still gets explained by Ask). Merging the two
+ * would make a UI preference look like access control, which is exactly
+ * the confusion CLAUDE.md's permissions/nav split exists to prevent.
+ * Omitted entirely (no second argument), it defaults to "hide nothing" —
+ * the same as every company that predates this feature or skipped the
+ * prompt, per `hasNoScopeAnswers`.
  */
-export function navGroupsFor(user: Principal, options: { showsInternal?: boolean } = {}): NavGroup[] {
+export function navGroupsFor(
+  user: Principal,
+  options: { showsInternal?: boolean; businessScope?: BusinessScopeAnswers } = {},
+): NavGroup[] {
   const groups = options.showsInternal ? [...NAV_GROUPS, INTERNAL_NAV_GROUP] : NAV_GROUPS;
+  const scope = options.businessScope;
   return groups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => canReach(user, item.href)),
+      items: group.items.filter(
+        (item) => canReach(user, item.href) && !(scope && isHiddenByBusinessScope(item.href, scope)),
+      ),
     }))
     .filter((group) => group.items.length > 0);
 }

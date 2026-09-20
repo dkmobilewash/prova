@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { activeFooterHref, navFooterFor, navGroupsFor } from "@/components/navItems";
 import { useNavAccordion } from "@/components/useNavAccordion";
 import type { Principal } from "@/lib/permissions";
+import type { BusinessScopeAnswers } from "@/lib/businessScope";
 
 /**
  * Navigation on a phone.
@@ -25,15 +26,19 @@ export function MobileNav({
   companyName,
   principal,
   showsInternal = false,
+  businessScope,
 }: {
   companyName: string;
   principal: Principal;
   /** Prova's own operating company only -- see Company.isProvaOperator. */
   showsInternal?: boolean;
+  /** The three onboarding questions' answers, or undefined for "hide
+   * nothing" — see navGroupsFor in navItems.tsx. */
+  businessScope?: BusinessScopeAnswers;
 }) {
   // Filtered here rather than in the layout so the desktop rail and
   // the mobile drawer run the same function on the same input.
-  const groups = navGroupsFor(principal, { showsInternal });
+  const groups = navGroupsFor(principal, { showsInternal, businessScope });
   const footer = navFooterFor(principal);
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
