@@ -9,3 +9,4 @@ export * from "./jobber";
 export * from "./docusign";
 export * from "./procore";
 export * from "./companycam";
+export * from "./bluebeam";

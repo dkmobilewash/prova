@@ -97,6 +97,12 @@ export const HANDLED_MODELS = [
   // deletes nothing in CompanyCam; the imported photos are ordinary
   // JobMedia rows, handled like every other photo.
   "CompanyCamProjectLink",
+  // A job's link to a Bluebeam Studio Session. CASCADE on Job, same shape
+  // as ProcoreProjectLink and CompanyCamProjectLink — it would not block
+  // the delete, but it carries a jobId, which is what clean-test-jobs.mjs
+  // counts. Deleting the link deletes nothing in Bluebeam; the Studio
+  // Session itself is left exactly as it was.
+  "BluebeamStudioSession",
   "JobAssignment",
   "EquipmentAssignment",
   "EstimateVersion",
