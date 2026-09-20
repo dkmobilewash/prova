@@ -103,6 +103,40 @@ describe("retainage is not receivable", () => {
     expect(row).toBeNull();
   });
 
+  it("does not leave float dust when the ROUNDING in cents() is what is missing", () => {
+    // The test above pins the wrong half of `cents()`, and only a mutation
+    // run shows it. There are two ways to lose this guard, and its fixture
+    // survives one of them:
+    //
+    //   arBalanceFor -> plain float subtraction   1000.35-100.04-900.31
+    //                                             = +1.1368683772161603e-13  CAUGHT
+    //   cents() -> `value * 100`, no Math.round   (100034.99999999999
+    //                                              - 10004.000000000002
+    //                                              - 90031.00000000001)/100
+    //                                             = 0 exactly               SURVIVES
+    //
+    // Multiplying by 100 first does not remove the dust, it changes its
+    // SIGN — and at $1,000.35 it happens to cancel, so the invoice still
+    // drops out and every assertion above still passes with the rounding
+    // deleted. `Math.round` was load-bearing and untested.
+    //
+    // $1,024.13 at 10% is the same construction with the sign the other
+    // way: (amount * 10/100).toFixed(2) === "102.41", the GC pays the
+    // $921.72 net, and without the rounding the balance comes out at
+    // +1.4551915228366852e-13 -- above zero, so the invoice stays in the
+    // aging table for ever at a balance that renders as $0.00. That is
+    // issue #288's own symptom, reintroduced by dropping one Math.round.
+    const row = calculateArAgingInvoice(
+      invoice({ amount: 1_024.13, retainageWithheld: 102.41, paidAmount: 921.72 }),
+      NOW,
+    );
+    // The fixture is only worth anything if the unrounded arithmetic really
+    // does go positive here — asserted, so a future edit to these three
+    // numbers cannot quietly make this test vacuous again.
+    expect((1_024.13 * 100 - 102.41 * 100 - 921.72 * 100) / 100).toBeGreaterThan(0);
+    expect(row).toBeNull();
+  });
+
   it("is the same subtraction wherever it is asked", () => {
     // arBalanceFor is exported because /cash-flow, the Today receivables
     // tile and the Ask receivables tool all need it, and this repo has
