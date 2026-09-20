@@ -5,7 +5,8 @@ import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
 import { ActionResult, actionFail, actionOk, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
-import { catalogActuals, repriceDecision, type JobStatusForActuals } from "@/lib/catalog-actuals";
+import { catalogActuals, catalogSourcedLine, repriceDecision } from "@/lib/catalog-actuals";
+import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import { addCatalogLine } from "@/lib/estimating/catalog-line";
 import { createBidInvitationRecord } from "@/lib/estimating/bid-invitation";
 import { issueEstimateVersionNumber } from "@/lib/estimating/estimate-version";
@@ -300,30 +301,38 @@ export async function updateCatalogDefaultsFromActuals(entryId: string, formData
   const { company, ...user } = await requireCompanyContext();
   assertOwner(user, "Only the account owner can re-price the catalog");
 
-  const entry = await prisma.lineItemCatalogEntry.findUnique({
-    where: { id: entryId },
-    include: {
-      jobLineItems: {
-        where: { isDeleted: false },
-        select: {
-          quantity: true,
-          costEntries: { select: { amount: true } },
-          job: { select: { status: true } },
+  const [entry, fringeSchedulesByCraft] = await Promise.all([
+    prisma.lineItemCatalogEntry.findUnique({
+      where: { id: entryId },
+      include: {
+        jobLineItems: {
+          where: { isDeleted: false },
+          select: {
+            quantity: true,
+            // `category` is load-bearing, not decoration: it is the only thing
+            // that can tell a LABOR cost entry sitting beside logged hours from
+            // a material one. Without it every line reads as unambiguous and
+            // `hasAmbiguousLaborCost` can never fire.
+            costEntries: { select: { amount: true, category: true } },
+            // #287: the crew's hours are most of a self-performed line's
+            // cost. Without this the figure written below is materials-only,
+            // and since it can only ever be LOW, every click walks the
+            // catalog nearer to zero — the same one-directional bias #105
+            // finding 2 documents for unfinished jobs.
+            timeEntries: { select: TIME_ENTRY_COST_SELECT },
+            job: { select: { status: true } },
+          },
         },
       },
-    },
-  });
+    }),
+    loadFringeSchedulesByCraft(company.id),
+  ]);
   if (!entry || entry.companyId !== company.id) {
     throw new Error("Catalog entry not found");
   }
 
   const actuals = catalogActuals(
-    entry.jobLineItems.map((line) => ({
-      quantity: Number(line.quantity),
-      actualCost: line.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
-      hasCosts: line.costEntries.length > 0,
-      jobStatus: line.job.status as JobStatusForActuals,
-    })),
+    entry.jobLineItems.map((line) => catalogSourcedLine(line, fringeSchedulesByCraft)),
     entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
   );
 

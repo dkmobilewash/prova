@@ -539,8 +539,30 @@ enum CostCategory {
 }
 
 /// An actual expense logged against a JobLineItem — references the line
-/// item rather than duplicating it, the same way ChangeOrder does. Actual
-/// cost per line item is SUM(costEntries.amount), computed, never stored.
+/// item rather than duplicating it, the same way ChangeOrder does.
+///
+/// ACTUAL COST PER LINE ITEM IS *NOT* SUM(costEntries.amount). This comment
+/// said it was, for months after it stopped being true, and it is the first
+/// place anyone reads when they ask the question. Issue #287: a CostEntry is
+/// created in exactly one place in the product — the manual "log a cost"
+/// form — so on a self-performed framing or drywall line this table holds
+/// the materials and none of the crew, which for that trade is most of the
+/// money.
+///
+/// Actual cost is cost entries PLUS the burdened labor on the TimeEntry rows
+/// that name the line, composed by apps/web/lib/labor-job-cost.ts. Still
+/// computed at read time, still stored nowhere — deriving CostEntry rows
+/// from time entries would both store derived state and double-count against
+/// a manual labor cost somebody had already typed.
+///
+/// `category` is load-bearing where the two meet. The app ADDS both, and on
+/// a ledger (/jobs/[id]) a duplicate is allowed to stand, because nothing
+/// can tell a duplicate from two real costs. But a LABOR-category entry
+/// sitting beside logged hours makes that line unreadable as a unit cost, so
+/// /catalog — which LEARNS a rate and writes it into
+/// LineItemCatalogEntry.defaultBudgetedUnitCost — excludes it from its
+/// sample and says so. See hasAmbiguousLaborCost in lib/catalog-actuals.ts.
+///
 /// Unlike change orders, logging a cost isn't gated by job status: real
 /// spending happens throughout the job, especially once work is in
 /// progress.

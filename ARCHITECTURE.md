@@ -77,12 +77,16 @@ A single `JobLineItem` row is simultaneously:
   life.
 - **A job-costing line** — actual cost vs. estimated cost is tracked via
   `CostEntry` rows that reference a `JobLineItem` (one per real expense —
-  a receipt, a labor entry), the same way `ChangeOrder` references it.
-  Actual cost is `SUM(costEntries.amount)`, computed, never stored as a
-  duplicate field on the line item. A single `actualCost` column was
-  considered and rejected: it can't tell you *what* it's made of, and a
-  contractor needs the breakdown (materials vs. labor vs. subcontractor),
-  not just a number.
+  a receipt, a subcontractor invoice), the same way `ChangeOrder`
+  references it, **plus** the burdened labor on the `TimeEntry` rows that
+  name the line. Both computed at read time, never stored as a duplicate
+  field. This bullet said actual cost was `SUM(costEntries.amount)` alone
+  until issue #287, which left it understated by most of a self-performed
+  job — see the `CostEntry` section below for the full rule. A single
+  `actualCost` column was considered and rejected, and the reason has only
+  got stronger: it can't tell you *what* it's made of, and a contractor
+  needs the breakdown (materials vs. labor vs. subcontractor), not just a
+  number.
 
 There is no transformation step where an "estimate" becomes a "contract"
 or a "budget." They were never different things.
@@ -415,11 +419,41 @@ it.
 
 Job costing follows the identical pattern as change orders: a new table
 that references `JobLineItem` rather than a new copy of line-item data.
-Each `CostEntry` is one real expense (a receipt, a labor entry) tied to
-the line item it was spent against. "Actual" is `SUM(costEntries.amount)`
-for that line item — always computed at read time, never stored. "Estimated"
-used to mean `quantity * unitPrice` (the sale price); since the WIP fields
-below landed, it means the cost side instead — see `lib/wip.ts`.
+Each `CostEntry` is one real expense (a receipt, a subcontractor invoice)
+tied to the line item it was spent against. "Estimated" used to mean
+`quantity * unitPrice` (the sale price); since the WIP fields below landed,
+it means the cost side instead — see `lib/wip.ts`.
+
+**"Actual" is NOT `SUM(costEntries.amount)`.** It was, and this paragraph
+said so for months while it was wrong. A `CostEntry` is created in exactly
+one place in the product — the manual "log a cost" form — so on a
+self-performed framing or drywall line that sum is the materials and none
+of the crew, which for this trade is most of the money missing. Issue #287.
+
+Actual cost to date is **cost entries plus burdened labor**, composed by
+`lib/labor-job-cost.ts` from the `TimeEntry` rows that name the line, at
+read time, stored nowhere. Materialising `CostEntry` rows from time entries
+would both store derived state and double-count against a manual labor cost
+somebody had already typed; the two are ADDED, and a company doing both
+will double-count, which is correct — nothing here can tell a duplicate
+from two real costs.
+
+Three consequences worth knowing before touching any of this:
+
+- `TimeEntry.lineItemId` is **nullable**, and the log-hours form defaults
+  to "No specific line", so unattached hours are the ordinary shape. They
+  go into the JOB's actual cost and into no line's, which correctly drags
+  `costCoverage` down rather than inventing a line to hold them.
+- Hours whose craft has no effective `FringeRateSchedule` contribute **no
+  dollars**, because `lib/labor-cost.ts` refuses to guess a rate. Every
+  surface reporting a cost figure therefore also reports the unpriced
+  hours behind it — "refused to guess" and "cost nothing" are
+  indistinguishable inside a total, and that is the whole defect.
+- The same rule reaches `/catalog` (where "Update default from actuals"
+  WRITES a unit cost that prices future bids) and `/phase-codes`. Those
+  were missed by #287's first fix and are the reason
+  `lib/jobCostCensus.test.ts` now asserts on the QUERY — a file that
+  selects `CostEntry` rows must select the hours beside them.
 
 Unlike change orders, logging a cost is **not** gated by `Job.status`.
 The ESTIMATE/CONTRACTED gate exists to protect the client-facing
