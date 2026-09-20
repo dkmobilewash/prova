@@ -23,7 +23,8 @@
           "cameraPermission": "C Stream uses the camera to take site photos, stamped with the time and place they were taken.",
           "photosPermission": "C Stream adds photos from your library to a job."
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "ios": {
       "supportsTablet": true,

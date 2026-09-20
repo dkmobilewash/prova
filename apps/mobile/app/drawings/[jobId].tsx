@@ -1,4 +1,5 @@
 import { useLocalSearchParams } from "expo-router";
+import * as Sharing from "expo-sharing";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -110,9 +111,20 @@ export default function DrawingsScreen() {
                         onPress={async () => {
                           setError(null);
                           try {
-                            // A held copy opens with no signal at all,
-                            // which is the entire point of keeping it.
-                            await WebBrowser.openBrowserAsync(localUri ?? revision.fileUrl!);
+                            if (localUri) {
+                              // A HELD file needs the OS, not a browser:
+                              // `openBrowserAsync` is SFSafariViewController
+                              // on iOS and it takes http(s) only, so handing
+                              // it a `file://` uri does nothing — which
+                              // would have broken opening a drawing in
+                              // exactly the place the download exists for.
+                              await Sharing.shareAsync(localUri, {
+                                UTI: "com.adobe.pdf",
+                                mimeType: "application/pdf",
+                              });
+                            } else {
+                              await WebBrowser.openBrowserAsync(revision.fileUrl!);
+                            }
                           } catch {
                             setError("Couldn't open that drawing.");
                           }
