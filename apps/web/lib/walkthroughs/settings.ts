@@ -40,6 +40,12 @@ export const settingsWalkthrough: Walkthrough = {
         "Press Connect QuickBooks to send your invoices into QuickBooks Online. It only sends one way — changes made in QuickBooks do not come back here.",
     },
     {
+      anchor: "quickbooks-not-set-up",
+      title: "QuickBooks isn't set up yet",
+      body:
+        "This install doesn't have the QuickBooks app keys yet, so there is nothing to press. Whoever runs C Stream for you adds them, and then a Connect QuickBooks button appears here.",
+    },
+    {
       anchor: "qbo-import-connect-first",
       title: "Bring your QuickBooks lists in",
       body:
