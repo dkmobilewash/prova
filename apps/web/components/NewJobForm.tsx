@@ -31,7 +31,9 @@ const field =
  * exactly what it does.
  *
  * A client component so the action's refusal can be rendered. `createJob`
- * redirects on success, which never returns here.
+ * redirects on success, which never returns here — to step 2 of the
+ * bid-creation stepper (`/jobs/new/[jobId]/items`), not straight to the
+ * job's own page. See `BidWizardSteps` for why.
  */
 export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
   const [isNewContact, setIsNewContact] = useState(contacts.length === 0);
@@ -149,7 +151,7 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
         data-tour="new-job-create"
         className="mt-2 inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {isPending ? "Creating…" : "Create job"}
+        {isPending ? "Creating…" : "Continue →"}
       </button>
 
       {error && (

@@ -5,7 +5,9 @@ import {
   createLineItemCatalogEntry,
   updateCatalogDefaultsFromActuals,
 } from "@/lib/actions";
-import { catalogActuals, type JobStatusForActuals } from "@/lib/catalog-actuals";
+import { catalogActuals, catalogSourcedLine, type CatalogLineRow } from "@/lib/catalog-actuals";
+import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
+import type { FringeRateScheduleInput } from "@/lib/labor-cost";
 import { CatalogImport } from "@/components/CatalogImport";
 import { CatalogEntryRow } from "@/components/CatalogEntryRow";
 import { TRADE_SCOPE_OPTIONS, tradeScopeLabel } from "@/lib/trade-scopes";
@@ -16,7 +18,7 @@ import { EmptyState } from "@/components/EmptyState";
 type CatalogEntryWithLines = {
   id: string;
   defaultBudgetedUnitCost: unknown;
-  jobLineItems: { quantity: unknown; costEntries: { amount: unknown }[]; job: { status: string } }[];
+  jobLineItems: CatalogLineRow[];
 };
 
 /**
@@ -39,28 +41,36 @@ function formatVariancePct(pct: number) {
   return `${rounded > 0 ? "+" : "−"}${Math.abs(rounded)}%`;
 }
 
-function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
+function ActualsLine({
+  entry,
+  fringeSchedulesByCraft,
+}: {
+  entry: CatalogEntryWithLines;
+  fringeSchedulesByCraft: ReadonlyMap<string, FringeRateScheduleInput[]>;
+}) {
+  // Built by the same function the WRITE uses (#287). A badge that disagreed
+  // with the button under it would be worse than either being wrong alone.
   const actuals = catalogActuals(
-    entry.jobLineItems.map((line) => ({
-      quantity: Number(line.quantity),
-      actualCost: line.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
-      hasCosts: line.costEntries.length > 0,
-      // #105 finding 2: only a FINISHED job's booked cost is a real unit
-      // cost — a job that is still running has quantity from day one but
-      // only partial cost, which reads artificially low every time.
-      jobStatus: line.job.status as JobStatusForActuals,
-    })),
+    entry.jobLineItems.map((line) => catalogSourcedLine(line, fringeSchedulesByCraft)),
     entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
   );
 
   if (actuals.actualUnitCost === null) {
     return (
       <p className="mt-1 text-xs text-ink-muted">
-        {actuals.linesExcludedUnfinished > 0
-          ? `${actuals.linesExcludedUnfinished} costed ${
-              actuals.linesExcludedUnfinished === 1 ? "line uses" : "lines use"
-            } this entry, but on a job that hasn't finished yet — nothing to compare its default against until one does.`
-          : "No costed jobs have used this entry yet — nothing to compare its default against."}
+        {actuals.linesExcludedDoubleCountedLabor > 0
+          ? `${actuals.linesExcludedDoubleCountedLabor} finished ${
+              actuals.linesExcludedDoubleCountedLabor === 1 ? "line has" : "lines have"
+            } both logged hours and a cost entry categorised Labor, so that time may be counted twice and what the work cost isn't clear. Recategorise the cost entry, or remove it if the hours already cover that labor.`
+          : actuals.linesExcludedUnpricedHours > 0
+          ? `${actuals.linesExcludedUnpricedHours} finished ${
+              actuals.linesExcludedUnpricedHours === 1 ? "line has hours" : "lines have hours"
+            } with no wage rate behind them, so what the work cost isn't known. Add a fringe rate schedule for that craft and dates to compare this entry's default against actuals.`
+          : actuals.linesExcludedUnfinished > 0
+            ? `${actuals.linesExcludedUnfinished} costed ${
+                actuals.linesExcludedUnfinished === 1 ? "line uses" : "lines use"
+              } this entry, but on a job that hasn't finished yet — nothing to compare its default against until one does.`
+            : "No costed jobs have used this entry yet — nothing to compare its default against."}
       </p>
     );
   }
@@ -80,6 +90,36 @@ function ActualsLine({ entry }: { entry: CatalogEntryWithLines }) {
         )}
         {actuals.isFlagged && " — worth re-pricing"}
       </p>
+      {/* #287: this figure is mostly crew time on a self-performed line, and
+          an estimator who thinks it is materials will read it as impossibly
+          cheap. Named rather than left to be inferred. */}
+      {actuals.laborCost > 0 && (
+        <p className="text-xs text-ink-muted">
+          Includes {money(actuals.laborCost)} of burdened labor from logged hours.
+        </p>
+      )}
+      {/* Hours nobody could price are left OUT of the figure above, so the
+          sample is smaller than the job history looks. Saying so is the
+          difference between a number and a number you can act on. */}
+      {actuals.linesExcludedUnpricedHours > 0 && (
+        <p className="text-xs text-tag-amber-ink">
+          {actuals.linesExcludedUnpricedHours} further finished{" "}
+          {actuals.linesExcludedUnpricedHours === 1 ? "line is" : "lines are"} left out — their
+          hours have no wage rate behind them.
+        </p>
+      )}
+      {/* The third exclusion, and the quickest to fix: the line has logged
+          hours AND a cost entry categorised Labor, so its labor may be in the
+          figure twice. Learning from it would bias this template HIGH, which
+          loses work silently — see hasAmbiguousLaborCost. */}
+      {actuals.linesExcludedDoubleCountedLabor > 0 && (
+        <p className="text-xs text-tag-amber-ink">
+          {actuals.linesExcludedDoubleCountedLabor} further finished{" "}
+          {actuals.linesExcludedDoubleCountedLabor === 1 ? "line is" : "lines are"} left out — they
+          have both logged hours and a cost entry categorised Labor, so that time may be counted
+          twice.
+        </p>
+      )}
       {actuals.isFlagged && (
         <form
           action={updateCatalogDefaultsFromActuals.bind(null, entry.id)}
@@ -110,7 +150,7 @@ export default async function CatalogPage() {
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
   const { company } = context;
 
-  const [entries, craftClassifications] = await Promise.all([
+  const [entries, craftClassifications, fringeSchedulesByCraft] = await Promise.all([
     prisma.lineItemCatalogEntry.findMany({
       where: { companyId: company.id },
       orderBy: { description: "asc" },
@@ -122,7 +162,15 @@ export default async function CatalogPage() {
           where: { isDeleted: false },
           select: {
             quantity: true,
-            costEntries: { select: { amount: true } },
+            // `category` is load-bearing, not decoration: it is the only thing
+            // that can tell a LABOR cost entry sitting beside logged hours from
+            // a material one. Without it every line reads as unambiguous and
+            // `hasAmbiguousLaborCost` can never fire.
+            costEntries: { select: { amount: true, category: true } },
+            // #287: on a self-performed line the crew's hours ARE the cost,
+            // and a line with no cost entries at all was not merely
+            // understated here — it dropped out of the sample entirely.
+            timeEntries: { select: TIME_ENTRY_COST_SELECT },
             job: { select: { status: true } },
           },
         },
@@ -133,6 +181,7 @@ export default async function CatalogPage() {
       include: { unionLocal: true },
       orderBy: { name: "asc" },
     }),
+    loadFringeSchedulesByCraft(company.id),
   ]);
 
   return (
@@ -213,7 +262,7 @@ export default async function CatalogPage() {
                       <> · {entry.defaultLaborHours.toString()} hrs/line</>
                     )}
                   </p>
-                  <ActualsLine entry={entry} />
+                  <ActualsLine entry={entry} fringeSchedulesByCraft={fringeSchedulesByCraft} />
                 </>
               </CatalogEntryRow>
             ))}

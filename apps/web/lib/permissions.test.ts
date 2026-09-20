@@ -303,6 +303,9 @@ const OPEN_ROUTES: Record<string, string> = {
   "/jobs/[id]":
     "The job record is the spine every function works from, so it must not sit behind MANAGE_JOBS: ACCOUNTING holds no MANAGE_JOBS and has to reach pay apps and retainage, and PAYROLL_COMPLIANCE holds none either. Its money sections are withheld in-page and pinned by lib/page-money-guards.test.ts.",
   "/jobs/new": "Same reason as /jobs/[id]. createJob is where a real restriction on making one would belong.",
+  "/jobs/new/[jobId]/items":
+    "Steps 2 and 3 of the bid-creation stepper that begins at /jobs/new — reached only via createJob's own redirect to the job it just made, never linked from the nav. Same reason as /jobs/new and /jobs/[id]: the job record underneath it must stay open to every function, and this page withholds its own money (line items, catalog prices) in-page behind VIEW_JOB_COSTS, exactly the way jobs/[id]'s estimate section does.",
+  "/jobs/new/[jobId]/review": "The stepper's last step, same reason as /jobs/new/[jobId]/items beside it — a summary of what the previous two steps already saved, gated the same way.",
   "/jobs": "A bare redirect to /dashboard. Guarding a redirect claims a protection it redirects straight past.",
   "/estimating": "A bare redirect to /dashboard?status=ESTIMATE. Same reason as /jobs.",
   "/settings/export":
