@@ -99,6 +99,14 @@ export const notYetRegistered: Exclusion[] = [
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },
   { action: "gettingStarted.*", reason: "Hides the dashboard's getting-started card on this browser — a cookie about one card, not work anyone asks the box for. Never a command." },
+  // Global search (lib/search). A read with its own box and its own
+  // keyboard shortcut, not a fact Ask narrates — app_help already answers
+  // "how do I find X" from the same walkthrough registry this reads for
+  // its page half. Registering it as a command would let the model return
+  // a company's own record titles and hrefs as an answer, second-guessing
+  // capability filtering that already runs once, correctly, inside
+  // globalSearch. Never a command.
+  { action: "search.*", reason: "Its own box and shortcut, not a fact for Ask to narrate; app_help already answers 'how do I find X'. Never a command." },
   { action: "prevailingWage.*", reason: "Rule sets are compliance configuration edited on their own page; needs a File for determinations." },
   { action: "apprenticeship.*", reason: "Enrollment and period sign-off are evidence with sign-off dates; page only for now." },
   { action: "unionCompliance.*", reason: "Craft, local and rate configuration; several writes are global reference data. Never a command." },
