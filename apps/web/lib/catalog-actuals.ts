@@ -13,13 +13,58 @@
  * a JobLineItem that already exists.
  */
 
+import {
+  laborCostForRows,
+  type CostEntryCostRow,
+  type DecimalLike,
+  type TimeEntryCostRow,
+} from "./labor-job-cost";
+import type { FringeRateScheduleInput } from "./labor-cost";
+
 /** A line created from a catalog entry, with the costs logged against it. */
 export type CatalogSourcedLine = {
   quantity: number;
-  /** SUM of this line's CostEntry amounts. */
-  actualCost: number;
-  /** Whether any cost has been logged at all. */
-  hasCosts: boolean;
+  /**
+   * SUM of this line's CostEntry amounts — every category, including a
+   * manually typed LABOR one.
+   *
+   * NOT the line's cost. A CostEntry comes from exactly one place in the
+   * product, the manual "log a cost" form, so on a self-performed line this
+   * is the board and the screws and nothing else. The crew's time is
+   * `laborCost` beside it, and both are added. Named for what it holds
+   * rather than `actualCost`, which is what it was called while it was
+   * quietly missing most of the money (#287).
+   */
+  costEntryTotal: number;
+  /** How many CostEntry rows there are. A count rather than a boolean
+   * because "costed" is no longer a question about cost entries alone — see
+   * `hasAnyCost` below, which is derived here rather than by each caller so
+   * that two callers cannot answer it differently. */
+  costEntryCount: number;
+  /**
+   * Burdened labor booked to THIS line — base wage plus fringes over the
+   * TimeEntry rows that name it, from lib/labor-job-cost.ts, which is the
+   * same arithmetic /jobs/[id] and the WH-347 use.
+   *
+   * Only hours a FringeRateSchedule could price are in here; see
+   * `unpricedLaborHours`.
+   */
+  laborCost: number;
+  /** Every hour booked to this line, priced or not. Part of deciding whether
+   * the line has been costed at all: a self-performed line commonly has no
+   * CostEntry rows whatsoever. */
+  laborHours: number;
+  /**
+   * Hours booked to this line that NO wage schedule could price.
+   *
+   * `calculateTimeEntryLaborCost` returns null rather than guessing a rate
+   * when no FringeRateSchedule covers an entry's craft and date. Those hours
+   * contribute zero dollars, and zero dollars is indistinguishable from
+   * "cheap" inside a total — so a line carrying any of them is excluded from
+   * the sample entirely rather than averaged in understated. Same treatment,
+   * and the same reasoning, as an unfinished job below.
+   */
+  unpricedLaborHours: number;
   /**
    * Status of the job this line sits on.
    *
@@ -54,6 +99,34 @@ export function isFinishedForActuals(line: CatalogSourcedLine): boolean {
   return FINISHED_JOB_STATUSES.includes(line.jobStatus);
 }
 
+/**
+ * Whether anything at all has been booked against this line.
+ *
+ * Derived here rather than handed in as a `hasCosts` boolean, because the
+ * answer changed with #287 and a caller that still answered it the old way
+ * (cost entries only) would silently drop every self-performed line out of
+ * the sample — the jobs whose costs this loop most needs to learn from.
+ */
+export function hasAnyCost(line: CatalogSourcedLine): boolean {
+  return line.costEntryCount > 0 || line.laborHours > 0;
+}
+
+/** Whether every hour on this line could be priced. A line with hours no
+ * wage schedule covers is evidence of nothing: its labor reads as $0. */
+export function isFullyPriced(line: CatalogSourcedLine): boolean {
+  return line.unpricedLaborHours === 0;
+}
+
+/** Everything booked against the line: manual cost entries plus the crew's
+ * burdened time. ADDED, never substituted — a company that logs hours AND
+ * types a manual "labor" cost entry double-counts, and that is correct here:
+ * this cannot tell a duplicate from two real costs, and dropping one would
+ * make a cost somebody entered disappear. Same rule as `lineItemCostToDate`
+ * in lib/labor-job-cost.ts, deliberately. */
+export function lineTotalCost(line: CatalogSourcedLine): number {
+  return line.costEntryTotal + line.laborCost;
+}
+
 export type CatalogActuals = {
   /** Costed lines on FINISHED jobs — the sample size, and the only lines any
    * figure below is computed from. */
@@ -68,9 +141,26 @@ export type CatalogActuals = {
    * once one of these finishes."
    */
   linesExcludedUnfinished: number;
+  /**
+   * Costed lines on FINISHED jobs left out because some of their hours have
+   * no wage rate.
+   *
+   * Reported for the same reason `linesExcludedUnfinished` is: the estimator
+   * needs to know the sample is smaller than the job history suggests, and
+   * the two call for completely different actions. "Come back when a job
+   * finishes" is waiting; this one is "add a fringe rate schedule for that
+   * craft" and is fixable this afternoon.
+   */
+  linesExcludedUnpricedHours: number;
   /** Total cost across those lines, over total quantity. Null when nothing
    * has been costed, or when the quantities sum to zero. */
   actualUnitCost: number | null;
+  /** The burdened labor inside the figure above, in dollars. Reported so the
+   * screen can say the unit cost is mostly crew time rather than leaving an
+   * estimator to wonder where the number came from. */
+  laborCost: number;
+  /** The manually logged cost entries inside the figure above. */
+  costEntryTotal: number;
   defaultBudgetedUnitCost: number | null;
   /** actual - default, in dollars per unit. Null unless both exist. */
   variance: number | null;
@@ -98,17 +188,67 @@ export const CATALOG_VARIANCE_THRESHOLD = 0.15;
  */
 export const CATALOG_MIN_SAMPLE = 2;
 
+/**
+ * A `JobLineItem` as this loop needs to read it, straight off Prisma.
+ *
+ * `timeEntries` is the line's OWN entries, via the back-relation — not the
+ * whole job's. A catalog entry's lines are scattered across many jobs, so
+ * fetching each entire job to throw most of it away would be a query shape
+ * rather than a saving. (`lineItemCostToDate`, which serves the WIP surfaces,
+ * takes the job's whole list because those callers already hold it.)
+ */
+export interface CatalogLineRow {
+  quantity: DecimalLike;
+  costEntries: readonly CostEntryCostRow[];
+  timeEntries: readonly TimeEntryCostRow[];
+  job: { status: string };
+}
+
+/**
+ * One Prisma row, converted for `catalogActuals` — including its labor.
+ *
+ * THE POINT OF THIS FUNCTION IS THAT THERE IS ONLY ONE OF IT. The catalog
+ * page renders this figure and `updateCatalogDefaultsFromActuals` WRITES it
+ * into the entry's default. Those two building the same line differently is
+ * how a badge comes to disagree with what the button beneath it saves, and
+ * the write is the one that prices the next bid.
+ */
+export function catalogSourcedLine(
+  row: CatalogLineRow,
+  schedulesByCraft: ReadonlyMap<string, FringeRateScheduleInput[]>,
+): CatalogSourcedLine {
+  const labor = laborCostForRows(row.timeEntries, schedulesByCraft);
+  return {
+    quantity: Number(row.quantity),
+    costEntryTotal: row.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
+    costEntryCount: row.costEntries.length,
+    laborCost: labor.total,
+    laborHours: labor.pricedHours + labor.unpricedHours,
+    unpricedLaborHours: labor.unpricedHours,
+    // #105 finding 2: only a FINISHED job's booked cost is a real unit cost —
+    // a job that is still running has quantity from day one but only partial
+    // cost, which reads artificially low every time.
+    jobStatus: row.job.status as JobStatusForActuals,
+  };
+}
+
 export function catalogActuals(
   lines: CatalogSourcedLine[],
   defaultBudgetedUnitCost: number | null,
 ): CatalogActuals {
-  const costedAnywhere = lines.filter((line) => line.hasCosts);
+  const costedAnywhere = lines.filter(hasAnyCost);
   // Finding 2: only a FINISHED job's cost is a real unit cost. Excluding the
   // rest here means every figure below — sample size, actual cost, variance,
   // the flag — is computed the same honest way whichever caller asks for it.
-  const costed = costedAnywhere.filter(isFinishedForActuals);
+  const finished = costedAnywhere.filter(isFinishedForActuals);
+  // #287: and only a line whose hours could all be PRICED. An unfinished job
+  // and unpriced hours are filtered in that order, and reported as two
+  // separate counts, so a line that is both is named once rather than twice.
+  const costed = finished.filter(isFullyPriced);
   const totalQuantity = costed.reduce((sum, line) => sum + line.quantity, 0);
-  const totalCost = costed.reduce((sum, line) => sum + line.actualCost, 0);
+  const totalCost = costed.reduce((sum, line) => sum + lineTotalCost(line), 0);
+  const laborCost = costed.reduce((sum, line) => sum + line.laborCost, 0);
+  const costEntryTotal = costed.reduce((sum, line) => sum + line.costEntryTotal, 0);
 
   // Weighted by quantity rather than averaging each line's own unit cost: a
   // 500 SF line and a 5 SF line are not equal evidence of what a square foot
@@ -122,8 +262,11 @@ export function catalogActuals(
 
   return {
     linesWithCosts: costed.length,
-    linesExcludedUnfinished: costedAnywhere.length - costed.length,
+    linesExcludedUnfinished: costedAnywhere.length - finished.length,
+    linesExcludedUnpricedHours: finished.length - costed.length,
     actualUnitCost,
+    laborCost,
+    costEntryTotal,
     defaultBudgetedUnitCost,
     variance,
     variancePct,
@@ -176,6 +319,21 @@ export function repriceDecision(
 ): RepriceDecision {
   if (actuals.actualUnitCost === null) {
     const unfinished = actuals.linesExcludedUnfinished;
+    const unpriced = actuals.linesExcludedUnpricedHours;
+
+    // Unpriced hours are named FIRST when both apply, because they are the
+    // only one of the two the reader can act on today. "No finished job has
+    // used this entry" sends an estimator looking for jobs; the actual fix
+    // here is a fringe rate schedule for the craft that worked those hours.
+    if (unpriced > 0) {
+      return {
+        ok: false,
+        error: `Nothing to re-price from: ${unpriced} finished ${
+          unpriced === 1 ? "line has hours" : "lines have hours"
+        } with no wage rate behind them, so what the work cost isn't known. Add a fringe rate schedule covering the craft and dates those hours were worked, then try again.`,
+      };
+    }
+
     return {
       ok: false,
       error:
