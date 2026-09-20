@@ -65,8 +65,8 @@ export async function createJob(formData: FormData): Promise<ActionResult> {
 
   // The body lives in lib/estimating/create-job.ts, shared with the Ask
   // command `create_estimate_job`. This action is the form's parse → core →
-  // revalidate → redirect, and behaves exactly as it did: an existing
-  // contact is asserted in-company, a new name is a new contact.
+  // revalidate → redirect; an existing contact is asserted in-company, a
+  // new name is a new contact.
   const created = await createEstimateJob(company.id, {
     jobName,
     scope,
@@ -78,7 +78,16 @@ export async function createJob(formData: FormData): Promise<ActionResult> {
 
   revalidatePath("/dashboard");
   revalidatePath("/contacts");
-  redirect(`/jobs/${created.value.jobId}`);
+  // Used to land on `/jobs/${id}` directly — the job's full management
+  // page, mid-scroll of every section a contracted job eventually grows.
+  // This is the one and only caller of `createJob` (the Ask command hits
+  // `createEstimateJob` above directly and builds its own confirmation
+  // card), so redirecting it into the rest of the bid-creation stepper
+  // instead — add work, then review — changes nothing else that reads
+  // this action. The job exists in the database the moment this redirect
+  // fires, so leaving the wizard here is never data loss: `/jobs/${id}`
+  // still opens the same ESTIMATE-stage job directly, stepper or not.
+  redirect(`/jobs/new/${created.value.jobId}/items`);
 }
 
 /**

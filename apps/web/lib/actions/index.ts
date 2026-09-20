@@ -67,3 +67,4 @@ export * from "./procore";
 export * from "./procoreFeed";
 export * from "./companycam";
 export * from "./calendarFeed";
+export * from "./bluebeam";

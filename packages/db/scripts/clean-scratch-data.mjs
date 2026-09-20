@@ -234,6 +234,10 @@ async function main() {
     // CASCADE on Job, same shape as ProcoreProjectLink — the link is a
     // pointer at CompanyCam, not evidence. Nothing in CompanyCam changes.
     await del("companyCamProjectLink", () => prisma.companyCamProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // CASCADE on Job, same shape as ProcoreProjectLink and
+    // CompanyCamProjectLink — the link is a pointer at Bluebeam, not
+    // evidence. Nothing in Bluebeam changes.
+    await del("bluebeamStudioSession", () => prisma.bluebeamStudioSession.deleteMany({ where: { jobId: { in: jobIds } } }));
     // Sign-offs first: a live one makes the TimeEntry day-lock trigger refuse
     // to delete that day's hours.
     await del("timesheetSignoff", () =>

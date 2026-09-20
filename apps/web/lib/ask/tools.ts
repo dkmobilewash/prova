@@ -437,10 +437,11 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "job_labor_cost",
-    // the job page's time entries, priced the way that page prices them
+    // the job page's time entries, priced the way that page prices them —
+    // wageCost + allowanceCost, same as jobWip.actualCostToDate's labor share
     capability: "VIEW_JOB_COSTS",
     description:
-      "Burdened labor cost booked to a job from logged hours — base wage times the pay-type multiplier plus fringes, using the rate schedule in force on each entry's own date. Answers 'what has the crew cost us on this job'. ALWAYS read the priced-hours share beside the total: hours on a craft with no rate schedule covering their date are NOT priced and are excluded from the money, so on a half-configured company the total is real but partial. It does NOT include material, equipment or subcontract cost — those reach a job as cost entries, and job_margin is the tool for total cost.",
+      "Burdened labor cost booked to a job from logged hours: base wage times the pay-type multiplier plus fringes (wageCost), PLUS any per diem and travel pay logged on those days (allowanceCost — TimeEntry.perDiemAmount/.travelPayAmount, real dollars the company pays to have the work done). The total is exactly what /jobs/[id]'s Actual cost figure counts as this job's labor — say so if asked why the two might otherwise seem to disagree. Answers 'what has the crew cost us on this job'. ALWAYS read the priced-hours share beside the total: hours on a craft with no rate schedule covering their date get $0 of WAGE and are excluded from wageCost, so the total can be nonzero from allowances alone while the wage side is still incomplete — that is what shareOfHoursPriced is for, and it must be read alongside the dollar figure, never dropped. It does NOT include material, equipment or subcontract cost — those reach a job as cost entries, and job_margin is the tool for total cost.",
     input_schema: jobFilter,
   },
   {
