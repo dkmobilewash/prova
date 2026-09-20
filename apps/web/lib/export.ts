@@ -438,6 +438,17 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       // Which crafts each person can be logged under -- setup for the
       // phone's craft picker, not a record of work done.
       "WorkerCraft",
+      // The imported payroll register: deductions, net wages and the
+      // hours a payroll system reported, none of it derived from anything
+      // else in this file. Same reason as the rest of this bucket -- it
+      // is what the hours were worth, not the hours themselves.
+      "PayrollRegisterEntry",
+      // WH-347 payroll numbers issued per job-week. A filing sequence,
+      // not a rate, but it lives here rather than its own bucket because
+      // nothing else exported names the job's certified-payroll filings
+      // yet -- see Wh347PayrollCounter below for the counter that issues
+      // it.
+      "Wh347PayrollNumber",
     ],
   },
   {
@@ -603,6 +614,7 @@ export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
   RfiCounter: "sequence counter — the numbers it issued are on the exported RFIs",
   SafetyCaseCounter: "sequence counter — the numbers it issued are on the exported incidents",
   SubmittalCounter: "sequence counter — the numbers it issued are on the exported submittals",
+  Wh347PayrollCounter: "sequence counter — the numbers it issued are on Wh347PayrollNumber, itself withheld above (payroll-rates)",
   QuickBooksConnection: "an integration connection: tokens into another system, withheld above",
   IntegrationConnection: "an integration connection: tokens into another system, withheld above",
   QuickBooksAccountMapping: "integration plumbing — which QuickBooks account a posting goes to, meaningless without that QuickBooks company",

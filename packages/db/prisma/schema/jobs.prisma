@@ -126,6 +126,8 @@ model Job {
   rfis                           Rfi[]
   invoiceCounter                 InvoiceCounter?
   contractDocumentVersionCounter ContractDocumentVersionCounter?
+  wh347PayrollNumbers            Wh347PayrollNumber[]
+  wh347PayrollCounter            Wh347PayrollCounter?
   rfiCounter                     RfiCounter?
   submittals                     Submittal[]
   submittalCounter               SubmittalCounter?

@@ -147,11 +147,13 @@ describe("CrewMember identity is locked after creation", () => {
     expect(after.legalLastName).toBe(`Alvarez ${stamp}a`);
   });
 
-  it("refuses to change the individual identifying number", async () => {
+  it("refuses to change the individual identifying number, once it is set", async () => {
+    // Its own RAISE, not the identity one above — see the SET-ONCE block
+    // below for why this field split off from "locked after creation".
     const crew = await makeCrew({ legalLastName: `Ident ${stamp}`, identifyingNumberLast4: "4821" });
     await expect(
       prisma.crewMember.update({ where: { id: crew.id }, data: { identifyingNumberLast4: "9999" } }),
-    ).rejects.toThrow(/locked after creation/);
+    ).rejects.toThrow(/cannot be changed once set/);
   });
 
   it("refuses to move a crew member to another company", async () => {
@@ -179,6 +181,46 @@ describe("CrewMember identity is locked after creation", () => {
     expect(updated.archivedAt).toEqual(utc("2026-09-01"));
     // archiving is not deleting: the row is still there to be named
     expect(await prisma.crewMember.findUnique({ where: { id: crew.id } })).not.toBeNull();
+  });
+});
+
+describe("identifyingNumberLast4 is SET-ONCE, not locked from creation", () => {
+  // 20260919200000_add_payroll_register replaced the trigger function so
+  // this one field stopped being covered by the full identity lock above.
+  // The column's own schema comment always said "nullable because a crew
+  // member is worth recording before payroll has sent the number over" —
+  // the payroll register import is that caller, and the OLD trigger
+  // refused the exact write that sentence describes. This is the
+  // production behaviour that migration changes, so it is the one case
+  // this file cannot skip: NULL -> value must now SUCCEED, and both other
+  // directions must still raise, same as before.
+
+  it("allows NULL -> a value, once — the write the column's own comment promises", async () => {
+    const crew = await makeCrew({ legalLastName: `SetOnce ${stamp}` });
+    expect(crew.identifyingNumberLast4).toBeNull();
+    const updated = await prisma.crewMember.update({
+      where: { id: crew.id },
+      data: { identifyingNumberLast4: "1234" },
+    });
+    expect(updated.identifyingNumberLast4).toBe("1234");
+  });
+
+  it("still refuses value -> a DIFFERENT value, once set", async () => {
+    const crew = await makeCrew({ legalLastName: `SetOnceChange ${stamp}`, identifyingNumberLast4: "1234" });
+    await expect(
+      prisma.crewMember.update({ where: { id: crew.id }, data: { identifyingNumberLast4: "5678" } }),
+    ).rejects.toThrow(/cannot be changed once set/);
+    const after = await prisma.crewMember.findUniqueOrThrow({ where: { id: crew.id } });
+    expect(after.identifyingNumberLast4).toBe("1234");
+  });
+
+  it("still refuses value -> NULL, once set — a filing already made must not be contradicted", async () => {
+    const crew = await makeCrew({ legalLastName: `SetOnceClear ${stamp}`, identifyingNumberLast4: "1234" });
+    await expect(
+      prisma.crewMember.update({ where: { id: crew.id }, data: { identifyingNumberLast4: null } }),
+    ).rejects.toThrow(/cannot be changed once set/);
+    const after = await prisma.crewMember.findUniqueOrThrow({ where: { id: crew.id } });
+    expect(after.identifyingNumberLast4).toBe("1234");
   });
 });
 

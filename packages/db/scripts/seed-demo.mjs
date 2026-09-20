@@ -1558,6 +1558,14 @@ async function undo(companyId) {
     await del("estimateVersionCounter", () =>
       prisma.estimateVersionCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    // WH-347 payroll numbers and their per-job counter -- the #227 shape:
+    // jobId-keyed RESTRICT children nothing else's delete reaches.
+    await del("wh347PayrollNumber", () =>
+      prisma.wh347PayrollNumber.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("wh347PayrollCounter", () =>
+      prisma.wh347PayrollCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     await del("dispatchSlip", () =>
       prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }),
     );

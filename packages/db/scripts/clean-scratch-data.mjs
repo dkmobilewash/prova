@@ -313,6 +313,12 @@ async function main() {
     // deleting the versions does not reach it, so it outlives them and
     // blocks the job delete on its own.
     await del("estimateVersionCounter", () => prisma.estimateVersionCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // WH-347 payroll numbers and their per-job counter: both keyed on
+    // jobId, RESTRICT on Job, and not reached by deleting anything else --
+    // the #227 shape again, which is why both are here AND in
+    // HANDLED_MODELS AND in seed-demo.mjs.
+    await del("wh347PayrollNumber", () => prisma.wh347PayrollNumber.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("wh347PayrollCounter", () => prisma.wh347PayrollCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("dispatchSlip", () => prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("prevailingWageDetermination", () => prisma.prevailingWageDetermination.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("jobAssignment", () => prisma.jobAssignment.deleteMany({ where: { jobId: { in: jobIds } } }));

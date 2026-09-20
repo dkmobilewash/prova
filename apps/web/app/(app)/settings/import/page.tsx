@@ -1,9 +1,37 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { SpreadsheetImport } from "@/components/SpreadsheetImport";
 import { MyCoiImport } from "@/components/MyCoiImport";
+import { PayrollRegisterImport } from "@/components/PayrollRegisterImport";
 import { toIsoDate } from "@/lib/compliance-expiry";
+import type { ExistingRegisterEntry, RegisterDeductionsDetail } from "@/lib/payroll-register-import";
+
+/** Prisma's Date fields, as the pure planner wants them: YYYY-MM-DD. */
+function toRegisterEntry(row: {
+  crewMemberId: string;
+  periodStart: Date;
+  periodEnd: Date;
+  grossCents: number;
+  deductionsCents: number;
+  netCents: number;
+  hours: unknown;
+  payDate: Date | null;
+  deductionsDetail: unknown;
+}): ExistingRegisterEntry {
+  return {
+    crewMemberId: row.crewMemberId,
+    periodStart: toIsoDate(row.periodStart)!,
+    periodEnd: toIsoDate(row.periodEnd)!,
+    grossCents: row.grossCents,
+    deductionsCents: row.deductionsCents,
+    netCents: row.netCents,
+    hours: row.hours === null ? null : String(row.hours),
+    payDate: row.payDate ? toIsoDate(row.payDate) : null,
+    deductionsDetail: (row.deductionsDetail as RegisterDeductionsDetail) ?? null,
+  };
+}
 
 /**
  * Bringing a contractor's existing clients, jobs and crew in from a
@@ -29,8 +57,16 @@ export const dynamic = "force-dynamic";
 export default async function ImportPage() {
   const context = await requireCompanyContext();
   const { company } = context;
+  const isOwner = context.role === "OWNER";
+  // The payroll register is the one import on this page that is NOT
+  // owner-only — see lib/actions/payrollRegister.ts's own doc comment.
+  // Certified payroll is the office manager's weekly chore, and gating the
+  // register import to OWNER would mean the person who runs that chore
+  // every week cannot reach the button, while the action they'd call
+  // already admits them.
+  const canImportPayrollRegister = can(context, "MANAGE_COMPLIANCE");
 
-  if (context.role !== "OWNER") {
+  if (!isOwner && !canImportPayrollRegister) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
         <h1 className="mb-2 text-xl font-semibold text-ink">Import from a spreadsheet</h1>
@@ -42,7 +78,55 @@ export default async function ImportPage() {
     );
   }
 
-  const [contacts, contactPeople, jobs, crew, phaseCodes, certificates, vendors] = await Promise.all([
+  if (!isOwner) {
+    const [crew, registerEntries] = await Promise.all([
+      prisma.crewMember.findMany({
+        where: { companyId: company.id },
+        select: {
+          id: true,
+          legalFirstName: true,
+          legalMiddleName: true,
+          legalLastName: true,
+          employeeNumber: true,
+          identifyingNumberLast4: true,
+        },
+      }),
+      prisma.payrollRegisterEntry.findMany({
+        where: { companyId: company.id },
+        select: {
+          crewMemberId: true,
+          periodStart: true,
+          periodEnd: true,
+          grossCents: true,
+          deductionsCents: true,
+          netCents: true,
+          hours: true,
+          payDate: true,
+          deductionsDetail: true,
+        },
+      }),
+    ]);
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-8">
+        <h1 className="mb-2 text-xl font-semibold text-ink">Import from a spreadsheet</h1>
+        <p className="mb-6 text-sm text-ink-body">
+          Clients, jobs, crew and certificates of insurance are the account owner&apos;s imports.
+          The payroll register below is yours — it is part of certified payroll, not company
+          administration.
+        </p>
+        <div className="mb-8">
+          <PayrollRegisterImport crew={crew} existing={registerEntries.map(toRegisterEntry)} />
+        </div>
+        <p className="text-sm text-ink-body">
+          <Link href="/settings" className="text-link hover:text-link-hover">
+            Back to settings
+          </Link>
+        </p>
+      </div>
+    );
+  }
+
+  const [contacts, contactPeople, jobs, crew, phaseCodes, certificates, vendors, registerEntries] = await Promise.all([
     prisma.contact.findMany({ where: { companyId: company.id }, select: { name: true, accountType: true } }),
     // For the phone-contacts (.vcf) preview's "already here": which people
     // already exist under which contact, matched the same way the confirm
@@ -57,7 +141,14 @@ export default async function ImportPage() {
     }),
     prisma.crewMember.findMany({
       where: { companyId: company.id },
-      select: { legalFirstName: true, legalMiddleName: true, legalLastName: true, employeeNumber: true },
+      select: {
+        id: true,
+        legalFirstName: true,
+        legalMiddleName: true,
+        legalLastName: true,
+        employeeNumber: true,
+        identifyingNumberLast4: true,
+      },
     }),
     // For the cost-codes import's "already here" — every code this company
     // has, active or retired, matched exactly the way the confirm matches
@@ -70,6 +161,20 @@ export default async function ImportPage() {
       select: { partyName: true, coverageType: true, expiresAt: true },
     }),
     prisma.vendor.findMany({ where: { companyId: company.id }, select: { name: true } }),
+    prisma.payrollRegisterEntry.findMany({
+      where: { companyId: company.id },
+      select: {
+        crewMemberId: true,
+        periodStart: true,
+        periodEnd: true,
+        grossCents: true,
+        deductionsCents: true,
+        netCents: true,
+        hours: true,
+        payDate: true,
+        deductionsDetail: true,
+      },
+    }),
   ]);
   const contactNames = contacts.map((contact) => contact.name);
 
@@ -131,6 +236,9 @@ export default async function ImportPage() {
         </div>
         <div data-tour="import-cost-codes">
           <SpreadsheetImport kind="costCodes" existingPhaseCodeCodes={phaseCodes.map((row) => row.code)} />
+        </div>
+        <div>
+          <PayrollRegisterImport crew={crew} existing={registerEntries.map(toRegisterEntry)} />
         </div>
         {/* The myCOI card on Settings → Integrations links here. */}
         <div id="mycoi" className="scroll-mt-6" data-tour="import-mycoi">

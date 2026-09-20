@@ -118,6 +118,13 @@ export const HANDLED_MODELS = [
   // RESTRICT on Job, and deleting the job's estimate versions does not
   // reach it.
   "EstimateVersionCounter",
+  // WH-347 payroll numbers for a job's weeks, and the per-job counter that
+  // issues them (#227 shape: jobId-keyed RESTRICT children of Job that no
+  // other delete reaches). The numbers are a sequence record, not signed
+  // evidence -- the signed thing is the printed form -- so they go with
+  // their scratch job the way the other per-job counters do.
+  "Wh347PayrollNumber",
+  "Wh347PayrollCounter",
   // `DocumentIntake` does NOT block a Job delete: its `jobId` is optional,
   // so Postgres holds ON DELETE SET NULL and the delete would succeed
   // without this entry. It is in this list anyway, and the distinction is

@@ -106,6 +106,7 @@ model Company {
   salesStageChanges         SalesStageChange[]
   equipmentAssignments      EquipmentAssignment[]
   crewMembers               CrewMember[]
+  payrollRegisterEntries    PayrollRegisterEntry[]
   crewScheduleDays          CrewScheduleDay[]
   workerCrafts              WorkerCraft[]
   experienceModRates        ExperienceModRate[]
