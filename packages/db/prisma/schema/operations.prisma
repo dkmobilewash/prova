@@ -145,29 +145,21 @@ model PunchListItem {
   raisedByUserId String?
   raisedBy       User?   @relation(fields: [raisedByUserId], references: [id])
 
+  /// The item's whole state, and the only record of it.
+  ///
+  /// `isDone` and `completedAt` USED TO LIVE HERE and were dropped by
+  /// 20260920030000_punch_item_verification. They were a stored derivation
+  /// — CLAUDE.md's oldest rule is that derived state is never stored,
+  /// because a stored flag can disagree with what it was derived from —
+  /// and the first version of this change kept them truthful with a
+  /// trigger instead of removing them. Diego's call, 2026-09-20: do it
+  /// honestly. Everything that read `isDone: false` reads `status: OPEN`,
+  /// which is what that boolean always meant.
+  ///
+  /// When it was finished is `readyAt`; when somebody agreed is
+  /// `verifiedAt`. Both are on the row and neither can disagree with the
+  /// status, because a CHECK constraint refuses a state without its stamp.
   status PunchItemStatus @default(OPEN)
-
-  /// `isDone` and `completedAt` are DERIVED FROM `status` and are kept that
-  /// way by a trigger (`prova_punch_item_status_sync`), which overwrites
-  /// whatever a writer puts in them on every insert and update.
-  ///
-  /// CLAUDE.md's rule is that derived state is never stored, and the honest
-  /// version of this change deletes both columns. They stay because six
-  /// readers outside this lane — closeout readiness, the export, the Ask
-  /// commands, the phone — count on `isDone`, and a destructive migration
-  /// against real data to save two columns is not a trade worth making
-  /// unannounced. The trigger buys the property the rule is actually
-  /// about: they cannot disagree with `status`, because nothing app-side
-  /// decides them.
-  ///
-  /// `isDone` stays TRUE for READY_FOR_REVIEW as well as VERIFIED, which is
-  /// exactly what it meant before this change — ticking the box was the
-  /// crew saying it was fixed. Closeout readiness therefore counts the same
-  /// items it counted yesterday. Tightening it to VERIFIED is a real
-  /// decision about when a job may close, in somebody else's lane, and it
-  /// is not smuggled in here.
-  isDone      Boolean   @default(false)
-  completedAt DateTime?
 
   /// Where on the job it is: "Level 3 corridor", "Unit 214 bath". Free text
   /// on purpose — a room schedule this app does not have is what a picker

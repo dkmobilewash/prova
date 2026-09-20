@@ -34,20 +34,39 @@ actually wrong and whose fault it was is now on the same screen as the
 deduction it is evidence against. `backcharges.prisma` had no reference to
 a punch item or to media at all.
 
-**`isDone` is now derived from `status` by a trigger**, and this is the
-part worth arguing with. CLAUDE.md says derived state is never stored and
-the honest version of this change drops the column. It stays because
-closeout readiness, the export, the Ask commands and the phone all read it,
-and a destructive migration against real data to save two columns is not a
-trade to make unannounced. The trigger buys back the property the rule is
-actually about: nothing app-side writes them, so they cannot disagree with
-the state. Proved by writing `isDone: true` by hand against a real Postgres
-and watching it come back false.
+**`isDone` and `completedAt` are gone.** They were a stored derivation —
+`isDone` was `status <> OPEN` and `completedAt` was `readyAt` under another
+name — and CLAUDE.md's oldest rule is that derived state is never stored,
+because a stored flag can disagree with what it was derived from. These
+could: nothing stopped a writer setting one without touching the other.
 
-Closeout readiness counts exactly the items it counted before: `isDone`
-stays true for READY_FOR_REVIEW, which is all the old checkbox ever meant.
-Tightening it to VERIFIED is a real decision about when a job may close and
-it belongs to whoever owns closeout, not to this PR.
+The first version of this change kept both columns and added a trigger to
+hold them in lockstep with the status. That was the cautious answer rather
+than the honest one: it left two columns whose only job was to agree with a
+third, and every future reader still had to be told which one to trust.
+Dropped instead, on Diego's call, announced in `#prova-build` before the
+push and pushed past `preflight.sh`'s destructive-statement check
+deliberately rather than quietly.
+
+Everything that read `isDone: false` reads `status: "OPEN"`, which is the
+same set of rows: closeout readiness, the Ask handlers and command, the
+export, the phone, the demo seed. Two CHECK constraints replace what the
+trigger was for — a READY_FOR_REVIEW row must carry `readyAt` and a
+VERIFIED row must carry `verifiedAt` — so a state can never exist without
+the stamp that dates it, which is also what makes `completedAt`
+unnecessary rather than merely redundant.
+
+**Order is load-bearing in that migration, and Prisma's own diff got it
+wrong.** It put the two DROPs in the same statement as the ADDs and ahead
+of them, which would have thrown `isDone` away before the backfill could
+read it — silently reopening every closed punch item in the database. The
+halves are separated by hand: add, backfill, constrain, then drop.
+
+Closeout readiness counts exactly the items it counted before: it blocked
+on `isDone: false` and now blocks on `status: "OPEN"`, the same set.
+Whether an item waiting on a VERIFICATION should also block a closeout
+package is a real decision about when a job may close, and it belongs to
+whoever owns closeout — asked in `#prova-build` rather than answered here.
 
 **The phone could not close an item offline.** The toggle called the API
 directly and threw when there was no signal — so the one thing a punch list
@@ -65,7 +84,10 @@ attaches the photo to that item at the shutter.
 Two things the database refuses outright, both tested against a real
 Postgres: a state with no witness for it (READY_FOR_REVIEW with no
 `readyAt`, VERIFIED with no `verifiedAt`), and two answers to who is fixing
-it. The migration's backfill sends every ticked-off item to
-READY_FOR_REVIEW rather than VERIFIED — that is tested too, by switching
-the trigger off, writing the old shape, and running the migration's own
-UPDATE against it, because a backfill runs once and can never be re-run.
+it. The backfill sends every ticked-off item to READY_FOR_REVIEW and never
+to VERIFIED — the old checkbox never meant anybody had checked it — and
+that is tested against a scratch table holding the old shape, because a
+backfill runs once and can never be re-run. So is the drop itself: a column
+the app has stopped writing and a column that is gone look identical from
+TypeScript, and only one of them stops the next reader finding a stale
+boolean nobody maintains.

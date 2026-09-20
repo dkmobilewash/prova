@@ -14,17 +14,16 @@ function jsonError(error: string, status: number) {
 
 /** The shape the phone reads.
  *
- * `isDone` is still here and still means what it meant — the trigger keeps
- * it in lockstep with `status` — because a build of the app is already
- * installed on somebody's phone and a response that dropped it would break
- * a screen nobody has updated yet. New fields are additive for the same
- * reason. */
+ * `isDone` and `completedAt` are gone from the row and from here with it.
+ * The phone's punch screen reads `status`, and the only build that can
+ * reach this deploy is one served from this branch. `readyAt`/`verifiedAt`
+ * are where "when was it closed" now lives. */
 function toJson(i: {
   id: string;
   description: string;
   status: string;
-  isDone: boolean;
-  completedAt: Date | null;
+  readyAt: Date | null;
+  verifiedAt: Date | null;
   area: string | null;
   dueOn: Date | null;
   assignedName: string | null;
@@ -34,8 +33,8 @@ function toJson(i: {
     id: i.id,
     description: i.description,
     status: i.status,
-    isDone: i.isDone,
-    completedAt: i.completedAt ? i.completedAt.toISOString() : null,
+    readyAt: i.readyAt ? i.readyAt.toISOString() : null,
+    verifiedAt: i.verifiedAt ? i.verifiedAt.toISOString() : null,
     area: i.area,
     dueOn: i.dueOn ? i.dueOn.toISOString() : null,
     assignedName: i.assignedName,

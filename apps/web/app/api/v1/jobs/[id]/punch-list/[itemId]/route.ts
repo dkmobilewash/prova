@@ -17,8 +17,9 @@ import { prisma } from "@prova/db";
  * half of the Ready/Verified split and it belongs to somebody who did not
  * do the work; the phone is the person who did.
  *
- * `isDone` and `completedAt` are not written by this route at all — a
- * trigger derives them from `status` (prova_punch_item_status_sync).
+ * `isDone` and `completedAt` no longer exist: they were a stored
+ * derivation of `status` and were dropped with this change. When the work
+ * was finished is `readyAt`.
  *
  * Same edges as the collection route: no session is a 401, a missing
  * capability is a 403, and there is no revalidatePath.
@@ -37,8 +38,8 @@ function toJson(i: {
   id: string;
   description: string;
   status: string;
-  isDone: boolean;
-  completedAt: Date | null;
+  readyAt: Date | null;
+  verifiedAt: Date | null;
   area: string | null;
   dueOn: Date | null;
   assignedName: string | null;
@@ -47,8 +48,8 @@ function toJson(i: {
     id: i.id,
     description: i.description,
     status: i.status,
-    isDone: i.isDone,
-    completedAt: i.completedAt ? i.completedAt.toISOString() : null,
+    readyAt: i.readyAt ? i.readyAt.toISOString() : null,
+    verifiedAt: i.verifiedAt ? i.verifiedAt.toISOString() : null,
     area: i.area,
     dueOn: i.dueOn ? i.dueOn.toISOString() : null,
     assignedName: i.assignedName,

@@ -83,7 +83,7 @@ async function resolveAddPunchItems(ctx: CommandContext, input: CommandInput): P
   // person walking a site adding the same thing twice because the assistant
   // could not see the list it was adding to.
   const open = await prisma.punchListItem.findMany({
-    where: { companyId: ctx.companyId, jobId: job.id, isDone: false },
+    where: { companyId: ctx.companyId, jobId: job.id, status: "OPEN" },
     select: { description: true },
   });
   const alreadyOpen = new Set(open.map((item) => punchItemKey(item.description)));

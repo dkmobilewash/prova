@@ -91,7 +91,7 @@ export default function PhotosScreen() {
       ),
       api.listMediaTags(token).then(setTags, () => setTags([])),
       api.listPunchListItems(jobId, token).then(
-        (items) => setPunchItems(items.filter((i) => !i.isDone)),
+        (items) => setPunchItems(items.filter((i) => i.status === "OPEN")),
         () => setPunchItems([]),
       ),
       api.listFieldReports(jobId, token).then(

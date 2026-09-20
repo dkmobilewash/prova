@@ -252,13 +252,11 @@ export type PunchItemStatus = "OPEN" | "READY_FOR_REVIEW" | "VERIFIED";
 export type PunchListItem = {
   id: string;
   description: string;
-  /** Three states, not two. `isDone` is still sent by the server and still
-   * means "not open", but the phone reads `status`: the middle state —
-   * we say it is fixed, nobody has checked yet — is the one a foreman
-   * needs to see, and a tick box cannot show it. */
+  /** Three states, not two. The middle one — we say it is fixed, nobody
+   * has checked yet — is the one a foreman needs to see, and a tick box
+   * cannot show it. `isDone` and `completedAt` were dropped from the
+   * server's row and from this type together. */
   status: PunchItemStatus;
-  isDone: boolean;
-  completedAt: string | null;
   area: string | null;
   dueOn: string | null;
   assignedName: string | null;

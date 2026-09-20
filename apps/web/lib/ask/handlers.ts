@@ -352,7 +352,7 @@ async function openPunchList(companyId: string, input: Input): Promise<ToolResul
   }
 
   const items = await prisma.punchListItem.findMany({
-    where: { companyId, isDone: false },
+    where: { companyId, status: "OPEN" },
     select: {
       description: true,
       createdAt: true,

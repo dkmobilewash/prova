@@ -5,16 +5,15 @@ import { prisma } from "@prova/db";
  * What the DATABASE enforces about a punch item's state, against a real
  * Postgres — none of which a unit test can see.
  *
- * Three things live here and nowhere else:
- *
- *   - `isDone` and `completedAt` are derived from `status` by a trigger.
- *     CLAUDE.md's rule is that derived state is never stored; keeping the
- *     two columns was a deliberate trade (six readers outside this lane),
- *     and the trigger is what buys back the property the rule is about.
- *     A test that only went through the actions would pass with the
- *     trigger dropped, because the actions never write those columns.
  *   - the CHECK constraints: one assignee at most, no blank typed name,
- *     and no state without the witness that state claims.
+ *     and no state without the witness that state claims. Those last two
+ *     are what replaced `isDone`/`completedAt`: when the work was finished
+ *     is `readyAt`, and it cannot disagree with `status` because a state
+ *     without its stamp is refused outright.
+ *   - that the two dropped columns are really gone. A migration that
+ *     "removes" a column the app has stopped writing but the table still
+ *     has looks identical from the app, and the next person to read the
+ *     table finds a stale boolean nobody maintains.
  *   - the migration's BACKFILL, which is the one piece of this change that
  *     runs exactly once against real rows and can never be re-run.
  */
@@ -57,14 +56,25 @@ describe("a punch item's state, as the database keeps it", () => {
     await prisma.$disconnect();
   });
 
-  it("starts open, and open is not done", async () => {
+  it("starts open", async () => {
     const item = await makeItem();
     expect(item.status).toBe("OPEN");
-    expect(item.isDone).toBe(false);
-    expect(item.completedAt).toBeNull();
+    expect(item.readyAt).toBeNull();
+    expect(item.verifiedAt).toBeNull();
   });
 
-  it("derives isDone and completedAt from the status, on the way up and back down", async () => {
+  it("no longer has the two columns that stored what the status already says", async () => {
+    // The assertion that the drop happened, rather than that the app
+    // stopped writing them — those look the same from TypeScript, and only
+    // one of them stops the next reader finding a stale boolean.
+    const columns = await prisma.$queryRawUnsafe<{ column_name: string }[]>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'PunchListItem' AND column_name IN ('isDone', 'completedAt')`,
+    );
+    expect(columns).toEqual([]);
+  });
+
+  it("carries the state and its stamps, on the way up and back down", async () => {
     const item = await makeItem();
     const readyAt = new Date("2026-09-18T15:00:00.000Z");
 
@@ -72,39 +82,24 @@ describe("a punch item's state, as the database keeps it", () => {
       where: { id: item.id },
       data: { status: "READY_FOR_REVIEW", readyAt, readyByUserId: userId },
     });
-    expect(ready.isDone).toBe(true);
-    // When the work was finished, not when somebody got round to agreeing.
-    expect(ready.completedAt?.toISOString()).toBe(readyAt.toISOString());
+    expect(ready.status).toBe("READY_FOR_REVIEW");
+    // When the work was finished, which is what `completedAt` used to hold.
+    expect(ready.readyAt?.toISOString()).toBe(readyAt.toISOString());
 
     const verified = await prisma.punchListItem.update({
       where: { id: item.id },
       data: { status: "VERIFIED", verifiedAt: new Date(), verifiedByUserId: userId },
     });
-    expect(verified.isDone).toBe(true);
-    expect(verified.completedAt?.toISOString()).toBe(readyAt.toISOString());
+    expect(verified.status).toBe("VERIFIED");
+    // Still the crew's finish time, not the sign-off's.
+    expect(verified.readyAt?.toISOString()).toBe(readyAt.toISOString());
 
     const reopened = await prisma.punchListItem.update({
       where: { id: item.id },
       data: { status: "OPEN", readyAt: null, readyByUserId: null, verifiedAt: null, verifiedByUserId: null },
     });
-    expect(reopened.isDone).toBe(false);
-    expect(reopened.completedAt).toBeNull();
-  });
-
-  it("overrules a caller that writes isDone by hand — that column has an owner now", async () => {
-    // The shape that matters: an old caller, or a new one written from
-    // memory of how this table used to work, setting the boolean directly.
-    // It does not get to disagree with the status.
-    const item = await makeItem({ isDone: true, completedAt: new Date() });
-    expect(item.status).toBe("OPEN");
-    expect(item.isDone).toBe(false);
-    expect(item.completedAt).toBeNull();
-
-    const lied = await prisma.punchListItem.update({
-      where: { id: item.id },
-      data: { isDone: true },
-    });
-    expect(lied.isDone).toBe(false);
+    expect(reopened.status).toBe("OPEN");
+    expect(reopened.readyAt).toBeNull();
   });
 
   it("refuses a state with no witness for it", async () => {
@@ -152,39 +147,34 @@ describe("a punch item's state, as the database keeps it", () => {
     expect(after.responsibleParty).toBe("OTHER_TRADE");
   });
 
-  it("backfills a ticked-off item to READY_FOR_REVIEW, not to VERIFIED", async () => {
+  it("backfills a ticked-off item to READY_FOR_REVIEW, not to VERIFIED, and keeps its date", async () => {
     // The world before this migration, reproduced the only way it can be
-    // now that the trigger owns `isDone`: switch the trigger off, write the
-    // old shape, then run the migration's own UPDATE against it.
+    // once the columns are gone: put them back on a scratch table, write
+    // the old shape, and run the migration's own statements against it.
     //
     // READY_FOR_REVIEW rather than VERIFIED is the whole point. The old
     // checkbox meant "the crew says it is fixed" and nothing more, so
     // calling these verified would invent a witness for every item in
-    // every database this ships to.
-    const item = await makeItem();
-    await prisma.$executeRawUnsafe(`ALTER TABLE "PunchListItem" DISABLE TRIGGER prova_punch_item_status_sync`);
-    try {
-      await prisma.$executeRawUnsafe(
-        `UPDATE "PunchListItem" SET "isDone" = true, "completedAt" = '2026-09-01T12:00:00Z' WHERE id = $1`,
-        item.id,
-      );
-    } finally {
-      await prisma.$executeRawUnsafe(`ALTER TABLE "PunchListItem" ENABLE TRIGGER prova_punch_item_status_sync`);
-    }
-
+    // every database this ships to. And the order matters as much: the
+    // backfill reads `completedAt`, so a migration that dropped first
+    // would silently reopen every closed item in the table.
     await prisma.$executeRawUnsafe(`
-      UPDATE "PunchListItem"
-      SET "status" = 'READY_FOR_REVIEW',
+      CREATE TEMP TABLE punch_backfill_probe AS
+      SELECT id, "updatedAt", 'OPEN'::text AS status, NULL::timestamp AS "readyAt",
+             true AS "isDone", timestamp '2026-09-01 12:00:00' AS "completedAt"
+      FROM "PunchListItem" LIMIT 1
+    `);
+    await prisma.$executeRawUnsafe(`
+      UPDATE punch_backfill_probe
+      SET status = 'READY_FOR_REVIEW',
           "readyAt" = COALESCE("completedAt", "updatedAt")
       WHERE "isDone" = true
     `);
 
-    const after = await prisma.punchListItem.findUniqueOrThrow({ where: { id: item.id } });
-    expect(after.status).toBe("READY_FOR_REVIEW");
-    expect(after.readyAt?.toISOString()).toBe("2026-09-01T12:00:00.000Z");
-    // And the constraint that refuses a state with no witness did not fire
-    // on the backfill, which is what would have made the migration fail
-    // halfway through somebody's production table.
-    expect(after.isDone).toBe(true);
+    const [row] = await prisma.$queryRawUnsafe<{ status: string; readyAt: Date }[]>(
+      `SELECT status, "readyAt" FROM punch_backfill_probe`,
+    );
+    expect(row.status).toBe("READY_FOR_REVIEW");
+    expect(row.readyAt.toISOString()).toBe("2026-09-01T12:00:00.000Z");
   });
 });
