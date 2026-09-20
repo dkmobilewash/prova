@@ -87,15 +87,48 @@ const { dbTouches, tripwire, prismaNamespace, principal } = vi.hoisted(() => {
     },
   );
 
-  // `Prisma` is imported by four of these modules for `Prisma.TransactionClient`,
-  // which is a type and is erased. Nothing reads it at runtime today; if
-  // something starts to, this says so instead of handing back undefined and
-  // failing somewhere unrecognisable.
+  /**
+   * `Prisma.Decimal`, and nothing else that can be used without noticing.
+   *
+   * Most modules import `Prisma` only for `Prisma.TransactionClient`,
+   * which is a type and is erased. `lib/change-order.ts` is the exception:
+   * it builds `new Prisma.Decimal(0)` at MODULE LOAD, so importing
+   * `lib/actions/changeOrders.ts` at all needs a constructible Decimal,
+   * and `@prisma/client` is a dependency of packages/db and not resolvable
+   * from here.
+   *
+   * So the stub constructs and refuses to compute. That split is
+   * deliberate: these cases prove a principal is turned away BEFORE any
+   * work happens, so no correct run ever reaches Decimal arithmetic — and
+   * a stub that quietly returned plausible numbers could let a guard that
+   * runs too late look like one that runs early enough. If a case ever
+   * does reach the maths, it says so by name instead.
+   */
+  class DecimalStub {
+    value: unknown;
+    constructor(value: unknown) {
+      this.value = value;
+    }
+    private refuse(): never {
+      throw new Error(
+        `Prisma.Decimal arithmetic ran in this suite. Every case here should be refused ` +
+          `before any figure is computed — if this is reached, the guard runs too late.`,
+      );
+    }
+    plus() { return this.refuse(); }
+    minus() { return this.refuse(); }
+    times() { return this.refuse(); }
+    dividedBy() { return this.refuse(); }
+    equals() { return this.refuse(); }
+    toString() { return this.refuse(); }
+  }
+
   const namespace = new Proxy(
     {},
     {
       get(_target, property) {
         if (typeof property === "symbol" || property === "then") return undefined;
+        if (property === "Decimal") return DecimalStub;
         throw new Error(
           `Prisma.${String(property)} was read at runtime. This suite stubs the Prisma ` +
             `namespace because only its types were ever used; give the stub a real value.`,
@@ -282,11 +315,97 @@ function capabilityDemandedByPage(route: string): Capability | null {
   return CAPABILITIES.includes(capability) ? capability : null;
 }
 
+/* ---------------------------------------------------------------- *
+ * 2b. The half this file could not see, and reported green over
+ * ---------------------------------------------------------------- */
+
+/**
+ * A page can refuse in TWO ways, and until now this walk only knew one.
+ *
+ *   HARD: `requireCapability("X")` + `<NoAccess>`. The route itself is
+ *         withheld. `capabilityDemandedByPage` above reads it.
+ *   SOFT: the route renders, and the page withholds its CONTENT behind
+ *         `can(principal, "X")` — either directly or through
+ *         `jobCapabilities()`'s four named flags. `/jobs/[id]/billing`
+ *         returns "This tab isn't part of your access" and nothing else.
+ *
+ * A soft gate is a real boundary for the READER and no boundary at all for
+ * the WRITER, which is the worse half of the shape every comment in this
+ * file warns about — and this walk was structurally unable to say so.
+ * `soleCapabilityGating` folded "every door demands nothing" into the same
+ * `null` as "the doors disagree", so an action whose only door was a
+ * soft-gated page contributed NO iteration and could never appear in
+ * `MUST_ASSERT`. The suite then passed, loudly, over every write behind
+ * `/jobs/[id]/estimate`, `/billing` and `/retainage`.
+ *
+ * That is this repo's recurring shape (CLAUDE.md, "a check that cannot
+ * distinguish refuted from never ran"): the check was not lying, it was
+ * answering about a set it had already excluded. So the fix is not a
+ * bigger allowlist — it is teaching the walk that a withheld page is a
+ * guarded page, and then proving the walk still sees everything.
+ */
+const FLAG_CAPABILITY: Record<string, Capability> = {
+  showsJobMoney: "VIEW_JOB_COSTS",
+  showsBilling: "MANAGE_BILLING",
+  showsField: "MANAGE_FIELD",
+  showsJobManagement: "MANAGE_JOBS",
+};
+
+/** Every capability a page's own source withholds content behind. */
+function capabilitiesWithheldByPage(route: string): Set<Capability> {
+  const source = readFileSync(pageFile(route), "utf8");
+  const found = new Set<Capability>();
+  for (const [flag, capability] of Object.entries(FLAG_CAPABILITY)) {
+    if (new RegExp(`\\b${flag}\\b`).test(source)) found.add(capability);
+  }
+  for (const match of source.matchAll(/\bcan\(principal,\s*"([A-Z_]+)"/g)) {
+    const capability = match[1] as Capability;
+    if (CAPABILITIES.includes(capability)) found.add(capability);
+  }
+  return found;
+}
+
+/** Counted from a literal that CANNOT drift with the extraction above.
+ *
+ * The lesson `lib/scratch-cleanup-order.test.ts` paid for: a check that
+ * derives its own input has two failure modes and only one of them looks
+ * like a failure. If `capabilitiesWithheldByPage`'s patterns stop matching
+ * — a flag renamed, `jobCapabilities` restructured, a stray space — the
+ * derived sets below quietly shrink to nothing, every "no holes found"
+ * assertion passes, and this whole section goes silent again. So the
+ * pages that withhold ANYTHING are counted by a separate literal, and the
+ * classification is required to account for exactly that many. */
+const PAGES_THAT_WITHHOLD = ROUTES.filter((route) =>
+  /jobCapabilities\(|can\(principal, "/.test(readFileSync(pageFile(route), "utf8")),
+);
+
+/** A page withholding behind exactly ONE capability: that capability is
+ * what its actions must answer to, the same way a hard gate's is. */
+const SOFT_GATED: Map<string, Capability> = new Map();
+/** A page withholding behind SEVERAL, section by section. Which section a
+ * given action belongs to is a per-section judgement this walk cannot make
+ * — so these pages contribute no capability and their actions stay
+ * undecidable by the ordinary rule, exactly as before. Listed, with the
+ * capabilities involved, so the count above balances and so the set is
+ * visible rather than merely absent. */
+const SOFT_GATED_AMBIGUOUS: Map<string, Capability[]> = new Map();
+
+for (const route of PAGES_THAT_WITHHOLD) {
+  const withheld = [...capabilitiesWithheldByPage(route)].sort();
+  if (withheld.length === 1) SOFT_GATED.set(route, withheld[0]);
+  else SOFT_GATED_AMBIGUOUS.set(route, withheld);
+}
+
+/** What a page refuses people for, hard or soft. */
+function effectiveCapability(route: string): Capability | null {
+  return capabilityDemandedByPage(route) ?? SOFT_GATED.get(route) ?? null;
+}
+
 /** action name -> the capabilities of every page that can reach it.
- * `null` in the set means "a page that demands no capability". */
+ * `null` in the set means "a page that refuses nobody". */
 const reachedBy = new Map<string, Map<string, Capability | null>>();
 for (const route of ROUTES) {
-  const capability = capabilityDemandedByPage(route);
+  const capability = effectiveCapability(route);
   for (const action of actionsReachableFrom(pageFile(route))) {
     if (!reachedBy.has(action)) reachedBy.set(action, new Map());
     (reachedBy.get(action) as Map<string, Capability | null>).set(route, capability);
@@ -526,6 +645,20 @@ const MIXED_DOORS: Record<string, { capability: Capability | null; reason: strin
     reason:
       "Reached from /rfis (MANAGE_JOBS) and from /messages (ungated), so no one capability can be asserted without breaking one of the two hand-offs. It is self-scoped instead: updateMany where-clause pins companyId AND createdByUserId, mode HANDOFF, unclaimed and unsettled, and the only column it writes is that card's own outcome. The right guard is canRunCommand on the card's command, in the ask lane.",
   },
+  // Two doors that disagree only because one of them is the Ask
+  // settings page: `/jobs/[id]/billing` withholds on MANAGE_BILLING, and
+  // `/settings/assistant` demands MANAGE_COMPLIANCE because it lists every
+  // person's Ask proposals and amounts — it reaches this action only by
+  // importing the command registry, never by rendering a payment form.
+  // Gated on MANAGE_BILLING regardless, which is not a new judgement: the
+  // `log_payment` Ask command declares MANAGE_BILLING already
+  // (lib/ask/commands/billing.ts), so the two surfaces now agree instead
+  // of one of them being open.
+  "billing.logPayment": {
+    capability: "MANAGE_BILLING",
+    reason:
+      "Reached from /jobs/[id]/billing, which withholds the whole tab on MANAGE_BILLING, and from /settings/assistant, which demands MANAGE_COMPLIANCE only because it imports the Ask command registry to list proposals — there is no payment form on it. MANAGE_BILLING is the capability the matching Ask command (log_payment) already declares, so gating it here makes the action agree with its own command rather than adding a new rule.",
+  },
   "fieldReports.deleteDailyFieldReport": {
     capability: "MANAGE_FIELD",
     reason:
@@ -558,6 +691,48 @@ describe("the walk this file's claims rest on", () => {
     // And a page guarded ONLY at the page, never in ROUTE_CAPABILITY,
     // is picked up by reading the source rather than the map.
     expect(capabilityDemandedByPage("/jobs/[id]/certified-payroll")).toBe("MANAGE_COMPLIANCE");
+  });
+
+  it("accounts for every page that withholds content, not only every page that refuses the route", () => {
+    // THE SIZE ASSERTION, and the reason it is an equality rather than a
+    // floor. Both sets below are DERIVED by pattern; `PAGES_THAT_WITHHOLD`
+    // is counted by a different literal. A pattern that matches nothing
+    // leaves both derived sets empty and every downstream "no holes
+    // found" assertion vacuously true — so the parse is required to
+    // classify exactly as many pages as the independent count found, and
+    // a silent shrink fails HERE with both numbers on screen.
+    expect(
+      SOFT_GATED.size + SOFT_GATED_AMBIGUOUS.size,
+      `${PAGES_THAT_WITHHOLD.length} pages withhold content behind a capability and this walk ` +
+        `classified ${SOFT_GATED.size + SOFT_GATED_AMBIGUOUS.size}. A page that withholds and is ` +
+        `classified as neither is invisible to every check below.`,
+    ).toBe(PAGES_THAT_WITHHOLD.length);
+
+    // And it must have found SOMETHING. An equality between two empty
+    // sets is the exact failure the paragraph above describes.
+    expect(PAGES_THAT_WITHHOLD.length).toBeGreaterThanOrEqual(9);
+    expect(SOFT_GATED.size).toBeGreaterThanOrEqual(5);
+
+    // Named, because a count is not a claim about WHICH. These three are
+    // the tabs issue #383 is about: each returns a single sentence and
+    // nothing else to a person lacking the capability.
+    expect(SOFT_GATED.get("/jobs/[id]/billing")).toBe("MANAGE_BILLING");
+    expect(SOFT_GATED.get("/jobs/[id]/retainage")).toBe("MANAGE_BILLING");
+    expect(SOFT_GATED.get("/jobs/[id]/estimate")).toBe("VIEW_JOB_COSTS");
+    // The bid wizard's pricing step, which withholds the same way through
+    // a direct `can(principal, …)` rather than through `jobCapabilities`.
+    expect(SOFT_GATED.get("/jobs/new/[jobId]/items")).toBe("VIEW_JOB_COSTS");
+
+    // A page withholding two different things stays undecidable, and that
+    // is a decision rather than an oversight: `/jobs/[id]` hides money and
+    // management sections separately, so "which capability do the actions
+    // behind it answer to" has no single answer to read off the file.
+    expect(SOFT_GATED_AMBIGUOUS.get("/jobs/[id]")).toEqual(["MANAGE_JOBS", "VIEW_JOB_COSTS"]);
+    expect(SOFT_GATED.has("/jobs/[id]")).toBe(false);
+
+    // A hard gate still wins over a soft one on the same page.
+    expect(effectiveCapability("/jobs/[id]/photos")).toBe("MANAGE_FIELD");
+    expect(effectiveCapability("/jobs/[id]/field-reports")).toBeNull();
   });
 });
 
@@ -660,7 +835,7 @@ describe("every write behind a guarded page answers to the same capability", () 
     // assertion and those all pass on an empty set. If a future change
     // unwires a page from its actions, the holes list stays empty and the
     // suite would go quiet about thirty-five real endpoints.
-    expect(MUST_ASSERT.length).toBeGreaterThanOrEqual(35);
+    expect(MUST_ASSERT.length).toBeGreaterThanOrEqual(69);
 
     const byCapability = (capability: Capability) =>
       MUST_ASSERT.filter((entry) => entry.capability === capability).map((e) => e.action);
@@ -669,10 +844,97 @@ describe("every write behind a guarded page answers to the same capability", () 
     expect(byCapability("MANAGE_FIELD").length).toBeGreaterThanOrEqual(16);
     expect(byCapability("MANAGE_JOBS").length).toBeGreaterThanOrEqual(17);
 
+    // The two the soft-gate pass added, and the reason they are named
+    // rather than only counted: every one of these is a MONEY write that
+    // was reachable by anyone signed in, because its only door refused
+    // people by rendering a sentence instead of by refusing the route.
+    expect(byCapability("VIEW_JOB_COSTS").length).toBeGreaterThanOrEqual(25);
+    expect(byCapability("MANAGE_BILLING").length).toBeGreaterThanOrEqual(11);
+    for (const action of ["createInvoice", "logPayment", "deletePayment", "submitPayApplication"]) {
+      expect(byCapability("MANAGE_BILLING")).toContain(action);
+    }
+    for (const action of ["addCostEntry", "addLineItem", "approveChangeOrder", "markJobContracted"]) {
+      expect(byCapability("VIEW_JOB_COSTS")).toContain(action);
+    }
+
     // The two deletes that had no guard of any kind — not owner, not
     // capability — named here so they can never fall out silently.
     expect(byCapability("MANAGE_FIELD")).toContain("deleteDailyFieldReport");
     expect(byCapability("MANAGE_FIELD")).toContain("deleteMaterialDelivery");
+  });
+
+  it("gives the money writes the capability their own tab withholds, and says which", () => {
+    // An INDEPENDENT expectation table for the set issue #383 names, written
+    // out by hand on purpose. Everything else in this file is derived, which
+    // is what makes it catch omissions — and is also why, on its own, it
+    // cannot catch a DERIVATION that has quietly changed its mind. Soften
+    // `/jobs/[id]/billing`'s gate from MANAGE_BILLING to something laxer and
+    // every derived check above still passes, because the actions would be
+    // asserting whatever the page now says. This table disagrees instead.
+    //
+    // It is small deliberately: the money surface, not the whole app.
+    const EXPECTED: Record<string, Capability> = {
+      // /jobs/[id]/billing — withheld on MANAGE_BILLING
+      "billing.createInvoice": "MANAGE_BILLING",
+      "billing.submitPayApplication": "MANAGE_BILLING",
+      "billing.updateInvoiceStatus": "MANAGE_BILLING",
+      "billing.logPayment": "MANAGE_BILLING",
+      "billing.deletePayment": "MANAGE_BILLING",
+      "quickbooks.pushInvoiceToQuickBooks": "MANAGE_BILLING",
+      "quickbooks.pushPaymentToQuickBooks": "MANAGE_BILLING",
+      // /jobs/[id]/retainage — withheld on MANAGE_BILLING
+      "billing.createRetainageRelease": "MANAGE_BILLING",
+      "billing.deleteRetainageRelease": "MANAGE_BILLING",
+      "billing.updateJobRetainageTerms": "MANAGE_BILLING",
+      // /jobs/[id]/estimate (+ the bid wizard's pricing step) — VIEW_JOB_COSTS
+      "jobs.addLineItem": "VIEW_JOB_COSTS",
+      "jobs.updateLineItem": "VIEW_JOB_COSTS",
+      "jobs.updateLineItemForecast": "VIEW_JOB_COSTS",
+      "jobs.deleteLineItem": "VIEW_JOB_COSTS",
+      "jobs.addTakeoffLineItems": "VIEW_JOB_COSTS",
+      "jobs.draftLineItemsFromScope": "VIEW_JOB_COSTS",
+      "jobs.addCostEntry": "VIEW_JOB_COSTS",
+      "jobs.deleteCostEntry": "VIEW_JOB_COSTS",
+      "jobs.markJobContracted": "VIEW_JOB_COSTS",
+      "estimating.addLineItemFromCatalog": "VIEW_JOB_COSTS",
+      "estimating.saveEstimateVersion": "VIEW_JOB_COSTS",
+      "estimating.saveLineItemAsCatalogEntry": "VIEW_JOB_COSTS",
+      "billing.generateJobWipNarrative": "VIEW_JOB_COSTS",
+      "changeOrders.createChangeOrder": "VIEW_JOB_COSTS",
+      "changeOrders.proposeAddedScope": "VIEW_JOB_COSTS",
+      "changeOrders.proposeLineItemChange": "VIEW_JOB_COSTS",
+      "changeOrders.proposeScopeRemoval": "VIEW_JOB_COSTS",
+      "changeOrders.removeProposal": "VIEW_JOB_COSTS",
+      "changeOrders.deleteChangeOrderDraft": "VIEW_JOB_COSTS",
+      "changeOrders.submitChangeOrder": "VIEW_JOB_COSTS",
+      "changeOrders.approveChangeOrder": "VIEW_JOB_COSTS",
+      "changeOrders.rejectChangeOrder": "VIEW_JOB_COSTS",
+      "changeOrders.voidChangeOrder": "VIEW_JOB_COSTS",
+      "changeOrders.reopenChangeOrder": "VIEW_JOB_COSTS",
+      "changeOrders.reviseChangeOrder": "VIEW_JOB_COSTS",
+    };
+
+    const derived = new Map(MUST_ASSERT.map((e) => [`${e.moduleName}.${e.action}`, e.capability]));
+    for (const [key, capability] of Object.entries(EXPECTED)) {
+      expect(
+        derived.get(key),
+        `${key} should answer to ${capability}. If the walk now derives something else, the ` +
+          `page it sits behind has changed what it withholds — decide which is right rather ` +
+          `than editing whichever of the two is easier.`,
+      ).toBe(capability);
+      // And it must really be in the source, not merely expected to be.
+      expect(assertsCapability(key.split(".")[1], capability)).toBe(true);
+    }
+
+    // The one money-shaped action in this set that is deliberately NOT
+    // gated, recorded here so the absence stays a decision. It drafts a
+    // change order from a delay the foreman logged, on a tab that
+    // withholds nothing; nothing before APPROVED moves a contract value,
+    // and every step that does is in the table above.
+    expect(derived.has("changeOrders.draftChangeOrderFromDelay")).toBe(false);
+    for (const capability of CAPABILITIES) {
+      expect(assertsCapability("draftChangeOrderFromDelay", capability)).toBe(false);
+    }
   });
 });
 
@@ -727,6 +989,26 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // owner) — the same door as CompanyCam's, reachable only from
   // /settings/integrations.
   bluebeam: () => import("./actions/bluebeam"),
+  // The three money modules behind the job tabs, added when this walk
+  // learned to read a soft gate (issue #383). Every action here is
+  // reachable ONLY from `/jobs/[id]/estimate`, `/billing`, `/retainage`
+  // or the bid wizard's pricing step — all of which withhold their whole
+  // body behind one capability — so the derivation places them in
+  // MUST_ASSERT and each is EXECUTED below as a principal without it.
+  //
+  // `billing` spans both: its invoice/payment/retainage writes answer to
+  // MANAGE_BILLING, and `generateJobWipNarrative` to VIEW_JOB_COSTS,
+  // because that is the capability the tab each one sits on withholds.
+  billing: () => import("./actions/billing"),
+  jobs: () => import("./actions/jobs"),
+  changeOrders: () => import("./actions/changeOrders"),
+  // Only the two PUSH actions: reachable from `/jobs/[id]/billing` alone.
+  // The account-mapping and reconcile actions on `/settings` are a
+  // different door and remain recorded in KNOWN_OPEN.
+  quickbooks: () => import("./actions/quickbooks"),
+  // Only the three estimate-tab writes; the catalog actions in the same
+  // module sit behind `/catalog` and remain in KNOWN_OPEN.
+  estimating: () => import("./actions/estimating"),
   safety: () => import("./actions/safety"),
   certifications: () => import("./actions/certifications"),
   punchLists: () => import("./actions/punchLists"),

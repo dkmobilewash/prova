@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
 import { ActionResult, actionFail, actionOk, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
@@ -161,8 +162,26 @@ export async function deleteLineItemCatalogEntry(catalogEntryId: string): Promis
 /** Turns an existing estimate line into a reusable catalog entry — the way
  * the catalog actually grows in practice, from real priced work, rather
  * than requiring separate manual data entry. */
+/**
+ * The three writes in this module that are posted from the ESTIMATE tab
+ * rather than from `/catalog`, and the capability they answer to.
+ *
+ * VIEW_JOB_COSTS, deliberately, and not the MANAGE_ESTIMATING that
+ * `/catalog`'s own actions take: both of their doors —
+ * `/jobs/[id]/estimate` and `/jobs/new/[jobId]/items` — withhold on
+ * VIEW_JOB_COSTS, and asserting MANAGE_ESTIMATING instead would newly
+ * refuse an ACCOUNTING member who holds VIEW_JOB_COSTS and can reach
+ * these controls today. Closing a hole must not take anything from
+ * somebody who already has it; tightening further is a separate decision
+ * with `/catalog`'s gate to reconcile, not this one. Issue #383.
+ */
+const JOB_COSTS_ONLY =
+  "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
+
 export async function saveLineItemAsCatalogEntry(lineItemId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
 
   const lineItem = await prisma.jobLineItem.findUnique({
     where: { id: lineItemId },
@@ -202,7 +221,9 @@ export async function saveLineItemAsCatalogEntry(lineItemId: string) {
  * exact same create call addLineItem uses — a catalog entry is a template
  * for that call, not a second live copy of estimate data. */
 export async function addLineItemFromCatalog(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
   const catalogEntryId = String(formData.get("catalogEntryId") ?? "").trim();
   const quantity = String(formData.get("quantity") ?? "").trim();
 
@@ -221,7 +242,9 @@ export async function addLineItemFromCatalog(jobId: string, formData: FormData) 
  * automatic log of every edit; only available pre-award, same gate as
  * every other direct estimate edit. */
 export async function saveEstimateVersion(jobId: string, formData: FormData) {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company, ...user } = context;
   const job = await assertJobInCompany(jobId, company.id);
   assertEditableDirectly(job);
 

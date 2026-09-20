@@ -21,6 +21,7 @@ import {
   getPayment,
 } from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 // Lifted into its own module when the QuickBooks import became a second
 // caller: a "use server" file may only export Server Actions, and a token
 // getter must never be one.
@@ -55,6 +56,11 @@ import {
   ownerRefusal,
   type ActionResult,
 } from "./shared";
+
+/** Same sentence as lib/actions/billing.ts's, for the same reason: a push
+ * is an invoice or a payment leaving this company for its books. */
+const BILLING_ONLY =
+  "Invoices and payments aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 /**
  * Pushing accounting data to QuickBooks.
@@ -388,6 +394,15 @@ async function resolveIncomeItemId(
  */
 export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
+  // MANAGE_BILLING BEFORE the owner check, and the order is the point:
+  // both messages are true, but the one a refused person needs is the one
+  // that names the thing they cannot do. The owner check alone already
+  // makes this unreachable for every non-owner, so this changes no
+  // behaviour today — it is here because an owner check stops standing in
+  // for a capability the moment the role model gains a third value, and
+  // because `/jobs/[id]/billing`, this action's only door, withholds on
+  // exactly this. Issue #383.
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
   const refusal = ownerRefusal(context, "Only the account owner can push to QuickBooks");
   if (refusal) return refusal;
   const { company, ...user } = context;
@@ -1072,6 +1087,15 @@ export async function reconcileQuickBooksInvoices(): Promise<
  */
 export async function pushPaymentToQuickBooks(paymentId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
+  // MANAGE_BILLING BEFORE the owner check, and the order is the point:
+  // both messages are true, but the one a refused person needs is the one
+  // that names the thing they cannot do. The owner check alone already
+  // makes this unreachable for every non-owner, so this changes no
+  // behaviour today — it is here because an owner check stops standing in
+  // for a capability the moment the role model gains a third value, and
+  // because `/jobs/[id]/billing`, this action's only door, withholds on
+  // exactly this. Issue #383.
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
   const refusal = ownerRefusal(context, "Only the account owner can push to QuickBooks");
   if (refusal) return refusal;
   const { company, ...user } = context;

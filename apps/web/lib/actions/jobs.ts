@@ -95,8 +95,24 @@ export async function createJob(formData: FormData): Promise<ActionResult> {
  * all read from JobLineItem, this single insert is what "building the
  * estimate" means — nothing else needs to be told about it separately.
  */
+/**
+ * The Estimate tab's refusal, in the house voice.
+ *
+ * `/jobs/[id]/estimate` and the bid wizard's pricing step
+ * (`/jobs/new/[jobId]/items`) BOTH withhold their content on
+ * VIEW_JOB_COSTS — a job function without it sees a job's scope and never
+ * its prices. That withholding stops a reader and does nothing about the
+ * endpoint: a Server Action has a stable id and answers whoever posts to
+ * it. Every write below now asserts the capability its own two doors
+ * already withhold on — issue #383.
+ */
+const JOB_COSTS_ONLY =
+  "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
+
 export async function addLineItem(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
   assertEditableDirectly(job);
 
@@ -147,7 +163,9 @@ export async function addLineItem(jobId: string, formData: FormData) {
  * aiDrafted for the UI to prompt review. Never auto-creates a contract or
  * changes job.status itself. */
 export async function draftLineItemsFromScope(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
   const scopeText = String(formData.get("scopeText") ?? "").trim();
 
   // The body lives in lib/estimating/draft-lines.ts, shared with the Ask
@@ -166,7 +184,9 @@ export async function draftLineItemsFromScope(jobId: string, formData: FormData)
 
 /** Direct edit of a line item — only while the job is still an ESTIMATE. */
 export async function updateLineItem(jobId: string, lineItemId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
   assertEditableDirectly(job);
   await assertLineItemOnJob(lineItemId, jobId);
@@ -215,7 +235,9 @@ export async function updateLineItem(jobId: string, lineItemId: string, formData
  * to, and real spending/re-forecasting happens throughout the job.
  */
 export async function updateLineItemForecast(jobId: string, lineItemId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
   await assertLineItemOnJob(lineItemId, jobId);
 
@@ -232,7 +254,9 @@ export async function updateLineItemForecast(jobId: string, lineItemId: string, 
 
 /** Direct removal of a line item — only while the job is still an ESTIMATE. */
 export async function deleteLineItem(jobId: string, lineItemId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
   assertEditableDirectly(job);
   await assertLineItemOnJob(lineItemId, jobId);
@@ -252,7 +276,11 @@ export async function deleteLineItem(jobId: string, lineItemId: string) {
  * assertEditableViaChangeOrder in ./shared, applied by ./changeOrders).
  */
 export async function markJobContracted(jobId: string): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // The button is on the Estimate tab and the step it completes is a
+  // pricing one — an estimate becoming a contract at an agreed value.
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
 
   // Returned, not thrown. All three of these are things a person can fix,
@@ -502,7 +530,9 @@ export async function setJobStatus(jobId: string, nextStatus: string): Promise<A
  * itself.
  */
 export async function addCostEntry(jobId: string, lineItemId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
   await assertLineItemOnJob(lineItemId, jobId);
 
@@ -555,7 +585,9 @@ export async function addCostEntry(jobId: string, lineItemId: string, formData: 
 
 /** Removes a mistaken cost entry. */
 export async function deleteCostEntry(jobId: string, costEntryId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   const costEntry = await prisma.costEntry.findUnique({
@@ -677,7 +709,9 @@ export async function addTakeoffLineItems(
   jobId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
   assertEditableDirectly(job);
 
