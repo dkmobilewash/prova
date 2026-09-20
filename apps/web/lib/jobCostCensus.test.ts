@@ -224,4 +224,70 @@ describe("the job-cost census", () => {
       .map((f) => f.path);
     expect(missing).toEqual([]);
   });
+
+  // -------------------------------------------------------------------
+  // THE BLIND SPOT ISSUE #375 NAMED, closed.
+  //
+  // Everything above this line only ever looks at a file that calls
+  // calculateLineItemWip( or that selects CostEntry rows. Ask's
+  // job_labor_cost (issue #375) is neither: it built a job-level LABOR
+  // total straight from TimeEntry rows, never touched calculateLineItemWip
+  // (it is not a WIP/percent-complete figure) and never selected a
+  // CostEntry (it deliberately excludes material/equipment/subcontract
+  // cost — see its own tool description). So every rule above passed
+  // while it quoted a lower number than /jobs/[id] for a job with per
+  // diem, because none of them were ever asking about it.
+  //
+  // This half targets the arithmetic instead of the query shape: any file
+  // that prices individual entries with calculateTimeEntryLaborCost is a
+  // file computing labor money, and per diem/travel pay
+  // (TimeEntry.perDiemAmount / .travelPayAmount) are real dollars the
+  // company pays for that labor — lib/labor-job-cost.ts's own docstring on
+  // LABOR_ALLOWANCES_IN_JOB_COST says so. A caller either adds them (by
+  // going through calculateBurdenedLaborCost or its laborCostForRows/
+  // lineItemCostToDate/unassignedLaborCost entry points, all of which add
+  // them) or handles the allowance fields itself for a documented reason.
+  // -------------------------------------------------------------------
+  const CALCULATE_TIME_ENTRY_LABOR_COST = /calculateTimeEntryLaborCost\s*\(/;
+
+  /** The primitives, not their consumers. labor-cost.ts DECLARES the wage
+   * function this census is about; labor-job-cost.ts is what adding the
+   * allowances to it looks like, and is already in OWNERS above for the
+   * identical reason. Neither is a caller deciding whether to add
+   * allowances — they are the arithmetic the rest of this census checks
+   * for. */
+  const PRICING_PRIMITIVES = new Set(["apps/web/lib/labor-cost.ts", "apps/web/lib/labor-job-cost.ts"]);
+
+  /** Files that price individual entries without ever handling per diem or
+   * travel pay, and are correct to. Checked by hand below, not assumed —
+   * adding a name here is the guard's escape hatch, so it stays a list of
+   * ONE-LINE reasons, not a place to silence a real miss. */
+  const WAGE_ONLY_BY_DESIGN = new Set([
+    // Bid-time estimate (estimateBurdenedLaborCost). JobLineItem.laborHours
+    // is a forecast entered before any work happens; no TimeEntry row
+    // exists yet at bid time, so there is no perDiemAmount/travelPayAmount
+    // to add — the concept does not exist until hours are actually logged.
+    "apps/web/lib/estimate-labor-cost.ts",
+  ]);
+
+  const timeEntryPricers = sources.filter(
+    (f) => CALCULATE_TIME_ENTRY_LABOR_COST.test(f.code) && !PRICING_PRIMITIVES.has(f.path),
+  );
+
+  it("finds the callers of calculateTimeEntryLaborCost at all", () => {
+    expect(timeEntryPricers.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("has every wage-computing file account for per diem and travel pay, or say why not", () => {
+    const offenders = timeEntryPricers
+      .filter((f) => !WAGE_ONLY_BY_DESIGN.has(f.path))
+      .filter(
+        (f) =>
+          !f.code.includes("calculateBurdenedLaborCost(") &&
+          !f.code.includes("laborCostForRows(") &&
+          !(f.code.includes("perDiemAmount") && f.code.includes("travelPayAmount")),
+      )
+      .map((f) => f.path);
+    expect(offenders).toEqual([]);
+  });
 });
