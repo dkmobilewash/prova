@@ -32,6 +32,7 @@ import {
   type RenewalKind,
 } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
+import { quickBooksConnectCardState, quickBooksSetup } from "@/lib/quickbooks-setup";
 
 const QB_ERROR_MESSAGES: Record<string, string> = {
   access_denied: "You declined the QuickBooks connection request.",
@@ -44,6 +45,13 @@ const QB_ERROR_MESSAGES: Record<string, string> = {
   not_owner: "Only an owner can connect QuickBooks. Ask an owner on your team to do it.",
   identity_mismatch:
     "That connection attempt finished as a different account than it started as. Sign in as the account you want to connect, then start again.",
+  // /api/quickbooks/start refuses before leaving the app when this install
+  // has no client id/secret/redirect URI — see lib/quickbooks-setup.ts.
+  // Reachable only by typing the URL directly, since the button itself is
+  // gated below; kept as a named message rather than falling through to
+  // "please try again", which would be false — retrying changes nothing
+  // here without someone adding the missing keys.
+  not_configured: "QuickBooks isn't set up on this install yet.",
 };
 
 const INSURANCE_POLICY_TYPE_OPTIONS = [
@@ -197,6 +205,17 @@ export default async function SettingsPage({
     website: company.website,
   };
 
+  // Whether THIS install has QuickBooks' own client id/secret/redirect URI
+  // — never a hardcoded "QuickBooks is live" claim, which is exactly the
+  // kind of thing that rots the day someone sets or removes a key and
+  // nobody edits a list. Read once, straight from process.env, and only
+  // ever exposed downstream as a boolean/card-state — see
+  // lib/quickbooks-setup.ts for why no variable's value can reach here.
+  const quickBooksCardState = quickBooksConnectCardState(
+    quickBooksSetup(process.env).configured,
+    connection !== null,
+  );
+
   const syncAttempts = rawSyncAttempts.map((attempt) => ({
     id: attempt.id,
     entityType: attempt.entityType,
@@ -302,7 +321,19 @@ export default async function SettingsPage({
           QuickBooks.
         </p>
 
-        {connection ? (
+        {quickBooksCardState === "not-set-up" ? (
+          // No keys on this install: say so, offer nothing to press. A
+          // Connect button here would send the browser to
+          // /api/quickbooks/start, which refuses before leaving the app
+          // (see that route) rather than reaching Intuit and failing
+          // there — but a button that always refuses is still a dead
+          // button, so it does not render at all. Same wording shape as
+          // JobberControls' "not-set-up" branch.
+          <p className="max-w-md text-xs text-ink-muted" data-tour="quickbooks-not-set-up">
+            Not set up on this install yet. Whoever runs C Stream for you has to add the
+            QuickBooks app keys before this can connect.
+          </p>
+        ) : connection ? (
           <div className="rounded-lg border border-line-card bg-surface p-4">
             <p className="text-sm text-ink">
               Connected

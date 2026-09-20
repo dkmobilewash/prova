@@ -69,3 +69,4 @@ export * from "./acc";
 export * from "./accFeed";
 export * from "./companycam";
 export * from "./calendarFeed";
+export * from "./bluebeam";

@@ -53,6 +53,7 @@ model Company {
   procoreProjectLinks       ProcoreProjectLink[]
   accProjectLinks           AccProjectLink[]
   companycamProjectLinks    CompanyCamProjectLink[]
+  bluebeamStudioSessions    BluebeamStudioSession[]
   calendarFeedTokens        CalendarFeedToken[]
   complianceDocuments       ComplianceDocument[]
   licenses                  CompanyLicense[]
@@ -174,6 +175,7 @@ model User {
   crewScheduleDays                     CrewScheduleDay[]      @relation("CrewScheduleDayUser")
   crewScheduleDaysCreated              CrewScheduleDay[]      @relation("CrewScheduleDayCreatedBy")
   companycamLinksCreated               CompanyCamProjectLink[] @relation("CompanyCamLinkedBy")
+  bluebeamSessionsLinked                BluebeamStudioSession[] @relation("BluebeamLinkedBy")
   calendarFeedTokens                   CalendarFeedToken[]
   workerCrafts                         WorkerCraft[]
   experienceModRatesCreated            ExperienceModRate[]    @relation("ExperienceModRateCreatedBy")

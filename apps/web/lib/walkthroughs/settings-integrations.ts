@@ -182,6 +182,52 @@ export const settingsIntegrationsWalkthrough: Walkthrough = {
         "Press Import photos. Each one lands in the job's own gallery, captioned and dated by when it was taken. Pressing it again only brings photos that aren't here yet.",
     },
     {
+      anchor: "bluebeam-not-set-up",
+      title: "Bluebeam isn't set up yet",
+      body:
+        "This install doesn't have the Bluebeam app keys yet, so there is nothing to press. Whoever runs C Stream for you adds them.",
+    },
+    {
+      anchor: "bluebeam-connect",
+      title: "Connect Bluebeam",
+      body:
+        "Press Connect and sign in with your own Bluebeam account. C Stream can then create Studio Sessions and push files into them on your behalf.",
+    },
+    {
+      anchor: "bluebeam-details",
+      title: "Your Bluebeam account",
+      body:
+        "This shows which Bluebeam account is connected and what syncs back from a session: a file count and markup status only — no drawing geometry, no takeoff quantities.",
+    },
+    {
+      anchor: "bluebeam-links",
+      title: "Which job talks to which Studio Session",
+      body:
+        "Each line is a job with its own Bluebeam Studio Session. Push a PDF into it, then press Refresh to see how many markups have come back.",
+    },
+    {
+      anchor: "bluebeam-link",
+      title: "Link a job",
+      body: "Press Link a job to a new Studio Session. Bluebeam creates a fresh session for that job.",
+    },
+    {
+      anchor: "bluebeam-link-form",
+      title: "Pick the job",
+      body: "Choose which of your jobs this Studio Session is for, then press Link.",
+    },
+    {
+      anchor: "bluebeam-push",
+      title: "Push a PDF in",
+      body:
+        "Press Push a PDF and choose a drawing set or spec section from your computer. It goes straight into that job's Studio Session — nothing about the file is kept in C Stream.",
+    },
+    {
+      anchor: "bluebeam-refresh",
+      title: "Check on the markups",
+      body:
+        "Press Refresh to see how many files are in the session and how many markups they have, grouped by status.",
+    },
+    {
       anchor: "integrations-storage",
       title: "Where photos are kept",
       body: "This shows where site photos are stored. Nothing to do here unless something looks wrong.",

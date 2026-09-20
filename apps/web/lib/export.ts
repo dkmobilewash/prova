@@ -626,6 +626,7 @@ export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
   AccProjectLink: "integration plumbing — which GC Autodesk Construction Cloud project feeds which job, meaningless without that ACC login",
   AccItem: "a cached copy of the GC's own ACC records — theirs, kept in Autodesk Construction Cloud, not this company's",
   CompanyCamProjectLink: "integration plumbing — which CompanyCam project feeds which job, meaningless without that CompanyCam login. The photos it imports are ordinary JobMedia rows and export with every other photo.",
+  BluebeamStudioSession: "integration plumbing — which job talks to which Bluebeam Studio Session, meaningless without that Bluebeam login. Nothing pushed to or read from Bluebeam is stored here.",
   CalendarFeedToken: "notification record — a person's own subscribable-calendar credential, not a record about the company's work",
   NotificationDispatch: "notification record — which alert was sent to whom, not the thing it was about",
   AlertAcknowledgement: "notification record — who dismissed or snoozed an alert",
