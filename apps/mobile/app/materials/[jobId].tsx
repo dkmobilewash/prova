@@ -8,6 +8,9 @@ import { Chip } from "@/components/Chip";
 import { Field } from "@/components/Field";
 import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, staleNote } from "@/lib/cached-read";
+import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -21,6 +24,7 @@ export default function MaterialsScreen() {
   const [orders, setOrders] = useState<MaterialOrder[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [description, setDescription] = useState("");
@@ -31,15 +35,21 @@ export default function MaterialsScreen() {
   const load = async () => {
     const token = await getToken();
     if (!token || !jobId) return;
-    try {
-      const [os, vs] = await Promise.all([api.listMaterialOrders(jobId, token), api.listVendors(token)]);
-      setOrders(os);
-      setVendors(vs);
-      if (!vendorId && vs.length > 0) setVendorId(vs[0].id);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load orders");
+    // The vendor list is cached with the orders rather than separately:
+    // an order row is unreadable without the vendor names beside it.
+    const result = await cachedRead(cacheKeys.materials(jobId), async () => ({
+      orders: await api.listMaterialOrders(jobId, token),
+      vendors: await api.listVendors(token),
+    }));
+    setError(null);
+    if (result.from === "nothing") {
+      setOffline("nothing");
+      return;
     }
+    setOrders(result.value.orders);
+    setVendors(result.value.vendors);
+    if (!vendorId && result.value.vendors.length > 0) setVendorId(result.value.vendors[0].id);
+    setOffline(staleNote(result));
   };
 
   useEffect(() => {
@@ -73,6 +83,7 @@ export default function MaterialsScreen() {
     <View style={styles.screen}>
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <OfflineNote state={offline} />
       <List
         data={orders}
         keyExtractor={(item) => item.id}

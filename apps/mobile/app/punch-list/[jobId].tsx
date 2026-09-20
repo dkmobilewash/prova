@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Icon } from "@/components/Icon";
+import { OfflineNote } from "@/components/OfflineNote";
 import { Field } from "@/components/Field";
 import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
@@ -11,7 +12,8 @@ import { JobSections } from "@/components/JobSections";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
-import { cacheAge, cacheGet, cacheSet } from "@/lib/offline-cache";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, staleNote } from "@/lib/cached-read";
 import { enqueue } from "@/lib/sync-queue";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 import { useSync } from "@/lib/use-sync";
@@ -56,49 +58,26 @@ export default function PunchListScreen() {
 
   const load = useCallback(async () => {
     if (!jobId) return;
-    const cacheKey = `punch-list.${jobId}`;
     const token = await getToken();
+    if (!token) return;
 
-    /** What to show when the list cannot be fetched: the rows this phone
-     * last saw, and how old they are. Saying nothing here is what produced
-     * "Nothing outstanding on this job." on a screen that simply had not
-     * loaded. */
-    const fallBackToCache = async () => {
-      const cached = await cacheGet<PunchListItem[]>(cacheKey);
-      if (!cached) {
-        setLoadedFrom("nothing");
-        return;
-      }
-      setItems(cached.rows);
-      setLoadedFrom(`Showing the list from ${cacheAge(cached.at)} — no connection`);
-    };
-
-    if (!token) {
-      await fallBackToCache();
+    const result = await cachedRead(cacheKeys.punchList(jobId), () => api.listPunchListItems(jobId, token));
+    setError(null);
+    if (result.from === "nothing") {
+      setLoadedFrom("nothing");
       return;
     }
-
-    try {
-      const fresh = await api.listPunchListItems(jobId, token);
-      setItems(fresh);
-      await cacheSet(cacheKey, fresh);
-      setLoadedFrom(null);
-      setLocal((current) => {
-        const next: Record<string, PunchItemStatus> = {};
-        for (const [id, status] of Object.entries(current)) {
-          const server = fresh.find((item) => item.id === id);
-          // Still waiting: the server has not caught up with this tap yet.
-          if (server && server.status !== status) next[id] = status;
-        }
-        return next;
-      });
-      setError(null);
-    } catch {
-      // Not an error banner: with no signal this is the expected state, and
-      // the queue is still holding anything that was typed.
-      setError(null);
-      await fallBackToCache();
-    }
+    setItems(result.value);
+    setLoadedFrom(staleNote(result));
+    setLocal((current) => {
+      const next: Record<string, PunchItemStatus> = {};
+      for (const [id, status] of Object.entries(current)) {
+        const server = result.value.find((item) => item.id === id);
+        // Still waiting: the server has not caught up with this tap yet.
+        if (server && server.status !== status) next[id] = status;
+      }
+      return next;
+    });
   }, [getToken, jobId]);
 
   useEffect(() => {
@@ -151,7 +130,7 @@ export default function PunchListScreen() {
       <JobSections jobId={jobId} active="punch-list" />
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      {loadedFrom && loadedFrom !== "nothing" ? <Text style={styles.stale}>{loadedFrom}</Text> : null}
+      <OfflineNote state={loadedFrom} />
 
       {refused.length > 0 ? (
         <Card style={styles.refused}>
@@ -270,7 +249,6 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
   pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
   error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
-  stale: { color: colors.inkMuted, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
   refused: { margin: 16, marginBottom: 0, borderColor: colors.tagRoseInk, borderWidth: 1, gap: 4 },
   refusedTitle: { color: colors.tagRoseInk, fontSize: typography.size.md, fontWeight: typography.weight.bold },
   refusedLine: { color: colors.ink, fontSize: typography.size.sm },

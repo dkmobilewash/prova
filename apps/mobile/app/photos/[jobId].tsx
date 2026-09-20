@@ -27,6 +27,9 @@ import {
 import { keepForUpload } from "@/lib/photo-store";
 import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
 import { JobSections } from "@/components/JobSections";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, staleNote } from "@/lib/cached-read";
+import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import type { Media, MediaTag, PunchListItem } from "@/lib/types";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
@@ -79,6 +82,7 @@ export default function PhotosScreen() {
   const [todaysReportId, setTodaysReportId] = useState<string | null>(null);
   const [jobName, setJobName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   // Photos taken on this phone that have not gone up yet.
@@ -89,15 +93,20 @@ export default function PhotosScreen() {
     if (!token || !jobId) return;
     const today = dayFromClockIn(new Date().toISOString());
     await Promise.allSettled([
-      api.listMedia(jobId, token).then(
-        async (m) => {
-          setMedia(m);
-          setError(null);
-          const queued = await queuedOperationIds();
-          setPending((rows) => rows.filter((r) => queued.has(r.clientOperationId)));
-        },
-        (e) => setError(e instanceof Error ? e.message : "Failed to load photos"),
-      ),
+      // The ROWS are cached, not the pictures: a job's photos are tens of
+      // megabytes, and what a foreman needs off-signal is which ones were
+      // taken and when, not to re-view them on a 5-inch screen.
+      cachedRead(cacheKeys.photos(jobId), () => api.listMedia(jobId, token)).then(async (result) => {
+        setError(null);
+        if (result.from === "nothing") {
+          setOffline("nothing");
+          return;
+        }
+        setMedia(result.value);
+        setOffline(staleNote(result));
+        const queued = await queuedOperationIds();
+        setPending((rows) => rows.filter((r) => queued.has(r.clientOperationId)));
+      }),
       api.listMediaTags(token).then(setTags, () => setTags([])),
       api.listPunchListItems(jobId, token).then(
         (items) => setPunchItems(items.filter((i) => i.status === "OPEN")),
@@ -255,6 +264,7 @@ export default function PhotosScreen() {
     <View style={styles.screen}>
       <JobSections jobId={jobId} active="photos" />
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <OfflineNote state={offline} />
       {busy ? <Text style={styles.busy}>{busy}</Text> : null}
       <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
 

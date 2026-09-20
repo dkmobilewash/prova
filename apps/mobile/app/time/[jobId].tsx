@@ -12,6 +12,9 @@ import { RefusedBanner } from "@/components/RefusedBanner";
 import { Sheet } from "@/components/Sheet";
 import { SignaturePad } from "@/components/SignaturePad";
 import { JobSections } from "@/components/JobSections";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, staleNote } from "@/lib/cached-read";
+import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import {
@@ -111,6 +114,7 @@ export default function TimeScreen() {
   // which may not be the job this screen is showing.
   const [jobNames, setJobNames] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
   // Apprentice-ratio breaches for today on this job, from the crew schedule
   // and the hours already logged. Empty when within ratio, or when it could
   // not be read (a failed read is not a warning).
@@ -159,16 +163,21 @@ export default function TimeScreen() {
     // to run one batch after another, and the list a person had just saved
     // into waited for the slowest of them — seconds, on a phone connection.
     await Promise.allSettled([
-      api.listTimeEntries(jobId, token).then(
-        async (es) => {
-          setEntries(es);
-          setError(null);
-          // Drop just-saved rows the server now has, or refused.
-          const queued = await queuedOperationIds();
-          setOptimistic((rows) => rows.filter((r) => queued.has(r.clientOperationId)));
-        },
-        (e) => setError(e instanceof Error ? e.message : "Failed to load time"),
-      ),
+      // The hours themselves go through the cache: with no signal this
+      // screen showed an error and no rows, on the one record a foreman is
+      // asked about at the end of the week.
+      cachedRead(cacheKeys.time(jobId), () => api.listTimeEntries(jobId, token)).then(async (result) => {
+        setError(null);
+        if (result.from === "nothing") {
+          setOffline("nothing");
+          return;
+        }
+        setEntries(result.value);
+        setOffline(staleNote(result));
+        // Drop just-saved rows the server now has, or refused.
+        const queued = await queuedOperationIds();
+        setOptimistic((rows) => rows.filter((r) => queued.has(r.clientOperationId)));
+      }),
       api.listCrew(token).then(setCrew),
       api.listLineItems(jobId, token).then(setLineItems),
       api.listCrafts(token).then(setCrafts),
@@ -509,6 +518,7 @@ export default function TimeScreen() {
       <JobSections jobId={jobId} active="time" />
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <OfflineNote state={offline} />
       <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
 
       {ratioWarnings.length > 0 ? (

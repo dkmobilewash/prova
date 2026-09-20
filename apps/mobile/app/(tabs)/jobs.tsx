@@ -5,6 +5,9 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Card } from "@/components/Card";
 import { List } from "@/components/List";
 import { StatusBadge } from "@/components/StatusBadge";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, staleNote } from "@/lib/cached-read";
+import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
@@ -22,18 +25,24 @@ export default function JobsScreen() {
   const getToken = useStableGetToken();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
 
   useEffect(() => {
     if (!isSignedIn) return;
     (async () => {
       const token = await getToken();
       if (!token) return;
-      try {
-        setJobs(await api.listJobs(token));
-        setError(null);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load jobs");
+      // The job list is the first screen after sign-in and the one most
+      // likely to be opened in a truck with one bar. An empty list here
+      // reads as "you have no jobs", which is never what it means.
+      const result = await cachedRead(cacheKeys.jobs(), () => api.listJobs(token));
+      setError(null);
+      if (result.from === "nothing") {
+        setOffline("nothing");
+        return;
       }
+      setJobs(result.value);
+      setOffline(staleNote(result));
     })();
   }, [isSignedIn, getToken]);
 
@@ -43,6 +52,7 @@ export default function JobsScreen() {
   return (
     <View style={styles.screen}>
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <OfflineNote state={offline} />
       <List
         data={jobs}
         keyExtractor={(item) => item.id}

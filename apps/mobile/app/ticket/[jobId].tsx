@@ -10,6 +10,9 @@ import { List } from "@/components/List";
 import { RefusedBanner } from "@/components/RefusedBanner";
 import { Sheet } from "@/components/Sheet";
 import { SignaturePad } from "@/components/SignaturePad";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, staleNote } from "@/lib/cached-read";
+import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -30,6 +33,7 @@ export default function TicketScreen() {
   const { getToken } = useAuth();
   const [tickets, setTickets] = useState<TmTicket[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [workDate, setWorkDate] = useState(localToday());
@@ -40,12 +44,14 @@ export default function TicketScreen() {
   const load = async () => {
     const token = await getToken();
     if (!token || !jobId) return;
-    try {
-      setTickets(await api.listTmTickets(jobId, token));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load tickets");
+    const result = await cachedRead(cacheKeys.tickets(jobId), () => api.listTmTickets(jobId, token));
+    setError(null);
+    if (result.from === "nothing") {
+      setOffline("nothing");
+      return;
     }
+    setTickets(result.value);
+    setOffline(staleNote(result));
   };
 
 
@@ -76,6 +82,7 @@ export default function TicketScreen() {
     <View style={styles.screen}>
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <OfflineNote state={offline} />
       <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
       <List
         data={tickets}

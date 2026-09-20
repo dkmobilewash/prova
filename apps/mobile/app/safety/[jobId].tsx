@@ -8,6 +8,9 @@ import { Chip } from "@/components/Chip";
 import { EmptyState } from "@/components/EmptyState";
 import { Field } from "@/components/Field";
 import { Sheet } from "@/components/Sheet";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, staleNote } from "@/lib/cached-read";
+import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -24,6 +27,9 @@ export default function SafetyScreen() {
   const [talks, setTalks] = useState<ToolboxTalk[]>([]);
   const [incidents, setIncidents] = useState<SafetyIncident[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** The line saying this came off the phone, or null when it is fresh;
+   * "nothing" when there was no signal and nothing cached. */
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
 
   const [showTalkForm, setShowTalkForm] = useState(false);
   const [topic, setTopic] = useState("");
@@ -39,13 +45,20 @@ export default function SafetyScreen() {
   const load = async () => {
     const token = await getToken();
     if (!token || !jobId) return;
-    try {
-      setTalks(await api.listToolboxTalks(jobId, token));
-      setIncidents(await api.listIncidents(jobId, token));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load safety");
+    // Both lists under one key: half a screen fresh and the other half a
+    // week old is worse than either.
+    const result = await cachedRead(cacheKeys.safety(jobId), async () => ({
+      talks: await api.listToolboxTalks(jobId, token),
+      incidents: await api.listIncidents(jobId, token),
+    }));
+    setError(null);
+    if (result.from === "nothing") {
+      setOffline("nothing");
+      return;
     }
+    setTalks(result.value.talks);
+    setIncidents(result.value.incidents);
+    setOffline(staleNote(result));
   };
 
   useEffect(() => {
@@ -89,6 +102,7 @@ export default function SafetyScreen() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <OfflineNote state={offline} />
 
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>Toolbox talks</Text>

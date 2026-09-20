@@ -5,6 +5,9 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "r
 import { CurrentJobBar } from "@/components/CurrentJobBar";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, type CachedRead } from "@/lib/cached-read";
+import { prefetchJob } from "@/lib/prefetch";
 import { pendingCount } from "@/lib/sync-queue";
 import { summariseToday, type TodayLine } from "@/lib/today";
 import { useCurrentJob } from "@/lib/use-current-job";
@@ -33,24 +36,42 @@ export default function HomeScreen() {
     if (!job) return;
     const token = await getToken();
     if (!token) return;
-    try {
-      const [reports, punchItems, media, timeEntries, pending] = await Promise.all([
-        api.listFieldReports(job.id, token),
-        api.listPunchListItems(job.id, token),
-        api.listMedia(job.id, token),
-        api.listTimeEntries(job.id, token),
-        pendingCount(),
-      ]);
-      setLines(summariseToday({ reports, punchItems, media, timeEntries, pending }));
+
+    // Through the cache, section by section, so Home offline shows the
+    // day as this phone last knew it rather than a page of zeros —
+    // "no photos today" is a claim, and it was wrong every time the
+    // fetch failed.
+    const [reports, punchItems, media, timeEntries] = await Promise.all([
+      cachedRead(cacheKeys.reports(job.id), () => api.listFieldReports(job.id, token)),
+      cachedRead(cacheKeys.punchList(job.id), () => api.listPunchListItems(job.id, token)),
+      cachedRead(cacheKeys.photos(job.id), () => api.listMedia(job.id, token)),
+      cachedRead(cacheKeys.time(job.id), () => api.listTimeEntries(job.id, token)),
+    ]);
+    const pending = await pendingCount();
+
+    setLines(
+      summariseToday({
+        reports: rows(reports),
+        punchItems: rows(punchItems),
+        media: rows(media),
+        timeEntries: rows(timeEntries),
+        pending,
+      }),
+    );
+
+    const sections = [reports, punchItems, media, timeEntries];
+    if (sections.every((section) => section.from === "server")) {
       setError(null);
-    } catch {
-      // Offline is the normal state here, not a failure worth shouting
-      // about: the queue is still holding whatever was typed, and the
-      // pending count below is computed on-device anyway.
-      setLines(
-        summariseToday({ reports: [], punchItems: [], media: [], timeEntries: [], pending: await pendingCount() }),
-      );
-      setError("Showing what this phone knows — no connection");
+      // While there IS signal, fill the cache for the sections Home does
+      // not itself read — Materials, Safety, T&M. Home is the screen the
+      // app opens on, so this is the moment the phone is most likely to
+      // still have bars; by the time somebody opens Materials in a
+      // basement it is far too late to fetch it.
+      void prefetchJob(job.id, token);
+    } else if (sections.some((section) => section.from === "cache")) {
+      setError("Showing what this phone last loaded — no connection");
+    } else {
+      setError("No connection, and this phone hasn't loaded this job yet");
     }
   }, [getToken, job]);
 
@@ -115,6 +136,13 @@ export default function HomeScreen() {
       </ScrollView>
     </View>
   );
+}
+
+/** An empty list is the honest answer when a section could not be loaded
+ * at all — and the banner above says so, which is what stops
+ * `summariseToday` turning that emptiness into "no photos today". */
+function rows<T>(read: CachedRead<T[]>): T[] {
+  return read.from === "nothing" ? [] : read.value;
 }
 
 /** The state of each line, said in a colour as well as in words — the
