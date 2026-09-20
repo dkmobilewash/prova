@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
-import { Prisma, prisma } from "@prova/db";
+import { prisma } from "@prova/db";
 import { pushToUser } from "@/lib/push";
 import { issueContractDocumentVersion } from "@/lib/billing/contract-document-version";
 import { createEstimateJob } from "@/lib/estimating/create-job";
@@ -21,7 +21,7 @@ import {
   jobStatusTransitionRefusal,
   type JobStatusValue,
 } from "@/lib/job-status-transitions";
-import { actionFail, actionOk, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, phaseCodeIdFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { actionFail, actionOk, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, isUniqueConstraintError, phaseCodeIdFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 
 /**
  * Starts a job against a GC — an EXISTING one by preference, a new one when
@@ -652,7 +652,15 @@ export async function assignCrewMember(jobId: string, formData: FormData) {
     await prisma.jobAssignment.create({ data: { jobId, userId } });
     assigned = true;
   } catch (error) {
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
+    // `isUniqueConstraintError`, NOT `instanceof
+    // Prisma.PrismaClientKnownRequestError` — that instanceof is false at
+    // runtime under Next's bundling, so this guard never fired and the
+    // no-op below never happened: assigning an already-assigned teammate
+    // rethrew a raw Prisma error and 500'd the page (#26). The logic was
+    // always right; only the class test was wrong. See isUniqueConstraintError
+    // in ./shared for the measurement, and inviteTeamMember in ./company.ts
+    // for the sibling fix (#25) that already landed this shape.
+    if (!isUniqueConstraintError(error)) {
       throw error;
     }
     // Already assigned — treat as a no-op rather than an error.
