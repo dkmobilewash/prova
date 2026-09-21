@@ -25,7 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const fake = {
   addLineItem: vi.fn<(jobId: string, formData: FormData) => Promise<void>>(),
   addLineItemFromCatalog: vi.fn<(jobId: string, formData: FormData) => Promise<void>>(),
-  addTakeoffLineItems:
+  addTakeoffLines:
     vi.fn<(jobId: string, formData: FormData) => Promise<{ ok: true } | { ok: false; error: string }>>(),
   deleteLineItem: vi.fn<(jobId: string, lineItemId: string) => Promise<void>>(),
 };
@@ -48,7 +48,7 @@ beforeEach(() => {
   root = createRoot(container);
   fake.addLineItem.mockReset().mockResolvedValue(undefined);
   fake.addLineItemFromCatalog.mockReset().mockResolvedValue(undefined);
-  fake.addTakeoffLineItems.mockReset().mockResolvedValue({ ok: true });
+  fake.addTakeoffLines.mockReset().mockResolvedValue({ ok: true });
   fake.deleteLineItem.mockReset().mockResolvedValue(undefined);
 });
 
