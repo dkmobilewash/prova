@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { PunchListForm } from "@/components/PunchListForm";
@@ -130,32 +131,51 @@ export default async function PunchListsPage({
     }`;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Punch lists</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        What still has to be fixed before a job closes out. Jobs currently go straight from in-progress to
-        complete with nothing tracking the walkthrough, so this is the list that used to live on someone&apos;s
-        memory.
-      </p>
+    // The archetypal `split`: a thing, and the thing it feeds. "Add an item"
+    // and the job filter both exist to change what the list below them says,
+    // and they sat ON TOP of it — the form's own height decided how much of
+    // the list you could see, so on a job with a full walkthrough list you
+    // scrolled past the form every time to reach the thing you came for.
+    // Beside it, the form stays put and the list starts at the top of the
+    // page. Below `lg` this stacks back to exactly the order it had.
+    <PageShell
+      width="split"
+      asideLabel="Add an item and filter by job"
+      header={
+        <>
+          <h1 className="mb-2 text-xl font-semibold text-ink">Punch lists</h1>
+          <p className="mb-6 text-sm text-ink-body">
+            What still has to be fixed before a job closes out. Jobs currently go straight from
+            in-progress to complete with nothing tracking the walkthrough, so this is the list that
+            used to live on someone&apos;s memory.
+          </p>
+        </>
+      }
+      aside={
+        <>
+          <section
+            className="mb-4 rounded-lg border border-line-card bg-surface p-4"
+            data-tour="punch-add"
+          >
+            <h2 className="mb-3 text-sm font-semibold text-ink-label">Add an item</h2>
+            <PunchListForm jobs={jobOptions} defaultJobId={activeJob ?? undefined} people={people} />
+          </section>
 
-      <section className="mb-8 rounded-lg border border-line-card bg-surface p-4" data-tour="punch-add">
-        <h2 className="mb-3 text-sm font-semibold text-ink-label">Add an item</h2>
-        <PunchListForm jobs={jobOptions} defaultJobId={activeJob ?? undefined} people={people} />
-      </section>
-
-      {jobOptions.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2" data-tour="punch-job-filter">
-          <Link href={filterHref({ job: null })} className={chip(!activeJob)}>
-            All jobs
-          </Link>
-          {jobOptions.map((j) => (
-            <Link key={j.id} href={filterHref({ job: j.id })} className={chip(activeJob === j.id)}>
-              {jobPickerLabel(j)}
-            </Link>
-          ))}
-        </div>
-      )}
-
+          {jobOptions.length > 0 && (
+            <div className="flex flex-wrap gap-2" data-tour="punch-job-filter">
+              <Link href={filterHref({ job: null })} className={chip(!activeJob)}>
+                All jobs
+              </Link>
+              {jobOptions.map((j) => (
+                <Link key={j.id} href={filterHref({ job: j.id })} className={chip(activeJob === j.id)}>
+                  {jobPickerLabel(j)}
+                </Link>
+              ))}
+            </div>
+          )}
+        </>
+      }
+    >
       <section data-tour="punch-open">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ink-label">
@@ -245,6 +265,6 @@ export default async function PunchListsPage({
           </ul>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }
