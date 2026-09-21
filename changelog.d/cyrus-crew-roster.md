@@ -75,7 +75,7 @@ so an office manager who fat-fingers a name can add the corrected person but
 needs the owner to retire the typo.
 
 Setting which CRAFT somebody works under stays `MANAGE_COMPLIANCE`, matching
-`setWorkerCrafts` on `/union-compliance` — fringe rates and the apprentice
+`setWorkerCraft` on `/union-compliance` — fringe rates and the apprentice
 ratio are computed from it, and writing the same row from a second form
 under a weaker capability would be a hole opened by a second door. The field
 is not rendered to somebody the action would refuse, so it is never a dead
@@ -93,7 +93,7 @@ needed was the fact nothing said: this page holds TWO KINDS OF PEOPLE.
 
 **The web time-entry dropdown.** One list, teammates and crew, posting
 `user:<id>` / `crew:<id>` — the prefix convention the crew schedule and
-`setWorkerCrafts` already use, because `user_abc` and `crew_abc` are
+`setWorkerCraft` already use, because `user_abc` and `crew_abc` are
 different people in different tables. `employeeUserId` is still accepted
 when the new field is absent, since the Ask assistant's direct command posts
 it and has no form to notice. A bare id is REFUSED rather than guessed at as

@@ -13,7 +13,7 @@ import {
  * id, because `user_abc` and `crew_abc` are different people in different
  * tables and `TimeEntry` names exactly one of them (a database XOR check
  * enforces it). The same prefix convention is already what the crew
- * schedule and `setWorkerCrafts` post.
+ * schedule and `setWorkerCraft` post.
  *
  * THIS TYPE REPLACED `TimeEntryEmployeeOption`, which was
  * `{ id, name, email }` — a shape only a `User` can have. That shape was the

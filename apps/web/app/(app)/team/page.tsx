@@ -17,7 +17,7 @@ export default async function TeamPage() {
   const isOwner = currentUser.role === "OWNER";
   // Adding and editing crew is MANAGE_FIELD, not owner — the argument is in
   // lib/actions/crewMembers.ts. Setting which craft somebody works under is
-  // MANAGE_COMPLIANCE, matching setWorkerCrafts on /union-compliance, since
+  // MANAGE_COMPLIANCE, matching setWorkerCraft on /union-compliance, since
   // fringe rates and the apprentice ratio are computed from it. Archiving
   // keeps the owner gate: it is the one-way door, with no un-archive.
   const canManageCrew = can(context, "MANAGE_FIELD");

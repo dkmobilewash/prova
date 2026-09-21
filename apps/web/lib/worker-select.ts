@@ -9,7 +9,7 @@
  * own does not say which table to look in.
  *
  * The prefix convention is not invented here. `lib/actions/crewSchedule.ts`
- * and `setWorkerCrafts` in `lib/actions/unionCompliance.ts` already post
+ * and `setWorkerCraft` in `lib/actions/unionCompliance.ts` already post
  * `user:<id>` / `crew:<id>` for the same reason. This module is the pure,
  * tested version of that parse so the time-entry form and the action agree
  * on it without a third hand-rolled copy — and so the failure mode is a

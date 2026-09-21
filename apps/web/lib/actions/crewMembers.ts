@@ -119,7 +119,7 @@ function readIdentity(formData: FormData) {
  * offered it and the answer was "not set". The two are different: undefined
  * leaves an existing craft alone, null clears it.
  *
- * WHY ITS OWN CAPABILITY. `setWorkerCrafts` on /union-compliance is
+ * WHY ITS OWN CAPABILITY. `setWorkerCraft` on /union-compliance is
  * MANAGE_COMPLIANCE, because a craft classification is what fringe rates
  * and the apprentice-ratio check are computed from. Writing the same row
  * from this form under a weaker capability would be a hole opened by a

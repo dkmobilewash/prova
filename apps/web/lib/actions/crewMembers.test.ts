@@ -257,7 +257,7 @@ describe("who may touch the crew", () => {
 
   /**
    * A craft classification is what fringe rates and the apprentice-ratio
-   * check are computed from, and `setWorkerCrafts` on /union-compliance
+   * check are computed from, and `setWorkerCraft` on /union-compliance
    * asks for MANAGE_COMPLIANCE. Writing the same row from this form under a
    * weaker capability would be a hole opened by a second door. FIELD — a
    * foreman — holds MANAGE_FIELD and not MANAGE_COMPLIANCE, so he may add
