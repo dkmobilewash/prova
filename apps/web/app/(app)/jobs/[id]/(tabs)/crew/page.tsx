@@ -12,7 +12,8 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { money } from "@/lib/money";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
-import { timeEntryWorkerName } from "@/lib/worker-name";
+import { crewMemberName, timeEntryWorkerName } from "@/lib/worker-name";
+import { workerValue } from "@/lib/worker-select";
 import { deleteDispatchSlip, deleteTimeEntry } from "@/lib/actions";
 
 const rowDeleteClass = "text-xs text-red-400 hover:underline";
@@ -60,8 +61,18 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
   });
   if (!job) throw new Error("job disappeared between checks");
 
-  const [companyMembers, craftClassifications, tmTickets] = await Promise.all([
+  const [companyMembers, crewMembers, craftClassifications, tmTickets] = await Promise.all([
     prisma.user.findMany({ where: { companyId: jobRef.companyId }, orderBy: { createdAt: "asc" } }),
+    // The other half of "who worked". TimeEntry names a User OR a
+    // CrewMember, and this page only ever offered the first — so hours for
+    // a worker with no login could be typed on the phone and not here.
+    // Archived people are left out: their hours stay, but no NEW hours go
+    // against them, which is the same rule the phone's API applies.
+    prisma.crewMember.findMany({
+      where: { companyId: jobRef.companyId, archivedAt: null },
+      select: { id: true, legalFirstName: true, legalMiddleName: true, legalLastName: true },
+      orderBy: [{ legalLastName: "asc" }, { legalFirstName: "asc" }],
+    }),
     prisma.craftClassification.findMany({
       where: { companyId: jobRef.companyId },
       include: { unionLocal: true, fringeRateSchedules: { orderBy: { effectiveFrom: "desc" } } },
@@ -72,6 +83,26 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
     // query rather than just hiding the result.
     showsField ? prisma.tmTicket.findMany({ where: { jobId: jobRef.id }, orderBy: { workDate: "desc" }, take: 20 }) : Promise.resolve([]),
   ]);
+  /**
+   * Everybody hours can be logged for, in one list.
+   *
+   * Teammates first, then crew, each alphabetical within its group, with a
+   * suffix naming which kind they are. That suffix is not decoration: two
+   * people in a small company genuinely share a first name, and the choice
+   * decides which TABLE the hour is attributed to and therefore which name
+   * prints on a WH-347.
+   */
+  const timeEntryWorkers = [
+    ...companyMembers.map((member) => ({
+      value: workerValue({ kind: "user", userId: member.id }),
+      label: `${member.name ?? member.email} (signs in)`,
+    })),
+    ...crewMembers.map((member) => ({
+      value: workerValue({ kind: "crew", crewMemberId: member.id }),
+      label: `${crewMemberName(member).label} (crew)`,
+    })),
+  ];
+
   const timeEntryCraftOptions = craftClassifications.map((craft) => ({
     id: craft.id,
     label: `${craft.unionLocal.parentInternational} ${craft.unionLocal.localNumber} — ${craft.name}`,
@@ -126,8 +157,9 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
           </Link>
         </div>
         <p className="mb-3 text-sm text-ink-muted">
-          Hours worked by employee, by day — optionally tied to a cost code and craft classification. Tracks hours
-          by pay type; wage cost is estimated from the applicable fringe rate schedule when one applies.
+          Hours worked by person, by day — teammates who sign in and field crew who don&rsquo;t, optionally tied to
+          a cost code and craft classification. Tracks hours by pay type; wage cost is estimated from the applicable
+          fringe rate schedule when one applies.
         </p>
 
         {job.timeEntries.length > 0 && (
@@ -171,7 +203,7 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
 
         <LogTimeEntryForm
           jobId={job.id}
-          employees={companyMembers}
+          workers={timeEntryWorkers}
           lineItems={job.lineItems}
           craftOptions={timeEntryCraftOptions}
         />

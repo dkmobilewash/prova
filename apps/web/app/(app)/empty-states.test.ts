@@ -109,6 +109,11 @@ vi.mock("next/navigation", () => ({
 }));
 // Server actions, imported by these pages only to hand to a form.
 vi.mock("@/lib/actions/notifications", () => ({ sendMyAlertDigest: vi.fn() }));
+// `/team` builds the sign-up link to share from the request's own headers,
+// and there is no request here.
+vi.mock("next/headers", () => ({
+  headers: async () => new Map([["host", "app.example.com"], ["x-forwarded-proto", "https"]]),
+}));
 
 /** Each page is imported and called at its own call site below, so its real
  * props are typechecked rather than widened away by a shared helper. */
@@ -304,6 +309,52 @@ describe("/settings with nothing filled in", () => {
     expect(html).toContain("No bonding recorded");
     // The one that was already right, unchanged.
     expect(html).toContain("No licences recorded");
+  });
+});
+
+/**
+ * THE PAGE A UNION SUB LANDS ON WHEN THE DASHBOARD SAYS "ADD YOUR CREW".
+ *
+ * Rendered against an EMPTY database, which is the only state that matters
+ * here: the crew section was wrapped in `crew.length > 0 ||
+ * archivedCrewCount > 0`, so on a brand-new account — every account today —
+ * the page offered an email invite, a sign-up link, and nothing at all for
+ * the fifteen to forty people who do the work and will never have a login.
+ *
+ * A component test cannot see this and a source scan can be satisfied
+ * without it. This calls the real page with nothing in the database and
+ * reads what comes out.
+ */
+describe("/team on a brand-new account with nobody on the crew", () => {
+  const load = async () => {
+    const { default: Page } = await import("@/app/(app)/team/page");
+    return renderToStaticMarkup(await Page());
+  };
+
+  it("renders, and the crew section is on it", async () => {
+    const html = await load();
+    // Anti-vacuity: a real render of the real page.
+    expect(html).toContain("Team members");
+    expect(html).toContain("Nobody on the crew yet");
+  });
+
+  it("puts the add form on the screen, not behind anything", async () => {
+    const html = await load();
+    expect(html).toContain('name="legalFirstName"');
+    expect(html).toContain('name="legalLastName"');
+    expect(html).toContain("Add to crew");
+  });
+
+  it("names the spreadsheet import here, where the crew is", async () => {
+    expect(await load()).toContain("Import crew");
+  });
+
+  it("says at the top that this page holds two kinds of people", async () => {
+    const html = await load();
+    expect(html).toContain("Two kinds of people");
+    // The paragraph that was there instead: true, and written for somebody
+    // who reads permission models for a living.
+    expect(html).not.toContain("leaving it unset gives the full office access");
   });
 });
 

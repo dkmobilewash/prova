@@ -20,6 +20,7 @@ import {
   timeEntryCorrectionUpdateData,
 } from "@/lib/time-entry-correction";
 import { isDayLockError, liveSignoff, lockedDayMessage } from "@/lib/timesheet-signoff";
+import { parseWorkerValue } from "@/lib/worker-select";
 
 /**
  * The Crew & time tab's refusal — MANAGE_FIELD, on five of this module's
@@ -85,24 +86,62 @@ function revalidateJobLabor(jobId: string) {
   revalidatePath(`/jobs/${jobId}/certified-payroll/wh-347`);
 }
 
-/** Logs a day's hours for one employee against a job — optionally tied to
+/** Logs a day's hours for one worker against a job — optionally tied to
  * a specific line item (cost code/SOV line) and craft classification. See
  * TimeEntry in schema.prisma for why pay types are separate rows rather
  * than one row with a rate multiplier.
  *
- * Returns an ActionResult only for the duplicate guard below — everything
- * else here still throws, matching this function's existing style; those
- * are malformed-input cases a working form never sends, not refusals a
- * normal user needs explained to them. */
+ * A WORKER IS ONE OF TWO THINGS HERE, AND THIS FUNCTION KNEW ABOUT ONE.
+ * `TimeEntry` has named either a `User` or a `CrewMember` since #292 — the
+ * XOR check in that migration enforces exactly one — and the phone's API has
+ * written both ever since. This did not: it read `employeeUserId` and looked
+ * it up in `User`, so the ONE screen where a contractor types hours with a
+ * keyboard offered only people who had completed a Clerk sign-up. A crew
+ * member could have hours logged for them from a phone on site and not from
+ * the office, which is where certified payroll actually gets typed up.
+ *
+ * `worker` carries `user:<id>` / `crew:<id>` (lib/worker-select.ts).
+ * `employeeUserId` is still read when `worker` is absent, because the Ask
+ * assistant's direct command posts it (lib/ask/commands/labor.ts) and
+ * because a form already open in a tab should not lose an entry.
+ *
+ * Returns an ActionResult only for the duplicate guard below and the
+ * archived-crew case — everything else here still throws, matching this
+ * function's existing style; those are malformed-input cases a working form
+ * never sends, not refusals a normal user needs explained to them. */
 export async function logTimeEntry(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_FIELD")) return actionFail(FIELD_ONLY);
   const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
-  const employeeUserId = String(formData.get("employeeUserId") ?? "");
-  const employee = await prisma.user.findUnique({ where: { id: employeeUserId } });
-  if (!employee || employee.companyId !== company.id) {
+  const legacyUserId = String(formData.get("employeeUserId") ?? "").trim();
+  const worker =
+    parseWorkerValue(formData.get("worker") as string | null) ??
+    // The old field name, which always meant a User and still does.
+    (legacyUserId ? ({ kind: "user", userId: legacyUserId } as const) : null);
+
+  let employeeUserId: string | null = null;
+  let crewMemberId: string | null = null;
+  if (worker?.kind === "user") {
+    const employee = await prisma.user.findUnique({ where: { id: worker.userId } });
+    if (!employee || employee.companyId !== company.id) {
+      throw new Error("Employee not found");
+    }
+    employeeUserId = employee.id;
+  } else if (worker?.kind === "crew") {
+    const member = await prisma.crewMember.findUnique({ where: { id: worker.crewMemberId } });
+    if (!member || member.companyId !== company.id) {
+      throw new Error("Employee not found");
+    }
+    // RETURNED, not thrown: this is a state a person actually reaches — the
+    // dropdown was rendered before somebody else archived them — so it needs
+    // a sentence rather than production's digest.
+    if (member.archivedAt) {
+      return actionFail("That crew member has been archived, so hours can't be logged for them.");
+    }
+    crewMemberId = member.id;
+  } else {
     throw new Error("Employee not found");
   }
 
@@ -152,10 +191,19 @@ export async function logTimeEntry(jobId: string, formData: FormData): Promise<A
   // this issue describes, not two requests landing at the exact same
   // instant. See the longer version of this caveat on logPayment's guard
   // in lib/actions/billing.ts.
+  //
+  // BOTH identity columns are in the where clause, and leaving one out
+  // would have been a real defect rather than an untidy query: for a crew
+  // entry `employeeUserId` is null, and `{ employeeUserId: null }` matches
+  // EVERY crew row on the job. Two different crew members logged for the
+  // same 8 hours on the same cost code within ten seconds — which is
+  // exactly how a foreman enters a crew sheet — would have had the second
+  // one refused as a duplicate of the first.
   const recentDuplicate = await prisma.timeEntry.findFirst({
     where: {
       jobId,
       employeeUserId,
+      crewMemberId,
       lineItemId,
       craftClassificationId,
       date,
@@ -181,7 +229,11 @@ export async function logTimeEntry(jobId: string, formData: FormData): Promise<A
       data: {
         jobId,
         lineItemId,
+        // Exactly one of these is set, and the database says so: the XOR
+        // CHECK added with crewMemberId refuses a row naming both or
+        // neither. The branch above is what guarantees it here.
         employeeUserId,
+        crewMemberId,
         craftClassificationId,
         date,
         hours: hoursRaw,
