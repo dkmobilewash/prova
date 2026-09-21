@@ -117,3 +117,64 @@ the Paper trail membership, and which group opens for a given path.
 
 `/safety` and `/material-orders` stay `disabled: true` for the reason
 given above; that part of this audit is unchanged.
+
+## Addendum 2, 21 Sep 2026 — the last two disables end, on a ground this audit could not have had
+
+`/safety` and `/material-orders` are ordinary links again, in Compliance &
+safety and Logistics respectively. Nothing behind either route changed,
+then or now. That is all eight items from the 3 Sep table resolved: four
+cut and restored (addendum 1), two disabled and now restored, one kept,
+one that never existed.
+
+**Read what the 3 Sep reasoning actually was before reading why it
+ended**, because the obvious summary of it is wrong. Addendum 1 retired
+the RAIL-CROWDING ground — "a flat rail could not afford four more
+labels" — and that ground was never given for these two. Rows 6 and 7
+give a product-scope deferral instead: a sub does have safety obligations
+and does order materials, so this was "not validated as a daily priority
+yet", made by explicit owner override with the build-status premise known
+to be false. A collapsible rail does not answer that argument. If ending
+these two rested on addendum 1, it would be a bad inference.
+
+It rests on two other things.
+
+**The person who granted the override ended it.** Cyrus asked for both
+back on 21 Sep, for a stated reason: a union sub carries OSHA 300
+obligations, real contractors were signing in to test that day, and
+Safety unreachable from the rail is a gap that buyer will hit. A
+deferral is the decision-maker's to keep or end, and this document exists
+so that can be done without re-deriving the audit — which is what
+happened.
+
+**And the app had begun contradicting itself, which is not a scope
+question at all.** Both of these shipped AFTER 3 Sep, so no one making
+that call could have weighed them:
+
+| Surface | What it does with `/safety` |
+| --- | --- |
+| Ask | answers "one of my guys cut his hand" with `{ label: "Safety", href: "/safety" }` — `lib/ask/handlers.ts` |
+| Global search (#386) | finds and links the page |
+| The rail, until today | greyed span, "coming soon" |
+
+A `disabled: true` is a claim that a page is not there yet. On a route two
+other surfaces actively send people to, that claim is simply false, and
+the contractor who follows the assistant's advice and then cannot find
+the page on the rail learns something untrue about the product. Deferring
+a feature and lying about it are different acts; only the first was
+decided on 3 Sep.
+
+**What stops this recurring silently.** Nothing pinned the flag to the
+thing it asserts, which is why it survived eighteen days.
+`apps/web/components/navDisabledCensus.test.ts` now fails the build when a
+nav entry carries `disabled: true` while a page file exists for its href.
+So the flag means one thing — the route is not built yet — and greying out
+a working page is no longer something that can be done quietly.
+
+The census derives a route set by walking the app directory, so per
+CLAUDE.md's two census scars it asserts that set from both ends: parsed
+route count must equal page-file count (size), and every `NAV_ITEMS` /
+`NAV_FOOTER` href must resolve within it (scope). Mutation-tested three
+ways — restoring the flag turns the guard red and names the offender;
+mis-rooting the walk leaves the guard vacuously GREEN and is caught by the
+scope and size tests instead; a parser that collides routes is caught by
+the size test alone while scope still passes.
