@@ -388,6 +388,23 @@ export async function deleteComplianceDocument(documentId: string) {
  * These actions return ActionResult rather than throwing. Production
  * redacts thrown Server Action messages, so "That licence number is
  * already recorded" would reach a user as an unexplained failure.
+ *
+ * AND THEY DID NOT KEEP THAT PROMISE UNTIL 2026-09-21, on the one path
+ * they do not write themselves. `licenceFieldsFromForm` below checks the
+ * free-text fields and the dates by hand and RETURNS a refusal for each —
+ * which is why this read as finished — but the two `<select>` values go
+ * through `enumFromForm`, and that THROWS. With no boundary anywhere in
+ * the function, the throw left the action as a rejected promise and
+ * production redacted it: a licence saved with a value the picker did not
+ * offer (a stale tab, a restored form, a dispatched submit) produced a
+ * digest on /settings rather than a sentence.
+ *
+ * It was invisible for the usual reason — it reads perfectly in `next dev`,
+ * where the message is not redacted. And a `grep` for the local-class
+ * defect #407 found could never see it, because there is no local class
+ * here: the boundary is not WRONG, it is ABSENT. Wrapping both actions in
+ * ./shared's `runAction` is the whole fix. Pinned by
+ * lib/actionInputError.test.ts.
  */
 
 /** A yyyy-mm-dd from a date input, at UTC midnight — or null when blank.
@@ -435,69 +452,77 @@ function licenceFieldsFromForm(formData: FormData) {
 }
 
 export async function createCompanyLicense(formData: FormData): Promise<ActionResult> {
+  // `requireCompanyContext()` stays OUTSIDE the boundary on purpose: it
+  // redirects an unauthenticated caller, and a redirect is a thrown control
+  // signal, not a failure to render under a form. See ./shared's runAction.
   const context = await requireCompanyContext();
-  const refusal = ownerRefusal(context, "Only the account owner can add a licence");
-  if (refusal) return refusal;
-  const { company } = context;
+  return runAction(async () => {
+    const refusal = ownerRefusal(context, "Only the account owner can add a licence");
+    if (refusal) return refusal;
+    const { company } = context;
 
-  const fields = licenceFieldsFromForm(formData);
-  if ("ok" in fields) return fields;
+    const fields = licenceFieldsFromForm(formData);
+    if ("ok" in fields) return fields;
 
-  // The same licence entered twice in two jurisdictions is legitimate (a
-  // number is only unique within the body that issued it), so this checks
-  // the pair, not the number alone.
-  const existing = await prisma.companyLicense.findFirst({
-    where: {
-      companyId: company.id,
-      licenseNumber: fields.licenseNumber,
-      jurisdictionName: fields.jurisdictionName,
-    },
+    // The same licence entered twice in two jurisdictions is legitimate (a
+    // number is only unique within the body that issued it), so this checks
+    // the pair, not the number alone.
+    const existing = await prisma.companyLicense.findFirst({
+      where: {
+        companyId: company.id,
+        licenseNumber: fields.licenseNumber,
+        jurisdictionName: fields.jurisdictionName,
+      },
+    });
+    if (existing) {
+      return actionFail(`${fields.jurisdictionName} licence ${fields.licenseNumber} is already recorded.`);
+    }
+
+    await prisma.companyLicense.create({ data: { companyId: company.id, ...fields } });
+
+    revalidatePath("/settings");
+    revalidatePath("/compliance");
+    return actionOk;
   });
-  if (existing) {
-    return actionFail(`${fields.jurisdictionName} licence ${fields.licenseNumber} is already recorded.`);
-  }
-
-  await prisma.companyLicense.create({ data: { companyId: company.id, ...fields } });
-
-  revalidatePath("/settings");
-  revalidatePath("/compliance");
-  return actionOk;
 }
 
 export async function updateCompanyLicense(
   licenseId: string,
   formData: FormData,
 ): Promise<ActionResult> {
+  // Outside the boundary for the reason createCompanyLicense's is.
   const context = await requireCompanyContext();
-  const refusal = ownerRefusal(context, "Only the account owner can edit a licence");
-  if (refusal) return refusal;
-  const { company } = context;
+  return runAction(async () => {
+    const refusal = ownerRefusal(context, "Only the account owner can edit a licence");
+    if (refusal) return refusal;
+    const { company } = context;
 
-  const licence = await prisma.companyLicense.findUnique({ where: { id: licenseId } });
-  if (!licence || licence.companyId !== company.id) {
-    return actionFail("That licence no longer exists.");
-  }
+    const licence = await prisma.companyLicense.findUnique({ where: { id: licenseId } });
+    if (!licence || licence.companyId !== company.id) {
+      return actionFail("That licence no longer exists.");
+    }
 
-  const fields = licenceFieldsFromForm(formData);
-  if ("ok" in fields) return fields;
+    const fields = licenceFieldsFromForm(formData);
+    if ("ok" in fields) return fields;
 
-  const clash = await prisma.companyLicense.findFirst({
-    where: {
-      companyId: company.id,
-      licenseNumber: fields.licenseNumber,
-      jurisdictionName: fields.jurisdictionName,
-      id: { not: licenseId },
-    },
+    const clash = await prisma.companyLicense.findFirst({
+      where: {
+        companyId: company.id,
+        licenseNumber: fields.licenseNumber,
+        jurisdictionName: fields.jurisdictionName,
+        id: { not: licenseId },
+      },
+    });
+    if (clash) {
+      return actionFail(`${fields.jurisdictionName} licence ${fields.licenseNumber} is already recorded.`);
+    }
+
+    await prisma.companyLicense.update({ where: { id: licenseId }, data: fields });
+
+    revalidatePath("/settings");
+    revalidatePath("/compliance");
+    return actionOk;
   });
-  if (clash) {
-    return actionFail(`${fields.jurisdictionName} licence ${fields.licenseNumber} is already recorded.`);
-  }
-
-  await prisma.companyLicense.update({ where: { id: licenseId }, data: fields });
-
-  revalidatePath("/settings");
-  revalidatePath("/compliance");
-  return actionOk;
 }
 
 export async function deleteCompanyLicense(licenseId: string): Promise<ActionResult> {

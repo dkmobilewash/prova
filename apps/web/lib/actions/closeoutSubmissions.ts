@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { Prisma, prisma } from "@prova/db";
-import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
+import { InputError, actionFail as fail, actionOk as ok, runAction, type ActionResult } from "./shared";
 
 /** Every entry point to a closeout package is a page guarded by
  * MANAGE_JOBS, so every write here answers to the same capability.
@@ -31,7 +31,12 @@ const JOBS_ONLY =
  * sessions editing one file is how a merge conflict becomes a stranded
  * commit. */
 
-class InputError extends Error {}
+// `InputError` and `runAction` are imported from ./shared rather than
+// declared here. Two classes with the same name are not the same class:
+// `instanceof` is false between them, so a refusal thrown by a shared
+// parser walked straight past a local boundary and reached production as a
+// redacted digest. That is what #407 found on /welcome, and this module
+// held the fifteenth copy of the class it found there.
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -68,14 +73,6 @@ function isoDay(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
-}
 
 async function assertJob(jobId: string, companyId: string) {
   const job = await prisma.job.findUnique({ where: { id: jobId } });

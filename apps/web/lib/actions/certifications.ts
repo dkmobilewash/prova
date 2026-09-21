@@ -6,10 +6,12 @@ import { requireCompanyContext } from "@/lib/auth";
 import { CERTIFICATION_KINDS, certificationTitle } from "@/lib/certifications";
 import { can } from "@/lib/permissions";
 import {
+  InputError,
   actionFail as fail,
   actionOk as ok,
   assertOwner,
   isUniqueConstraintError,
+  runAction,
   type ActionResult,
 } from "./shared";
 
@@ -21,9 +23,12 @@ import {
  * `./shared`; `lib/actions/submittals.ts` is the reference.
  */
 
-/** Thrown by the parsers below, caught at each action's boundary. Anything
- * else that throws is a real bug and is rethrown. */
-class InputError extends Error {}
+// `InputError` and `runAction` are imported from ./shared rather than
+// declared here. Two classes with the same name are not the same class:
+// `instanceof` is false between them, so a refusal thrown by a shared
+// parser walked straight past a local boundary and reached production as a
+// redacted digest. That is what #407 found on /welcome, and this module
+// held the fifteenth copy of the class it found there.
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -99,14 +104,6 @@ function otherLabelFor(kind: Kind, formData: FormData): string | null {
 const FIELD_ONLY =
   "Certification records aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
-}
 
 /** Records a card, class or fit test against one person.
  *
