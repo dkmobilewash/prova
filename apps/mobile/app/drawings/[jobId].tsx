@@ -1,16 +1,19 @@
 import { useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Card } from "@/components/Card";
+import { Icon } from "@/components/Icon";
+import { JobContextChip } from "@/components/JobContextChip";
 import { List } from "@/components/List";
-import { OfflineNote } from "@/components/OfflineNote";
+import { SyncStatus } from "@/components/SyncStatus";
 import { emptyFor } from "@/lib/empty-state";
 import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
 import { useMe } from "@/lib/use-me";
-import { colors, typography } from "@/lib/theme";
+import { type Palette, hitTarget, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
@@ -65,6 +68,8 @@ async function openHeldFile(uri: string): Promise<boolean> {
 
 export default function DrawingsScreen() {
   const { me } = useMe();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const getToken = useStableGetToken();
   const [sets, setSets] = useState<DrawingSetRow[]>([]);
@@ -106,8 +111,11 @@ export default function DrawingsScreen() {
 
   return (
     <View style={styles.screen}>
+      <View style={styles.chipWrap}>
+        <JobContextChip />
+      </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <OfflineNote state={offline} />
+      <SyncStatus state={offline} />
 
       <List
         data={sets}
@@ -150,6 +158,7 @@ export default function DrawingsScreen() {
                     <View style={styles.actions}>
                       <Pressable
                         accessibilityRole="button"
+                        style={styles.action}
                         onPress={async () => {
                           setError(null);
                           const opened = localUri ? await openHeldFile(localUri) : false;
@@ -165,11 +174,13 @@ export default function DrawingsScreen() {
                           }
                         }}
                       >
-                        <Text style={styles.action}>Open</Text>
+                        <Icon name="chevron" size={16} color={palette.colors.link} />
+                        <Text style={styles.actionLabel}>Open</Text>
                       </Pressable>
 
                       <Pressable
                         accessibilityRole="button"
+                        style={styles.action}
                         disabled={busy === revision.id}
                         onPress={async () => {
                           setError(null);
@@ -189,7 +200,12 @@ export default function DrawingsScreen() {
                           }
                         }}
                       >
-                        <Text style={styles.action}>
+                        <Icon
+                          name={localUri ? "trash" : "refresh"}
+                          size={16}
+                          color={busy === revision.id ? palette.colors.inkMuted : palette.colors.link}
+                        />
+                        <Text style={styles.actionLabel}>
                           {busy === revision.id ? "Saving…" : localUri ? "Remove from phone" : "Keep on phone"}
                         </Text>
                       </Pressable>
@@ -213,25 +229,49 @@ export default function DrawingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
-  card: { gap: 6 },
-  name: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  meta: { color: colors.inkMuted, fontSize: typography.size.sm },
-  warn: { color: colors.tagAmberInk, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  revision: { borderTopWidth: 1, borderTopColor: colors.lineRow, paddingTop: 10, marginTop: 8, gap: 2 },
-  revisionHead: { flexDirection: "row", alignItems: "center", gap: 8 },
-  label: { color: colors.inkBody, fontSize: typography.size.md, flex: 1 },
-  labelCurrent: { color: colors.ink, fontWeight: typography.weight.semibold },
-  held: { color: colors.barGreen, fontSize: typography.size.xs, fontWeight: typography.weight.semibold },
-  actions: { flexDirection: "row", gap: 20, marginTop: 6, minHeight: 44, alignItems: "center" },
-  action: { color: colors.link, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  footer: {
-    color: colors.inkMuted,
-    fontSize: typography.size.xs,
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: colors.lineRow,
-  },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    chipWrap: { padding: space.md, paddingBottom: 0 },
+    error: { color: p.colors.tagRoseInk, padding: space.md, paddingBottom: 0, fontSize: typography.size.sm },
+    card: { gap: 6 },
+    name: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+    meta: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    warn: {
+      color: p.colors.tagAmberInk,
+      fontSize: typography.size.sm,
+      fontWeight: typography.weight.semibold,
+    },
+    revision: { borderTopWidth: 1, borderTopColor: p.colors.lineRow, paddingTop: 10, marginTop: 8, gap: 2 },
+    revisionHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+    label: { color: p.colors.inkBody, fontSize: typography.size.md, flex: 1 },
+    labelCurrent: { color: p.colors.ink, fontWeight: typography.weight.semibold },
+    held: {
+      color: p.colors.barGreen,
+      fontSize: typography.size.xs,
+      fontWeight: typography.weight.semibold,
+    },
+    // A proper 44pt target each, icon and label together — the old bare
+    // text links were the row's padding pretending to be a button.
+    actions: { flexDirection: "row", gap: space.lg, marginTop: 6 },
+    action: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      minHeight: hitTarget,
+      paddingHorizontal: space.xs,
+    },
+    actionLabel: {
+      color: p.colors.link,
+      fontSize: typography.size.md,
+      fontWeight: typography.weight.semibold,
+    },
+    footer: {
+      color: p.colors.inkMuted,
+      fontSize: typography.size.xs,
+      padding: space.md,
+      borderTopWidth: 1,
+      borderTopColor: p.colors.lineRow,
+    },
+  });
+}

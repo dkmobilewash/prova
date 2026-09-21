@@ -1,22 +1,26 @@
 import { useAuth } from "@clerk/expo";
 import { useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
+import { DateField } from "@/components/DateField";
 import { EmptyState } from "@/components/EmptyState";
 import { Field } from "@/components/Field";
+import { JobContextChip } from "@/components/JobContextChip";
 import { Sheet } from "@/components/Sheet";
+import { SyncStatus } from "@/components/SyncStatus";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
-import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
 import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
 import { useMe } from "@/lib/use-me";
-import { colors, typography } from "@/lib/theme";
+import { localToday } from "@/lib/local-today";
+import { type Palette, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
 import { enqueue } from "@/lib/sync-queue";
@@ -33,6 +37,8 @@ function titles({ emptyTitle, emptyDescription }: { emptyTitle: string; emptyDes
 
 export default function SafetyScreen() {
   const { me } = useMe();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [talks, setTalks] = useState<ToolboxTalk[]>([]);
@@ -44,12 +50,12 @@ export default function SafetyScreen() {
 
   const [showTalkForm, setShowTalkForm] = useState(false);
   const [topic, setTopic] = useState("");
-  const [heldOn, setHeldOn] = useState("");
+  const [heldOn, setHeldOn] = useState(localToday());
 
   const [showIncidentForm, setShowIncidentForm] = useState(false);
   const [employeeName, setEmployeeName] = useState("");
   const [description, setDescription] = useState("");
-  const [occurredAt, setOccurredAt] = useState("");
+  const [occurredAt, setOccurredAt] = useState(localToday());
   const [classification, setClassification] = useState("INJURY");
   const [outcome, setOutcome] = useState("FIRST_AID_ONLY");
 
@@ -81,12 +87,12 @@ export default function SafetyScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
-  const { pending, sync } = useSync(load);
+  const { pending, sync, refused, dismissRefused, retrySetAside } = useSync(load);
 
   const submitTalk = async () => {
     if (!jobId || !topic || !heldOn) return;
     setTopic("");
-    setHeldOn("");
+    setHeldOn(localToday());
     setShowTalkForm(false);
     await enqueue({ type: "toolbox-talk:create", jobId, clientOperationId: uuid(), topic, heldOn });
     await sync();
@@ -96,7 +102,7 @@ export default function SafetyScreen() {
     if (!jobId || !employeeName || !description || !occurredAt) return;
     setEmployeeName("");
     setDescription("");
-    setOccurredAt("");
+    setOccurredAt(localToday());
     setShowIncidentForm(false);
     await enqueue({
       type: "incident:create",
@@ -119,9 +125,15 @@ export default function SafetyScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      <JobContextChip />
+      <SyncStatus
+        pending={pending}
+        state={offline}
+        refused={refused}
+        onDismiss={dismissRefused}
+        onRetry={retrySetAside}
+      />
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <OfflineNote state={offline} />
 
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>Toolbox talks</Text>
@@ -168,7 +180,7 @@ export default function SafetyScreen() {
         onPrimary={submitTalk}
       >
         <Field label="Topic" placeholder="e.g. Fall protection" value={topic} onChangeText={setTopic} />
-        <Field label="Date" placeholder="YYYY-MM-DD" value={heldOn} onChangeText={setHeldOn} />
+        <DateField label="Date" value={heldOn} onChange={setHeldOn} max={localToday()} />
       </Sheet>
 
       <Sheet
@@ -180,7 +192,7 @@ export default function SafetyScreen() {
       >
         <Field label="Employee name" value={employeeName} onChangeText={setEmployeeName} />
         <Field label="Description" placeholder="What happened" value={description} onChangeText={setDescription} multiline />
-        <Field label="Date" placeholder="YYYY-MM-DD" value={occurredAt} onChangeText={setOccurredAt} />
+        <DateField label="Date" value={occurredAt} onChange={setOccurredAt} max={localToday()} />
         <Text style={styles.chipLabel}>Classification</Text>
         <View style={styles.chips}>
           {CLASSIFICATIONS.map((c) => (
@@ -198,17 +210,18 @@ export default function SafetyScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { padding: 16, gap: 12 },
-  pending: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  error: { color: colors.tagRoseInk, fontSize: typography.size.sm },
-  sectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  sectionHeadGap: { marginTop: 12 },
-  sectionTitle: { color: colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
-  cardTitle: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  cardBody: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
-  cardMeta: { color: colors.inkMuted, fontSize: typography.size.sm, marginTop: 4 },
-  chipLabel: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    content: { padding: space.md, gap: space.sm, paddingBottom: space.xxl },
+    error: { color: p.colors.tagRoseInk, fontSize: typography.size.sm },
+    sectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    sectionHeadGap: { marginTop: space.sm },
+    sectionTitle: { color: p.colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
+    cardTitle: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+    cardBody: { color: p.colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
+    cardMeta: { color: p.colors.inkMuted, fontSize: typography.size.sm, marginTop: 4 },
+    chipLabel: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  });
+}

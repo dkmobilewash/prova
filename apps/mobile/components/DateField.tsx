@@ -53,18 +53,22 @@ export function DateField({
   value,
   onChange,
   max,
+  allowFuture = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   /** The latest pickable day, yyyy-mm-dd — the phone's today. */
   max: string;
+  /** A promised-for date may be ahead of today. The calendar then lets
+   * you move forward, and days after `max` are pickable. */
+  allowFuture?: boolean;
 }) {
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const [open, setOpen] = useState(false);
   const selected = parse(value);
-  const limit = parse(max);
+  const limit = allowFuture ? null : parse(max);
   const [month, setMonth] = useState(() => {
     const start = selected ?? limit ?? { y: 2026, m: 0, d: 1 };
     return { y: start.y, m: start.m };
@@ -137,7 +141,7 @@ export function DateField({
             {cells.map((day, i) => {
               if (day === null) return <View key={`e${i}`} style={styles.cell} />;
               const text = format(month.y, month.m, day);
-              const future = text > max;
+              const future = !allowFuture && text > max;
               const isSelected = text === value;
               return (
                 <Pressable
