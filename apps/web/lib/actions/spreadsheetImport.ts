@@ -409,8 +409,13 @@ export async function importCrew(formData: FormData): Promise<ImportResult> {
       };
     }, TX_OPTIONS);
 
+    // `/team` FIRST, because that is where this import is now offered — the
+    // crew list and the "already here" preview both sit on that page, and an
+    // import that left them stale would read as an import that did nothing.
+    revalidatePath("/team");
     revalidatePath("/settings/import");
     revalidatePath("/schedule");
+    revalidatePath("/union-compliance");
     return { ok: true, value: summary };
   } catch (err) {
     if (isWriteConflict(err)) return fail(COLLIDED);

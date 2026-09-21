@@ -104,7 +104,7 @@ export function CrewRoster({
           <CrewMemberForm
             craftOptions={craftOptions}
             canSetCraft={canSetCraft}
-            autoFocusOpen={crew.length === 0}
+            startOpen={crew.length === 0}
           />
 
           {/* The spreadsheet import, ON THIS PAGE rather than only inside

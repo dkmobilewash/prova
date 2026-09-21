@@ -22,16 +22,16 @@ import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 export function CrewMemberForm({
   craftOptions,
   canSetCraft,
-  autoFocusOpen = false,
+  startOpen = false,
 }: {
   craftOptions: CrewCraftOption[];
   canSetCraft: boolean;
   /** Opened already, for the empty state — there is nothing else on the
    *  screen to look at, so a button that only reveals a form is a step for
    *  no reason. */
-  autoFocusOpen?: boolean;
+  startOpen?: boolean;
 }) {
-  const [isOpen, setIsOpen] = useState(autoFocusOpen);
+  const [isOpen, setIsOpen] = useState(startOpen);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState<string | null>(null);

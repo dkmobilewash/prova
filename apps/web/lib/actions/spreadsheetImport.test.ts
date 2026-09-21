@@ -28,6 +28,9 @@ const state = vi.hoisted(() => ({
   writes: [] as string[],
   txOptions: [] as unknown[],
   failNext: null as string | null,
+  /** Every path revalidated, so "the page this import is offered on gets
+   *  refreshed" is observed rather than assumed. */
+  revalidated: [] as string[],
   /** The Prisma error code the next failure carries, if any. */
   failCode: null as string | null,
   context: {
@@ -151,7 +154,7 @@ const client: Record<string, unknown> = new Proxy(
 );
 
 vi.mock("@prova/db", () => ({ prisma: client, Prisma: {} }));
-vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("next/cache", () => ({ revalidatePath: (path: string) => state.revalidated.push(path) }));
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => state.context }));
 vi.mock("@/lib/permissions", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/permissions")>();
@@ -183,6 +186,7 @@ function seed() {
   state.txOptions = [];
   state.failNext = null;
   state.failCode = null;
+  state.revalidated = [];
   state.denied = new Set();
   state.context.role = "OWNER";
   state.context.jobFunction = null;
@@ -493,6 +497,18 @@ describe("who may confirm", () => {
       value: expect.anything(),
     });
     expect(rows("crewMember", "co_A").some((row) => row.legalLastName === "Ortega")).toBe(true);
+  });
+
+  /**
+   * The crew import is offered on `/team` now, not only inside Settings.
+   * `importCrew` revalidated `/settings/import` and `/schedule` and not the
+   * page it is actually on, so a contractor pasting forty names would have
+   * watched the list under the box not change — an import that reads as an
+   * import that did nothing, and an invitation to paste it again.
+   */
+  it("refreshes the page the import is offered on", async () => {
+    expect(await importCrew(form("First,Last\nLuis,Ortega"))).toEqual({ ok: true, value: expect.anything() });
+    expect(state.revalidated).toContain("/team");
   });
 
   it("still refuses crew to a job function without MANAGE_FIELD", async () => {
