@@ -198,8 +198,23 @@ describe("/ landing content renders signed out, with no auth call of its own", (
     expect(heroIndex).toBeLessThan(firstReveal);
   });
 
-  it("wraps exactly the five below-the-fold sections in reveal motion — proof, contrast, features, objection, closing", () => {
-    expect((html.match(/data-reveal="idle"/g) ?? []).length).toBe(5);
+  /**
+   * Every section below the fold is wrapped in reveal motion, and the
+   * hero is not. The count is DERIVED from the section list above rather
+   * than written as its own literal: the two must move together, and a
+   * second hardcoded number here would be one more thing to forget when a
+   * section is added — which is exactly how this file ended up asserting
+   * five while the page had ten.
+   *
+   * `data-reveal="idle"` is the at-rest state, and "idle" renders
+   * IDENTICALLY to "visible" (full opacity, no transform) — see
+   * Reveal.tsx. So this also quietly asserts the thing the page must
+   * never regress: the server markup has nothing parked at opacity 0
+   * waiting on an observer that may never fire.
+   */
+  it("wraps every below-the-fold section in reveal motion, and only those", () => {
+    const belowTheFold = SECTIONS_IN_ORDER.length - 1; // everything but the hero
+    expect((html.match(/data-reveal="idle"/g) ?? []).length).toBe(belowTheFold);
   });
 
   it("the old-way/new-way contrast names five concrete pains and backs each with a real capability", () => {

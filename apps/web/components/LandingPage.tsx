@@ -263,43 +263,66 @@ export function LandingPage() {
           application summary, which is both the thing this buyer most
           wants and the fastest possible proof that this is not generic
           construction software. */}
-      <section className="grid min-h-[78svh] items-center gap-10 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:gap-14">
-        <div className="flex flex-col justify-center gap-8 sm:gap-10">
-          <h1 className="max-w-4xl text-[clamp(3rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink lg:text-[clamp(3rem,5.2vw,4.5rem)]">
-            The job-site system for union specialty-trade subcontractors.
-          </h1>
-          <p className="max-w-2xl text-lg leading-relaxed text-ink-body sm:text-xl">
-            The estimate, the contract, the crew&rsquo;s hours, certified payroll and the GC&rsquo;s pay
-            application &mdash; all in one place, so the same numbers don&rsquo;t get typed in three
-            times.
-          </p>
-          <ul className="flex flex-wrap gap-2" aria-label="Trades C Stream is built for">
-            {TRADES.map((trade) => (
-              <li
-                key={trade}
-                className="rounded-full border border-line-card bg-surface px-4 py-1.5 text-sm font-medium text-ink-label"
-              >
-                {trade}
-              </li>
-            ))}
-          </ul>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <Link href="/sign-up" className={cta}>
-              Sign up
-            </Link>
-            <Link href="/sign-in" className={ctaQuiet}>
-              Sign in
-            </Link>
+      {/* THE HEADLINE SPANS THE FULL WIDTH AND THE SPLIT HAPPENS BELOW IT,
+          and that is a measured decision rather than a stylistic one.
+
+          The obvious way to fill the empty right half is a two-column hero
+          with the headline in the left column. Tried, measured, rejected:
+          at 1440 the container is 1088px inside its padding, so a 420px
+          panel column leaves the headline about 612px — and
+          "subcontractors." alone is wider than that at 96px. It wrapped to
+          six ragged lines and pushed past its own column. The only ways to
+          make it fit were to shrink the headline (the 96px is a spec this
+          page was tuned to) or to shrink the panel past the point a G703
+          is legible.
+
+          So the headline keeps the full 1088px and its three lines, and
+          the subhead, chips, CTAs and panel share the row underneath. The
+          right half is full either way, which was the actual problem. */}
+      <section className="flex min-h-[78svh] flex-col justify-center gap-8 py-10 sm:gap-10">
+        {/* The clamp, the 1.03 leading and the -0.02em tracking are
+            MEASURED specs carried forward from the scale pass and are not
+            to be traded away for layout convenience. A `lg:` override was
+            tried here and silently dropped the desktop headline from 96px
+            to 72px; the layout is sized to the type instead. */}
+        <h1 className="max-w-4xl text-[clamp(3rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink">
+          The job-site system for union specialty-trade subcontractors.
+        </h1>
+        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:gap-14">
+          <div className="flex min-w-0 flex-col gap-8">
+            <p className="max-w-2xl text-lg leading-relaxed text-ink-body sm:text-xl">
+              The estimate, the contract, the crew&rsquo;s hours, certified payroll and the GC&rsquo;s
+              pay application &mdash; all in one place, so the same numbers don&rsquo;t get typed in
+              three times.
+            </p>
+            <ul className="flex flex-wrap gap-2" aria-label="Trades C Stream is built for">
+              {TRADES.map((trade) => (
+                <li
+                  key={trade}
+                  className="rounded-full border border-line-card bg-surface px-4 py-1.5 text-sm font-medium text-ink-label"
+                >
+                  {trade}
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <Link href="/sign-up" className={cta}>
+                Sign up
+              </Link>
+              <Link href="/sign-in" className={ctaQuiet}>
+                Sign in
+              </Link>
+            </div>
           </div>
-        </div>
-        {/* `data-landing-panel` is this file's own handle on a placement,
-            deliberately NOT an attribute reached for inside
-            components/landing/ — those components belong to another lane,
-            and a guard that asserts on markup it does not own breaks on
-            somebody else's refactor without saying anything useful. See
-            app/page.test.ts, which counts these. */}
-        <div data-landing-panel="pay-application" className="min-w-0">
-          <PayApplicationPanel />
+          {/* `data-landing-panel` is this file's own handle on a placement,
+              deliberately NOT an attribute reached for inside
+              components/landing/ — those components belong to another lane,
+              and a guard that asserts on markup it does not own breaks on
+              somebody else's refactor without saying anything useful. See
+              app/page.test.ts, which counts these. */}
+          <div data-landing-panel="pay-application" className="min-w-0">
+            <PayApplicationPanel />
+          </div>
         </div>
       </section>
 
