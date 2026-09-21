@@ -6,6 +6,7 @@ import { PayApplicationPanel } from "@/components/landing/PayApplicationPanel";
 import { CertifiedPayrollPanel } from "@/components/landing/CertifiedPayrollPanel";
 import { ApprenticeRatioPanel } from "@/components/landing/ApprenticeRatioPanel";
 import { JobCostPanel } from "@/components/landing/JobCostPanel";
+import { FactTicker } from "@/components/landing/FactTicker";
 
 /**
  * The visitor-facing content of the public landing page (app/page.tsx).
@@ -70,6 +71,11 @@ import { JobCostPanel } from "@/components/landing/JobCostPanel";
  * list would fall into:
  *
  *   1. Hero (+ pay application summary in the right half)
+ *      — then the FACT TICKER, hugging the hero's foot: a continuously
+ *        moving band of short verified statements about how the product
+ *        is built (components/landing/FactTicker.tsx owns the list and
+ *        every receipt). Not a section, not in the ranked list, not in a
+ *        <Reveal>; see the note where it is placed.
  *   2. The old way, and the C Stream way   ← MOVED UP from fourth
  *   3. Getting paid
  *   4. Certified payroll
@@ -325,6 +331,28 @@ export function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* ------------------------------------------------------ the ticker
+          A continuously moving band of short, verified statements about
+          how the product is built — components/landing/FactTicker.tsx
+          owns the list and the receipts. Placed HERE, hugging the bottom
+          of the hero rather than between two sections lower down, for two
+          reasons. The hero is the screen the founder called empty, twice,
+          and it is the only screen most visitors see; motion here is
+          motion where it is looked at. And it is the one place on the page
+          where a band of many short facts is not competing with a section
+          that is itself making an argument — the contrast block below
+          opens the case, and the ticker is a preview of the evidence, not
+          part of the case.
+
+          Deliberately NOT inside <Reveal>: it is its own motion, and
+          page.test.ts derives the reveal count from the section list, so
+          wrapping it would either break that count or need a literal. It
+          is also not a `data-landing-panel`: it is prose, so the page-wide
+          invented-statistic guard runs over it, which is wanted. */}
+      <div className="mt-2 sm:mt-4">
+        <FactTicker />
+      </div>
 
       {/* -------------------------------------------------------------- 2
           The problem, in the reader's own language. Moved up from fourth:

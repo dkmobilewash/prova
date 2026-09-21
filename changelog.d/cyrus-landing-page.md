@@ -223,3 +223,88 @@ The general form, for the next guard here: when new content legitimately
 trips an old assertion, ask whether the assertion's SUBJECT changed
 before narrowing its SCOPE. Narrowing is the cheap move and it is how
 coverage disappears without anyone deciding to drop it.
+
+**Then the fact ticker (fifth round).** The founder had now called the
+page empty twice, the second time after it went from 3.8 to 8.4 screens,
+and asked for "a spinning wheel of like almost kind of fun facts about why
+the software is good just to make it look more high tech and fuller". He
+wanted motion and density; the page had length and no motion. So under the
+hero there is now a continuously moving band of fourteen short statements
+about how the product is built — `components/landing/FactTicker.tsx`.
+
+"Fun facts about why the software is good" is exactly where marketing
+fiction creeps in, so the list is held to rules stricter than the page's
+own, and the mechanical half is enforced rather than remembered
+(`FactTicker.test.ts`): no numeral at all (a fact that needs a digit is on
+its way to being a statistic — "WH-347" is the one allowed form name), no
+performance or comparison vocabulary, no count of anything, eight to
+fourteen entries, each under 110 characters, each carrying the file it was
+verified in. The page-wide invented-statistic guard ALSO runs over it — it
+is prose, not a `data-landing-panel`, and it was deliberately not added to
+the strip list. Every line is a statement about what the code does today,
+read before it was written: counters that only count up
+(`lib/actions/rfis.ts`), a WH-347 that names its missing field
+(`lib/wh347.ts`), a pay-app line that refuses to bill past its scheduled
+value (`lib/pay-application.ts`), overdue derived not stored
+(`components/rfiLabels.ts`), a sent RFI closed never deleted
+(`deleteRfi`), the phone's outbox (`apps/mobile/lib/outbox.ts`), a signed
+day's locked hours (`lib/actions/labor.ts`), two permissions between "fixed"
+and "verified" on a punch item (`lib/permissions.ts`), photos keeping
+capture time and taker apart from upload time (`media.prisma`), the
+assistant proposing and only a person confirming (`lib/actions/ask.ts`),
+retainage snapshots never rewritten (`lib/retainage.ts`).
+
+Two candidates were verified and DISCARDED because the code disagreed with
+the folklore: "money is held in whole cents" — it is not, every money
+column is `Decimal(12,2)` with only the payroll register in integer cents,
+so the line says "to the exact cent, never floating point" instead; and
+"a punch item is verified by someone other than who fixed it" — the code
+enforces a different PERMISSION, not a different person, so the line says
+that.
+
+The build is a marquee, not a carousel: two copies of the list, the track
+translating by exactly half its own width, each copy carrying a trailing
+pad equal to its item gap so the wrap is seamless; the second copy is
+`aria-hidden` so a screen reader gets the list once. `transform` only, no
+JS, no dependency, existing tokens only. Hover and keyboard focus pause it
+(the region is focusable, with a brand-yellow ring). AT REST IT IS A LIST:
+the default CSS, with no media query at all, draws a wrapped, fully
+readable list with the clone hidden; only inside the existing
+`prefers-reduced-motion: no-preference` block does it become one moving
+row — so a reader who asked for less motion gets every fact, nothing
+clipped, and a browser that never applies the animation still shows a
+complete list. `globals.ticker.test.ts` pins that shape, including one
+thing only a browser would otherwise have caught: the static rules must
+come BEFORE the media block, because they share its specificity and the
+later rule wins — the first draft wrote them after it and the motion's
+`nowrap` lost to the static `wrap`.
+
+Measured in a real browser: at 1440 the two copies are 9258px each to the
+hundredth, `scrollWidth` is 1440 and the track moves 61px/s (150s per
+copy; 90s read as a stock ticker); hovered, it moved 0px in 800ms and
+reported `paused`, resumed on leave; focused, `paused` with the ring,
+resumed on blur. At 375, `document.documentElement.scrollWidth === 375`
+with the ticker running. With the motion rules disabled — what `reduce`
+renders — all fourteen items wrapped inside the viewport (max right edge
+338 of 375), clone `display: none`, no animation, no mask. 4 mutants
+requested, 4 caught: a "100%" in a fact fails both the ticker's own guard
+and the page-wide one; the static CSS moved below the media block fails
+the order test; the clone losing `aria-hidden` fails the accessibility
+test; the ticker wrapped in `<Reveal>` fails the placement test and the
+derived reveal count.
+
+Placement: directly under the hero, not between two lower sections. The
+hero is the screen that was called empty and the only screen most visitors
+see, so motion there is motion where it is looked at; and it is the one
+spot where a band of many short facts is not competing with a section that
+is itself making an argument.
+
+Two of this repo's censuses caught the FIRST draft of the fact list, and
+both were right: `rowActionsCensus.test.ts` tokenises every component and
+treats a removal action's NAME as a call to it, so a receipt comment that
+named the RFI delete action read as a delete with no confirm; and
+`retainage-single-source.test.ts` enumerates every file naming the
+retainage column, so a receipt naming it looked like a new reader. The
+receipts were reworded to describe the behaviour rather than spell the
+identifier — the censuses were not touched, and neither was given an
+exception.

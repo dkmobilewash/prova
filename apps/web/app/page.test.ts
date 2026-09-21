@@ -298,6 +298,29 @@ describe("/ landing content renders signed out, with no auth call of its own", (
     expect(new Set(sites).size).toBe(4);
   });
 
+  /**
+   * The fact ticker sits directly under the hero and above the contrast
+   * section — one placement, outside any panel wrapper (so the page-wide
+   * statistic guard above runs over its text) and outside any <Reveal>
+   * (so the derived reveal count below stays derived). The position is
+   * asserted, not just the presence: a ticker that drifted to the footer
+   * would still "be on the page" and would have stopped doing the one
+   * thing it was placed to do, which is put motion on the first screen.
+   */
+  it("places the fact ticker once, between the hero and the contrast section, outside every panel and reveal", () => {
+    const tickers = html.match(/data-landing-ticker/g) ?? [];
+    expect(tickers.length).toBe(1);
+    const at = html.indexOf("data-landing-ticker");
+    const heroEnd = html.indexOf("</section>");
+    const contrast = html.indexOf("The old way, and the C Stream way");
+    expect(at).toBeGreaterThan(heroEnd);
+    expect(at).toBeLessThan(contrast);
+    expect(at).toBeLessThan(html.indexOf("data-reveal="));
+    // Still present after the panels are stripped — it is prose, and the
+    // guard must be looking at it.
+    expect(stripPanels(html)).toContain("data-landing-ticker");
+  });
+
   it("the hero renders before any reveal-motion wrapper — nothing above the fold fades in", () => {
     const heroIndex = html.indexOf("The job-site system for union specialty-trade subcontractors.");
     const firstReveal = html.indexOf("data-reveal=");

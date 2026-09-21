@@ -45,28 +45,34 @@ body {
   scroll-margin-bottom: 1rem;
 }
 
-/* Landing page reveal motion (components/Reveal.tsx). Restated here rather
-   than trusted from memory: content must be visible AT REST, and hidden
-   only after Reveal's own IntersectionObserver has positively confirmed an
-   element is off-screen — never by default. So "idle" (the state a server
-   render and a browser with no JS both produce) and "visible" render
-   IDENTICALLY, full opacity with no transform; only "pending" is ever
-   hidden, and that selector lives entirely inside this media query, so a
-   bug in the JS layer still cannot hide or move anything for a reader who
-   has asked for reduced motion. Two independent tests hold this shape:
-   components/Reveal.test.ts (the JS never leaves "idle" under reduced
-   motion) and app/globals.reveal.test.ts (this block cannot silently move
-   outside the media query or lose the selector it's meant to gate). */
-@media (prefers-reduced-motion: no-preference) {
-  [data-reveal="pending"] {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  [data-reveal="visible"] {
-    transition:
-      opacity var(--speed-slow) var(--ease-landing),
-      transform var(--speed-slow) var(--ease-landing);
-  }
+/* The fact ticker AT REST (components/landing/FactTicker.tsx): a plain
+   wrapped list, every item visible, the duplicate copy hidden. This is what
+   a reader with prefers-reduced-motion: reduce gets, what a browser that
+   never runs the animation gets, and what the markup IS before any media
+   query applies — the motion (inside the reduced-motion block further
+   down) is layered on top, never the other way round. ORDER MATTERS: these
+   rules must stay ABOVE that block, because they share its specificity and
+   the later rule wins — a `flex-wrap: wrap` written after it would defeat
+   the motion's `nowrap` with nothing to say why (globals.ticker.test.ts
+   asserts the order). The two custom properties are the only numbers the
+   motion rules need, kept here so the gap the list uses and the pad the
+   loop relies on are one value rather than two that can drift. */
+.landing-ticker {
+  --landing-ticker-gap: 2.5rem;
+  /* Measured at 1440: one copy of fourteen facts is ~9260px, so this is
+     ~60px/s — slow enough to read a line as it passes, fast enough to
+     read as alive. At 90s it was ~100px/s and read as a stock ticker. */
+  --landing-ticker-duration: 150s;
+}
+.landing-ticker__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--landing-ticker-gap);
+  row-gap: 0.5rem;
+}
+.landing-ticker__clone {
+  display: none;
 }
 
 /* The capability scroller (components/LandingPage.tsx): a real horizontal
@@ -114,4 +120,71 @@ body {
   background-color: theme("colors.surface");
   color: theme("colors.ink");
   font-weight: 600;
+}
+
+/* Landing page reveal motion (components/Reveal.tsx). Restated here rather
+   than trusted from memory: content must be visible AT REST, and hidden
+   only after Reveal's own IntersectionObserver has positively confirmed an
+   element is off-screen — never by default. So "idle" (the state a server
+   render and a browser with no JS both produce) and "visible" render
+   IDENTICALLY, full opacity with no transform; only "pending" is ever
+   hidden, and that selector lives entirely inside this media query, so a
+   bug in the JS layer still cannot hide or move anything for a reader who
+   has asked for reduced motion. Two independent tests hold this shape:
+   components/Reveal.test.ts (the JS never leaves "idle" under reduced
+   motion) and app/globals.reveal.test.ts (this block cannot silently move
+   outside the media query or lose the selector it's meant to gate). */
+@media (prefers-reduced-motion: no-preference) {
+  [data-reveal="pending"] {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  [data-reveal="visible"] {
+    transition:
+      opacity var(--speed-slow) var(--ease-landing),
+      transform var(--speed-slow) var(--ease-landing);
+  }
+
+  /* The fact ticker's MOTION (components/landing/FactTicker.tsx). Lives in
+     this same block for the same reason the reveal does: the rules below
+     are the only thing that turns the wrapped, static, fully readable list
+     the top-level `.landing-ticker*` rules draw into one moving row. Under
+     prefers-reduced-motion: reduce none of this applies, the clone stays
+     `display: none`, and every fact is on screen at rest with nothing
+     clipped. Animates `transform` only — no layout property, no JS loop.
+     The translate is exactly -50% of the track, which is two identical
+     copies each carrying a trailing pad equal to its item gap, so the
+     wrap is seamless. Hover or keyboard focus pauses it. */
+  .landing-ticker__viewport {
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+    mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+  }
+  .landing-ticker__track {
+    display: flex;
+    width: max-content;
+    animation: landing-ticker var(--landing-ticker-duration) linear infinite;
+  }
+  .landing-ticker__list {
+    flex-wrap: nowrap;
+    padding-right: var(--landing-ticker-gap);
+  }
+  .landing-ticker__list > li {
+    white-space: nowrap;
+  }
+  .landing-ticker__clone {
+    display: flex;
+  }
+  .landing-ticker:hover .landing-ticker__track,
+  .landing-ticker:focus-within .landing-ticker__track {
+    animation-play-state: paused;
+  }
+  @keyframes landing-ticker {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
 }
