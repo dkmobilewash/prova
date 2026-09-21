@@ -8,7 +8,8 @@ import { businessScopeLine, hasNoScopeAnswers, type BusinessScopeAnswers } from 
 
 /**
  * Settings' half of the onboarding questions — "see and change it" from the
- * spec. Same three questions as `CompanySetupPrompt.tsx`, same
+ * spec. Same three questions as the full-page onboarding gate
+ * (`CompanySetupGate.tsx`, `/welcome`), same
  * `BusinessScopeFields`, same `saveBusinessScope` action, so re-answering
  * here and answering at signup can never drift into two different forms
  * asking two different things.

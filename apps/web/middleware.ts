@@ -34,6 +34,12 @@ const isProtectedRoute = createRouteMatcher([
   "/intake(.*)",
   "/sales(.*)",
   "/certifications(.*)",
+  // The full-page onboarding gate. Authenticated like every other route in
+  // this list — a signed-out visitor is sent to /sign-in first, same as
+  // anywhere else — even though the only thing that ever LINKS here is a
+  // server-side redirect from /dashboard (lib/onboarding-gate.ts). Typing
+  // the URL directly while signed out must not skip sign-in.
+  "/welcome(.*)",
   // Ask streams over a route handler rather than a Server Action.
   // requireCompanyContext already redirects an anonymous caller, but this
   // list is the allowlist a reader checks, and a data route missing from
