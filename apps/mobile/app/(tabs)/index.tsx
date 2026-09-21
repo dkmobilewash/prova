@@ -301,7 +301,7 @@ function rows<T>(read: CachedRead<T[]>): T[] {
 
 function toneStyles(p: Palette) {
   return StyleSheet.create({
-    dot: { width: 12, height: 12, borderRadius: 6 },
+    dot: { width: 12, height: 12, borderRadius: radius.pill },
     dotTodo: { backgroundColor: p.colors.brand },
     dotPlain: { backgroundColor: p.colors.inkMuted },
   });

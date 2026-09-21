@@ -234,7 +234,7 @@ function makeStyles(p: Palette) {
     screen: { flex: 1, backgroundColor: p.colors.canvas },
     chipWrap: { padding: space.md, paddingBottom: 0 },
     error: { color: p.colors.tagRoseInk, padding: space.md, paddingBottom: 0, fontSize: typography.size.sm },
-    card: { gap: 6 },
+    card: { gap: space.six },
     name: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
     meta: { color: p.colors.inkMuted, fontSize: typography.size.sm },
     warn: {

@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { GroupedList } from "@/components/GroupedList";
 import { GroupedRow } from "@/components/GroupedRow";
 import { SectionHeader } from "@/components/SectionHeader";
-import { type Palette, space, typography } from "@/lib/theme";
+import { type Palette, radius, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import { tokenOrNull } from "@/lib/clerk-token";
 import { jobNames, statusOf, toOutboxItem, triesLeft, describeRefused, type OutboxItem } from "@/lib/outbox";
@@ -210,7 +210,7 @@ function makeStyles(p: Palette) {
     row: { flexDirection: "row", gap: space.xs, flexWrap: "wrap", marginTop: space.sm },
     rowActions: { flexDirection: "row", marginTop: space.xs },
     sendRow: { marginTop: space.md },
-    waitingDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: p.colors.brand },
-    refusedDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: p.colors.tagRoseInk },
+    waitingDot: { width: 10, height: 10, borderRadius: radius.pill, backgroundColor: p.colors.brand },
+    refusedDot: { width: 10, height: 10, borderRadius: radius.pill, backgroundColor: p.colors.tagRoseInk },
   });
 }

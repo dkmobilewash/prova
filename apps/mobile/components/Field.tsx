@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { StyleSheet, Text, TextInput, View, type TextInputProps } from "react-native";
-import { type Palette, hitTarget, radius, typography } from "@/lib/theme";
+import { type Palette, hitTarget, radius, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 
 /**
@@ -32,7 +32,7 @@ export function Field({
 
 function makeStyles(p: Palette) {
   return StyleSheet.create({
-    wrap: { gap: 6 },
+    wrap: { gap: space.six },
     label: {
       color: p.colors.inkLabel,
       fontSize: typography.size.sm,

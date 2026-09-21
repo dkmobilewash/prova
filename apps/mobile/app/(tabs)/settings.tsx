@@ -166,7 +166,7 @@ function makeStyles(p: Palette) {
       fontWeight: typography.weight.bold,
       minWidth: 22,
       textAlign: "center",
-      borderRadius: 11,
+      borderRadius: radius.pill,
       paddingVertical: 3,
       paddingHorizontal: 6,
       overflow: "hidden",

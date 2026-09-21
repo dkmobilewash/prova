@@ -1,5 +1,7 @@
+import { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { colors, typography } from "@/lib/theme";
+import { type Palette, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 
 /**
  * What a screen says when this person's job function does not include it.
@@ -13,6 +15,8 @@ import { colors, typography } from "@/lib/theme";
  * section.
  */
 export function NotYourJobFunction({ what }: { what: string }) {
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>{what} aren&apos;t part of your job function.</Text>
@@ -24,8 +28,10 @@ export function NotYourJobFunction({ what }: { what: string }) {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { padding: 24, gap: 8 },
-  title: { color: colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.semibold },
-  body: { color: colors.inkBody, fontSize: typography.size.sm, lineHeight: 22 },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    wrap: { padding: space.xl, gap: space.xs },
+    title: { color: p.colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.semibold },
+    body: { color: p.colors.inkBody, fontSize: typography.size.sm, lineHeight: 22 },
+  });
+}

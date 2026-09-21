@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Chip } from "@/components/Chip";
 import { Icon } from "@/components/Icon";
-import { type Palette, hitTarget, radius, typography } from "@/lib/theme";
+import { type Palette, hitTarget, radius, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -166,7 +166,7 @@ export function DateField({
 
 function makeStyles(p: Palette) {
   return StyleSheet.create({
-    wrap: { gap: 6 },
+    wrap: { gap: space.six },
     label: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
     chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     picked: { color: p.colors.inkMuted, fontSize: typography.size.sm },
@@ -176,7 +176,7 @@ function makeStyles(p: Palette) {
     arrow: { width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" },
     disabled: { opacity: 0.3 },
     grid: { flexDirection: "row", flexWrap: "wrap" },
-    cell: { width: `${100 / 7}%`, height: 38, alignItems: "center", justifyContent: "center", borderRadius: 19 },
+    cell: { width: `${100 / 7}%`, height: 38, alignItems: "center", justifyContent: "center", borderRadius: radius.dayCell },
     weekday: { color: p.colors.inkMuted, fontSize: typography.size.sm, textAlign: "center", lineHeight: 38 },
     dayText: { color: p.colors.ink, fontSize: typography.size.md },
     futureText: { color: p.colors.inkMuted, opacity: 0.4 },

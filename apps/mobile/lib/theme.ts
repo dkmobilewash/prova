@@ -139,15 +139,6 @@ export type ColorKey = keyof (typeof palettes)["light"]["colors"];
  * values would reject the dark palette outright. */
 export type Palette = { colors: Record<ColorKey, string> };
 
-/**
- * TEMPORARY SHIM — dies in the final cleanup phase of the redesign.
- *
- * Until every screen and component reads its palette through usePalette()
- * (lib/use-palette.ts), this keeps the dark values at the old import path
- * so the tree compiles phase by phase. New code must NOT import it.
- */
-export const colors = palettes.dark.colors;
-
 /** Big, heavy type. Body defaults to 17; nothing below 13, and 13 is only
  * for secondary metadata. Labels run semibold (600) — the gloved thumb is
  * reading while moving, not while sitting still. */
@@ -176,9 +167,14 @@ export const typography = {
 } as const;
 
 /** Spacing scale. The 4-pt grid iOS layouts sit on; `md` (16) is the
- * screen gutter. */
+ * screen gutter. `one` and `six` are the two deliberate half-steps — the
+ * tightest meta-line rhythm and the label-to-field gap — tokenised
+ * because a gap nobody can name is how two screens drift 1pt apart
+ * forever. */
 export const space = {
+  one: 1,
   xxs: 4,
+  six: 6,
   xs: 8,
   sm: 12,
   md: 16,
@@ -194,6 +190,10 @@ export const radius = {
   sheet: 20,
   pill: 999,
   checkbox: 8,
+  /** Small media corners — the photo preview, the signature paper. */
+  small: 8,
+  /** The calendar's circular day cell: half its own height. */
+  dayCell: 19,
 } as const;
 
 /** Elevation is used exactly once in this app — under the floating

@@ -19,8 +19,8 @@ vi.mock("expo-router", async () => {
   const react = await import("react");
   return {
     useLocalSearchParams: () => ({ jobId: "job_1" }),
-    useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
-    router: { push: vi.fn(), replace: vi.fn(), back: vi.fn() },
+    useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), navigate: vi.fn() }),
+    router: { push: vi.fn(), replace: vi.fn(), back: vi.fn(), navigate: vi.fn() },
     useFocusEffect: (effect: () => void | (() => void)) => react.useEffect(effect, [effect]),
     Redirect: () => null,
     Link: ({ children }: { children?: unknown }) => children ?? null,

@@ -24,7 +24,7 @@ import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
 import { useMe } from "@/lib/use-me";
 import { dayKey, todayKey } from "@/lib/today";
-import { type Palette, space, typography } from "@/lib/theme";
+import { type Palette, radius, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import {
@@ -1008,7 +1008,7 @@ function makeStyles(p: Palette) {
     crewRow: {
       gap: 8,
       padding: 12,
-      borderRadius: 12,
+      borderRadius: radius.card,
       borderWidth: 1,
       borderColor: p.colors.lineCard,
     },
@@ -1018,7 +1018,7 @@ function makeStyles(p: Palette) {
       margin: space.md,
       marginBottom: 0,
       padding: 12,
-      borderRadius: 12,
+      borderRadius: radius.card,
       borderWidth: 1,
       borderColor: p.colors.tagRoseInk,
       gap: 4,
