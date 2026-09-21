@@ -3,15 +3,24 @@ import type { ReactNode } from "react";
 /**
  * THE PAGE'S HORIZONTAL MEASURE, DECLARED AS AN INTENT RATHER THAN A NUMBER.
  *
- * Measured on the deployed app at a 1272px content area, 2026-09-21:
- * `/jobs/<id>` and `/settings` both poured a single 768px column down the
- * middle and left **504px of empty side space** — 40% of the screen — while
- * `/settings` ran to 4.7 screens of scrolling. Across `app/(app)` there were
- * 59 `page.tsx` files, 63 per-page `max-w-*` caps, and only 10 pages using a
- * multi-column grid at any breakpoint. Every page had picked its own number
- * independently: 25 chose `max-w-3xl`, 18 chose `max-w-2xl` (672px — narrower
- * than a phone-sized column has any reason to be on a 27" monitor), 20 chose
- * `max-w-4xl`, and the rest chose one of three others.
+ * Measured in Chrome on the deployed app, 2026-09-21, at a content area of
+ * **1272 x 632** — the port inside the rail and the metric bar. `/settings`
+ * poured a single 768px column down the middle of it, left **504px of empty
+ * side space** (40% of the screen), and ran to **5.69 screens** of scrolling.
+ *
+ * A SCREENS-TO-SCROLL FIGURE IS PAGE HEIGHT DIVIDED BY VIEWPORT HEIGHT, SO IT
+ * MEANS NOTHING WITHOUT THE HEIGHT IT WAS TAKEN AT. An earlier pass reported
+ * this same page as "4.7 screens" with no viewport stated; it was taken in a
+ * shorter port and neither figure can be reproduced from the other. Every
+ * such number in this file carries its port for that reason.
+ *
+ * The width itself was nobody's decision. Across the 73 route files under
+ * `app/` (`page.tsx` and `layout.tsx`), **55 centred and capped their own
+ * column**; restricted to the 59 `app/(app)` pages, **49 of them did, making
+ * 65 separate width decisions between them** — some pages make more than one.
+ * They used nine different cap tokens: `max-w-2xl` (672px) through
+ * `max-w-6xl`, plus `max-w-md`, `max-w-xl`, `max-w-none` and `max-w-[5in]`.
+ * Each was defensible on its own page; 60% of the screen was the sum.
  *
  * THE TRAP THIS EXISTS TO AVOID: widening everything makes it worse. A form
  * field stretched to 1272px is harder to read than one at 768 — line length
@@ -39,20 +48,43 @@ import type { ReactNode } from "react";
  * for 1272px of single column.
  *
  * VALUES ARE TAILWIND SCALE POSITIONS, NOT NEW TOKENS:
- *   reading -> `max-w-3xl`, 768px. The app's own most-used cap (25 of 63),
- *              and ~100 characters at the 14px body size these pages are set
- *              in — already at the top of a comfortable measure, so it is a
- *              ceiling rather than a target.
+ *   reading -> `max-w-3xl`, 768px. The app's own most-used cap — 28 of the
+ *              72 container decisions, ahead of `max-w-4xl` at 21 and
+ *              `max-w-2xl` at 12. Measured on `/settings` in Chrome, the
+ *              14px body type runs **101 characters per line** at this width
+ *              and **172** at the full 1272. Past roughly 90 the eye starts
+ *              losing the head of the next line, so 768 is already a ceiling
+ *              rather than a target, and the case for widening a form page
+ *              is not close.
  *   working -> `max-w-7xl`, 1280px. Above the 1272px content area a 16"
  *              laptop gives, so in practice it means "all of it", while
  *              still capping the line on a 27" display instead of running
  *              unbounded.
- *   aside   -> `20rem`, 320px — `w-80` on the spacing scale. At `working`
- *              width that leaves the main column ~872px, which is still a
+ *   aside   -> `20rem`, 320px — the value Tailwind's spacing scale calls
+ *              `w-80`, written here inside the grid template rather than as
+ *              that class. Measured in Chrome at a 1272px content area, the
+ *              pair resolves to 320px + 872px, so the main column keeps a
  *              list's worth of room rather than a squeezed remainder.
- *   gutters -> `px-6 py-8`, which is what 51 of the 59 pages already wrote by
- *              hand. 24px of side gutter at 375px, so nothing touches the
- *              bezel and nothing overflows.
+ *   gutters -> `px-6 py-8`, the combination 47 of the 72 containers already
+ *              wrote by hand — a plurality large enough that the shell is
+ *              adopting the app's habit rather than imposing one. 24px of
+ *              side gutter at 375px, measured: nothing touches the bezel and
+ *              nothing overflows.
+ *
+ * THE SHELL IS ITSELF OUTSIDE THE CENSUS THAT ENFORCES IT. `mx-auto
+ * ${MEASURE[width]}` below is the exact class string
+ * `apps/web/lib/pageWidthCensus.test.ts` fails route files for, and it is
+ * legal here because this file is not a route file — the census walks
+ * `apps/web/app`. That is the correct boundary and also a familiar one:
+ * `theme-contrast.test.ts` scanned `apps/web` for a month while the single
+ * offending file sat in `packages/ui`, unseen because it was outside the
+ * walk. Nothing here is wrong today. It is worth knowing that a width
+ * mistake made IN THIS FILE is the one the guard cannot see, which is why
+ * the values above are argued from measurements rather than taste.
+ *
+ * `packages/ui` is also named in neither WORK-SPLIT.md nor CLAUDE.md's list
+ * of shared files, yet nine pages import from it. Treat it as shared and
+ * edit it surgically.
  *
  * The breakpoint is `lg` (1024px), matching `SidePanel`, which is the other
  * component in this app that turns a second column on and off and returns at

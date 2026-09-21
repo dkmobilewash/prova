@@ -2,13 +2,23 @@
 `cyrus/width-intent`
 
 Cyrus has said more than once that the app is "stacked, ugly, frustrating,
-confusing and takes way too long". Measured on the deployed app at a 1272px
-content area: `/jobs/<id>` and `/settings` each ran a single 768px column down
-the middle of the screen and left **504px empty on either side**, and
-`/settings` took 4.7 screens to get through. Across `app/(app)` there were 59
-`page.tsx` files, **63 separate `max-w-*` caps**, and only 10 pages using more
-than one column at any breakpoint. Nobody chose that. Fifty-nine pages each
-chose a number on their own and 60% of the screen was the sum.
+confusing and takes way too long". Measured in Chrome on the deployed app at a
+content area of **1272 x 632** — the port inside the rail and the metric bar —
+`/settings` ran a single 768px column down the middle of it, left **504px
+empty at the sides**, and took **5.69 screens** to get through.
+
+**Any screens-to-scroll figure needs the viewport height it was taken at, or
+it means nothing.** It is page height over viewport height. An earlier pass
+reported this same page as "4.7 screens" with no height stated; it was a
+shorter port, and neither number can be derived from the other. Every figure
+below carries its port, and that is the transferable part of this entry.
+
+Nobody chose the width. Across the 73 route files under `app/`, **55 centred
+and capped their own column**; among the 59 `app/(app)` pages, **49 did,
+making 65 separate width decisions** in nine different cap tokens —
+`max-w-2xl` (672px) through `max-w-6xl`, plus `max-w-md`, `max-w-xl`,
+`max-w-none` and `max-w-[5in]`. Each was defensible on its own page. 60% of
+the screen was the sum.
 
 The obvious fix makes it worse. A text input stretched to 1272px is harder to
 read than one at 768 — line length is precisely why every one of those caps was
@@ -36,7 +46,7 @@ them. Measured in Chrome at a 1272x632 content area, on the live app for the
 before and with the shipped values applied to the same live pages for the
 after — same data, same viewport, so the only variable is the change:
 
-| | container | wasted side | screens to scroll |
+| | container | wasted side | screens to scroll (port 1272x632) |
 | --- | --- | --- | --- |
 | `/punch-lists` `split` | 768 -> **1272** | 504 -> **0** | 1.93 -> **1.12** |
 | `/vendors` `working` | 768 -> **1272** | 504 -> **0** | 1.18 -> 1.16 |
@@ -87,5 +97,18 @@ size check; converting an allowed page without deleting its line goes red; and
 pointing the walk at a narrower root goes red on scope. Baseline green after
 each.
 
-Typecheck, lint, 5871 tests and `./scripts/preflight.sh` all by exit code. No
-migration, no new dependency, no new token.
+**One boundary stated rather than discovered later.** `PageShell.tsx` lives in
+`packages/ui` and emits the exact class string the census fails route files
+for — legal, because the census walks `apps/web/app` and the shell is not a
+route file. That is the correct boundary AND the one the `theme-contrast`
+scar was about: that census scanned `apps/web` for a month while the single
+offending file sat in `packages/ui`, outside the walk. Nothing is wrong here
+today; what is true is that a width mistake made inside `PageShell.tsx` is the
+one mistake this guard cannot see, which is why its values are argued from
+measurements in its own header rather than from taste. Worth adding that
+`packages/ui` appears in neither WORK-SPLIT.md nor CLAUDE.md's list of shared
+files, and nine pages import from it — it is shared, and should be edited
+surgically.
+
+Typecheck, lint, the full suite (5910 tests) and `./scripts/preflight.sh`, all
+by exit code. No migration, no new dependency, no new token.

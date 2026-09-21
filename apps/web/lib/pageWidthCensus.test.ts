@@ -7,13 +7,19 @@ import { describe, expect, it } from "vitest";
 /**
  * NO PAGE DECIDES ITS OWN WIDTH.
  *
- * Measured on the deployed app at a 1272px content area, 2026-09-21:
- * `/jobs/<id>` and `/settings` each ran a single 768px column down the middle
- * and wasted 504px of side space, and `/settings` ran to 4.7 screens. The
- * cause was not one bad page — it was 63 per-page `max-w-*` caps across 59
- * `page.tsx` files, each individually defensible and collectively a product
- * that uses 60% of the screen. `packages/ui/src/PageShell.tsx` replaces the
- * numbers with three intents (`reading`, `working`, `split`).
+ * Measured in Chrome on the deployed app, 2026-09-21, at a content area of
+ * **1272 x 632**: `/settings` ran a single 768px column down the middle of
+ * it, wasted 504px of side space, and took 5.69 screens. (Screens-to-scroll
+ * is page height over viewport height, so the port is quoted with it — an
+ * earlier figure of "4.7 screens" for this same page was taken at an
+ * unstated, shorter height and is not reproducible from this one.)
+ *
+ * The cause was not one bad page. **55 of the 73 route files under `app/`
+ * centred and capped their own column**; among the 59 `app/(app)` pages,
+ * **49 did, making 65 separate width decisions** in nine different cap
+ * tokens. Each was defensible on its own page and collectively they were a
+ * product using 60% of the screen. `packages/ui/src/PageShell.tsx` replaces
+ * the numbers with three intents (`reading`, `working`, `split`).
  *
  * Without this file, pages drift back to ad-hoc caps inside a month: nothing
  * about `mx-auto max-w-2xl` looks wrong in a diff, and it is the single
@@ -24,8 +30,14 @@ import { describe, expect, it } from "vitest";
  * on a truncating span (`max-w-[16rem]`) or a hint paragraph (`max-w-md`) is
  * a content decision inside a column and is none of this file's business.
  * `mx-auto max-w-…` is the thing that centres a column and decides how wide
- * the page is, which is the decision the shell now owns. All 71 of those in
+ * the page is, which is the decision the shell now owns. All 72 of those in
  * the tree when this landed are the shape this census names.
+ *
+ * The shell itself is outside this walk by construction — `PageShell.tsx`
+ * lives in `packages/ui` and emits the very class string this file fails
+ * route files for. That is the right boundary, and it is the same boundary
+ * the `theme-contrast.test.ts` scar was about, so it is written down in that
+ * file's own header rather than left to be rediscovered.
  *
  * TWO FAILURE MODES, NOT ONE — CLAUDE.md's rule for anything that derives the
  * set it reasons about, and both are asserted below rather than assumed:
