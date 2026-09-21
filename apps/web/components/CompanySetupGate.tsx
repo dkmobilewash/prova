@@ -47,15 +47,34 @@ export function CompanySetupGate() {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  // THIS SCREEN HAS NO ERROR BOUNDARY ABOVE IT BY DESIGN — it sits outside
+  // `app/(app)/` so that no shell renders behind it — so it must not need
+  // one. An action that THROWS (production redacts the message to a
+  // digest, so the Error that arrives here says nothing a person can use)
+  // is caught right here and becomes a sentence, and the questions stay on
+  // screen to be answered. Without this, a rejection inside the transition
+  // surfaced as Next's stock "Application error" page — which is what a
+  // brand-new owner saw as the FIRST screen of the product on 2026-09-21.
+  // The action itself no longer throws on an empty Save
+  // (lib/businessScope-save.test.ts); this is the net under that fix, for
+  // the dropped connection or the genuine bug that will throw one day.
+  // Pinned by components/companySetupGate.test.ts.
+  const COULD_NOT_SAVE =
+    "Couldn't save just now. Nothing was changed — try again, or choose Skip for now and set this later in Settings.";
+
   const skip = () => {
     setError(null);
     startTransition(async () => {
-      const result = await skipBusinessScopeQuestions();
-      if (!result.ok) {
-        setError(result.error);
-        return;
+      try {
+        const result = await skipBusinessScopeQuestions();
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        router.replace("/dashboard");
+      } catch {
+        setError(COULD_NOT_SAVE);
       }
-      router.replace("/dashboard");
     });
   };
 
@@ -75,12 +94,16 @@ export function CompanySetupGate() {
             const formData = new FormData(event.currentTarget);
             setError(null);
             startTransition(async () => {
-              const result = await saveBusinessScope(formData);
-              if (!result.ok) {
-                setError(result.error);
-                return;
+              try {
+                const result = await saveBusinessScope(formData);
+                if (!result.ok) {
+                  setError(result.error);
+                  return;
+                }
+                router.replace("/dashboard");
+              } catch {
+                setError(COULD_NOT_SAVE);
               }
-              router.replace("/dashboard");
             });
           }}
           className="mt-8 flex flex-col gap-8"
