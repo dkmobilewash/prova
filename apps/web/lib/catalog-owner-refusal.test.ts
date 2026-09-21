@@ -273,8 +273,16 @@ describe("/catalog does not render an owner-only control to a non-owner", () => 
     // hours on this branch and was deleted on the rebase onto #414: two
     // conventions for one thing is how this repo got sixteen copies of
     // InputError.
-    expect(page).toContain("<ActionForm");
-    expect(page).toContain("updateCatalogDefaultsFromActuals.bind(null, entry.id)");
+    // THE SITE, NOT THE FILE. `expect(page).toContain("<ActionForm")` was
+    // here and mutation testing found it vacuous: this page has a SECOND
+    // ActionForm (#414 converted the add-entry form), so changing the
+    // re-price one back to a plain `<form action={…}>` left it green. And
+    // `formActionCensus.test.ts` cannot cover that edit either — it scopes
+    // to client modules on purpose, and this page is a server component.
+    // Nothing anywhere would have noticed. Anchored to the action now.
+    expect(page).toMatch(
+      /<ActionForm\s+action=\{updateCatalogDefaultsFromActuals\.bind\(null, entry\.id\)\}/,
+    );
   });
 
   it("keeps the import behind the flag rather than only styling it", () => {

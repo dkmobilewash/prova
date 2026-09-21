@@ -261,15 +261,35 @@ const read = (path: string) => stripComments(readFileSync(join(process.cwd(), pa
 describe("the negative-materials path stays reachable", () => {
   const form = read("components/PayApplications.tsx");
 
-  /** The 200 characters of markup immediately before a named input. */
-  const attributesBefore = (name: string) => {
+  /**
+   * THE WHOLE `<input …/>` TAG a named field sits in — both sides of the
+   * `name`, not the 200 characters before it.
+   *
+   * It read `form.slice(at - 200, at)`, and mutation testing caught that
+   * going vacuous: putting `type="number" min="0"` back on the This-period
+   * box left every assertion here GREEN. #414 reordered these inputs to put
+   * `name` FIRST, so the attributes each assertion is about had moved
+   * behind the anchor it measured from and there was nothing to find. The
+   * window was never wrong about anything — it had stopped looking at the
+   * attributes at all, which is the failure mode this repo keeps paying
+   * for: a check answering a question nobody asked.
+   *
+   * Reading the tag has no window to get wrong, and it fails loudly if the
+   * markup ever stops being a self-closing input.
+   */
+  const attributesOf = (name: string) => {
     const at = form.indexOf(`name="${name}"`);
-    expect(at).toBeGreaterThan(-1);
-    return form.slice(Math.max(0, at - 200), at);
+    expect(at, `no input named ${name}`).toBeGreaterThan(-1);
+    const open = form.lastIndexOf("<input", at);
+    const close = form.indexOf("/>", at);
+    expect(open, `no opening <input before name="${name}"`).toBeGreaterThan(-1);
+    expect(close, `no closing /> after name="${name}"`).toBeGreaterThan(open);
+    return form.slice(open, close + 2);
   };
 
   it("does not put min=0 on the stored-materials input", () => {
-    expect(attributesBefore("materialsStoredValue")).not.toContain('min="0"');
+    expect(attributesOf("materialsStoredValue")).not.toContain('min="0"');
+    expect(attributesOf("materialsStoredValue")).toContain('type="text"');
   });
 
   it("keeps NO floor on this period's billed amount — the third state of this assertion", () => {
@@ -292,11 +312,16 @@ describe("the negative-materials path stays reachable", () => {
     // rather than nothing: you cannot un-bill more than the line has been
     // billed. Enforced on the server, where a crafted POST meets it too.
     const parse = read("lib/pay-application.ts");
-    expect(attributesBefore("thisPeriodBilled")).not.toContain('min="0"');
+    expect(attributesOf("thisPeriodBilled")).not.toContain('min="0"');
     // #414's measurement stands and must keep standing: type="number"
     // discards a thousands comma before the server sees it, and Firefox
     // submits an empty string for anything it dislikes.
-    expect(attributesBefore("thisPeriodBilled")).not.toContain('type="number"');
+    expect(attributesOf("thisPeriodBilled")).not.toContain('type="number"');
+    // Positive as well as negative: an assertion that only ever says what
+    // is ABSENT passes just as happily over an input that has stopped
+    // existing, or over a window that has stopped containing it.
+    expect(attributesOf("thisPeriodBilled")).toContain('type="text"');
+    expect(attributesOf("thisPeriodBilled")).toContain('inputMode="decimal"');
     expect(parse).toContain('payAppFigure(thisPeriodValues[i], "This period")');
     expect(parse).not.toMatch(/payAppFigure\(thisPeriodValues\[i\], "This period", \{ min: 0 \}\)/);
     // Stored never had one, which was the whole point of the pair; now they
