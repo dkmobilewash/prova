@@ -4,6 +4,7 @@ import * as api from "./api";
 import { cacheKeys } from "./cache-keys";
 import { cachedRead, staleNote, withToken } from "./cached-read";
 import { tokenOrNull } from "./clerk-token";
+import { syncOnce } from "./sync-order";
 import { getClientId } from "./client-id";
 import { uuid } from "./id";
 import { enqueue, flushQueue, pendingCount } from "./sync-queue";
@@ -46,22 +47,30 @@ export function useFieldReports(jobId: string) {
     }
   }, [getToken, jobId]);
 
-  const sync = useCallback(async () => {
-    // Bounded — see lib/clerk-token.ts. The refresh below is what shows
-    // the cached reports, and it waits for this line.
-    const token = await tokenOrNull(getToken);
-    if (token) {
-      try {
-        await flushQueue(token);
-      } catch {
-        // 401 or offline — leave queued, retry later.
-      }
-    }
-    // Refreshed with or without a token: offline that means re-reading
-    // the cache, which is the whole point of having one.
-    setPending(await pendingCount());
-    await refresh();
-  }, [getToken, refresh]);
+  const sync = useCallback(
+    () =>
+      // Same rule as useSync, same scar: the read never waits on the
+      // write (lib/sync-order.ts). Offline this screen showed neither the
+      // reports it had cached nor the note saying they were cached,
+      // because both were behind a queue flush.
+      syncOnce({
+        refresh,
+        counters: async () => setPending(await pendingCount()),
+        flush: async () => {
+          const before = await pendingCount();
+          if (before === 0) return false;
+          const token = await tokenOrNull(getToken);
+          if (!token) return false;
+          try {
+            await flushQueue(token);
+          } catch {
+            // 401 or offline — leave queued, retry later.
+          }
+          return (await pendingCount()) !== before;
+        },
+      }),
+    [getToken, refresh],
+  );
 
   useEffect(() => {
     if (isSignedIn) {

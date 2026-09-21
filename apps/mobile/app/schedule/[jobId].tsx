@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { Card } from "@/components/Card";
 import { List } from "@/components/List";
 import { OfflineNote } from "@/components/OfflineNote";
+import { emptyFor } from "@/lib/empty-state";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
@@ -83,12 +84,10 @@ export default function ScheduleScreen() {
             ))}
           </Card>
         )}
-        emptyTitle={offline === "nothing" ? "Can't load the schedule right now." : "Nobody is scheduled on this job."}
-        emptyDescription={
-          offline === "nothing"
-            ? "No connection, and this phone hasn't loaded it before."
-            : "Days are planned on the web, under Deployment."
-        }
+        {...emptyFor(offline, "the schedule", {
+          title: "Nobody is scheduled on this job.",
+          description: "Days are planned on the web, under Deployment.",
+        })}
       />
     </View>
   );

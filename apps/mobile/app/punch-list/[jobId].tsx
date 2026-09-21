@@ -5,6 +5,7 @@ import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Icon } from "@/components/Icon";
 import { OfflineNote } from "@/components/OfflineNote";
+import { emptyFor } from "@/lib/empty-state";
 import { Field } from "@/components/Field";
 import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
@@ -200,16 +201,10 @@ export default function PunchListScreen() {
             </Card>
           );
         }}
-        emptyTitle={
-          loadedFrom === "nothing"
-            ? "Can't load the punch list right now."
-            : "Nothing outstanding on this job."
-        }
-        emptyDescription={
-          loadedFrom === "nothing"
-            ? "No connection, and this phone hasn't loaded this job's list before. Anything you add is kept and sent when you're back in range."
-            : "Tap “Add item” to log what still needs fixing."
-        }
+        {...emptyFor(loadedFrom, "the punch list", {
+          title: "Nothing outstanding on this job.",
+          description: "Tap “Add item” to log what still needs fixing.",
+        })}
       />
 
       <View style={styles.footer}>

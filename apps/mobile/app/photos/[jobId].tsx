@@ -31,6 +31,7 @@ import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
 import { tokenOrNull } from "@/lib/clerk-token";
 import { OfflineNote } from "@/components/OfflineNote";
+import { emptyFor } from "@/lib/empty-state";
 import { colors, typography } from "@/lib/theme";
 import type { Media, MediaTag, PunchListItem } from "@/lib/types";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
@@ -322,8 +323,11 @@ export default function PhotosScreen() {
             </Card>
           )
         }
-        emptyTitle="No photos yet"
-        emptyDescription="Tap “Take photo”. Each one is stamped with the time and place it was taken, and goes up when there's signal."
+        {...emptyFor(offline, "the photos", {
+          title: "No photos yet",
+          description:
+            "Tap “Take photo”. Each one is stamped with the time and place it was taken, and goes up when there's signal.",
+        })}
       />
 
       <View style={[styles.footer, styles.footerRow]}>

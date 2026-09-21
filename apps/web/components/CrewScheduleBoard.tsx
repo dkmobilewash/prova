@@ -311,21 +311,61 @@ export function CrewScheduleBoard({
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {missingHours.map((day) => (
-              <li key={day.id} className="px-4 py-3">
-                <p className="text-sm text-ink">
-                  {day.worker}
-                  <span className="text-ink-muted"> · {day.workDate}</span>
-                </p>
-                <p className="text-xs text-ink-body">
-                  <Link href={`/jobs/${day.jobId}`} className="underline hover:text-link">
-                    {day.jobName}
-                  </Link>
-                  <span className="text-ink-muted">
-                    {" "}
-                    — planned, and nobody logged hours. That is a gap in the paperwork, not a claim
-                    that they did not work.
-                  </span>
-                </p>
+              <li key={day.id} className="flex items-start justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm text-ink">
+                    {day.worker}
+                    <span className="text-ink-muted"> · {day.workDate}</span>
+                  </p>
+                  <p className="text-xs text-ink-body">
+                    <Link href={`/jobs/${day.jobId}`} className="underline hover:text-link">
+                      {day.jobName}
+                    </Link>
+                    <span className="text-ink-muted">
+                      {" "}
+                      — planned, and nobody logged hours. That is a gap in the paperwork, not a claim
+                      that they did not work.
+                    </span>
+                  </p>
+                </div>
+                {/* A day that has already gone by can be taken off the
+                    schedule HERE, and nowhere else in the product — which
+                    is the whole reason this control exists. Removal lived
+                    only on the two-week list above, so a plan entered by
+                    mistake, or one for a job that was called off, could be
+                    made and never unmade: the day aged out of the top list
+                    and stayed on the record with nothing anywhere able to
+                    correct it.
+
+                    The objection to putting it here is real, and it is
+                    answered in the sentence rather than by leaving people
+                    stuck: this is a gap report, so a Remove on it could be
+                    used to make a gap disappear. `describe` therefore says
+                    exactly what removal does and does not do — it unmakes
+                    the PLAN, it does not record the HOURS, and the row
+                    leaves this list because nobody is planned on that day
+                    any more. Same capability as every other change on this
+                    page (MANAGE_FIELD, asserted in the action itself),
+                    same two-step confirm, and no logged hours are touched
+                    because by definition there are none. */}
+                {canWrite && (
+                  <RowActions
+                    className="flex shrink-0 flex-col items-end gap-1"
+                    destructive={
+                      <ConfirmDelete
+                        label="Remove"
+                        confirmLabel="Remove it"
+                        describe={`Takes ${day.worker} off ${day.jobName} on ${day.workDate}, a day that has already gone by. It records no hours: the row leaves this list because nobody is planned on that day any more, not because the hours were logged.`}
+                        pinned="end"
+                        action={async () => {
+                          await unscheduleCrewDay(day.id);
+                        }}
+                        armedClassName="flex flex-wrap items-center justify-end gap-2"
+                        deleteClassName="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-red-400"
+                      />
+                    }
+                  />
+                )}
               </li>
             ))}
           </ul>
