@@ -14,13 +14,22 @@ import { vi } from "vitest";
  */
 
 // Navigation. `useFocusEffect` is React's effect: in a test the screen is
-// mounted and therefore focused.
+// mounted and therefore focused. `router` and `useRouter` share the same
+// fns, so a test can assert on `router.push` what a mounted hook did
+// through `useRouter().push`.
+const routerPush = vi.fn();
+const routerReplace = vi.fn();
+const routerBack = vi.fn();
 vi.mock("expo-router", async () => {
   const react = await import("react");
   return {
     useLocalSearchParams: () => ({ jobId: "job_1" }),
-    useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
-    router: { push: vi.fn(), replace: vi.fn(), back: vi.fn() },
+    useRouter: () => ({
+      push: routerPush,
+      replace: routerReplace,
+      back: routerBack,
+    }),
+    router: { push: routerPush, replace: routerReplace, back: routerBack },
     useFocusEffect: (effect: () => void | (() => void)) => react.useEffect(effect, [effect]),
     Redirect: () => null,
     Link: ({ children }: { children?: unknown }) => children ?? null,
@@ -84,6 +93,12 @@ vi.mock("expo-notifications", () => ({
   getExpoPushTokenAsync: async () => ({ data: "ExponentPushToken[test]" }),
   scheduleNotificationAsync: async () => "id_1",
   cancelScheduledNotificationAsync: async () => {},
+  // The tap half. vi.fn so a test can reach inside with vi.mocked; the
+  // listener is whatever the mock was handed, read back via mock.calls.
+  DEFAULT_ACTION_IDENTIFIER: "expo.modules.notifications.actions.DEFAULT",
+  getLastNotificationResponse: vi.fn(() => null),
+  clearLastNotificationResponse: vi.fn(),
+  addNotificationResponseReceivedListener: vi.fn(() => ({ remove: vi.fn() })),
 }));
 
 vi.mock("expo-device", () => ({ isDevice: false }));

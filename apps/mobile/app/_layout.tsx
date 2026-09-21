@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import * as SecureStore from "expo-secure-store";
 import { colors, typography } from "@/lib/theme";
 import { getHandover } from "@/lib/handover";
+import { usePushTapRouter } from "@/lib/push";
 import { useQueueDrain } from "@/lib/use-queue-drain";
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
@@ -68,6 +69,15 @@ function HandoverGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** The one place a notification tap is answered. Mounted here, inside
+ * ClerkProvider and OUTSIDE the handover gate, so the listener stays
+ * alive while the phone is in a crew member's hands — and the swallow
+ * still works, which is the point. */
+function PushTapRouter() {
+  usePushTapRouter();
+  return null;
+}
+
 export default function RootLayout() {
   // One drain timer for the whole app, and it lives HERE rather than on
   // the tabs (where #403 put it) so the queue keeps going during a
@@ -80,6 +90,7 @@ export default function RootLayout() {
       {/* Light glyphs: the chrome is #171717 now, and the default dark
           status bar text disappeared into it. */}
       <StatusBar style="light" />
+      <PushTapRouter />
       <HandoverGate>
       <Stack screenOptions={screenOptions}>
         {/* The title is never shown — the tabs draw their own headers. */}
