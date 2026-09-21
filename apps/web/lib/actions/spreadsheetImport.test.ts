@@ -457,12 +457,55 @@ describe("size", () => {
 describe("who may confirm", () => {
   it("refuses a non-owner before any query", async () => {
     state.context.role = "MEMBER";
-    for (const action of [importClients, importJobs, importCrew, importPhaseCodes]) {
+    // CREW IS NOT IN THIS LIST ANY MORE, and that is the decision rather
+    // than an omission — see the test below and the block at the top of
+    // lib/actions/crewMembers.ts.
+    for (const action of [importClients, importJobs, importPhaseCodes]) {
       const result = await action(form("Name\nX"));
       expect(result).toEqual({ ok: false, error: expect.stringContaining("Only the account owner") });
     }
     expect(state.writes).toEqual([]);
     expect(state.txOptions).toEqual([]);
+  });
+
+  /**
+   * THE OFFICE MANAGER CAN GET THE CREW IN.
+   *
+   * PAYROLL_COMPLIANCE is the job function of the person who runs certified
+   * payroll every week. She could already import the payroll REGISTER —
+   * that import is deliberately not owner-only, for exactly this reason —
+   * and could not create the crew members its rows have to match, because
+   * `importCrew` asked for OWNER. The person whose job this is could not do
+   * it, and the register import she could reach was matching against a list
+   * only somebody else could fill.
+   *
+   * The pair of assertions is the test: she may ADD, and she may not
+   * ARCHIVE. Archiving is the one-way door — there is no un-archive
+   * anywhere in the app — so it keeps the owner gate. A test asserting only
+   * the first half would pass on an action that had dropped its guards
+   * altogether.
+   */
+  it("lets the payroll & compliance manager import crew, owner or not", async () => {
+    state.context.role = "MEMBER";
+    state.context.jobFunction = "PAYROLL_COMPLIANCE";
+    expect(await importCrew(form("First,Last\nLuis,Ortega"))).toEqual({
+      ok: true,
+      value: expect.anything(),
+    });
+    expect(rows("crewMember", "co_A").some((row) => row.legalLastName === "Ortega")).toBe(true);
+  });
+
+  it("still refuses crew to a job function without MANAGE_FIELD", async () => {
+    state.context.role = "MEMBER";
+    // ACCOUNTING holds billing and financials and no field capability at
+    // all (lib/permissions.ts), so it is the honest negative case — this
+    // is not a capability every member happens to hold.
+    state.context.jobFunction = "ACCOUNTING";
+    expect(await importCrew(form("First,Last\nLuis,Ortega"))).toEqual({
+      ok: false,
+      error: expect.stringContaining("job function"),
+    });
+    expect(state.writes).toEqual([]);
   });
 
   it("asks for MANAGE_JOBS on clients and jobs, and MANAGE_FIELD on crew", async () => {

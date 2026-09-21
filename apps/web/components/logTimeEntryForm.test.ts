@@ -63,10 +63,18 @@ function render(node: ReactNode) {
   });
 }
 
-const employees = [
-  { id: "ana", name: "Ana Reyes", email: "ana@example.com" },
-  { id: "marco", name: "Marco Silva", email: "marco@example.com" },
-  { id: "dee", name: "Dee Okonkwo", email: "dee@example.com" },
+/**
+ * Teammates AND crew, which is the whole of the second thing this file now
+ * pins. The dropdown used to be built from `User` rows alone, so a crew
+ * member — somebody with no login, which is most of a drywall sub's payroll
+ * — could not be chosen at all on the one screen the office types hours on.
+ * `crew:` / `user:` is the value convention (lib/worker-select.ts).
+ */
+const workers = [
+  { value: "user:ana", label: "Ana Reyes (signs in)" },
+  { value: "user:marco", label: "Marco Silva (signs in)" },
+  { value: "user:dee", label: "Dee Okonkwo (signs in)" },
+  { value: "crew:luis", label: "Luis Ortega (crew)" },
 ];
 
 function field(name: string) {
@@ -79,7 +87,7 @@ function renderForm() {
   render(
     createElement(LogTimeEntryForm, {
       jobId: "riverside",
-      employees,
+      workers,
       lineItems: [{ id: "line-1", description: "05 40 00 — Framing" }],
       craftOptions: [{ id: "craft-1", label: "Carpenter — Journeyman" }],
     }),
@@ -101,7 +109,7 @@ describe("after a time entry is logged", () => {
   it("keeps the employee and the day, and clears everything else", async () => {
     renderForm();
     await logOne({
-      employeeUserId: "marco",
+      worker: "user:marco",
       date: "2026-09-14",
       hours: "8",
       payType: "OVERTIME",
@@ -118,7 +126,7 @@ describe("after a time entry is logged", () => {
     expect(field("date").value).toBe("2026-09-14");
     // Not "ana" — which is what a full reset left behind, the first name in
     // the list wearing the confident face of a chosen answer.
-    expect(field("employeeUserId").value).toBe("marco");
+    expect(field("worker").value).toBe("user:marco");
 
     // Cleared: an unseen 8 or a stale per diem carried into the next
     // person's entry is the error this must not make quietly.
@@ -133,13 +141,13 @@ describe("after a time entry is logged", () => {
 
   it("files the second crew member against the day still on screen", async () => {
     renderForm();
-    await logOne({ employeeUserId: "marco", date: "2026-09-14", hours: "8" });
+    await logOne({ worker: "user:marco", date: "2026-09-14", hours: "8" });
     // Only the two fields a foreman would actually touch for the next person.
-    await logOne({ employeeUserId: "dee", hours: "6.5" });
+    await logOne({ worker: "crew:luis", hours: "6.5" });
 
     expect(fake.logTimeEntry).toHaveBeenCalledTimes(2);
     const second = fake.logTimeEntry.mock.calls[1][1];
-    expect(second.get("employeeUserId")).toBe("dee");
+    expect(second.get("worker")).toBe("crew:luis");
     expect(second.get("date")).toBe("2026-09-14");
     expect(second.get("hours")).toBe("6.5");
   });
@@ -147,12 +155,42 @@ describe("after a time entry is logged", () => {
   it("keeps nothing when the action refused — the entry was not filed", async () => {
     fake.logTimeEntry.mockResolvedValue({ ok: false, error: "Hours must be a positive number" });
     renderForm();
-    await logOne({ employeeUserId: "marco", date: "2026-09-14", hours: "0" });
+    await logOne({ worker: "user:marco", date: "2026-09-14", hours: "0" });
 
     // The whole form stands as typed, with the reason next to it: nothing
     // was reset, so nothing has to be re-entered to fix one field.
     expect(field("hours").value).toBe("0");
-    expect(field("employeeUserId").value).toBe("marco");
+    expect(field("worker").value).toBe("user:marco");
     expect(container.textContent).toContain("Hours must be a positive number");
+  });
+});
+
+/**
+ * WHO THE FORM WILL EVEN OFFER — the half nothing tested, and the half that
+ * was wrong.
+ *
+ * The select was built from `User` rows and named `employeeUserId`, so the
+ * only people the office could log hours for were people who had completed a
+ * Clerk sign-up. A union drywall sub's fifteen to forty field workers have
+ * none, and `TimeEntry` has been able to name a crew member since #292 — the
+ * phone's API writes it. Hours for a crew member could be entered on site
+ * and not from the office, which is where a certified payroll is typed up.
+ *
+ * Both assertions are needed. A crew option in a select still called
+ * `employeeUserId` would post a crew id into a field the action looks up in
+ * `User`, which fails as "Employee not found" — a fix that reads correct and
+ * behaves exactly like the bug.
+ */
+describe("who the form offers", () => {
+  it("offers crew members, under a field name that admits they are not users", () => {
+    renderForm();
+    const select = field("worker") as HTMLSelectElement;
+    expect(Array.from(select.options).map((option) => option.value)).toEqual([
+      "user:ana",
+      "user:marco",
+      "user:dee",
+      "crew:luis",
+    ]);
+    expect(container.querySelector('[name="employeeUserId"]')).toBeNull();
   });
 });

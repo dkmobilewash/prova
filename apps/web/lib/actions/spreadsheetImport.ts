@@ -350,11 +350,24 @@ export async function importJobs(formData: FormData): Promise<ImportResult> {
   }
 }
 
-/** Crew -> CrewMember. */
+/** Crew -> CrewMember.
+ *
+ * THE ONLY IMPORT ON THIS PAGE THAT IS NOT OWNER-ONLY, apart from the
+ * payroll register, and for the same reason the register is not. Certified
+ * payroll is the office manager's weekly chore; she holds
+ * PAYROLL_COMPLIANCE, which carries MANAGE_FIELD and MANAGE_COMPLIANCE and
+ * not OWNER. Gating this to the owner meant she could import the payroll
+ * REGISTER but could not create the crew members its rows have to match —
+ * the person whose job this is could not do it, and had to wait for
+ * somebody whose job it is not.
+ *
+ * Adding a person to the crew grants nobody a login and no access to
+ * anything; `archiveCrewMember` keeps the owner gate because it is the
+ * one-way door. The argument in full is at the top of
+ * lib/actions/crewMembers.ts, next to the hand-entry path this now matches.
+ */
 export async function importCrew(formData: FormData): Promise<ImportResult> {
   const context = await requireCompanyContext();
-  const refusal = ownerRefusal(context, "Only the account owner can import crew.");
-  if (refusal) return refusal;
   if (!can(context, "MANAGE_FIELD")) {
     return fail("Adding crew isn't part of your job function. Ask the account owner.");
   }
