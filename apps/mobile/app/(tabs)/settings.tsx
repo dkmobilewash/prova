@@ -17,6 +17,7 @@ import {
   setReminderHour,
 } from "@/lib/unsent-reminder";
 import { useCurrentJob } from "@/lib/use-current-job";
+import { useMe } from "@/lib/use-me";
 
 /** The account, and the one piece of app state worth being able to clear
  * by hand: which job the phone thinks it is on. */
@@ -24,6 +25,7 @@ export default function SettingsScreen() {
   const { signOut } = useAuth();
   const { user } = useUser();
   const { job } = useCurrentJob();
+  const { me } = useMe();
   const [waiting, setWaiting] = useState(0);
   const [needsAttention, setNeedsAttention] = useState(0);
   const [hour, setHour] = useState<number | null>(null);
@@ -48,6 +50,17 @@ export default function SettingsScreen() {
           <Text style={styles.value}>
             {user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? "—"}
           </Text>
+          {/* What this phone will and will not show you, said once, here —
+              so a missing tab is answerable without asking the office. */}
+          {me ? (
+            <Text style={styles.label}>
+              {me.role === "OWNER"
+                ? "Account owner — everything on this phone is yours to see"
+                : me.jobFunction
+                  ? `${me.jobFunction.replace(/_/g, " ").toLowerCase()} — the account owner sets what that includes, on the Team page`
+                  : "Full access to this company's records"}
+            </Text>
+          ) : null}
         </View>
 
         {/* The outbox. A count on one screen was the whole of it before,

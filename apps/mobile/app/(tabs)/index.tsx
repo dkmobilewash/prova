@@ -12,6 +12,8 @@ import { prefetchJob } from "@/lib/prefetch";
 import { pendingCount } from "@/lib/sync-queue";
 import { summariseToday, type TodayLine } from "@/lib/today";
 import { useCurrentJob } from "@/lib/use-current-job";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 
 /**
@@ -29,12 +31,17 @@ export default function HomeScreen() {
   const { isLoaded, isSignedIn } = useAuth();
   const getToken = useStableGetToken();
   const { job, loading } = useCurrentJob();
+  // Home is four FIELD lists. Somebody who cannot read them must not be
+  // told "today's report isn't filed" — that is a claim about a day, made
+  // from four empty lists the server refused to send.
+  const { me } = useMe();
+  const field = holds(me, "MANAGE_FIELD");
   const [lines, setLines] = useState<TodayLine[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    if (!job) return;
+    if (!job || !field) return;
 
     // Through the cache, section by section, so Home offline shows the
     // day as this phone last knew it rather than a page of zeros —
@@ -77,10 +84,10 @@ export default function HomeScreen() {
       // phone is most likely to still have bars; by the time somebody
       // opens Materials in a basement it is far too late to fetch it.
       void tokenOrNull(getToken).then((token) => {
-        if (token) void prefetchJob(job.id, token);
+        if (token) void prefetchJob(job.id, token, me);
       });
     }
-  }, [getToken, job]);
+  }, [getToken, job, field, me]);
 
   useFocusEffect(
     useCallback(() => {
@@ -109,7 +116,15 @@ export default function HomeScreen() {
           />
         }
       >
-        {loading ? null : !job ? (
+        {loading ? null : !field ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>Today isn&apos;t your screen</Text>
+            <Text style={styles.emptyBody}>
+              Home is the day on a job — reports, photos, the punch list, hours — and field records
+              aren&apos;t part of your job function. The jobs themselves are still on the Jobs tab.
+            </Text>
+          </View>
+        ) : !job ? (
           <View style={styles.empty}>
             <Text style={styles.emptyTitle}>Pick a job to start the day</Text>
             <Text style={styles.emptyBody}>

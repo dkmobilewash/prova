@@ -5,6 +5,10 @@ import { Card } from "@/components/Card";
 import { List } from "@/components/List";
 import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
@@ -27,6 +31,7 @@ import type { ScheduleRow } from "@/lib/types";
  * "who is on tomorrow", never "list the assignments".
  */
 export default function ScheduleScreen() {
+  const { me } = useMe();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const getToken = useStableGetToken();
   const [rows, setRows] = useState<ScheduleRow[]>([]);
@@ -59,6 +64,12 @@ export default function ScheduleScreen() {
   // The phone's day, not UTC's — see lib/local-today.ts.
   const today = localToday();
   const days = groupByDay(rows);
+
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["schedule/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["schedule/[jobId]"]} />;
 
   return (
     <View style={styles.screen}>

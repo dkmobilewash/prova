@@ -1,6 +1,8 @@
 import * as api from "./api";
 import { cacheKeys } from "./cache-keys";
 import { cacheSet } from "./offline-cache";
+import { holds } from "./capabilities";
+import type { Capability, Me } from "./types";
 
 /**
  * Fills the cache for a job WHILE there is still signal.
@@ -21,7 +23,11 @@ import { cacheSet } from "./offline-cache";
  * signal halfway through is the normal case, and the sections that did
  * land are worth keeping.
  */
-export async function prefetchJob(jobId: string, token: string): Promise<number> {
+export async function prefetchJob(jobId: string, token: string, me: Me | null = null): Promise<number> {
+  // Only what this person is allowed to read. Without this, a bookkeeper's
+  // phone would spend a cellular round trip per section collecting 403s,
+  // and cache "nothing" against keys their screens will never open.
+  const may = (capability: Capability) => holds(me, capability);
   const sections: [string, () => Promise<unknown>][] = [
     [cacheKeys.punchList(jobId), () => api.listPunchListItems(jobId, token)],
     [cacheKeys.reports(jobId), () => api.listFieldReports(jobId, token)],
@@ -45,6 +51,7 @@ export async function prefetchJob(jobId: string, token: string): Promise<number>
 
   let filled = 0;
   for (const [key, read] of sections) {
+    if (!may(key.startsWith("drawings") ? "MANAGE_JOBS" : "MANAGE_FIELD")) continue;
     try {
       await cacheSet(key, await read());
       filled += 1;

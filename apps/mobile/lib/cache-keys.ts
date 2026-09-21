@@ -15,6 +15,9 @@
  */
 export const cacheKeys = {
   jobs: () => "jobs",
+  /** Who this phone is signed in as, and what they may do. Cached like
+   * every other read: the shell has to be right in a basement too. */
+  me: () => "me",
   punchList: (jobId: string) => `punch-list.${jobId}`,
   reports: (jobId: string) => `reports.${jobId}`,
   photos: (jobId: string) => `photos.${jobId}`,

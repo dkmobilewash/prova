@@ -299,3 +299,31 @@ export type ScheduleRow = {
    * as an accusation rather than a fact. */
   hoursLogged: boolean | null;
 };
+
+/** The capabilities the SERVER derives (apps/web/lib/permissions.ts) and
+ * hands to the phone. Deliberately a plain string list rather than a rule
+ * set: the phone must not carry a second copy of who-can-do-what, because
+ * a copy inside an app-store binary goes stale the day a job function
+ * changes and cannot be fixed without a release. */
+export type Capability =
+  | "VIEW_JOB_COSTS"
+  | "VIEW_COMPANY_FINANCIALS"
+  | "MANAGE_ESTIMATING"
+  | "MANAGE_BILLING"
+  | "MANAGE_COMPLIANCE"
+  | "MANAGE_FIELD"
+  | "MANAGE_JOBS"
+  | "VERIFY_PUNCH_ITEMS";
+
+export type Me = {
+  id: string;
+  name: string | null;
+  email: string;
+  role: string;
+  jobFunction: string | null;
+  capabilities: Capability[];
+  /** Narrower than a plain member — the phone says WHY a screen is
+   * missing rather than quietly drawing a smaller app. */
+  restricted: boolean;
+  company: { id: string; name: string };
+};

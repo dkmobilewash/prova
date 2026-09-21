@@ -10,6 +10,10 @@ import { Field } from "@/components/Field";
 import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
 import { JobSections } from "@/components/JobSections";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -30,6 +34,7 @@ const STATUS_LABEL: Record<PunchItemStatus, string> = {
 };
 
 export default function PunchListScreen() {
+  const { me } = useMe();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const router = useRouter();
   const getToken = useStableGetToken();
@@ -125,6 +130,12 @@ export default function PunchListScreen() {
     await enqueue({ type: "punch-list:status", jobId, itemId: item.id, status: next });
     await sync();
   };
+
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["punch-list/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["punch-list/[jobId]"]} />;
 
   return (
     <View style={styles.screen}>

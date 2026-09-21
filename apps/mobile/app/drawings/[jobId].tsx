@@ -6,6 +6,10 @@ import { Card } from "@/components/Card";
 import { List } from "@/components/List";
 import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
@@ -60,6 +64,7 @@ async function openHeldFile(uri: string): Promise<boolean> {
 }
 
 export default function DrawingsScreen() {
+  const { me } = useMe();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const getToken = useStableGetToken();
   const [sets, setSets] = useState<DrawingSetRow[]>([]);
@@ -92,6 +97,12 @@ export default function DrawingsScreen() {
   }, [jobId]);
 
   const held = heldBytes();
+
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["drawings/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["drawings/[jobId]"]} />;
 
   return (
     <View style={styles.screen}>

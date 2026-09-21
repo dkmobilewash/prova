@@ -17,6 +17,10 @@ import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
 import { JobSections } from "@/components/JobSections";
 import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 import type { DelayRow, FieldReportRow } from "@/lib/types";
 import { useFieldReports } from "@/lib/use-field-reports";
@@ -67,6 +71,7 @@ function daysOf(reports: FieldReportRow[], delays: DelayRow[]): Day[] {
 }
 
 export default function ReportsScreen() {
+  const { me } = useMe();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const getToken = useStableGetToken();
   const { reports, pending, error, offline, create, refresh } = useFieldReports(jobId ?? "");
@@ -206,6 +211,12 @@ export default function ReportsScreen() {
     await enqueue(op);
     await sync();
   };
+
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["reports/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["reports/[jobId]"]} />;
 
   return (
     <View style={styles.screen}>
