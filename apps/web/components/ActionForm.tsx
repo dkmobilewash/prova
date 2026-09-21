@@ -47,7 +47,11 @@ export function ActionForm({
   onSuccess,
 }: {
   action: (formData: FormData) => Promise<ActionResult | void>;
-  children: ReactNode;
+  /** Optional only so `createElement(ActionForm, props, …children)` resolves
+   * in a `.ts` test — the unit suite has no JSX, and a required `children`
+   * prop forces the shape `react/no-children-prop` forbids. A form with no
+   * children renders an empty form, which is harmless and never happens. */
+  children?: ReactNode;
   className?: string;
   /** Off for an edit form, where putting every field back to its stored
    * value after a successful save is not what a reset does. */

@@ -207,7 +207,16 @@ describe("createContact accepts standing-terms fields, against a real database",
     formData.set("paymentTermsDays", "net-30");
 
     const result = await createContact(formData);
-    expect(result).toEqual({ ok: false, error: '"paymentTermsDays" must be a number' });
+    // The sentence changed 2026-09-21 and is asserted in full on purpose:
+    // it used to read back the FORM KEY, quotes and camelCase and all
+    // (`"paymentTermsDays" must be a number`), which is a name out of the
+    // HTML rather than anything on the screen. One parser writes these now
+    // — lib/numeric-input.ts — so it names the field and says which way the
+    // figure is wrong.
+    expect(result).toEqual({
+      ok: false,
+      error: "Payment terms has to be a whole number — “net-30” isn't one.",
+    });
 
     const contact = await prisma.contact.findFirst({ where: { companyId: termsCompanyId, name: "Bad Terms Inc" } });
     expect(contact).toBeNull();
