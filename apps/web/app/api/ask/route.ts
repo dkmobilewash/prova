@@ -115,6 +115,19 @@ export async function POST(request: Request) {
     userId: context.id,
     principal: { role: context.role, jobFunction: context.jobFunction },
     today: await viewerToday(),
+    // The three onboarding answers, straight off the Company row the
+    // session already loaded — so this is free rather than a second query
+    // on the path a person waits through. Same three fields the nav filter
+    // reads (lib/businessScope.ts); what Ask does with them is
+    // lib/ask/business-scope-context.ts, and it is wording, never a gate.
+    //
+    // From the SESSION's company, like companyId and the role beside it.
+    // Nothing a caller can put in the body reaches this.
+    businessScope: {
+      contractingRelationship: context.company.contractingRelationship,
+      doesPublicWork: context.company.doesPublicWork,
+      filesMonthlyPayApps: context.company.filesMonthlyPayApps,
+    },
   };
 
   const encoder = new TextEncoder();

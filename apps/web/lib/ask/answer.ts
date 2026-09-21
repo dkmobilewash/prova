@@ -31,6 +31,8 @@ import {
   type PreviewLine,
 } from "./commands";
 import { pageContextSentence } from "./page-context";
+import { businessScopeContext } from "./business-scope-context";
+import { UNANSWERED_SCOPE } from "@/lib/businessScope";
 import { can } from "@/lib/permissions";
 import { loadAskAttachment, type AskAttachmentRef } from "./attachment";
 import type { WebSuggestion } from "./webSuggestions";
@@ -614,6 +616,12 @@ export async function* streamAnswer(
   const perRequestContext =
     [
       accessContext(ctx.principal),
+      // What kind of contractor this is — the three onboarding answers, so
+      // the wording fits the business rather than the average of every
+      // business. Nothing at all for a company that skipped them, which is
+      // most of them. Costs no database read: the answers came off the
+      // Company row the session had already loaded.
+      businessScopeContext(ctx.businessScope ?? UNANSWERED_SCOPE),
       pageContextSentence(pageJob),
       priorTurns.length > 0 ? PRIOR_TURNS_RULE : null,
       attachment ? ATTACHMENT_RULE : null,
