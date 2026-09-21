@@ -1,6 +1,7 @@
 "use client";
 
 import { isStaleDeployError } from "@/lib/stale-deploy-error";
+import { isSchemaDriftDigest } from "@/lib/schema-drift";
 
 /**
  * What the app shows when a page — or the shell around it — fails to
@@ -53,14 +54,17 @@ import { isStaleDeployError } from "@/lib/stale-deploy-error";
  * not. It has now cost four rounds of debugging on this project: the
  * Integrations page, twice on Settings, and the first-screen digest above.
  *
- * The boundary cannot detect it. A production build redacts every thrown
- * Server Action message to a digest, so all this component ever receives is
- * an opaque string — a missing column and a dropped connection look
- * identical from here. But it does not need the code: on a preview, this
- * cause is common enough to be worth naming, and on production it is
- * impossible, because CI applies migrations on merge. So the hint is shown
- * by ENVIRONMENT rather than by error, which is a claim this file can
- * actually stand behind.
+ * The boundary cannot read the error. A production build redacts every
+ * thrown server message to a digest, so all this component receives is an
+ * opaque string — a missing column and a thousands comma in an Amount
+ * field look identical from here. Until 2026-09-21 the hint was therefore
+ * shown by ENVIRONMENT alone, and that was confidently wrong for every
+ * non-drift failure on a preview: it sent a tester to run a migration
+ * workflow for a form-parsing throw. So the Prisma client now stamps the
+ * two drift codes (P2021/P2022) with a `SCHEMA_DRIFT_*` digest BEFORE Next
+ * redacts anything (packages/db/src/schema-drift.ts), and the digest is
+ * what this component reads. Environment still decides the remedy; the
+ * digest decides whether drift is the diagnosis at all.
  */
 export function PageLoadError({
   error,
@@ -75,6 +79,8 @@ export function PageLoadError({
   // The only real remedy is a hard reload, so this case gets its own copy
   // and its own button rather than a "Try again" that cannot work.
   const staleDeploy = isStaleDeployError(error);
+  const drift = isSchemaDriftDigest(error.digest);
+  const isPreview = process.env.NEXT_PUBLIC_DEPLOY_ENV === "preview";
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-12">
@@ -121,21 +127,54 @@ export function PageLoadError({
           </a>
         </div>
 
-        {/* Named only on a preview, where it is the likeliest cause and the
-            remedy is one button. On production this is impossible — CI
-            applies migrations on merge — so saying it there would be noise
-            pointing at the wrong thing. */}
-        {process.env.NEXT_PUBLIC_DEPLOY_ENV === "preview" && (
+        {/* SCHEMA DRIFT IS NAMED ONLY WHEN THE ERROR SAYS SO. The Prisma
+            client tags a "table/column does not exist" error with a
+            SCHEMA_DRIFT_* digest before Next redacts it (packages/db/src/
+            schema-drift.ts), and that digest is the one thing that reaches
+            this component intact. Until 2026-09-21 the preview paragraph
+            below was shown for EVERY failure on a preview, and a
+            thousands comma typed into an Amount field sent a tester to run
+            a migration workflow that could not help. Now:
+
+              preview   + drift  → this IS the database; run the workflow.
+              preview   + other  → say it is NOT that, so nobody runs it.
+              production + drift → a deploy and its migration land apart
+                                   (CLAUDE.md, #378): usually clears in
+                                   minutes; reload, then report if not.
+              production + other → nothing extra; the digest is the report. */}
+        {isPreview && drift && (
           <div className="mt-5 rounded-md border border-amber-700 bg-tag-amber p-3">
             <p className="text-sm font-medium text-tag-amber-ink">
-              On a preview, this is usually the database, not the code.
+              On this preview, this is the database, not the code.
             </p>
             <p className="mt-1 text-sm text-tag-amber-ink/80">
-              A branch that adds a table or a column runs against a database that doesn&apos;t
-              have it yet — migrations only land when the PR merges. Run the{" "}
+              The preview&apos;s database is missing a table or column this branch expects —
+              migrations only land when the PR merges. Run the{" "}
               <span className="font-medium">Migrate demo database</span> workflow from THIS
               branch (Actions tab → Run workflow → pick this branch), then reload. If the page
               still fails after that, it is a real bug.
+            </p>
+          </div>
+        )}
+        {isPreview && !drift && (
+          <div className="mt-5 rounded-md border border-line-card bg-surface p-3">
+            <p className="text-sm text-ink-body">
+              This is a preview, but the failure did not look like the preview&apos;s database
+              being behind the branch — that case says so here in so many words — so the{" "}
+              <span className="font-medium">Migrate demo database</span> workflow will not fix
+              it. More likely a bug on this branch, or something typed into a form that the page
+              could not handle. Report the reference below.
+            </p>
+          </div>
+        )}
+        {!isPreview && drift && (
+          <div className="mt-5 rounded-md border border-amber-700 bg-tag-amber p-3">
+            <p className="text-sm font-medium text-tag-amber-ink">
+              C Stream was just updated, and the app and its database changed a moment apart.
+            </p>
+            <p className="mt-1 text-sm text-tag-amber-ink/80">
+              This usually clears itself within a couple of minutes. Reload then; if it still
+              fails, report the reference below.
             </p>
           </div>
         )}
