@@ -25,6 +25,7 @@ import { ContactPersonForm } from "@/components/ContactPersonForm";
 import { ContactPersonRow } from "@/components/ContactPersonRow";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
+import { ActionForm } from "@/components/ActionForm";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -300,7 +301,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                     />
                   }
                 >
-                  <form action={updateBidInvitationStatus.bind(null, bid.id)} className="flex items-center gap-2">
+                  <ActionForm action={updateBidInvitationStatus.bind(null, bid.id)} resetOnSuccess={false} className="flex items-center gap-2">
                     <select
                       key={bid.status}
                       name="status"
@@ -315,6 +316,8 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                     </select>
                     <input
                       name="bidAmount"
+                      type="text"
+                      inputMode="decimal"
                       defaultValue={bid.bidAmount?.toString() ?? ""}
                       placeholder="Bid $"
                       title="Amount bid, once known"
@@ -326,13 +329,13 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                     >
                       Update
                     </SubmitButton>
-                  </form>
+                  </ActionForm>
                 </RowActions>
               </li>
             ))}
           </ul>
         )}
-        <form action={createBidInvitationWithId} className="flex flex-wrap items-end gap-3">
+        <ActionForm action={createBidInvitationWithId} className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-sm text-ink-label">
             Project name
             <input
@@ -374,6 +377,8 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                 most invitations arrive with nothing bid yet. */}
             <input
               name="bidAmount"
+              type="text"
+              inputMode="decimal"
               placeholder="Optional"
               title="Amount bid, if already known"
               className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
@@ -393,7 +398,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           >
             Log invitation
           </SubmitButton>
-        </form>
+        </ActionForm>
       </section>
       )}
 

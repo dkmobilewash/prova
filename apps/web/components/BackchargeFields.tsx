@@ -92,11 +92,10 @@ export function BackchargeFields({
           <label className={labelClass}>
             Amount claimed
             <input
-              type="number"
               name="claimedAmount"
+              type="text"
+              inputMode="decimal"
               required
-              step="0.01"
-              min="0.01"
               defaultValue={defaults.claimedAmount}
               placeholder="0.00"
               className={inputClass}

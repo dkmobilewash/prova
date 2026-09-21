@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseNumericInput } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
@@ -240,10 +241,9 @@ export async function setWarrantyPeriod(formData: FormData): Promise<ActionResul
     const startsOn = requiredDate(formData, "startsOn", "Start date");
 
     const monthsRaw = required(formData, "months", "Length in months");
-    const months = Number(monthsRaw);
-    if (!Number.isInteger(months) || months < 1) {
-      return fail("Length has to be a whole number of months, at least 1");
-    }
+    const parsed = parseNumericInput(monthsRaw, { label: "Length", integer: true, min: 1 });
+    if (!parsed.ok) return fail(parsed.error);
+    const months = parsed.n;
     // 50 years. Not a real warranty, and a typo like 120 for 12 would
     // otherwise sit there quietly claiming cover we never gave.
     if (months > 600) {

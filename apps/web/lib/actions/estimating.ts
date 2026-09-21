@@ -5,7 +5,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
-import { ActionResult, actionFail, actionOk, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { ActionResult, actionFail, actionOk, InputError, runAction, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 import { catalogActuals, catalogSourcedLine, repriceDecision } from "@/lib/catalog-actuals";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import { addCatalogLine } from "@/lib/estimating/catalog-line";
@@ -19,47 +19,54 @@ import { issueEstimateVersionNumber } from "@/lib/estimating/estimate-version";
  * command `log_bid_invitation`; this keeps its throw for the form, and
  * throws the core's own sentences, so the page and the card refuse a
  * missing name or a foreign contact in one voice. */
-export async function createBidInvitation(contactId: string, formData: FormData) {
+export async function createBidInvitation(contactId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
+  return runAction(async () => {
+    const projectName = String(formData.get("projectName") ?? "").trim();
+    const dueDateRaw = String(formData.get("dueDate") ?? "").trim();
+    const notes = String(formData.get("notes") ?? "").trim();
+    const tradeScope = tradeScopeFromForm(formData);
+    const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
 
-  const projectName = String(formData.get("projectName") ?? "").trim();
-  const dueDateRaw = String(formData.get("dueDate") ?? "").trim();
-  const notes = String(formData.get("notes") ?? "").trim();
-  const tradeScope = tradeScopeFromForm(formData);
-  const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
+    const result = await createBidInvitationRecord(company.id, {
+      contactId,
+      projectName,
+      dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+      notes: notes || null,
+      tradeScope,
+      bidAmount,
+    });
+    if (!result.ok) return actionFail(result.error);
 
-  const result = await createBidInvitationRecord(company.id, {
-    contactId,
-    projectName,
-    dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
-    notes: notes || null,
-    tradeScope,
-    bidAmount,
+    revalidatePath(`/contacts/${contactId}`);
+    revalidatePath("/bids");
+    return actionOk;
   });
-  if (!result.ok) throw new Error(result.error);
-
-  revalidatePath(`/contacts/${contactId}`);
-  revalidatePath("/bids");
 }
 
 /** Updates a bid invitation's outcome (invited/submitted/won/lost/declined)
  * and, once known, what was actually bid — together with tradeScope this
  * is what makes the table a historical bid database, not just a log. */
-export async function updateBidInvitationStatus(bidInvitationId: string, formData: FormData) {
+export async function updateBidInvitationStatus(
+  bidInvitationId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
+  return runAction(async () => {
+      const bid = await prisma.bidInvitation.findUnique({ where: { id: bidInvitationId } });
+      if (!bid || bid.companyId !== company.id) {
+        throw new Error("Bid invitation not found");
+      }
 
-  const bid = await prisma.bidInvitation.findUnique({ where: { id: bidInvitationId } });
-  if (!bid || bid.companyId !== company.id) {
-    throw new Error("Bid invitation not found");
-  }
+      const status = enumFromForm(formData, "status", BID_INVITATION_STATUSES);
+      const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
 
-  const status = enumFromForm(formData, "status", BID_INVITATION_STATUSES);
-  const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
+      await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { status, bidAmount } });
 
-  await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { status, bidAmount } });
-
-  revalidatePath(`/contacts/${bid.contactId}`);
-  revalidatePath("/bids");
+      revalidatePath(`/contacts/${bid.contactId}`);
+      revalidatePath("/bids");
+      return actionOk;
+  });
 }
 
 export async function deleteBidInvitation(bidInvitationId: string) {
@@ -105,42 +112,46 @@ async function duplicateCatalogEntry(companyId: string, description: string) {
 
 /** Adds a reusable line-item template, scoped to the company. Not tied to
  * any job — see LineItemCatalogEntry in schema.prisma. */
-export async function createLineItemCatalogEntry(formData: FormData) {
+export async function createLineItemCatalogEntry(formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
+  return runAction(async () => {
+    const description = String(formData.get("description") ?? "").trim();
+    const unit = String(formData.get("unit") ?? "").trim();
+    const tradeScope = tradeScopeFromForm(formData);
+    const defaultUnitPrice = nullableDecimalFromForm(formData, "defaultUnitPrice");
+    const defaultBudgetedUnitCost = nullableDecimalFromForm(formData, "defaultBudgetedUnitCost");
+    const defaultLaborHours = nullableDecimalFromForm(formData, "defaultLaborHours");
+    const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
 
-  const description = String(formData.get("description") ?? "").trim();
-  const unit = String(formData.get("unit") ?? "").trim();
-  const tradeScope = tradeScopeFromForm(formData);
-  const defaultUnitPrice = nullableDecimalFromForm(formData, "defaultUnitPrice");
-  const defaultBudgetedUnitCost = nullableDecimalFromForm(formData, "defaultBudgetedUnitCost");
-  const defaultLaborHours = nullableDecimalFromForm(formData, "defaultLaborHours");
-  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+    // InputError, not Error: both of these are things a person can fix, and
+    // a thrown one arrives redacted. Same reason the parsers above changed.
+    if (!description) {
+      throw new InputError("Description is required");
+    }
 
-  if (!description) {
-    throw new Error("Description is required");
-  }
+    const duplicate = await duplicateCatalogEntry(company.id, description);
+    if (duplicate) {
+      throw new InputError(
+        `"${duplicate.description}" is already in the catalog. Edit that entry instead — a second copy splits its actuals history between the two and can hide a bad price on both.`,
+      );
+    }
 
-  const duplicate = await duplicateCatalogEntry(company.id, description);
-  if (duplicate) {
-    throw new Error(
-      `"${duplicate.description}" is already in the catalog. Edit that entry instead — a second copy splits its actuals history between the two and can hide a bad price on both.`,
-    );
-  }
+    await prisma.lineItemCatalogEntry.create({
+      data: {
+        companyId: company.id,
+        description,
+        unit: unit || null,
+        tradeScope,
+        defaultUnitPrice,
+        defaultBudgetedUnitCost,
+        defaultLaborHours,
+        craftClassificationId,
+      },
+    });
 
-  await prisma.lineItemCatalogEntry.create({
-    data: {
-      companyId: company.id,
-      description,
-      unit: unit || null,
-      tradeScope,
-      defaultUnitPrice,
-      defaultBudgetedUnitCost,
-      defaultLaborHours,
-      craftClassificationId,
-    },
+    revalidatePath("/catalog");
+    return actionOk;
   });
-
-  revalidatePath("/catalog");
 }
 
 export async function deleteLineItemCatalogEntry(catalogEntryId: string): Promise<ActionResult> {
@@ -220,21 +231,22 @@ export async function saveLineItemAsCatalogEntry(lineItemId: string) {
 /** Adds a new JobLineItem pre-filled from a catalog entry, through the
  * exact same create call addLineItem uses — a catalog entry is a template
  * for that call, not a second live copy of estimate data. */
-export async function addLineItemFromCatalog(jobId: string, formData: FormData) {
+export async function addLineItemFromCatalog(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company } = context;
   const catalogEntryId = String(formData.get("catalogEntryId") ?? "").trim();
   const quantity = String(formData.get("quantity") ?? "").trim();
 
   // The body lives in lib/estimating/catalog-line.ts, shared with the Ask
-  // command `add_catalog_line`; the sentences thrown here are the core's.
+  // command `add_catalog_line`; the sentences it returns are the core's.
   const added = await addCatalogLine(company.id, { jobId, catalogEntryId, quantity });
   if (!added.ok) {
-    throw new Error(added.error);
+    return actionFail(added.error);
   }
 
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
 }
 
 /** Saves a manual checkpoint of the estimate's current line items — "what

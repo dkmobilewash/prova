@@ -124,10 +124,9 @@ export function UnionLocalCard({
           <label className={labelClass}>
             <span className="text-xs">Apprentices</span>
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
               name="apprenticeCount"
-              min="1"
-              max="99"
               required
               defaultValue={local.ratio?.apprenticeCount ?? 1}
               className={`${inputClass} w-24 py-1 text-sm`}
@@ -137,10 +136,9 @@ export function UnionLocalCard({
           <label className={labelClass}>
             <span className="text-xs">Journeymen</span>
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
               name="journeymenCount"
-              min="1"
-              max="99"
               required
               defaultValue={local.ratio?.journeymenCount ?? 3}
               className={`${inputClass} w-24 py-1 text-sm`}
@@ -278,10 +276,9 @@ export function UnionLocalCard({
               <label className={labelClass}>
                 <span className="text-xs">Period</span>
                 <input
-                  type="number"
                   name="apprenticePeriod"
-                  min="1"
-                  max="10"
+                  type="text"
+                  inputMode="numeric"
                   className={`${inputClass} w-20 py-1 text-sm`}
                 />
               </label>

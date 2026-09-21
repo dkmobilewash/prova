@@ -108,11 +108,9 @@ export function RuleSetFields({ defaults }: { defaults: RuleSetDefaults }) {
         <label className={labelClass}>
           Daily overtime after
           <input
-            type="number"
             name="dailyOvertimeAfterHours"
-            step="0.25"
-            min="0"
-            max="24"
+            type="text"
+            inputMode="decimal"
             defaultValue={num(defaults.dailyOvertimeAfterHours)}
             placeholder="hours"
             className={inputClass}
@@ -121,11 +119,9 @@ export function RuleSetFields({ defaults }: { defaults: RuleSetDefaults }) {
         <label className={labelClass}>
           Daily double time after
           <input
-            type="number"
             name="dailyDoubleTimeAfterHours"
-            step="0.25"
-            min="0"
-            max="24"
+            type="text"
+            inputMode="decimal"
             defaultValue={num(defaults.dailyDoubleTimeAfterHours)}
             placeholder="hours"
             className={inputClass}
@@ -134,11 +130,9 @@ export function RuleSetFields({ defaults }: { defaults: RuleSetDefaults }) {
         <label className={labelClass}>
           Weekly overtime after
           <input
-            type="number"
             name="weeklyOvertimeAfterHours"
-            step="0.25"
-            min="0"
-            max="168"
+            type="text"
+            inputMode="decimal"
             defaultValue={num(defaults.weeklyOvertimeAfterHours)}
             placeholder="hours"
             className={inputClass}
@@ -147,11 +141,9 @@ export function RuleSetFields({ defaults }: { defaults: RuleSetDefaults }) {
         <label className={labelClass}>
           7th straight day — OT after
           <input
-            type="number"
             name="seventhDayOvertimeAfterHours"
-            step="0.25"
-            min="0"
-            max="24"
+            type="text"
+            inputMode="decimal"
             defaultValue={num(defaults.seventhDayOvertimeAfterHours)}
             placeholder="hours"
             className={inputClass}
@@ -160,11 +152,9 @@ export function RuleSetFields({ defaults }: { defaults: RuleSetDefaults }) {
         <label className={labelClass}>
           7th straight day — 2× after
           <input
-            type="number"
             name="seventhDayDoubleTimeAfterHours"
-            step="0.25"
-            min="0"
-            max="24"
+            type="text"
+            inputMode="decimal"
             defaultValue={num(defaults.seventhDayDoubleTimeAfterHours)}
             placeholder="hours"
             className={inputClass}
@@ -187,11 +177,9 @@ export function RuleSetFields({ defaults }: { defaults: RuleSetDefaults }) {
         <label className={labelClass}>
           Due days after period ends
           <input
-            type="number"
             name="filingDueDays"
-            step="1"
-            min="0"
-            max="365"
+            type="text"
+            inputMode="numeric"
             defaultValue={defaults.filingDueDays === null ? "" : String(defaults.filingDueDays)}
             placeholder="days"
             className={inputClass}

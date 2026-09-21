@@ -72,10 +72,9 @@ export function VendorPriceQuoteFields({
         <label className={labelClass}>
           Unit price
           <input
-            type="number"
             name="unitPrice"
-            step="0.01"
-            min="0"
+            type="text"
+            inputMode="decimal"
             required
             defaultValue={defaults.unitPrice}
             placeholder="e.g. 0.42"

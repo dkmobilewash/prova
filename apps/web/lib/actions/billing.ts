@@ -6,6 +6,7 @@ import { deleteDocument } from "@/lib/blob";
 import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
 import { isSignatureLinkDead } from "@/lib/access-tokens";
 import { linkToken } from "@/lib/tokens";
+import { isBlank, parseNumericInput } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { viewerToday } from "@/lib/viewerToday";
@@ -38,7 +39,9 @@ import {
   decimalFromForm,
   enumFromForm,
   INVOICE_STATUSES,
-  nullableDecimalFromForm,
+  InputError,
+  nullablePercentFromForm,
+  runAction,
   type ActionResultWith,
 } from "./shared";
 
@@ -368,27 +371,30 @@ export async function revokeClientPortalAccess(contactId: string) {
  * `draft_invoice`. This wrapper keeps the form's contract: it throws its
  * refusal, as it always did, because the job page posts to it as a plain
  * form action with no place to render a returned sentence. */
-export async function createInvoice(jobId: string, formData: FormData) {
+export async function createInvoice(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  // Throws rather than returning a failure, matching this action's own
-  // existing contract (`throw new Error(result.error)` below): the tab
-  // posts to it as a plain form action with nowhere to render a returned
-  // sentence. Production redacts the message, so what a refused person
-  // sees is the error boundary — but the invoice is not created, which is
-  // the property that matters here.
-  if (!can(context, "MANAGE_BILLING")) throw new Error(BILLING_ONLY);
+  // RETURNS its refusals now. It used to throw every one of them, with a
+  // comment here explaining that the tab "posts to it as a plain form
+  // action with nowhere to render a returned sentence" — true when written,
+  // and the reason an Amount of `12,500` produced the redacted digest
+  // paragraph instead of a sentence about commas. The tab posts through
+  // `<ActionForm>` now, which has somewhere to put one.
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
   const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
-  const description = String(formData.get("description") ?? "").trim();
-  const amount = decimalFromForm(formData, "amount");
-  const dueRaw = String(formData.get("dueAt") ?? "").trim();
-  const dueAt = dueRaw ? new Date(dueRaw) : null;
+  return runAction(async () => {
+      const description = String(formData.get("description") ?? "").trim();
+      const amount = decimalFromForm(formData, "amount", { label: "Amount", maxDecimals: 2 });
+      const dueRaw = String(formData.get("dueAt") ?? "").trim();
+      const dueAt = dueRaw ? new Date(dueRaw) : null;
 
-  const result = await createInvoiceRecord(company.id, jobId, { description, amount, dueAt });
-  if (!result.ok) throw new Error(result.error);
+      const result = await createInvoiceRecord(company.id, jobId, { description, amount, dueAt });
+      if (!result.ok) return actionFail(result.error);
 
-  revalidatePath(`/jobs/${jobId}`);
+      revalidatePath(`/jobs/${jobId}`);
+      return actionOk;
+  });
 }
 
 /** Submits a full AIA-style pay application: one row per active line item
@@ -409,6 +415,19 @@ export async function createInvoice(jobId: string, formData: FormData) {
  * production REDACTS thrown Server Action messages, so a refusal that
  * throws shows the user an opaque digest while the $140,000 application
  * they were trying to submit is simply not created, with no explanation. */
+/** One cell of the pay-application grid. Blank is zero — most rows on a
+ * schedule of values are untouched in any given period — and anything else
+ * has to be a figure, said out loud rather than quietly zeroed. */
+function payApplicationFigure(
+  raw: string | undefined,
+  label: string,
+  options?: { min?: number },
+): { ok: true; n: number } | { ok: false; error: string } {
+  if (raw === undefined || isBlank(raw)) return { ok: true, n: 0 };
+  const parsed = parseNumericInput(raw, { label, maxDecimals: 2, ...options });
+  return parsed.ok ? { ok: true, n: parsed.n } : { ok: false, error: parsed.error };
+}
+
 export async function submitPayApplication(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
@@ -423,13 +442,27 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   const thisPeriodValues = formData.getAll("thisPeriodBilled").map(String);
   const materialsStoredValues = formData.getAll("materialsStoredValue").map(String);
 
-  const rows = lineItemIds
-    .map((lineItemId, i) => ({
-      lineItemId,
-      thisPeriodBilled: Number(thisPeriodValues[i] || "0") || 0,
-      materialsStoredValue: Number(materialsStoredValues[i] || "0") || 0,
-    }))
-    .filter((row) => row.thisPeriodBilled !== 0 || row.materialsStoredValue !== 0);
+  // `Number(x) || 0` USED TO BE HERE, AND IT DROPPED LINES IN SILENCE.
+  // `12,500` typed into This period became NaN, then 0, then was filtered
+  // out by the line below — so a pay application came back short by a line
+  // with nothing anywhere saying which one, on a document the GC receives.
+  // Parsed and reported by row instead.
+  //
+  // `min="0"` used to live on the This-period input as markup. It is a
+  // server rule now, for the reason the comment beside the stored-materials
+  // input already gives: native validation gates the submit handler, so the
+  // form refused silently and showed nothing. The rule is unchanged —
+  // negative stored value is the documented way to move value out of stored
+  // once material is installed, and there is no negative-billing mechanism.
+  const rows: Array<{ lineItemId: string; thisPeriodBilled: number; materialsStoredValue: number }> = [];
+  for (const [i, lineItemId] of lineItemIds.entries()) {
+    const billed = payApplicationFigure(thisPeriodValues[i], "This period", { min: 0 });
+    if (!billed.ok) return actionFail(billed.error);
+    const stored = payApplicationFigure(materialsStoredValues[i], "Stored materials");
+    if (!stored.ok) return actionFail(stored.error);
+    if (billed.n === 0 && stored.n === 0) continue;
+    rows.push({ lineItemId, thisPeriodBilled: billed.n, materialsStoredValue: stored.n });
+  }
 
   if (rows.length === 0) {
     return actionFail("Enter an amount for at least one line item");
@@ -567,22 +600,39 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
 
 /** Sets this job's retainage rate and expected substantial-completion
  * date. Only affects future invoices -- see Invoice.retainageWithheld. */
-export async function updateJobRetainageTerms(jobId: string, formData: FormData) {
+export async function updateJobRetainageTerms(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  if (!can(context, "MANAGE_BILLING")) throw new Error(BILLING_ONLY);
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
   const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
-  const retainagePercent = nullableDecimalFromForm(formData, "retainagePercent");
-  const completionRaw = String(formData.get("substantialCompletionDate") ?? "").trim();
-  const substantialCompletionDate = completionRaw ? new Date(completionRaw) : null;
+  return runAction(async () => {
+      // A PERCENT, 0 TO 100 — never a fraction of one. This field had no
+      // type, no min, no max and no step, so `0.10` typed by somebody meaning
+      // ten percent was accepted in silence and stored as a tenth of one
+      // percent: on a $105,000 contract that is $105 withheld where $10,500
+      // was intended, on a document the GC receives. Confirmed in a browser
+      // 2026-09-21, reloaded, and still 0.1. The bound is only half the fix —
+      // 0.10 is inside it. The other half is on the screen: the input wears a
+      // `%` that does not vanish when you type, and prints what the rate
+      // comes to in money on THIS job's contract value while you type it.
+      const retainagePercent = nullablePercentFromForm(formData, "retainagePercent", {
+        label: "Retainage",
+      });
+      const completionRaw = String(formData.get("substantialCompletionDate") ?? "").trim();
+      const substantialCompletionDate = completionRaw ? new Date(completionRaw) : null;
+      if (substantialCompletionDate && Number.isNaN(substantialCompletionDate.getTime())) {
+        throw new InputError("That substantial completion date isn't a real date.");
+      }
 
-  await prisma.job.update({
-    where: { id: jobId },
-    data: { retainagePercent, substantialCompletionDate },
+      await prisma.job.update({
+        where: { id: jobId },
+        data: { retainagePercent, substantialCompletionDate },
+      });
+
+      revalidatePath(`/jobs/${jobId}`);
+      return actionOk;
   });
-
-  revalidatePath(`/jobs/${jobId}`);
 }
 
 async function assertInvoiceInCompany(invoiceId: string, companyId: string) {
@@ -642,7 +692,16 @@ export async function logPayment(jobId: string, invoiceId: string, formData: For
     throw new Error("Invoice not found on this job");
   }
 
-  const amount = decimalFromForm(formData, "amount");
+  // Parsed to a RETURNED failure rather than through `decimalFromForm`'s
+  // throw: this action promises `ActionResult` and has no `runAction`
+  // boundary, so a thrown InputError would sail past the contract and be
+  // redacted — the exact shape `ownerRefusalCensus.test.ts` exists for.
+  const parsedAmount = parseNumericInput(formData.get("amount"), {
+    label: "Amount applied",
+    maxDecimals: 2,
+  });
+  if (!parsedAmount.ok) return actionFail(parsedAmount.error);
+  const amount = parsedAmount.value;
   const method = String(formData.get("method") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
 
@@ -763,32 +822,35 @@ export async function deletePayment(jobId: string, paymentId: string) {
  * returned sentence — and it sets NEITHER of the core's two options, so
  * the form still accepts a release above the balance held (the core says
  * why that is deliberate) and never compares against a balance it showed. */
-export async function createRetainageRelease(jobId: string, formData: FormData) {
+export async function createRetainageRelease(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  if (!can(context, "MANAGE_BILLING")) throw new Error(BILLING_ONLY);
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
   const { company, ...user } = context;
 
-  const amount = decimalFromForm(formData, "amount");
-  const releasedRaw = String(formData.get("releasedAt") ?? "").trim();
-  // Blank falls back to TODAY on the viewer's calendar at UTC midnight,
-  // never `new Date()` — that stored the raw instant of the click, which
-  // the job page then rendered through UTC so a release logged 5pm PT
-  // printed as the NEXT day, on a date that feeds closeout and lien
-  // timing conversations. Entered, not stamped.
-  const releasedAt = releasedRaw
-    ? new Date(releasedRaw)
-    : new Date(`${await viewerToday()}T00:00:00.000Z`);
-  const note = String(formData.get("note") ?? "").trim();
+  return runAction(async () => {
+    const amount = decimalFromForm(formData, "amount", { label: "Amount released", maxDecimals: 2 });
+    const releasedRaw = String(formData.get("releasedAt") ?? "").trim();
+    // Blank falls back to TODAY on the viewer's calendar at UTC midnight,
+    // never `new Date()` — that stored the raw instant of the click, which
+    // the job page then rendered through UTC so a release logged 5pm PT
+    // printed as the NEXT day, on a date that feeds closeout and lien
+    // timing conversations. Entered, not stamped.
+    const releasedAt = releasedRaw
+      ? new Date(releasedRaw)
+      : new Date(`${await viewerToday()}T00:00:00.000Z`);
+    const note = String(formData.get("note") ?? "").trim();
 
-  const result = await createRetainageReleaseRecord(company.id, jobId, {
-    amount,
-    releasedAt,
-    note: note || null,
-    createdByUserId: user.id,
+    const result = await createRetainageReleaseRecord(company.id, jobId, {
+      amount,
+      releasedAt,
+      note: note || null,
+      createdByUserId: user.id,
+    });
+    if (!result.ok) return actionFail(result.error);
+
+    revalidatePath(`/jobs/${jobId}`);
+    return actionOk;
   });
-  if (!result.ok) throw new Error(result.error);
-
-  revalidatePath(`/jobs/${jobId}`);
 }
 
 export async function deleteRetainageRelease(jobId: string, releaseId: string) {

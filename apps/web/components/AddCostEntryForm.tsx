@@ -66,6 +66,8 @@ export function AddCostEntryForm({
         />
         <input
           name="amount"
+          type="text"
+          inputMode="decimal"
           placeholder="Amount"
           required
           className="w-24 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"

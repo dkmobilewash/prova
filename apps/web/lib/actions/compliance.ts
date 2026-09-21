@@ -22,8 +22,10 @@ import {
   enumFromForm,
   INSURANCE_POLICY_TYPES,
   JURISDICTION_TYPES,
+  InputError,
   nullableDecimalFromForm,
   ownerRefusal,
+  runAction,
   SETTABLE_LICENSE_STATUSES,
   type ActionResult,
 } from "./shared";
@@ -76,39 +78,43 @@ export async function deleteInsurancePolicy(policyId: string) {
 }
 
 /** Adds a company bonding record (license bond or performance/payment capacity). */
-export async function createBond(formData: FormData) {
+export async function createBond(formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  assertOwner(context);
+  const refusal = ownerRefusal(context);
+  if (refusal) return refusal;
   const { company } = context;
 
-  const bondType = enumFromForm(formData, "bondType", BOND_TYPES);
-  const suretyName = String(formData.get("suretyName") ?? "").trim();
-  const aggregateBondingCapacity = nullableDecimalFromForm(formData, "aggregateBondingCapacity");
-  const singleJobLimit = nullableDecimalFromForm(formData, "singleJobLimit");
-  const agentContactName = String(formData.get("agentContactName") ?? "").trim();
-  const agentContactPhone = String(formData.get("agentContactPhone") ?? "").trim();
-  const agentContactEmail = String(formData.get("agentContactEmail") ?? "").trim();
-  const renewalRaw = String(formData.get("renewalDate") ?? "").trim();
+  return runAction(async () => {
+    const bondType = enumFromForm(formData, "bondType", BOND_TYPES);
+    const suretyName = String(formData.get("suretyName") ?? "").trim();
+    const aggregateBondingCapacity = nullableDecimalFromForm(formData, "aggregateBondingCapacity");
+    const singleJobLimit = nullableDecimalFromForm(formData, "singleJobLimit");
+    const agentContactName = String(formData.get("agentContactName") ?? "").trim();
+    const agentContactPhone = String(formData.get("agentContactPhone") ?? "").trim();
+    const agentContactEmail = String(formData.get("agentContactEmail") ?? "").trim();
+    const renewalRaw = String(formData.get("renewalDate") ?? "").trim();
 
-  if (!suretyName) {
-    throw new Error("Surety name is required");
-  }
+    if (!suretyName) {
+      throw new InputError("Surety name is required");
+    }
 
-  await prisma.companyBond.create({
-    data: {
-      companyId: company.id,
-      suretyName,
-      bondType,
-      aggregateBondingCapacity,
-      singleJobLimit,
-      agentContactName: agentContactName || null,
-      agentContactPhone: agentContactPhone || null,
-      agentContactEmail: agentContactEmail || null,
-      renewalDate: renewalRaw ? new Date(renewalRaw) : null,
-    },
+    await prisma.companyBond.create({
+      data: {
+        companyId: company.id,
+        suretyName,
+        bondType,
+        aggregateBondingCapacity,
+        singleJobLimit,
+        agentContactName: agentContactName || null,
+        agentContactPhone: agentContactPhone || null,
+        agentContactEmail: agentContactEmail || null,
+        renewalDate: renewalRaw ? new Date(renewalRaw) : null,
+      },
+    });
+
+    revalidatePath("/settings");
+    return actionOk;
   });
-
-  revalidatePath("/settings");
 }
 
 export async function deleteBond(bondId: string) {
@@ -292,41 +298,44 @@ async function readStoredDocument(
  * fixed (same as fixing a typo, not a separate "correction" flow) but
  * also just how anyone edits a manually-entered record. Not owner-gated,
  * same reasoning as uploadComplianceDocument. */
-export async function updateComplianceDocument(documentId: string, formData: FormData) {
+export async function updateComplianceDocument(documentId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
 
-  const document = await prisma.complianceDocument.findUnique({ where: { id: documentId } });
-  if (!document || document.companyId !== company.id) {
-    throw new Error("Compliance document not found");
-  }
+  return runAction(async () => {
+    const document = await prisma.complianceDocument.findUnique({ where: { id: documentId } });
+    if (!document || document.companyId !== company.id) {
+      throw new Error("Compliance document not found");
+    }
 
-  const type = enumFromForm(formData, "type", COMPLIANCE_DOCUMENT_TYPES);
-  const partyName = String(formData.get("partyName") ?? "").trim();
-  if (!partyName) {
-    throw new Error("Party name is required");
-  }
-  const amount = nullableDecimalFromForm(formData, "amount");
-  const periodStartRaw = String(formData.get("periodStart") ?? "").trim();
-  const periodEndRaw = String(formData.get("periodEnd") ?? "").trim();
-  const effectiveRaw = String(formData.get("effectiveDate") ?? "").trim();
-  const expiresRaw = String(formData.get("expiresAt") ?? "").trim();
-  const notes = String(formData.get("notes") ?? "").trim();
+    const type = enumFromForm(formData, "type", COMPLIANCE_DOCUMENT_TYPES);
+    const partyName = String(formData.get("partyName") ?? "").trim();
+    if (!partyName) {
+      throw new Error("Party name is required");
+    }
+    const amount = nullableDecimalFromForm(formData, "amount");
+    const periodStartRaw = String(formData.get("periodStart") ?? "").trim();
+    const periodEndRaw = String(formData.get("periodEnd") ?? "").trim();
+    const effectiveRaw = String(formData.get("effectiveDate") ?? "").trim();
+    const expiresRaw = String(formData.get("expiresAt") ?? "").trim();
+    const notes = String(formData.get("notes") ?? "").trim();
 
-  await prisma.complianceDocument.update({
-    where: { id: documentId },
-    data: {
-      type,
-      partyName,
-      amount,
-      periodStart: periodStartRaw ? new Date(periodStartRaw) : null,
-      periodEnd: periodEndRaw ? new Date(periodEndRaw) : null,
-      effectiveDate: effectiveRaw ? new Date(effectiveRaw) : null,
-      expiresAt: expiresRaw ? new Date(expiresRaw) : null,
-      notes: notes || null,
-    },
+    await prisma.complianceDocument.update({
+      where: { id: documentId },
+      data: {
+        type,
+        partyName,
+        amount,
+        periodStart: periodStartRaw ? new Date(periodStartRaw) : null,
+        periodEnd: periodEndRaw ? new Date(periodEndRaw) : null,
+        effectiveDate: effectiveRaw ? new Date(effectiveRaw) : null,
+        expiresAt: expiresRaw ? new Date(expiresRaw) : null,
+        notes: notes || null,
+      },
+    });
+
+    revalidatePath("/compliance");
+    return actionOk;
   });
-
-  revalidatePath("/compliance");
 }
 
 /** Marks a compliance document RECEIVED (e.g. the lien waiver came back

@@ -20,7 +20,8 @@ import {
   jobStatusTransitionRefusal,
   type JobStatusValue,
 } from "@/lib/job-status-transitions";
-import { actionFail, actionOk, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, isUniqueConstraintError, phaseCodeIdFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { actionFail, actionOk, InputError, runAction, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, isUniqueConstraintError, phaseCodeIdFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { parseNumericInput } from "@/lib/numeric-input";
 
 /**
  * Starts a job against a GC — an EXISTING one by preference, a new one when
@@ -108,51 +109,54 @@ export async function createJob(formData: FormData): Promise<ActionResult> {
 const JOB_COSTS_ONLY =
   "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
-export async function addLineItem(jobId: string, formData: FormData) {
+export async function addLineItem(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
   assertEditableDirectly(job);
 
-  const description = String(formData.get("description") ?? "").trim();
-  const unit = String(formData.get("unit") ?? "").trim();
-  const quantity = decimalFromForm(formData, "quantity");
-  // Nullable: a cost-only budget line (general conditions, overhead,
-  // contingency) has no client-facing sale price.
-  const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
-  const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
-  // currentEstimatedUnitCost defaults to budgetedUnitCost at creation (app-
-  // level, not a DB default) unless the form explicitly sets a different
-  // value — see the field's doc comment in schema.prisma.
-  const currentEstimatedUnitCost =
-    nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
-  const tradeScope = tradeScopeFromForm(formData);
-  const laborHours = nullableDecimalFromForm(formData, "laborHours");
-  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
-  const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
+  return runAction(async () => {
+    const description = String(formData.get("description") ?? "").trim();
+    const unit = String(formData.get("unit") ?? "").trim();
+    const quantity = decimalFromForm(formData, "quantity");
+    // Nullable: a cost-only budget line (general conditions, overhead,
+    // contingency) has no client-facing sale price.
+    const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
+    const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
+    // currentEstimatedUnitCost defaults to budgetedUnitCost at creation (app-
+    // level, not a DB default) unless the form explicitly sets a different
+    // value — see the field's doc comment in schema.prisma.
+    const currentEstimatedUnitCost =
+      nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
+    const tradeScope = tradeScopeFromForm(formData);
+    const laborHours = nullableDecimalFromForm(formData, "laborHours");
+    const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+    const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
 
-  if (!description) {
-    throw new Error("Description is required");
-  }
+    if (!description) {
+      throw new InputError("Description is required");
+    }
 
-  await prisma.jobLineItem.create({
-    data: {
-      jobId,
-      description,
-      unit: unit || null,
-      quantity,
-      unitPrice,
-      budgetedUnitCost,
-      currentEstimatedUnitCost,
-      tradeScope,
-      laborHours,
-      craftClassificationId,
-      phaseCodeId,
-    },
+    await prisma.jobLineItem.create({
+      data: {
+        jobId,
+        description,
+        unit: unit || null,
+        quantity,
+        unitPrice,
+        budgetedUnitCost,
+        currentEstimatedUnitCost,
+        tradeScope,
+        laborHours,
+        craftClassificationId,
+        phaseCodeId,
+      },
+    });
+
+    revalidatePath(`/jobs/${jobId}`);
+    return actionOk;
   });
-
-  revalidatePath(`/jobs/${jobId}`);
 }
 
 /** Turns pasted scope-of-work text into draft JobLineItem rows — the
@@ -182,47 +186,54 @@ export async function draftLineItemsFromScope(jobId: string, formData: FormData)
 
 
 /** Direct edit of a line item — only while the job is still an ESTIMATE. */
-export async function updateLineItem(jobId: string, lineItemId: string, formData: FormData) {
+export async function updateLineItem(
+  jobId: string,
+  lineItemId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
   assertEditableDirectly(job);
   await assertLineItemOnJob(lineItemId, jobId);
 
-  const description = String(formData.get("description") ?? "").trim();
-  const unit = String(formData.get("unit") ?? "").trim();
-  const quantity = decimalFromForm(formData, "quantity");
-  const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
-  const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
-  const currentEstimatedUnitCost =
-    nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
-  const tradeScope = tradeScopeFromForm(formData);
-  const laborHours = nullableDecimalFromForm(formData, "laborHours");
-  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
-  const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
+  return runAction(async () => {
+    const description = String(formData.get("description") ?? "").trim();
+    const unit = String(formData.get("unit") ?? "").trim();
+    const quantity = decimalFromForm(formData, "quantity");
+    const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
+    const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
+    const currentEstimatedUnitCost =
+      nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
+    const tradeScope = tradeScopeFromForm(formData);
+    const laborHours = nullableDecimalFromForm(formData, "laborHours");
+    const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+    const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
 
-  if (!description) {
-    throw new Error("Description is required");
-  }
+    if (!description) {
+      throw new InputError("Description is required");
+    }
 
-  await prisma.jobLineItem.update({
-    where: { id: lineItemId },
-    data: {
-      description,
-      unit: unit || null,
-      quantity,
-      unitPrice,
-      budgetedUnitCost,
-      currentEstimatedUnitCost,
-      tradeScope,
-      laborHours,
-      craftClassificationId,
-      phaseCodeId,
-    },
+    await prisma.jobLineItem.update({
+      where: { id: lineItemId },
+      data: {
+        description,
+        unit: unit || null,
+        quantity,
+        unitPrice,
+        budgetedUnitCost,
+        currentEstimatedUnitCost,
+        tradeScope,
+        laborHours,
+        craftClassificationId,
+        phaseCodeId,
+      },
+    });
+
+    revalidatePath(`/jobs/${jobId}`);
+    return actionOk;
   });
-
-  revalidatePath(`/jobs/${jobId}`);
 }
 
 /**
@@ -233,22 +244,33 @@ export async function updateLineItem(jobId: string, lineItemId: string, formData
  * this is internal cost tracking, not a change to what the client agreed
  * to, and real spending/re-forecasting happens throughout the job.
  */
-export async function updateLineItemForecast(jobId: string, lineItemId: string, formData: FormData) {
+export async function updateLineItemForecast(
+  jobId: string,
+  lineItemId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company } = context;
   await assertJobInCompany(jobId, company.id);
   await assertLineItemOnJob(lineItemId, jobId);
 
-  const currentEstimatedUnitCost = nullableDecimalFromForm(formData, "currentEstimatedUnitCost");
-  const estimatedCostToComplete = nullableDecimalFromForm(formData, "estimatedCostToComplete");
+  return runAction(async () => {
+      const currentEstimatedUnitCost = nullableDecimalFromForm(formData, "currentEstimatedUnitCost", {
+        label: "Current estimated unit cost",
+      });
+      const estimatedCostToComplete = nullableDecimalFromForm(formData, "estimatedCostToComplete", {
+        label: "Estimated cost to complete",
+      });
 
-  await prisma.jobLineItem.update({
-    where: { id: lineItemId },
-    data: { currentEstimatedUnitCost, estimatedCostToComplete },
+      await prisma.jobLineItem.update({
+        where: { id: lineItemId },
+        data: { currentEstimatedUnitCost, estimatedCostToComplete },
+      });
+
+      revalidatePath(`/jobs/${jobId}`);
+      return actionOk;
   });
-
-  revalidatePath(`/jobs/${jobId}`);
 }
 
 /** Direct removal of a line item — only while the job is still an ESTIMATE. */
@@ -536,7 +558,14 @@ export async function addCostEntry(jobId: string, lineItemId: string, formData: 
   await assertLineItemOnJob(lineItemId, jobId);
 
   const description = String(formData.get("description") ?? "").trim();
-  const amount = decimalFromForm(formData, "amount");
+  // Returned, not thrown: this action promises `ActionResult` and has no
+  // `runAction` boundary of its own.
+  const parsedAmount = parseNumericInput(formData.get("amount"), {
+    label: "Amount",
+    maxDecimals: 2,
+  });
+  if (!parsedAmount.ok) return actionFail(parsedAmount.error);
+  const amount = parsedAmount.value;
   const categoryRaw = String(formData.get("category") ?? "OTHER");
   const category = COST_CATEGORIES.includes(categoryRaw as (typeof COST_CATEGORIES)[number])
     ? (categoryRaw as (typeof COST_CATEGORIES)[number])

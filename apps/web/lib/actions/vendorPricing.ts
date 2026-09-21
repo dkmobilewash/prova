@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseNumericInput } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
@@ -53,11 +54,14 @@ function requiredDate(formData: FormData, key: string, label: string): Date {
  * cheapest on the comparison forever. Zero is allowed — "included, no
  * charge" is a real thing on a quote. */
 function unitPriceFromForm(formData: FormData): string {
-  const raw = required(formData, "unitPrice", "Unit price");
-  const value = Number(raw);
-  if (Number.isNaN(value)) throw new InputError(`"${raw}" is not a number`);
-  if (value < 0) throw new InputError("A unit price can't be negative");
-  return raw;
+  required(formData, "unitPrice", "Unit price");
+  const parsed = parseNumericInput(formData.get("unitPrice"), {
+    label: "Unit price",
+    min: 0,
+    maxDecimals: 2,
+  });
+  if (!parsed.ok) throw new InputError(parsed.error);
+  return parsed.value;
 }
 
 function sourceFromForm(formData: FormData): (typeof SOURCES)[number] {

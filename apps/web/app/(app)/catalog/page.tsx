@@ -14,6 +14,7 @@ import { TRADE_SCOPE_OPTIONS, tradeScopeLabel } from "@/lib/trade-scopes";
 import { money } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
 import { EmptyState } from "@/components/EmptyState";
+import { ActionForm } from "@/components/ActionForm";
 
 type CatalogEntryWithLines = {
   id: string;
@@ -272,7 +273,7 @@ export default async function CatalogPage() {
 
       <section className="rounded-lg border border-line-card bg-surface p-4" data-tour="catalog-add">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Add a catalog entry</h2>
-        <form action={createLineItemCatalogEntry} className="flex flex-wrap items-end gap-3">
+        <ActionForm action={createLineItemCatalogEntry} className="flex flex-wrap items-end gap-3">
           <label className="flex flex-1 min-w-[200px] flex-col gap-1 text-sm text-ink-label">
             Description
             <input
@@ -290,34 +291,41 @@ export default async function CatalogPage() {
             />
           </label>
           {/* THESE THREE HAD NO `type` AT ALL, so they defaulted to text and
-              fed `nullableDecimalFromForm`, which refuses anything
-              `Number()` cannot read. Type "1,200" or "$2.85" — the two ways
-              a person actually writes a price — and the action THREW, which
-              on this form is the worst case in the app: it is a plain
-              `<form action={…}>` with no client error handling, so the throw
-              reaches the error boundary, the page is replaced, and every
-              field typed alongside it is gone. The message would have been
-              redacted anyway.
+              fed `nullableDecimalFromForm`, which refused anything `Number()`
+              could not read. Type "1,200" or "$2.85" — the two ways a person
+              actually writes a price — and the action THREW, which on this
+              form was the worst case in the app: a plain `<form action={…}>`
+              with no client error handling, so the throw reached the error
+              boundary, the page was replaced, and every field typed alongside
+              it went with it. The message would have been redacted anyway.
 
-              `type="number"` makes the browser refuse the comma and the
-              dollar sign before anything is submitted; `step="0.01"` is what
-              stops it ALSO rejecting 2.85 (the default step is 1);
-              `inputMode="decimal"` opens a phone straight on a keypad with a
-              decimal point, which `type="number"` alone does not guarantee
-              on Android — the same pairing SafetyIncidentFields documents.
+              THE FIX THAT USED TO BE DESCRIBED HERE WAS `type="number"`, and
+              this paragraph recommended it in as many words: "makes the
+              browser refuse the comma and the dollar sign before anything is
+              submitted". That sentence is true and it is the PROBLEM, not the
+              solution — measured in real Chromium 2026-09-21, setting such a
+              field's value to `2,800` submits an EMPTY STRING, and on a
+              NULLABLE field like these three an empty string is "not set", so
+              the price silently vanished with no error at all. Firefox
+              submits "" for anything it dislikes. Refusing input at the box
+              is only safe when the box refuses visibly, and it does not.
 
-              Browser validation is not the server check, and the server
-              check here is still a throw: `createLineItemCatalogEntry` lives
-              in `lib/actions/estimating.ts`, which is the other lane. Its
-              conversion is reported, not done here. */}
+              So: `type="text"` with `inputMode="decimal"` — what was typed
+              stays on screen and a phone still opens on a keypad — and the
+              server does the deciding, tolerantly, in lib/numeric-input.ts.
+              `1,200` and `$2.85` both save now. `step` went with the type;
+              there is nothing left for it to fix.
+
+              `createLineItemCatalogEntry` returns its refusals rather than
+              throwing them, and this form posts through `<ActionForm>`, so a
+              figure that genuinely is not a number arrives as a sentence
+              under the fields that are still filled in. */}
           <label className="flex flex-col gap-1 text-sm text-ink-label">
             Default unit price
             <input
               name="defaultUnitPrice"
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="0.01"
-              min="0"
               placeholder="optional"
               className="w-32 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
             />
@@ -326,10 +334,8 @@ export default async function CatalogPage() {
             Default budgeted cost
             <input
               name="defaultBudgetedUnitCost"
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="0.01"
-              min="0"
               placeholder="optional"
               className="w-32 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
             />
@@ -346,10 +352,8 @@ export default async function CatalogPage() {
             Default labor hrs — whole line
             <input
               name="defaultLaborHours"
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="0.01"
-              min="0"
               placeholder="optional"
               aria-describedby="defaultLaborHours-help"
               className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
@@ -397,7 +401,7 @@ export default async function CatalogPage() {
           >
             Add entry
           </SubmitButton>
-        </form>
+        </ActionForm>
       </section>
     </div>
   );

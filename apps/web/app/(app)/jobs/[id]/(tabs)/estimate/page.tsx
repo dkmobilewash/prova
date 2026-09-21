@@ -32,6 +32,7 @@ import {
 import { jobEarnedRevenue, jobOverUnderBilling } from "@/lib/company-financials";
 import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
+import { ActionForm } from "@/components/ActionForm";
 import {
   addLineItem,
   addLineItemFromCatalog,
@@ -432,14 +433,17 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
 
                 <AddCostEntryForm jobId={job.id} lineItemId={item.id} defaultTradeScope={item.tradeScope} />
 
-                <form
+                <ActionForm
                   action={updateLineItemForecastWithId(item.id)}
+                  resetOnSuccess={false}
                   className="mt-3 flex flex-wrap items-end gap-2 border-t border-line-row pt-3"
                 >
                   <label className="flex flex-col gap-1 text-xs text-ink-body">
                     Re-forecast current unit cost
                     <input
                       name="currentEstimatedUnitCost"
+                      type="text"
+                      inputMode="decimal"
                       defaultValue={item.currentEstimatedUnitCost?.toString() ?? ""}
                       placeholder="per unit"
                       className="w-28 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
@@ -449,6 +453,8 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                     Override cost-to-complete
                     <input
                       name="estimatedCostToComplete"
+                      type="text"
+                      inputMode="decimal"
                       defaultValue={item.estimatedCostToComplete?.toString() ?? ""}
                       placeholder="leave blank to auto-derive"
                       title="Overrides the mechanical (current estimate - actual) calculation — use when you know something the cost data doesn't reflect yet"
@@ -461,7 +467,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                   >
                     Save forecast
                   </SubmitButton>
-                </form>
+                </ActionForm>
               </div>
             );
           })}
@@ -478,7 +484,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
               {job.lineItems.length === 0 && <p className="py-2 text-sm text-ink-body">No line items yet — add one below.</p>}
               {job.lineItems.map((item) => (
                 <div key={item.id} className="border-t border-line-row py-3 first:border-t-0">
-                  <form action={updateLineItemWithId(item.id)} className="flex flex-col gap-2">
+                  <ActionForm action={updateLineItemWithId(item.id)} resetOnSuccess={false} className="flex flex-col gap-2">
                     <div className="flex flex-wrap items-center gap-2">
                       {item.aiDrafted && <PriceBasisBadge basis={item.priceBasis} />}
                       <input
@@ -490,6 +496,8 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                       />
                       <input
                         name="quantity"
+                        type="text"
+                        inputMode="decimal"
                         defaultValue={item.quantity.toString()}
                         required
                         title="Quantity"
@@ -519,6 +527,8 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                         Unit price
                         <input
                           name="unitPrice"
+                          type="text"
+                          inputMode="decimal"
                           defaultValue={item.unitPrice?.toString() ?? ""}
                           placeholder="cost-only"
                           title="Leave blank for a cost-only budget line (general conditions, overhead) with no client-facing price"
@@ -529,6 +539,8 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                         Budgeted cost
                         <input
                           name="budgetedUnitCost"
+                          type="text"
+                          inputMode="decimal"
                           defaultValue={item.budgetedUnitCost?.toString() ?? ""}
                           placeholder="per unit"
                           title="Estimated unit cost at estimate approval — the frozen historical baseline for WIP reporting"
@@ -539,6 +551,8 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                         Labor hrs
                         <input
                           name="laborHours"
+                          type="text"
+                          inputMode="decimal"
                           defaultValue={item.laborHours?.toString() ?? ""}
                           placeholder="hrs"
                           className="w-16 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
@@ -572,7 +586,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                         Save
                       </SubmitButton>
                     </div>
-                  </form>
+                  </ActionForm>
                   <RowActions
                     className="mt-1 flex flex-wrap items-center justify-end gap-3"
                     destructive={
@@ -607,7 +621,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
 
           <section className="mb-10" data-tour="job-add-line-item">
             <h2 className="mb-3 text-lg font-semibold text-ink">Add line item</h2>
-            <form action={addLineItemWithId} className="flex flex-wrap items-end gap-3">
+            <ActionForm action={addLineItemWithId} className="flex flex-wrap items-end gap-3">
               <label className="flex flex-col gap-1 text-sm text-ink-label">
                 Description
                 <input
@@ -620,6 +634,8 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                 Qty
                 <input
                   name="quantity"
+                  type="text"
+                  inputMode="decimal"
                   defaultValue="1"
                   required
                   className="w-20 rounded-md border border-line-card bg-surface px-3 py-2 text-ink focus:border-link focus:outline-none"
@@ -636,6 +652,8 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                 Unit price
                 <input
                   name="unitPrice"
+                  type="text"
+                  inputMode="decimal"
                   placeholder="cost-only"
                   title="Leave blank for a cost-only budget line (general conditions, overhead) with no client-facing price"
                   className="w-28 rounded-md border border-line-card bg-surface px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
@@ -645,6 +663,8 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                 Budgeted cost
                 <input
                   name="budgetedUnitCost"
+                  type="text"
+                  inputMode="decimal"
                   placeholder="per unit"
                   title="Estimated unit cost — the historical baseline for WIP reporting"
                   className="w-28 rounded-md border border-line-card bg-surface px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
@@ -673,10 +693,10 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
               >
                 Add line item
               </SubmitButton>
-            </form>
+            </ActionForm>
 
             {catalogEntries.length > 0 && (
-              <form action={addLineItemFromCatalogWithId} className="mt-4 flex flex-wrap items-end gap-3">
+              <ActionForm action={addLineItemFromCatalogWithId} className="mt-4 flex flex-wrap items-end gap-3">
                 <label className="flex flex-col gap-1 text-sm text-ink-label">
                   Add from catalog
                   <select
@@ -695,6 +715,8 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                   Qty
                   <input
                     name="quantity"
+                    type="text"
+                    inputMode="decimal"
                     defaultValue="1"
                     required
                     className="w-20 rounded-md border border-line-card bg-surface px-3 py-2 text-ink focus:border-link focus:outline-none"
@@ -706,7 +728,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                 >
                   Add from catalog
                 </SubmitButton>
-              </form>
+              </ActionForm>
             )}
           </section>
 

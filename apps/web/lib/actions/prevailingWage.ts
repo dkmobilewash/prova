@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { numericReaders } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
@@ -9,6 +10,13 @@ import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared"
  * message to a digest. `lib/actions/submittals.ts` is the reference. */
 
 class InputError extends Error {}
+
+/** One parser for every typed figure in the app — `lib/numeric-input.ts`.
+ * Raises THIS module's InputError so the local `runAction` catch still
+ * sees it; see numericReaders' header for why that indirection exists. */
+const { optionalNumber } = numericReaders((message) => {
+  throw new InputError(message);
+});
 
 const AUTHORITIES = ["FEDERAL", "STATE", "COUNTY", "CITY"] as const;
 const FREQUENCIES = ["WEEKLY", "BIWEEKLY", "SEMI_MONTHLY", "MONTHLY"] as const;
@@ -53,32 +61,18 @@ function requiredDate(formData: FormData, key: string, label: string): Date {
  * how a seventh-consecutive-day rule is usually written.
  */
 function optionalHours(formData: FormData, key: string, label: string): string | null {
-  const raw = text(formData, key);
-  if (!raw) return null;
-  const value = Number(raw);
-  if (Number.isNaN(value)) throw new InputError(`${label} must be a number`);
-  if (value < 0) throw new InputError(`${label} can't be negative`);
-  if (value > 24) throw new InputError(`${label} can't be more than 24 hours in a day`);
-  return value.toFixed(2);
+  const value = optionalNumber(formData, key, { label, min: 0, max: 24, unit: " hours" });
+  return value === null ? null : value.n.toFixed(2);
 }
 
 function optionalWeeklyHours(formData: FormData, key: string, label: string): string | null {
-  const raw = text(formData, key);
-  if (!raw) return null;
-  const value = Number(raw);
-  if (Number.isNaN(value)) throw new InputError(`${label} must be a number`);
-  if (value < 0) throw new InputError(`${label} can't be negative`);
-  if (value > 168) throw new InputError(`${label} can't be more than 168 hours in a week`);
-  return value.toFixed(2);
+  const value = optionalNumber(formData, key, { label, min: 0, max: 168, unit: " hours" });
+  return value === null ? null : value.n.toFixed(2);
 }
 
 function optionalDays(formData: FormData, key: string, label: string): number | null {
-  const raw = text(formData, key);
-  if (!raw) return null;
-  const value = Number(raw);
-  if (!Number.isInteger(value)) throw new InputError(`${label} must be a whole number of days`);
-  if (value < 0 || value > 365) throw new InputError(`${label} has to be between 0 and 365`);
-  return value;
+  const value = optionalNumber(formData, key, { label, min: 0, max: 365, integer: true, unit: " days" });
+  return value === null ? null : value.n;
 }
 
 /** Only http(s): this string goes into an href, so a javascript: URL would

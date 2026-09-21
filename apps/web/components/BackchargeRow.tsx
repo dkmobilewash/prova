@@ -213,18 +213,24 @@ export function BackchargeRow({
             <label className={labelClass}>
               Amount settled at
               <input
-                type="number"
+                type="text"
+                inputMode="decimal"
                 name="resolvedAmount"
                 required
-                step="0.01"
-                min="0.01"
-                // Deliberately NO max={claimed}. The action already refuses a
-                // settlement above the claim, with a sentence explaining that
-                // a bigger number is a NEW backcharge rather than this one
-                // growing. `max` fired Chrome's own "Value must be less than
-                // or equal to 4200" first, so that sentence was unreachable
-                // -- unstyled, untranslatable, and gone entirely if the
-                // attribute is ever dropped. The server owns this rule.
+                // Deliberately NO max={claimed}, and now no `type="number"`,
+                // `step` or `min` either — for one reason, stated twice. The
+                // action already refuses a settlement above the claim, with a
+                // sentence explaining that a bigger number is a NEW backcharge
+                // rather than this one growing. `max` fired Chrome's own
+                // "Value must be less than or equal to 4200" first, so that
+                // sentence was unreachable — unstyled, untranslatable, and
+                // gone entirely if the attribute is ever dropped.
+                //
+                // `type="number"` is the same trap one layer down: Chromium
+                // drops a character it cannot parse as you type and Firefox
+                // submits an empty string, so `$4,200.00` stopped being what
+                // the person typed before the server had an opinion about it.
+                // The server owns this rule — all of it.
                 placeholder="0.00"
                 className={inputClass}
               />

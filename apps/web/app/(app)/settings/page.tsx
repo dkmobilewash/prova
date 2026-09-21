@@ -35,6 +35,7 @@ import {
 } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
 import { quickBooksConnectCardState, quickBooksSetup } from "@/lib/quickbooks-setup";
+import { ActionForm } from "@/components/ActionForm";
 
 const QB_ERROR_MESSAGES: Record<string, string> = {
   access_denied: "You declined the QuickBooks connection request.",
@@ -777,7 +778,7 @@ export default async function SettingsPage({
 
         <details className="rounded-lg border border-line-card bg-surface p-4">
           <summary className="cursor-pointer text-sm font-medium text-ink-label">Add a bond</summary>
-          <form action={createBond} className="mt-4 flex flex-col gap-3">
+          <ActionForm action={createBond} className="mt-4 flex flex-col gap-3">
             <div className="flex flex-wrap gap-3">
               <label className={labelClass}>
                 Type
@@ -797,11 +798,11 @@ export default async function SettingsPage({
             <div className="flex flex-wrap gap-3">
               <label className={labelClass}>
                 Aggregate bonding capacity (optional)
-                <input name="aggregateBondingCapacity" type="number" step="0.01" className={`w-48 ${inputClass}`} />
+                <input name="aggregateBondingCapacity" type="text" inputMode="decimal" className={`w-48 ${inputClass}`} />
               </label>
               <label className={labelClass}>
                 Single job limit (optional)
-                <input name="singleJobLimit" type="number" step="0.01" className={`w-48 ${inputClass}`} />
+                <input name="singleJobLimit" type="text" inputMode="decimal" className={`w-48 ${inputClass}`} />
               </label>
               <label className={labelClass}>
                 Renewal date (optional)
@@ -825,7 +826,7 @@ export default async function SettingsPage({
             <SubmitButton type="submit" className={`self-start ${addButtonClass}`}>
               Add bond
             </SubmitButton>
-          </form>
+          </ActionForm>
         </details>
       </section>
     </div>
