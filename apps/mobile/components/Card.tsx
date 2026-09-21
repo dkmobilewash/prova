@@ -1,59 +1,30 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
-import { colors } from "@/lib/theme";
-
-type Accent = "rose" | "amber" | "green" | "blue" | "indigo" | "violet" | "teal";
-
-const ACCENT_BAR: Record<Accent, string> = {
-  rose: colors.barRose,
-  amber: colors.barAmber,
-  green: colors.barGreen,
-  blue: colors.barBlue,
-  indigo: colors.barIndigo,
-  violet: colors.barViolet,
-  teal: colors.barTeal,
-};
+import { type Palette, radius, space } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 
 /**
- * A surface — #1a1a1a on the #0f0f0f canvas, hairline border, no shadow,
- * exactly as the web draws a card. `accent` draws a 4px bar down the left
- * edge, for summary tiles only (a colour on everything is a colour that
- * says nothing).
+ * A standalone surface — hairline border, no shadow, exactly as the web
+ * draws a card. Deliberately RARE now: lists of rows live in GroupedList,
+ * and this survives only for objects that stand alone on the canvas (the
+ * clock card on Time, a photo, an outbox item). The old `accent` bar prop
+ * was deleted — no screen ever used it, and a colour on everything is a
+ * colour that says nothing.
  */
-export function Card({
-  accent,
-  children,
-  style,
-}: {
-  accent?: Accent;
-  children: ReactNode;
-  style?: object;
-}) {
-  return (
-    <View style={[styles.card, style]}>
-      {accent ? (
-        <View style={[styles.bar, { backgroundColor: ACCENT_BAR[accent] }]} />
-      ) : null}
-      {children}
-    </View>
-  );
+export function Card({ children, style }: { children: ReactNode; style?: object }) {
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
+  return <View style={[styles.card, style]}>{children}</View>;
 }
 
-const styles = StyleSheet.create({
-  card: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.lineCard,
-    backgroundColor: colors.surface,
-    padding: 16,
-  },
-  bar: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    borderTopLeftRadius: 12,
-    borderBottomLeftRadius: 12,
-  },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    card: {
+      borderRadius: radius.card,
+      borderWidth: 1,
+      borderColor: p.colors.lineCard,
+      backgroundColor: p.colors.surface,
+      padding: space.md,
+    },
+  });
+}
