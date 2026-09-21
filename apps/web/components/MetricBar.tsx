@@ -1,3 +1,27 @@
+"use client";
+
+/**
+ * A CLIENT component, and that is load-bearing rather than incidental.
+ *
+ * `Metric` below hands a `<span>` to `<Hint>`, which is a client
+ * component. While this file was a SERVER component that span had to
+ * travel through React's Flight payload to get there — and React's
+ * production serializer defers any element it reaches after the current
+ * row has passed 3,200 bytes, so the span arrived in the browser as a
+ * LAZY with no `.props` and `Hint` threw reading one. This bar is in the
+ * `(app)` layout, so that took down every signed-in page: the dashboard,
+ * the jobs list and every job tab, with no way out of it from the UI.
+ * Created here in the browser, the element never crosses that boundary
+ * and cannot be deferred.
+ *
+ * `financials` is plain numbers, so nothing else about this changes: the
+ * queries still run on the server in the layout, and only the four
+ * already-computed figures are serialized.
+ *
+ * `hintClientOnly.test.ts` fails the build if this directive is ever
+ * removed, or if any other file rendering <Hint> is a server component.
+ */
+
 import { Hint } from "@/components/Hint";
 import { money } from "@/lib/money";
 import {
