@@ -1,8 +1,11 @@
 import { ClerkProvider } from "@clerk/expo";
-import { Stack } from "expo-router";
+import { Redirect, Stack } from "expo-router";
+import { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import * as SecureStore from "expo-secure-store";
 import { colors, typography } from "@/lib/theme";
+import { getHandover } from "@/lib/handover";
+import { useQueueDrain } from "@/lib/use-queue-drain";
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
 
@@ -41,12 +44,43 @@ const screenOptions = {
   headerBackTitle: "Back",
 } as const;
 
+/**
+ * A handover survives a relaunch, and this is where that is enforced.
+ *
+ * The flag lives on disk (lib/handover.ts) precisely because React state
+ * does not: a crew member who wanted out of the handover screen would
+ * force-quit the app, and anything held in memory would hand them the
+ * foreman's phone. So the app asks, before it draws anything, whether it
+ * is currently in somebody else's hands.
+ *
+ * `null` means "haven't looked yet" and renders nothing at all — a frame
+ * of the tabs before the redirect is exactly the frame worth not showing.
+ */
+function HandoverGate({ children }: { children: React.ReactNode }) {
+  const [inHandover, setInHandover] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void getHandover().then((open) => setInHandover(!!open));
+  }, []);
+
+  if (inHandover === null) return null;
+  if (inHandover) return <Redirect href="/handover" />;
+  return <>{children}</>;
+}
+
 export default function RootLayout() {
+  // One drain timer for the whole app, and it lives HERE rather than on
+  // the tabs (where #403 put it) so the queue keeps going during a
+  // handover too: a crew member's hours must not wait for the foreman to
+  // take the phone back.
+  useQueueDrain();
+
   return (
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
       {/* Light glyphs: the chrome is #171717 now, and the default dark
           status bar text disappeared into it. */}
       <StatusBar style="light" />
+      <HandoverGate>
       <Stack screenOptions={screenOptions}>
         {/* The title is never shown — the tabs draw their own headers. */}
         <Stack.Screen name="(tabs)" options={{ headerShown: false, title: "Home" }} />
@@ -62,7 +96,11 @@ export default function RootLayout() {
         <Stack.Screen name="drawings/[jobId]" options={{ title: "Drawings" }} />
         <Stack.Screen name="schedule/[jobId]" options={{ title: "Schedule" }} />
         <Stack.Screen name="outbox" options={{ title: "Waiting to send" }} />
+        {/* No header and no swipe-back: the way out of a handover is
+            handing the phone back, not an iOS gesture. */}
+        <Stack.Screen name="handover" options={{ headerShown: false, gestureEnabled: false }} />
       </Stack>
+      </HandoverGate>
     </ClerkProvider>
   );
 }

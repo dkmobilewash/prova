@@ -2,7 +2,6 @@ import { Tabs } from "expo-router";
 import { usePushRegistration } from "@/lib/use-push-registration";
 import { holds } from "@/lib/capabilities";
 import { useMe } from "@/lib/use-me";
-import { useQueueDrain } from "@/lib/use-queue-drain";
 import { Icon } from "@/components/Icon";
 import { colors, typography } from "@/lib/theme";
 
@@ -30,9 +29,8 @@ export default function TabsLayout() {
   // option 403s — the shell promising work the server will refuse.
   const { me } = useMe();
   const field = holds(me, "MANAGE_FIELD");
-  // One timer for the app: the queue retries itself while Prova is open,
-  // rather than only when a screen happens to be focused.
-  useQueueDrain();
+  // The queue's drain timer is NOT here: it moved to the root layout so
+  // it keeps running during a handover, when the tabs are not mounted.
 
   return (
     <Tabs
