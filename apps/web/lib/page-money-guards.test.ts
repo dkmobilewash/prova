@@ -121,8 +121,11 @@ describe("the app layout's Money Rail figures", () => {
   const source = read("app/(app)/layout.tsx");
 
   it("loads the stages only behind VIEW_COMPANY_FINANCIALS", () => {
+    // The gated call may be settled with shellQueryFailed (a rail query that
+    // throws costs the rail its figures, not the page — components/
+    // ShellRegion.tsx) and nothing else: the gate is still the ternary.
     expect(source).toMatch(
-      /can\(principal, "VIEW_COMPANY_FINANCIALS"\)\s*\? getMoneyRailStages\(company\.id\)\s*: Promise\.resolve\(\[\]\)/,
+      /can\(principal, "VIEW_COMPANY_FINANCIALS"\)\s*\? getMoneyRailStages\(company\.id\)(?:\s*\.catch\(shellQueryFailed\("sidebar", \[\]\)\))?\s*: Promise\.resolve\(\[\]\)/,
     );
   });
 

@@ -9,6 +9,8 @@ import { can, type Principal } from "@/lib/permissions";
 import { viewerToday } from "@/lib/viewerToday";
 import { TimeZoneCookie } from "@/components/TimeZoneCookie";
 import { FullTour } from "@/components/FullTour";
+import { ShellRegion, ShellRegionFallback } from "@/components/ShellRegion";
+import { shellQueryFailed } from "@/lib/shell-region-failure";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -53,8 +55,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // not serialise them: it is a cookie read, not a round trip.
   const today = await viewerToday();
 
+  // The two money queries are settled, not awaited bare: a query that
+  // chokes on one strange invoice must cost its own region, never the page.
+  // See lib/shell-region-failure.ts for why the alert count is NOT settled.
   const [financials, alertCount, moneyRailStages] = await Promise.all([
-    loadCompanyFinancials(company.id),
+    loadCompanyFinancials(company.id).catch(shellQueryFailed("metricbar", null)),
     // In the layout, so the count is on every screen. Derived on each
     // render like everything else here — there is no stored unread count
     // to go stale against the records it is counting. Scoped to this
@@ -74,7 +79,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // lib/permissions.ts deliberately strips of all money. No capability
     // means no figures: the rail renders its headings without them, and
     // the queries never run.
-    can(principal, "VIEW_COMPANY_FINANCIALS") ? getMoneyRailStages(company.id) : Promise.resolve([]),
+    can(principal, "VIEW_COMPANY_FINANCIALS")
+      ? getMoneyRailStages(company.id).catch(shellQueryFailed("sidebar", []))
+      : Promise.resolve([]),
   ]);
   return (
     // h-screen with the content column scrolling inside it, so the metric
@@ -85,28 +92,43 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // --shell-port, so anything that must fit inside the scroll port (the
     // side panel) is bounded by the same numbers the bars are laid out
     // with, rather than repeating them and drifting.
+    //
+    // Every shell region below is inside its own <ShellRegion>: a widget
+    // that throws is replaced by a quiet fallback of the same height and the
+    // page keeps working. The page itself ({children}) is deliberately NOT
+    // wrapped — app/(app)/error.tsx owns that and must stay loud. See
+    // components/ShellRegion.tsx; shellRegion.test.ts fails the build if a
+    // shell component is rendered here bare.
     <div className="flex h-screen bg-canvas [--shell-metricbar:52px] [--shell-topbar:56px]">
       {/* Renders nothing. Parks the browser's IANA zone in a cookie so
           the server can work out what day it is where the reader is. */}
-      <TimeZoneCookie />
+      <ShellRegion region="helper">
+        <TimeZoneCookie />
+      </ShellRegion>
       {/* "Take the full tour": renders nothing until someone starts it.
           Here rather than on a page because it moves between pages. */}
-      <FullTour principal={principal} />
-      <Sidebar
-        companyName={company.name}
-        principal={principal}
-        showsInternal={showsInternal}
-        businessScope={businessScope}
-        stages={moneyRailStages}
-      />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar
+      <ShellRegion region="helper">
+        <FullTour principal={principal} />
+      </ShellRegion>
+      <ShellRegion region="sidebar">
+        <Sidebar
           companyName={company.name}
-          alertCount={alertCount}
           principal={principal}
           showsInternal={showsInternal}
           businessScope={businessScope}
+          stages={moneyRailStages}
         />
+      </ShellRegion>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <ShellRegion region="topbar">
+          <Topbar
+            companyName={company.name}
+            alertCount={alertCount}
+            principal={principal}
+            showsInternal={showsInternal}
+            businessScope={businessScope}
+          />
+        </ShellRegion>
         {/* No background of its own: each page brings its own ground, so a
             page still written against the dark theme keeps it and a
             converted one opts into the light canvas. */}
@@ -117,8 +139,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             blended margin, cash collected. Withheld from anyone without
             VIEW_COMPANY_FINANCIALS, because a permission enforced on
             /cash-flow and then rendered along the bottom of every other
-            page is not enforced at all. */}
-        {can(principal, "VIEW_COMPANY_FINANCIALS") && <MetricBar financials={financials} />}
+            page is not enforced at all. A null here means its query failed
+            above and was logged; the region shows its fallback instead. */}
+        {can(principal, "VIEW_COMPANY_FINANCIALS") &&
+          (financials ? (
+            <ShellRegion region="metricbar">
+              <MetricBar financials={financials} />
+            </ShellRegion>
+          ) : (
+            <ShellRegionFallback region="metricbar" />
+          ))}
       </div>
     </div>
   );
