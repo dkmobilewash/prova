@@ -91,46 +91,43 @@ class FakeDb {
   }
 
   client() {
-    const self = this;
     return {
       deviceToken: {
         findMany: ({ where }: { where: { userId: string } }) =>
-          op(() => self.rows("deviceToken").filter((row) => matches(row, where))),
+          op(() => this.rows("deviceToken").filter((row) => matches(row, where))),
       },
       notificationDispatch: {
         findMany: ({ where }: { where?: Record<string, unknown> } = {}) =>
           op(() =>
             where
-              ? self
-                  .rows("notificationDispatch")
-                  .filter((row) => matches(row, where))
-              : self.rows("notificationDispatch"),
+              ? this.rows("notificationDispatch").filter((row) => matches(row, where))
+              : this.rows("notificationDispatch"),
           ),
         createManyAndReturn: ({ data }: { data: Record<string, unknown>[] }) =>
           op(() => {
-            self.writes.push("ledger.createManyAndReturn");
-            if (self.beforeClaim) self.beforeClaim();
+            this.writes.push("ledger.createManyAndReturn");
+            if (this.beforeClaim) this.beforeClaim();
             const created: Row[] = [];
             for (const item of data) {
-              const clash = self.rows("notificationDispatch").some(
+              const clash = this.rows("notificationDispatch").some(
                 (row) =>
                   row.userId === item.userId &&
                   row.dispatchKey === item.dispatchKey,
               );
               if (clash) continue;
-              const row = { id: `nd_${++self.seq}`, ...item } as Row;
-              self.seed("notificationDispatch", row);
+              const row = { id: `nd_${++this.seq}`, ...item } as Row;
+              this.seed("notificationDispatch", row);
               created.push(row);
             }
             return created;
           }),
         deleteMany: ({ where }: { where: Record<string, unknown> }) =>
           op(() => {
-            self.writes.push("ledger.deleteMany");
+            this.writes.push("ledger.deleteMany");
             let count = 0;
-            for (const row of self.rows("notificationDispatch")) {
+            for (const row of this.rows("notificationDispatch")) {
               if (!matches(row, where)) continue;
-              self.tables.get("notificationDispatch")!.delete(row.id);
+              this.tables.get("notificationDispatch")!.delete(row.id);
               count += 1;
             }
             return { count };
