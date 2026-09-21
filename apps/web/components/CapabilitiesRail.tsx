@@ -31,7 +31,16 @@ export function CapabilitiesRail({
   children,
   label,
 }: {
-  children: React.ReactNode;
+  /** Optional in the TYPE only, and the reason is worth a line so nobody
+   * "tightens" it back. Once `label` became a required prop,
+   * `createElement(CapabilitiesRail, null, ...cards)` stopped typechecking
+   * — React types the props argument as `Attributes & P`, so a required
+   * member makes a partial props object invalid. Moving the children INTO
+   * the props object fixes the type and trips `react/no-children-prop`,
+   * which is a lint ERROR here and fails the build. Optional children is
+   * the one shape that satisfies both: callers still pass cards as
+   * ordinary JSX children, and nothing in the app renders this empty. */
+  children?: React.ReactNode;
   /** The region's accessible name. REQUIRED, and deliberately has no
    * default: it used to be a string literal in this file that counted the
    * cards ("six capabilities"), which is a number sitting next to a list

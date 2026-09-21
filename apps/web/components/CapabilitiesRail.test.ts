@@ -54,19 +54,15 @@ function mount() {
         // ("six capabilities") while being unable to see them, and it went
         // stale when the list changed length. The real caller derives it
         // from CAPABILITIES.length; this test only needs a valid name.
-        // Children go INSIDE the props object rather than as variadic
-        // arguments: `createElement`'s last overload types `props` as
-        // `Attributes & P`, so once P carries a required `label` a partial
-        // props object stops matching it. The old call passed `null`,
-        // which that overload does accept — which is why this is a new
-        // line rather than an existing one that broke.
-        {
-          label: "Two test cards. Swipe, scroll, or use the arrow keys.",
-          children: [
-            createElement("article", { key: "a", "data-rail-card": true, style: { width: "300px" } }, "card 1"),
-            createElement("article", { key: "b", "data-rail-card": true, style: { width: "300px" } }, "card 2"),
-          ],
-        },
+        //
+        // Children stay VARIADIC here. Passing them inside the props object
+        // also typechecks, and is a `react/no-children-prop` lint error —
+        // which is an error rather than a warning in this repo, so it fails
+        // the build. `children` is optional in the component's prop type
+        // precisely so this call site can stay the ordinary shape.
+        { label: "Two test cards. Swipe, scroll, or use the arrow keys." },
+        createElement("article", { "data-rail-card": true, style: { width: "300px" } }, "card 1"),
+        createElement("article", { "data-rail-card": true, style: { width: "300px" } }, "card 2"),
       ),
     );
   });
