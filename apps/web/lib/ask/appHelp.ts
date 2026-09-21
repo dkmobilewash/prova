@@ -1,5 +1,6 @@
 import { WALKTHROUGHS, type Walkthrough } from "@/lib/walkthroughs";
 import { capabilityForRoute, can, type Principal } from "@/lib/permissions";
+import { isOpenableRoute, openableStartFor } from "@/lib/route-shape";
 
 /**
  * "How do I…" answered from the app's own registered "Walk me through this
@@ -124,7 +125,19 @@ function isRelevant(scores: number[]): boolean {
 }
 
 export type AppHelpMatch = {
+  /** The registry's own route, exactly as `app/` writes it — so a
+   * PATTERN (`/jobs/[id]/billing`) for the six pages that live inside one
+   * job. Kept because it is the truth about where the page is, and
+   * NEVER usable as a link target — `href` below is that. */
   route: string;
+  /** A path that actually resolves. Equal to `route` for an ordinary
+   * page; for a pattern it is the list the person starts from, and
+   * `insideOneJob` says so. */
+  href: string;
+  /** True when `href` is a starting point rather than the page itself —
+   * the caller must say "open the job first", never present `href` as
+   * being the page. */
+  insideOneJob: boolean;
   title: string;
   steps: { title: string; body: string }[];
 };
@@ -157,9 +170,26 @@ export function searchAppHelp(
     .sort((a, b) => b.points - a.points)
     .map((entry) => ({
       route: entry.walkthrough.route,
+      ...openableFor(entry.walkthrough.route),
       title: entry.walkthrough.title,
       steps: entry.walkthrough.steps.map((step) => ({ title: step.title, body: step.body })),
     }));
+}
+
+/**
+ * The `href`/`insideOneJob` half of a match: a place that resolves, and
+ * whether it is the page or only the way to it.
+ *
+ * A pattern with no openable prefix at all (`/[slug]`) falls back to
+ * `/dashboard` — a real page, never `""`, which would render as a link to
+ * the site root. No route in the registry is that shape, and
+ * `appHelpRouteCensus.test.ts` fails the build if one appears: every
+ * dynamic route today is a job page, which is the only thing that makes
+ * the name `insideOneJob` a description rather than a lie.
+ */
+function openableFor(route: string): { href: string; insideOneJob: boolean } {
+  if (isOpenableRoute(route)) return { href: route, insideOneJob: false };
+  return { href: openableStartFor(route) ?? "/dashboard", insideOneJob: true };
 }
 
 /**
