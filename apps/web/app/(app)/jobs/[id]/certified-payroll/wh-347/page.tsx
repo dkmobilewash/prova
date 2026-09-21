@@ -18,6 +18,7 @@
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { formatHours, formatHoursOrNull } from "@/lib/render-hours";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -80,10 +81,12 @@ function formatDate(date: Date): string {
   });
 }
 
-/** Hours as the form prints them — 8, 7.5, never 8.00 and never 0. */
+/** Hours as the FORM prints them: blank for a day nobody worked, because
+ * a dash in a box a federal reviewer reads as a number is worse than an
+ * empty one. The rounding itself is `lib/render-hours.ts` — this is only
+ * the empty-cell decision. */
 function hoursCell(hours: number | null): string {
-  if (hours == null) return "";
-  return String(Number(hours.toFixed(2)));
+  return formatHoursOrNull(hours, "");
 }
 
 /** What goes where a number should have been. A sentence, not a dash:
@@ -323,7 +326,7 @@ export default async function Wh347Page({
             {form.blocking.map((field) => (
               <li key={field} className="text-xs leading-snug text-tag-rose-ink">
                 {field === "hoursOutsideWeek"
-                  ? `${form.hoursOutsideWeek} ${form.hoursOutsideWeek === 1 ? "hour falls" : "hours fall"} outside this week's grid. ${WH347_BLOCKING_FIELD_REASON[field]}`
+                  ? `${formatHours(form.hoursOutsideWeek)} ${form.hoursOutsideWeek === 1 ? "hour falls" : "hours fall"} outside this week's grid. ${WH347_BLOCKING_FIELD_REASON[field]}`
                   : WH347_BLOCKING_FIELD_REASON[field]}
               </li>
             ))}

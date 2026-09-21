@@ -12,6 +12,7 @@ import { UnionLocalForm } from "@/components/UnionLocalForm";
 import { UnionLocalCard } from "@/components/UnionLocalCard";
 import { ratioLabel } from "@/lib/apprentice-ratio";
 import { money } from "@/lib/money";
+import { formatHours } from "@/lib/render-hours";
 import { isWhollyUnpriced } from "@/lib/fringe-remittance";
 import { loadApprenticeships, loadTeamForApprenticeship } from "@/lib/apprenticeship-query";
 import { ApprenticeshipForm } from "@/components/ApprenticeshipForm";
@@ -177,11 +178,11 @@ export default async function UnionCompliancePage({
                             {craft.craftLabel}
                             {craft.uncomputedHours > 0 && (
                               <span className="ml-2 text-xs text-tag-amber-ink">
-                                {craft.uncomputedHours} hrs unpriced
+                                {formatHours(craft.uncomputedHours)} hrs unpriced
                               </span>
                             )}
                           </td>
-                          <td className="py-1.5 text-right tabular-nums">{craft.hours}</td>
+                          <td className="py-1.5 text-right tabular-nums">{formatHours(craft.hours)}</td>
                           <td className="py-1.5 text-right tabular-nums">{cell(craft.components.pension)}</td>
                           <td className="py-1.5 text-right tabular-nums">{cell(craft.components.vacation)}</td>
                           <td className="py-1.5 text-right tabular-nums">
@@ -201,11 +202,11 @@ export default async function UnionCompliancePage({
 
             <p className="text-sm text-ink-body">
               <span className="font-mono text-ink-label">{money(remittance.total)}</span> across{" "}
-              {remittance.totalHours} hours.
+              {formatHours(remittance.totalHours)} hours.
               {remittance.uncomputedHours > 0 && (
                 <span className="text-tag-amber-ink">
                   {" "}
-                  {remittance.uncomputedHours} of those hours could not be priced — no craft tag, or no
+                  {formatHours(remittance.uncomputedHours)} of those hours could not be priced — no craft tag, or no
                   rate schedule in force on the day — so this total is short by whatever they are
                   worth. {remittance.uncomputedNames.join(", ")}.
                 </span>
@@ -272,10 +273,10 @@ export default async function UnionCompliancePage({
                         <span className={STATUS_TONE[day.status]}>{STATUS_LABEL[day.status]}</span>
                         <span className="text-ink-muted">
                           {" "}
-                          · {day.journeymanHours} jrny / {day.apprenticeHours} appr
-                          {day.allowedApprenticeHours !== null && ` (allows ${day.allowedApprenticeHours})`}
+                          · {formatHours(day.journeymanHours)} jrny / {formatHours(day.apprenticeHours)} appr
+                          {day.allowedApprenticeHours !== null && ` (allows ${formatHours(day.allowedApprenticeHours)})`}
                           {day.unclassifiedHours > 0 &&
-                            ` · ${day.unclassifiedHours} hrs unclassified: ${day.unclassifiedNames.join(", ")}`}
+                            ` · ${formatHours(day.unclassifiedHours)} hrs unclassified: ${day.unclassifiedNames.join(", ")}`}
                         </span>
                       </li>
                     ))}

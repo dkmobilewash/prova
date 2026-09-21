@@ -14,6 +14,8 @@
 // override when set; otherwise it's derived mechanically as
 // (currentEstimatedUnitCost × quantity) − actual-to-date, floored at 0.
 
+import { formatHours } from "./render-hours";
+
 /**
  * Burdened labor as job cost, split so a screen can name the parts.
  *
@@ -256,13 +258,16 @@ export function formatCoveragePercent(coverage: number): string {
 
 /** Logged hours for display: "7.5", "16", never "7.500000000000001".
  *
- * `TimeEntry.hours` is `Decimal(5,2)` and these totals are floating-point
- * sums of many of them, so the drift is real and it lands on a caveat whose
- * whole job is to be believed. Trailing zeroes are dropped because hours are
- * read as a quantity, not as money — "16" rather than "16.00". */
-export function formatLoggedHours(hours: number): string {
-  return String(Math.round(hours * 100) / 100);
-}
+ * KEPT AS A NAME, NOT AS AN IMPLEMENTATION. This was the original fix for
+ * issue #287 and its body was correct; it was also one of THREE copies of
+ * the same arithmetic in this app, and the other two sat on the two
+ * certified-payroll pages while a fourth screen printed
+ * "35.300000000000004" between them. The one implementation now lives in
+ * `lib/render-hours.ts` and the reasoning is there; this alias stays so
+ * the WIP call sites and `wip.test.ts`'s #287 cases keep reading in this
+ * file's own vocabulary. `hoursRenderCensus.test.ts` fails the build if a
+ * second implementation reappears. */
+export const formatLoggedHours = formatHours;
 
 /**
  * @param unassignedLabor Burdened labor on the job's TimeEntry rows that name

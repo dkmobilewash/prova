@@ -1,3 +1,5 @@
+import { formatHours } from "@/lib/render-hours";
+
 /** Wording for prevailing wage rule sets. Every threshold and every
  * disagreement is decided in lib/prevailing-wage.ts; nothing here judges
  * anything. */
@@ -56,6 +58,6 @@ export function payTypeLabel(value: string) {
 export function splitLabel(split: Record<string, number>): string {
   const parts = (["STRAIGHT", "OVERTIME", "DOUBLE_TIME", "SHIFT_DIFFERENTIAL"] as const)
     .filter((type) => (split[type] ?? 0) > 0)
-    .map((type) => `${split[type]} ${payTypeLabel(type)}`);
+    .map((type) => `${formatHours(split[type] ?? 0)} ${payTypeLabel(type)}`);
   return parts.length > 0 ? parts.join(", ") : "no hours";
 }
