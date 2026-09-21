@@ -294,7 +294,14 @@ export function LandingPage() {
         <h1 className="max-w-4xl text-[clamp(3rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink">
           The job-site system for union specialty-trade subcontractors.
         </h1>
-        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:gap-14">
+        {/* `items-start`, NOT `items-center`. The pay-application panel is
+            ~578px tall and the left column is ~242px, so centring the row
+            split the difference and left a 207px hole between the headline
+            and the subhead — read as "the page looks empty" twice before
+            anyone measured it. Top-aligning puts the subhead directly under
+            the headline, where it belongs, and lets the panel be the tall
+            element it is. */}
+        <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:gap-14">
           <div className="flex min-w-0 flex-col gap-8">
             <p className="max-w-2xl text-lg leading-relaxed text-ink-body sm:text-xl">
               The estimate, the contract, the crew&rsquo;s hours, certified payroll and the GC&rsquo;s
