@@ -195,10 +195,27 @@ export const COMPLIANCE_DOCUMENT_TYPES = [
   "UNION_AGREEMENT",
 ] as const;
 
+/**
+ * A `<select>` or radio group's value, checked against the list the form
+ * offered.
+ *
+ * Throws `InputError` (declared further down this file), NOT a bare
+ * `Error`, and the difference reached a user. This threw `Error` until
+ * 2026-09-21, so an action wrapped in `runAction` — which converts only
+ * `InputError` — rethrew it, and production redacted it to a digest. The
+ * first screen a new owner sees (`/welcome` → `saveBusinessScope`) did
+ * exactly that on a Save with no radio chosen: "Application error", a
+ * digest, and no way forward. Pinned by lib/businessScope-save.test.ts.
+ *
+ * The message is still the parser's — a field name and a constant list —
+ * so an action that can say something better checks for the empty case
+ * itself first, as `saveBusinessScope` now does. This is the floor, not
+ * the sentence.
+ */
 export function enumFromForm<T extends readonly string[]>(formData: FormData, key: string, allowed: T): T[number] {
   const raw = String(formData.get(key) ?? "");
   if (!allowed.includes(raw as T[number])) {
-    throw new Error(`"${key}" must be one of: ${allowed.join(", ")}`);
+    throw new InputError(`"${key}" must be one of: ${allowed.join(", ")}`);
   }
   return raw as T[number];
 }
@@ -238,7 +255,8 @@ export function optionalEnumFromForm<T extends readonly string[]>(
   const raw = String(formData.get(key) ?? "").trim();
   if (!raw) return null;
   if (!allowed.includes(raw as T[number])) {
-    throw new Error(`"${key}" must be one of: ${allowed.join(", ")}`);
+    // InputError for the same reason enumFromForm's is — see its comment.
+    throw new InputError(`"${key}" must be one of: ${allowed.join(", ")}`);
   }
   return raw as T[number];
 }

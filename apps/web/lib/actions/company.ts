@@ -8,6 +8,7 @@ import {
   CONTACT_TYPES,
   LOCATION_TYPES,
   type ActionResult,
+  InputError,
   actionFail as fail,
   actionOk as ok,
   assertOwner,
@@ -18,6 +19,7 @@ import {
   optionalEnumFromForm,
   ownerRefusal,
   plural,
+  runAction,
 } from "./shared";
 import { normalizeEin, normalizeWebsite } from "@/lib/company-profile";
 import { can } from "@/lib/permissions";
@@ -32,10 +34,14 @@ import { CONTRACTING_RELATIONSHIPS } from "@/lib/businessScope";
 const COMPLIANCE_ONLY =
   "The company record isn't part of your job function. The account owner sets who sees what, on the Team page.";
 
-/** Thrown by the form parsers below, caught at each action's boundary and
- * converted to a returned failure — same shape as submittals.ts, the
- * reference implementation for this pattern. */
-class InputError extends Error {}
+// `InputError` and `runAction` come from ./shared, and that is a fix rather
+// than tidiness. Until 2026-09-21 this file declared its OWN `InputError`
+// class and its own `runAction` that caught only that class — while the
+// shared parsers it also calls (`enumFromForm`, `optionalEnumFromForm`)
+// threw shared.ts's. Same name, two classes, `instanceof` false, so a
+// refusal from those parsers left every action here as a throw and reached
+// production as a digest. `/welcome`'s empty Save was the one a person
+// actually hit. One class, one boundary, no way for the two to disagree.
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -63,15 +69,6 @@ function optionalDate(formData: FormData, key: string): Date | null {
 function isForeignKeyViolation(err: unknown): boolean {
   const code = (err as { code?: unknown } | null)?.code;
   return code === "P2003" || code === "P2014";
-}
-
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
 }
 
 /**
@@ -180,8 +177,8 @@ export async function updateCompanyProfile(formData: FormData): Promise<ActionRe
    form appeared to do nothing on a duplicate email, and a failed removal left
    the teammate on the list with no explanation anywhere.
    `lib/actions/submittals.ts` is the reference for the shape; the
-   `InputError`/`runAction`/`fail()` machinery above already existed here for
-   the contact actions and is reused rather than duplicated.
+   `InputError`/`runAction`/`fail()` machinery comes from ./shared (see the
+   note above `text()` for why this file no longer has its own copy).
 
    The owner check is `ownerRefusal`, not `assertOwner`: an action whose type
    promises `{ ok: false, error }` must not refuse by throwing, which is
@@ -521,6 +518,20 @@ export async function saveBusinessScope(formData: FormData): Promise<ActionResul
       "Only the account owner can set this — it decides what the whole team's menu shows.",
     );
     if (refusal) return refusal;
+
+    // Said in the person's terms BEFORE the parsers get a turn. The radios
+    // are `required`, so a browser refuses an empty Save on its own — but a
+    // dispatched submit, an old tab, or a hand-built request reaches here
+    // with a group unanswered, and what the parsers would say about that is
+    // `"contractingRelationship" must be one of: …`, a sentence addressed to
+    // the form rather than to the person filling it in. This is the one
+    // that was the raw digest on /welcome (lib/businessScope-save.test.ts).
+    const unanswered = (["contractingRelationship", "doesPublicWork", "filesMonthlyPayApps"] as const).filter(
+      (key) => !text(formData, key),
+    );
+    if (unanswered.length > 0) {
+      return fail("Answer all three questions to save, or choose Skip for now and come back to this in Settings.");
+    }
 
     const contractingRelationship = enumFromForm(
       formData,
