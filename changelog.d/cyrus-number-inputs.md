@@ -86,6 +86,22 @@ viewport. It was legible, styled, and nowhere near the box. happy-dom returns
 zeros from `getBoundingClientRect`, so nothing in the unit suite could have
 said so.
 
+**The census's FIRST version asked the wrong question and passed**, which is
+worth more than the fix it was guarding. Its `type="number"` rule was scoped
+to a roster of field names derived from keyed reader calls in `lib/actions/`
+— a good source that cannot see a field read through a label-taking helper,
+rendered with a dynamic `name={…}`, or with no `name` at all. Four real
+inputs sat outside it (`apprenticeCount`, `journeymenCount`,
+`FringeScheduleList`'s five rate boxes, `CraftTierPicker`'s period), every
+one still `type="number"`, and the test was green. The rule is blanket now —
+no `<input type="number">` anywhere, whatever it is named — so it needs no
+roster and has no scope left to get wrong.
+
+**`dbtest` is a SECOND CI job and `preflight.sh` does not run it.** There is
+no local Postgres on this machine, so it was never run before the first
+push, and it caught one assertion the four local checks could not. Worth
+knowing before reading "preflight passed" as "CI will pass".
+
 Not fixed, deliberately: `components/TimeEntryFields.tsx` and
 `lib/actions/labor.ts` were another branch's files this session, so the Hours
 box still refuses a figure with a comma in it. It is named, with the reason,
