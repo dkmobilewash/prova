@@ -52,3 +52,12 @@ exist.
 **The check:** typecheck plus both vitest suites green, and Diego's
 13-step phone click-list (light and dark, both appearances) — the real
 gate, since the tests are text-only by design.
+
+**The handover screen joins the pass.** Once #405 merged, the redesign
+rebased onto it and restyled the crew-handover screen into the same
+system — safe-area header with the person's name at the large-title size,
+the hours entry and the saved list as groups, the keypad glyph on the
+PIN sheet — with every one of its strings frozen letter-for-letter (its
+own test pins them, plus the absence of Jobs/Margin/Backlog/Invoice),
+and its rails untouched: no header, no swipe-back, the on-disk flag that
+survives a force-quit.
