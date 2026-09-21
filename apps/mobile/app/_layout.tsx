@@ -49,13 +49,18 @@ function HandoverGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** The one drain timer for the whole app. It reads the session token
+ * (useAuth), so it MUST mount inside ClerkProvider — and it must keep
+ * running during a handover too, so it sits BESIDE the gate, not inside
+ * it. The first cut of this called useQueueDrain() directly in
+ * RootLayout, above the provider, and red-screened every launch. */
+function DrainTimer() {
+  useQueueDrain();
+  return null;
+}
+
 export default function RootLayout() {
   const palette = usePalette();
-  // One drain timer for the whole app, and it lives HERE rather than on
-  // the tabs (where it was before) so the queue keeps going during a
-  // handover too: a crew member's hours must not wait for the foreman to
-  // take the phone back.
-  useQueueDrain();
 
   /** Every pushed screen wears the app's own chrome rather than the stock
    * iOS one. `rail` is deliberately LIFTED off the canvas — the same trick
@@ -87,6 +92,7 @@ export default function RootLayout() {
           glyphs, the dark palette needs light ones, and only the OS knows
           which is showing. */}
       <StatusBar style="auto" />
+      <DrainTimer />
       <HandoverGate>
         <Stack screenOptions={screenOptions}>
           {/* The title is never shown — the tabs draw their own headers. */}
