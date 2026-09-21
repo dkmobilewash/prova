@@ -28,4 +28,9 @@ coverage
 # playwright
 apps/web/playwright-report
 apps/web/test-results
+# ...and the public suite's own two, which playwright.public.config.ts pins
+# explicitly rather than letting Playwright default them — three places
+# assuming the same default is how one of them ends up committing a report.
+apps/web/playwright-report-public
+apps/web/test-results-public
 apps/web/blob-report
