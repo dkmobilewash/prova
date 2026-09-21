@@ -1,7 +1,7 @@
 import { useAuth } from "@clerk/expo";
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
@@ -42,6 +42,7 @@ import {
   type WorkerKey,
 } from "@/lib/crew-entry";
 import { uuid } from "@/lib/id";
+import { isValidPin, startHandover } from "@/lib/handover";
 import { enqueue, queuedOperationIds, type CreateOp } from "@/lib/sync-queue";
 import { useSync } from "@/lib/use-sync";
 import type {
@@ -158,6 +159,12 @@ export default function TimeScreen() {
   const [reportDates, setReportDates] = useState<Set<string>>(new Set());
   const [delayCounts, setDelayCounts] = useState<Map<string, number>>(new Map());
   const [showSign, setShowSign] = useState(false);
+  // "Hand the phone to a crew member": who, and the PIN that brings it
+  // back. See lib/handover.ts — this is the C15/D-13 case, the hanger or
+  // taper who does not carry a company phone.
+  const [showHandover, setShowHandover] = useState(false);
+  const [handTo, setHandTo] = useState<string | null>(null);
+  const [handPin, setHandPin] = useState("");
   const [signDate, setSignDate] = useState("");
   const [signerName, setSignerName] = useState("");
   const [signaturePath, setSignaturePath] = useState<string | null>(null);
@@ -430,6 +437,24 @@ export default function TimeScreen() {
     if (lastDay.payType) setPayType(lastDay.payType as TimeEntryPayType);
   };
 
+  const handOver = async () => {
+    const member = crew.find((c) => c.id === handTo);
+    if (!jobId || !member) return;
+    setShowHandover(false);
+    await startHandover({
+      crewMemberId: member.id,
+      name: member.name,
+      jobId,
+      jobName: jobNames[jobId] ?? "this job",
+      // Blank means no PIN, which is a decision rather than an omission:
+      // the protection is then the foreman standing next to the phone.
+      ...(isValidPin(handPin.trim()) ? { pin: handPin.trim() } : {}),
+    });
+    setHandTo(null);
+    setHandPin("");
+    router.replace("/handover");
+  };
+
   const openSign = () => {
     setSignDate(today);
     setSignaturePath(null);
@@ -643,12 +668,63 @@ export default function TimeScreen() {
         <Button variant="secondary" onPress={openSign}>
           Sign the day
         </Button>
+        <Button variant="secondary" onPress={() => setShowHandover(true)}>
+          Hand phone over
+        </Button>
         <View style={styles.footerMain}>
           <Button fullWidth onPress={openForm}>
             Log time
           </Button>
         </View>
       </View>
+
+      {/* Handing the phone to a crew member so they put their OWN hours
+          in and sign for them, rather than the foreman typing what he
+          remembers at the end of the day. */}
+      <Sheet
+        visible={showHandover}
+        onClose={() => setShowHandover(false)}
+        title="Hand the phone over"
+        primaryLabel="Hand it over"
+        onPrimary={handOver}
+        primaryDisabled={!handTo}
+      >
+        <Text style={styles.handoverNote}>
+          They will see one screen — their own hours for today on this job, and a place to sign.
+          Nothing else on the phone is open while they have it.
+        </Text>
+        <View style={styles.handoverList}>
+          {crew.map((member) => (
+            <Pressable
+              key={member.id}
+              onPress={() => setHandTo(member.id)}
+              style={[styles.handoverPick, handTo === member.id && styles.handoverPicked]}
+              accessibilityRole="button"
+            >
+              <Text style={handTo === member.id ? styles.handoverPickedText : styles.handoverPickText}>
+                {member.name}
+              </Text>
+            </Pressable>
+          ))}
+          {crew.length === 0 ? (
+            <Text style={styles.handoverNote}>
+              No crew members on this company yet. They are added on the web, under Team.
+            </Text>
+          ) : null}
+        </View>
+        <Field
+          label="PIN to get the phone back (optional)"
+          value={handPin}
+          onChangeText={setHandPin}
+          keyboardType="number-pad"
+          maxLength={4}
+          placeholder="4 digits"
+        />
+        <Text style={styles.handoverNote}>
+          Without a PIN, anyone holding the phone can hand it back — which is usually fine, because
+          you are standing there. With one, it does not come back until you type it.
+        </Text>
+      </Sheet>
 
       {/* Clock in / Switch — pick craft + cost code together */}
       <Sheet
@@ -821,6 +897,18 @@ export default function TimeScreen() {
 }
 
 const styles = StyleSheet.create({
+  handoverNote: { color: colors.inkBody, fontSize: typography.size.sm, lineHeight: 20 },
+  handoverList: { gap: 8 },
+  handoverPick: {
+    borderWidth: 1,
+    borderColor: colors.lineCard,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  handoverPicked: { backgroundColor: colors.brand, borderColor: colors.brand },
+  handoverPickText: { color: colors.ink, fontSize: typography.size.md },
+  handoverPickedText: { color: colors.canvas, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
   screen: { flex: 1, backgroundColor: colors.canvas },
   pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
   error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
