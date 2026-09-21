@@ -122,3 +122,71 @@ All CSS/JS built from the platform — no new dependencies, no animation
 library. Existing dark/gold tokens only; no new colours. Full suite (355
 files / 5793 tests), typecheck, lint and build all green; `./scripts/preflight.sh`
 passed with no pending migrations.
+
+**Fourth round: "it still looks really empty."** The founder's judgement,
+and the measurement agreed with him rather than with the page. Measured in
+a real browser at 1440x900 before this pass: **3391px tall, 3.77 screens,
+353 words.** Comparable pages researched for the same buyer run 9-11
+screens. The most visible symptom was that at desktop the hero was text on
+the left and the entire right half was empty — the exact spot where the two
+closest comparables put a product video and an app screenshot.
+
+So this round adds CONTENT, not whitespace or bigger gaps. Nothing about
+the measured craft specs from round two changed: same headline clamp, same
+1.03 leading and -0.02em tracking, same single vertical rhythm, same two
+easing tokens, same reduced-motion guarantees at both layers.
+
+- **Five full sections replace the capability rail as the primary
+  presentation**, one each for the things that actually cost a union
+  specialty-trade sub money, in that order: getting paid, certified
+  payroll, apprentice ratios, whether the job is making money, protecting
+  yourself. Each is a heading, a paragraph in trade language, three
+  concrete specifics, and — for four of the five — a rendered panel of the
+  real document, alternating left and right so they do not read as one
+  column.
+- **The section order is the argument, and two moves in it are
+  load-bearing.** The old-way/new-way contrast moved UP to second: it
+  states the problem in the reader's own vocabulary (WH-347, AIA forms,
+  retainage, RFIs, submittals) and earns the rest of the page. "C Stream is
+  new" moved DOWN from second to immediately before the ask — it is a
+  DISCLOSURE, not proof, and in second position it was an apology to a
+  reader who had not yet been given a reason to care. Every word of its
+  substance is kept, and a second paragraph was added saying why there are
+  no logos or testimonials. `app/page.test.ts` now asserts all eleven
+  sections in order, strictly increasing, with the two moved ones named in
+  the comment so a later "tidy" cannot undo them silently.
+- **The rail/tabs component was kept and repurposed rather than deleted.**
+  The five capabilities it used to carry now have sections of their own, so
+  repeating them would have been the same words twice. It is now
+  "Everything else it does" — eight things that did not earn a section but
+  are real: fringe remittance, change orders, phase codes, cash flow, lien
+  deadlines, backcharges, OSHA case numbers, the offline phone. Same
+  component, same phone rail, same `<details name>` desktop switcher; only
+  the data moved, and every count in `CapabilitiesSection.test.ts` already
+  derived from `CAPABILITIES.length`, so it followed with no edit.
+- **A stale number was found while doing it, of exactly the kind CLAUDE.md
+  deletes on sight.** The rail's accessible name was the string "What C
+  Stream does — six capabilities", hardcoded inside
+  `CapabilitiesRail.tsx` — a count sitting next to a list that file cannot
+  see. The list is eight long now. `label` is a REQUIRED prop with no
+  default, the caller derives it from `CAPABILITIES.length`, and the test
+  asserts the derived number rather than a literal of its own. Mutation:
+  restoring the old hardcoded string fails the test naming the mismatch.
+  1 requested, 1 caught.
+- **One claim the brief asked for was refused, because the code does not do
+  it.** The panel set was specified as including "estimated vs actual
+  labor HOURS on a takeoff line". It does not exist: `JobLineItem.laborHours`
+  is an estimate, `lib/wip.ts` compares estimated against actual in DOLLARS
+  per line (Contract / Budget / Current est. / Actual / % complete /
+  Earned), actual hours surface only as the unpriced-hours coverage caveat
+  on `jobWip.laborHourCoverage`, and the only thing in the repo labelled
+  "variance" is catalog UNIT COST. The job-cost section claims dollars, and
+  `LandingPage.tsx`'s header records the finding so the copy does not get
+  "fixed" back into a false claim later.
+
+The panels are **not screenshots and are never called one** — they are the
+product's own column headers, row labels and status strings re-rendered as
+markup with illustrative figures. `app/page.test.ts` asserts the page never
+uses the words "screenshot", "actual customer" or "real customer data", and
+counts the placements against a literal so a selector that matches nothing
+fails loudly instead of passing an empty set.

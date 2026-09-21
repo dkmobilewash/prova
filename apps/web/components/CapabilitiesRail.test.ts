@@ -49,9 +49,24 @@ function mount() {
     root.render(
       createElement(
         CapabilitiesRail,
-        null,
-        createElement("article", { "data-rail-card": true, style: { width: "300px" } }, "card 1"),
-        createElement("article", { "data-rail-card": true, style: { width: "300px" } }, "card 2"),
+        // `label` is required and has no default on purpose — it used to
+        // be a literal inside CapabilitiesRail.tsx that counted the cards
+        // ("six capabilities") while being unable to see them, and it went
+        // stale when the list changed length. The real caller derives it
+        // from CAPABILITIES.length; this test only needs a valid name.
+        // Children go INSIDE the props object rather than as variadic
+        // arguments: `createElement`'s last overload types `props` as
+        // `Attributes & P`, so once P carries a required `label` a partial
+        // props object stops matching it. The old call passed `null`,
+        // which that overload does accept — which is why this is a new
+        // line rather than an existing one that broke.
+        {
+          label: "Two test cards. Swipe, scroll, or use the arrow keys.",
+          children: [
+            createElement("article", { key: "a", "data-rail-card": true, style: { width: "300px" } }, "card 1"),
+            createElement("article", { key: "b", "data-rail-card": true, style: { width: "300px" } }, "card 2"),
+          ],
+        },
       ),
     );
   });

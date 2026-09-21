@@ -39,36 +39,71 @@
 
 import { CapabilitiesRail } from "@/components/CapabilitiesRail";
 
+/**
+ * WHAT THIS LIST IS NOW, AND WHY IT CHANGED.
+ *
+ * It used to be the page's PRIMARY presentation of six capabilities — the
+ * whole of "what it does". The rebuild that made the page roughly twice as
+ * long gave the five that cost a sub the most money a full section each,
+ * with a rendered panel of the real document (getting paid, certified
+ * payroll, apprentice ratios, job cost, the evidence trail). A rail that
+ * repeated those five would have been the same words twice.
+ *
+ * So this is the SECONDARY summary — the things that did not earn a
+ * section of their own but are real and worth knowing exist. The component
+ * below is unchanged: same phone rail, same desktop tabs, same
+ * `<details name>` group. Only the data moved, and everything in
+ * CapabilitiesSection.test.ts derives its counts from
+ * `CAPABILITIES.length`, so it followed without an edit.
+ *
+ * Same receipt rule as the rest of the page: a comment naming the file or
+ * route that actually does it, and no claim beyond what that code does.
+ * The lien-deadlines line is the one to read before adding another — that
+ * page says in its own copy that it does NOT work the dates out for you,
+ * and this list says the same, because a page that oversells one line is
+ * not trusted on the other seven.
+ */
 export const CAPABILITIES: { title: string; body: string }[] = [
   {
-    // Job/JobLineItem unified object — ARCHITECTURE.md
-    title: "One estimate, no retyping",
-    body: "Price the job once. The same line items become the contract, the budget and the job-costing structure.",
+    // lib/fringe-remittance.ts, FringeRateSchedule (pension/vacation/
+    // healthWelfare/training rates) on /union-compliance
+    title: "Fringe remittance to the funds",
+    body: "Pension, vacation, health & welfare and training, worked out from the same logged hours the certified payroll comes from.",
   },
   {
-    // lib/certified-payroll.ts, lib/fringe-remittance.ts on /union-compliance
-    title: "Certified payroll & fringe remittance",
-    body: "Weekly WH-347-style certified payroll, and the pension, vacation, H&W and training remittance reports, from the hours your crew already logged.",
+    // components/ChangeOrders.tsx, ChangeOrderCounter (jobs.prisma)
+    title: "Change orders that move the contract",
+    body: "Numbered from a counter that only counts up, and the line they raise moves with them — so the schedule of values stays the contract.",
   },
   {
-    // lib/apprentice-ratio.ts — per job, per local, per day
-    title: "Apprentice ratios, tracked daily",
-    body: "Apprentice-to-journeyman ratio per job, per local, per day, flagged the day you go over — not a monthly average that hides it.",
+    // lib/phase-code-rollup.ts, /phase-codes
+    title: "Your own cost codes, across every job",
+    body: "Phase codes you define, with budget against actual rolled up across all the jobs carrying them — not one job at a time.",
   },
   {
-    // lib/pay-application.ts (G702/G703) + lib/retainage.ts
-    title: "Pay applications & retainage",
-    body: "AIA-style pay applications built from your schedule of values, with retainage withheld and released per job.",
+    // /cash-flow — AR aging, retainage receivable, monthly projection
+    title: "Cash flow and what is still owed",
+    body: "What each GC owes and how long it has been owed, retainage receivable, and a month-by-month projection built only from dates already on file.",
   },
   {
-    // /rfis, /submittals, /drawings — evidence records, counters never reissued
-    title: "RFIs, submittals, drawings",
-    body: "Numbered, dated and never reissued once sent — a paper trail a GC can't argue with.",
+    // /lien-deadlines — dates ENTERED from the statute or an attorney
+    title: "Lien deadlines, kept in front of you",
+    body: "Preliminary notices, liens, stop payment notices and bond claims. You enter the dates — it sorts them and warns you 14 days out.",
   },
   {
-    // DailyFieldReport, JobMedia photos, punch lists, offline outbox (#382, #403)
-    title: "The field, on record",
-    body: "Daily reports, site photos and punch lists — dated and attributable, from a phone that still works with no signal on site.",
+    // /backcharges + BackchargeCounter (backcharges.prisma)
+    title: "Backcharges, on the record",
+    body: "What another trade or the GC is charging you for, numbered and dated, so it is answered rather than discovered in a final accounting.",
+  },
+  {
+    // /safety + SafetyCaseCounter (operations.prisma) — OSHA case numbers
+    title: "Safety incidents and OSHA case numbers",
+    body: "Case numbers issued from a counter that never reissues a retired one, because a retired OSHA case number coming back is its own problem.",
+  },
+  {
+    // apps/mobile — offline outbox and cached reads (#382, #398, #399, #403)
+    title: "A phone that works with no signal",
+    body: "Hours, photos, field reports, materials and punch lists from the deck of a building with no bars — queued and sent when there is signal again.",
   },
 ];
 
@@ -82,7 +117,9 @@ export function CapabilitiesSection() {
       {/* ------------------------------------------------------- phone rail */}
       <div className="sm:hidden">
         <div className="relative">
-          <CapabilitiesRail>
+          <CapabilitiesRail
+            label={`What else C Stream does — ${CAPABILITIES.length} capabilities. Swipe, scroll, or use the arrow keys.`}
+          >
             {CAPABILITIES.map((item, i) => (
               <article
                 key={item.title}

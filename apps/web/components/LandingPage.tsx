@@ -2,6 +2,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { Reveal } from "@/components/Reveal";
 import { CapabilitiesSection } from "@/components/CapabilitiesSection";
+import { PayApplicationPanel } from "@/components/landing/PayApplicationPanel";
+import { CertifiedPayrollPanel } from "@/components/landing/CertifiedPayrollPanel";
+import { ApprenticeRatioPanel } from "@/components/landing/ApprenticeRatioPanel";
+import { JobCostPanel } from "@/components/landing/JobCostPanel";
 
 /**
  * The visitor-facing content of the public landing page (app/page.tsx).
@@ -25,51 +29,83 @@ import { CapabilitiesSection } from "@/components/CapabilitiesSection";
  * no customers yet, and a page that pretends otherwise loses this reader
  * faster than a plain one.
  *
- * SCALE, MOTION AND STRUCTURE PASS (second and third rounds, same
- * content). The founder's follow-up on #404 asked for scale, restraint,
- * and the six capabilities on a scroll wheel. A second and third message
- * supplied measured numbers from comparable product pages (Linear, Gusto,
- * Siteline, Rippling) that replaced the earlier guesses:
+ * ── THE LENGTH PASS (fourth round) ──────────────────────────────────────
  *
- * - Headline: fluid `clamp(3rem, 9vw, 6rem)` — 48px on a phone (Gusto's
- *   own phone floor, the closest buyer analogue: a non-technical SMB
- *   owner), ~96px at desktop, tightened leading and slightly negative
- *   tracking so bigger reads as designed rather than just large.
- * - One vertical rhythm between every section (not an ad-hoc set of
- *   values): `mt-16 sm:mt-24 lg:mt-[120px]`, landing on Rippling's
- *   measured 120px at desktop.
- * - Section order matches what every comparable page does: hero, then
- *   proof (our honest "C Stream is new" — moved up from the footer,
- *   which is where it originally sat), then a problem/contrast section,
- *   then the six capabilities, then objection handling, then a closing
- *   CTA, then the footer.
- * - Motion: two shared easing tokens in globals.css
- *   (--ease-landing / --ease-landing-snap), not an ad-hoc curve per
- *   component. Only opacity and transform ever animate. The hero is never
- *   wrapped in <Reveal>: nothing above the fold should fade in on load,
- *   which reads as lag rather than polish.
- * - The six capabilities: a horizontal snap rail below `sm` (confirmed
- *   against Linear's own phone layout), a tab switcher at `sm` and up
- *   (confirmed against Linear, Gusto and Siteline, none of which run a
- *   rail on desktop) — see components/CapabilitiesSection.tsx.
+ * The founder said the page "still looks really empty" and wanted it "more
+ * full and more completed", and he was right in a way that is measurable
+ * rather than a matter of taste. MEASURED IN A REAL BROWSER AT 1440x900,
+ * before this pass: 3391px, 3.77 screens, 353 words. Comparable pages
+ * researched for the same buyer run 9-11 screens. The page was not badly
+ * spaced; there was not enough on it.
  *
- * Still true from the first pass and unchanged by any of this: no
- * gradient-mesh hero, no 3D, no particle field, no tilted device mockups,
- * existing dark/gold tokens only.
+ * So this pass adds CONTENT, not whitespace. The five capabilities that
+ * actually cost a union specialty-trade sub money each get a full section
+ * — a heading, a paragraph in trade language, three concrete specifics,
+ * and (for four of the five) a rendered panel of the real document,
+ * alternating left and right so five sections do not read as one column.
+ * The single most visible symptom, the hero's empty right half at desktop,
+ * is now the pay application. Section 7 is the one without a panel; the
+ * note on EVIDENCE below says why, and what it does instead.
  *
- * REAL PRODUCT SCREENSHOTS WERE ASKED FOR, TWICE, AND ARE DELIBERATELY NOT
- * HERE. Producing them needs a seeded database
- * (packages/db/scripts/seed-demo.mjs) and a signed-in session to reach the
- * authenticated pages worth showing (a job's tabs, WH-347 certified
- * payroll, the Money Rail, a pay application) — this environment has
- * neither a local Postgres (no docker/postgres/brew on PATH) nor, on
- * purpose, this repo's own real Neon/Clerk credentials, which CLAUDE.md
- * and this session's own standing rule say not to hand to an agent
- * worktree. Rather than fake it with an illustration, that section is
- * simply absent. See the PR description for the exact recipe to add it
- * later: flat, full-bleed, no browser chrome, no tilt — confirmed as the
- * right treatment against Siteline, Raken and Knowify, the three
- * comparable pages that show real product at all.
+ * THE PANELS ARE NOT SCREENSHOTS AND ARE NEVER CALLED ONE. They live in
+ * components/landing/ — the product's own column headers, row labels and
+ * status strings, re-rendered as markup, with illustrative figures. This
+ * file only places them; it does not own them.
+ *
+ * ONE THING ESTABLISHED WHILE WIRING THEM UP, recorded here because it is
+ * the kind of claim a marketing page invents by accident: the brief for
+ * this pass asked for a job-cost panel showing "estimated vs actual labor
+ * HOURS on a takeoff line", AND THE APP DOES NOT DO THAT.
+ * `JobLineItem.laborHours` is an estimate, and `lib/wip.ts` compares
+ * estimated against actual in DOLLARS per line (Contract / Budget /
+ * Current est. / Actual / % complete / Earned) — actual hours surface only
+ * as the unpriced-hours coverage caveat on `jobWip.laborHourCoverage`.
+ * The only thing in the codebase labelled "variance" is catalog UNIT COST
+ * (lib/catalog-actuals.ts). So the job-cost section below claims dollars,
+ * not hours. Do not "fix" that copy back.
+ *
+ * ── SECTION ORDER, which is the argument ────────────────────────────────
+ *
+ * Ranked by what costs this buyer money, which is not the order a feature
+ * list would fall into:
+ *
+ *   1. Hero (+ pay application summary in the right half)
+ *   2. The old way, and the C Stream way   ← MOVED UP from fourth
+ *   3. Getting paid
+ *   4. Certified payroll
+ *   5. Apprentice ratios
+ *   6. Whether the job is making money
+ *   7. Protecting yourself
+ *   8. Everything else it does (the rail/tabs)
+ *   9. Not generic construction software
+ *  10. C Stream is new                     ← MOVED DOWN from second
+ *  11. Closing CTA
+ *
+ * Two of those moves are deliberate and should not be quietly undone:
+ *
+ * - THE CONTRAST SECTION MOVED TO SECOND. It is the problem in the
+ *   reader's own words, and it names WH-347, AIA forms, retainage, RFIs
+ *   and submittals — the vocabulary that signals we know the business. It
+ *   earns the rest of the page, so it goes before the rest of the page.
+ *
+ * - "C STREAM IS NEW" MOVED DOWN TO TENTH, immediately before the ask. It
+ *   was second, on the theory that it was our proof. It is not proof; it
+ *   is a DISCLOSURE. Second position put the weakest card in front of a
+ *   reader who had not yet been given a reason to care, and it reads as an
+ *   apology there. Directly before the ask, the identical words read as
+ *   integrity. Every word of its substance is kept.
+ *
+ * ── CRAFT SPECS CARRIED FORWARD UNCHANGED ───────────────────────────────
+ *
+ * All measured live and still correct: headline clamp to ~96px desktop /
+ * 48px phone; line-height 1.03; tracking -0.02em; one vertical rhythm
+ * between every section; easing and duration as CSS custom properties in
+ * globals.css (never an ad-hoc curve here); motion only on opacity and
+ * transform; prefers-reduced-motion honoured at BOTH the JS and CSS layers
+ * (Reveal.tsx and globals.css, independently); every piece of text visible
+ * at rest; no horizontal overflow at 375px; the CTA at nav, hero and
+ * close; existing tokens only; no new dependencies. The hero is never
+ * wrapped in <Reveal> — nothing above the fold should fade in on load.
  */
 
 const cta =
@@ -92,7 +128,7 @@ const TRADES = ["Framing & drywall", "Plaster", "EIFS", "Ceilings", "Fireproofin
  * The problem/contrast section — the "single most defensible section"
  * available, because a GC-first platform cannot honestly run this
  * argument against its own buyer. Every right-column line is a
- * restatement of a capability from CapabilitiesSection.tsx, so it carries
+ * restatement of a capability the sections below it draw, so it carries
  * the same receipt rather than a new, unbacked one; the left column
  * describes how the job gets done WITHOUT this app, in general terms —
  * deliberately no invented statistics (no "X minutes saved", no "X% of
@@ -108,15 +144,100 @@ const OLD_WAY = [
 
 const NEW_WAY = [
   "One estimate becomes the contract, the budget and the job cost — entered once", // Job/JobLineItem — ARCHITECTURE.md
-  "Certified payroll generates from the hours your crew already logged", // lib/certified-payroll.ts
+  "Certified payroll generates from the hours your crew already logged", // lib/certified-payroll.ts, lib/wh347.ts
   "AIA-style pay applications build straight from your schedule of values", // lib/pay-application.ts
   "Retainage withheld and released per job, calculated from the job itself", // lib/retainage.ts
   "RFIs and submittals are numbered, dated and never reissued", // /rfis, /submittals counters
 ];
 
+/**
+ * Section 7's three cards. This is the one ranked section with no rendered
+ * panel beside it, and that is a scoping decision rather than an oversight:
+ * the panel set in components/landing/ is four documents (pay application,
+ * WH-347, apprentice ratio, job cost) and an RFI/submittal register is not
+ * one of them. Three cards carry the weight instead of a thin two-column
+ * row with an empty right half — which is the exact defect this whole pass
+ * exists to remove from the hero.
+ *
+ * Receipts, in order: RfiCounter / SubmittalCounter / ChangeOrderCounter
+ * (CLAUDE.md's counter roll-call — they only ever increment);
+ * components/rfiLabels.ts `isOverdue`/`daysBetween` and
+ * components/submittalLabels.ts `submittalState`, both DERIVED on every
+ * render and never stored; DailyFieldReport, JobMedia photos, punch lists
+ * and the apps/mobile offline outbox.
+ */
+const EVIDENCE = [
+  {
+    title: "Numbered, never reissued",
+    body: "RFIs, submittals and change orders take their number from a counter that only counts up. Delete a row and the number does not come back around — which is the whole point on a document a GC has already been sent.",
+  },
+  {
+    title: "Nothing stored that can go stale",
+    body: "Overdue, days open and which revision is current are worked out from the dates every time they are shown. A stored flag can disagree with the thing it was derived from, and that disagreement is how somebody builds from a superseded drawing.",
+  },
+  {
+    title: "Kept as it happened",
+    body: "Daily field reports, site photos and punch lists, dated and attributable, entered from the deck of the building on a phone with no signal — queued and sent when there is signal again.",
+  },
+];
+
+/**
+ * One of the ranked capability sections. A heading, a
+ * paragraph in trade language, three concrete specifics, and the rendered
+ * panel of the document the section is about.
+ *
+ * `flip` alternates which side the panel lands on at desktop, so five
+ * sections in a row do not read as one column. It only ever changes the
+ * ORDER of two grid children, never their content — at phone the panel is
+ * always last, under the words, because a panel is evidence for a claim
+ * and the claim should arrive first on a small screen.
+ *
+ * `lg:` rather than `sm:` for the two-column split deliberately: these
+ * panels carry real tables, and a 384px tablet column makes a G703
+ * continuation sheet unreadable for no gain.
+ */
+function CapabilitySection({
+  heading,
+  lead,
+  points,
+  panel,
+  panelId,
+  flip = false,
+}: {
+  heading: string;
+  lead: string;
+  points: string[];
+  panel: React.ReactNode;
+  /** This placement's handle, counted by app/page.test.ts. */
+  panelId: string;
+  flip?: boolean;
+}) {
+  return (
+    <div className="grid items-center gap-8 lg:grid-cols-2 lg:gap-14">
+      <div className={`min-w-0 ${flip ? "lg:order-2" : ""}`}>
+        <h2 className="text-3xl font-semibold leading-tight text-ink sm:text-4xl">{heading}</h2>
+        <p className="mt-4 max-w-xl text-base leading-relaxed text-ink-body sm:text-lg">{lead}</p>
+        <ul className="mt-6 flex flex-col gap-3">
+          {points.map((point) => (
+            <li key={point} className="flex gap-3 text-sm leading-relaxed text-ink-body sm:text-base">
+              <span aria-hidden className="mt-0.5 shrink-0 text-brand">
+                &#8212;
+              </span>
+              <span>{point}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div data-landing-panel={panelId} className={`min-w-0 ${flip ? "lg:order-1" : ""}`}>
+        {panel}
+      </div>
+    </div>
+  );
+}
+
 export function LandingPage() {
   return (
-    <main className="mx-auto max-w-5xl px-4 pb-24 pt-6 sm:px-6 sm:pt-8 lg:px-8">
+    <main className="mx-auto max-w-6xl px-4 pb-24 pt-6 sm:px-6 sm:pt-8 lg:px-8">
       {/* ---------------------------------------------------------- header
           The first of three CTA placements (nav, hero, closing section). */}
       <header className="flex items-center justify-between gap-4">
@@ -133,55 +254,58 @@ export function LandingPage() {
         </Link>
       </header>
 
-      {/* -------------------------------------------------------------- hero
-          Deliberately outside <Reveal>: the first screen should be there
-          immediately, at full size, not fade in. */}
-      <section className="flex min-h-[78svh] flex-col justify-center gap-8 py-10 sm:gap-10">
-        <h1 className="max-w-4xl text-[clamp(3rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink">
-          The job-site system for union specialty-trade subcontractors.
-        </h1>
-        <p className="max-w-2xl text-lg leading-relaxed text-ink-body sm:text-xl">
-          The estimate, the contract, the crew&rsquo;s hours, certified payroll and the GC&rsquo;s pay
-          application &mdash; all in one place, so the same numbers don&rsquo;t get typed in three
-          times.
-        </p>
-        <ul className="flex flex-wrap gap-2" aria-label="Trades C Stream is built for">
-          {TRADES.map((trade) => (
-            <li
-              key={trade}
-              className="rounded-full border border-line-card bg-surface px-4 py-1.5 text-sm font-medium text-ink-label"
-            >
-              {trade}
-            </li>
-          ))}
-        </ul>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <Link href="/sign-up" className={cta}>
-            Sign up
-          </Link>
-          <Link href="/sign-in" className={ctaQuiet}>
-            Sign in
-          </Link>
+      {/* -------------------------------------------------------------- 1
+          Hero. Deliberately outside <Reveal>: the first screen should be
+          there immediately, at full size, not fade in.
+
+          The right half used to be empty at desktop — the single most
+          visible thing wrong with this page. It now holds the pay
+          application summary, which is both the thing this buyer most
+          wants and the fastest possible proof that this is not generic
+          construction software. */}
+      <section className="grid min-h-[78svh] items-center gap-10 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:gap-14">
+        <div className="flex flex-col justify-center gap-8 sm:gap-10">
+          <h1 className="max-w-4xl text-[clamp(3rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink lg:text-[clamp(3rem,5.2vw,4.5rem)]">
+            The job-site system for union specialty-trade subcontractors.
+          </h1>
+          <p className="max-w-2xl text-lg leading-relaxed text-ink-body sm:text-xl">
+            The estimate, the contract, the crew&rsquo;s hours, certified payroll and the GC&rsquo;s pay
+            application &mdash; all in one place, so the same numbers don&rsquo;t get typed in three
+            times.
+          </p>
+          <ul className="flex flex-wrap gap-2" aria-label="Trades C Stream is built for">
+            {TRADES.map((trade) => (
+              <li
+                key={trade}
+                className="rounded-full border border-line-card bg-surface px-4 py-1.5 text-sm font-medium text-ink-label"
+              >
+                {trade}
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <Link href="/sign-up" className={cta}>
+              Sign up
+            </Link>
+            <Link href="/sign-in" className={ctaQuiet}>
+              Sign in
+            </Link>
+          </div>
+        </div>
+        {/* `data-landing-panel` is this file's own handle on a placement,
+            deliberately NOT an attribute reached for inside
+            components/landing/ — those components belong to another lane,
+            and a guard that asserts on markup it does not own breaks on
+            somebody else's refactor without saying anything useful. See
+            app/page.test.ts, which counts these. */}
+        <div data-landing-panel="pay-application" className="min-w-0">
+          <PayApplicationPanel />
         </div>
       </section>
 
-      {/* ------------------------------------------------------- proof
-          "C Stream is new" moved here, right after the hero — it is our
-          proof (there is nothing else to show yet), and per every
-          comparable page researched, proof belongs in the first two
-          sections, not the footer. */}
-      <Reveal className={sectionSpace}>
-        <div className="rounded-2xl border border-line-card bg-surface p-8 sm:p-10">
-          <h2 className="text-2xl font-semibold text-ink sm:text-3xl">C Stream is new</h2>
-          <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
-            This is not an established platform with years of customers behind it &mdash; it is a new
-            system, built directly with subs in these trades. You will find rough edges, and what you
-            run into gets fixed fast rather than filed away.
-          </p>
-        </div>
-      </Reveal>
-
-      {/* ------------------------------------------------- problem/contrast */}
+      {/* -------------------------------------------------------------- 2
+          The problem, in the reader's own language. Moved up from fourth:
+          it earns the rest of the page, so it goes before the rest. */}
       <Reveal className={sectionSpace}>
         <h2 className="text-3xl font-semibold text-ink sm:text-4xl">The old way, and the C Stream way</h2>
         <div className="mt-8 grid gap-6 sm:grid-cols-2 sm:gap-8">
@@ -214,15 +338,127 @@ export function LandingPage() {
         </div>
       </Reveal>
 
-      {/* ------------------------------------------------------ capabilities */}
+      {/* -------------------------------------------------------------- 3
+          Getting paid. First of the five ranked sections, because it is
+          the biggest single pain a sub has — a competitor built an entire
+          company on this one capability alone. */}
       <Reveal className={sectionSpace}>
-        <h2 className="text-3xl font-semibold text-ink sm:text-4xl">What it does</h2>
+        <CapabilitySection
+          heading="Getting paid"
+          lead="The pay application is the document that decides whether you make payroll this month, and on most jobs it is built by retyping your own schedule of values into the GC's forms. Here it builds itself out of the job."
+          points={[
+            // lib/pay-application.ts — calculatePayAppLineItem / calculatePayAppSummary
+            "A G702/G703-style summary and continuation sheet, off the schedule of values already on the job",
+            // lib/retainage.ts — held and released per job
+            "Retainage held and released per job, calculated from the job rather than remembered in a spreadsheet",
+            // payAppEntryError — refuses the over-billing case with a specific message
+            "It refuses to bill a line past its scheduled value, and says what to do instead — an approved change order, or stored materials now installed",
+          ]}
+          panel={<PayApplicationPanel />}
+          panelId="pay-application"
+        />
+      </Reveal>
+
+      {/* -------------------------------------------------------------- 4
+          Certified payroll. Weekly grind plus legal exposure, and on
+          union work it gates the payment above. */}
+      <Reveal className={sectionSpace}>
+        <CapabilitySection
+          flip
+          heading="Certified payroll, from hours already logged"
+          lead="Every week, for every worker, on every prevailing-wage job — name, classification, hours by day, rate, fringe. It is assembled from timesheets by hand almost everywhere, and a wrong one is not a clerical problem."
+          points={[
+            // lib/wh347.ts — buildWh347, WH347_DAY_COUNT = 7, S/O/DT/SD rows
+            "A real WH-347 sheet: seven dated day columns, straight time and overtime on their own rows",
+            // FringeRateSchedule: baseWage + pension + vacation + healthWelfare + training
+            "Fringe rates by craft and effective date — pension, vacation, health & welfare, training",
+            // Wh347BlockingField / WH347_BLOCKING_FIELD_REASON, form.fileable
+            "If something is missing it tells you it is not ready to file, and names the field — rather than printing a form that is wrong",
+          ]}
+          panel={<CertifiedPayrollPanel />}
+          panelId="certified-payroll"
+        />
+      </Reveal>
+
+      {/* -------------------------------------------------------------- 5
+          Apprentice ratios. The most differentiated capability for THIS
+          buyer specifically; no general construction tool does it. */}
+      <Reveal className={sectionSpace}>
+        <CapabilitySection
+          heading="Apprentice ratios, on the day you go over"
+          lead="The ratio is enforced per day, so a compliant month does not undo a Tuesday you ran two apprentices to one journeyman. Most systems can only show you an average, which is the one shape of number that hides it."
+          points={[
+            // lib/apprentice-ratio.ts — reviewRatioByDay, per job × union local × day
+            "Per job, per local, per day, measured in hours — off the hours the crew already logged",
+            // ApprenticeRatioRule: apprenticeCount / journeymenCount, per local
+            "Your local's own rule (1 per 3, 1 per 5) recorded per local, with where it is written down",
+            // DayRatioStatus INCOMPLETE — unclassified hours are never counted as journeyman
+            "Hours with no craft tag are reported as can't-be-judged, never quietly counted as journeyman",
+          ]}
+          panel={<ApprenticeRatioPanel />}
+          panelId="apprentice-ratio"
+        />
+      </Reveal>
+
+      {/* -------------------------------------------------------------- 6
+          Whether the job is making money. */}
+      <Reveal className={sectionSpace}>
+        <CapabilitySection
+          flip
+          heading="Whether the job is actually making money"
+          lead="Most subs find out a job went wrong when it is finished. Because the estimate, the hours and the costs are the same object here, the answer is available while there is still something you can do about it."
+          points={[
+            // lib/wip.ts — calculateLineItemWip / calculateJobWip
+            "Budget, current estimate, actual and earned revenue per line item — not one number for the whole job",
+            // lib/labor-job-cost.ts — burdened labour from logged hours
+            "Labour costed at burdened rates from the hours logged against the line, base wage plus fringes",
+            // jobWip.laborHourCoverage — the amber caveat, drawn in the panel
+            "When some hours are unpriced it says so on the figure, instead of quietly reporting a number it cannot stand behind",
+          ]}
+          panel={<JobCostPanel />}
+          panelId="job-cost"
+        />
+      </Reveal>
+
+      {/* -------------------------------------------------------------- 7
+          Protecting yourself. The evidence trail when there is a dispute. */}
+      <Reveal className={sectionSpace}>
+        <h2 className="text-3xl font-semibold text-ink sm:text-4xl">
+          Protecting yourself when it goes wrong
+        </h2>
+        <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
+          Every job that ends in an argument ends in an argument about what was asked, when it was
+          asked, and who answered. That record is worth more than anything else on this page &mdash;
+          and it is only worth anything if it was kept as it happened, rather than reconstructed
+          afterwards by the side with the most to lose.
+        </p>
+        <div className="mt-8 grid gap-4 sm:grid-cols-3 sm:gap-6">
+          {EVIDENCE.map((item) => (
+            <div key={item.title} className="rounded-xl border border-line-card bg-surface p-6">
+              <h3 className="text-lg font-semibold text-ink-label">{item.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-ink-body">{item.body}</p>
+            </div>
+          ))}
+        </div>
+      </Reveal>
+
+      {/* -------------------------------------------------------------- 8
+          Everything else. The rail/tabs component, kept but repurposed —
+          the five above have full sections now, so repeating them here
+          would have been the same words twice. See
+          CapabilitiesSection.tsx's own header. */}
+      <Reveal className={sectionSpace}>
+        <h2 className="text-3xl font-semibold text-ink sm:text-4xl">Everything else it does</h2>
+        <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
+          The rest of the job, in the same system, so none of it needs a second spreadsheet.
+        </p>
         <div className="mt-8">
           <CapabilitiesSection />
         </div>
       </Reveal>
 
-      {/* --------------------------------------------- objection handling */}
+      {/* -------------------------------------------------------------- 9
+          Objection handling. Copy unchanged. */}
       <Reveal className={`${sectionSpace} max-w-2xl`}>
         <h2 className="text-3xl font-semibold text-ink sm:text-4xl">Not generic construction software</h2>
         <p className="mt-4 text-base leading-relaxed text-ink-body sm:text-lg">
@@ -232,11 +468,33 @@ export function LandingPage() {
         </p>
       </Reveal>
 
-      {/* -------------------------------------------------------- closing CTA
-          The third of three CTA placements (nav, hero, here). */}
+      {/* ------------------------------------------------------------- 10
+          "C Stream is new" — moved down from second to here, immediately
+          before the ask. It is a disclosure, not proof. See the header. */}
+      <Reveal className={sectionSpace}>
+        <div className="rounded-2xl border border-line-card bg-surface p-8 sm:p-10">
+          <h2 className="text-2xl font-semibold text-ink sm:text-3xl">C Stream is new</h2>
+          <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
+            This is not an established platform with years of customers behind it &mdash; it is a new
+            system, built directly with subs in these trades. You will find rough edges, and what you
+            run into gets fixed fast rather than filed away.
+          </p>
+          <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
+            That is also why there are no logos, no customer counts and no testimonials on this page.
+            There is nothing here we could not show you in the product itself.
+          </p>
+        </div>
+      </Reveal>
+
+      {/* ------------------------------------------------------------- 11
+          Closing CTA. The third of three placements (nav, hero, here). */}
       <Reveal className={sectionSpace}>
         <div className="flex flex-col items-start gap-6 rounded-2xl border border-line-card bg-surface p-8 sm:p-10">
           <h2 className="text-2xl font-semibold text-ink sm:text-3xl">See it on your own job</h2>
+          <p className="max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
+            Put a real job in it &mdash; the estimate, a week of hours, one pay application &mdash; and
+            see whether the numbers come out where you expect.
+          </p>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
             <Link href="/sign-up" className={cta}>
               Sign up

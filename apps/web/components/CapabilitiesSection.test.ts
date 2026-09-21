@@ -62,7 +62,12 @@ describe("CapabilitiesSection", () => {
     expect(html).toContain("landing-scroller");
     expect(html).toContain('tabindex="0"');
     expect(html).toMatch(/role="region"/);
-    expect(html).toMatch(/aria-label="[^"]*six capabilities[^"]*"/);
+    // The accessible name must CARRY THE REAL COUNT, derived. It was the
+    // word "six" hardcoded in CapabilitiesRail.tsx, beside a list that
+    // file cannot see; the list changed length and the label did not.
+    // Asserting the derived number here is what makes that impossible to
+    // repeat — a literal in this test would rot in exactly the same way.
+    expect(html).toMatch(new RegExp(`aria-label="[^"]*${CAPABILITIES.length} capabilities[^"]*"`));
   });
 
   it("carries no fabricated claim — this is presentation, not new copy", () => {

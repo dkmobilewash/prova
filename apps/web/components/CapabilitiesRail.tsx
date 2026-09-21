@@ -27,7 +27,18 @@ import { useRef } from "react";
  * not decorative motion), only the animated transition between positions
  * is skipped.
  */
-export function CapabilitiesRail({ children }: { children: React.ReactNode }) {
+export function CapabilitiesRail({
+  children,
+  label,
+}: {
+  children: React.ReactNode;
+  /** The region's accessible name. REQUIRED, and deliberately has no
+   * default: it used to be a string literal in this file that counted the
+   * cards ("six capabilities"), which is a number sitting next to a list
+   * it cannot see. The list changed length and the label did not. The
+   * caller derives it from the data now, so it cannot disagree again. */
+  label: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
@@ -54,7 +65,7 @@ export function CapabilitiesRail({ children }: { children: React.ReactNode }) {
       onKeyDown={onKeyDown}
       className="landing-scroller -mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-px-4 px-4 pb-3"
       role="region"
-      aria-label="What C Stream does — six capabilities. Swipe, scroll, or use the arrow keys."
+      aria-label={label}
       tabIndex={0}
     >
       {children}
