@@ -97,6 +97,25 @@ one still `type="number"`, and the test was green. The rule is blanket now —
 no `<input type="number">` anywhere, whatever it is named — so it needs no
 roster and has no scope left to get wrong.
 
+**AND THE CENSUS'S FIRST VERSION MISSED THE BIGGEST ONE.** An audit of the
+PR found that the wizard's OTHER quantity box — "Add from catalog", which
+goes through `lib/estimating/catalog-line.ts` rather than `decimalFromForm`
+— was still refusing `2,800`. For a few hours the same screen took a comma
+in one box and refused it in the one underneath: the original bug surviving
+inside its own fix. What let it survive was a comment reading "the same test
+`decimalFromForm` applies", which was true when written and false the moment
+the parser moved, with nothing going red.
+
+Two more census blind spots came out of the same audit, and both are the
+same shape as the one above: the name regex read only `name="literal"`, so
+`name={name as string}` could never match and an input with no `name` had
+nothing to match at all; and the parser rule matched
+`Number(formData.get(…))` — the shape the original fourteen had — which
+cannot see a validator handed an already-extracted string, which is exactly
+what `catalog-line.ts` was. An input whose name cannot be read is CHECKED
+now rather than skipped, since an unreadable name is not evidence that a
+field is not numeric.
+
 **`dbtest` is a SECOND CI job and `preflight.sh` does not run it.** There is
 no local Postgres on this machine, so it was never run before the first
 push, and it caught one assertion the four local checks could not. Worth
