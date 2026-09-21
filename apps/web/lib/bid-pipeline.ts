@@ -67,14 +67,39 @@ export function isOverdue(bid: PipelineBid, today: string): boolean {
   return isLive(bid) && bid.dueDate !== null && bid.dueDate < today;
 }
 
+export interface WonValueSummary {
+  /** Summed bidAmount across WON bids. */
+  valueWon: number;
+  /** How many WON bids had no amount recorded -- see GcRecord.valueWonUnpriced
+   * for what that implies about valueWon. */
+  valueWonUnpriced: number;
+}
+
+/**
+ * The money half of summariseGc, split out so a caller with no notion of
+ * "today" -- no overdue or winRate to compute -- can get the same floor
+ * arithmetic without fabricating one. /bids (issue #79) is exactly that
+ * caller: it renders one page-wide total, not a per-GC record, and has no
+ * due-date comparison to make.
+ *
+ * Deliberately takes a bare status+bidAmount shape rather than the full
+ * PipelineBid, so a caller with no dueDate field (a plain BidInvitation row)
+ * can pass its rows straight through.
+ */
+export function summariseWonValue(bids: { status: BidStatus; bidAmount: number | null }[]): WonValueSummary {
+  const wonBids = bids.filter((b) => b.status === "WON");
+  return {
+    valueWon: wonBids.reduce((sum, b) => sum + (b.bidAmount ?? 0), 0),
+    valueWonUnpriced: wonBids.filter((b) => b.bidAmount === null).length,
+  };
+}
+
 export function summariseGc(bids: PipelineBid[], today: string): GcRecord {
   const count = (s: BidStatus) => bids.filter((b) => b.status === s).length;
 
   const won = count("WON");
   const lost = count("LOST");
   const decided = won + lost;
-
-  const wonBids = bids.filter((b) => b.status === "WON");
 
   return {
     invited: bids.length,
@@ -85,13 +110,13 @@ export function summariseGc(bids: PipelineBid[], today: string): GcRecord {
     outstanding: bids.filter(isLive).length,
     overdue: bids.filter((b) => isOverdue(b, today)).length,
     winRate: decided === 0 ? null : won / decided,
-    valueWon: wonBids.reduce((sum, b) => sum + (b.bidAmount ?? 0), 0),
-    valueWonUnpriced: wonBids.filter((b) => b.bidAmount === null).length,
+    ...summariseWonValue(bids),
   };
 }
 
-/** True when valueWon is a floor rather than a total. */
-export function valueIsPartial(record: GcRecord): boolean {
+/** True when valueWon is a floor rather than a total -- works on a full
+ * GcRecord or on summariseWonValue's own narrower result. */
+export function valueIsPartial(record: { valueWonUnpriced: number }): boolean {
   return record.valueWonUnpriced > 0;
 }
 

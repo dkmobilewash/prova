@@ -365,6 +365,20 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
               className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
             />
           </label>
+          <label className="flex flex-col gap-1 text-sm text-ink-label">
+            Bid $ (if known)
+            {/* #133: optional, blank by default. A bid known and priced
+                at invitation time (a rebid, a negotiated price) no longer
+                has to be logged blank and then found again to price --
+                but leaving this blank is still the normal path, since
+                most invitations arrive with nothing bid yet. */}
+            <input
+              name="bidAmount"
+              placeholder="Optional"
+              title="Amount bid, if already known"
+              className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+            />
+          </label>
           <label className="flex flex-1 min-w-[180px] flex-col gap-1 text-sm text-ink-label">
             Notes
             <input
