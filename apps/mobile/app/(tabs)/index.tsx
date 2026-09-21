@@ -6,7 +6,7 @@ import { CurrentJobBar } from "@/components/CurrentJobBar";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
-import { cachedRead, type CachedRead } from "@/lib/cached-read";
+import { cachedRead, withToken, type CachedRead } from "@/lib/cached-read";
 import { prefetchJob } from "@/lib/prefetch";
 import { pendingCount } from "@/lib/sync-queue";
 import { summariseToday, type TodayLine } from "@/lib/today";
@@ -34,18 +34,18 @@ export default function HomeScreen() {
 
   const load = useCallback(async () => {
     if (!job) return;
-    const token = await getToken();
-    if (!token) return;
 
     // Through the cache, section by section, so Home offline shows the
     // day as this phone last knew it rather than a page of zeros —
     // "no photos today" is a claim, and it was wrong every time the
-    // fetch failed.
+    // fetch failed. The token is fetched INSIDE each read: Clerk refreshes
+    // it over the network, so a screen that bails on a null token never
+    // reaches its own cache (see withToken).
     const [reports, punchItems, media, timeEntries] = await Promise.all([
-      cachedRead(cacheKeys.reports(job.id), () => api.listFieldReports(job.id, token)),
-      cachedRead(cacheKeys.punchList(job.id), () => api.listPunchListItems(job.id, token)),
-      cachedRead(cacheKeys.photos(job.id), () => api.listMedia(job.id, token)),
-      cachedRead(cacheKeys.time(job.id), () => api.listTimeEntries(job.id, token)),
+      cachedRead(cacheKeys.reports(job.id), withToken(getToken, (t) => api.listFieldReports(job.id, t))),
+      cachedRead(cacheKeys.punchList(job.id), withToken(getToken, (t) => api.listPunchListItems(job.id, t))),
+      cachedRead(cacheKeys.photos(job.id), withToken(getToken, (t) => api.listMedia(job.id, t))),
+      cachedRead(cacheKeys.time(job.id), withToken(getToken, (t) => api.listTimeEntries(job.id, t))),
     ]);
     const pending = await pendingCount();
 
@@ -63,11 +63,13 @@ export default function HomeScreen() {
     if (sections.every((section) => section.from === "server")) {
       setError(null);
       // While there IS signal, fill the cache for the sections Home does
-      // not itself read — Materials, Safety, T&M. Home is the screen the
-      // app opens on, so this is the moment the phone is most likely to
-      // still have bars; by the time somebody opens Materials in a
-      // basement it is far too late to fetch it.
-      void prefetchJob(job.id, token);
+      // not itself read — Materials, Safety, T&M, drawings, schedule.
+      // Home is the screen the app opens on, so this is the moment the
+      // phone is most likely to still have bars; by the time somebody
+      // opens Materials in a basement it is far too late to fetch it.
+      void getToken().then((token) => {
+        if (token) void prefetchJob(job.id, token);
+      });
     } else if (sections.some((section) => section.from === "cache")) {
       setError("Showing what this phone last loaded — no connection");
     } else {

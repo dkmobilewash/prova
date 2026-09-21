@@ -13,7 +13,7 @@ import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
 import { cacheKeys } from "@/lib/cache-keys";
-import { cachedRead, staleNote } from "@/lib/cached-read";
+import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { enqueue } from "@/lib/sync-queue";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 import { useSync } from "@/lib/use-sync";
@@ -58,10 +58,10 @@ export default function PunchListScreen() {
 
   const load = useCallback(async () => {
     if (!jobId) return;
-    const token = await getToken();
-    if (!token) return;
-
-    const result = await cachedRead(cacheKeys.punchList(jobId), () => api.listPunchListItems(jobId, token));
+    const result = await cachedRead(
+      cacheKeys.punchList(jobId),
+      withToken(getToken, (token) => api.listPunchListItems(jobId, token)),
+    );
     setError(null);
     if (result.from === "nothing") {
       setLoadedFrom("nothing");

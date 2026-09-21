@@ -22,6 +22,38 @@ import { cacheAge, cacheGet, cacheSet } from "./offline-cache";
  * caches them as one object and gets both back together — which is also
  * what stops half a screen being fresh and the other half a week old.
  */
+/**
+ * The read a screen hands to `cachedRead`, with the token fetched INSIDE
+ * it rather than before it.
+ *
+ * This exists because of a bug that reached a real phone on 2026-09-20.
+ * Every screen was written as:
+ *
+ *     const token = await getToken();
+ *     if (!token) return;              // ← never reaches the cache
+ *     const result = await cachedRead(key, () => api.list(jobId, token));
+ *
+ * Clerk refreshes the session JWT over the NETWORK, so with no signal
+ * `getToken()` answers null — and every screen returned before it could
+ * read its own cache. Offline, the punch list therefore fell back to its
+ * initial state and rendered "Nothing outstanding on this job.", which is
+ * the exact bug the whole caching layer was built to kill, reintroduced
+ * by the refactor that unified it.
+ *
+ * Putting the token inside the reader makes a missing token fail the same
+ * way a dead network does, which is the only way the fallback can see it.
+ */
+export function withToken<T>(
+  getToken: () => Promise<string | null>,
+  read: (token: string) => Promise<T>,
+): () => Promise<T> {
+  return async () => {
+    const token = await getToken();
+    if (!token) throw new Error("No token — offline or signed out");
+    return read(token);
+  };
+}
+
 export type CachedRead<T> =
   | { from: "server"; value: T }
   | { from: "cache"; value: T; note: string }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@clerk/expo";
 import * as api from "./api";
 import { cacheKeys } from "./cache-keys";
-import { cachedRead, staleNote } from "./cached-read";
+import { cachedRead, staleNote, withToken } from "./cached-read";
 import { getClientId } from "./client-id";
 import { uuid } from "./id";
 import { enqueue, flushQueue, pendingCount } from "./sync-queue";
@@ -25,13 +25,14 @@ export function useFieldReports(jobId: string) {
   const [offline, setOffline] = useState<string | "nothing" | null>(null);
 
   const refresh = useCallback(async () => {
-    const token = await getToken();
-    if (!token) return;
     setLoading(true);
     try {
       // Yesterday's report is what somebody checks before writing today's,
       // and with no signal this list was empty with an error over it.
-      const result = await cachedRead(cacheKeys.reports(jobId), () => api.listFieldReports(jobId, token));
+      const result = await cachedRead(
+        cacheKeys.reports(jobId),
+        withToken(getToken, (token) => api.listFieldReports(jobId, token)),
+      );
       setError(null);
       if (result.from === "nothing") {
         setOffline("nothing");
@@ -46,12 +47,15 @@ export function useFieldReports(jobId: string) {
 
   const sync = useCallback(async () => {
     const token = await getToken();
-    if (!token) return;
-    try {
-      await flushQueue(token);
-    } catch {
-      // 401 or offline — leave queued, retry later.
+    if (token) {
+      try {
+        await flushQueue(token);
+      } catch {
+        // 401 or offline — leave queued, retry later.
+      }
     }
+    // Refreshed with or without a token: offline that means re-reading
+    // the cache, which is the whole point of having one.
     setPending(await pendingCount());
     await refresh();
   }, [getToken, refresh]);

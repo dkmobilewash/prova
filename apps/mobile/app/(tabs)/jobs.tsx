@@ -6,7 +6,7 @@ import { Card } from "@/components/Card";
 import { List } from "@/components/List";
 import { StatusBadge } from "@/components/StatusBadge";
 import { cacheKeys } from "@/lib/cache-keys";
-import { cachedRead, staleNote } from "@/lib/cached-read";
+import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
@@ -30,12 +30,11 @@ export default function JobsScreen() {
   useEffect(() => {
     if (!isSignedIn) return;
     (async () => {
-      const token = await getToken();
-      if (!token) return;
       // The job list is the first screen after sign-in and the one most
       // likely to be opened in a truck with one bar. An empty list here
-      // reads as "you have no jobs", which is never what it means.
-      const result = await cachedRead(cacheKeys.jobs(), () => api.listJobs(token));
+      // reads as "you have no jobs", which is never what it means — and
+      // the token goes inside the read so no signal still shows the list.
+      const result = await cachedRead(cacheKeys.jobs(), withToken(getToken, (t) => api.listJobs(t)));
       setError(null);
       if (result.from === "nothing") {
         setOffline("nothing");

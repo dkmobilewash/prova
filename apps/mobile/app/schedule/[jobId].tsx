@@ -7,7 +7,7 @@ import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
-import { cachedRead, staleNote } from "@/lib/cached-read";
+import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { localToday } from "@/lib/local-today";
 import { groupByDay } from "@/lib/schedule-days";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
@@ -33,9 +33,13 @@ export default function ScheduleScreen() {
 
   const load = useCallback(async () => {
     if (!jobId) return;
-    const token = await getToken();
-    if (!token) return;
-    const result = await cachedRead(cacheKeys.schedule(jobId), () => api.listSchedule(jobId, token));
+    // The token is fetched INSIDE the read: with no signal Clerk cannot
+    // refresh it, and a screen that returns early on a null token never
+    // reaches its own cache. See withToken().
+    const result = await cachedRead(
+      cacheKeys.schedule(jobId),
+      withToken(getToken, (token) => api.listSchedule(jobId, token)),
+    );
     if (result.from === "nothing") {
       setOffline("nothing");
       return;

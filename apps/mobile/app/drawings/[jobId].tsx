@@ -8,7 +8,7 @@ import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
-import { cachedRead, staleNote } from "@/lib/cached-read";
+import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { formatBytes, forgetFile, heldBytes, heldFile, keepForOffline } from "@/lib/drawing-files";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 import type { DrawingSetRow } from "@/lib/types";
@@ -71,9 +71,10 @@ export default function DrawingsScreen() {
 
   const load = useCallback(async () => {
     if (!jobId) return;
-    const token = await getToken();
-    if (!token) return;
-    const result = await cachedRead(cacheKeys.drawings(jobId), () => api.listDrawings(jobId, token));
+    const result = await cachedRead(
+      cacheKeys.drawings(jobId),
+      withToken(getToken, (token) => api.listDrawings(jobId, token)),
+    );
     if (result.from === "nothing") {
       setOffline("nothing");
       return;
