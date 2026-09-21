@@ -66,10 +66,21 @@ The two known-unconverted actions are a ratchet, not an allowlist: the test
 fails if a new one appears AND if a listed one is fixed without deleting its
 line.
 
-Eight mutations, eight red — including one that first reported GREEN because
+Ten mutations, ten red — including one that first reported GREEN because
 the mutation had not applied, which is the "refuted versus never ran" trap in
 miniature and is why every mutation here is asserted to have landed before
 its result is read.
+
+**A third way for a scope to be wrong, found by this census failing CI after
+passing locally on the same content.** `git ls-files` lists TRACKED files.
+While the census was being written it was untracked, so it was not in its own
+scan — and its closing assertion, that `shared.ts` still declares the class,
+reads to its own rule A as a second declaration. Locally: one declaration,
+green. Committed and pushed: two, red. Nothing was wrong with the pattern or
+the root; the set grew by one file at `git add` time, which is a moment no
+local test run ever observes. The declaration pattern is anchored to a
+statement start now — naming a class inside an expression is not declaring
+one — and the census asserts it can see itself.
 
 What a contractor sees change: a bad number or a bad dropdown value now
 gives a sentence instead of a blank page on change orders and proposals

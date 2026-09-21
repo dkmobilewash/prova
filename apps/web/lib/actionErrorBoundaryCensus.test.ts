@@ -71,6 +71,7 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const SHARED = "apps/web/lib/actions/shared.ts";
+const CENSUS = "apps/web/lib/actionErrorBoundaryCensus.test.ts";
 const actionsDir = "apps/web/lib/actions";
 
 /** Every tracked TypeScript file in the repository.
@@ -127,29 +128,58 @@ describe("the scan can see what it claims to see", () => {
     expect(files.some((f) => f.startsWith("apps/web/"))).toBe(true);
     expect(files).toContain(SHARED);
   });
+
+  it("can see itself, which it could not while it was uncommitted", () => {
+    // A THIRD WAY FOR A SCOPE TO BE WRONG, found by this file failing CI
+    // after passing locally on the same commit's content.
+    //
+    // `git ls-files` lists TRACKED files. While this census was being
+    // written it was untracked, so it was not in its own scan — and rule A
+    // below matches on source text, which means the assertion further down
+    // that shared.ts still declares the class reads, to rule A, as a second
+    // declaration. Locally: one declaration, green. Committed and pushed:
+    // two, red.
+    //
+    // Nothing was wrong with the pattern or the root. The set simply grew
+    // by one file at `git add` time, which is a moment no local test run
+    // ever observes. So: assert membership, and keep rule A anchored to a
+    // statement start so naming the class inside an expression is not a
+    // declaration.
+    expect(files).toContain(CENSUS);
+  });
 });
 
 /* ────────────────────────────── rule A ────────────────────────────── */
 
 describe("there is exactly one InputError class", () => {
-  const DECL = /\bclass\s+InputError\b/g;
+  /** A DECLARATION begins a statement. Anchoring to line start is what
+   * separates `export class InputError extends Error {}` from the same two
+   * words appearing inside an expression — such as the assertion at the
+   * bottom of this very file, which is why this is anchored at all. */
+  const DECLARATION = /^[ \t]*(?:export[ \t]+)?(?:abstract[ \t]+)?class[ \t]+InputError\b/m;
+
+  /** Every MENTION of the two words in code, anchored to nothing. The
+   * superset, derived differently from DECLARATION on purpose. */
+  const MENTION = /\bclass\s+InputError\b/;
 
   it("and it is the one in lib/actions/shared.ts", () => {
-    const holders = files.filter((f) => DECL.test(stripped.get(f)!) && (DECL.lastIndex = 0) === 0);
+    const holders = files.filter((f) => DECLARATION.test(stripped.get(f)!));
+    // Exact equality rather than "no offenders": a pattern that stopped
+    // matching gives [] and fails here, instead of reporting a clean sweep
+    // over an empty set. That is scar 1, and it is why this assertion is
+    // not written as `expect(extras).toEqual([])`.
     expect(holders).toEqual([SHARED]);
   });
 
-  it("counts declarations independently of the pattern that finds them", () => {
-    // Scar 1. `class InputError` as a literal string, counted over the raw
-    // sources, must equal what the regex found over the stripped ones —
-    // minus whatever sits in prose. A pattern that silently stopped
-    // matching would make the first number 0 and fail here rather than
-    // reporting a clean sweep.
-    const parsed = files.flatMap((f) => (stripped.get(f)!.match(/\bclass\s+InputError\b/g) ?? []));
-    expect(parsed.length).toBe(1);
-
-    const inCode = files.filter((f) => /\bclass\s+InputError\b/.test(stripped.get(f)!));
-    expect(inCode.length).toBe(parsed.length);
+  it("and the unanchored superset holds nothing else that could be one", () => {
+    // Scar 1, using a genuinely different derivation. MENTION cannot drift
+    // with DECLARATION because it shares no anchoring with it. Two files
+    // write those words in code and both are accounted for: shared.ts
+    // declares the class, and this census names it in the assertion that
+    // shared.ts still does. A third file appearing here is a declaration
+    // somebody indented past the anchor, and it fails.
+    const mentions = files.filter((f) => MENTION.test(stripped.get(f)!)).sort();
+    expect(mentions).toEqual([CENSUS, SHARED].sort());
   });
 });
 
