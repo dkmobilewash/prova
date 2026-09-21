@@ -32,14 +32,32 @@ tokens.
 
 **Three pages converted, one per intent**, because six other lanes were being
 edited at the same time and a 59-page sweep would have collided with all of
-them: `/settings` (`reading`), `/vendors` (`working`) and `/punch-lists`
-(`split`). Before-and-after measurements are in the PR description, taken in
-Chrome on this branch's preview at a 1272px content area.
+them. Measured in Chrome at a 1272x632 content area, on the live app for the
+before and with the shipped values applied to the same live pages for the
+after — same data, same viewport, so the only variable is the change:
+
+| | container | wasted side | screens to scroll |
+| --- | --- | --- | --- |
+| `/punch-lists` `split` | 768 -> **1272** | 504 -> **0** | 1.93 -> **1.12** |
+| `/vendors` `working` | 768 -> **1272** | 504 -> **0** | 1.18 -> 1.16 |
+| `/settings` `reading` | 768 -> 768 | 504 | 5.69 -> 5.69 |
+
+The split column pair is 320px + 872px, and `/punch-lists` loses 514px of
+height because the add-form stops sitting on top of the list. At 375px it is
+one column with the form above the list — the order it already had — and no
+horizontal overflow.
+
+Said plainly: `/vendors` barely moves on screens-to-scroll because that
+company's vendor list is EMPTY, so there are no rows to reflow. The width is
+real; the row count is not there to show it.
 
 `/settings` moving no pixels is the point of `reading`, not a failure of it:
 what changed is that the page stopped owning the number. Its real problem is
-4.7 screens of vertical stacking, which is density, not width, and widening it
-would have made that worse.
+5.69 screens of vertical stacking, which is density, not width — and widening
+it would have made that worse, measured rather than asserted: the body text
+runs **101 characters per line at 768px and 172 at the full width**. Past
+about 90 the eye loses the start of the next line. That is the whole reason
+`reading` exists and refuses to widen.
 
 **The guard is half the value.** Without it these drift back inside a month —
 nothing about `mx-auto max-w-2xl` looks wrong in a diff.
