@@ -61,3 +61,14 @@ PIN sheet — with every one of its strings frozen letter-for-letter (its
 own test pins them, plus the absence of Jobs/Margin/Backlog/Invoice),
 and its rails untouched: no header, no swipe-back, the on-disk flag that
 survives a force-quit.
+
+**The rebase also surfaced a launch crash that #405 had shipped.** The
+drain timer's move to the root layout put `useQueueDrain()` — which reads
+the session token through `useAuth` — in RootLayout itself, ABOVE the
+ClerkProvider it depends on. Every launch red-screened with "useAuth can
+only be used within the ClerkProvider component" before anything drew,
+and no typecheck can see it: the dependency is a runtime context, not a
+type. The call now lives in a `DrainTimer` component rendered beside the
+handover gate — inside the provider, outside the gate, because a crew
+member's hours must keep draining while the tabs are unmounted — and the
+rails test pins all three of those properties out of the source.
