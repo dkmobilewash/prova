@@ -72,6 +72,10 @@ export default function TabsLayout() {
           name="index"
           options={{
             title: "Home",
+            // Home draws its own greeting block inside the safe area — a
+            // static header above "Good morning" is chrome between the
+            // person and the day.
+            headerShown: false,
             tabBarIcon: ({ color, focused }) => <Icon name="home" color={color} filled={focused} size={24} />,
           }}
         />

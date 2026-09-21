@@ -35,6 +35,14 @@ vi.mock("@expo/vector-icons/Ionicons", () => ({ default: () => null }));
 // offline one makes the API reject, which is what a phone does.
 vi.mock("@clerk/expo", () => ({
   useAuth: () => ({ isLoaded: true, isSignedIn: true, getToken: async () => "test_token" }),
+  useUser: () => ({ user: { firstName: null } }),
+}));
+
+// The inset provider is a native thing; the screens' text is the same with
+// zero insets and no provider wrapper.
+vi.mock("react-native-safe-area-context", () => ({
+  SafeAreaView: ({ children }: { children?: unknown }) => children ?? null,
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
 // The device keystore, backing the cache and the queue.
