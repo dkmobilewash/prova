@@ -190,3 +190,36 @@ markup with illustrative figures. `app/page.test.ts` asserts the page never
 uses the words "screenshot", "actual customer" or "real customer data", and
 counts the placements against a literal so a selector that matches nothing
 fails loudly instead of passing an empty set.
+
+**One guard was narrowed and then put back wider, and the round trip is
+the part worth keeping.** When the rendered panels landed, the page-wide
+"never invent a statistic" assertion started failing — on a G703's real
+`%` column and on an apprentice ratio's real hour counts. The first fix
+scoped it to the old-way/new-way block it had always been named for,
+which was defensible and still wrong: it silently stopped checking nine
+other sections of marketing copy, on a page whose entire credibility is
+that it contains no made-up numbers. The contrast block was never the
+only place a fabricated statistic could appear; it was just the only
+place that existed when the test was written.
+
+The right cut is by KIND, not by section. A drawn document may carry real
+percentages — it IS the document, and it says on its face that the
+figures are illustrative. The prose around it may not. So `stripPanels`
+removes every `data-landing-panel` wrapper and the pattern runs over what
+is left, depth-counted rather than regex-matched (a non-greedy
+`.*?</div>` cuts at the first inner close, leaves most of a G703 behind,
+and looks exactly like it worked). Both failure modes of a deriving check
+are asserted before the pattern runs: every wrapper gone, more than 3000
+characters actually removed, and prose from the first, seventh and last
+sections still present — so a stripper that matches nothing and one that
+eats the document both fail loudly instead of passing vacuously. The
+narrow contrast assertion is kept beside it, since it also pins the ten
+contrast lines by name. 3 mutants requested, 3 caught: a fake "37%
+faster" in the closing CTA turns the page-wide guard red while the
+contrast guard stays green (which is the proof they are not the same
+check), and both stripper failures are caught by their own assertion.
+
+The general form, for the next guard here: when new content legitimately
+trips an old assertion, ask whether the assertion's SUBJECT changed
+before narrowing its SCOPE. Narrowing is the cheap move and it is how
+coverage disappears without anyone deciding to drop it.
