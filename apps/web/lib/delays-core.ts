@@ -6,41 +6,30 @@ import { prisma, type DelayCause, type DelayResponsibleParty, type NotificationM
  * differently. Replaces DailyFieldReport.delays, a single free-text box that
  * a delay claim could never be built from: no cause, no responsible party,
  * no times, no crew-hours, no record of telling the GC.
+ *
+ * The option lists and label helpers moved to `./delay-options` on
+ * 2026-09-21 and are re-exported here unchanged, so every caller of this
+ * module keeps working. They left because this file imports `prisma` as a
+ * VALUE, and a "use client" component importing one of those lists dragged
+ * PrismaClient into the browser bundle — see delay-options.ts for the whole
+ * account. Nothing a client component needs may live in this file.
  */
+export {
+  DELAY_CAUSES,
+  RESPONSIBLE_PARTIES,
+  NOTIFICATION_METHODS,
+  causeLabel,
+  partyLabel,
+  methodLabel,
+} from "./delay-options";
 
-export const DELAY_CAUSES: { value: DelayCause; label: string }[] = [
-  { value: "WEATHER", label: "Weather" },
-  { value: "GC_SCHEDULE", label: "GC schedule / sequencing" },
-  { value: "OTHER_TRADE", label: "Another trade in the way" },
-  { value: "MATERIAL", label: "Material late or wrong" },
-  { value: "INSPECTION", label: "Inspection" },
-  { value: "DESIGN_RFI", label: "Design question / RFI" },
-  { value: "SITE_ACCESS", label: "Site access" },
-  { value: "EQUIPMENT", label: "Equipment" },
-  { value: "OTHER", label: "Other" },
-];
-
-export const RESPONSIBLE_PARTIES: { value: DelayResponsibleParty; label: string }[] = [
-  { value: "GC", label: "GC" },
-  { value: "OWNER", label: "Owner" },
-  { value: "OTHER_TRADE", label: "Another trade" },
-  { value: "SUPPLIER", label: "Supplier" },
-  { value: "OURSELVES", label: "Us" },
-  { value: "NOBODY", label: "Nobody (weather, act of God)" },
-];
-
-export const NOTIFICATION_METHODS: { value: NotificationMethod; label: string }[] = [
-  { value: "PHONE", label: "Phone" },
-  { value: "EMAIL", label: "Email" },
-  { value: "TEXT", label: "Text" },
-  { value: "IN_PERSON", label: "In person" },
-  { value: "MEETING", label: "Meeting" },
-  { value: "OTHER", label: "Other" },
-];
-
-export const causeLabel = (c: string) => DELAY_CAUSES.find((x) => x.value === c)?.label ?? c;
-export const partyLabel = (p: string) => RESPONSIBLE_PARTIES.find((x) => x.value === p)?.label ?? p;
-export const methodLabel = (m: string) => NOTIFICATION_METHODS.find((x) => x.value === m)?.label ?? m;
+import {
+  DELAY_CAUSES,
+  RESPONSIBLE_PARTIES,
+  NOTIFICATION_METHODS,
+  causeLabel,
+  partyLabel,
+} from "./delay-options";
 
 export class DelayInputError extends Error {}
 
