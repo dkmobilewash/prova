@@ -1,4 +1,5 @@
-# Hint no longer assumes its child survived serialisation
+### One tooltip stopped assuming its child survived serialisation, and it had been killing whole accounts (Cyrus)
+`cyrus/hint-lazy-child`
 
 One invoice bricked an entire account this afternoon — `/dashboard`, `/jobs`,
 every job tab, permanently, through reloads, with no way back from the UI.
