@@ -13,7 +13,8 @@ import { Sheet } from "@/components/Sheet";
 import { SignaturePad } from "@/components/SignaturePad";
 import { JobSections } from "@/components/JobSections";
 import { cacheKeys } from "@/lib/cache-keys";
-import { cachedRead, staleNote } from "@/lib/cached-read";
+import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
+import { tokenOrNull } from "@/lib/clerk-token";
 import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
@@ -156,8 +157,12 @@ export default function TimeScreen() {
   const [signaturePath, setSignaturePath] = useState<string | null>(null);
 
   const load = async () => {
-    const token = await getToken();
-    if (!token || !jobId) return;
+    if (!jobId) return;
+    // ONE token for the screen, with a deadline: offline `getToken()`
+    // takes about two and a half minutes to answer (lib/clerk-token.ts),
+    // and the hours below are the record a foreman is asked about at the
+    // end of the week — they come off the cache long before that.
+    const token = await tokenOrNull(getToken);
     const today = dayFromClockIn(new Date().toISOString());
     // Everything at once, each piece shown the moment it arrives. These used
     // to run one batch after another, and the list a person had just saved
@@ -166,36 +171,45 @@ export default function TimeScreen() {
       // The hours themselves go through the cache: with no signal this
       // screen showed an error and no rows, on the one record a foreman is
       // asked about at the end of the week.
-      cachedRead(cacheKeys.time(jobId), () => api.listTimeEntries(jobId, token)).then(async (result) => {
-        setError(null);
-        if (result.from === "nothing") {
-          setOffline("nothing");
-          return;
-        }
-        setEntries(result.value);
-        setOffline(staleNote(result));
-        // Drop just-saved rows the server now has, or refused.
-        const queued = await queuedOperationIds();
-        setOptimistic((rows) => rows.filter((r) => queued.has(r.clientOperationId)));
-      }),
-      api.listCrew(token).then(setCrew),
-      api.listLineItems(jobId, token).then(setLineItems),
-      api.listCrafts(token).then(setCrafts),
-      api.listJobs(token).then((js) => setJobNames(Object.fromEntries(js.map((j) => [j.id, j.name])))),
-      // An older server without sign-offs still shows the hours.
-      api.listSignoffs(jobId, token).then(setSignoffs, () => setSignoffs([])),
-      Promise.all([api.listFieldReports(jobId, token), api.listDelays(jobId, token)]).then(([rs, ds]) => {
-        setReportDates(new Set(rs.map((r) => r.reportDate)));
-        const counts = new Map<string, number>();
-        for (const d of ds) counts.set(d.date, (counts.get(d.date) ?? 0) + 1);
-        setDelayCounts(counts);
-      }),
-      // A ratio that cannot be read is not a warning, and offline it simply
-      // shows nothing.
-      api.getApprenticeRatio(jobId, today, token).then(
-        (r) => setRatioWarnings(r.warnings),
-        () => setRatioWarnings([]),
+      cachedRead(cacheKeys.time(jobId), requireToken(token, (t) => api.listTimeEntries(jobId, t))).then(
+        async (result) => {
+          setError(null);
+          if (result.from === "nothing") {
+            setOffline("nothing");
+            return;
+          }
+          setEntries(result.value);
+          setOffline(staleNote(result));
+          // Drop just-saved rows the server now has, or refused.
+          const queued = await queuedOperationIds();
+          setOptimistic((rows) => rows.filter((r) => queued.has(r.clientOperationId)));
+        },
       ),
+      // The rest are the pickers and the context around the hours. With
+      // no token there is nothing to ask for, and the hours above still
+      // render.
+      ...(token
+        ? [
+            api.listCrew(token).then(setCrew),
+            api.listLineItems(jobId, token).then(setLineItems),
+            api.listCrafts(token).then(setCrafts),
+            api.listJobs(token).then((js) => setJobNames(Object.fromEntries(js.map((j) => [j.id, j.name])))),
+            // An older server without sign-offs still shows the hours.
+            api.listSignoffs(jobId, token).then(setSignoffs, () => setSignoffs([])),
+            Promise.all([api.listFieldReports(jobId, token), api.listDelays(jobId, token)]).then(([rs, ds]) => {
+              setReportDates(new Set(rs.map((r) => r.reportDate)));
+              const counts = new Map<string, number>();
+              for (const d of ds) counts.set(d.date, (counts.get(d.date) ?? 0) + 1);
+              setDelayCounts(counts);
+            }),
+            // A ratio that cannot be read is not a warning, and offline it
+            // simply shows nothing.
+            api.getApprenticeRatio(jobId, today, token).then(
+              (r) => setRatioWarnings(r.warnings),
+              () => setRatioWarnings([]),
+            ),
+          ]
+        : []),
     ]);
   };
 

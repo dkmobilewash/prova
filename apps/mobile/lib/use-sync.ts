@@ -1,6 +1,7 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
+import { tokenOrNull } from "./clerk-token";
 import { clearRefused, flushQueue, listRefused, pendingCount, retryRefused, type RefusedOp } from "./sync-queue";
 import { useStableGetToken } from "./use-stable-get-token";
 
@@ -29,7 +30,10 @@ export function useSync(refresh: () => Promise<void>) {
   }, []);
 
   const sync = useCallback(async () => {
-    const token = await getToken();
+    // Bounded: offline Clerk takes about two and a half minutes to say
+    // "no token" (lib/clerk-token.ts), and `refresh()` — the screen
+    // re-reading its own cache — is queued up behind this line.
+    const token = await tokenOrNull(getToken);
     if (token) {
       try {
         await flushQueue(token);

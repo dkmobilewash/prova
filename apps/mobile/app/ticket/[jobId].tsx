@@ -11,7 +11,7 @@ import { RefusedBanner } from "@/components/RefusedBanner";
 import { Sheet } from "@/components/Sheet";
 import { SignaturePad } from "@/components/SignaturePad";
 import { cacheKeys } from "@/lib/cache-keys";
-import { cachedRead, staleNote } from "@/lib/cached-read";
+import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
@@ -42,9 +42,11 @@ export default function TicketScreen() {
   const [signaturePath, setSignaturePath] = useState<string | null>(null);
 
   const load = async () => {
-    const token = await getToken();
-    if (!token || !jobId) return;
-    const result = await cachedRead(cacheKeys.tickets(jobId), () => api.listTmTickets(jobId, token));
+    if (!jobId) return;
+    const result = await cachedRead(
+      cacheKeys.tickets(jobId),
+      withToken(getToken, (token) => api.listTmTickets(jobId, token)),
+    );
     setError(null);
     if (result.from === "nothing") {
       setOffline("nothing");

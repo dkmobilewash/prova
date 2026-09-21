@@ -16,15 +16,37 @@ import { PREFETCHED_KEYS } from "./prefetch";
  */
 
 const APP = join(__dirname, "..", "app");
+const LIB = join(__dirname);
 
+/** Every source file under `dir`, screens AND the hooks they call.
+ *
+ * This used to collect `.tsx` only, which was invisibly wrong the moment
+ * it was pointed at `lib/`: the token rule below was run over a list that
+ * could not contain `use-sync.ts` or `use-field-reports.ts`, and passed
+ * because an empty question has no wrong answers. Same shape as the SQL
+ * census in CLAUDE.md — a parser's two failure modes are a wrong answer
+ * and no question at all, and only the first one looks like a failure.
+ * `sources()` below asserts the size against a count that cannot drift
+ * with this filter. */
 function files(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) out.push(...files(full));
-    else if (full.endsWith(".tsx")) out.push(full);
+    else if (full.endsWith(".tsx") || (full.endsWith(".ts") && !full.endsWith(".test.ts"))) out.push(full);
   }
   return out;
+}
+
+/** The screens, and the hooks under lib/ that load on their behalf. */
+function sources(): string[] {
+  const all = [...files(APP), ...files(LIB)];
+  // A floor, not a total: it fails loudly if the walk ever comes back
+  // empty or collapses to one extension, and does not need editing every
+  // time a screen is added.
+  if (all.filter((f) => f.endsWith(".tsx")).length < 10) throw new Error("the screen walk found almost nothing");
+  if (all.filter((f) => f.endsWith(".ts")).length < 10) throw new Error("the lib walk found almost nothing");
+  return all;
 }
 
 /** Screens that legitimately call the API without caching, each with its
@@ -50,7 +72,7 @@ describe("the cache the phone actually uses", () => {
     // Derived from the screens rather than restated: a new section that
     // caches but is never prefetched fails here.
     const read = new Set<string>();
-    for (const file of files(APP)) {
+    for (const file of sources()) {
       for (const match of readFileSync(file, "utf8").matchAll(/cacheKeys\.(\w+)\(/g)) {
         read.add(match[1]);
       }
@@ -71,13 +93,15 @@ describe("the cache the phone actually uses", () => {
 
   it("leaves no screen fetching a list without the cache", () => {
     const offenders: string[] = [];
-    for (const file of files(APP)) {
+    for (const file of sources()) {
       const name = file.slice(APP.length + 1);
       if (NOT_CACHED[name]) continue;
       const text = readFileSync(file, "utf8");
       const fetches = /api\.list\w+\(/.test(text);
-      // `use-field-reports` holds the cached read for the reports screen.
-      const caches = text.includes("cachedRead") || text.includes("useFieldReports");
+      // `use-field-reports` holds the cached read for the reports screen;
+      // the prefetch fills the same keys with `cacheSet` and no screen.
+      const caches =
+        text.includes("cachedRead") || text.includes("useFieldReports") || text.includes("cacheSet(");
       if (fetches && !caches) offenders.push(name);
     }
     expect(offenders, `these screens fetch a list with no offline fallback: ${offenders.join(", ")}`).toEqual([]);
@@ -100,21 +124,51 @@ describe("the cache the phone actually uses", () => {
     // The census before this one asked whether a screen CALLS cachedRead.
     // It does. It could not ask whether the call is REACHABLE, which is a
     // different question and the one that mattered.
+    //
+    // AND THEN THIS RULE MISSED FIVE SCREENS, which is why it no longer
+    // matches one spelling of one line. It required `if (!token) return;`
+    // exactly; materials, safety, time, photos and T&M tickets all wrote
+    // `if (!token || !jobId) return;` and sailed through for as long as
+    // the rule existed. Any early return on a falsy token now fails.
     const offenders: string[] = [];
-    for (const file of [...files(APP), ...files(join(APP, "..", "lib"))]) {
+    for (const file of sources()) {
       const text = readFileSync(file, "utf8");
       if (!text.includes("cachedRead(")) continue;
       // The comment in cached-read.ts quotes the bad pattern on purpose.
       if (file.endsWith("cached-read.ts")) continue;
       for (const line of text.split("\n")) {
-        if (/^\s*if \(!token\) return;/.test(line)) {
-          offenders.push(file.slice(APP.length + 1));
-        }
+        if (/^\s*if \(!token\b.*\breturn\b/.test(line)) offenders.push(file.slice(APP.length + 1));
       }
     }
     expect(
       offenders,
       `these read through the cache but return early without a token, so offline they never reach it: ${offenders.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("waits for a token with a deadline, everywhere, because offline Clerk takes 2m42s", () => {
+    // The device bug of 2026-09-20, after #398 had already fixed the
+    // early return. Offline, `getToken()` does not answer null — it
+    // retries for about two and a half minutes first (the arithmetic is
+    // in lib/clerk-token.ts, read out of the installed clerk-js). Home's
+    // load never finished, so it kept yesterday's lines and never drew
+    // its "no connection" note: the note was not missing, it was 162
+    // seconds away.
+    //
+    // So no file waits on Clerk directly. `tokenOrNull` is the only
+    // caller, and it has the deadline.
+    const offenders: string[] = [];
+    for (const file of sources()) {
+      if (file.endsWith("clerk-token.ts")) continue;
+      const text = readFileSync(file, "utf8");
+      for (const line of text.split("\n")) {
+        if (line.trimStart().startsWith("*")) continue; // the comment that quotes it
+        if (/\bawait getToken\(\)/.test(line)) offenders.push(file.slice(APP.length + 1));
+      }
+    }
+    expect(
+      offenders,
+      `these await Clerk's getToken() directly, which offline blocks for ~2m42s — use tokenOrNull/withToken: ${offenders.join(", ")}`,
     ).toEqual([]);
   });
 

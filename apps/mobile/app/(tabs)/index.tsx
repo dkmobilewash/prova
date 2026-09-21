@@ -6,7 +6,8 @@ import { CurrentJobBar } from "@/components/CurrentJobBar";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
-import { cachedRead, withToken, type CachedRead } from "@/lib/cached-read";
+import { cachedRead, oldestNote, withToken, type CachedRead } from "@/lib/cached-read";
+import { tokenOrNull } from "@/lib/clerk-token";
 import { prefetchJob } from "@/lib/prefetch";
 import { pendingCount } from "@/lib/sync-queue";
 import { summariseToday, type TodayLine } from "@/lib/today";
@@ -60,20 +61,24 @@ export default function HomeScreen() {
     );
 
     const sections = [reports, punchItems, media, timeEntries];
-    if (sections.every((section) => section.from === "server")) {
+    // Stale beats missing beats fresh, in that order. A screen with ANY
+    // old section on it says so — reporting the oldest of the four,
+    // because Home is only as current as its stalest line.
+    const stale = oldestNote(sections);
+    if (stale) {
+      setError(stale);
+    } else if (sections.some((section) => section.from === "nothing")) {
+      setError("No connection, and this phone hasn't loaded this job yet");
+    } else {
       setError(null);
       // While there IS signal, fill the cache for the sections Home does
       // not itself read — Materials, Safety, T&M, drawings, schedule.
       // Home is the screen the app opens on, so this is the moment the
       // phone is most likely to still have bars; by the time somebody
       // opens Materials in a basement it is far too late to fetch it.
-      void getToken().then((token) => {
+      void tokenOrNull(getToken).then((token) => {
         if (token) void prefetchJob(job.id, token);
       });
-    } else if (sections.some((section) => section.from === "cache")) {
-      setError("Showing what this phone last loaded — no connection");
-    } else {
-      setError("No connection, and this phone hasn't loaded this job yet");
     }
   }, [getToken, job]);
 

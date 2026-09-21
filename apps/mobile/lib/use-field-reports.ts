@@ -3,6 +3,7 @@ import { useAuth } from "@clerk/expo";
 import * as api from "./api";
 import { cacheKeys } from "./cache-keys";
 import { cachedRead, staleNote, withToken } from "./cached-read";
+import { tokenOrNull } from "./clerk-token";
 import { getClientId } from "./client-id";
 import { uuid } from "./id";
 import { enqueue, flushQueue, pendingCount } from "./sync-queue";
@@ -46,7 +47,9 @@ export function useFieldReports(jobId: string) {
   }, [getToken, jobId]);
 
   const sync = useCallback(async () => {
-    const token = await getToken();
+    // Bounded — see lib/clerk-token.ts. The refresh below is what shows
+    // the cached reports, and it waits for this line.
+    const token = await tokenOrNull(getToken);
     if (token) {
       try {
         await flushQueue(token);
