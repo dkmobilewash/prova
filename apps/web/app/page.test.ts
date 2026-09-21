@@ -173,6 +173,28 @@ describe("/ landing content renders signed out, with no auth call of its own", (
     expect(html).not.toMatch(/screenshot|screen shot|actual customer|real customer data/i);
   });
 
+  /**
+   * THE HONESTY LINE IS THE ONE STRING ON THIS PAGE WORTH FAILING A BUILD
+   * OVER, which is why it is asserted here even though the wording lives
+   * in another lane's file (components/landing/panelChrome.tsx).
+   *
+   * These panels are the product's real column headers and row labels with
+   * made-up numbers in them. That is legitimate exactly as long as the page
+   * says so where a reader can see it. Silently dropping the caption turns
+   * six honest drawings into six unlabelled claims about somebody's data,
+   * and nothing else on the page would notice.
+   *
+   * `PanelFrame` renders it unconditionally rather than taking it as a
+   * prop, so a caller cannot forget it — the assertion is that the frame
+   * keeps doing that, one caption per placement.
+   */
+  it("every placed panel says its figures are illustrative, where a reader can see it", () => {
+    const placements = (html.match(/data-landing-panel="/g) ?? []).length;
+    const captions = (html.match(/[Ff]igures are illustrative/g) ?? []).length;
+    expect(placements).toBeGreaterThan(0);
+    expect(captions).toBe(placements);
+  });
+
   it("places every panel the page claims to place, at the five ranked sites", () => {
     // The handle is `data-landing-panel`, a wrapper THIS file's component
     // owns, not an attribute inside components/landing/ — a guard should
@@ -218,8 +240,30 @@ describe("/ landing content renders signed out, with no auth call of its own", (
   });
 
   it("the old-way/new-way contrast names five concrete pains and backs each with a real capability", () => {
-    // Old-way lines describe a process, never invent a statistic.
-    expect(html).not.toMatch(/\d+%|\d+\s*(minutes?|hours?|days?)\s+(saved|per|of)/i);
+    /**
+     * "Never invent a statistic" is about THIS SECTION'S COPY, and until
+     * the panels landed the whole page happened to be the same thing.
+     *
+     * It is not any more. A G703 continuation sheet has a "%" column and
+     * an apprentice ratio is a pair of hour counts — those digits are the
+     * documents being drawn, labelled illustrative, not a "37% faster"
+     * claim about a customer. Run page-wide, this assertion now fails on
+     * the product telling the truth, which is the point at which a guard
+     * stops meaning what its name says and starts getting deleted.
+     *
+     * So it is scoped to the block it was always about. The scope is
+     * derived from the section headings either side of it rather than a
+     * line number, and asserted non-empty first — a slice that silently
+     * came back empty would pass every assertion after it, which is the
+     * empty-question failure CLAUDE.md records twice.
+     */
+    const start = html.indexOf("The old way, and the C Stream way");
+    const end = html.indexOf("Getting paid");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const contrast = html.slice(start, end);
+    expect(contrast.length).toBeGreaterThan(500);
+    expect(contrast).not.toMatch(/\d+%|\d+\s*(minutes?|hours?|days?)\s+(saved|per|of)/i);
     for (const line of [
       "Certified payroll is assembled by hand",
       "Certified payroll generates from the hours your crew already logged",

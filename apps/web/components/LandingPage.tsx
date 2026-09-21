@@ -503,8 +503,18 @@ export function LandingPage() {
             run into gets fixed fast rather than filed away.
           </p>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
-            That is also why there are no logos, no customer counts and no testimonials on this page.
-            There is nothing here we could not show you in the product itself.
+            {/* Deliberately worded around the marketing vocabulary this
+                page is guarded against ("testimonial", "trusted by",
+                "hundreds of"). page.test.ts matches those words BLUNTLY,
+                with no notion of polarity — and a sentence denying them
+                would trip it. The fix is not to teach the guard about
+                negation, which is how a simple check becomes an
+                unmaintainable one and then gets deleted; it is for the
+                page not to contain the words at all, which is a stronger
+                property and the one actually wanted here. */}
+            That is also why this page shows no customer logos, no count of how many subs are using
+            it, and no quoted endorsements. There is nothing here we could not show you in the
+            product itself.
           </p>
         </div>
       </Reveal>
