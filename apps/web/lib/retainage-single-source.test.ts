@@ -211,21 +211,26 @@ function workspaceSourceRoots(): string[] {
   const yaml = readFileSync(join(REPO, "pnpm-workspace.yaml"), "utf8");
   // The `packages:` block's list items, e.g. `- "apps/*"`.
   const globs = [...yaml.matchAll(/^\s*-\s*"([^"]+)"\s*$/gm)].map((m) => m[1]);
-  // A glob list that parsed to nothing would silently shrink the scan to
-  // zero files and pass every assertion below.
-  expect(globs.length).toBeGreaterThanOrEqual(2);
+  // Plain throws rather than `expect`, because this runs at module load
+  // where a failed assertion surfaces as a collect error instead of a
+  // named failing test. The message has to carry the diagnosis itself.
+  if (globs.length < 2) {
+    throw new Error(`pnpm-workspace.yaml parsed to ${globs.length} globs; the scan would be near-empty`);
+  }
 
   const roots: string[] = [];
   for (const glob of globs) {
     const [parent, star] = glob.split("/");
-    expect(star).toBe("*"); // the only shape this parser claims to handle
+    // The only shape this parser claims to handle. A `packages/**` or a
+    // bare path would be silently mis-scanned.
+    if (star !== "*") throw new Error(`unhandled workspace glob shape: ${glob}`);
     const parentDir = join(REPO, parent);
     const children = readdirSync(parentDir).filter((name) =>
       statSync(join(parentDir, name)).isDirectory(),
     );
     // A workspace glob matching no package means the parse is wrong, not
     // that the repo is empty.
-    expect(children.length).toBeGreaterThan(0);
+    if (children.length === 0) throw new Error(`workspace glob ${glob} matched no package`);
     for (const child of children) roots.push(join(parentDir, child));
   }
   return roots;
