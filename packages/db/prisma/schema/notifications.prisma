@@ -129,6 +129,12 @@ model NotificationDispatch {
   /// What is deliberately NOT in here is the date it was sent. A key
   /// carrying today's date is a new key tomorrow, which is the whole
   /// failure this table exists to prevent.
+  ///
+  /// THE PREFIX IS THE CHANNEL. Email keys are unprefixed
+  /// (`RENEWAL:lic_1:2026-11-30@week`); push keys are the same keys with a
+  /// `push:` prefix. The unique constraint on (userId, dispatchKey) then
+  /// makes the two channels claimable independently — a phone user still
+  /// gets email, and a claim on one channel never suppresses the other.
   dispatchKey String
 
   /// The alert key on its own, and the rung on its own. Neither is read to
