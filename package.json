@@ -12,6 +12,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:db": "pnpm --filter @prova/web run test:db",
+    "test:e2e": "pnpm --filter @prova/web run test:e2e:local",
     "db:generate": "pnpm --filter @prova/db generate",
     "db:migrate": "pnpm --filter @prova/db migrate:dev",
     "db:studio": "pnpm --filter @prova/db studio",
@@ -25,6 +26,12 @@
   "pnpm": {
     "overrides": {
       "@types/react": "19.0.14"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@embedded-postgres/darwin-arm64",
+      "@embedded-postgres/darwin-x64",
+      "@embedded-postgres/linux-arm64",
+      "@embedded-postgres/linux-x64"
+    ]
   }
 }

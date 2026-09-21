@@ -1,5 +1,7 @@
 import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
+import { assertScratchDatabase } from "./lib/assertScratchDatabase";
+import { E2E_FAKE_BLOB_TOKEN } from "./lib/fakeBlobToken.mjs";
 
 /**
  * Real browser E2E, chromium-only, kept deliberately separate from
@@ -36,6 +38,19 @@ import { defineConfig, devices } from "@playwright/test";
 const repoRoot = path.resolve(__dirname, "../../..");
 const webRoot = path.resolve(__dirname, "..");
 const PORT = 3100;
+
+// AT CONFIG LOAD, not only in global-setup.ts. Read out of the installed
+// runner (playwright@1.63.0 lib/runner/index.js, `createGlobalSetupTasks`):
+// the task order is remove-output-dirs -> PLUGIN SETUP -> global setup,
+// and `webServer` is a plugin. So `next start` below boots BEFORE
+// global-setup.ts gets to refuse a non-scratch DATABASE_URL — and a
+// production Next server inherits whatever connection string this
+// process has. Booting it against a real database writes nothing by
+// itself, but "writes nothing by itself" is the exact sentence that
+// preceded the shadow-database reset in CLAUDE.md. Refusing here, while
+// this file is still being evaluated, is the earliest point there is.
+// Same guard, same function (`scratchProblem()`), no second opinion.
+assertScratchDatabase();
 
 export default defineConfig({
   testDir: "./specs",
@@ -99,7 +114,28 @@ export default defineConfig({
     command: `pnpm --filter @prova/web exec next start -p ${PORT}`,
     cwd: repoRoot,
     url: `http://localhost:${PORT}/pilot`,
-    reuseExistingServer: !process.env.CI,
+    // Never reuse a server the runner (e2e/run.mjs) did not start: a
+    // `next start` somebody left on :3100 carries ITS env, not the
+    // throwaway database and fake blob token below, and every assertion in
+    // the journey would then be about a server nobody vouched for.
+    reuseExistingServer: !process.env.CI && !process.env.E2E_RUNNER,
+    // The server under test cannot reach anything real. `webServer.env`
+    // REPLACES the child's environment rather than merging, so the spread
+    // comes first and the two overrides win:
+    //   - BLOB_READ_WRITE_TOKEN is a fake read-write token whose store id
+    //     is `e2estore`. Every real upload would fail against it, and the
+    //     journey never sends one: lib/blobStub.ts answers the browser's
+    //     upload in the browser, with a URL the app's own
+    //     `documentUrlProblem` check accepts BECAUSE it names this store.
+    //   - ANTHROPIC_API_KEY is blank, so no spec can spend a model call by
+    //     accident (memory: a full eval run once emptied the shared
+    //     balance). specs/ask-panel.spec.ts stubs /api/ask in the browser
+    //     anyway; this is the server-side belt to that brace.
+    env: {
+      ...process.env,
+      BLOB_READ_WRITE_TOKEN: E2E_FAKE_BLOB_TOKEN,
+      ANTHROPIC_API_KEY: "",
+    },
     timeout: 120_000,
     stdout: "pipe",
     stderr: "pipe",

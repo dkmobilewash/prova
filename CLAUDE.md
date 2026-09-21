@@ -24,6 +24,18 @@ Vercel deployment and repo settings). Each drives their own agent.
   loading the page and doing the thing. After building anything, give
   Cyrus a numbered click-list with the exact expected result, phrased so
   a wrong result is unmistakable.
+
+  **A machine now does the first pass of that clicking: `pnpm test:e2e`**
+  (from the repo root). It boots a throwaway Postgres, builds the app the
+  way production runs it, signs a real Clerk test user in through a real
+  Chromium, and walks the pilot journey in order — first job, estimate
+  line, executed subcontract, contracted, retainage, first invoice, every
+  job tab, dashboard, jobs list, every nav destination — failing on any
+  page that shows an error boundary or renders nothing. It exists because
+  on 2026-09-21 all four CI checks and 5,800 unit tests were green while
+  creating one invoice crashed every authenticated page. It does not
+  replace the click-list; it is the floor under it. Read
+  `apps/web/e2e/run.mjs`'s header before changing what it touches.
 - Say plainly when something is your fault, what broke, and what changes.
 
 ## Coordination
@@ -160,6 +172,18 @@ scrollback gets broken by whoever didn't scroll far enough.
   true as of 2026-08-28. `gh auth setup-git` is what makes git push use
   that token; without it the stale keychain entry wins and pushes fail
   with "Invalid username or token".
+
+  **The `workflow` scope in that list is NOT what the keyring holds, as
+  of 2026-09-21.** `gh auth status` on Cyrus's laptop prints `'gist',
+  'read:org', 'repo'` — no `workflow` — so a push touching
+  `.github/workflows/` is rejected exactly as the "older PAT" paragraph
+  above describes. #364 hit this and left its CI job as a diff in the PR
+  body; the E2E journey PR hit it again three weeks later, from this same
+  keyring, because this bullet said the problem was gone. The fix is one
+  interactive command Cyrus runs himself — `gh auth refresh -h github.com
+  -s workflow` — followed by `gh auth setup-git`; an agent cannot complete
+  the device-code prompt. Verify with `gh auth status`, not with this
+  paragraph.
 - `.git/info/exclude` patterns must be anchored with `/` (an unanchored
   `punch-lists*` matched a source directory).
 - CI (`ci.yml`) runs test → lint → typecheck → build. This file used to
