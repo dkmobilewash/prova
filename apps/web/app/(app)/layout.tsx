@@ -9,7 +9,6 @@ import { can, type Principal } from "@/lib/permissions";
 import { viewerToday } from "@/lib/viewerToday";
 import { TimeZoneCookie } from "@/components/TimeZoneCookie";
 import { FullTour } from "@/components/FullTour";
-import { CompanySetupPrompt } from "@/components/CompanySetupPrompt";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -38,16 +37,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     doesPublicWork: company.doesPublicWork,
     filesMonthlyPayApps: company.filesMonthlyPayApps,
   };
-  // Shown once, and only to the person who can actually answer it: a
-  // non-owner has no capability to change what the answers below already
-  // decided (saveBusinessScope refuses them), so showing them a prompt
-  // they cannot act on would be a door that does not open. Null means
-  // "never asked" — true of a brand-new company on its very first page
-  // load, and also true of every company that existed before this shipped,
-  // which is why an existing company sees this ONCE rather than never: the
-  // absence of an answer and the absence of the "have you been asked yet"
-  // stamp are deliberately the same column, not two.
-  const showsCompanySetupPrompt = currentUser.role === "OWNER" && company.businessScopeAskedAt === null;
+
+  // The onboarding PROMPT used to be mounted here as a modal, shown over
+  // whatever page happened to be on screen. That was the defect: it
+  // painted a card over an already-visible sidebar, so the four seconds
+  // this feature exists to own were already spent (Cyrus watched it appear
+  // over /messages). It is a real page now — app/welcome/page.tsx, reached
+  // by a redirect from app/(app)/dashboard/page.tsx ONLY — so this layout
+  // has nothing to do with it any more. See lib/onboarding-gate.ts.
 
   // The reader's own calendar day, not the server's UTC one. At 18:00 in
   // Los Angeles the UTC date is already tomorrow, so this badge counted a
@@ -95,10 +92,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* "Take the full tour": renders nothing until someone starts it.
           Here rather than on a page because it moves between pages. */}
       <FullTour principal={principal} />
-      {/* The three onboarding questions. Renders nothing once answered,
-          skipped, or for anyone but the owner — see showsCompanySetupPrompt
-          above. */}
-      <CompanySetupPrompt show={showsCompanySetupPrompt} />
       <Sidebar
         companyName={company.name}
         principal={principal}

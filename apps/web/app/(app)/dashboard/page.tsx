@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { Card, StatusBadge } from "@prova/ui";
 import { JobStatus, Prisma, prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
+import { redirectToOnboardingIfUnasked } from "@/lib/onboarding-gate";
 import { estimateStage } from "@/lib/estimate-stage";
 import { can } from "@/lib/permissions";
 import { money } from "@/lib/money";
@@ -108,6 +109,13 @@ export default async function TodayPage({
   searchParams: Promise<{ q?: string; status?: string }>;
 }) {
   const { company, ...currentUser } = await requireCompanyContext();
+
+  // The onboarding gate. THIS MUST STAY THE FIRST THING AFTER
+  // requireCompanyContext() — redirect() throws, so nothing below it runs
+  // when it fires, and this is the one page a fresh signup or sign-in ever
+  // lands on by default (see lib/onboarding-gate.ts's own header for why
+  // that makes this the only page that should ever call it).
+  redirectToOnboardingIfUnasked({ role: currentUser.role, businessScopeAskedAt: company.businessScopeAskedAt });
 
   // Both TRUE for an owner and for a member with no job function set, so
   // this screen is unchanged for everyone who has ever used it. A narrowed
