@@ -10,6 +10,7 @@ import { List } from "@/components/List";
 import { RefusedBanner } from "@/components/RefusedBanner";
 import { Sheet } from "@/components/Sheet";
 import * as api from "@/lib/api";
+import { tokenOrNull } from "@/lib/clerk-token";
 import { dayFromClockIn } from "@/lib/clock-session";
 import { uuid } from "@/lib/id";
 import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
@@ -75,7 +76,10 @@ export default function ReportsScreen() {
   const today = dayFromClockIn(new Date().toISOString());
 
   const loadDelays = useCallback(async () => {
-    const token = await getToken();
+    // Delays are not cached, so this one genuinely has nothing to show
+    // without a token — but it still must not sit on Clerk for two and a
+    // half minutes offline (lib/clerk-token.ts).
+    const token = await tokenOrNull(getToken);
     if (!token || !jobId) return;
     try {
       setDelays(await api.listDelays(jobId, token));

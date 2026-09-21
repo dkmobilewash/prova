@@ -1,3 +1,4 @@
+import { tokenOrNull } from "./clerk-token";
 import { cacheAge, cacheGet, cacheSet } from "./offline-cache";
 
 /**
@@ -47,8 +48,23 @@ export function withToken<T>(
   getToken: () => Promise<string | null>,
   read: (token: string) => Promise<T>,
 ): () => Promise<T> {
+  return async () => requireToken(await tokenOrNull(getToken), read)();
+}
+
+/**
+ * The same policy for a screen that fetches ONE token and spends it on
+ * several calls: a missing token fails the read, so the fallback runs,
+ * rather than returning before the read exists.
+ *
+ * Both halves of that sentence are scars. `if (!token) return;` skipped
+ * the cache (#398), and waiting on `getToken()` without a deadline
+ * skipped it for two and a half minutes (see clerk-token.ts).
+ */
+export function requireToken<T>(
+  token: string | null,
+  read: (token: string) => Promise<T>,
+): () => Promise<T> {
   return async () => {
-    const token = await getToken();
     if (!token) throw new Error("No token — offline or signed out");
     return read(token);
   };
@@ -56,7 +72,10 @@ export function withToken<T>(
 
 export type CachedRead<T> =
   | { from: "server"; value: T }
-  | { from: "cache"; value: T; note: string }
+  /** `at` is when this phone last got the real thing, so a screen made of
+   * several lists can report the OLDEST of them rather than whichever one
+   * it happened to render first. */
+  | { from: "cache"; value: T; note: string; at: string }
   | { from: "nothing" };
 
 export async function cachedRead<T>(key: string, read: () => Promise<T>): Promise<CachedRead<T>> {
@@ -70,6 +89,7 @@ export async function cachedRead<T>(key: string, read: () => Promise<T>): Promis
     return {
       from: "cache",
       value: cached.rows,
+      at: cached.at,
       note: `Showing what this phone last loaded, ${cacheAge(cached.at)} — no connection`,
     };
   }
@@ -85,4 +105,18 @@ export function staleNote<T>(read: CachedRead<T>): string | null {
  * an empty state must not describe as emptiness. */
 export function couldNotLoad<T>(read: CachedRead<T>): boolean {
   return read.from === "nothing";
+}
+
+/** The note for a screen made of SEVERAL cached lists — the oldest of
+ * them, because a screen is only as fresh as its stalest part. Home had
+ * its own sentence with no age in it at all; this is where that sentence
+ * comes from now. */
+export function oldestNote(reads: CachedRead<unknown>[]): string | null {
+  const cached = reads.filter(
+    (read): read is Extract<CachedRead<unknown>, { from: "cache" }> => read.from === "cache",
+  );
+  if (cached.length === 0) return null;
+  // ISO-8601 sorts as text, which is the only reason this is a compare
+  // and not a Date.parse.
+  return cached.reduce((a, b) => (a.at <= b.at ? a : b)).note;
 }

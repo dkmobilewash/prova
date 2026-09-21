@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { Field } from "@/components/Field";
 import { Sheet } from "@/components/Sheet";
 import { cacheKeys } from "@/lib/cache-keys";
-import { cachedRead, staleNote } from "@/lib/cached-read";
+import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
@@ -43,14 +43,16 @@ export default function SafetyScreen() {
   const [outcome, setOutcome] = useState("FIRST_AID_ONLY");
 
   const load = async () => {
-    const token = await getToken();
-    if (!token || !jobId) return;
+    if (!jobId) return;
     // Both lists under one key: half a screen fresh and the other half a
     // week old is worse than either.
-    const result = await cachedRead(cacheKeys.safety(jobId), async () => ({
-      talks: await api.listToolboxTalks(jobId, token),
-      incidents: await api.listIncidents(jobId, token),
-    }));
+    const result = await cachedRead(
+      cacheKeys.safety(jobId),
+      withToken(getToken, async (token) => ({
+        talks: await api.listToolboxTalks(jobId, token),
+        incidents: await api.listIncidents(jobId, token),
+      })),
+    );
     setError(null);
     if (result.from === "nothing") {
       setOffline("nothing");

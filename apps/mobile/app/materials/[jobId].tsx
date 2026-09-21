@@ -9,7 +9,7 @@ import { Field } from "@/components/Field";
 import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
 import { cacheKeys } from "@/lib/cache-keys";
-import { cachedRead, staleNote } from "@/lib/cached-read";
+import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
@@ -33,14 +33,16 @@ export default function MaterialsScreen() {
   const [vendorId, setVendorId] = useState<string | null>(null);
 
   const load = async () => {
-    const token = await getToken();
-    if (!token || !jobId) return;
+    if (!jobId) return;
     // The vendor list is cached with the orders rather than separately:
     // an order row is unreadable without the vendor names beside it.
-    const result = await cachedRead(cacheKeys.materials(jobId), async () => ({
-      orders: await api.listMaterialOrders(jobId, token),
-      vendors: await api.listVendors(token),
-    }));
+    const result = await cachedRead(
+      cacheKeys.materials(jobId),
+      withToken(getToken, async (token) => ({
+        orders: await api.listMaterialOrders(jobId, token),
+        vendors: await api.listVendors(token),
+      })),
+    );
     setError(null);
     if (result.from === "nothing") {
       setOffline("nothing");

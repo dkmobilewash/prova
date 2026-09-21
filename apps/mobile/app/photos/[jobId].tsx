@@ -28,7 +28,8 @@ import { keepForUpload } from "@/lib/photo-store";
 import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
 import { JobSections } from "@/components/JobSections";
 import { cacheKeys } from "@/lib/cache-keys";
-import { cachedRead, staleNote } from "@/lib/cached-read";
+import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
+import { tokenOrNull } from "@/lib/clerk-token";
 import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import type { Media, MediaTag, PunchListItem } from "@/lib/types";
@@ -89,37 +90,50 @@ export default function PhotosScreen() {
   const [pending, setPending] = useState<{ clientOperationId: string; uri: string; capturedAt: string }[]>([]);
 
   const load = useCallback(async () => {
-    const token = await getToken();
-    if (!token || !jobId) return;
+    if (!jobId) return;
+    // ONE token for the whole screen, and a deadline on it: offline
+    // `getToken()` takes about two and a half minutes to answer (see
+    // lib/clerk-token.ts), and the cached rows below are exactly what
+    // this screen is opened for when there is no signal.
+    const token = await tokenOrNull(getToken);
     const today = dayFromClockIn(new Date().toISOString());
     await Promise.allSettled([
       // The ROWS are cached, not the pictures: a job's photos are tens of
       // megabytes, and what a foreman needs off-signal is which ones were
       // taken and when, not to re-view them on a 5-inch screen.
-      cachedRead(cacheKeys.photos(jobId), () => api.listMedia(jobId, token)).then(async (result) => {
-        setError(null);
-        if (result.from === "nothing") {
-          setOffline("nothing");
-          return;
-        }
-        setMedia(result.value);
-        setOffline(staleNote(result));
-        const queued = await queuedOperationIds();
-        setPending((rows) => rows.filter((r) => queued.has(r.clientOperationId)));
-      }),
-      api.listMediaTags(token).then(setTags, () => setTags([])),
-      api.listPunchListItems(jobId, token).then(
-        (items) => setPunchItems(items.filter((i) => i.status === "OPEN")),
-        () => setPunchItems([]),
+      cachedRead(cacheKeys.photos(jobId), requireToken(token, (t) => api.listMedia(jobId, t))).then(
+        async (result) => {
+          setError(null);
+          if (result.from === "nothing") {
+            setOffline("nothing");
+            return;
+          }
+          setMedia(result.value);
+          setOffline(staleNote(result));
+          const queued = await queuedOperationIds();
+          setPending((rows) => rows.filter((r) => queued.has(r.clientOperationId)));
+        },
       ),
-      api.listFieldReports(jobId, token).then(
-        (rs) => setTodaysReportId(rs.find((r) => r.reportDate === today)?.id ?? null),
-        () => setTodaysReportId(null),
-      ),
-      api.listJobs(token).then(
-        (js) => setJobName(js.find((j) => j.id === jobId)?.name ?? ""),
-        () => {},
-      ),
+      // The rest are what the CAPTURE SHEET needs — tags, today's report,
+      // the open punch items. Without a token there is nothing to ask,
+      // and each already falls back to an empty list of its own.
+      ...(token
+        ? [
+            api.listMediaTags(token).then(setTags, () => setTags([])),
+            api.listPunchListItems(jobId, token).then(
+              (items) => setPunchItems(items.filter((i) => i.status === "OPEN")),
+              () => setPunchItems([]),
+            ),
+            api.listFieldReports(jobId, token).then(
+              (rs) => setTodaysReportId(rs.find((r) => r.reportDate === today)?.id ?? null),
+              () => setTodaysReportId(null),
+            ),
+            api.listJobs(token).then(
+              (js) => setJobName(js.find((j) => j.id === jobId)?.name ?? ""),
+              () => {},
+            ),
+          ]
+        : []),
     ]);
   }, [getToken, jobId]);
 

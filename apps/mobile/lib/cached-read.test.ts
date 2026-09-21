@@ -103,9 +103,54 @@ describe("a read that needs a token", () => {
     expect(offline).toMatchObject({ from: "cache", value: ["fix the grid"] });
   });
 
+  it("stops waiting for a token that is two minutes away, and shows the cache", async () => {
+    // THE DEVICE BUG OF 2026-09-20, the second one. Offline `getToken()`
+    // does not answer null — it retries for about two and a half minutes
+    // first. Home's load therefore never finished, so it kept the lines
+    // from its last online load and never drew its "no connection" note:
+    // the note was not missing, it was 162 seconds away.
+    const { withToken } = await import("./cached-read");
+    const { TOKEN_WAIT_MS } = await import("./clerk-token");
+
+    await cachedRead("time.job_5", withToken(async () => "token", async () => ["8 hours"]));
+
+    vi.useFakeTimers();
+    try {
+      const offline = cachedRead(
+        "time.job_5",
+        withToken(
+          () => new Promise<string | null>((resolve) => setTimeout(() => resolve(null), 162_000)),
+          async () => ["never asked"],
+        ),
+      );
+      await vi.advanceTimersByTimeAsync(TOKEN_WAIT_MS + 1);
+      expect(await offline).toMatchObject({ from: "cache", value: ["8 hours"] });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("says nothing rather than empty when there is no token AND no cache", async () => {
     const { withToken } = await import("./cached-read");
     const first = await cachedRead("safety.job_7", withToken(async () => null, async () => ["never"]));
     expect(first).toEqual({ from: "nothing" });
+  });
+});
+
+describe("a screen made of several cached lists", () => {
+  it("reports the OLDEST of them, because a screen is as fresh as its stalest part", async () => {
+    const { oldestNote } = await import("./cached-read");
+
+    // Home is four lists. It used to say "Showing what this phone last
+    // loaded — no connection" with no age at all, which is the one thing
+    // a person standing in a basement wants from that sentence.
+    const old = { from: "cache" as const, value: [], note: "two days ago", at: "2026-09-18T10:00:00.000Z" };
+    const newer = { from: "cache" as const, value: [], note: "ten minutes ago", at: "2026-09-20T18:00:00.000Z" };
+    const fresh = { from: "server" as const, value: [] };
+
+    expect(oldestNote([fresh, newer, old])).toBe("two days ago");
+    expect(oldestNote([old, newer])).toBe("two days ago");
+    expect(oldestNote([fresh, fresh])).toBeNull();
+    expect(oldestNote([{ from: "nothing" }, fresh])).toBeNull();
   });
 });
