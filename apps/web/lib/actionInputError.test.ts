@@ -10,41 +10,44 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * census can be satisfied by a file that has no boundary at all, and these
  * two cases cannot prove anything about the other sixteen modules.
  *
- * TWO DIFFERENT DEFECTS ARE PINNED HERE, and they are worth telling apart
- * because #407 fixed one of them and the other is the one a contractor
- * actually hit.
+ * TWO THINGS ARE PINNED HERE, and after #414 landed under this branch they
+ * are no longer the same kind of thing. Saying so is the point.
  *
- * 1. THE PARSER THREW THE WRONG CLASS (`/jobs/[id]` change orders).
- *    `decimalFromForm` in lib/actions/shared.ts threw a BARE `Error` until
- *    2026-09-21. #407 converted `enumFromForm` and `optionalEnumFromForm`
- *    and left the two decimal parsers behind, so a thousands comma — the
- *    single most likely thing a contractor types into a quantity — was
- *    still a class no boundary in this repo catches.
- *
- *    `changeOrders.ts` had SURVIVED that by hand: local `decimal()` and
- *    `nullableDecimal()` wrappers caught the bare `Error` and rethrew it as
- *    the module's own `InputError`, passing `err.message` through
- *    unchanged. That workaround is deleted now that the parser throws the
- *    right class, and this test is what says the message still arrives —
- *    the deletion and the parser change have to be read together or the
- *    screen goes silent.
- *
- * 2. THE ACTION HAD NO BOUNDARY AT ALL (`/settings` licences).
+ * 1. THE LIVE DEFECT: NO BOUNDARY AT ALL (`/settings` licences).
  *    `createCompanyLicense` and `updateCompanyLicense` declare
  *    `Promise<ActionResult>` — a promise that their refusals are legible —
- *    and called `enumFromForm` with no `runAction` anywhere. After #407
- *    made that parser throw `InputError`, the throw had nothing to catch
- *    it, so the action REJECTED and production redacted the rejection to a
- *    digest. No local `InputError` class is involved, which is exactly why
- *    a `grep -rl "class InputError"` over the action modules never sees
- *    this shape. Counting files found sixteen; counting BOUNDARIES found
- *    these.
+ *    and call `enumFromForm` with no `runAction` anywhere. The throw has
+ *    nothing to catch it, so the action REJECTS and production redacts the
+ *    rejection to a digest. Reproduced against `origin/main` before being
+ *    fixed: all three cases below reject out of `enumFromForm` with
+ *    `"jurisdictionType" must be one of: STATE, COUNTY, CITY` and
+ *    `"status" must be one of: …`.
  *
- * Both were reproduced against unfixed code before being fixed. Run at
- * `9b53afc` (the `origin/main` this branch left from), case 1 rejects with
- * `"quantity" must be a number` and case 2 rejects with
- * `"jurisdictionType" must be one of: STATE, COUNTY, CITY` — a REJECTION in
- * both, which is the digest.
+ *    NO LOCAL `InputError` CLASS IS INVOLVED, which is exactly why a
+ *    `grep -rl "class InputError"` over the action modules never sees this
+ *    shape. Counting files found sixteen; counting BOUNDARIES found these.
+ *    As of #414 these two are the ONLY pair of their shape left in
+ *    `lib/actions` — #414 closed `billing.ts::logPayment` and
+ *    `jobs.ts::addCostEntry` by having each return its refusal instead.
+ *
+ * 2. THE COMPOSITION PROOF, NOT A DEFECT (`/jobs/[id]` change orders).
+ *    This section used to assert that `2,800` in a quantity came back as a
+ *    refusal. **#414 made `2,800` a valid number** — it parses to `2800`,
+ *    along with `$12,500.00` and a non-breaking space from a spreadsheet
+ *    paste — so that assertion is obsolete and its replacement is better
+ *    news: the comma now SAVES. That is asserted below, through the
+ *    converged module, because two changes landing in the same file in the
+ *    same day is exactly when a silent regression gets in.
+ *
+ *    What still has to refuse is a comma in the WRONG place — `12,50`,
+ *    which #414 deliberately rejects rather than silently reading as 1250.
+ *    That refusal now travels a path this branch changed: the parser
+ *    raises the SHARED `InputError`, and `changeOrders.ts`'s boundary is
+ *    the shared one. The module's own `decimal()` / `nullableDecimal()`
+ *    wrappers — which existed only to catch a bare `Error` and rethrow it
+ *    as a private class — are deleted, and this test is what says the
+ *    sentence still arrives. The deletion and the shared class have to be
+ *    read together or the screen goes silent.
  *
  * `resolves` versus `rejects` is the entire assertion. A rejected Server
  * Action promise is the "Application error … Digest:" screen; a resolved
@@ -155,26 +158,51 @@ function licenceForm(overrides: Record<string, string>): FormData {
   });
 }
 
-describe("a thousands comma in a change order quantity", () => {
-  it("comes back as a sentence, not a rejected promise", async () => {
-    // "2,800" is what a contractor types. Number("2,800") is NaN.
+describe("numbers a contractor types into a change order", () => {
+  it("saves a thousands comma, and stores the figure without it", async () => {
+    // #414's tolerance, asserted THROUGH the converged module. `2,800` used
+    // to be the bug; it is now the happy path, and the stored value is the
+    // bare digits bound for a Postgres numeric column.
     const result = await proposeAddedScope("co-1", scopeForm({ quantity: "2,800" }));
+
+    expect(result).toEqual({ ok: true });
+    expect(db.changeOrderProposal.create).toHaveBeenCalledTimes(1);
+    const written = db.changeOrderProposal.create.mock.calls[0][0] as {
+      data: { quantity: string };
+    };
+    expect(written.data.quantity).toBe("2800");
+  });
+
+  it("saves a currency symbol on the optional money field too", async () => {
+    const result = await proposeAddedScope("co-1", scopeForm({ unitPrice: "$12,500.00" }));
+
+    expect(result).toEqual({ ok: true });
+    const written = db.changeOrderProposal.create.mock.calls[0][0] as {
+      data: { unitPrice: string | null };
+    };
+    expect(written.data.unitPrice).toBe("12500");
+  });
+
+  it("refuses a comma in the wrong place with a sentence, not a rejection", async () => {
+    // `12,50` is the one that MUST still refuse: read as 1250 it would be a
+    // hundredfold error on a change order a GC signs. #414 wrote that
+    // refusal; this branch is what carries it out of the module, now that
+    // the local class and the local wrapper are gone.
+    const result = await proposeAddedScope("co-1", scopeForm({ quantity: "12,50" }));
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toContain("quantity");
-    expect(result.error).toMatch(/must be a number/);
+    expect(result.error).toMatch(/three digits/i);
     // Nothing was written on the way to refusing.
     expect(db.changeOrderProposal.create).not.toHaveBeenCalled();
   });
 
-  it("says the same thing for an optional money field", async () => {
-    const result = await proposeAddedScope("co-1", scopeForm({ unitPrice: "12,500" }));
+  it("refuses an unreadable optional money field the same way", async () => {
+    const result = await proposeAddedScope("co-1", scopeForm({ unitPrice: "abc" }));
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toContain("unitPrice");
-    expect(result.error).toMatch(/must be a number/);
+    expect(result.error).toMatch(/isn't a number/i);
     expect(db.changeOrderProposal.create).not.toHaveBeenCalled();
   });
 

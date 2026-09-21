@@ -206,6 +206,39 @@ describe("no file converts errors by testing a class it declared itself", () => 
     return found;
   }
 
+  /**
+   * Can a shared `InputError` reach this file's catch at all?
+   *
+   * TWO WAYS, AND THE SECOND WAS MISSING UNTIL A MUTATION FOUND IT. The
+   * first is obvious: the file calls one of the shared parsers. The second
+   * is that the file RAISES the shared class itself — it imports
+   * `InputError` from ./shared and constructs it, or hands it to something
+   * that will, which is precisely what `unionCompliance.ts` does with
+   * `numericReaders((message) => { throw new InputError(message); })`.
+   *
+   * With only the first test, restoring that module's private `SetupError`
+   * and private catch left this rule GREEN: the file calls no shared
+   * parser, so it was skipped — while its own numeric readers raised the
+   * shared class straight past a catch testing the private one. The exact
+   * bug, in the exact file this branch converged, invisible to the rule
+   * written to forbid it.
+   *
+   * Importing the shared class is the honest precondition: a file that has
+   * the shared `InputError` in scope and converts a DIFFERENT, locally
+   * declared class has a mismatch, whatever raised it.
+   *
+   * `lib/field-reports-core.ts` is still correctly not flagged. Its
+   * `FieldReportInputError` is deliberately shared between the web action
+   * and the mobile API, and the file imports no `InputError` and calls no
+   * shared parser — own vocabulary, no shared throw, no mismatch.
+   */
+  function canReceiveSharedInputError(src: string): boolean {
+    const importsShared = [...src.matchAll(/import\s*\{([^}]*)\}\s*from\s*["'][^"']*shared["']/g)].some(
+      (m) => /\bInputError\b/.test(m[1]),
+    );
+    return importsShared || THROWERS.some((t) => new RegExp("\\b" + t + "\\s*\\(").test(src));
+  }
+
   it("catches the shared class, never a private one of the same shape", () => {
     const offenders: string[] = [];
     for (const f of files) {
@@ -213,17 +246,39 @@ describe("no file converts errors by testing a class it declared itself", () => 
       const src = stripped.get(f)!;
       const mine = new Set(localClasses(src));
       if (mine.size === 0) continue;
-      // Only a file that can RECEIVE a shared InputError is at risk: the
-      // defect is a shared throw meeting a private catch. A module with its
-      // own vocabulary and no shared parser (lib/field-reports-core.ts and
-      // its FieldReportInputError, shared deliberately between the web
-      // action and the mobile API) is not this bug and is not flagged.
-      if (!THROWERS.some((t) => new RegExp("\\b" + t + "\\s*\\(").test(src))) continue;
+      if (!canReceiveSharedInputError(src)) continue;
       for (const c of convertedClasses(src)) {
         if (mine.has(c)) offenders.push(`${f} converts its own ${c}`);
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("recognises both ways a shared InputError can reach a file", () => {
+    // Scar 1 for the precondition ITSELF, exercised through the real
+    // function rather than a copy of half of it — a copy is how the import
+    // arm could be deleted with this test still green.
+    const UNION = "apps/web/lib/actions/unionCompliance.ts";
+    const unionSrc = stripped.get(UNION)!;
+
+    // The witness for the arm that was missing: this module imports the
+    // shared class and raises it through its own `numericReaders` callback,
+    // while calling NO shared parser. Under a parser-only precondition it
+    // is skipped entirely, which is how a private catch survived here.
+    expect(THROWERS.some((t) => new RegExp("\\b" + t + "\\s*\\(").test(unionSrc))).toBe(false);
+    expect(canReceiveSharedInputError(unionSrc)).toBe(true);
+
+    // And the parser arm still works, so widening it did not replace one
+    // blind spot with another.
+    const viaParser = files.filter(
+      (f) => f !== SHARED && THROWERS.some((t) => new RegExp("\\b" + t + "\\s*\\(").test(stripped.get(f)!)),
+    );
+    expect(viaParser.length).toBeGreaterThan(5);
+    for (const f of viaParser) expect(canReceiveSharedInputError(stripped.get(f)!)).toBe(true);
+
+    // And it is not simply true of everything: a file with neither is not
+    // a candidate, which is what keeps field-reports-core.ts unflagged.
+    expect(canReceiveSharedInputError("export const x = 1;\n")).toBe(false);
   });
 
   it("finds the catch blocks it is reasoning about", () => {
@@ -237,31 +292,90 @@ describe("no file converts errors by testing a class it declared itself", () => 
 
 /* ────────────────────────────── rule C ────────────────────────────── */
 
-/** The shared parsers that throw `InputError`, DERIVED from shared.ts
- * rather than listed by hand — so adding a fifth extends this census with
- * no edit here, and renaming one cannot leave a stale name behind. */
+/**
+ * The shared parsers that raise `InputError`, DERIVED from shared.ts rather
+ * than listed by hand.
+ *
+ * IT FOLLOWS THE CALLBACK, AND THAT IS NOT DEFENSIVENESS — IT IS THE STATE
+ * OF THE FILE. An earlier version of this function looked for a literal
+ * `throw new InputError` inside each exported parser's body. #414 landed
+ * while this branch was open and moved numeric parsing into
+ * `lib/numeric-input.ts`, which raises through a callback shared.ts hands
+ * it:
+ *
+ *     const { number, optionalNumber } = numericReaders((message) => {
+ *       throw new InputError(message);
+ *     });
+ *
+ * After that, `decimalFromForm` is one line — `return number(...).value` —
+ * with no `throw` anywhere in it. The literal-throw version found TWO of
+ * seven, and every rule downstream would have passed over the smaller set,
+ * because nothing is ever missing from a set you failed to build. That is
+ * `scratch-cleanup-order`'s failure arriving through an indirection
+ * instead of a line break.
+ *
+ * So: seed from the `numericReaders` callback, then walk exported
+ * functions and aliases to a fixpoint, adding any that raise directly or
+ * call something that does.
+ */
 function throwingParsers(): string[] {
   const src = stripComments(sources.get(SHARED)!);
-  const names: string[] = [];
-  for (const m of src.matchAll(/export\s+function\s+(\w+)[\s\S]*?\n\}/g)) {
-    if (/throw\s+new\s+InputError\b/.test(m[0])) names.push(m[1]);
+  const raisers = new Set<string>();
+
+  // Seed: names destructured from a numericReaders() whose callback raises.
+  for (const m of src.matchAll(/const\s*\{([^}]*)\}\s*=\s*numericReaders\(([\s\S]*?)\n\}\);/g)) {
+    if (!/InputError/.test(m[2])) continue;
+    for (const part of m[1].split(",")) {
+      const name = part.split(":").pop()!.trim();
+      if (name) raisers.add(name);
+    }
   }
-  return names.sort();
+  expect(raisers.size).toBeGreaterThan(0);
+
+  // `[<(]` rather than `\(`: enumFromForm is generic, and requiring a paren
+  // straight after the name silently skipped both enum parsers.
+  const FN = "export\\s+function\\s+(\\w+)\\s*[<(][\\s\\S]*?\\n\\}";
+  for (let pass = 0; pass < 5; pass += 1) {
+    for (const m of src.matchAll(new RegExp(FN, "g"))) {
+      const raisesHere = /throw\s+new\s+InputError\b/.test(m[0]);
+      const callsRaiser = [...raisers].some((r) => new RegExp("\\b" + r + "\\s*\\(").test(m[0]));
+      if (raisesHere || callsRaiser) raisers.add(m[1]);
+    }
+    for (const m of src.matchAll(/export\s+const\s+(\w+)\s*=\s*(\w+)\s*;/g)) {
+      if (raisers.has(m[2])) raisers.add(m[1]);
+    }
+  }
+
+  // Only the EXPORTED ones can reach another module, which is the whole
+  // question this census asks.
+  return [...raisers]
+    .filter((n) => new RegExp("export\\s+(?:function|const)\\s+" + n + "\\b").test(src))
+    .sort();
 }
 
 const THROWERS = throwingParsers();
 
-describe("the shared parsers that throw", () => {
-  it("are the four form parsers, and the list is derived not typed", () => {
-    // The roll-call is the size assertion (scar 1): a regex that matched
-    // nothing would give [] and fail here, rather than making every rule
-    // below vacuously true. Adding a throwing parser to shared.ts is a
-    // deliberate act and updating this line is part of it.
+describe("the shared parsers that raise InputError", () => {
+  it("are all seven, derived through the callback rather than typed", () => {
+    // The roll-call IS the size assertion (scar 1): a derivation that
+    // matched nothing gives [] and fails here, instead of making every rule
+    // below vacuously true over an empty set.
+    //
+    // It has already earned its keep once. When #414's indirection landed
+    // under this branch, the old literal-throw derivation silently dropped
+    // to two names and THIS line is what went red — before rule C could
+    // report a clean repo over a set five parsers short.
+    //
+    // Adding a raising parser to shared.ts is a deliberate act, and
+    // updating this line is part of it.
     expect(THROWERS).toEqual([
       "decimalFromForm",
       "enumFromForm",
       "nullableDecimalFromForm",
+      "nullablePercentFromForm",
+      "numberFromForm",
       "optionalEnumFromForm",
+      "optionalNumberFromForm",
     ]);
   });
 });
@@ -270,20 +384,29 @@ describe("an action that promises a readable refusal has a boundary", () => {
   /**
    * KNOWN UNCONVERTED, DELIBERATELY LISTED RATHER THAN EXCLUDED BY PATTERN.
    *
-   * Both are in the estimating/job-costing/billing lane (WORK-SPLIT.md) and
-   * both are live: a thousands comma in either field is a digest today.
-   * They are Diego's to take, flagged in #prova-build on 2026-09-21 under
-   * the live-money exception rather than fixed from this branch.
+   * THE LIST IS EMPTY, AND IT GOT THERE BY DOING ITS JOB.
    *
-   * This list is a RATCHET, not an allowlist. The test fails if a new
-   * offender appears AND if one of these is fixed without deleting its line
-   * — so the list cannot quietly become the permanent state of the repo,
-   * which is the failure mode of every exclusion that is only ever added to.
+   * It held two entries when this branch opened: `billing.ts::logPayment`
+   * and `jobs.ts::addCostEntry`, both live, both in the
+   * estimating/job-costing/billing lane, both flagged in #prova-build under
+   * the live-money exception rather than fixed from here. #414 then landed
+   * and fixed both — not with a boundary, but by having each parse to a
+   * RETURNED failure through `parseNumericInput` + `actionFail`, which
+   * keeps the same promise a different way. Both carry a comment saying
+   * exactly why. Issues #428 and #429 record the pair; they were overtaken.
+   *
+   * This test went RED on the rebase because two listed names no longer
+   * offended. That is the ratchet working in the direction nobody
+   * remembers to build: an exclusion list that is only ever added to
+   * becomes the permanent state of the repo, and a stale entry is a claim
+   * with an expiry date — the shape CLAUDE.md records costing four days
+   * over one sentence about a Neon project.
+   *
+   * So it stays here, empty, as the place a new one goes: the test fails if
+   * an offender appears AND if a listed one is fixed without deleting its
+   * line.
    */
-  const KNOWN = [
-    "apps/web/lib/actions/billing.ts::logPayment",
-    "apps/web/lib/actions/jobs.ts::addCostEntry",
-  ];
+  const KNOWN: string[] = [];
 
   /** Same contract test as ownerRefusalCensus.test.ts, and for the same
    * reason: matching the type NAME missed two actions that spell the

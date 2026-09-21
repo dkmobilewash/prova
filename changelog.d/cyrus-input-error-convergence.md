@@ -1,88 +1,99 @@
 ### What actually changed, in plain English (Cyrus)
 `cyrus/input-error-convergence`
 
-A contractor types `2,800` into a quantity, or `12,500` into a money field,
-and presses Save. Until now that produced a blank screen with a reference
-number on it. It now produces the sentence `"quantity" must be a number`,
-under the form, with the rest of what he typed still there.
+Saving a licence on `/settings` whose jurisdiction or status is a value the
+picker did not offer — a stale tab, a restored form, a dispatched submit —
+produced a blank screen with a reference number. It now says which field is
+wrong, under the form. That is the only user-visible change in this PR; the
+rest is what stops the class of bug behind it coming back.
 
-**The cause, and why it was two bugs rather than one.** #407 found that
-`lib/actions/company.ts` had its own `class InputError` and its own
-`runAction` that caught only that class, while the shared parsers it called
-threw `shared.ts`'s class of the same name. Two classes, one name,
-`instanceof` false between them, so the refusal escaped and production
-redacted it — that was the digest on `/welcome`. #407 converted the two ENUM
-parsers and switched that one module over.
+**This branch opened before #414 and was rebased onto it. #414 took the
+headline.** The bug this started from was `2,800` in a quantity: the shared
+decimal parsers threw a bare `Error`, which production redacts. #414 fixed
+that far better than this branch was going to — one parser in
+`lib/numeric-input.ts`, tolerant of `2,800`, `$12,500.00` and a spreadsheet's
+non-breaking space, strict about `12,50`. The two-line change here was
+DROPPED on the rebase rather than re-applied: re-applying it would have been
+a second convention in the very file this PR exists to make have one.
 
-It left the two DECIMAL parsers throwing a bare `Error`, and those are the
-ones a contractor reaches first, because `Number("2,800")` is `NaN`. So the
-comma was still a class nothing in the repo caught. That single line is the
-fix for the bug people actually hit; everything else here is what stops it
-coming back.
+**Sixteen files held a private `class InputError`. None of them was broken.**
+The number is the misleading part and the correction is the useful part. Of
+the fifteen modules outside `shared.ts`, exactly one (`changeOrders.ts`)
+called a shared parser at all — and it had already worked around the whole
+problem by hand, with local `decimal()` / `nullableDecimal()` wrappers that
+caught the bare `Error` and rethrew it as its own class. The other fourteen
+were traps waiting for the first person to reach for `enumFromForm`.
 
-**Sixteen files held a private copy of the class. Fifteen of them were not
-broken.** Worth saying plainly, because the number is the misleading part:
-of the fifteen modules outside `shared.ts`, exactly ONE (`changeOrders.ts`)
-called a shared parser at all — and it had already paid for the gap by hand,
-with local `decimal()` / `nullableDecimal()` wrappers that caught the bare
-`Error` and rethrew it as its own class. The other fourteen were traps
-waiting for the first person to reach for `enumFromForm`. All sixteen now
-import the one class and the one boundary; `changeOrders.ts`'s workaround is
-deleted, and the message a person reads is byte-identical to the one the
-wrapper used to forward. `unionCompliance.ts` had the identical arrangement
-under the name `SetupError` and was converged with them — no grep for
-`InputError` would ever have found it.
+All sixteen now import the one class and the one boundary.
+`changeOrders.ts`'s workaround is deleted. `unionCompliance.ts` had the
+identical arrangement under the name `SetupError` and converged with them —
+no grep for `InputError` would ever have found it.
 
-**The live bugs were somewhere else entirely, and this is the part worth
-remembering.** Counting FILES that declare the class finds the traps.
-Counting BOUNDARIES finds the bugs. Three actions declare
-`Promise<ActionResult>` — a promise that their refusals are legible — and
-call a throwing parser with no boundary anywhere, so the rejection escapes
-and is redacted. None of the three declares a local class, so the grep that
-found the sixteen could never see them:
+**The cost of the private class arrived while this branch was open, which
+beats the hypothetical it was argued from.** #414 wired
+`unionCompliance.ts`'s numeric parsing to the shared `numericReaders`, and to
+keep the private catch working it had to hand that shared helper a callback
+throwing the PRIVATE class. That is a second convention growing a second
+branch rather than the first one being removed. With one class the callback
+needs no such thought.
 
-- `compliance.ts` → `createCompanyLicense` / `updateCompanyLicense`. Fixed
-  here. Saving a licence on `/settings` with a value the picker did not
-  offer — a stale tab, a restored form — gave a digest. It reads perfectly
-  in `next dev`, which is why it survived.
-- `billing.ts` → `logPayment`, and `jobs.ts` → `addCostEntry`. Both left
-  alone: estimating/job-costing/billing is Diego's lane and both are live
-  money. Flagged in `#prova-build` under the live-money exception, and
-  recorded as a named, deliberately-listed exception in the new census, so
-  they cannot be forgotten.
+**The live bugs were never in those sixteen files, and #414 proved it.**
+Counting files that declare the class finds the traps. Counting BOUNDARIES
+finds the bugs. The defect is an action that declares `Promise<ActionResult>`
+— a promise its refusals are legible — and calls a throwing parser with no
+boundary, so the rejection escapes and is redacted. None of those actions
+declares a local class, so the grep that found the sixteen could not see them.
+
+When this branch opened there were four. **#414 fixed two of them
+(`billing.ts::logPayment`, `jobs.ts::addCostEntry`) without touching a single
+one of the sixteen files** — the sharpest available demonstration that the two
+counts measure different things. The remaining two are `compliance.ts`'s
+`createCompanyLicense` and `updateCompanyLicense`, fixed here. Run against
+`origin/main` today the rule reports exactly those two; after this PR, none.
 
 **The guard: `lib/actionErrorBoundaryCensus.test.ts`.** Three rules — one
-`InputError` class in the repo; no file converting an error by testing a
-class it declared itself; no action promising a legible refusal while
-calling a throwing parser outside a boundary. It is built against this
-repo's three census scars and says so in its header: the file list comes
-from `git ls-files` over the WHOLE repository (`theme-contrast.test.ts` had
-the right pattern and a root that could not see `packages/ui`), every set it
-reasons about is size-asserted against a count derived a different way
-(`scratch-cleanup-order.test.ts` parsed 180 of 181 foreign keys and passed),
-and the header states plainly what it reasons about and what it therefore
-cannot catch — a throw from a helper in another module, or anything dynamic.
-The two known-unconverted actions are a ratchet, not an allowlist: the test
-fails if a new one appears AND if a listed one is fixed without deleting its
-line.
+`InputError` class; no file converting an error by testing a class it declared
+itself; no action promising a legible refusal while calling a throwing parser
+outside a boundary. Scope from `git ls-files` over the whole repository, every
+derived set size-asserted against a count reached a different way, and a
+header stating what it reasons about and what it therefore cannot catch.
 
-Ten mutations, ten red — including one that first reported GREEN because
-the mutation had not applied, which is the "refuted versus never ran" trap in
-miniature and is why every mutation here is asserted to have landed before
-its result is read.
+**Three ways it was wrong before it was right — all found rather than
+anticipated, and all the same shape: a set the check failed to build, then
+asserted over confidently.**
 
-**A third way for a scope to be wrong, found by this census failing CI after
-passing locally on the same content.** `git ls-files` lists TRACKED files.
-While the census was being written it was untracked, so it was not in its own
-scan — and its closing assertion, that `shared.ts` still declares the class,
-reads to its own rule A as a second declaration. Locally: one declaration,
-green. Committed and pushed: two, red. Nothing was wrong with the pattern or
-the root; the set grew by one file at `git add` time, which is a moment no
-local test run ever observes. The declaration pattern is anchored to a
-statement start now — naming a class inside an expression is not declaring
-one — and the census asserts it can see itself.
+1. **It could not see itself.** `git ls-files` lists TRACKED files, so while
+   the census was being written it was absent from its own scan — and its
+   closing assertion that `shared.ts` still declares the class reads, to its
+   own rule, as a second declaration. One declaration locally, two in CI, on
+   identical content. The set grew by one file at `git add` time, a moment no
+   local run observes. Fixed by anchoring a declaration to a statement start,
+   plus a test that the census is in its own scan.
+2. **Its list of throwing parsers fell from seven to two under #414.** The
+   derivation looked for a literal `throw new InputError` in each parser body.
+   #414 moved the raise into a callback, so `decimalFromForm` became one line
+   with no `throw` in it. The roll-call assertion is what went red — before
+   rule C could report a clean repo over a set five parsers short. It follows
+   the callback now.
+3. **Rule B skipped the one file it was written for.** Its precondition was
+   "does this file call a shared parser", and `unionCompliance.ts` calls none:
+   it raises the shared class through its own `numericReaders` callback.
+   Restoring that module's private class and private catch left the rule
+   GREEN. Found by mutation, not by reading. The precondition is now "can a
+   shared `InputError` reach this file at all", with two arms — calling a
+   parser, or importing the class. `lib/field-reports-core.ts` stays correctly
+   unflagged: its own vocabulary, no shared throw.
 
-What a contractor sees change: a bad number or a bad dropdown value now
-gives a sentence instead of a blank page on change orders and proposals
-(`/jobs/[id]`), and on licences (`/settings`). Nothing else moves — no
-schema change, no migration, and no refusal anywhere changed its wording.
+**The two known-unconverted actions are gone from the ratchet, and the ratchet
+is how.** It held `logPayment` and `addCostEntry`; #414 fixed both; the test
+went red on the rebase because two listed names no longer offended. An
+exclusion list that is only ever added to becomes the permanent state of the
+repo, and a stale entry is a claim with an expiry date. The list stays, empty,
+as the place the next one goes.
+
+Twelve mutations, twelve red. Two first reported GREEN and both readings were
+false: one had never applied, and one had applied and was exposing the rule B
+gap above. Every mutation asserts its anchor was found before its result is
+read, which is the only reason the second was believed rather than dismissed.
+
+No schema change, no migration, and no refusal anywhere changed its wording.
