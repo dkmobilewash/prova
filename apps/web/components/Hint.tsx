@@ -2,6 +2,7 @@
 
 import {
   cloneElement,
+  isValidElement,
   useId,
   useRef,
   useState,
@@ -147,9 +148,34 @@ export function Hint({
         if (event.key === "Escape") hide();
       }}
     >
-      {cloneElement(children, {
-        "aria-describedby": [children.props["aria-describedby"], id].filter(Boolean).join(" "),
-      })}
+      {/* `isValidElement` IS LOAD-BEARING AND IS NOT DEFENSIVE PROGRAMMING.
+          `children` is typed as an element, and at a call site inside a
+          client component it always is one. It is NOT one when a SERVER
+          component passes the child across the Flight boundary and React
+          outlines it: `react-server-dom-webpack` defers any element it
+          reaches after a row has already written 3200 bytes, replacing it
+          with a `$L` reference that the client rehydrates as a lazy object
+          — `{ $$typeof: REACT_LAZY_TYPE, _payload, _init }`, which has no
+          `.props` at all. Reading `children.props[...]` on it threw
+          `Cannot read properties of undefined (reading 'aria-describedby')`,
+          and because the only such call site was `MetricBar` in the (app)
+          layout, that took down EVERY authenticated page — permanently,
+          through reloads, with no way back from the UI.
+
+          It is a byte count, not a data problem: ~1 in 5 row sizes lands in
+          a window where this fires, so an account could be dead at sign-up
+          having created nothing. See changelog.d for the full derivation.
+
+          Degrading here loses only the `aria-describedby` link on that one
+          instance; the tooltip still renders and the page still works. A
+          server-component caller should also be a client component so the
+          child is never serialised — that is the better fix at the call
+          site, and this is the guard that makes the class survivable. */}
+      {isValidElement<Described>(children)
+        ? cloneElement(children, {
+            "aria-describedby": [children.props["aria-describedby"], id].filter(Boolean).join(" "),
+          })
+        : children}
       <span
         id={id}
         role="tooltip"
