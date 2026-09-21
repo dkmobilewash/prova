@@ -5,6 +5,9 @@ import { setCurrentJob } from "@/lib/current-job";
 import { Icon } from "@/components/Icon";
 import { Row } from "@/components/Row";
 import { StatusBadge } from "@/components/StatusBadge";
+import { SCREEN_CAPABILITY } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 
 // One row per field feature. Icon names are the app's own vocabulary and
@@ -26,6 +29,7 @@ const FEATURES = [
  * straight into field reports, so the whole field toolkit is one thumb's
  * reach from the tap that opened the job. */
 export default function JobHubScreen() {
+  const { me } = useMe();
   const { jobId, name, status } = useLocalSearchParams<{
     jobId: string;
     name?: string;
@@ -48,7 +52,10 @@ export default function JobHubScreen() {
       </View>
 
       <View style={styles.panel}>
-        {FEATURES.map((feature, i) => (
+        {/* Only what this person can actually open. A row that leads to a
+            403 is worse than no row: it reads as a broken app rather than
+            as access somebody else decides. */}
+        {FEATURES.filter((feature) => holds(me, SCREEN_CAPABILITY[`${feature.path}/[jobId]`])).map((feature, i) => (
           <View key={feature.path}>
             {i > 0 ? <View style={styles.divider} /> : null}
             <Row
@@ -60,11 +67,19 @@ export default function JobHubScreen() {
           </View>
         ))}
       </View>
+
+      {me && !holds(me, "MANAGE_FIELD") && !holds(me, "MANAGE_JOBS") ? (
+        <Text style={styles.noneForYou}>
+          Nothing on this job is part of your job function. The account owner sets who sees what, on
+          the Team page.
+        </Text>
+      ) : null}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  noneForYou: { color: colors.inkBody, fontSize: typography.size.sm, lineHeight: 22, paddingTop: 12 },
   screen: { flex: 1, backgroundColor: colors.canvas },
   content: { padding: 16, gap: 16 },
   header: { gap: 8, paddingVertical: 4 },

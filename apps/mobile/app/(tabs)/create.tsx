@@ -4,6 +4,9 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { CurrentJobBar } from "@/components/CurrentJobBar";
 import { Icon } from "@/components/Icon";
 import { Row } from "@/components/Row";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 import { useCurrentJob } from "@/lib/use-current-job";
 
@@ -26,11 +29,14 @@ const THINGS = [
 ] as const;
 
 export default function CreateScreen() {
+  const { me } = useMe();
   const { isLoaded, isSignedIn } = useAuth();
   const { job, loading } = useCurrentJob();
 
   if (!isLoaded) return <Text style={styles.loading}>Loading…</Text>;
   if (!isSignedIn) return <Redirect href="/sign-in" />;
+
+  if (!holds(me, "MANAGE_FIELD")) return <NotYourJobFunction what="Field records" />;
 
   return (
     <View style={styles.screen}>

@@ -12,6 +12,10 @@ import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { emptyFor } from "@/lib/empty-state";
 import { OfflineNote } from "@/components/OfflineNote";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -20,6 +24,7 @@ import { useSync } from "@/lib/use-sync";
 import type { MaterialOrder, Vendor } from "@/lib/types";
 
 export default function MaterialsScreen() {
+  const { me } = useMe();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [orders, setOrders] = useState<MaterialOrder[]>([]);
@@ -81,6 +86,12 @@ export default function MaterialsScreen() {
     });
     await sync();
   };
+
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["materials/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["materials/[jobId]"]} />;
 
   return (
     <View style={styles.screen}>

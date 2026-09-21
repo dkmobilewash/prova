@@ -12,6 +12,10 @@ import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -28,6 +32,7 @@ function titles({ emptyTitle, emptyDescription }: { emptyTitle: string; emptyDes
 }
 
 export default function SafetyScreen() {
+  const { me } = useMe();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [talks, setTalks] = useState<ToolboxTalk[]>([]);
@@ -105,6 +110,12 @@ export default function SafetyScreen() {
     });
     await sync();
   };
+
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["safety/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["safety/[jobId]"]} />;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>

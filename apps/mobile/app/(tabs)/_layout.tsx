@@ -1,5 +1,7 @@
 import { Tabs } from "expo-router";
 import { usePushRegistration } from "@/lib/use-push-registration";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { useQueueDrain } from "@/lib/use-queue-drain";
 import { Icon } from "@/components/Icon";
 import { colors, typography } from "@/lib/theme";
@@ -23,6 +25,11 @@ import { colors, typography } from "@/lib/theme";
  */
 export default function TabsLayout() {
   usePushRegistration();
+  // Create and Camera both make FIELD records. Shown to everybody before
+  // this, so an estimator or a bookkeeper got a Create tab whose every
+  // option 403s — the shell promising work the server will refuse.
+  const { me } = useMe();
+  const field = holds(me, "MANAGE_FIELD");
   // One timer for the app: the queue retries itself while Prova is open,
   // rather than only when a screen happens to be focused.
   useQueueDrain();
@@ -71,6 +78,10 @@ export default function TabsLayout() {
         options={{
           title: "Create",
           tabBarIcon: ({ color, focused }) => <Icon name="create" color={color} filled={focused} size={24} />,
+          // `href: null` is how expo-router takes a tab off the bar while
+          // leaving the route reachable — the screen itself still guards,
+          // so a stale deep link lands on a sentence rather than a 403.
+          href: field ? undefined : null,
         }}
       />
       <Tabs.Screen
@@ -78,6 +89,7 @@ export default function TabsLayout() {
         options={{
           title: "Camera",
           tabBarIcon: ({ color, focused }) => <Icon name="camera" color={color} filled={focused} size={24} />,
+          href: field ? undefined : null,
         }}
       />
       <Tabs.Screen

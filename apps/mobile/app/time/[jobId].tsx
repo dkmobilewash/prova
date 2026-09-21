@@ -17,6 +17,10 @@ import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
 import { tokenOrNull } from "@/lib/clerk-token";
 import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import {
@@ -102,6 +106,7 @@ function formatElapsed(ms: number): string {
 }
 
 export default function TimeScreen() {
+  const { me } = useMe();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [entries, setEntries] = useState<TimeEntry[]>([]);
@@ -527,6 +532,12 @@ export default function TimeScreen() {
   const onOtherJob = openSession != null && openSession.jobId !== jobId;
   const sessionJobName = openSession ? jobNames[openSession.jobId] : undefined;
   const switchLabel = onOtherJob ? "Switch to this job" : "Switch";
+
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["time/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["time/[jobId]"]} />;
 
   return (
     <View style={styles.screen}>

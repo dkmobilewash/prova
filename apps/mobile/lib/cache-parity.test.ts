@@ -71,6 +71,16 @@ const FLUSH_WITHOUT_LIST: Record<string, string> = {
 /** Screens that legitimately call the API without caching, each with its
  * reason. A screen added to this list is a decision; a screen missing
  * from it is a bug. */
+/** Cached reads that are not ABOUT a job, and so are not the per-job
+ * prefetch's business. Each still has to be a real key. */
+const NOT_PER_JOB: Record<string, string> = {
+  jobs: "the job list — refreshed by opening the Jobs tab",
+  me: "who is holding the phone and what they may do; read on every screen focus, not per job",
+};
+
+/** Screens that legitimately call the API without caching, each with its
+ * reason. A screen added to this list is a decision; a screen missing
+ * from it is a bug. */
 const NOT_CACHED: Record<string, string> = {
   "(tabs)/camera.tsx": "a doorway to the photo screen; it loads nothing itself",
   "(tabs)/create.tsx": "a launcher; the screens it opens do the loading",
@@ -96,7 +106,11 @@ describe("the cache the phone actually uses", () => {
         read.add(match[1]);
       }
     }
-    read.delete("jobs");
+    for (const [key, reason] of Object.entries(NOT_PER_JOB)) {
+      expect(reason.length, `${key} needs a reason`).toBeGreaterThan(10);
+      expect(Object.keys(cacheKeys), `${key} is not a real cache key`).toContain(key);
+      read.delete(key);
+    }
 
     const prefetched = new Set(
       PREFETCHED_KEYS.map((build) => {

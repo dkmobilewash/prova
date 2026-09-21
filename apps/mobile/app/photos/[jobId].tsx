@@ -32,6 +32,10 @@ import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
 import { tokenOrNull } from "@/lib/clerk-token";
 import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 import type { Media, MediaTag, PunchListItem } from "@/lib/types";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
@@ -64,6 +68,7 @@ type Shot = {
 };
 
 export default function PhotosScreen() {
+  const { me } = useMe();
   // `punchListItemId` arrives when the punch list sent us here to
   // photograph a specific fix, so the attachment is already chosen by the
   // time the sheet opens — the prompt that offered it would be a lie if it
@@ -274,6 +279,12 @@ export default function PhotosScreen() {
    * pixel sizes it should come out at, then scaled by this. */
   const stampScale = layoutWidth / STAMP_WIDTH;
   const lines = shot ? stampLines({ jobName: jobName || "This job", capturedAt: shot.capturedAt, location: shot.location }) : [];
+
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["photos/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["photos/[jobId]"]} />;
 
   return (
     <View style={styles.screen}>
