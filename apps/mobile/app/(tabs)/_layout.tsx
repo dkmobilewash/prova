@@ -92,6 +92,8 @@ export default function TabsLayout() {
           name="settings"
           options={{
             title: "More",
+            // More draws its own large title inside the safe area.
+            headerShown: false,
             tabBarIcon: ({ color, focused }) => <Icon name="more" color={color} filled={focused} size={24} />,
           }}
         />

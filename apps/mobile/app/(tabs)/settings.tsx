@@ -1,12 +1,15 @@
 import { useAuth, useUser } from "@clerk/expo";
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "@/components/Button";
-import { CurrentJobBar } from "@/components/CurrentJobBar";
-import { colors, typography } from "@/lib/theme";
-import { clearCurrentJob } from "@/lib/current-job";
+import { GroupedList } from "@/components/GroupedList";
+import { GroupedRow } from "@/components/GroupedRow";
 import { Icon } from "@/components/Icon";
+import { LargeTitle } from "@/components/LargeTitle";
+import { SectionHeader } from "@/components/SectionHeader";
+import { clearCurrentJob } from "@/lib/current-job";
 import { pendingCount, listRefused } from "@/lib/sync-queue";
 import {
   ensureReminderPermission,
@@ -16,16 +19,20 @@ import {
   REMINDER_CHOICES,
   setReminderHour,
 } from "@/lib/unsent-reminder";
+import { type Palette, radius, space, typography } from "@/lib/theme";
 import { useCurrentJob } from "@/lib/use-current-job";
 import { useMe } from "@/lib/use-me";
+import { usePalette } from "@/lib/use-palette";
 
-/** The account, and the one piece of app state worth being able to clear
- * by hand: which job the phone thinks it is on. */
+/** More: the account, the queue, and the one piece of app state worth
+ * being able to clear by hand — which job the phone thinks it is on. */
 export default function SettingsScreen() {
   const { signOut } = useAuth();
   const { user } = useUser();
   const { job } = useCurrentJob();
   const { me } = useMe();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const [waiting, setWaiting] = useState(0);
   const [needsAttention, setNeedsAttention] = useState(0);
   const [hour, setHour] = useState<number | null>(null);
@@ -42,137 +49,143 @@ export default function SettingsScreen() {
   );
 
   return (
-    <View style={styles.screen}>
-      <CurrentJobBar job={job} />
+    <SafeAreaView edges={["top"]} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.panel}>
-          <Text style={styles.label}>Signed in as</Text>
-          <Text style={styles.value}>
-            {user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? "—"}
-          </Text>
-          {/* What this phone will and will not show you, said once, here —
-              so a missing tab is answerable without asking the office. */}
-          {me ? (
-            <Text style={styles.label}>
-              {me.role === "OWNER"
-                ? "Account owner — everything on this phone is yours to see"
-                : me.jobFunction
-                  ? `${me.jobFunction.replace(/_/g, " ").toLowerCase()} — the account owner sets what that includes, on the Team page`
-                  : "Full access to this company's records"}
-            </Text>
-          ) : null}
-        </View>
+        <LargeTitle>More</LargeTitle>
+
+        <SectionHeader>Account</SectionHeader>
+        <GroupedList>
+          <GroupedRow
+            icon={<Icon name="person" />}
+            title={user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? "—"}
+            subtitle={
+              me
+                ? me.role === "OWNER"
+                  ? "Account owner — everything on this phone is yours to see"
+                  : me.jobFunction
+                    ? `${me.jobFunction.replace(/_/g, " ").toLowerCase()} — the account owner sets what that includes, on the Team page`
+                    : "Full access to this company's records"
+                : undefined
+            }
+            chevron={false}
+          />
+        </GroupedList>
 
         {/* The outbox. A count on one screen was the whole of it before,
             and a count cannot be acted on — see app/outbox.tsx. */}
-        <Pressable style={styles.rowLink} onPress={() => router.push("/outbox")}>
-          <View style={styles.rowText}>
-            <Text style={styles.value}>Waiting to send</Text>
-            <Text style={styles.label}>
-              {waiting === 0 && needsAttention === 0
+        <SectionHeader>Waiting to send</SectionHeader>
+        <GroupedList>
+          <GroupedRow
+            icon={<Icon name="outbox" />}
+            title="Waiting to send"
+            subtitle={
+              waiting === 0 && needsAttention === 0
                 ? "Everything has reached the office"
                 : [
                     waiting > 0 ? `${waiting} waiting` : null,
                     needsAttention > 0 ? `${needsAttention} need attention` : null,
                   ]
                     .filter(Boolean)
-                    .join(" · ")}
-            </Text>
-          </View>
-          {waiting + needsAttention > 0 ? <Text style={styles.count}>{waiting + needsAttention}</Text> : null}
-          <Icon name="chevron" size={18} />
-        </Pressable>
+                    .join(" · ")
+            }
+            trailing={
+              waiting + needsAttention > 0 ? (
+                <Text style={styles.count}>{waiting + needsAttention}</Text>
+              ) : undefined
+            }
+            onPress={() => router.push("/outbox")}
+          />
+        </GroupedList>
 
         {/* The end-of-day reminder. Local to this phone — it has to work
             on the day it matters, which is the day there was no signal. */}
-        <View style={styles.panel}>
-          <Text style={styles.label}>Remind me about unsent work</Text>
-          <View style={styles.choices}>
-            {REMINDER_CHOICES.map((choice) => (
-              <Pressable
-                key={String(choice)}
-                onPress={async () => {
-                  // Permission is asked for HERE, where the person has
-                  // just said they want it — not silently at sign-in,
-                  // where a decline makes this whole row a lie.
-                  const allowed = choice === null || (await ensureReminderPermission());
-                  setBlocked(choice !== null && !allowed);
-                  await setReminderHour(choice);
-                  setHour(choice);
-                  await reconcileReminder(await pendingCount());
-                }}
-                style={[styles.choice, hour === choice && styles.choiceOn]}
-              >
-                <Text style={hour === choice ? styles.choiceOnText : styles.choiceText}>{formatHour(choice)}</Text>
-              </Pressable>
-            ))}
+        <SectionHeader>Unsent work reminder</SectionHeader>
+        <GroupedList>
+          <View style={styles.reminder}>
+            <Text style={styles.label}>Remind me about unsent work</Text>
+            <View style={styles.choices}>
+              {REMINDER_CHOICES.map((choice) => (
+                <Pressable
+                  key={String(choice)}
+                  onPress={async () => {
+                    // Permission is asked for HERE, where the person has
+                    // just said they want it — not silently at sign-in,
+                    // where a decline makes this whole row a lie.
+                    const allowed = choice === null || (await ensureReminderPermission());
+                    setBlocked(choice !== null && !allowed);
+                    await setReminderHour(choice);
+                    setHour(choice);
+                    await reconcileReminder(await pendingCount());
+                  }}
+                  style={[styles.choice, hour === choice && styles.choiceOn]}
+                >
+                  <Text style={hour === choice ? styles.choiceOnText : styles.choiceText}>
+                    {formatHour(choice)}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.label}>
+              {blocked
+                ? "Notifications are off for Prova in iOS Settings, so this cannot show. Everything still waits safely on the phone."
+                : "Only if something is still unsent at that time. Nothing is sent to anyone else."}
+            </Text>
           </View>
-          <Text style={styles.label}>
-            {blocked
-              ? "Notifications are off for Prova in iOS Settings, so this cannot show. Everything still waits safely on the phone."
-              : "Only if something is still unsent at that time. Nothing is sent to anyone else."}
-          </Text>
-        </View>
+        </GroupedList>
 
-        {job ? (
-          <Button variant="secondary" onPress={() => clearCurrentJob()}>
-            Leave {job.name}
-          </Button>
-        ) : null}
-
-        <Button variant="secondary" onPress={() => signOut()}>
-          Sign out
-        </Button>
+        <SectionHeader>Job</SectionHeader>
+        <GroupedList>
+          {job ? (
+            <GroupedRow
+              icon={<Icon name="jobs" />}
+              title={`Leave ${job.name}`}
+              onPress={() => clearCurrentJob()}
+            />
+          ) : null}
+          <GroupedRow
+            icon={<Icon name="logOut" />}
+            title="Sign out"
+            divider={!!job}
+            onPress={() => signOut()}
+          />
+        </GroupedList>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { padding: 16, gap: 16 },
-  panel: {
-    borderWidth: 1,
-    borderColor: colors.lineCard,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    padding: 16,
-    gap: 4,
-  },
-  label: { color: colors.inkMuted, fontSize: typography.size.xs, fontWeight: typography.weight.semibold },
-  value: { color: colors.ink, fontSize: typography.size.md },
-  rowLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderWidth: 1,
-    borderColor: colors.lineCard,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    padding: 16,
-  },
-  rowText: { flex: 1, gap: 4 },
-  count: {
-    color: colors.canvas,
-    backgroundColor: colors.brand,
-    fontSize: typography.size.xs,
-    fontWeight: typography.weight.bold,
-    minWidth: 22,
-    textAlign: "center",
-    borderRadius: 11,
-    paddingVertical: 3,
-    paddingHorizontal: 6,
-    overflow: "hidden",
-  },
-  choices: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-  choice: {
-    borderWidth: 1,
-    borderColor: colors.lineCard,
-    borderRadius: 999,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  choiceOn: { backgroundColor: colors.brand, borderColor: colors.brand },
-  choiceText: { color: colors.inkBody, fontSize: typography.size.sm },
-  choiceOnText: { color: colors.canvas, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    content: { paddingHorizontal: space.md, paddingBottom: 88 },
+    label: { color: p.colors.inkMuted, fontSize: typography.size.xs, fontWeight: typography.weight.semibold },
+    count: {
+      color: p.colors.brandInk,
+      backgroundColor: p.colors.brand,
+      fontSize: typography.size.xs,
+      fontWeight: typography.weight.bold,
+      minWidth: 22,
+      textAlign: "center",
+      borderRadius: 11,
+      paddingVertical: 3,
+      paddingHorizontal: 6,
+      overflow: "hidden",
+    },
+    reminder: { padding: space.md, gap: space.sm },
+    choices: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+    choice: {
+      borderWidth: 1,
+      borderColor: p.colors.lineCard,
+      borderRadius: radius.pill,
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+    },
+    choiceOn: { backgroundColor: p.colors.brand, borderColor: p.colors.brand },
+    choiceText: { color: p.colors.inkBody, fontSize: typography.size.sm },
+    choiceOnText: {
+      color: p.colors.brandInk,
+      fontSize: typography.size.sm,
+      fontWeight: typography.weight.semibold,
+    },
+  });
+}

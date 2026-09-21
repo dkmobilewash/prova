@@ -1,10 +1,13 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
-import { colors, typography } from "@/lib/theme";
+import { GroupedList } from "@/components/GroupedList";
+import { GroupedRow } from "@/components/GroupedRow";
+import { SectionHeader } from "@/components/SectionHeader";
+import { type Palette, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import { tokenOrNull } from "@/lib/clerk-token";
 import { jobNames, statusOf, toOutboxItem, triesLeft, describeRefused, type OutboxItem } from "@/lib/outbox";
 import {
@@ -38,6 +41,8 @@ import { useStableGetToken } from "@/lib/use-stable-get-token";
  */
 export default function OutboxScreen() {
   const getToken = useStableGetToken();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const [items, setItems] = useState<OutboxItem[]>([]);
   const [refused, setRefused] = useState<RefusedOp[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
@@ -92,51 +97,64 @@ export default function OutboxScreen() {
 
       {items.length > 0 ? (
         <>
-          <Text style={styles.heading}>Waiting to send</Text>
-          {items.map((item) => (
-            <Card key={item.opId}>
-              <Text style={styles.title}>{item.title}</Text>
-              <Text style={styles.detail}>{item.detail}</Text>
-              <Text style={item.attempts > 0 ? styles.trying : styles.waiting}>{statusOf(item)}</Text>
-              {item.attempts > 0 ? (
-                <Text style={styles.detail}>
-                  {triesLeft(item) === 1
-                    ? "One more try, then it moves to Needs attention."
-                    : `${triesLeft(item)} more tries, then it moves to Needs attention.`}
-                </Text>
-              ) : null}
-              <View style={styles.row}>
-                <Button
-                  variant="secondary"
-                  onPress={async () => {
-                    await removeQueued(item.opId);
-                    await load();
-                  }}
-                >
-                  Remove
-                </Button>
-              </View>
-            </Card>
-          ))}
+          <SectionHeader uppercase={false}>Waiting to send</SectionHeader>
+          <GroupedList>
+            {items.map((item, i) => (
+              <GroupedRow
+                key={item.opId}
+                icon={<View style={styles.waitingDot} />}
+                title={item.title}
+                subtitle={item.detail}
+                detail={statusOf(item)}
+                note={
+                  item.attempts > 0
+                    ? triesLeft(item) === 1
+                      ? "One more try, then it moves to Needs attention."
+                      : `${triesLeft(item)} more tries, then it moves to Needs attention.`
+                    : undefined
+                }
+                divider={i > 0}
+                chevron={false}
+              >
+                <View style={styles.rowActions}>
+                  <Button
+                    variant="secondary"
+                    onPress={async () => {
+                      await removeQueued(item.opId);
+                      await load();
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </View>
+              </GroupedRow>
+            ))}
+          </GroupedList>
         </>
       ) : null}
 
       {refused.length > 0 ? (
         <>
-          <Text style={styles.heading}>Needs attention</Text>
+          <SectionHeader uppercase={false}>Needs attention</SectionHeader>
           <Text style={styles.detail}>
             The server read these and said no. They will not go up on their own.
           </Text>
-          {refused.map((entry, index) => {
-            const { title, detail } = describeRefused(entry, names);
-            return (
-              <Card key={`${entry.at}-${index}`}>
-                <Text style={styles.title}>{title}</Text>
-                <Text style={styles.detail}>{detail}</Text>
-                <Text style={styles.refused}>The server said: “{entry.error}”</Text>
-              </Card>
-            );
-          })}
+          <GroupedList>
+            {refused.map((entry, index) => {
+              const { title, detail } = describeRefused(entry, names);
+              return (
+                <GroupedRow
+                  key={`${entry.at}-${index}`}
+                  icon={<View style={styles.refusedDot} />}
+                  title={title}
+                  subtitle={detail}
+                  note={`The server said: “${entry.error}”`}
+                  divider={index > 0}
+                  chevron={false}
+                />
+              );
+            })}
+          </GroupedList>
           <View style={styles.row}>
             <Button
               variant="secondary"
@@ -163,23 +181,36 @@ export default function OutboxScreen() {
       {note ? <Text style={styles.note}>{note}</Text> : null}
 
       {items.length > 0 ? (
-        <Button fullWidth disabled={busy} onPress={send}>
-          {busy ? "Sending…" : "Send now"}
-        </Button>
+        <View style={styles.sendRow}>
+          <Button fullWidth disabled={busy} onPress={send}>
+            {busy ? "Sending…" : "Send now"}
+          </Button>
+        </View>
       ) : null}
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { padding: 16, gap: 12 },
-  heading: { color: colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.semibold },
-  title: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  detail: { color: colors.inkBody, fontSize: typography.size.sm },
-  waiting: { color: colors.inkMuted, fontSize: typography.size.sm },
-  trying: { color: colors.tagAmberInk, fontSize: typography.size.sm },
-  refused: { color: colors.tagRoseInk, fontSize: typography.size.sm },
-  note: { color: colors.inkBody, fontSize: typography.size.sm },
-  row: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    content: { padding: space.md, paddingBottom: space.xxl },
+    detail: {
+      color: p.colors.inkBody,
+      fontSize: typography.size.sm,
+      paddingHorizontal: space.md,
+      paddingBottom: space.xs,
+    },
+    note: {
+      color: p.colors.inkBody,
+      fontSize: typography.size.sm,
+      paddingHorizontal: space.md,
+      paddingTop: space.sm,
+    },
+    row: { flexDirection: "row", gap: space.xs, flexWrap: "wrap", marginTop: space.sm },
+    rowActions: { flexDirection: "row", marginTop: space.xs },
+    sendRow: { marginTop: space.md },
+    waitingDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: p.colors.brand },
+    refusedDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: p.colors.tagRoseInk },
+  });
+}
