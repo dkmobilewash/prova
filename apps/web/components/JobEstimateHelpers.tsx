@@ -1,4 +1,5 @@
 import { money } from "@/lib/money";
+import type { ProductionBackCheck } from "@/lib/labor-productivity";
 
 export const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -61,6 +62,34 @@ export function LaborCostHint({ cost }: { cost: number | null }) {
   return (
     <span className="text-xs text-ink-body" title="Burdened labor: base wage plus fringes, at straight time">
       ≈ {money(cost)} labor
+    </span>
+  );
+}
+
+/**
+ * "actual 50 SF/hr vs 62.5 est · -20%" beside the rate field — the back-check
+ * the competitive audit's #1 finding calls the point of a production rate. It
+ * compares the hours logged against the line to what the estimate assumed;
+ * nothing is stored, so it updates as hours are logged.
+ */
+export function ProductionBackCheckHint({
+  check,
+  unit,
+}: {
+  check: ProductionBackCheck | null;
+  unit: string | null;
+}) {
+  if (check === null) return null;
+  const unitLabel = unit ? ` ${unit}` : "";
+  const pct = Math.round(check.variance * 100);
+  const signed = pct > 0 ? `+${pct}%` : `${pct}%`;
+  return (
+    <span
+      className={`text-xs ${check.isFlagged ? "text-tag-amber-ink" : "text-ink-body"}`}
+      title="Actual production rate vs. what this line was estimated at, derived from the hours logged against it. Negative means the crew is slower than the estimate."
+    >
+      actual {check.actualRate.toFixed(1)}
+      {unitLabel}/hr vs {check.estimatedRate.toFixed(1)} est · {signed}
     </span>
   );
 }

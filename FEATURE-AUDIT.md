@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**134 items audited — 107 built / 22 partial / 4 missing / 1 descoped**
+**135 items audited — 108 built / 22 partial / 4 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -101,7 +101,7 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 107 |
+| Built | 108 |
 | Partial | 22 |
 | Missing | 4 |
 | Descoped | 1 |
@@ -144,7 +144,7 @@ closing "we track the GC but not who to actually call."*
 | Built | Interaction log per contact (calls, emails, site visits, notes, optional follow-up) | `ContactInteraction` (`crm.prisma`) — dated, entered not stamped; follow-up date and follow-up owner are separate from who logged the entry. Not an evidence record (no counter, no locked fields): any team member can log/edit/delete one, same access as bid invitations. A due/overdue follow-up now surfaces in `/alerts` too — see Sheet 26 |
 | Built | Individual people at an account (name, title, email/phone, who to actually call) | `ContactPerson` (`crm.prisma`), nested under `Contact`. No stored "last contact" — derived at read time from `ContactInteraction.contactPersonId` (optional, `SET NULL` on delete so removing a person never blocks on their call history). `deleteContact`'s guard extended again to count people as account history |
 
-## 03. Estimating & Bidding — 11 built · 0 partial · 0 missing
+## 03. Estimating & Bidding — 12 built · 0 partial · 0 missing
 
 *Updated from the original audit (was 2 built / 1 partial / 5 missing) — the
 catalog, bid tracking, historical bid database, labor hours, and estimate
@@ -157,6 +157,7 @@ versioning all shipped same-day.*
 | Built | Historical bid database, by project type/GC/trade | `BidInvitation` rows persist regardless of outcome — filterable by trade/status on `/bids` |
 | Built | Material takeoff quantities per line item (manual entry v1) | A recipe engine (`lib/takeoff-recipes.ts`) turns measured primitives — linear feet, square feet, counts — into unpriced `JobLineItem` rows. Starter recipes: drywall walls/ceilings (studs, sheets, track via `lib/takeoff.ts`), paint (gallons from coverage), flooring (SF + waste + trim), fixture counts. Quantities are recomputed server-side from the dimensions, never trusted from the client. CV plan-takeoff still Missing (Sheet 23) |
 | Built | Labor hour estimates per line item, by craft classification | `JobLineItem.laborHours` + `.craftClassificationId` |
+| Built | Editable labor production rate + actual-productivity back-check | `JobLineItem.productionRate` (units/hr) — hours = quantity ÷ rate unless `laborHours` is typed directly (which overrides). `lib/labor-productivity.ts` turns the hours logged against a line back into the achieved rate and flags variance past 15% once 8+ actual hours exist, so a bid is back-checked against what the crew actually produced |
 | Built | Union fringe/burden rate tables applied to labor cost estimates | `lib/estimate-labor-cost.ts` reuses the same `findEffectiveFringeRateSchedule`/`calculateTimeEntryLaborCost` the actuals use, at straight time, priced at the job's planned start date. Read-only hint beside the hours field — never written into `budgetedUnitCost`, and shows nothing rather than a wrong number when no schedule is effective |
 | Built | Bulk import of a price list into the catalog | Paste from a spreadsheet or upload a CSV; headers matched loosely so an existing price list needs no renaming. Preview shows what will be added, what is already in the catalog, and every row it couldn't read, before anything is written. Existing entries are never overwritten or duplicated |
 | Built | Catalog defaults learn from what jobs actually cost | `JobLineItem.sourceCatalogEntryId` records which template a line came from; `/catalog` reports actual unit cost against the default across every line created from it, flags variance past 15% on 2+ costed lines, and offers a one-click update. Template only — never touches a `JobLineItem`, snapshot or invoice that already exists |
