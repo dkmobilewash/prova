@@ -85,9 +85,12 @@ function buildPayApplication() {
   const lineItems = SOV_LINES.map(calculatePayAppLineItem);
 
   // Exactly what submitPayApplication stores: the invoice amount is the sum of
-  // this period's billed and newly stored values, and retainageWithheld is the
-  // job's rate applied to it. Earlier invoices did the same, so their
-  // withheld total is the rate applied to what they billed and stored.
+  // this period's billed and newly stored values, and the retainage held back
+  // on it is the job's rate applied to that amount. Earlier invoices did the
+  // same, so their held-back total is the rate applied to what they billed
+  // and stored. (This panel reads no retainage column — it applies the rate
+  // to illustrative amounts; the company-wide figure lives in
+  // lib/retainage-query.ts and nowhere else.)
   const thisPeriodAmount = SOV_LINES.reduce(
     (sum, line) => sum + line.thisPeriodBilled + line.materialsStoredValue,
     0,
