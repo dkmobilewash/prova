@@ -132,13 +132,22 @@ describe("drawings and the schedule, as the phone reads them", () => {
       },
     });
 
-    // The server asked about a world where today IS the 10th.
+    // TODAY IS NOT OVER, so nothing is claimed about it. The first
+    // version of this test asserted `false` here — it encoded the bug it
+    // was written to prevent, which is worth more as a warning than the
+    // assertion is as a check: at 18:03 nobody has filed today's hours,
+    // and "no hours logged" is an accusation about a shift still being
+    // worked.
     const sameDay = await (await get(schedule, "?from=2026-02-10&to=2026-02-10&today=2026-02-10")).json();
-    expect(sameDay[0].hoursLogged).toBe(false);
+    expect(sameDay[0].hoursLogged).toBeNull();
 
-    // And one where the viewer has not reached it yet: nothing is claimed.
+    // Tomorrow, from the viewer's position: also nothing.
     const notYet = await (await get(schedule, "?from=2026-02-10&to=2026-02-10&today=2026-02-09")).json();
     expect(notYet[0].hoursLogged).toBeNull();
+
+    // The day AFTER it ends is when the question becomes a fact.
+    const over = await (await get(schedule, "?from=2026-02-10&to=2026-02-10&today=2026-02-11")).json();
+    expect(over[0].hoursLogged).toBe(false);
   });
 
   it("refuses a today that is not a date", async () => {

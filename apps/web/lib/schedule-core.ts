@@ -27,8 +27,14 @@ export type ScheduleRow = {
   workerId: string;
   craftLabel: string | null;
   /** Hours exist for this worker, this job, this day. Derived on read —
-   * never stored. Null for a day in the future, where the question does
-   * not apply yet and a `false` would read as an accusation. */
+   * never stored.
+   *
+   * NULL FOR TODAY AS WELL AS FOR THE FUTURE, and the reason is the
+   * whole point of the field: the question "was this day worked without
+   * a timecard" can only be asked about a day that is OVER. At 18:03 a
+   * foreman has not filed today's hours yet, and telling him "no hours
+   * logged" is an accusation about a shift he is still working. Only
+   * `date < today` is a fact. */
   hoursLogged: boolean | null;
 };
 
@@ -90,7 +96,7 @@ export async function listScheduleForJob(
       workerKind: day.scheduledUserId ? "user" : "crew",
       workerId,
       craftLabel: day.craftClassification?.name ?? null,
-      hoursLogged: date > today ? null : logged.has(`${date}|${workerId}`),
+      hoursLogged: date >= today ? null : logged.has(`${date}|${workerId}`),
     };
   });
 }
