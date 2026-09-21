@@ -107,6 +107,7 @@ export default function RootLayout() {
         <Stack.Screen name="drawings/[jobId]" options={{ title: "Drawings" }} />
         <Stack.Screen name="schedule/[jobId]" options={{ title: "Schedule" }} />
         <Stack.Screen name="outbox" options={{ title: "Waiting to send" }} />
+        <Stack.Screen name="alerts" options={{ title: "Alerts" }} />
         {/* No header and no swipe-back: the way out of a handover is
             handing the phone back, not an iOS gesture. */}
         <Stack.Screen name="handover" options={{ headerShown: false, gestureEnabled: false }} />
