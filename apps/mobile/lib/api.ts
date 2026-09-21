@@ -1,3 +1,4 @@
+import { localToday } from "./local-today";
 import type {
   CreateFieldReportInput,
   Craft,
@@ -338,12 +339,18 @@ export async function listDrawings(jobId: string, token: string): Promise<Drawin
 
 /** The schedule for a window of days. Omitting the dates gets the
  * server's default: a week either side of today, which is what a phone
- * wants — the plan ahead and the gaps behind. */
+ * wants — the plan ahead and the gaps behind.
+ *
+ * `today` is the PHONE'S calendar date, always sent. Whether a planned
+ * day is past decides whether "no hours logged" is a fact or an
+ * accusation, and UTC answers that wrong for every timezone west of it
+ * after late afternoon. */
 export async function listSchedule(
   jobId: string,
   token: string,
   window?: { from: string; to: string },
 ): Promise<ScheduleRow[]> {
-  const query = window ? `?from=${window.from}&to=${window.to}` : "";
-  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/schedule${query}`, { token });
+  const parts = [`today=${localToday()}`];
+  if (window) parts.push(`from=${window.from}`, `to=${window.to}`);
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/schedule?${parts.join("&")}`, { token });
 }
