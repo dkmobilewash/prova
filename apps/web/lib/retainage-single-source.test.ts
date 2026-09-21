@@ -131,6 +131,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
     "WRITES the snapshot when a pay application is submitted. The plain-invoice write moved out in phase 3 of the Ask build (below). Never reads a total. Declared in RETAINAGE_WRITERS below.",
   "lib/billing/create-invoice.ts":
     "WRITES the snapshot for a plain invoice: createInvoice's body, lifted so the form and the draft_invoice card share one write and one formula. Never reads a total. Declared in RETAINAGE_WRITERS below.",
+  "lib/billing/retainage-write.dbtest.ts":
+    "Proves BOTH write paths snapshot the same cent for the same bill, against a real Postgres, and reads the G702 back through loadPayApplication. The behavioural half that this census and the formula's unit test cannot reach.",
   "lib/billing/retainage-amount.ts":
     "THE FORMULA — the only expression in this product that multiplies an amount by a retainage rate, in exact decimal. Names the column in its header to say what it produces; computes no total and touches no database.",
   "lib/billing/payment-entry.test.ts":
