@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ContractSummary } from "@/components/ContractSummary";
 import { prisma } from "@prova/db";
 import { money } from "@/lib/money";
+import { invoiceBalanceState } from "@/lib/billing/invoice-balance";
 import { PortalJobPhotos } from "@/components/PortalJobPhotos";
 import { countJobMedia, loadSharedJobMediaForClient } from "@/lib/job-media-query";
 import { viewerTimeZone } from "@/lib/viewerToday";
@@ -171,7 +172,11 @@ export default async function PortalJobPage({
           <ul className="flex flex-col gap-2">
             {job.invoices.map((invoice) => {
               const paid = invoice.payments.reduce((s, p) => s + Number(p.amount), 0);
-              const balance = Number(invoice.amount) - paid;
+              // `balance <= 0 ? "Paid in full"` until 2026-09-21, and this
+              // is the GC's own screen: a credit invoice has a negative
+              // balance, so the one document telling a GC they are owed
+              // money back announced itself to them as settled, in green.
+              const state = invoiceBalanceState(Number(invoice.amount), paid);
               return (
                 <li key={invoice.id} className="rounded-md border border-line-card bg-surface p-3 text-sm">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -179,8 +184,8 @@ export default async function PortalJobPage({
                       Invoice #{invoice.number}
                       {invoice.description ? ` — ${invoice.description}` : ""}
                     </p>
-                    <span className={balance <= 0 ? "text-green-400" : "text-amber-400"}>
-                      {balance <= 0 ? "Paid in full" : `Balance ${money(balance)}`}
+                    <span className={state.settled ? "text-green-400" : "text-amber-400"}>
+                      {state.label}
                     </span>
                   </div>
                   <p className="text-ink-body">Amount {money(Number(invoice.amount))}</p>

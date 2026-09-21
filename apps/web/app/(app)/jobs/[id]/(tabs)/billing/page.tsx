@@ -13,6 +13,7 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { formatCalendarDate } from "@/lib/render-date";
 import { cashReceived } from "@/lib/billing/payment-entry";
 import { money } from "@/lib/money";
+import { invoiceBalanceState } from "@/lib/billing/invoice-balance";
 import { SubmitButton } from "@/components/SubmitButton";
 import { createInvoice, deletePayment } from "@/lib/actions";
 import { ActionForm } from "@/components/ActionForm";
@@ -137,7 +138,12 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
         <div className="flex flex-col gap-4">
           {job.invoices.map((invoice) => {
             const paid = invoice.payments.reduce((s, p) => s + Number(p.amount), 0);
-            const balance = Number(invoice.amount) - paid;
+            // `balance <= 0 ? "Paid in full"` until 2026-09-21. A pay
+            // application can net negative — a credit — and a credit's
+            // balance is below zero, so the row announcing that the GC is
+            // owed money back rendered as settled, in green. Same ternary,
+            // same defect, on the GC portal.
+            const state = invoiceBalanceState(Number(invoice.amount), paid);
             return (
               <div key={invoice.id} className="rounded-lg border border-line-card bg-surface p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -148,8 +154,8 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                   <div className="flex items-center gap-4 text-sm">
                     <span className="text-ink-body">Amount {money(Number(invoice.amount))}</span>
                     <span className="text-ink-body">Paid {money(paid)}</span>
-                    <span className={balance <= 0 ? "text-green-400" : "text-amber-400"}>
-                      {balance <= 0 ? "Paid in full" : `Balance ${money(balance)}`}
+                    <span className={state.settled ? "text-green-400" : "text-amber-400"}>
+                      {state.label}
                     </span>
                     <StatusForm jobId={job.id} invoiceId={invoice.id} status={invoice.status} />
                     <PushInvoiceToQuickBooks
@@ -235,7 +241,11 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                   </ul>
                 )}
 
-                {balance > 0 && <LogPaymentForm jobId={job.id} invoiceId={invoice.id} />}
+                {/* A credit is not something a GC pays, so this stays
+                    hidden for one — `outstanding` is negative there. Same
+                    single source as the money line above, so the row and
+                    this form cannot disagree about the same invoice. */}
+                {state.outstanding > 0 && <LogPaymentForm jobId={job.id} invoiceId={invoice.id} />}
               </div>
             );
           })}
