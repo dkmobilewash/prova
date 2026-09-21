@@ -32,7 +32,7 @@
    Hint with nothing to describe is meaningless. The rule is about JSX
    readability; there is no JSX in this file. */
 
-import { createElement, type ButtonHTMLAttributes } from "react";
+import { createElement, type ButtonHTMLAttributes, type ComponentProps } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -205,5 +205,56 @@ describe("Hint", () => {
     const described = (trigger().getAttribute("aria-describedby") ?? "").split(" ");
     expect(described).toContain("existing-note");
     expect(described).toContain(tooltip().id);
+  });
+
+  /* THE 2026-09-21 OUTAGE, held still.
+   *
+   * A child written by a server component does not always reach a client
+   * component as an element. React's production Flight serializer defers
+   * any element it reaches once the current row has passed 3,200 bytes
+   * into a row of its own; the browser turns that reference back into a
+   * LAZY, and a lazy has no `.props`. The object below is exactly what
+   * `createLazyChunkWrapper` builds in
+   * `react-server-dom-webpack-client.browser.production.js` — the same
+   * three fields, in the same shape — built here by hand because nothing
+   * in this suite runs a Flight stream.
+   *
+   * React renders it fine. Only reading its props throws, and before the
+   * guard this component did exactly that: `MetricBar` sits in the `(app)`
+   * layout, so one TypeError here blanked the dashboard, the jobs list and
+   * every job tab on a live account at once.
+   *
+   * `hintClientOnly.test.ts` is what keeps a lazy out of here at all. This
+   * is the floor under it: even if one gets through, the control still
+   * renders and the app still stands. */
+  it("renders a lazy child rather than throwing on it", () => {
+    const resolved = {
+      status: "fulfilled",
+      value: createElement("button", { type: "button" }, "Release retainage"),
+    };
+    const lazyChild = {
+      $$typeof: Symbol.for("react.lazy"),
+      _payload: resolved,
+      _init: (payload: typeof resolved) => payload.value,
+    };
+
+    expect(() =>
+      act(() => {
+        root.render(
+          createElement(Hint, {
+            text: DESCRIPTION,
+            // Deliberately cast: this is a value the TYPES say cannot
+            // happen and the Flight boundary produces anyway. That gap is
+            // the whole bug.
+            children: lazyChild as unknown as ComponentProps<typeof Hint>["children"],
+          }),
+        );
+      }),
+    ).not.toThrow();
+
+    expect(trigger().textContent).toBe("Release retainage");
+    // The words are still on the page for anyone who can see them; the
+    // description is what is lost, which is why the census test exists.
+    expect(tooltip().textContent).toBe(DESCRIPTION);
   });
 });
