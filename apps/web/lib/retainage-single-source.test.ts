@@ -165,6 +165,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/actions/ask.dbtest.ts": "Asserts the snapshot on the invoice a tapped card created, and seeds the snapshots a release card is made from, against real rows.",
   "app/(app)/cash-flow/page.test.ts":
     "Renders the page with money on it — the assembly rather than the arithmetic, which is where #288 actually lived.",
+  "app/(app)/evening-dates.test.ts":
+    "Sets the column to null on the one invoice it renders /cash-flow and /dashboard with, so an invoice due today ages on its full amount and the day, not the retainage, is what the test is about.",
   "lib/cash-flow.test.ts":
     "Pins the AR balance as net of retainage, and the forecast identity that no dollar is in both halves (#288).",
   "lib/gc-reliability.test.ts": "Pins that a retainage-bearing invoice can settle, and that a genuine shortfall still cannot (#288).",

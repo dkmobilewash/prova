@@ -138,9 +138,31 @@ function formatEditValue(field: string, value: string) {
   return value;
 }
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
+/** Today, on the calendar of the person looking at the screen — handed
+ * down from the page rather than worked out here.
+ *
+ * This file had its own `today()`: `new Date().toISOString().slice(0, 10)`,
+ * the UTC day. From 17:00 Mountain that is TOMORROW, so a change order
+ * approved at 6pm recorded "answered Sep 23" on a document the GC quotes
+ * back — and correcting it the next morning hit
+ * `lib/actions/changeOrders.ts`'s "A change order can't be answered before
+ * it was sent", blaming the contractor for typing the right date.
+ *
+ * NOT components/localToday.ts, which is what ~30 other forms use and is
+ * the obvious reach. Its own comment says it may only be called from a
+ * component mounted by a user ACTION: `<Decision>` renders for every
+ * SUBMITTED change order and `<DraftActions>` for every DRAFT, out of the
+ * server render, so a browser-derived day here is a hydration mismatch —
+ * and the hidden `decidedOn` inputs below are CONTROLLED, which is the
+ * loud kind. The page resolves the zone from the request instead
+ * (lib/viewerToday.ts) and the markup is identical on both sides.
+ *
+ * WHY NOTHING CAUGHT THE OLD ONE, which is worth a sentence because the
+ * obvious guess is wrong: it did NOT mismatch. `toISOString()` is UTC in
+ * every process, so the server and the browser rendered the same string —
+ * the same wrong string. A bug that is consistently wrong on both sides of
+ * hydration raises no warning anywhere. */
+type TodayProp = { today: string };
 
 function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderView; lineItems: LineItemChoice[] }) {
   const [kind, setKind] = useState<"ADD" | "EDIT" | "REMOVE">("ADD");
@@ -281,7 +303,7 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
   );
 }
 
-function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
+function Decision({ changeOrder, today }: { changeOrder: ChangeOrderView } & TodayProp) {
   const approve = useActionRunner();
   const reject = useActionRunner();
   const void_ = useActionRunner();
@@ -303,7 +325,7 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
         >
           <label className={labelClass}>
             Decision date
-            <input name="decidedOn" type="date" defaultValue={today()} className={`${inputClass} w-40`} />
+            <input name="decidedOn" type="date" defaultValue={today} className={`${inputClass} w-40`} />
           </label>
           <label className={labelClass}>
             GC notes
@@ -325,7 +347,7 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
           }}
           className="flex items-end gap-2"
         >
-          <input type="hidden" name="decidedOn" value={today()} />
+          <input type="hidden" name="decidedOn" value={today} />
           <button
             type="submit"
             disabled={reject.isPending}
@@ -342,7 +364,7 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
           }}
           className="flex items-end gap-2"
         >
-          <input type="hidden" name="decidedOn" value={today()} />
+          <input type="hidden" name="decidedOn" value={today} />
           <button
             type="submit"
             disabled={void_.isPending}
@@ -461,7 +483,7 @@ function ProposalRow({ proposal, canRemove }: { proposal: ProposalView; canRemov
   );
 }
 
-function DraftActions({ changeOrder }: { changeOrder: ChangeOrderView }) {
+function DraftActions({ changeOrder, today }: { changeOrder: ChangeOrderView } & TodayProp) {
   const submit = useActionRunner();
   const discard = useActionRunner();
 
@@ -477,7 +499,7 @@ function DraftActions({ changeOrder }: { changeOrder: ChangeOrderView }) {
       >
         <label className={labelClass}>
           Date sent to GC
-          <input name="submittedOn" type="date" defaultValue={today()} className={`${inputClass} w-40`} />
+          <input name="submittedOn" type="date" defaultValue={today} className={`${inputClass} w-40`} />
         </label>
         <button
           type="submit"
@@ -511,11 +533,12 @@ function ChangeOrderCard({
   co,
   lineItems,
   docuSign,
+  today,
 }: {
   co: ChangeOrderView;
   lineItems: LineItemChoice[];
   docuSign?: ChangeOrderDocuSign;
-}) {
+} & TodayProp) {
   const envelopes = docuSign?.byChangeOrder[co.id] ?? [];
   return (
     <li className="rounded-md border border-line-card bg-surface p-3">
@@ -590,11 +613,11 @@ function ChangeOrderCard({
       {co.status === "DRAFT" && (
         <>
           <ProposalForms changeOrder={co} lineItems={lineItems} />
-          <DraftActions changeOrder={co} />
+          <DraftActions changeOrder={co} today={today} />
         </>
       )}
 
-      {co.status === "SUBMITTED" && <Decision changeOrder={co} />}
+      {co.status === "SUBMITTED" && <Decision changeOrder={co} today={today} />}
 
       {docuSign && (co.status === "SUBMITTED" || envelopes.length > 0) && (
         <DocuSignPanel
@@ -623,6 +646,7 @@ export function ChangeOrders({
   pendingExposure,
   pendingUnbookable,
   docuSign,
+  today,
 }: {
   jobId: string;
   changeOrders: ChangeOrderView[];
@@ -635,7 +659,7 @@ export function ChangeOrders({
   pendingUnbookable?: number;
   /** Send-with-DocuSign on submitted change orders. Omitted, nothing renders. */
   docuSign?: ChangeOrderDocuSign;
-}) {
+} & TodayProp) {
   const pendingCount = changeOrders.filter((co) => co.status === "SUBMITTED").length;
   const { groups, unbanded } = groupIntoBands(changeOrders);
   const create = useActionRunner();
@@ -719,7 +743,7 @@ export function ChangeOrders({
               </header>
               <ul className="flex flex-col gap-3">
                 {items.map((co) => (
-                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} docuSign={docuSign} />
+                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} docuSign={docuSign} today={today} />
                 ))}
               </ul>
             </section>
@@ -741,7 +765,7 @@ export function ChangeOrders({
               </header>
               <ul className="flex flex-col gap-3">
                 {unbanded.map((co) => (
-                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} docuSign={docuSign} />
+                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} docuSign={docuSign} today={today} />
                 ))}
               </ul>
             </section>
