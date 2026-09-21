@@ -103,7 +103,24 @@ function buildPayApplication() {
 
   const summary = calculatePayAppSummary({
     lineItems,
-    retainagePercent: RETAINAGE_PERCENT,
+    // `retainagePercent` WAS HERE AND IT DOES NOT TYPECHECK. #409 deleted
+    // that field from PayAppSummaryInput — it was supplied by every caller
+    // and read by nothing, which is this repo's "written, documented and
+    // never called" shape in the version that costs money: a live rate
+    // inside the function that computes retainage is an invitation to
+    // derive the figure from it, and the withheld column on Invoice is a
+    // SNAPSHOT that must never be recomputed. (Named in prose rather than
+    // spelled exactly: retainage-single-source.test.ts matches that column
+    // name as a bare token and does not strip comments, so writing it here
+    // adds this file to a census allowlist over a note about it.) #404 was
+    // written before that
+    // landed and merged after it, so `main` itself has not typechecked
+    // since. Deleting the line changes no figure on this panel — nothing
+    // ever read it — and RETAINAGE_PERCENT still drives `withheld()` two
+    // lines up, which is where this panel's illustrative numbers come from.
+    //
+    // Fixed from another branch because main was red and nothing could go
+    // green behind it; reported rather than done quietly.
     previousRetainageWithheld: withheld(previousAmount),
     thisPeriodRetainageWithheld: withheld(thisPeriodAmount),
   });
