@@ -45,6 +45,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { decimalFromForm, InputError, nullableDecimalFromForm } from "./actions/shared";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 
@@ -566,5 +567,160 @@ describe("the percent field keeps its % on the box", () => {
     const pct = source.slice(source.indexOf('aria-hidden="true"'));
     expect(pct).toContain("%");
     expect(source).not.toMatch(/placeholder="e\.g\. 10"/);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 5. The parsers, EXECUTED against what people actually type.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Everything above this line SCANS. This block RUNS.
+ *
+ * Taken from #423 (`cyrus/numeric-input-gate`), which reached the same
+ * defect independently and built its gate the other way round — and its
+ * best idea is this one: the suite missed `2,800` for one reason, which is
+ * that **no test ever typed a comma**. Tests pass well-formed values into
+ * functions; contractors type what is in their head into boxes. A pattern
+ * that looks for a parser cannot tell you what the parser does.
+ *
+ * SHARPENED IN ONE PLACE. #423 asserts that a parser does not THROW. On
+ * this branch a refusal throwing is correct and intended — `runAction`
+ * converts an `InputError` into the `{ ok: false, error }` the form
+ * renders. What must never happen is a bare `Error`, because that is the
+ * kind production redacts to a digest, and the digest under the Qty box is
+ * the whole bug. So the verdict here is not "did it throw" but **"if it
+ * refused, was the refusal the kind a form can render"**.
+ *
+ * The count check is the #195 discipline: a missing verdict is its own
+ * failure state, never folded into a pass.
+ */
+const TYPED: Array<{ input: string; means: string | null; why: string }> = [
+  { input: "2,800", means: "2800", why: "thousands comma — the new-job wizard quantity" },
+  { input: "12,500", means: "12500", why: "thousands comma — the invoice amount" },
+  { input: "12,500.00", means: "12500", why: "comma and cents, what the payroll importer already took" },
+  { input: "$12,500", means: "12500", why: "leading dollar sign" },
+  { input: "$1,234.56", means: "1234.56", why: "dollar, comma and cents together" },
+  { input: "1,234,567.89", means: "1234567.89", why: "two groups" },
+  { input: "10%", means: "10", why: "trailing percent, typed back at a percent box" },
+  { input: " 42 ", means: "42", why: "whitespace from a paste" },
+  { input: "12 500", means: "12500", why: "non-breaking space from a spreadsheet" },
+  { input: "42", means: "42", why: "the plain case — a control, so a parser that refuses everything cannot pass" },
+  { input: "0.10", means: "0.1", why: "the retainage fraction: parses fine, and the MEANING is the bug" },
+  { input: "-5", means: "-5", why: "negative, which is valid unless a caller sets min" },
+  { input: "abc", means: null, why: "letters" },
+  // A DISAGREEMENT WITH #423, RECORDED RATHER THAN RESOLVED IN SILENCE.
+  // Its corpus calls this garbage and expects a refusal. This parser strips
+  // internal whitespace first — which is what makes `12 500` off a
+  // spreadsheet work — so `1,0 00` becomes `1,000` and reads as 1000. A
+  // space between digits on a US form is a fat finger or a paste artifact,
+  // and 1000 is the only thing it can plausibly mean. The dangerous case is
+  // not this one: `12,50` is still refused, because THAT is ambiguous
+  // between 12.5 and 1250 and getting it wrong is a hundredfold money
+  // error. If this reading is ever wrong, delete the space-stripping in
+  // numeric-input.ts and the NBSP case below goes with it — they are the
+  // same line and cannot be decided separately.
+  { input: "1,0 00", means: "1000", why: "a stray space inside 1,000" },
+  { input: "12,50", means: null, why: "European decimal comma — refused rather than read as 1250" },
+  { input: "1e999", means: null, why: "Number() makes this Infinity" },
+  { input: "Infinity", means: null, why: "the literal word, which Number() accepts" },
+  { input: "0x10", means: null, why: "hex, which Number() reads as 16" },
+];
+
+type Verdict = "ok" | "wrong-value" | "refused-readably" | "REFUSED-WITH-A-DIGEST";
+
+function formOf(value: string): FormData {
+  const f = new FormData();
+  f.set("k", value);
+  return f;
+}
+
+function verdictFor(fn: (f: FormData) => string | null, input: string, means: string | null): Verdict {
+  try {
+    const got = fn(formOf(input));
+    if (means === null) return "wrong-value"; // it should have refused
+    return got === means ? "ok" : "wrong-value";
+  } catch (err) {
+    // The distinction this whole change is about. `InputError` is caught by
+    // `runAction` and rendered; a bare `Error` is redacted by production to
+    // "the specific message is omitted in production builds".
+    return err instanceof InputError ? "refused-readably" : "REFUSED-WITH-A-DIGEST";
+  }
+}
+
+describe("the shared parsers, run for real against what people type", () => {
+  const PARSERS: Record<string, (f: FormData) => string | null> = {
+    decimalFromForm: (f) => decimalFromForm(f, "k"),
+    nullableDecimalFromForm: (f) => nullableDecimalFromForm(f, "k"),
+  };
+
+  const verdicts = new Map<string, Verdict>();
+  for (const [fnName, fn] of Object.entries(PARSERS)) {
+    for (const { input, means } of TYPED) {
+      verdicts.set(`${fnName}(${JSON.stringify(input)})`, verdictFor(fn, input, means));
+    }
+  }
+
+  it("ran every case against every parser — a missing verdict is its own failure", () => {
+    expect(verdicts.size).toBe(Object.keys(PARSERS).length * TYPED.length);
+    expect(TYPED.length).toBeGreaterThanOrEqual(15);
+    // A corpus with no passing case would be satisfied by a parser that
+    // refuses everything, and would prove nothing.
+    expect(verdicts.get('decimalFromForm("42")')).toBe("ok");
+    expect(verdicts.get('decimalFromForm(" 42 ")')).toBe("ok");
+  });
+
+  it("reads every figure a contractor could reasonably type", () => {
+    const wrong: string[] = [];
+    for (const { input, means, why } of TYPED) {
+      if (means === null) continue;
+      for (const fnName of Object.keys(PARSERS)) {
+        const key = `${fnName}(${JSON.stringify(input)})`;
+        if (verdicts.get(key) !== "ok") wrong.push(`${key} => ${verdicts.get(key)} — ${why}, means ${means}`);
+      }
+    }
+    expect(wrong, "a figure a person would type was not read as the number they meant").toEqual([]);
+  });
+
+  it("refuses the rest in a way a FORM CAN RENDER — never a bare Error", () => {
+    const digests: string[] = [];
+    for (const { input, means, why } of TYPED) {
+      if (means !== null) continue;
+      for (const fnName of Object.keys(PARSERS)) {
+        const key = `${fnName}(${JSON.stringify(input)})`;
+        const got = verdicts.get(key)!;
+        if (got !== "refused-readably") digests.push(`${key} => ${got} — ${why}`);
+      }
+    }
+    expect(
+      digests,
+      "a refusal must be an InputError, which runAction turns into { ok: false, error } for the " +
+        "form to render. A bare Error is redacted by production to the digest paragraph, which is " +
+        "exactly what a quantity of 2,800 used to produce on the second screen of a first job",
+    ).toEqual([]);
+  });
+
+  it("treats a blank field as not-set for the nullable parser, and as missing for the other", () => {
+    // The one input whose right answer differs between the two, so it is
+    // asserted rather than left out of the corpus.
+    expect(nullableDecimalFromForm(formOf(""), "k")).toBe(null);
+    expect(nullableDecimalFromForm(formOf("   "), "k")).toBe(null);
+    expect(() => decimalFromForm(formOf(""), "k")).toThrow(InputError);
+  });
+});
+
+/**
+ * The reader names in `numericFieldNames`'s pattern are a hand-written
+ * list, and #423 is right that such a list goes stale the first time
+ * somebody writes the thirteenth reader. Renaming one would silently
+ * shrink the roster rather than fail — the same shape as everything else
+ * this file guards. This asserts each name still exists in the source.
+ */
+describe("the roster's reader names still exist", () => {
+  it("names no reader that has been renamed away", () => {
+    const names = ["decimalFromForm", "nullableDecimalFromForm", "nullablePercentFromForm", "optionalNumberFromForm", "numberFromForm"];
+    const all = [...sources().values()].join("\n");
+    const missing = names.filter((n) => !new RegExp(`(export (?:function|const) ${n}\\b|${n} = )`).test(all));
+    expect(missing, "a reader in the roster pattern no longer exists under that name").toEqual([]);
   });
 });

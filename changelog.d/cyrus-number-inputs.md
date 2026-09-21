@@ -116,6 +116,49 @@ what `catalog-line.ts` was. An input whose name cannot be read is CHECKED
 now rather than skipped, since an unreadable name is not evidence that a
 field is not numeric.
 
+**REBASED ONTO #418, WHICH HAD JUST TURNED THE TAKEOFF INTO A RECIPE
+ENGINE.** That PR moved `addTakeoffLineItems` out of `jobs.ts` into
+`lib/actions/takeoff.ts` and generalised two hardcoded surfaces into five
+recipes — carrying the silent-zero with it, into all five. Not a mistake in
+#418; it is what happens when the parsing is inline. Both survive: his
+recipes are untouched, and the measurements now go through the same parser
+as the Qty box beside them.
+
+**The census caught his new file on its own**, which is the first time one
+of these guards has earned its keep on a module written by somebody else,
+days later: restoring the old `num` turns `numericInputCensus.test.ts` red
+naming `lib/actions/takeoff.ts`, with nobody having thought about it.
+
+One behaviour change in his lane, flagged rather than folded in quietly: a
+recipe ARGUMENT (waste, coats, coverage, spacing) that was not blank but
+could not be read used to fall back to the recipe default, so `1,0` typed
+into Waste quietly bid at 10%. Blank still means "use the default"; a typo
+now says so. `lib/actions/takeoff.numbers.test.ts` pins both halves.
+
+**#423 reached the same three defects independently**, and its best idea is
+folded in here: the suite missed `2,800` because **no test ever typed a
+comma**. Its corpus is EXECUTED against the real parsers rather than
+scanned for, and that block now lives in this census — sharpened in one
+place, because on this branch a refusal SHOULD throw: `runAction` converts
+an `InputError` into the sentence a form renders. So the verdict is not
+"did it throw" but "was the refusal the kind a form can render", and a bare
+`Error` — the redacted kind — fails it.
+
+What was NOT taken from #423, and why it matters: its rules REQUIRE
+`type="number"` on every numeric box, and require `step="0.25"` on a
+percent so the browser refuses `0.10`. Both are the opposite of what this
+branch measured. `type="number"` submits an EMPTY STRING for a value it
+cannot parse, which on a nullable field means "not set" — the figure
+vanishes with no error at all. And native `step` validation gates the
+submit handler silently, which this repo has already been bitten by twice
+and documented in `BackchargeRow.tsx` ("`max` fired Chrome's own message
+first, so that sentence was unreachable") and in `PayApplications.tsx`
+("the attribute made that unreachable... the form silently refused rather
+than showing anything"). Its underlying point is right — `min`/`max` cannot
+catch `0.10` — and the answer here is the visible `%` and the money
+preview, which catch every wrong value rather than only non-multiples of a
+quarter point.
+
 **`dbtest` is a SECOND CI job and `preflight.sh` does not run it.** There is
 no local Postgres on this machine, so it was never run before the first
 push, and it caught one assertion the four local checks could not. Worth
