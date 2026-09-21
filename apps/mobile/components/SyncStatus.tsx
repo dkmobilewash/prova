@@ -30,6 +30,10 @@ export function SyncStatus({
   refused,
   onDismiss,
   onRetry,
+  refusedLine,
+  dismissLabel,
+  refusedTitle,
+  maxRefused = 5,
 }: {
   pending?: number;
   state?: string | "nothing" | null;
@@ -37,6 +41,17 @@ export function SyncStatus({
   onDismiss?: () => void;
   /** Puts them back on the queue — the reason may have been dealt with. */
   onRetry?: () => void;
+  /** How one refused op is described. The default names the work the way
+   * the outbox does; the punch list says only what the server said. */
+  refusedLine?: (op: RefusedOp) => string;
+  /** The dismissed count, in the caller's own words — "items" on the
+   * banner, "changes" on the punch list, both pre-existing copy. */
+  refusedTitle?: (count: number) => string;
+  /** The dismiss action's word — "Throw away" on the banner, "Dismiss" on
+   * the punch list, both pre-existing copy. */
+  dismissLabel?: string;
+  /** How many refused lines to show. */
+  maxRefused?: number;
 }) {
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
@@ -52,7 +67,14 @@ export function SyncStatus({
   if (state) {
     rows.push(
       <Row key="offline" icon="cloudOffline" palette={palette}>
-        <Text style={state === "nothing" ? styles.body : styles.stale}>{state}</Text>
+        {state === "nothing" ? (
+          <Text style={styles.body}>
+            Can&apos;t load this right now, and this phone hasn&apos;t loaded it before. Anything you
+            add is kept and sent when you&apos;re back in range.
+          </Text>
+        ) : (
+          <Text style={styles.stale}>{state}</Text>
+        )}
       </Row>,
     );
   }
@@ -62,12 +84,16 @@ export function SyncStatus({
         <View style={styles.refusedTitleRow}>
           <Icon name="alert" size={22} color={palette.colors.tagRoseInk} />
           <Text style={styles.refusedTitle}>
-            {refused.length === 1 ? "1 item wasn't saved" : `${refused.length} items weren't saved`}
+            {refusedTitle
+              ? refusedTitle(refused.length)
+              : refused.length === 1
+                ? "1 item wasn't saved"
+                : `${refused.length} items weren't saved`}
           </Text>
         </View>
-        {refused.slice(-5).map((r, i) => (
+        {refused.slice(-maxRefused).map((r, i) => (
           <Text key={i} style={styles.line}>
-            {describeOp(r.op).title} — {r.error}
+            {refusedLine ? refusedLine(r) : `${describeOp(r.op).title} — ${r.error}`}
           </Text>
         ))}
         <View style={styles.actions}>
@@ -78,7 +104,7 @@ export function SyncStatus({
           ) : null}
           {onDismiss ? (
             <Pressable onPress={onDismiss} style={styles.dismiss}>
-              <Text style={styles.dismissLabel}>Throw away</Text>
+              <Text style={styles.dismissLabel}>{dismissLabel ?? "Throw away"}</Text>
             </Pressable>
           ) : null}
         </View>
