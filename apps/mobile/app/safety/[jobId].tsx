@@ -12,6 +12,7 @@ import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
+import { useT } from "@/lib/i18n";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -28,6 +29,7 @@ function titles({ emptyTitle, emptyDescription }: { emptyTitle: string; emptyDes
 }
 
 export default function SafetyScreen() {
+  const { t } = useT();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [talks, setTalks] = useState<ToolboxTalk[]>([]);
@@ -108,18 +110,18 @@ export default function SafetyScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      {pending > 0 ? <Text style={styles.pending}>{t("common.pendingSync", { count: pending })}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <OfflineNote state={offline} />
 
       <View style={styles.sectionHead}>
-        <Text style={styles.sectionTitle}>Toolbox talks</Text>
+        <Text style={styles.sectionTitle}>{t("safety.talks")}</Text>
         <Button variant="secondary" onPress={() => setShowTalkForm(true)}>
-          Add talk
+          {t("safety.addTalk")}
         </Button>
       </View>
       {talks.length === 0 ? (
-        <EmptyState {...titles(emptyFor(offline, "the safety talks", { title: "No talks logged" }))} />
+        <EmptyState {...titles(emptyFor(offline, "thing.safety.talks", { title: "safety.noTalks" }))} />
       ) : (
         talks.map((t) => (
           <Card key={t.id}>
@@ -130,13 +132,13 @@ export default function SafetyScreen() {
       )}
 
       <View style={[styles.sectionHead, styles.sectionHeadGap]}>
-        <Text style={styles.sectionTitle}>Incidents</Text>
+        <Text style={styles.sectionTitle}>{t("safety.incidents")}</Text>
         <Button variant="secondary" onPress={() => setShowIncidentForm(true)}>
-          Add incident
+          {t("safety.addIncident")}
         </Button>
       </View>
       {incidents.length === 0 ? (
-        <EmptyState {...titles(emptyFor(offline, "the incidents", { title: "No incidents" }))} />
+        <EmptyState {...titles(emptyFor(offline, "thing.safety.incidents", { title: "safety.noIncidents" }))} />
       ) : (
         incidents.map((i) => (
           <Card key={i.id}>
@@ -152,31 +154,42 @@ export default function SafetyScreen() {
       <Sheet
         visible={showTalkForm}
         onClose={() => setShowTalkForm(false)}
-        title="Add toolbox talk"
-        primaryLabel="Save talk"
+        title={t("safety.talk.title")}
+        primaryLabel={t("safety.talk.save")}
         onPrimary={submitTalk}
       >
-        <Field label="Topic" placeholder="e.g. Fall protection" value={topic} onChangeText={setTopic} />
-        <Field label="Date" placeholder="YYYY-MM-DD" value={heldOn} onChangeText={setHeldOn} />
+        <Field
+          label={t("safety.field.topic")}
+          placeholder={t("safety.field.topicHint")}
+          value={topic}
+          onChangeText={setTopic}
+        />
+        <Field label={t("common.date")} placeholder="YYYY-MM-DD" value={heldOn} onChangeText={setHeldOn} />
       </Sheet>
 
       <Sheet
         visible={showIncidentForm}
         onClose={() => setShowIncidentForm(false)}
-        title="Add incident"
-        primaryLabel="Save incident"
+        title={t("safety.incident.title")}
+        primaryLabel={t("safety.incident.save")}
         onPrimary={submitIncident}
       >
-        <Field label="Employee name" value={employeeName} onChangeText={setEmployeeName} />
-        <Field label="Description" placeholder="What happened" value={description} onChangeText={setDescription} multiline />
-        <Field label="Date" placeholder="YYYY-MM-DD" value={occurredAt} onChangeText={setOccurredAt} />
-        <Text style={styles.chipLabel}>Classification</Text>
+        <Field label={t("safety.field.employee")} value={employeeName} onChangeText={setEmployeeName} />
+        <Field
+          label={t("safety.field.description")}
+          placeholder={t("safety.field.descriptionHint")}
+          value={description}
+          onChangeText={setDescription}
+          multiline
+        />
+        <Field label={t("common.date")} placeholder="YYYY-MM-DD" value={occurredAt} onChangeText={setOccurredAt} />
+        <Text style={styles.chipLabel}>{t("safety.classification")}</Text>
         <View style={styles.chips}>
           {CLASSIFICATIONS.map((c) => (
             <Chip key={c} label={c.replace(/_/g, " ")} selected={classification === c} onPress={() => setClassification(c)} />
           ))}
         </View>
-        <Text style={styles.chipLabel}>Outcome</Text>
+        <Text style={styles.chipLabel}>{t("safety.outcome")}</Text>
         <View style={styles.chips}>
           {OUTCOMES.map((o) => (
             <Chip key={o} label={o.replace(/_/g, " ")} selected={outcome === o} onPress={() => setOutcome(o)} />

@@ -17,6 +17,7 @@ import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
 import { JobSections } from "@/components/JobSections";
 import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
+import { useT } from "@/lib/i18n";
 import { colors, typography } from "@/lib/theme";
 import type { DelayRow, FieldReportRow } from "@/lib/types";
 import { useFieldReports } from "@/lib/use-field-reports";
@@ -67,6 +68,7 @@ function daysOf(reports: FieldReportRow[], delays: DelayRow[]): Day[] {
 }
 
 export default function ReportsScreen() {
+  const { t } = useT();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const getToken = useStableGetToken();
   const { reports, pending, error, offline, create, refresh } = useFieldReports(jobId ?? "");
@@ -210,7 +212,7 @@ export default function ReportsScreen() {
   return (
     <View style={styles.screen}>
       <JobSections jobId={jobId} active="reports" />
-      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      {pending > 0 ? <Text style={styles.pending}>{t("common.pendingSync", { count: pending })}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <OfflineNote state={offline} />
       <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
@@ -248,7 +250,7 @@ export default function ReportsScreen() {
             )}
             {item.delays.map((d) => (
               <View key={d.id} style={styles.delay}>
-                {d.id.startsWith("local-") ? <Text style={styles.syncing}>Syncing…</Text> : null}
+                {d.id.startsWith("local-") ? <Text style={styles.syncing}>{t("common.syncing")}</Text> : null}
                 <Text style={styles.delayTitle}>
                   Delay · {d.causeLabel} · {d.responsibleLabel}
                   {d.responsibleName ? ` (${d.responsibleName})` : ""}
@@ -268,10 +270,9 @@ export default function ReportsScreen() {
             ))}
           </Card>
         )}
-        {...emptyFor(offline, "the field reports", {
-          title: "No reports yet",
-          description:
-            "Tap “New report” to file the day's work. The crew and the weather fill in on their own.",
+        {...emptyFor(offline, "thing.reports", {
+          title: "reports.empty.title",
+          description: "reports.empty.body",
         })}
       />
 

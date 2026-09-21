@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
+import { useT } from "@/lib/i18n";
 import { colors, typography } from "@/lib/theme";
 import { tokenOrNull } from "@/lib/clerk-token";
 import { jobNames, statusOf, toOutboxItem, triesLeft, describeRefused, type OutboxItem } from "@/lib/outbox";
@@ -37,6 +38,7 @@ import { useStableGetToken } from "@/lib/use-stable-get-token";
  * decisions available — put it back on the queue, or let it go.
  */
 export default function OutboxScreen() {
+  const { t } = useT();
   const getToken = useStableGetToken();
   const [items, setItems] = useState<OutboxItem[]>([]);
   const [refused, setRefused] = useState<RefusedOp[]>([]);
@@ -67,12 +69,12 @@ export default function OutboxScreen() {
     await sendNow();
     const token = await tokenOrNull(getToken);
     if (!token) {
-      setNote("Still no connection. Everything here is kept until there is.");
+      setNote(t("outbox.stillOffline"));
     } else {
       try {
         await flushQueue(token);
       } catch {
-        setNote("Sign-in expired — open any screen to sign in again, then send.");
+        setNote(t("outbox.signInAgain"));
       }
     }
     await load();
@@ -85,14 +87,14 @@ export default function OutboxScreen() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       {nothingHeld ? (
         <EmptyState
-          title="Everything on this phone has reached the office."
-          description="Anything you save with no signal waits here until it can go up, and this screen tells you which."
+          title={t("outbox.empty.title")}
+          description={t("outbox.empty.body")}
         />
       ) : null}
 
       {items.length > 0 ? (
         <>
-          <Text style={styles.heading}>Waiting to send</Text>
+          <Text style={styles.heading}>{t("outbox.waiting")}</Text>
           {items.map((item) => (
             <Card key={item.opId}>
               <Text style={styles.title}>{item.title}</Text>
@@ -101,8 +103,8 @@ export default function OutboxScreen() {
               {item.attempts > 0 ? (
                 <Text style={styles.detail}>
                   {triesLeft(item) === 1
-                    ? "One more try, then it moves to Needs attention."
-                    : `${triesLeft(item)} more tries, then it moves to Needs attention.`}
+                    ? t("outbox.triesLeft.one")
+                    : t("outbox.triesLeft.many", { count: triesLeft(item) })}
                 </Text>
               ) : null}
               <View style={styles.row}>
@@ -113,7 +115,7 @@ export default function OutboxScreen() {
                     await load();
                   }}
                 >
-                  Remove
+                  {t("outbox.remove")}
                 </Button>
               </View>
             </Card>
@@ -123,17 +125,15 @@ export default function OutboxScreen() {
 
       {refused.length > 0 ? (
         <>
-          <Text style={styles.heading}>Needs attention</Text>
-          <Text style={styles.detail}>
-            The server read these and said no. They will not go up on their own.
-          </Text>
+          <Text style={styles.heading}>{t("outbox.needsAttention")}</Text>
+          <Text style={styles.detail}>{t("outbox.needsAttention.body")}</Text>
           {refused.map((entry, index) => {
             const { title, detail } = describeRefused(entry, names);
             return (
               <Card key={`${entry.at}-${index}`}>
                 <Text style={styles.title}>{title}</Text>
                 <Text style={styles.detail}>{detail}</Text>
-                <Text style={styles.refused}>The server said: “{entry.error}”</Text>
+                <Text style={styles.refused}>{t("outbox.serverSaid", { error: entry.error })}</Text>
               </Card>
             );
           })}
@@ -145,7 +145,7 @@ export default function OutboxScreen() {
                 await load();
               }}
             >
-              Put them back on
+              {t("outbox.putBack")}
             </Button>
             <Button
               variant="secondary"
@@ -154,7 +154,7 @@ export default function OutboxScreen() {
                 await load();
               }}
             >
-              Let them go
+              {t("outbox.letGo")}
             </Button>
           </View>
         </>
@@ -164,7 +164,7 @@ export default function OutboxScreen() {
 
       {items.length > 0 ? (
         <Button fullWidth disabled={busy} onPress={send}>
-          {busy ? "Sending…" : "Send now"}
+          {busy ? t("outbox.sending") : t("outbox.sendNow")}
         </Button>
       ) : null}
     </ScrollView>

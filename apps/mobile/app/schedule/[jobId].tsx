@@ -84,9 +84,9 @@ export default function ScheduleScreen() {
             ))}
           </Card>
         )}
-        {...emptyFor(offline, "the schedule", {
-          title: "Nobody is scheduled on this job.",
-          description: "Days are planned on the web, under Deployment.",
+        {...emptyFor(offline, "thing.schedule", {
+          title: "schedule.empty.title",
+          description: "schedule.empty.body",
         })}
       />
     </View>

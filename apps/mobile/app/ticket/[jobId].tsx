@@ -14,6 +14,7 @@ import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
+import { useT } from "@/lib/i18n";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -30,6 +31,7 @@ function localToday(): string {
 }
 
 export default function TicketScreen() {
+  const { t } = useT();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [tickets, setTickets] = useState<TmTicket[]>([]);
@@ -83,7 +85,7 @@ export default function TicketScreen() {
 
   return (
     <View style={styles.screen}>
-      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      {pending > 0 ? <Text style={styles.pending}>{t("common.pendingSync", { count: pending })}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <OfflineNote state={offline} />
       <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
@@ -108,9 +110,9 @@ export default function TicketScreen() {
             ) : null}
           </Card>
         )}
-        {...emptyFor(offline, "the T&M tickets", {
-          title: "No T&M tickets",
-          description: "Tap “New ticket” to document and sign the day's extra work.",
+        {...emptyFor(offline, "thing.tickets", {
+          title: "tickets.empty.title",
+          description: "tickets.empty.body",
         })}
       />
 

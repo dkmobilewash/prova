@@ -17,6 +17,7 @@ import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
 import { tokenOrNull } from "@/lib/clerk-token";
 import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
+import { useT } from "@/lib/i18n";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import {
@@ -102,6 +103,7 @@ function formatElapsed(ms: number): string {
 }
 
 export default function TimeScreen() {
+  const { t } = useT();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [entries, setEntries] = useState<TimeEntry[]>([]);
@@ -531,7 +533,7 @@ export default function TimeScreen() {
   return (
     <View style={styles.screen}>
       <JobSections jobId={jobId} active="time" />
-      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      {pending > 0 ? <Text style={styles.pending}>{t("common.pendingSync", { count: pending })}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <OfflineNote state={offline} />
       <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
@@ -602,7 +604,7 @@ export default function TimeScreen() {
               <Text style={styles.date}>{item.date}</Text>
               <Text style={styles.hours}>{item.hours}h</Text>
             </View>
-            {item.id.startsWith("local-") ? <Text style={styles.syncing}>Syncing…</Text> : null}
+            {item.id.startsWith("local-") ? <Text style={styles.syncing}>{t("common.syncing")}</Text> : null}
             {signedByDate.get(item.date) ? (
               <Text style={styles.signed}>
                 {signedByDate.get(item.date)!.state === "APPROVED" ? "Approved" : "Signed"} · locked
@@ -622,9 +624,9 @@ export default function TimeScreen() {
             {item.note ? <Text style={styles.note}>{item.note}</Text> : null}
           </Card>
         )}
-        {...emptyFor(offline, "the hours", {
-          title: "No time logged",
-          description: "Tap “Log time” to record the day's hours.",
+        {...emptyFor(offline, "thing.time", {
+          title: "time.empty.title",
+          description: "time.empty.body",
         })}
       />
 

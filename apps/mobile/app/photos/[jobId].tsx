@@ -32,6 +32,7 @@ import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
 import { tokenOrNull } from "@/lib/clerk-token";
 import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
+import { useT } from "@/lib/i18n";
 import { colors, typography } from "@/lib/theme";
 import type { Media, MediaTag, PunchListItem } from "@/lib/types";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
@@ -64,6 +65,7 @@ type Shot = {
 };
 
 export default function PhotosScreen() {
+  const { t } = useT();
   // `punchListItemId` arrives when the punch list sent us here to
   // photograph a specific fix, so the attachment is already chosen by the
   // time the sheet opens — the prompt that offered it would be a lie if it
@@ -293,7 +295,7 @@ export default function PhotosScreen() {
           item.kind === "pending" ? (
             <Card>
               <Image source={{ uri: item.uri }} style={styles.photo} resizeMode="cover" />
-              <Text style={styles.syncing}>Syncing…</Text>
+              <Text style={styles.syncing}>{t("common.syncing")}</Text>
               <Text style={styles.meta}>{item.capturedAt.slice(0, 10)}</Text>
             </Card>
           ) : (
@@ -323,10 +325,9 @@ export default function PhotosScreen() {
             </Card>
           )
         }
-        {...emptyFor(offline, "the photos", {
-          title: "No photos yet",
-          description:
-            "Tap “Take photo”. Each one is stamped with the time and place it was taken, and goes up when there's signal.",
+        {...emptyFor(offline, "thing.photos", {
+          title: "photos.empty.title",
+          description: "photos.empty.body",
         })}
       />
 
@@ -378,8 +379,8 @@ export default function PhotosScreen() {
       <Sheet
         visible={shot !== null}
         onClose={() => setShot(null)}
-        title="Save photo"
-        primaryLabel="Save photo"
+        title={t("photos.sheet.title")}
+        primaryLabel={t("photos.sheet.save")}
         onPrimary={save}
         primaryDisabled={busy !== null}
       >

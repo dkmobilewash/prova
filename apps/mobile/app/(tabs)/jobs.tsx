@@ -75,9 +75,9 @@ export default function JobsScreen() {
             </Card>
           </Pressable>
         )}
-        {...emptyFor(offline, "the job list", {
-          title: "No jobs yet",
-          description: "Jobs appear here once they're created in the office.",
+        {...emptyFor(offline, "thing.jobs", {
+          title: "jobs.empty.title",
+          description: "jobs.empty.body",
         })}
       />
     </View>

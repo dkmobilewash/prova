@@ -191,9 +191,9 @@ export default function DrawingsScreen() {
             })}
           </Card>
         )}
-        {...emptyFor(offline, "the drawings", {
-          title: "No drawing sets on this job.",
-          description: "Sets and revisions are recorded on the web, off the transmittal.",
+        {...emptyFor(offline, "thing.drawings", {
+          title: "drawings.empty.title",
+          description: "drawings.empty.body",
         })}
       />
 

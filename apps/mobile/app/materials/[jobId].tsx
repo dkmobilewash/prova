@@ -12,6 +12,7 @@ import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { emptyFor } from "@/lib/empty-state";
 import { OfflineNote } from "@/components/OfflineNote";
+import { useT } from "@/lib/i18n";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -20,6 +21,7 @@ import { useSync } from "@/lib/use-sync";
 import type { MaterialOrder, Vendor } from "@/lib/types";
 
 export default function MaterialsScreen() {
+  const { t } = useT();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [orders, setOrders] = useState<MaterialOrder[]>([]);
@@ -84,7 +86,7 @@ export default function MaterialsScreen() {
 
   return (
     <View style={styles.screen}>
-      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      {pending > 0 ? <Text style={styles.pending}>{t("common.pendingSync", { count: pending })}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <OfflineNote state={offline} />
       <List
@@ -103,9 +105,9 @@ export default function MaterialsScreen() {
             </Text>
           </Card>
         )}
-        {...emptyFor(offline, "the material orders", {
-          title: "Nothing on order",
-          description: "Tap “Add order” to log a material delivery.",
+        {...emptyFor(offline, "thing.materials", {
+          title: "materials.empty.title",
+          description: "materials.empty.body",
         })}
       />
 

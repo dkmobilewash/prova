@@ -1,4 +1,5 @@
 import { StyleSheet, Text } from "react-native";
+import { t } from "@/lib/i18n";
 import { colors, typography } from "@/lib/theme";
 
 /**
@@ -15,10 +16,7 @@ export function OfflineNote({ state }: { state: string | "nothing" | null }) {
   if (!state) return null;
   if (state === "nothing") {
     return (
-      <Text style={styles.nothing}>
-        Can&apos;t load this right now, and this phone hasn&apos;t loaded it before. Anything you add is
-        kept and sent when you&apos;re back in range.
-      </Text>
+      <Text style={styles.nothing}>{t("offline.nothing")}</Text>
     );
   }
   return <Text style={styles.stale}>{state}</Text>;
