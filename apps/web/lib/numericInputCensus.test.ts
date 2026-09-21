@@ -38,6 +38,30 @@
  *   - and the stale-exception checks fired for real during development:
  *     two ROSTER_ADDITIONS lines were true when written and false ten
  *     minutes later, and this file named both.
+ *
+ * ────────────────────────────────────────────────────────────────────────
+ * AND A THIRD THING TO ASSERT, WHICH SIZE AND SCOPE TOGETHER STILL MISS.
+ *
+ * Added after this file merged, by mutating it rather than reading it —
+ * a check nobody has seen fail is a check nobody should trust. Two
+ * mutations of the input scanner came back GREEN on `main`:
+ *
+ *   - losing exactly ONE `<input>` repo-wide. The count above is a
+ *     TOLERANCE BAND (`<= raw`, `> raw * 0.8`), and a band cannot see a
+ *     loss smaller than the band;
+ *   - removing `withoutComments()` from the tag walk. The count barely
+ *     moves, so nothing downstream noticed — while ELEVEN tags in this
+ *     repo parse differently without it, because JSX allows a `//`
+ *     comment between attributes and this codebase uses that heavily to
+ *     explain why an attribute is ABSENT. `BackchargeRow.tsx` says
+ *     "Deliberately NO max={claimed}, and now no `type="number"`", and a
+ *     raw parse reads that as an element which HAS both.
+ *
+ * So: SIZE answers "did the pattern stop matching". SCOPE answers "was I
+ * looking everywhere". NEITHER answers "did the parse MEAN anything", and
+ * that is a third question with its own two cases under "the input
+ * scanner sees every input" — exact accounting instead of a band, and a
+ * control that fails if comment stripping ever stops changing the answer.
  */
 
 import { execFileSync } from "node:child_process";
@@ -343,7 +367,14 @@ function nameOfInput(attrs: string): { name: string; literal: boolean } {
 /** The attributes of one `<input …>` tag, braces collapsed so an arrow's
  * `>` inside `{…}` does not end the tag early. */
 function inputTags(source: string): string[] {
-  const code = withoutComments(source);
+  return inputTagsFrom(withoutComments(source));
+}
+
+/** The walk itself, over whatever text it is handed. Split out from
+ * `inputTags` so the comment-stripping check further down can run the SAME
+ * walk over raw source — two copies of this loop would eventually drift and
+ * start agreeing for the wrong reason. */
+function inputTagsFrom(code: string): string[] {
   const tags: string[] = [];
   for (const match of code.matchAll(/<input\b/g)) {
     let depth = 0;
@@ -400,7 +431,129 @@ describe("the input scanner sees every input", () => {
     // order of magnitude below it is a pattern that stopped matching.
     expect(mine, "the scanner's count collapsed against git's").toBeGreaterThan(raw * 0.8);
   });
+
+  /**
+   * THE BAND ABOVE ANSWERS "DID THE PATTERN STOP MATCHING". IT CANNOT ANSWER
+   * "DID THE PARSE MEAN ANYTHING", AND THE TWO CASES BELOW ARE WHY THAT
+   * DISTINCTION IS NOT PEDANTRY.
+   *
+   * Both were found by mutating THIS file after it merged, on the principle
+   * that a check nobody has seen fail is a check nobody should trust. Two
+   * mutations came back GREEN:
+   *
+   *   1. dropping exactly ONE `<input>` repo-wide. `mine <= raw` still holds
+   *      and `mine > raw * 0.8` still holds, so a walk that loses a single
+   *      element — the realistic failure, one tag with an attribute shape the
+   *      walker mishandles — is invisible. A tolerance band cannot see a loss
+   *      smaller than the tolerance;
+   *   2. removing `withoutComments()` from `inputTags`. The count barely
+   *      moves, so nothing downstream notices.
+   *
+   * The second is the dangerous one, and it is dangerous by measurement
+   * rather than in principle. With stripping removed, ELEVEN tags in this
+   * repo parse differently, because JSX permits a `//` comment BETWEEN
+   * ATTRIBUTES and this codebase uses that heavily to explain why an
+   * attribute is absent — `BackchargeRow.tsx`'s "Deliberately NO
+   * max={claimed}, and now no `type="number"`" is the clearest case, and a
+   * raw parse reads it as an element that HAS `max` and `type="number"`.
+   *
+   * And `JobMediaCard.tsx` is worse than a wrong attribute: it carries a
+   * commented-out `<input type="checkbox">`, so a raw walk finds 5 tags where
+   * there are 4 and every later tag in that file is attributed the previous
+   * one's attributes. Silent index shift, correct-looking count.
+   */
+  it("loses no single input — the band above cannot see a loss of one", () => {
+    // Exact accounting rather than a tolerance: every `<input` in the raw
+    // bytes is either a tag this scanner parsed, or is demonstrably inside a
+    // comment. Nothing is allowed to be neither.
+    let parsed = 0;
+    let insideComment = 0;
+    let rawOccurrences = 0;
+    for (const [, source] of sources()) {
+      parsed += inputTags(source).length;
+      const blanked = blankKeepingOffsets(source);
+      for (const m of source.matchAll(/<input\b/g)) {
+        rawOccurrences++;
+        // Offsets are preserved, so a position whose character changed is a
+        // position inside a comment.
+        if (blanked[m.index] !== source[m.index]) insideComment++;
+      }
+    }
+    expect(
+      parsed + insideComment,
+      `Every <input> must be accounted for: ${parsed} parsed + ${insideComment} inside comments ` +
+        `should equal the ${rawOccurrences} in the raw source. A shortfall means the walk is ` +
+        `dropping elements, which the count band above is too loose to see.`,
+    ).toBe(rawOccurrences);
+  });
+
+  it("still depends on comment stripping, and would parse differently without it", () => {
+    // Asserted from the other end: not "are comments stripped" (which would
+    // just restate the implementation) but "does stripping still CHANGE the
+    // answer". If somebody removes `withoutComments` from `inputTags`, the
+    // first expectation fails. If the repo ever stops putting comments inside
+    // opening tags, the second one fails and says this check has gone vacuous
+    // rather than passing on an empty question.
+    let differing = 0;
+    const examples: string[] = [];
+    for (const [path, source] of sources()) {
+      const stripped = inputTags(source);
+      const rawParse = inputTagsFrom(source);
+      if (stripped.length !== rawParse.length) {
+        differing++;
+        examples.push(`${path}: ${stripped.length} tags stripped vs ${rawParse.length} raw`);
+        continue;
+      }
+      for (let i = 0; i < stripped.length; i++) {
+        if (stripped[i] !== rawParse[i]) {
+          differing++;
+          if (examples.length < 5) examples.push(`${path} tag#${i}`);
+        }
+      }
+    }
+    expect(
+      differing,
+      "No <input> in the repo is parsed differently with and without comment stripping any more, " +
+        "so this check can no longer tell one from the other and is vacuous. Give it a fixture " +
+        "or delete it — do not leave it passing on an empty question.",
+    ).toBeGreaterThanOrEqual(1);
+
+    // A commented-out `<input>` must never become a tag, because it shifts
+    // every later tag in that file onto the previous one's attributes.
+    const phantom = [...sources()].filter(([, s]) => inputTags(s).length !== countRealInputs(s));
+    expect(
+      phantom.map(([p]) => p),
+      `These files parse a different number of tags than they have real (non-commented) <input> ` +
+        `elements, so tag N is carrying tag N-1's attributes: ${phantom.map(([p]) => p).join(", ")}`,
+    ).toEqual([]);
+  });
 });
+
+/**
+ * Comments blanked PRESERVING EVERY OFFSET — same characters replaced by
+ * spaces, so position `i` still means position `i`.
+ *
+ * `withoutComments` above preserves the LINE COUNT, which is what the
+ * pattern-matching tests need in order to report a line number. It does not
+ * preserve length: it deletes the comment's characters. The two checks below
+ * ask "is the `<input` at THIS OFFSET inside a comment", which needs offsets
+ * to line up — an earlier draft used `withoutComments` for that and reported
+ * 438 of 441 inputs as commented out. Two helpers, two different jobs.
+ */
+function blankKeepingOffsets(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
+    .replace(/(^|[^:])\/\/[^\n]*/g, (all, lead: string) => lead + " ".repeat(all.length - lead.length));
+}
+
+/** Real, non-commented `<input` occurrences — counted by blanking rather than
+ * by walking, so it cannot fail the same way the walker does. */
+function countRealInputs(source: string): number {
+  const blanked = blankKeepingOffsets(source);
+  let n = 0;
+  for (const m of source.matchAll(/<input\b/g)) if (blanked[m.index] === source[m.index]) n++;
+  return n;
+}
 
 /**
  * Inputs NOT fixed by this change, each with the reason and what is left.
