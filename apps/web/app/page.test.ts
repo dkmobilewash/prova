@@ -14,6 +14,10 @@
  *    in the second describe block below, the same proof /pilot's test
  *    uses: a passing render with nothing mocked out is the evidence the
  *    page makes no hidden auth call, not just an assertion that it doesn't.
+ *
+ * Section-level checks (order, CTA count, the reveal-motion count) belong
+ * here rather than in CapabilitiesSection.test.ts, which covers the
+ * capabilities presentation on its own.
  */
 
 import { createElement } from "react";
@@ -72,8 +76,12 @@ describe("/ landing content renders signed out, with no auth call of its own", (
     }
   });
 
-  it("sends a new visitor to /sign-up and an existing one to /sign-in, more than once", () => {
-    expect(html.match(/href="\/sign-up"/g)?.length).toBe(2);
+  it("repeats the primary CTA at three placements — nav, hero, closing section", () => {
+    expect(html.match(/href="\/sign-up"/g)?.length).toBe(3);
+    // Sign in appears wherever sign up does except the nav (an existing
+    // tester has no reason for a nav-level sign-up button to matter to
+    // them, and the nav's job is to get a new visitor moving) — hero and
+    // the closing section, so two.
     expect(html.match(/href="\/sign-in"/g)?.length).toBe(2);
   });
 
@@ -85,10 +93,53 @@ describe("/ landing content renders signed out, with no auth call of its own", (
     expect(html).not.toMatch(/trusted by|hundreds of|thousands of|customers love|5 star|testimonial/i);
   });
 
-  it("covers the sections the page was rebuilt for", () => {
+  it("covers every section the page was rebuilt for", () => {
+    expect(html).toContain("C Stream is new");
+    expect(html).toContain("The old way, and the C Stream way");
     expect(html).toContain("What it does");
     expect(html).toContain("Not generic construction software");
-    expect(html).toContain("C Stream is new");
+    expect(html).toContain("See it on your own job");
+  });
+
+  it("orders sections hero, proof, contrast, features, objection, closing CTA — matching the brief", () => {
+    const order = [
+      "The job-site system for union specialty-trade subcontractors.", // hero
+      "C Stream is new", // proof
+      "The old way, and the C Stream way", // problem/contrast
+      "What it does", // features
+      "Not generic construction software", // objection handling
+      "See it on your own job", // closing CTA
+    ];
+    const positions = order.map((text) => html.indexOf(text));
+    for (const p of positions) expect(p).toBeGreaterThan(-1);
+    for (let i = 1; i < positions.length; i++) {
+      expect(positions[i]).toBeGreaterThan(positions[i - 1]);
+    }
+  });
+
+  it("the hero renders before any reveal-motion wrapper — nothing above the fold fades in", () => {
+    const heroIndex = html.indexOf("The job-site system for union specialty-trade subcontractors.");
+    const firstReveal = html.indexOf("data-reveal=");
+    expect(heroIndex).toBeGreaterThan(-1);
+    expect(firstReveal).toBeGreaterThan(-1);
+    expect(heroIndex).toBeLessThan(firstReveal);
+  });
+
+  it("wraps exactly the five below-the-fold sections in reveal motion — proof, contrast, features, objection, closing", () => {
+    expect((html.match(/data-reveal="idle"/g) ?? []).length).toBe(5);
+  });
+
+  it("the old-way/new-way contrast names five concrete pains and backs each with a real capability", () => {
+    // Old-way lines describe a process, never invent a statistic.
+    expect(html).not.toMatch(/\d+%|\d+\s*(minutes?|hours?|days?)\s+(saved|per|of)/i);
+    for (const line of [
+      "Certified payroll is assembled by hand",
+      "Certified payroll generates from the hours your crew already logged",
+      "RFIs and submittals live in an email thread",
+      "RFIs and submittals are numbered, dated and never reissued",
+    ]) {
+      expect(html).toContain(line);
+    }
   });
 
   it("has working privacy and terms links", () => {

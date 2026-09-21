@@ -17,10 +17,101 @@ body {
   background-color: theme("colors.brand / 50%");
 }
 
+/* Motion tokens for the public landing page (components/LandingPage.tsx,
+   Reveal.tsx, CapabilitiesSection.tsx) — defined once, next to nothing else
+   in this file, and referenced everywhere motion or a transition needs a
+   curve or a duration rather than each spot picking its own. A page where
+   every transition shares a small, fixed set of curves reads as coherent;
+   scattering ad-hoc cubic-beziers through a stylesheet is what stops it
+   from reading that way, so this file has exactly two of them.
+   `--ease-landing` is the general curve (content easing to rest, e.g. the
+   scroll-reveal below); `--ease-landing-snap` is a faster-decelerating
+   "snap" reserved for brief interactive feedback (button hover). Both are
+   scoped to :root rather than tailwind.config.ts on purpose — additive
+   custom properties nothing else reads, so this page's motion pass cannot
+   regress a class used anywhere else in the app. */
+:root {
+  --ease-landing: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-landing-snap: cubic-bezier(0.16, 1, 0.3, 1);
+  --speed-fast: 200ms;
+  --speed-slow: 500ms;
+}
+
 /* "Walk me through this page" scrolls each highlighted element into view.
    A little room above and below, so the highlight ring drawn 6px outside
    the element is not cut off by the edge of the scrolling area. */
 [data-tour] {
   scroll-margin-top: 1rem;
   scroll-margin-bottom: 1rem;
+}
+
+/* Landing page reveal motion (components/Reveal.tsx). Restated here rather
+   than trusted from memory: content must be visible AT REST, and hidden
+   only after Reveal's own IntersectionObserver has positively confirmed an
+   element is off-screen — never by default. So "idle" (the state a server
+   render and a browser with no JS both produce) and "visible" render
+   IDENTICALLY, full opacity with no transform; only "pending" is ever
+   hidden, and that selector lives entirely inside this media query, so a
+   bug in the JS layer still cannot hide or move anything for a reader who
+   has asked for reduced motion. Two independent tests hold this shape:
+   components/Reveal.test.ts (the JS never leaves "idle" under reduced
+   motion) and app/globals.reveal.test.ts (this block cannot silently move
+   outside the media query or lose the selector it's meant to gate). */
+@media (prefers-reduced-motion: no-preference) {
+  [data-reveal="pending"] {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  [data-reveal="visible"] {
+    transition:
+      opacity var(--speed-slow) var(--ease-landing),
+      transform var(--speed-slow) var(--ease-landing);
+  }
+}
+
+/* The capability scroller (components/LandingPage.tsx): a real horizontal
+   scroll container with CSS snap and native momentum — no JS runs the
+   scrolling itself, so every card stays reachable by touch, trackpad or
+   keyboard even with JS disabled entirely. The scrollbar is hidden only
+   visually; the element underneath is unchanged and still focusable. */
+.landing-scroller {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+.landing-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+/* The desktop capability switcher (components/CapabilitiesSection.tsx):
+   plain <details name="capability"> elements, not a JS tab component — the
+   browser already treats same-named <details> as mutually exclusive, so
+   clicking a label, tabbing to one and pressing Enter/Space, and reading it
+   with no JS at all all work identically. `display: contents` on each
+   <details> takes only the wrapper out of the grid box model; its
+   <summary> and content still lay out as direct grid children, one column
+   of labels beside one (single, currently-open) content block. No opacity
+   or transform animates the open/close itself — the panel is either shown
+   or not, so there is nothing here for prefers-reduced-motion to gate.
+   Only the label's own hover/open colour changes, a state style rather
+   than motion. */
+.landing-tabs summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  color: theme("colors.ink-body");
+  transition: color var(--speed-fast) var(--ease-landing-snap), background-color var(--speed-fast) var(--ease-landing-snap);
+}
+.landing-tabs summary::-webkit-details-marker {
+  display: none;
+}
+.landing-tabs summary:hover {
+  background-color: theme("colors.surface");
+  color: theme("colors.ink");
+}
+.landing-tabs details[open] > summary {
+  background-color: theme("colors.surface");
+  color: theme("colors.ink");
+  font-weight: 600;
 }
