@@ -86,6 +86,19 @@ const day = (offsetDays) => {
 };
 const iso = (d) => d.toISOString().slice(0, 10);
 
+/**
+ * A sequence counter only ever goes UP — including when this seed sets one.
+ *
+ * `max(number)` over the surviving rows is the right value for a job this run
+ * just created, and can be the WRONG one for a job that already had a
+ * counter: change-order drafts are deletable (`deleteChangeOrderDraft`), so a
+ * job's highest surviving number can sit below the highest it ever issued,
+ * and writing that back down reissues a number a GC has already been quoted.
+ * Only reachable under `--force`, which seeds on top of an existing set —
+ * which is to say, on the one run nobody is watching closely.
+ */
+const raise = (existing, highest) => Math.max(existing ?? 0, highest);
+
 async function main() {
   const company = process.env.SEED_COMPANY_ID
     ? await prisma.company.findUnique({ where: { id: process.env.SEED_COMPANY_ID } })
@@ -400,6 +413,48 @@ async function main() {
     ],
   });
 
+  // THE COUNTER THOSE NUMBERS CAME FROM. Without this the demo dataset
+  // shipped invoices #1, #1 and #2 and no InvoiceCounter row at all, and
+  // "Create invoice" was PERMANENTLY dead on every seeded job — not flaky,
+  // permanently. `issueInvoiceNumber` upserts `lastNumber: 1`, the insert
+  // collides with the seeded #1 on @@unique([jobId, number]), and because the
+  // bump and the insert are one `$transaction` the counter rolls back with
+  // it. So the next attempt issues 1 again, and the next, forever. Demo
+  // project and previews only — production seeds nothing — which is to say
+  // it was broken in exactly the two places testers land.
+  //
+  // DERIVED FROM THE ROWS, not written as a literal, and that is the part
+  // worth keeping: the six counters this file already seeded were right for
+  // months while these two were missing, because each one is a hand-written
+  // number sitting next to the rows it has to agree with. Adding a fourth
+  // invoice above cannot leave this behind.
+  //
+  // Written out longhand, naming `prisma.invoiceCounter.upsert` literally,
+  // rather than through a `prisma[accessor]` helper shared with the change
+  // orders below. A dynamic accessor is invisible to a source scan, and the
+  // guard that now polices this file (apps/web/lib/counterCensus.test.ts) is
+  // a source scan — a helper here would have fixed the seed and left the
+  // guard unable to see the fix, which is the shape this repo keeps paying
+  // for.
+  for (const group of await prisma.invoice.groupBy({
+    by: ["jobId"],
+    where: { job: { companyId: company.id, name: { contains: MARK } } },
+    _max: { number: true },
+  })) {
+    const highest = group._max.number;
+    if (highest == null) continue;
+    const existing = await prisma.invoiceCounter.findUnique({
+      where: { jobId: group.jobId },
+      select: { lastNumber: true },
+    });
+    const lastNumber = raise(existing?.lastNumber, highest);
+    await prisma.invoiceCounter.upsert({
+      where: { jobId: group.jobId },
+      create: { jobId: group.jobId, lastNumber },
+      update: { lastNumber },
+    });
+  }
+
   // ---------------------------------------------------------- field reports
   // A fortnight of days with a deliberate gap: the missing-day banner and
   // the week summary are the whole point of that page and both need holes
@@ -508,6 +563,30 @@ async function main() {
       currentEstimatedUnitCost: "4.35",
     },
   });
+
+  // Same defect, same fix, one section up: `issueChangeOrderNumber` would
+  // have issued 1 against a seeded CO #1 and rolled its own bump back on the
+  // unique violation. "New change order" was dead on the demo job for the
+  // same reason "Create invoice" was — ChangeOrder carries the same
+  // @@unique([jobId, number]).
+  for (const group of await prisma.changeOrder.groupBy({
+    by: ["jobId"],
+    where: { job: { companyId: company.id, name: { contains: MARK } } },
+    _max: { number: true },
+  })) {
+    const highest = group._max.number;
+    if (highest == null) continue;
+    const existing = await prisma.changeOrderCounter.findUnique({
+      where: { jobId: group.jobId },
+      select: { lastNumber: true },
+    });
+    const lastNumber = raise(existing?.lastNumber, highest);
+    await prisma.changeOrderCounter.upsert({
+      where: { jobId: group.jobId },
+      create: { jobId: group.jobId, lastNumber },
+      update: { lastNumber },
+    });
+  }
 
   // --------------------------------------------------------------- submittals
   // Numbers come from the counter row, never from a count of surviving
