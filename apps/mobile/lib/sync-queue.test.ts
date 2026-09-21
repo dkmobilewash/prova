@@ -75,7 +75,8 @@ vi.mock("./api", () => ({
   },
 }));
 
-const { enqueue, flushQueue, pendingCount, listRefused } = await import("./sync-queue");
+const { enqueue, flushQueue, pendingCount, listRefused, listQueued, removeQueued, sendNow, MAX_ATTEMPTS } =
+  await import("./sync-queue");
 
 beforeEach(() => {
   store.clear();
@@ -181,5 +182,97 @@ describe("what the queue does with a failure", () => {
     const refused = await listRefused();
     expect(refused).toHaveLength(1);
     expect(refused[0].error).toBe("Punch list item not found");
+  });
+});
+
+/**
+ * GAP 6, the head-of-line block. Written from the audit's own words:
+ * "One op that fails permanently blocks every write queued behind it,
+ * forever… The teardown's OFF-32 is written against exactly this: never
+ * drop time, and never let it be blocked behind something else."
+ *
+ * Half of it was already fixed when #382 added the refused list: a 4xx
+ * the server will give again is set aside and the drain continues. The
+ * half that was still live is the one below — a write the SERVER answers
+ * with a 500, over and over. That hit `break`, so a day of time could sit
+ * behind a photo the server would not take, with no attempt count, no
+ * backoff, no way to see it and no way to remove it.
+ */
+describe("one write the server keeps refusing", () => {
+  it("does not hold the writes queued behind it", async () => {
+    await enqueue({ type: "punch-list:create", jobId: "job_1", clientOperationId: "op_bad", description: "Bad one" });
+    await enqueue({ type: "punch-list:status", jobId: "job_1", itemId: "item_9", status: "READY_FOR_REVIEW" });
+
+    // ONLY the first write 500s; the second is perfectly sendable, which
+    // is the whole question — does the queue ever get to it.
+    failNext = () => {
+      failNext = null;
+      throw new FakeApiError("Something went wrong", 500);
+    };
+
+    await flushQueue("token");
+
+    // THE POINT: the good write went up on the same pass.
+    expect(sent).toEqual(["create:Bad one", "status:item_9:READY_FOR_REVIEW"]);
+    expect(await pendingCount()).toBe(1);
+  });
+
+  it("backs off rather than hammering the radio, and says what happened", async () => {
+    await enqueue({ type: "punch-list:status", jobId: "job_1", itemId: "item_9", status: "READY_FOR_REVIEW" });
+    failNext = () => {
+      throw new FakeApiError("Something went wrong", 500);
+    };
+    await flushQueue("token");
+
+    const [queued] = await listQueued();
+    expect(queued.attempts).toBe(1);
+    expect(queued.lastError).toBe("Something went wrong");
+    expect(Date.parse(queued.nextTryAt!)).toBeGreaterThan(Date.now());
+
+    // A second flush inside the backoff window does not send it again.
+    sent.length = 0;
+    await flushQueue("token");
+    expect(sent).toEqual([]);
+  });
+
+  it("sets it aside after five server refusals, with what the server said", async () => {
+    await enqueue({ type: "punch-list:status", jobId: "job_1", itemId: "item_9", status: "READY_FOR_REVIEW" });
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      await sendNow(); // clear the backoff, as the outbox's button does
+      failNext = () => {
+        throw new FakeApiError("Something went wrong", 500);
+      };
+      await flushQueue("token");
+    }
+
+    expect(await pendingCount()).toBe(0);
+    const [refused] = await listRefused();
+    expect(refused.error).toBe("Something went wrong (tried 5 times)");
+    expect(refused.status).toBe(500);
+  });
+
+  it("does not count a basement as an attempt", async () => {
+    // A phone carried through a job with no signal must not arrive with
+    // its writes in "needs attention" for never having reached anybody.
+    await enqueue({ type: "punch-list:status", jobId: "job_1", itemId: "item_9", status: "READY_FOR_REVIEW" });
+
+    for (let pass = 0; pass < MAX_ATTEMPTS + 3; pass++) {
+      failNext = () => {
+        throw new TypeError("Network request failed");
+      };
+      await flushQueue("token");
+    }
+
+    expect(await pendingCount()).toBe(1);
+    expect(await listRefused()).toEqual([]);
+    expect((await listQueued())[0].attempts).toBe(0);
+  });
+
+  it("can be taken off the queue by hand, which nothing could do before", async () => {
+    await enqueue({ type: "punch-list:create", jobId: "job_1", clientOperationId: "op_1", description: "Bad one" });
+    const [queued] = await listQueued();
+    await removeQueued(queued.opId);
+    expect(await pendingCount()).toBe(0);
   });
 });

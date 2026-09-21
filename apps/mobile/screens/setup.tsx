@@ -76,6 +76,18 @@ vi.mock("react-native-view-shot", () => ({
   captureRef: async () => "file:///stamped.jpg",
 }));
 
+vi.mock("expo-notifications", () => ({
+  SchedulableTriggerInputTypes: { DATE: "date" },
+  setNotificationHandler: () => {},
+  getPermissionsAsync: async () => ({ granted: false }),
+  requestPermissionsAsync: async () => ({ granted: false }),
+  getExpoPushTokenAsync: async () => ({ data: "ExponentPushToken[test]" }),
+  scheduleNotificationAsync: async () => "id_1",
+  cancelScheduledNotificationAsync: async () => {},
+}));
+
+vi.mock("expo-device", () => ({ isDevice: false }));
+
 vi.mock("expo-sharing", () => ({ isAvailableAsync: async () => false, shareAsync: async () => {} }));
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: async () => ({ type: "dismiss" }) }));
 

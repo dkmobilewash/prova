@@ -35,6 +35,13 @@ export const ICON_GLYPHS = {
   drawings: ["map-outline", "map"],
   schedule: ["calendar-outline", "calendar"],
 
+  /** Waiting to send. An envelope rather than a cloud: what is in it is
+   * work somebody did, not a sync state. */
+  outbox: ["mail-outline", "mail"],
+
+  /** "There is more behind this row", on a settings link. */
+  chevron: ["chevron-forward", "chevron-forward"],
+
   /** The tick inside a checkbox. Both halves are the same glyph: it is
    * already inside a filled box, so a second weight would say nothing. */
   check: ["checkmark", "checkmark"],

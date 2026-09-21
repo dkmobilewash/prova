@@ -61,6 +61,7 @@ export default function RootLayout() {
         <Stack.Screen name="ticket/[jobId]" options={{ title: "T&M ticket" }} />
         <Stack.Screen name="drawings/[jobId]" options={{ title: "Drawings" }} />
         <Stack.Screen name="schedule/[jobId]" options={{ title: "Schedule" }} />
+        <Stack.Screen name="outbox" options={{ title: "Waiting to send" }} />
       </Stack>
     </ClerkProvider>
   );

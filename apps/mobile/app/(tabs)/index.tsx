@@ -126,7 +126,11 @@ export default function HomeScreen() {
                 <Pressable
                   key={line.key}
                   disabled={!line.section}
-                  onPress={() => line.section && router.push(`/${line.section}/${job.id}`)}
+                  onPress={() => {
+                    if (!line.section) return;
+                    // The outbox is about this phone, not this job.
+                    router.push(line.section === "outbox" ? "/outbox" : `/${line.section}/${job.id}`);
+                  }}
                   style={styles.line}
                 >
                   {i > 0 ? <View style={styles.divider} /> : null}

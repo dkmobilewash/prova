@@ -150,7 +150,40 @@ export type PendingOp = CreateOp | UpdateOp;
  * status change carries no clientOperationId at all (setting a status
  * twice lands on the same row), so identity could not be borrowed from it.
  */
-export type QueuedOp = PendingOp & { opId: string };
+export type QueuedOp = PendingOp & {
+  opId: string;
+  /** When this phone first held it. What the outbox orders by, and what
+   * "changes from today" is counted from. */
+  queuedAt?: string;
+  /** How many times the SERVER has answered and said no in a way that
+   * might pass later (5xx, 408, 429). A network failure is NOT an attempt:
+   * nothing reached the server, and counting a basement would push good
+   * writes into "needs attention" for being carried around a jobsite. */
+  attempts?: number;
+  /** The last thing the server said, kept so the outbox can show it
+   * rather than "failed". */
+  lastError?: string;
+  lastStatus?: number;
+  lastTriedAt?: string;
+  /** Not before this. Backoff, so one unhappy record does not spin the
+   * radio — and, crucially, so the drain can SKIP it and carry on. */
+  nextTryAt?: string;
+};
+
+/** How long after each server-side failure before this write is tried
+ * again: 15s, 30s, 1m, 2m, then 2m. */
+export const BACKOFF_MS = [15_000, 30_000, 60_000, 120_000];
+
+/** After this many server-side failures a write is set aside in "needs
+ * attention" instead of being retried forever. Chosen with Diego
+ * 2026-09-20: enough that a bad afternoon on the server does not set
+ * anything aside, few enough that a permanently bad record stops taking
+ * up a slot. */
+export const MAX_ATTEMPTS = 5;
+
+export function backoffFor(attempts: number): number {
+  return BACKOFF_MS[Math.min(attempts, BACKOFF_MS.length) - 1] ?? BACKOFF_MS[0];
+}
 
 async function read(): Promise<QueuedOp[]> {
   const raw = await AsyncStorage.getItem(KEY);
@@ -180,8 +213,30 @@ async function ensureIds(): Promise<void> {
 
 export async function enqueue(op: PendingOp): Promise<void> {
   const ops = await read();
-  ops.push({ ...op, opId: uuid() } as QueuedOp);
+  ops.push({ ...op, opId: uuid(), queuedAt: new Date().toISOString(), attempts: 0 } as QueuedOp);
   await write(ops);
+}
+
+/** Everything still waiting, oldest first — what the outbox draws. */
+export async function listQueued(): Promise<QueuedOp[]> {
+  return read();
+}
+
+/** Takes one write off the queue without sending it. The outbox's only
+ * destructive control, and it names what it is removing before it does it;
+ * a photo's file goes with it, since nothing else refers to that file. */
+export async function removeQueued(opId: string): Promise<void> {
+  const ops = await read();
+  for (const op of ops) {
+    if (op.opId === opId && op.type === "media:create") discardQueuedPhoto(op.fileUri);
+  }
+  await write(ops.filter((op) => op.opId !== opId));
+}
+
+/** Clears the backoff on everything, so "Send now" means now. */
+export async function sendNow(): Promise<void> {
+  const ops = await read();
+  await write(ops.map((op) => ({ ...op, nextTryAt: undefined })));
 }
 
 export async function pendingCount(): Promise<number> {
@@ -312,16 +367,34 @@ async function drain(token: string): Promise<void> {
   const ops = await read();
   const handled = new Set<string>();
   const refused: RefusedOp[] = [];
+  /** Per-op state changes to persist: attempts, the server's words, when
+   * to try again. Keyed by opId, applied against the CURRENT queue for the
+   * same reason `removeHandled` re-reads it. */
+  const marked = new Map<string, Partial<QueuedOp>>();
+  const now = Date.now();
+
   for (const op of ops) {
+    // NOT DUE YET — skip it and carry on down the queue. This one line is
+    // the head-of-line fix: the drain used to `break` on any failure that
+    // was not a final refusal, so a single write the server kept saying
+    // 500 to held every write behind it forever. A day of time can sit
+    // behind a photo. OFF-32: never drop time, and never let it be blocked
+    // behind something else.
+    if (op.nextTryAt && Date.parse(op.nextTryAt) > now) continue;
+
     try {
       await runOp(op, token);
       handled.add(op.opId);
     } catch (error) {
       if (error instanceof api.ApiError && error.status === 401) {
+        // Not this write's fault and not something the queue can fix:
+        // everything stays exactly as it is and the caller re-auths.
         await recordRefused(refused);
         await removeHandled(handled);
+        await applyMarks(marked);
         throw error;
       }
+
       if (error instanceof api.ApiError && isFinalRefusal(error.status)) {
         // The photo file is KEPT. A refusal here is the server saying no to
         // this request, not proof the picture is worthless — a too-large
@@ -333,11 +406,53 @@ async function drain(token: string): Promise<void> {
         handled.add(op.opId);
         continue;
       }
+
+      if (error instanceof api.ApiError) {
+        // The server ANSWERED and it was 5xx/408/429 — this write's own
+        // problem, not the network's. Count it, back off, and keep going:
+        // the next write may be perfectly sendable.
+        const attempts = (op.attempts ?? 0) + 1;
+        if (attempts >= MAX_ATTEMPTS) {
+          refused.push({
+            op,
+            error: `${error.message} (tried ${attempts} times)`,
+            status: error.status,
+            at: new Date().toISOString(),
+          });
+          handled.add(op.opId);
+          continue;
+        }
+        marked.set(op.opId, {
+          attempts,
+          lastError: error.message,
+          lastStatus: error.status,
+          lastTriedAt: new Date().toISOString(),
+          nextTryAt: new Date(Date.now() + backoffFor(attempts)).toISOString(),
+        });
+        continue;
+      }
+
+      // NO STATUS AT ALL — the request never reached anybody: airplane
+      // mode, a dead cell, a tunnel. Stop: everything after this would
+      // fail the same way, and there is nothing to learn by proving it on
+      // somebody's battery. Deliberately NOT counted as an attempt —
+      // counting a basement would set aside perfectly good writes for
+      // having been carried around a jobsite.
       break;
     }
   }
+
   await recordRefused(refused);
   await removeHandled(handled);
+  await applyMarks(marked);
+}
+
+/** Writes the per-op state back onto the CURRENT queue, leaving anything
+ * added while this flush ran alone. */
+async function applyMarks(marked: Map<string, Partial<QueuedOp>>): Promise<void> {
+  if (marked.size === 0) return;
+  const current = await read();
+  await write(current.map((op) => (marked.has(op.opId) ? ({ ...op, ...marked.get(op.opId) } as QueuedOp) : op)));
 }
 
 /** Takes exactly the handled writes off the CURRENT queue, re-read rather
