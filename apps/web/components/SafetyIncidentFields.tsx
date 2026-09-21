@@ -164,15 +164,16 @@ export function SafetyIncidentFields({
         <div className="grid gap-3 sm:grid-cols-2">
           <label className={labelClass}>
             Days away from work
-            {/* inputMode="numeric" so the phone opens straight on digits.
-                type="number" alone gets a keypad on iOS but a full keyboard
-                on several Android browsers, and a day count has no decimal
-                point or minus sign to reach for. */}
+            {/* inputMode="numeric" so the phone opens straight on digits,
+                and `type="text"` rather than `type="number"` so nothing the
+                person typed is discarded before the server sees it — see
+                lib/numeric-input.ts. `min` came off with the type: it never
+                did anything on a text input, and the floor is the action's
+                (`countFromForm`, which refuses a negative by name). */}
             <input
               name="daysAway"
               type="text"
               inputMode="numeric"
-              min={0}
               defaultValue={defaults.daysAway ?? ""}
               className={inputClass}
             />
@@ -183,7 +184,6 @@ export function SafetyIncidentFields({
               name="daysRestricted"
               type="text"
               inputMode="numeric"
-              min={0}
               defaultValue={defaults.daysRestricted ?? ""}
               className={inputClass}
             />

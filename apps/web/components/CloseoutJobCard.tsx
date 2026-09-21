@@ -404,7 +404,6 @@ export function CloseoutJobCard({
                   type="text"
                   inputMode="numeric"
                   required
-                  min={1}
                   defaultValue={job.warranty?.months ?? 12}
                   className={inputClass}
                 />

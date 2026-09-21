@@ -360,15 +360,33 @@ describe("every numeric input declares itself, and none is type=number", () => {
     expect(stale, "INPUT_EXCEPTIONS names an input that no longer exists").toEqual([]);
   });
 
-  it("has no numeric field on type=number", () => {
+  /**
+   * NOT ROSTER-SCOPED, AND THAT IS THE POINT — this is the one rule here
+   * that asks nothing about field names.
+   *
+   * The roster is derived from keyed reader calls in `lib/actions/`, which
+   * is a good source and still has a hole: a field read through a
+   * label-taking helper, or rendered with a DYNAMIC `name={…}`, is not in
+   * it. Four real numeric inputs sat outside it the day this file was
+   * written — `apprenticeCount` and `journeymenCount` (read via
+   * `setupCount`, which takes a label), `FringeScheduleList`'s five rate
+   * boxes (`name={name as string}`, mapped over an array), and
+   * `CraftTierPicker`'s period box (no `name` at all; its value goes
+   * straight into a hand-built FormData). Every one was still
+   * `type="number"`, and the roster-scoped version of this test was green.
+   *
+   * Nothing is ever missing from a set you cannot see, so this rule does
+   * not use the set: this app has no `<input type="number">`, full stop.
+   */
+  it("has NO type=number input anywhere, whatever it is named", () => {
     const offenders: string[] = [];
     for (const [path, source] of sources()) {
       if (/\.(test|dbtest)\.tsx?$/.test(path)) continue;
       for (const attrs of inputTags(source)) {
-        const name = /name="([a-zA-Z0-9_]+)"/.exec(attrs)?.[1];
-        if (!name || !roster.has(name)) continue;
+        if (!/type="number"/.test(attrs)) continue;
+        const name = /name=[{"]([a-zA-Z0-9_ ]+)/.exec(attrs)?.[1] ?? "(unnamed)";
         if (INPUT_EXCEPTIONS[`${path} ${name}`]) continue;
-        if (/type="number"/.test(attrs)) offenders.push(`${path} ${name}`);
+        offenders.push(`${path} ${name}`);
       }
     }
     expect(
