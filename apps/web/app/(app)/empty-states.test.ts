@@ -592,3 +592,68 @@ describe("pages that use the shared empty state, on an empty account", () => {
     });
   }
 });
+
+/**
+ * THE PAGES THAT DESCRIBED A CONDITION AND GAVE NO WAY OUT OF IT.
+ *
+ * The cases above are the top-level list pages, all of which route through
+ * the shared `EmptyState`. These two do not, which is exactly why they
+ * drifted: nothing shared was there to carry the promise for them.
+ *
+ * `/prevailing-wage` was the worst of the set, and it is worth naming the
+ * shape rather than the page. It NAMED the way out and then did not give
+ * it — "Upload one on a job first" with nothing to press, on a screen a
+ * compliance clerk reaches with a filing deadline in front of her. A
+ * sentence that tells somebody what to do and not where is worse than one
+ * that says nothing, because it proves the product knows the answer.
+ *
+ * Both are rendered, not grepped, for the reason the header of this file
+ * gives: a link inside a branch that never runs greps identically to one
+ * that renders. Each case asserts the page rendered at all before it
+ * asserts anything about what is missing from it.
+ */
+describe("an empty state has to offer a way out of being empty", () => {
+  const wayOut = (html: string): string[] =>
+    [...html.matchAll(/<a[^>]*href="([^"]*)"/g)].map((m) => m[1]);
+
+  describe("/prevailing-wage with nothing filed", () => {
+    const load = async () => {
+      const { default: Page } = await import("@/app/(app)/prevailing-wage/page");
+      return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+    };
+
+    it("renders both of its empty sections", async () => {
+      const html = await load();
+      // Anti-vacuity, twice: these are the two headings the sections below
+      // belong to, so a page that failed to render fails here rather than
+      // passing the link assertions on an empty string.
+      expect(html).toContain("Check a week against the rules");
+      expect(html).toContain("Which rules apply to which job");
+      expect(html).toContain("No wage determinations recorded yet");
+    });
+
+    it("gives the reader somewhere to press, not just something to read", async () => {
+      expect(wayOut(await load())).toContain("/jobs");
+    });
+  });
+
+  describe("/union-compliance with no hours logged", () => {
+    const load = async () => {
+      const { default: Page } = await import("@/app/(app)/union-compliance/page");
+      return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+    };
+
+    it("renders its two empty sections", async () => {
+      const html = await load();
+      expect(html).toContain("Apprentice ratio");
+      expect(html).toContain("No hours logged this month");
+    });
+
+    it("says where hours are logged, as a link", async () => {
+      const html = await load();
+      expect(wayOut(html)).toContain("/jobs");
+      // Named, so the reader knows which tab when he gets there.
+      expect(html).toContain("Crew &amp; time");
+    });
+  });
+});

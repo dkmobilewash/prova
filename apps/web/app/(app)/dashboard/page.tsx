@@ -354,14 +354,25 @@ export default async function TodayPage({
                   <h3 className="text-sm font-semibold text-ink">How your GCs pay</h3>
                   {today.gcReliability.length === 0 ? (
                     <p className="mt-2 text-sm text-ink-body">
-                      No invoices raised yet, so there is nothing to judge.
+                      No invoices raised yet, so there is nothing to judge.{" "}
+                      <Link href="/jobs" className="text-link hover:underline">
+                        Open a job
+                      </Link>{" "}
+                      and bill it under Billing — this fills in once a GC has paid one.
                     </p>
                   ) : (
                     <ul className="mt-3 divide-y divide-line-row">
                       {today.gcReliability.slice(0, 6).map((row) => (
                         <li key={row.contactId} className="flex items-baseline justify-between gap-3 py-2.5">
                           <Link href={`/contacts/${row.contactId}`} className="min-w-0">
-                            <span className="block truncate text-sm font-medium text-ink">
+                            {/* NOT `truncate`. The GC's name is the only thing
+                                telling these rows apart, and at 375px this
+                                column is ~215px — enough for about 24
+                                characters, which turns "Turner Construction —
+                                West Region" and "…— East Region" into the same
+                                row. Wrapping costs a line; clipping costs the
+                                answer to the question the card exists for. */}
+                            <span className="block break-words text-sm font-medium text-ink">
                               {row.name}
                             </span>
                             <span className="block text-xs text-ink-body">
@@ -371,12 +382,22 @@ export default async function TodayPage({
                             </span>
                           </Link>
                           <span className="shrink-0 text-right">
-                            <span className="block text-sm font-medium tabular-nums text-ink">
-                              {row.reliability.onTimeRate === null
-                                ? "—"
-                                : `${Math.round(row.reliability.onTimeRate * 100)}%`}
-                            </span>
-                            <span className="block text-xs text-ink-body">on time</span>
+                            {/* A bare em dash in a percentage slot reads as a
+                                broken screen. It means "nobody has paid one of
+                                theirs in full yet", which is a fact about the
+                                account rather than a fault, so it says so. */}
+                            {row.reliability.onTimeRate === null ? (
+                              <span className="block max-w-[7.5rem] text-xs text-ink-body">
+                                Not enough paid yet to say
+                              </span>
+                            ) : (
+                              <>
+                                <span className="block text-sm font-medium tabular-nums text-ink">
+                                  {`${Math.round(row.reliability.onTimeRate * 100)}%`}
+                                </span>
+                                <span className="block text-xs text-ink-body">on time</span>
+                              </>
+                            )}
                           </span>
                         </li>
                       ))}

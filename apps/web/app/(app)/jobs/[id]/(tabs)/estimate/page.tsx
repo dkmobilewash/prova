@@ -4,6 +4,7 @@ import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { TakeoffForm } from "@/components/TakeoffForm";
 import { AddCostEntryForm } from "@/components/AddCostEntryForm";
+import { costCategoryLabel } from "@/components/costCategoryLabels";
 import { LaborHoursField } from "@/components/LaborHoursField";
 import { PhaseCodeField } from "@/components/PhaseCodeField";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -405,7 +406,13 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                     {item.costEntries.map((entry) => (
                       <li key={entry.id} className="flex items-center justify-between text-sm">
                         <span className="text-ink-label">
-                          {entry.description} <span className="text-xs text-ink-muted">({entry.category})</span>
+                          {entry.description}{" "}
+                          {/* Printed the raw enum until 2026-09-21 —
+                              "(SUBCONTRACTOR)", "(MATERIAL)" — beside every
+                              cost a contractor has logged. */}
+                          <span className="text-xs text-ink-muted">
+                            ({costCategoryLabel(entry.category)})
+                          </span>
                         </span>
                         <span className="flex items-center gap-2">
                           <span className="text-ink">{money(Number(entry.amount))}</span>
