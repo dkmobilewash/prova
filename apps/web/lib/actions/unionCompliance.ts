@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
+import { numericReaders, parseNumericInput } from "@/lib/numeric-input";
 import { prisma } from "@prova/db";
 import {
   actionFail as fail,
@@ -58,10 +59,14 @@ export async function setCraftTier(craftId: string, formData: FormData): Promise
 
   let apprenticePeriod: number | null = null;
   if (raw === "APPRENTICE" && periodRaw) {
-    const value = Number(periodRaw);
-    if (!Number.isInteger(value) || value < 1 || value > 10) {
-      return fail("An apprentice period is a whole number between 1 and 10");
-    }
+    const parsed = parseNumericInput(periodRaw, {
+      label: "An apprentice period",
+      integer: true,
+      min: 1,
+      max: 10,
+    });
+    if (!parsed.ok) return fail("An apprentice period is a whole number between 1 and 10");
+    const value = parsed.n;
     apprenticePeriod = value;
   }
 
@@ -103,6 +108,12 @@ export async function setCraftTier(craftId: string, formData: FormData): Promise
 
 class SetupError extends Error {}
 
+/** One parser for every typed figure — see `lib/numeric-input.ts`. Raises
+ * THIS module's SetupError so the local catch still sees it. */
+const { number: setupNumber, optionalNumber: setupOptionalNumber } = numericReaders((message) => {
+  throw new SetupError(message);
+});
+
 function setupText(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
@@ -132,21 +143,12 @@ function setupRequiredDate(formData: FormData, key: string, label: string): Date
  * real state and different from zero being unknown — buildRemittanceReport
  * treats a missing rate as nothing owed to that fund. */
 function setupRate(formData: FormData, key: string, label: string): string | null {
-  const raw = setupText(formData, key);
-  if (!raw) return null;
-  const value = Number(raw);
-  if (Number.isNaN(value)) throw new SetupError(`${label} must be a number`);
-  if (value < 0) throw new SetupError(`${label} can't be negative`);
-  return value.toFixed(2);
+  return setupOptionalNumber(formData, key, { label, min: 0 })?.n.toFixed(2) ?? null;
 }
 
 function setupCount(formData: FormData, key: string, label: string): number {
-  const raw = setupRequired(formData, key, label);
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < 1 || value > 99) {
-    throw new SetupError(`${label} has to be a whole number between 1 and 99`);
-  }
-  return value;
+  setupRequired(formData, key, label);
+  return setupNumber(formData, key, { label, integer: true, min: 1, max: 99 }).n;
 }
 
 /**
@@ -290,11 +292,14 @@ export async function createCraftClassification(formData: FormData): Promise<Act
     let apprenticePeriod: number | null = null;
     const periodRaw = setupText(formData, "apprenticePeriod");
     if (tierRaw === "APPRENTICE" && periodRaw) {
-      const value = Number(periodRaw);
-      if (!Number.isInteger(value) || value < 1 || value > 10) {
-        return fail("An apprentice period is a whole number between 1 and 10");
-      }
-      apprenticePeriod = value;
+      const parsed = parseNumericInput(periodRaw, {
+        label: "An apprentice period",
+        integer: true,
+        min: 1,
+        max: 10,
+      });
+      if (!parsed.ok) return fail("An apprentice period is a whole number between 1 and 10");
+      apprenticePeriod = parsed.n;
     }
 
     try {

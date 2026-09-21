@@ -169,8 +169,8 @@ export function SafetyIncidentFields({
                 on several Android browsers, and a day count has no decimal
                 point or minus sign to reach for. */}
             <input
-              type="number"
               name="daysAway"
+              type="text"
               inputMode="numeric"
               min={0}
               defaultValue={defaults.daysAway ?? ""}
@@ -180,8 +180,8 @@ export function SafetyIncidentFields({
           <label className={labelClass}>
             Days restricted or transferred
             <input
-              type="number"
               name="daysRestricted"
+              type="text"
               inputMode="numeric"
               min={0}
               defaultValue={defaults.daysRestricted ?? ""}

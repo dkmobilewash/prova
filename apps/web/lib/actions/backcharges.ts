@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseNumericInput } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { money as formatMoney } from "@/lib/money";
@@ -101,10 +102,10 @@ function utcMidnightToday() {
 
 function money(formData: FormData, key: string, label: string): string {
   const raw = required(formData, key, label);
-  const value = Number(raw);
-  if (Number.isNaN(value)) throw new InputError(`${label} must be a number`);
-  if (value <= 0) throw new InputError(`${label} has to be more than $0`);
-  return value.toFixed(2);
+  const parsed = parseNumericInput(raw, { label, maxDecimals: 2 });
+  if (!parsed.ok) throw new InputError(parsed.error);
+  if (parsed.n <= 0) throw new InputError(`${label} has to be more than $0`);
+  return parsed.n.toFixed(2);
 }
 
 async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {

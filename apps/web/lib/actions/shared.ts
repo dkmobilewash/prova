@@ -6,29 +6,66 @@
 // imported directly by the domain files and never re-exported from index.ts.
 
 import { prisma } from "@prova/db";
+import { numericReaders, PERCENT_BOUNDS, type NumericInputOptions } from "@/lib/numeric-input";
 
-export function decimalFromForm(formData: FormData, key: string): string {
-  const raw = formData.get(key);
-  const value = typeof raw === "string" ? raw.trim() : "";
-  if (!value || Number.isNaN(Number(value))) {
-    throw new Error(`"${key}" must be a number`);
-  }
-  return value;
+const { number, optionalNumber } = numericReaders((message) => {
+  throw new InputError(message);
+});
+
+/** The same two readers, for the action modules that already throw THIS
+ * module's `InputError` (safety, phase codes) rather than a private copy.
+ * `optionalNumberFromForm` returns null for a blank field and never for a
+ * bad one — a bad one raises. */
+export const numberFromForm = number;
+export const optionalNumberFromForm = optionalNumber;
+
+/**
+ * A required number from a form, parsed the way a person types it.
+ *
+ * THROWS `InputError`, NOT `Error`, AND THAT IS THE WHOLE POINT OF THE
+ * CHANGE. Production redacts a thrown Server Action message to a digest
+ * (see `ActionResult` below), so the old plain `throw new Error` meant a
+ * quantity of `2,800` produced the "specific message is omitted in
+ * production builds" paragraph on the second screen of creating a first
+ * job. `InputError` is what `runAction` converts into a returned
+ * `{ ok: false, error }` the form can render.
+ *
+ * Tolerance and bounds both live in `lib/numeric-input.ts` — one parser,
+ * one rule about what a number is, for the fourteen places that each had
+ * their own.
+ */
+export function decimalFromForm(formData: FormData, key: string, options?: NumericInputOptions): string {
+  return number(formData, key, options).value;
 }
 
 /** Like decimalFromForm, but an empty field is valid and means "not set"
  * (null) rather than an error — used for unitPrice (cost-only budget
  * lines have none) and the WIP cost fields (optional until entered). */
-export function nullableDecimalFromForm(formData: FormData, key: string): string | null {
-  const raw = formData.get(key);
-  const value = typeof raw === "string" ? raw.trim() : "";
-  if (!value) {
-    return null;
-  }
-  if (Number.isNaN(Number(value))) {
-    throw new Error(`"${key}" must be a number`);
-  }
-  return value;
+export function nullableDecimalFromForm(
+  formData: FormData,
+  key: string,
+  options?: NumericInputOptions,
+): string | null {
+  return optionalNumber(formData, key, options)?.value ?? null;
+}
+
+/**
+ * A percentage — 0 to 100, never a fraction of one.
+ *
+ * `Job.retainagePercent` went through `nullableDecimalFromForm` with no
+ * bounds at all, so `0.10` typed by somebody meaning ten percent stored a
+ * tenth of one percent and every invoice afterwards withheld a hundredth
+ * of what the contract said, with nothing on any screen to contradict it.
+ * The bound is half the fix; the other half is the `%` the input now wears,
+ * because no bound can tell 0.10-meaning-a-tenth-of-a-percent apart from
+ * 0.10-typed-by-somebody-thinking-in-fractions.
+ */
+export function nullablePercentFromForm(
+  formData: FormData,
+  key: string,
+  options?: NumericInputOptions,
+): string | null {
+  return nullableDecimalFromForm(formData, key, { ...PERCENT_BOUNDS, maxDecimals: 2, ...options });
 }
 
 export async function assertJobInCompany(jobId: string, companyId: string) {

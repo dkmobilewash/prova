@@ -183,10 +183,9 @@ export function PayApplications({
                     <td className="py-1 pr-3 text-right">
                       <input type="hidden" name="lineItemId" value={item.id} />
                       <input
-                        type="number"
-                        step="0.01"
-                        min="0"
                         name="thisPeriodBilled"
+                        type="text"
+                        inputMode="decimal"
                         placeholder="0.00"
                         className={inputClass}
                       />
@@ -199,9 +198,9 @@ export function PayApplications({
                           gates the submit handler, so the form silently
                           refused rather than showing anything. */}
                       <input
-                        type="number"
-                        step="0.01"
                         name="materialsStoredValue"
+                        type="text"
+                        inputMode="decimal"
                         placeholder="0.00"
                         className={inputClass}
                       />

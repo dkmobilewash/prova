@@ -215,6 +215,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             Length (ft)
             <input
               name="lengthFt"
+              type="text"
               value={lengthFt}
               onChange={(e) => setLengthFt(e.target.value)}
               inputMode="decimal"
@@ -228,6 +229,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             Height (ft)
             <input
               name="heightFt"
+              type="text"
               value={heightFt}
               onChange={(e) => setHeightFt(e.target.value)}
               inputMode="decimal"
@@ -241,6 +243,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             Width (ft)
             <input
               name="widthFt"
+              type="text"
               value={widthFt}
               onChange={(e) => setWidthFt(e.target.value)}
               inputMode="decimal"
@@ -269,6 +272,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             Stud spacing (in o.c.)
             <input
               name="spacingIn"
+              type="text"
               value={spacingIn}
               onChange={(e) => setSpacingIn(e.target.value)}
               inputMode="decimal"
@@ -282,6 +286,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             Waste (%)
             <input
               name="wastePercent"
+              type="text"
               value={wastePercent}
               onChange={(e) => setWastePercent(e.target.value)}
               inputMode="decimal"
@@ -298,6 +303,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             Area (sq ft)
             <input
               name="areaSqFt"
+              type="text"
               value={areaSqFt}
               onChange={(e) => setAreaSqFt(e.target.value)}
               inputMode="decimal"
@@ -311,6 +317,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             Coats
             <input
               name="coats"
+              type="text"
               value={coats}
               onChange={(e) => setCoats(e.target.value)}
               inputMode="decimal"
@@ -324,6 +331,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             Coverage (sq ft/gal)
             <input
               name="coverageSqFtPerGal"
+              type="text"
               value={coverageSqFtPerGal}
               onChange={(e) => setCoverageSqFtPerGal(e.target.value)}
               inputMode="decimal"
@@ -337,6 +345,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             Trim / base perimeter (ft, optional)
             <input
               name="perimeterFt"
+              type="text"
               value={perimeterFt}
               onChange={(e) => setPerimeterFt(e.target.value)}
               placeholder="leave blank if not trimming"
@@ -360,6 +369,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             <div key={index} className="flex items-center gap-2">
               <input
                 name="openingWidth"
+                type="text"
                 value={opening.w}
                 onChange={(e) =>
                   setOpenings((prev) =>
@@ -373,6 +383,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
               <span className="text-ink-muted">×</span>
               <input
                 name="openingHeight"
+                type="text"
                 value={opening.h}
                 onChange={(e) =>
                   setOpenings((prev) =>
@@ -425,6 +436,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
               />
               <input
                 name="fixtureCount"
+                type="text"
                 value={fixture.count}
                 onChange={(e) =>
                   setFixtures((prev) =>

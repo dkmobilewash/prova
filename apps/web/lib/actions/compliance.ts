@@ -22,8 +22,10 @@ import {
   enumFromForm,
   INSURANCE_POLICY_TYPES,
   JURISDICTION_TYPES,
+  InputError,
   nullableDecimalFromForm,
   ownerRefusal,
+  runAction,
   SETTABLE_LICENSE_STATUSES,
   type ActionResult,
 } from "./shared";
@@ -76,11 +78,13 @@ export async function deleteInsurancePolicy(policyId: string) {
 }
 
 /** Adds a company bonding record (license bond or performance/payment capacity). */
-export async function createBond(formData: FormData) {
+export async function createBond(formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  assertOwner(context);
+  const refusal = ownerRefusal(context);
+  if (refusal) return refusal;
   const { company } = context;
 
+  return runAction(async () => {
   const bondType = enumFromForm(formData, "bondType", BOND_TYPES);
   const suretyName = String(formData.get("suretyName") ?? "").trim();
   const aggregateBondingCapacity = nullableDecimalFromForm(formData, "aggregateBondingCapacity");
@@ -91,7 +95,7 @@ export async function createBond(formData: FormData) {
   const renewalRaw = String(formData.get("renewalDate") ?? "").trim();
 
   if (!suretyName) {
-    throw new Error("Surety name is required");
+    throw new InputError("Surety name is required");
   }
 
   await prisma.companyBond.create({
@@ -109,6 +113,8 @@ export async function createBond(formData: FormData) {
   });
 
   revalidatePath("/settings");
+  return actionOk;
+  });
 }
 
 export async function deleteBond(bondId: string) {
@@ -292,9 +298,10 @@ async function readStoredDocument(
  * fixed (same as fixing a typo, not a separate "correction" flow) but
  * also just how anyone edits a manually-entered record. Not owner-gated,
  * same reasoning as uploadComplianceDocument. */
-export async function updateComplianceDocument(documentId: string, formData: FormData) {
+export async function updateComplianceDocument(documentId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
 
+  return runAction(async () => {
   const document = await prisma.complianceDocument.findUnique({ where: { id: documentId } });
   if (!document || document.companyId !== company.id) {
     throw new Error("Compliance document not found");
@@ -327,6 +334,8 @@ export async function updateComplianceDocument(documentId: string, formData: For
   });
 
   revalidatePath("/compliance");
+  return actionOk;
+  });
 }
 
 /** Marks a compliance document RECEIVED (e.g. the lien waiver came back

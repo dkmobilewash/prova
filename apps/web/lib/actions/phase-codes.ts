@@ -8,6 +8,7 @@ import {
   actionFail as fail,
   actionOk as ok,
   InputError,
+  optionalNumberFromForm as optionalNumber,
   isUniqueConstraintError,
   ownerRefusal,
   runAction,
@@ -72,11 +73,11 @@ function fieldsFromForm(formData: FormData) {
     throw new InputError("What is this phase called? Something like “Plywood - SF”.");
   }
 
-  const sortOrderRaw = text(formData, "sortOrder");
-  const sortOrder = sortOrderRaw === "" ? 0 : Number(sortOrderRaw);
-  if (!Number.isInteger(sortOrder)) {
-    throw new InputError("Sort order has to be a whole number — it is the order you read them in.");
-  }
+  const sortOrder =
+    optionalNumber(formData, "sortOrder", {
+      label: "Sort order",
+      integer: true,
+    })?.n ?? 0;
 
   return {
     code,

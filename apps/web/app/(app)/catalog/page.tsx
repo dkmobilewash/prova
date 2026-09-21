@@ -14,6 +14,7 @@ import { TRADE_SCOPE_OPTIONS, tradeScopeLabel } from "@/lib/trade-scopes";
 import { money } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
 import { EmptyState } from "@/components/EmptyState";
+import { ActionForm } from "@/components/ActionForm";
 
 type CatalogEntryWithLines = {
   id: string;
@@ -272,7 +273,7 @@ export default async function CatalogPage() {
 
       <section className="rounded-lg border border-line-card bg-surface p-4" data-tour="catalog-add">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Add a catalog entry</h2>
-        <form action={createLineItemCatalogEntry} className="flex flex-wrap items-end gap-3">
+        <ActionForm action={createLineItemCatalogEntry} className="flex flex-wrap items-end gap-3">
           <label className="flex flex-1 min-w-[200px] flex-col gap-1 text-sm text-ink-label">
             Description
             <input
@@ -314,10 +315,8 @@ export default async function CatalogPage() {
             Default unit price
             <input
               name="defaultUnitPrice"
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="0.01"
-              min="0"
               placeholder="optional"
               className="w-32 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
             />
@@ -326,10 +325,8 @@ export default async function CatalogPage() {
             Default budgeted cost
             <input
               name="defaultBudgetedUnitCost"
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="0.01"
-              min="0"
               placeholder="optional"
               className="w-32 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
             />
@@ -346,10 +343,8 @@ export default async function CatalogPage() {
             Default labor hrs — whole line
             <input
               name="defaultLaborHours"
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="0.01"
-              min="0"
               placeholder="optional"
               aria-describedby="defaultLaborHours-help"
               className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
@@ -397,7 +392,7 @@ export default async function CatalogPage() {
           >
             Add entry
           </SubmitButton>
-        </form>
+        </ActionForm>
       </section>
     </div>
   );

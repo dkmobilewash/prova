@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { numericReaders } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
 import { viewerToday } from "@/lib/viewerToday";
 import { prisma } from "@prova/db";
@@ -57,11 +58,12 @@ function requiredDate(formData: FormData, key: string, label: string): Date {
   return date;
 }
 
+const { optionalNumber } = numericReaders((message) => {
+  throw new InputError(message);
+});
+
 function optionalDecimal(formData: FormData, key: string): string | null {
-  const raw = text(formData, key);
-  if (!raw) return null;
-  if (Number.isNaN(Number(raw))) throw new InputError(`"${key}" must be a number`);
-  return raw;
+  return optionalNumber(formData, key, { maxDecimals: 2 })?.value ?? null;
 }
 
 async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {

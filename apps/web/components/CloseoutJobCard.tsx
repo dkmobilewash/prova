@@ -400,8 +400,9 @@ export function CloseoutJobCard({
               <label className={labelClass}>
                 Length in months
                 <input
-                  type="number"
                   name="months"
+                  type="text"
+                  inputMode="numeric"
                   required
                   min={1}
                   defaultValue={job.warranty?.months ?? 12}

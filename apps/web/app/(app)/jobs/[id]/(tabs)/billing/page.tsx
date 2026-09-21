@@ -15,6 +15,7 @@ import { cashReceived } from "@/lib/billing/payment-entry";
 import { money } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
 import { createInvoice, deletePayment } from "@/lib/actions";
+import { ActionForm } from "@/components/ActionForm";
 
 const rowDeleteClass = "text-xs text-red-400 hover:underline";
 const rowCancelClass =
@@ -240,7 +241,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
           })}
         </div>
 
-        <form action={createInvoiceWithId} className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-line-card bg-surface p-4">
+        <ActionForm action={createInvoiceWithId} className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-line-card bg-surface p-4">
           <label className="flex flex-col gap-1 text-sm text-ink-label">
             Description
             <input
@@ -253,6 +254,8 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
             Amount
             <input
               name="amount"
+              type="text"
+              inputMode="decimal"
               required
               className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
             />
@@ -268,7 +271,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
           <SubmitButton type="submit" className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500">
             Create invoice
           </SubmitButton>
-        </form>
+        </ActionForm>
       </section>
 
       <PayApplications jobId={job.id} lineItems={payApplicationLineItemOptions} payApplications={payApplications} timeZone={timeZone} />

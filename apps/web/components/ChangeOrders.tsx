@@ -190,15 +190,22 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
           </label>
           <label className={labelClass}>
             Qty
-            <input name="quantity" type="number" step="0.01" defaultValue="1" required className={`${inputClass} w-24`} />
+            <input
+              name="quantity"
+              type="text"
+              inputMode="decimal"
+              defaultValue="1"
+              required
+              className={`${inputClass} w-24`}
+            />
           </label>
           <label className={labelClass}>
             Unit price
-            <input name="unitPrice" type="number" step="0.01" className={`${inputClass} w-28`} />
+            <input name="unitPrice" type="text" inputMode="decimal" className={`${inputClass} w-28`} />
           </label>
           <label className={labelClass}>
             Budgeted unit cost
-            <input name="budgetedUnitCost" type="number" step="0.01" className={`${inputClass} w-32`} />
+            <input name="budgetedUnitCost" type="text" inputMode="decimal" className={`${inputClass} w-32`} />
           </label>
           <label className={labelClass}>
             Trade scope
@@ -235,11 +242,11 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
           </label>
           <label className={labelClass}>
             New qty
-            <input name="quantity" type="number" step="0.01" className={`${inputClass} w-24`} />
+            <input name="quantity" type="text" inputMode="decimal" className={`${inputClass} w-24`} />
           </label>
           <label className={labelClass}>
             New unit price
-            <input name="unitPrice" type="number" step="0.01" className={`${inputClass} w-28`} />
+            <input name="unitPrice" type="text" inputMode="decimal" className={`${inputClass} w-28`} />
           </label>
           <button type="submit" disabled={isPending} className={primaryBtn}>
             {isPending ? "Adding…" : "Add to CO"}

@@ -213,10 +213,22 @@ describe("the negative-materials path stays reachable", () => {
     expect(attributesBefore("materialsStoredValue")).not.toContain('min="0"');
   });
 
-  it("DOES keep min=0 on this period's billed amount", () => {
+  it("DOES keep the floor on this period's billed amount — in the ACTION now, not the markup", () => {
     // Guards against a fix that strips both. There is no negative-billing
     // mechanism; only stored materials get released with a negative.
-    expect(attributesBefore("thisPeriodBilled")).toContain('min="0"');
+    //
+    // MOVED 2026-09-21, and moved for the reason the comment beside the
+    // stored-materials input has always given: `min="0"` is native
+    // validation, which gates the submit handler, so the form refused in
+    // silence and showed nothing. The floor is the same floor; it is
+    // enforced where it can say so. `type="number"` went with it — measured
+    // in real Chromium, it discards a thousands comma before the server
+    // sees it, and on Firefox submits an empty string.
+    const action = read("lib/actions/billing.ts");
+    expect(attributesBefore("thisPeriodBilled")).not.toContain('type="number"');
+    expect(action).toContain('payApplicationFigure(thisPeriodValues[i], "This period", { min: 0 })');
+    // And no floor on stored, which is the whole point of the pair.
+    expect(action).toContain('payApplicationFigure(materialsStoredValues[i], "Stored materials")');
   });
 
   it("shows the running stored-to-date figure beside the input", () => {
