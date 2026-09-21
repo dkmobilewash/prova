@@ -16,6 +16,7 @@ import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import { createInvoiceRecord } from "@/lib/billing/create-invoice";
+import { retainageWithheldFor } from "@/lib/billing/retainage-amount";
 import { issueInvoiceNumber } from "@/lib/billing/invoice-number";
 // Shared with recordExecutedSubcontract in lib/actions/jobs.ts, the other
 // writer of this table — issue #280. It was private to this file, which is
@@ -486,8 +487,18 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   const dueAt = dueRaw ? new Date(dueRaw) : null;
 
   const amount = rows.reduce((sum, row) => sum + row.thisPeriodBilled + row.materialsStoredValue, 0);
-  const retainageWithheld =
-    job.retainagePercent != null ? ((amount * Number(job.retainagePercent)) / 100).toFixed(2) : null;
+  // The figure that goes on the document, fixed to the two decimal places
+  // the Decimal(12, 2) column stores, BEFORE anything is derived from it.
+  // The retainage then comes from the amount the GC is actually billed
+  // rather than from the running float it was summed out of, so the two
+  // numbers on the page cannot disagree about what was billed.
+  const amountValue = amount.toFixed(2);
+  // ONE formula, shared with the lump-sum path — see
+  // lib/billing/retainage-amount.ts. This line used to be
+  // `((amount * Number(job.retainagePercent)) / 100).toFixed(2)`, a second
+  // float expression that rounded $1,000.35 at 10% to $100.03 while the
+  // lump-sum path rounded the same bill to $100.04.
+  const retainageWithheld = retainageWithheldFor(amountValue, job.retainagePercent);
 
   // A resubmitted click bills the GC again for the same period at a new
   // invoice number, and retainageWithheld is snapshotted at creation and
@@ -513,7 +524,7 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   if (
     lastInvoice &&
     Date.now() - lastInvoice.issuedAt.getTime() < 10_000 &&
-    Number(lastInvoice.amount).toFixed(2) === amount.toFixed(2) &&
+    Number(lastInvoice.amount).toFixed(2) === amountValue &&
     lastInvoice.lineItems.length === rows.length &&
     rows.every((row) =>
       lastInvoice.lineItems.some(
@@ -536,7 +547,7 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
         jobId,
         number: await issueInvoiceNumber(tx, jobId),
         description: description || null,
-        amount: amount.toFixed(2),
+        amount: amountValue,
         dueAt,
         retainageWithheld,
         lineItems: {

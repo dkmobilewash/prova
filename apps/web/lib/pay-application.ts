@@ -124,13 +124,31 @@ export function payAppEntryError(input: PayAppLineItemInput): string | null {
 
 export interface PayAppSummaryInput {
   lineItems: PayAppLineItemResult[];
-  /** Job.retainagePercent, e.g. 10 for 10%. Null means no retainage. */
-  retainagePercent: number | null;
-  /** SUM(Invoice.retainageWithheld) across every earlier invoice on this
-   * job, before the one being viewed. */
+  /** SUM(Invoice.retainageWithheld) across every earlier PAY APPLICATION on
+   * this job, before the one being viewed. A lump-sum bill is not one — see
+   * `isPayApplicationInvoice` in pay-application-query.ts for why both
+   * halves of this certificate have to come from the same population. */
   previousRetainageWithheld: number;
   /** This invoice's own Invoice.retainageWithheld snapshot. */
   thisPeriodRetainageWithheld: number;
+
+  /*
+   * THERE IS DELIBERATELY NO `retainagePercent` HERE.
+   *
+   * There was one until now, supplied by every caller and read by nothing —
+   * `calculatePayAppSummary` never mentioned it. That is this repo's
+   * "written, documented, and never called" shape, in the version of it
+   * that costs money rather than the version that is merely untidy: a rate
+   * sitting in the input of the function that computes retainage is an open
+   * invitation to derive the figure from it live.
+   *
+   * `Invoice.retainageWithheld` is a SNAPSHOT, taken at creation from the
+   * rate in force that period and never recomputed (billing.prisma says
+   * so). Change a job from 10% to 5% and a live recomputation would
+   * silently restate every certificate already sent to that GC. The
+   * snapshots are the only correct source, so the rate has no business
+   * being in reach here at all.
+   */
 }
 
 export interface PayAppSummaryResult {

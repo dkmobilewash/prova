@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { companyRetainageScope } from "./retainage-query";
 
@@ -18,9 +18,42 @@ import { companyRetainageScope } from "./retainage-query";
  * What this file adds is the case a behavioural test cannot reach: a
  * SEVENTH copy of the query, written in a file that does not exist yet.
  * A behavioural test only catches copies that are already wired up.
+ *
+ * ────────────────────────────────────────────────────────────────────────
+ * WHY THIS FILE WAS GREEN WHILE TWO RETAINAGE FORMULAS WERE LIVE, which is
+ * worth more than the fix it is attached to.
+ *
+ * `lib/billing/create-invoice.ts` computed the snapshot as
+ * `(Number(amount) * (pct / 100)).toFixed(2)`. `lib/actions/billing.ts`
+ * computed it as `((amount * Number(pct)) / 100).toFixed(2)`. Both float,
+ * and they round $1,000.35 at 10% to different cents — $100.04 and $100.03.
+ * The column is snapshotted at creation and never recomputed, so the wrong
+ * cent is permanent on a document the GC has already been sent.
+ *
+ * This census did not miss them. BOTH FILES WERE IN THE ALLOWLIST BELOW,
+ * with notes saying, in capitals, "WRITES the snapshot". The pattern was
+ * right. The scope was right. Nothing had drifted.
+ *
+ * The question was wrong. This census asks "does any file name this column
+ * without having been declared?" — a question about FILES. Nobody had asked
+ * "and how does a declared file produce the value?", which is a question
+ * about EXPRESSIONS, and no answer to the first question can contain an
+ * answer to the second.
+ *
+ * That makes this the third of a family CLAUDE.md already records: the
+ * scratch-cleanup guard whose regex silently matched nothing, and the
+ * contrast census whose pattern was fine and whose scan root could not see
+ * the offending file. Both of those were fixed by asserting something the
+ * check could not fake — a size, a scope. This one needs a third thing
+ * asserted, and it is neither: the check has to be told what QUESTION each
+ * listed file answers. So the writers are now declared separately below,
+ * that declaration is checked against a set derived from the code, and each
+ * writer is required to obtain its value from the one shared formula.
+ * ────────────────────────────────────────────────────────────────────────
  */
 
 const WEB = process.cwd();
+const REPO = join(WEB, "..", "..");
 
 /**
  * The population decision, asserted as a VALUE rather than as a string
@@ -95,9 +128,13 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
 
   // ----------------------------------- writes, exports, documentation ---
   "lib/actions/billing.ts":
-    "WRITES the snapshot when a pay application is submitted. The plain-invoice write moved out in phase 3 of the Ask build (below). Never reads a total.",
+    "WRITES the snapshot when a pay application is submitted. The plain-invoice write moved out in phase 3 of the Ask build (below). Never reads a total. Declared in RETAINAGE_WRITERS below.",
   "lib/billing/create-invoice.ts":
-    "WRITES the snapshot for a plain invoice: createInvoice's body, lifted so the form and the draft_invoice card share one write and one formula. Never reads a total.",
+    "WRITES the snapshot for a plain invoice: createInvoice's body, lifted so the form and the draft_invoice card share one write and one formula. Never reads a total. Declared in RETAINAGE_WRITERS below.",
+  "lib/billing/retainage-write.dbtest.ts":
+    "Proves BOTH write paths snapshot the same cent for the same bill, against a real Postgres, and reads the G702 back through loadPayApplication. The behavioural half that this census and the formula's unit test cannot reach.",
+  "lib/billing/retainage-amount.ts":
+    "THE FORMULA — the only expression in this product that multiplies an amount by a retainage rate, in exact decimal. Names the column in its header to say what it produces; computes no total and touches no database.",
   "lib/billing/payment-entry.test.ts":
     "A TEST FIXTURE, and the only reason it names the column at all: #288 made retainageWithheld required on ReliabilityInvoiceInput, so every fixture building one must now state it. This one passes null — a job with no retainage terms — because its subject is the recorded platform fee and it makes no claim about retainage. Reads no total and exercises no retainage behaviour. Added when the fee work and #288 were merged together; each was green alone and only this type disagreed.",
   "lib/billing/retainage-release.ts":
@@ -147,7 +184,7 @@ const COLUMN = /retainageWithheld(?![A-Za-z])/;
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
-    if (entry === "node_modules" || entry === ".next") continue;
+    if (entry === "node_modules" || entry === ".next" || entry === "dist") continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) sourceFiles(full, out);
     else if (/\.tsx?$/.test(entry)) out.push(full);
@@ -155,12 +192,67 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+/**
+ * WHERE THIS CENSUS CAN SEE, and it is no longer "the three folders
+ * somebody typed".
+ *
+ * The contrast-census scar in CLAUDE.md is the reason: that check's pattern
+ * and size assertion were both fine, and it was green because the one
+ * offending file lived in `packages/ui`, outside a scan root spelled by
+ * hand. Nothing is ever missing from a directory you do not walk, so a size
+ * assertion cannot reach it.
+ *
+ * The non-drifting source here is `pnpm-workspace.yaml`: it is the
+ * definition of which directories are this product's source, and adding a
+ * workspace package extends this census with no edit to this file. Retainage
+ * lives in `apps/web` today, but nothing stops a future `packages/billing`
+ * from writing the column, and this is what makes that visible on the day it
+ * happens rather than a year later.
+ */
+function workspaceSourceRoots(): string[] {
+  const yaml = readFileSync(join(REPO, "pnpm-workspace.yaml"), "utf8");
+  // The `packages:` block's list items, e.g. `- "apps/*"`.
+  const globs = [...yaml.matchAll(/^\s*-\s*"([^"]+)"\s*$/gm)].map((m) => m[1]);
+  // Plain throws rather than `expect`, because this runs at module load
+  // where a failed assertion surfaces as a collect error instead of a
+  // named failing test. The message has to carry the diagnosis itself.
+  if (globs.length < 2) {
+    throw new Error(`pnpm-workspace.yaml parsed to ${globs.length} globs; the scan would be near-empty`);
+  }
+
+  const roots: string[] = [];
+  for (const glob of globs) {
+    const [parent, star] = glob.split("/");
+    // The only shape this parser claims to handle. A `packages/**` or a
+    // bare path would be silently mis-scanned.
+    if (star !== "*") throw new Error(`unhandled workspace glob shape: ${glob}`);
+    const parentDir = join(REPO, parent);
+    const children = readdirSync(parentDir).filter((name) =>
+      statSync(join(parentDir, name)).isDirectory(),
+    );
+    // A workspace glob matching no package means the parse is wrong, not
+    // that the repo is empty.
+    if (children.length === 0) throw new Error(`workspace glob ${glob} matched no package`);
+    for (const child of children) roots.push(join(parentDir, child));
+  }
+  return roots;
+}
+
+const SCANNED = workspaceSourceRoots().flatMap((root) => sourceFiles(root));
+
 describe("every file that reads the retainage column is accounted for", () => {
-  const found = sourceFiles(join(WEB, "app"))
-    .concat(sourceFiles(join(WEB, "components")), sourceFiles(join(WEB, "lib")))
-    .filter((file) => COLUMN.test(readFileSync(file, "utf8")))
+  const found = SCANNED.filter((file) => COLUMN.test(readFileSync(file, "utf8")))
     .map((file) => relative(WEB, file))
     .sort();
+
+  it("walks every workspace package, not three folders in this one", () => {
+    // The scope assertion the contrast-census scar asks for. `apps/web` is
+    // where retainage lives today; what must not happen is the walk
+    // quietly ending at this package's edge.
+    expect(SCANNED.length).toBeGreaterThan(500);
+    expect(SCANNED.some((file) => file.includes(`${sep}packages${sep}`))).toBe(true);
+    expect(SCANNED.some((file) => file.includes(`${sep}apps${sep}web${sep}lib${sep}`))).toBe(true);
+  });
 
   it("matches the enumerated list exactly", () => {
     // Fails BOTH ways on purpose. A new file naming the column is an
@@ -231,5 +323,156 @@ describe("the contact page hands the column to the calculator", () => {
 
   it("says on screen what the timing figures left out", () => {
     expect(source).toContain("reliability.retainageExcluded");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// THE WRITE SIDE — the question this file was not asking.
+//
+// Everything above is about READING the column. What was live for weeks was
+// a disagreement about how to COMPUTE the value that goes into it, in two
+// files this census had already signed off.
+// ═══════════════════════════════════════════════════════════════════════
+
+/** The one module allowed to turn an amount and a rate into a cent. */
+const FORMULA = "lib/billing/retainage-amount.ts";
+
+/**
+ * Every file that PRODUCES a retainage figure, declared by hand, each
+ * saying why it is entitled to.
+ *
+ * Adding to this list is the deliberate ten seconds that the allowlist
+ * above is also built on. What makes it a guard rather than a comment is
+ * the assertion below: the same set is derived from the code, by asking who
+ * calls the formula, and the two must be identical. So a new producer has
+ * exactly two futures — it calls the formula, and then it must be declared
+ * here; or it does not, and then the arithmetic assertion after this is
+ * what it has to get past.
+ */
+const RETAINAGE_WRITERS: Record<string, string> = {
+  "lib/billing/create-invoice.ts":
+    "The lump-sum invoice write. Held one of the two float expressions.",
+  "lib/actions/billing.ts":
+    "submitPayApplication's write. Held the other one — `((amount * Number(pct)) / 100).toFixed(2)`.",
+  "lib/ask/commands/billing.ts":
+    "Writes nothing; PREVIEWS the figure on the draft_invoice card before the tap. It has to run the identical formula or the card promises a cent the write does not deliver, which is worse than showing none.",
+};
+
+/**
+ * Comments stripped, so a doc comment QUOTING the old expression — which
+ * three files in this fix deliberately do, because the next person needs to
+ * see what was wrong — cannot fail the arithmetic assertion below, and
+ * cannot satisfy the positive one either.
+ *
+ * #185 is the scar: a census was disarmed by a comment that quoted its own
+ * pattern. This is the same hazard pointed the other way, and the stripper
+ * is checked rather than trusted — every writer must still contain the
+ * formula call after stripping, which a stripper that ate the code could
+ * not produce.
+ */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+}
+
+/**
+ * The rate used as an ARITHMETIC OPERAND: `x * rate`, `rate / x`, with a
+ * `Number(...)` or parentheses in between. That is the exact shape of both
+ * expressions that were live, and of any third one somebody reaches for.
+ *
+ * BE HONEST ABOUT WHAT THIS CANNOT SEE, because a guard sold too high is
+ * how this file ended up green in the first place. It looks for the float
+ * shape. A second implementation written in decimal.js — `new
+ * Decimal(amount).times(rate).dividedBy(100)` — uses method calls, not
+ * operators, and would walk straight past it. The assertion that catches
+ * THAT one is the positive one above: a second implementation is still a
+ * file that produces the figure without calling the formula, so the derived
+ * writer set stops matching the declared one.
+ *
+ * Neither assertion is sufficient alone. Together they cover the two ways a
+ * second formula can arrive: written inside a declared writer, or written
+ * somewhere new.
+ */
+/** Tests and database tests are excluded from both scans below. A test
+ * legitimately spells an expression out as a fixture — this very file does,
+ * in the mutation assertions at the bottom — and no test writes a column on
+ * a document a GC reads. */
+const NON_PRODUCTION = /\.(test|dbtest)\.tsx?$/;
+
+const RATE_AS_OPERAND =
+  /[*/]\s*\(*\s*(?:Number\s*\(\s*)?[A-Za-z_$][\w$]*\.?retainagePercent|retainagePercent\s*\)*\s*[*/]/;
+
+describe("there is one retainage formula", () => {
+  /** Derived from the code rather than declared: who CALLS the formula.
+   * The trailing `(` matters — `import { retainageWithheldFor }` is not a
+   * call, and a file that imports the formula and then computes the figure
+   * by hand must not be able to buy its way past this. */
+  const callers = SCANNED.map((file) => relative(WEB, file))
+    .filter((path) => path !== FORMULA && !NON_PRODUCTION.test(path))
+    .filter((path) => readFileSync(join(WEB, path), "utf8").includes("retainageWithheldFor("))
+    .sort();
+
+  it("is called by exactly the files declared as producing the figure", () => {
+    // Fails both ways. A new caller is an undeclared producer; a declared
+    // file that stopped calling it has either gone away or gone rogue.
+    expect(callers).toEqual(Object.keys(RETAINAGE_WRITERS).sort());
+  });
+
+  it("has producers at all — a scan that found none would pass everything after it", () => {
+    // The size assertion the scratch-cleanup scar asks for, against a
+    // literal that cannot drift with the pattern that produced it. Three:
+    // two writes and one card preview.
+    expect(callers.length).toBe(3);
+  });
+
+  it("is defined in exactly one file", () => {
+    const definitions = SCANNED.map((file) => relative(WEB, file))
+      // Tests excluded, and this file is the reason: it quotes the pattern
+      // it searches for, so it matched itself on the first run. Exactly the
+      // #185 shape — a census disarmed, here inverted into a census
+      // indicting itself — and it is left recorded rather than tidied away.
+      .filter((path) => !/\.(test|dbtest)\.tsx?$/.test(path))
+      .filter((path) => /export function retainageWithheldFor\b/.test(readFileSync(join(WEB, path), "utf8")));
+    expect(definitions).toEqual([FORMULA]);
+  });
+
+  it("is the only place in any workspace package that does the arithmetic", () => {
+    // REPO-WIDE, not writer-wide, and that is the point. Restricting this
+    // to the three declared writers would answer only "did a known writer
+    // grow a second formula" and leave the more likely future — a fourth
+    // file nobody has declared yet — to the allowlist alone. The scan
+    // covers every workspace package (see `workspaceSourceRoots`), 1,273
+    // files at the time of writing, and comes back with nothing but this
+    // test file, which quotes both expressions on purpose a few lines down.
+    const offenders = SCANNED.map((file) => relative(WEB, file))
+      .filter((path) => path !== FORMULA && !NON_PRODUCTION.test(path))
+      .filter((path) => RATE_AS_OPERAND.test(withoutComments(readFileSync(join(WEB, path), "utf8"))));
+    expect(offenders).toEqual([]);
+  });
+
+  for (const [path, why] of Object.entries(RETAINAGE_WRITERS)) {
+    describe(`${path} — ${why}`, () => {
+      const stripped = withoutComments(readFileSync(join(WEB, path), "utf8"));
+
+      it("calls the formula in code, not only in a comment", () => {
+        // Two things at once, and both are load-bearing. It proves the
+        // declared writer really calls the shared formula; and it proves
+        // the comment stripper did not eat the code the assertion above
+        // reads, which is what would make that assertion vacuous.
+        expect(stripped).toContain("retainageWithheldFor(");
+      });
+    });
+  }
+
+  it("refuses the expressions that were actually live", () => {
+    // The mutation test, inlined, so the regex above is never taken on
+    // trust. These are the two real lines, verbatim.
+    expect("(Number(amount) * (retainagePercent / 100)).toFixed(2)").toMatch(RATE_AS_OPERAND);
+    expect("((amount * Number(job.retainagePercent)) / 100).toFixed(2)").toMatch(RATE_AS_OPERAND);
+    // And the shapes that must keep passing, or the guard is unusable:
+    // reading the column, selecting it, storing it, printing it.
+    expect("select: { retainagePercent: true }").not.toMatch(RATE_AS_OPERAND);
+    expect("retainageWithheldFor(amountValue, job.retainagePercent);").not.toMatch(RATE_AS_OPERAND);
+    expect("data: { retainagePercent, substantialCompletionDate }").not.toMatch(RATE_AS_OPERAND);
+    expect("`${Number(retainagePercent)}% per the job's terms`").not.toMatch(RATE_AS_OPERAND);
   });
 });
