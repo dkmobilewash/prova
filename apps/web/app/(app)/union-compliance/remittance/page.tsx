@@ -37,6 +37,7 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
 import { money } from "@/lib/money";
+import { formatHours } from "@/lib/render-hours";
 import { loadRemittance, monthBounds } from "@/lib/union-compliance-query";
 import {
   isWhollyUnpriced,
@@ -57,10 +58,10 @@ function Missing({ children }: { children: React.ReactNode }) {
   return <span className="text-[10px] font-medium leading-tight text-red-600">{children}</span>;
 }
 
-/** Hours as a remittance prints them — 8, 7.5, never 8.00. */
-function hoursCell(hours: number): string {
-  return String(Number(hours.toFixed(2)));
-}
+/** Hours as a remittance prints them. One line so the name reads locally;
+ * the rounding is `lib/render-hours.ts`, shared with the WH-347 page that
+ * had a byte-identical copy of this function. */
+const hoursCell = formatHours;
 
 /** The four funds, in the order they are printed and cheque-written. Each
  * one is a separate line and a separate cheque, which is the whole reason

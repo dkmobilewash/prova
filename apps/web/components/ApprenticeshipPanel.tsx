@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { standingLabel } from "@/lib/apprenticeship";
+import { formatHours } from "@/lib/render-hours";
 import type { ApprenticeStanding } from "@/lib/apprenticeship-query";
 import { ApprenticeshipRowActions } from "@/components/ApprenticeshipRowActions";
 import { ApprenticeshipPeriodRow } from "@/components/ApprenticeshipPeriodRow";
@@ -30,11 +31,11 @@ function StandingNote({
 
   return (
     <span className={`text-xs ${tone}`}>
-      {done === null ? "—" : `${done} ${unit}`}
-      {required !== null && <span className="text-ink-muted"> of {required}</span>}
+      {done === null ? "—" : `${formatHours(done)} ${unit}`}
+      {required !== null && <span className="text-ink-muted"> of {formatHours(required)}</span>}
       {" · "}
       {standingLabel(standing as never)}
-      {shortfallHours !== null && shortfallHours > 0 && ` · ${shortfallHours} short`}
+      {shortfallHours !== null && shortfallHours > 0 && ` · ${formatHours(shortfallHours)} short`}
     </span>
   );
 }

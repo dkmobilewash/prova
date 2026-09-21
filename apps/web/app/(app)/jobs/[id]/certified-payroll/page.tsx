@@ -5,6 +5,7 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
 import { money } from "@/lib/money";
+import { formatHours } from "@/lib/render-hours";
 import { buildCertifiedPayrollSummary, type CertifiedPayrollTimeEntryInput } from "@/lib/certified-payroll";
 import {
   certifiedPayrollWeekStart,
@@ -242,10 +243,10 @@ export default async function CertifiedPayrollPage({
                         <td className="py-1 pr-3 text-ink-label">{row.craftLabel}</td>
                         {PAY_TYPE_COLUMNS.map((col) => (
                           <td key={col.value} className="py-1 pr-3 text-right text-ink-body">
-                            {row.hoursByPayType[col.value] > 0 ? row.hoursByPayType[col.value] : "—"}
+                            {row.hoursByPayType[col.value] > 0 ? formatHours(row.hoursByPayType[col.value]) : "—"}
                           </td>
                         ))}
-                        <td className="py-1 pr-3 text-right text-ink">{row.totalHours}</td>
+                        <td className="py-1 pr-3 text-right text-ink">{formatHours(row.totalHours)}</td>
                         <td className="py-1 text-right text-ink">
                           {row.wageCost != null ? money(row.wageCost) : "—"}
                           {row.hasUncomputedHours && <span className="ml-1 text-amber-400">*</span>}
@@ -256,7 +257,7 @@ export default async function CertifiedPayrollPage({
                 </table>
               </div>
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-line-row pt-2 text-xs text-ink-muted">
-                <span>Total hours: {employee.totalHours}</span>
+                <span>Total hours: {formatHours(employee.totalHours)}</span>
                 <span>Total wages: {employee.totalWageCost != null ? money(employee.totalWageCost) : "—"}</span>
                 {employee.perDiemTotal > 0 && <span>Per diem: {money(employee.perDiemTotal)}</span>}
                 {employee.travelPayTotal > 0 && <span>Travel pay: {money(employee.travelPayTotal)}</span>}
@@ -265,12 +266,14 @@ export default async function CertifiedPayrollPage({
           ))}
 
           <div className="rounded-lg border border-line-card bg-surface p-4 text-sm">
-            <p className="text-ink">Week total: {weekTotalHours} hours across {employeeSummaries.length} employee(s)</p>
+            <p className="text-ink">
+              Week total: {formatHours(weekTotalHours)} hours across {employeeSummaries.length} employee(s)
+            </p>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-line-row pt-2 text-xs text-ink-muted">
               <span className="text-ink-body">Hours by day:</span>
               {hoursByDay.map(([iso, hours]) => (
                 <span key={iso}>
-                  {dayLabel(new Date(`${iso}T00:00:00.000Z`))} — {hours}
+                  {dayLabel(new Date(`${iso}T00:00:00.000Z`))} — {formatHours(hours)}
                 </span>
               ))}
             </div>

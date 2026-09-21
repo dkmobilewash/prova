@@ -11,6 +11,7 @@ import { RuleSetForm } from "@/components/RuleSetForm";
 import { RuleSetRow } from "@/components/RuleSetRow";
 import { DeterminationRuleSetPicker } from "@/components/DeterminationRuleSetPicker";
 import { splitLabel } from "@/components/prevailingWageLabels";
+import { formatHours } from "@/lib/render-hours";
 
 export default async function PrevailingWagePage({
   searchParams,
@@ -107,7 +108,7 @@ export default async function PrevailingWagePage({
                         <p className="text-sm font-medium text-ink-label">
                           {employee.employeeName}
                           <span className="ml-2 font-normal text-ink-muted">
-                            {employee.review.totalHours} hrs
+                            {formatHours(employee.review.totalHours)} hrs
                           </span>
                         </p>
 
