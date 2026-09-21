@@ -1,5 +1,4 @@
 import { useLocalSearchParams } from "expo-router";
-import * as Sharing from "expo-sharing";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -29,6 +28,36 @@ import type { DrawingSetRow } from "@/lib/types";
  * cached automatically because they are cheap, and a drawing file is
  * megabytes on somebody's cellular plan.
  */
+/**
+ * Opens a file held on the phone, if this build can.
+ *
+ * A `file://` uri cannot go to `WebBrowser` — that is
+ * SFSafariViewController on iOS and it takes http(s) only, which is the
+ * bug this function exists to fix. The OS share sheet (Quick Look) can,
+ * and that is `expo-sharing`.
+ *
+ * IMPORTED LAZILY, AND THAT IS THE POINT. `expo-sharing` is a NATIVE
+ * module: adding the package changes the JS bundle but not the binary
+ * already installed on a phone, so a dev client built before it existed
+ * throws `Cannot find native module 'ExpoSharing'` — at module scope,
+ * which took the whole screen down with a red box. Found on a device on
+ * 2026-09-20, because nothing that runs in node can see it.
+ *
+ * So the import happens inside the tap, inside a try, and a build that
+ * cannot do it falls back to opening online and says so. The next native
+ * build gets the held copy for free.
+ */
+async function openHeldFile(uri: string): Promise<boolean> {
+  try {
+    const Sharing = await import("expo-sharing");
+    if (!(await Sharing.isAvailableAsync())) return false;
+    await Sharing.shareAsync(uri, { UTI: "com.adobe.pdf", mimeType: "application/pdf" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function DrawingsScreen() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const getToken = useStableGetToken();
@@ -110,23 +139,16 @@ export default function DrawingsScreen() {
                         accessibilityRole="button"
                         onPress={async () => {
                           setError(null);
+                          const opened = localUri ? await openHeldFile(localUri) : false;
+                          if (opened) return;
                           try {
-                            if (localUri) {
-                              // A HELD file needs the OS, not a browser:
-                              // `openBrowserAsync` is SFSafariViewController
-                              // on iOS and it takes http(s) only, so handing
-                              // it a `file://` uri does nothing — which
-                              // would have broken opening a drawing in
-                              // exactly the place the download exists for.
-                              await Sharing.shareAsync(localUri, {
-                                UTI: "com.adobe.pdf",
-                                mimeType: "application/pdf",
-                              });
-                            } else {
-                              await WebBrowser.openBrowserAsync(revision.fileUrl!);
-                            }
+                            await WebBrowser.openBrowserAsync(revision.fileUrl!);
                           } catch {
-                            setError("Couldn't open that drawing.");
+                            setError(
+                              localUri
+                                ? "This build can't open a saved drawing yet — it opens online until the app is rebuilt."
+                                : "Couldn't open that drawing.",
+                            );
                           }
                         }}
                       >

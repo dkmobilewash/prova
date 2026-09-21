@@ -14,6 +14,15 @@ import { defaultScheduleWindow, listScheduleForJob } from "@/lib/schedule-core";
  *
  * The window defaults to a week either side of today. `from`/`to` are
  * accepted so the phone can page without this route guessing.
+ *
+ * SO IS `today`, AND IT IS NOT DECORATION. Whether a planned day is in
+ * the past decides whether "no hours logged" is a fact or an accusation,
+ * and that is a question about the VIEWER'S calendar, not the server's:
+ * at 18:03 in Albuquerque the UTC date is already tomorrow, so a phone
+ * asking about today got told today was over. Found on a device,
+ * 2026-09-20 — the same shape as the web's `localToday.ts` scar. The
+ * phone sends its own day; UTC is only the fallback for a caller that
+ * does not.
  */
 export const dynamic = "force-dynamic";
 
@@ -35,7 +44,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const job = await prisma.job.findUnique({ where: { id }, select: { id: true, companyId: true } });
   if (!job || job.companyId !== context.companyId) return jsonError("Job not found", 400);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const asked = request.nextUrl.searchParams.get("today");
+  if (asked !== null && !DAY.test(asked)) return jsonError("today must be a date", 400);
+  const today = asked ?? new Date().toISOString().slice(0, 10);
   const fallback = defaultScheduleWindow(today);
   const from = request.nextUrl.searchParams.get("from") ?? fallback.from;
   const to = request.nextUrl.searchParams.get("to") ?? fallback.to;

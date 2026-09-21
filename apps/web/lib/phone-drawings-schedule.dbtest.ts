@@ -119,6 +119,32 @@ describe("drawings and the schedule, as the phone reads them", () => {
     expect(byDate["2026-02-03"]).toMatchObject({ hoursLogged: false });
   });
 
+  it("takes the VIEWER'S day, so an evening in Albuquerque is not tomorrow", async () => {
+    // The device bug, 2026-09-20: at 18:03 Mountain the UTC date is
+    // already the 21st, so today's planned day came back as past with no
+    // hours — an accusation aimed at a day still being worked.
+    await prisma.crewScheduleDay.create({
+      data: {
+        companyId: context.companyId,
+        jobId,
+        crewMemberId: crewId,
+        workDate: new Date("2026-02-10T00:00:00.000Z"),
+      },
+    });
+
+    // The server asked about a world where today IS the 10th.
+    const sameDay = await (await get(schedule, "?from=2026-02-10&to=2026-02-10&today=2026-02-10")).json();
+    expect(sameDay[0].hoursLogged).toBe(false);
+
+    // And one where the viewer has not reached it yet: nothing is claimed.
+    const notYet = await (await get(schedule, "?from=2026-02-10&to=2026-02-10&today=2026-02-09")).json();
+    expect(notYet[0].hoursLogged).toBeNull();
+  });
+
+  it("refuses a today that is not a date", async () => {
+    expect((await get(schedule, "?from=2026-02-01&to=2026-02-05&today=yesterday")).status).toBe(400);
+  });
+
   it("does not accuse a future day of having no hours", async () => {
     const future = new Date();
     future.setUTCDate(future.getUTCDate() + 3);

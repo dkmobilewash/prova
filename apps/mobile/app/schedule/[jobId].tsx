@@ -8,6 +8,7 @@ import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote } from "@/lib/cached-read";
+import { localToday } from "@/lib/local-today";
 import { groupByDay } from "@/lib/schedule-days";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 import type { ScheduleRow } from "@/lib/types";
@@ -50,7 +51,8 @@ export default function ScheduleScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
-  const today = new Date().toISOString().slice(0, 10);
+  // The phone's day, not UTC's — see lib/local-today.ts.
+  const today = localToday();
   const days = groupByDay(rows);
 
   return (
