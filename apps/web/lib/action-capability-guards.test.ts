@@ -1280,7 +1280,7 @@ describe("every write behind a guarded page answers to the same capability", () 
       "jobs.updateLineItem": "VIEW_JOB_COSTS",
       "jobs.updateLineItemForecast": "VIEW_JOB_COSTS",
       "jobs.deleteLineItem": "VIEW_JOB_COSTS",
-      "jobs.addTakeoffLineItems": "VIEW_JOB_COSTS",
+      "takeoff.addTakeoffLines": "VIEW_JOB_COSTS",
       "jobs.draftLineItemsFromScope": "VIEW_JOB_COSTS",
       "jobs.addCostEntry": "VIEW_JOB_COSTS",
       "jobs.deleteCostEntry": "VIEW_JOB_COSTS",
@@ -1492,6 +1492,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // Only the three estimate-tab writes; the catalog actions in the same
   // module sit behind `/catalog` and remain in KNOWN_OPEN.
   estimating: () => import("./actions/estimating"),
+  // The generalized takeoff action. Reachable only from the estimate tab and
+  // the bid wizard's pricing step — both withhold on VIEW_JOB_COSTS — so the
+  // walk derives its assertion and executes it as a principal without it,
+  // same as the jobs/estimating modules above.
+  takeoff: () => import("./actions/takeoff"),
   // Crew & time. Five of the seven actions here are decided per SECTION
   // rather than per page (SECTION_DECIDED) — `/jobs/[id]/crew` withholds
   // on two capabilities, so the ordinary rule derives nothing for it. The

@@ -606,7 +606,7 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "deleteCostEntry", reason: "Deletes are never commands (T5)." },
   { action: "assignCrewMember", reason: "Its duplicate check uses the instanceof form shared.ts documents as false at runtime; not registered until that is fixed." },
   { action: "unassignCrewMember", reason: "Removing a person from a roster is done where the roster is shown." },
-  { action: "addTakeoffLineItems", reason: "Takeoff needs dimensions in a form the model should not be transcribing; the job page's takeoff form is the path." },
+  { action: "addTakeoffLines", reason: "Takeoff needs dimensions in a form the model should not be transcribing; the job page's takeoff form is the path." },
   // createBidInvitation left this list in phase 4c: registered as
   // log_bid_invitation in commands/bids.ts, DIRECT over the lifted core
   // in lib/estimating/bid-invitation.ts.
