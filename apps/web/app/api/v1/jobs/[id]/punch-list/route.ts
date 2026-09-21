@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { Prisma, prisma } from "@prova/db";
+import { prisma } from "@prova/db";
+import { isUniqueConstraintError } from "@/lib/actions/shared";
 
 export const dynamic = "force-dynamic";
 
@@ -128,7 +129,16 @@ export async function POST(
   } catch (error) {
     // The other half of the replay, for the request that lost the race.
     // Anything else is a real failure and is rethrown.
-    if (clientOperationId && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+    //
+    // `isUniqueConstraintError` rather than `instanceof
+    // Prisma.PrismaClientKnownRequestError`, which is the dead-guard shape
+    // this repo has paid for three times (#25, #26, and `lib/auth.ts`'s
+    // first-sign-in recovery): under Next's bundling the thrown error's
+    // class and the re-exported namespace are different copies, so the
+    // `instanceof` is false at runtime and the guard never fires. The
+    // dbtest beside this route could not see it — it calls the route
+    // directly, where both copies are the same one.
+    if (clientOperationId && isUniqueConstraintError(error)) {
       const existing = await prisma.punchListItem.findUnique({
         where: { companyId_clientOperationId: { companyId: context.companyId, clientOperationId } },
       });
