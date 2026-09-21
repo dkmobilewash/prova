@@ -1077,13 +1077,14 @@ before any hours are worked and may never result in hours at all (a
 no-show, or a job that gets pulled). The scanned slip (Vercel Blob) is
 optional — some halls dispatch by phone with only a referral number.
 
-Deliberately not built in this pass: a dedicated mobile/field time-entry
-app. Every time entry and dispatch slip today goes through the same
-responsive Next.js site as everything else. A real field app (offline
-support, native camera access for slip photos, etc.) is a separate,
-larger effort with its own design pass — the same category as
-QuickBooks data sync or plan-takeoff via computer vision above, not
-something to bolt onto this phase.
+Corrected 2026-09-21: the dedicated mobile/field app this paragraph said
+was deliberately not built now exists as `apps/mobile`, a dedicated Expo
+app on `main` — time entry, timesheet sign-off, punch lists, camera
+capture with GPS, drawings and schedule, offline-first (write outbox,
+cached reads) on the phone's own calendar day. What remains not built is
+its distribution: EAS is configured and the Apple Developer Program is
+enrolled, but no TestFlight build exists. FEATURE-AUDIT Sheets 07 and 25
+carry the same correction.
 
 ## Certified payroll and prevailing wage
 
@@ -1427,10 +1428,14 @@ each page still consults `can()` and still references its flags. It cannot
 tell you a guard wraps the right section — only that a refactor has not
 silently dropped the import and restored the hole with every test green.
 
-What remains genuinely unbuilt is a mobile SURFACE. This is the same
-responsive site, narrowed; an offline-capable field app with camera
-capture is a separate build, not a permission, and FEATURE-AUDIT Sheet 25
-keeps that row at Partial for that reason alone.
+Corrected 2026-09-21: the mobile surface this paragraph calls genuinely
+unbuilt now exists — `apps/mobile`, a dedicated Expo app on `main`
+(FEATURE-AUDIT Sheet 07). Sheet 25 keeps the field-only row at Partial,
+but no longer for that reason: the native app's tabs and screens read
+the same capability map (`screen-capabilities.ts` in `apps/mobile`), so
+the phone shows only what the holder can do. The honest remainder is
+that the field tier has not been walked screen-by-screen on a device,
+and the app is not yet distributed.
 
 Per-company overrides of the capability map are not built. A settings page
 editing a map nothing reads would be worse than the honest absence; where a
