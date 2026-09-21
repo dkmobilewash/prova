@@ -31,6 +31,28 @@ and not on production. Mutation-tested: removing `app/error.tsx` fails 12
 tests, removing `global-error.tsx` fails 5, dropping the preview paragraph
 fails 3.
 
+**And the boundary now says "database" only when it IS the database.**
+Found by clicking during review: a thousands comma typed into an invoice
+Amount field crashed the page (a parsing defect owned elsewhere, not fixed
+here), the boundary caught it correctly — and then told the tester "on a
+preview this is usually the database, run the Migrate demo database
+workflow". Confidently the wrong diagnosis; the workflow could not help. The
+boundary cannot read the error — production redacts the message — but
+Next.js keeps a digest the SERVER sets (that is how `redirect()` travels), so
+the Prisma client now stamps a `SCHEMA_DRIFT_P2021`/`P2022` digest on a
+"table/column does not exist" error via one `$extends` query hook
+(`packages/db/src/schema-drift.ts`). `PageLoadError` reads it: preview +
+drift → run the workflow; preview + anything else → say in so many words
+that the workflow will not fix it; production + drift → the deploy window
+(#378), reload in a couple of minutes; production + other → nothing extra.
+The extended client is typed as the plain `PrismaClient` on purpose —
+exporting the extended type produced 20 TS2345 errors at `tx:
+Prisma.TransactionClient` call sites in both lanes — and a test fails the
+build if anything starts calling the two members `$extends` drops.
+`lib/schema-drift.dbtest.ts` drops a column inside a transaction against the
+real scratch Postgres and asserts the real P2022 comes back stamped, then
+that the rollback restored the column.
+
 **Save with nothing selected on `/welcome` threw.** Reproduced before it was
 fixed, not taken from the report: `saveBusinessScope(new FormData())`
 rejected with `"contractingRelationship" must be one of: …`. The chain was
