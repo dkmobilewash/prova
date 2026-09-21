@@ -207,6 +207,47 @@ describe("/ landing content renders signed out, with no auth call of its own", (
   });
 
   /**
+   * The hero's LEFT column had the other half of the same defect: ~336px
+   * of bare background under the Sign in button at 1440, beside the lower
+   * half of the panel. It is filled with the paperwork list — the
+   * documents the product produces, by trade name. Three things are
+   * asserted, each a way the fix could quietly stop being one:
+   *
+   *  - it is inside the hero <section>, not drifted below it;
+   *  - it names the documents (a list hollowed out to two entries would
+   *    still "be there");
+   *  - it SURVIVES stripPanels, so the page-wide invented-statistic guard
+   *    is reading it. "G702/G703" and "WH-347" carry digits, which is
+   *    exactly why this block must stay prose rather than be wrapped as a
+   *    panel to make a guard go quiet.
+   */
+  it("the hero's left column carries the paperwork list, inside the hero, as guarded prose", () => {
+    const heroStart = html.indexOf("<section");
+    const heroEnd = html.indexOf("</section>", heroStart);
+    const hero = html.slice(heroStart, heroEnd);
+    expect((html.match(/data-landing-paperwork/g) ?? []).length).toBe(1);
+    expect(hero).toContain("data-landing-paperwork");
+    expect(hero).toContain("The paperwork it produces");
+    for (const doc of [
+      "Pay applications",
+      "Certified payroll",
+      "Fringe remittance",
+      "Change orders",
+      "RFIs",
+      "Submittals",
+      "Daily field reports",
+      // renderToStaticMarkup escapes the ampersand.
+      "T&amp;M tickets",
+    ]) {
+      expect(hero).toContain(doc);
+    }
+    // It is prose, not a panel: the stripper must leave it in place.
+    const prose = stripPanels(html);
+    expect(prose).toContain("data-landing-paperwork");
+    expect(prose).toContain("WH-347");
+  });
+
+  /**
    * The panels are re-rendered markup, NOT screenshots, and the page must
    * never imply otherwise — "screenshot", "preview of your data" or a
    * customer's name on a figure would each be a false claim on a page

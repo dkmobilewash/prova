@@ -131,6 +131,79 @@ const sectionSpace = "mt-16 sm:mt-24 lg:mt-[120px]";
 const TRADES = ["Framing & drywall", "Plaster", "EIFS", "Ceilings", "Fireproofing"];
 
 /**
+ * The documents the product actually produces, by the names the trade uses
+ * for them. Sits in the hero's left column under the buttons — see the
+ * geometry note at the hero for why that column needed real content.
+ *
+ * This is the single fastest test a contractor can run on a page like
+ * this: does it cover MY paperwork. So the list is nouns a sub already
+ * has a folder for, not capabilities — and every one is checked against
+ * the code, with the receipt beside it. If the product stops producing
+ * one, remove its line in the same commit. Deliberately no counts, no
+ * percentages and no comparisons; the page-wide invented-statistic guard
+ * in app/page.test.ts runs over this block, because it is prose and not a
+ * `data-landing-panel`.
+ *
+ * Two candidates were considered and left OUT because the app does not
+ * produce them as documents: lien notices (lib/lien-deadlines.ts — the
+ * app tracks deadlines a person ENTERED and never computes or drafts a
+ * notice) and an OSHA 300 log (the safety module issues case numbers and
+ * marks recordability, components/safetyLabels.ts, but renders no 300/300A
+ * form).
+ */
+const PAPERWORK: { name: string; detail: string }[] = [
+  {
+    // lib/pay-application.ts calculatePayAppLineItem / calculatePayAppSummary;
+    // app/(app)/jobs/[id]/pay-applications/[invoiceId]/page.tsx
+    name: "Pay applications",
+    detail: "G702/G703-style, off the schedule of values",
+  },
+  {
+    // lib/wh347.ts buildWh347; app/(app)/jobs/[id]/certified-payroll/wh-347/page.tsx
+    name: "Certified payroll",
+    detail: "WH-347, from hours the crew already logged",
+  },
+  {
+    // lib/fringe-remittance.ts RemittanceLocalRow; app/(app)/union-compliance/
+    // remittance/page.tsx — "the monthly fringe remittance", one row per local
+    name: "Fringe remittance",
+    detail: "One sheet per local, for the month",
+  },
+  {
+    // components/ChangeOrders.tsx; ChangeOrderCounter (jobs.prisma);
+    // components/changeOrderStates.ts CONTRACT_EFFECT — SUBMITTED moves nothing
+    name: "Change orders",
+    detail: "Numbered; the sum moves only on approval",
+  },
+  {
+    // RfiCounter (operations.prisma); components/rfiLabels.ts isOverdue,
+    // derived on every render from an ENTERED dueBy
+    name: "RFIs",
+    detail: "Numbered, dated; overdue is never stored",
+  },
+  {
+    // SubmittalCounter, SubmittalRevision (operations.prisma) — "sent
+    // revisions are correspondence and are never deleted or renumbered"
+    name: "Submittals",
+    detail: "Every revision kept, none renumbered",
+  },
+  {
+    // DailyFieldReport (operations.prisma) — crew read from that day's
+    // TimeEntry rows by craft, weatherAuto fetched for the site
+    // (lib/field-reports-core.ts), never typed
+    name: "Daily field reports",
+    detail: "Crew from the day's hours, weather fetched",
+  },
+  {
+    // TmTicket (operations.prisma) — snapshot frozen at signing,
+    // signaturePath drawn on the phone; apps/mobile/app/ticket/[jobId].tsx;
+    // app/api/v1/jobs/[id]/tickets/route.ts
+    name: "T&M tickets",
+    detail: "Signed on site, frozen at signing",
+  },
+];
+
+/**
  * The problem/contrast section — the "single most defensible section"
  * available, because a GC-first platform cannot honestly run this
  * argument against its own buyer. Every right-column line is a
@@ -295,15 +368,27 @@ export function LandingPage() {
           The job-site system for union specialty-trade subcontractors.
         </h1>
         {/* `items-start`, NOT `items-center`. The pay-application panel is
-            ~578px tall and the left column is ~242px, so centring the row
-            split the difference and left a 207px hole between the headline
-            and the subhead — read as "the page looks empty" twice before
-            anyone measured it. Top-aligning puts the subhead directly under
-            the headline, where it belongs, and lets the panel be the tall
-            element it is. */}
+            ~578px tall. When the left column was ~242px (subhead, chips,
+            buttons), centring the row split the difference and left a
+            207px hole between the headline and the subhead — read as "the
+            page looks empty" twice before anyone measured it. Top-aligning
+            put the subhead directly under the headline, where it belongs,
+            and moved the surplus to the BOTTOM: ~336px of bare background
+            under the Sign in button, beside the lower half of the panel,
+            which is where the founder pointed the third time.
+
+            The fix for that is content, not alignment. The column now
+            carries the paperwork list (PAPERWORK above) under the buttons,
+            and the subhead and chips step up one size at `lg` where the
+            96px headline had left them undersized. Measured at 1440x900
+            after this change: the left column and the panel are within a
+            few tens of pixels of each other — see the changelog entry for
+            the numbers. Do not put `items-center` back, and do not close
+            the gap with padding: the column has to be the height it is
+            because of what is in it. */}
         <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:gap-14">
           <div className="flex min-w-0 flex-col gap-8">
-            <p className="max-w-2xl text-lg leading-relaxed text-ink-body sm:text-xl">
+            <p className="max-w-2xl text-lg leading-relaxed text-ink-body sm:text-xl lg:text-2xl">
               The estimate, the contract, the crew&rsquo;s hours, certified payroll and the GC&rsquo;s
               pay application &mdash; all in one place, so the same numbers don&rsquo;t get typed in
               three times.
@@ -312,7 +397,7 @@ export function LandingPage() {
               {TRADES.map((trade) => (
                 <li
                   key={trade}
-                  className="rounded-full border border-line-card bg-surface px-4 py-1.5 text-sm font-medium text-ink-label"
+                  className="rounded-full border border-line-card bg-surface px-4 py-1.5 text-sm font-medium text-ink-label lg:text-base"
                 >
                   {trade}
                 </li>
@@ -325,6 +410,26 @@ export function LandingPage() {
               <Link href="/sign-in" className={ctaQuiet}>
                 Sign in
               </Link>
+            </div>
+            {/* The paperwork list. Two columns at EVERY width, including
+                375px, on purpose: at phone width this sits between the
+                buttons and the panel, and eight single-column rows would
+                push the panel most of a screen further down. Two columns of
+                short names keep it to four rows there. `data-landing-paperwork`
+                is this file's handle for app/page.test.ts, which asserts the
+                block is inside the hero and that the statistic guard sees it. */}
+            <div data-landing-paperwork className="border-t border-line-card pt-6">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                The paperwork it produces
+              </h2>
+              <ul className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4">
+                {PAPERWORK.map((doc) => (
+                  <li key={doc.name} className="min-w-0">
+                    <p className="text-sm font-semibold text-ink-label lg:text-base">{doc.name}</p>
+                    <p className="mt-0.5 text-xs leading-snug text-ink-body lg:text-sm">{doc.detail}</p>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
           {/* `data-landing-panel` is this file's own handle on a placement,

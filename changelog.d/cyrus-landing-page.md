@@ -308,3 +308,41 @@ retainage column, so a receipt naming it looked like a new reader. The
 receipts were reworded to describe the behaviour rather than spell the
 identifier — the censuses were not touched, and neither was given an
 exception.
+
+**Sixth round: the hero's left column, measured.** After the fact ticker
+the founder pointed at one specific region in a screenshot: the space
+under the Sign in button at desktop. Measured at 1440x900 before this
+change: the hero's left column (subhead, trade chips, two buttons) was
+**242px** tall beside a **578px** pay-application panel, leaving **336px**
+of bare background below the last button. An earlier commit on this branch
+(`a9ed980`) had already fixed the worse version of the same defect — the
+row was `items-center`, which put the surplus as a 207px hole BETWEEN the
+headline and the subhead; `items-start` moved the subhead to 40px under
+the headline, where it belongs, and moved the surplus to the bottom.
+
+The fix is content, not alignment or padding. Under the buttons the column
+now carries **the paperwork the product produces**, by the names the trade
+uses: pay applications (G702/G703-style — `lib/pay-application.ts`),
+certified payroll (WH-347 — `lib/wh347.ts`), fringe remittance (one sheet
+per local for the month — `union-compliance/remittance/page.tsx`), change
+orders (numbered; the contract sum moves only on approval —
+`changeOrderStates.ts` CONTRACT_EFFECT), RFIs (overdue derived from the
+dates — `rfiLabels.ts`), submittals (revisions kept, never renumbered —
+`SubmittalRevision`), daily field reports (crew from the day's hours,
+weather fetched — `field-reports-core.ts`), T&M tickets (signed on site,
+snapshot frozen at signing — `TmTicket`). Each carries its receipt as a
+comment beside it. Two candidates were checked and LEFT OUT because the
+app does not produce them as documents: lien notices (it tracks entered
+deadlines and drafts nothing) and an OSHA 300 log (case numbers and
+recordability, no rendered form). The subhead and chips also step up one
+size at `lg` — `text-2xl` and `text-base` — where a 96px headline had left
+20px and 14px undersized; that is part of the answer, not most of it.
+
+The block is two columns at every width, including 375px, on purpose: on
+a phone it lands between the buttons and the panel, and eight
+single-column rows would push the panel most of a screen down. It is
+prose, not a `data-landing-panel`, so the page-wide invented-statistic
+guard reads it — "G702/G703" and "WH-347" carry digits, which is exactly
+why it must not be wrapped as a panel to make a guard go quiet.
+`app/page.test.ts` asserts the block is inside the hero, names every
+document, and survives `stripPanels`.
