@@ -17,7 +17,7 @@ import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, oldestNote, withToken, type CachedRead } from "@/lib/cached-read";
 import { holds } from "@/lib/capabilities";
 import { tokenOrNull } from "@/lib/clerk-token";
-import { localToday } from "@/lib/local-today";
+import { localToday, shortDay } from "@/lib/local-today";
 import { prefetchJob } from "@/lib/prefetch";
 import { pendingCount } from "@/lib/sync-queue";
 import { type Palette, radius, space, typography } from "@/lib/theme";
@@ -46,13 +46,6 @@ function longDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
   return `${WEEKDAYS[date.getUTCDay()]}, ${MONTHS[m - 1]} ${d}`;
-}
-
-/** "Sep 1" — the quiet form for a job's date range. */
-function shortDay(iso: string | null): string | null {
-  if (!iso) return null;
-  const [, m, d] = iso.split("-").map(Number);
-  return `${MONTHS[m - 1].slice(0, 3)} ${d}`;
 }
 
 /**

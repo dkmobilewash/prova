@@ -83,6 +83,8 @@ export default function TabsLayout() {
           name="jobs"
           options={{
             title: "Jobs",
+            // Jobs draws its own large title inside the safe area.
+            headerShown: false,
             tabBarIcon: ({ color, focused }) => <Icon name="jobs" color={color} filled={focused} size={24} />,
           }}
         />

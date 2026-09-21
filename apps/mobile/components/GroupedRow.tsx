@@ -18,6 +18,7 @@ export function GroupedRow({
   title,
   subtitle,
   value,
+  trailing,
   onPress,
   chevron = true,
   divider = false,
@@ -26,6 +27,9 @@ export function GroupedRow({
   title: string;
   subtitle?: string;
   value?: string;
+  /** A right-side node BEFORE the chevron — the current-job checkmark,
+   * a count pill. */
+  trailing?: ReactNode;
   onPress?: () => void;
   /** Chevron shows only when the row actually leads somewhere. */
   chevron?: boolean;
@@ -54,6 +58,7 @@ export function GroupedRow({
         ) : null}
       </View>
       {value ? <Text style={styles.value}>{value}</Text> : null}
+      {trailing}
       {chevron && onPress ? (
         <Icon name="chevron" size={18} color={palette.colors.inkMuted} />
       ) : null}
