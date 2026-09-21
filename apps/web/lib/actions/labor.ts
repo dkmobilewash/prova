@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
 import { prisma } from "@prova/db";
 import {
@@ -19,6 +20,55 @@ import {
   timeEntryCorrectionUpdateData,
 } from "@/lib/time-entry-correction";
 import { isDayLockError, liveSignoff, lockedDayMessage } from "@/lib/timesheet-signoff";
+
+/**
+ * The Crew & time tab's refusal — MANAGE_FIELD, on five of this module's
+ * seven actions. Issue #383, second pass.
+ *
+ * THE PAGE CANNOT SUPPLY THIS ONE EITHER, which is why #392 left the tab
+ * alone. `/jobs/[id]/crew` withholds T&M tickets on MANAGE_FIELD and the
+ * timesheet APPROVE control on MANAGE_COMPLIANCE — two capabilities,
+ * section by section — while the two sections these five live in ("Field
+ * time entries" and "Union hiring-hall dispatch") have no wrapper at all.
+ * The page's own doc comment says so plainly and has always been honest
+ * about it: "Ungated as a route, exactly as it was in the monolith."
+ *
+ * SO THE CAPABILITY COMES FROM THE ASK SIDE, the second source this
+ * feature already uses. `log_time_entry` (lib/ask/commands/labor.ts)
+ * declares `capability: "MANAGE_FIELD"` and imports and calls
+ * `logTimeEntry` from this file directly — the same action, reached two
+ * ways, previously answering to a capability on one of them and to nobody
+ * on the other. That is #392's `log_payment` finding in a different
+ * module. MANAGE_FIELD's own doc comment in lib/permissions.ts names
+ * "time" outright. `updateTimeEntry` and `deleteTimeEntry` correct and
+ * remove exactly the rows `logTimeEntry` creates, in the same section, so
+ * they take the same capability — a correction is not looser than the
+ * write it corrects, and hours are what certified payroll and a delay
+ * claim are argued from months later.
+ *
+ * THE DISPATCH PAIR IS THE ONE ARGUABLE CALL, so here is the argument
+ * rather than a silent choice. A hiring-hall dispatch slip is the
+ * authorization to work under a local's agreement, and every other union
+ * artefact in this app sits behind MANAGE_COMPLIANCE (`/union-compliance`).
+ * It is MANAGE_FIELD anyway, on exactly the reasoning ROUTE_CAPABILITY
+ * already records for `/certifications`: PAYROLL_COMPLIANCE holds BOTH
+ * capabilities, so nobody who would own this under the compliance reading
+ * loses it — while FIELD and PROJECT_MANAGER hold only MANAGE_FIELD and
+ * would lose a control they use today. Closing a hole must not take
+ * something from somebody who already has it. Reading the slip as
+ * compliance paperwork would shut out the people who receive it.
+ *
+ * WHAT IT COSTS: ESTIMATOR and ACCOUNTING are the only functions without
+ * MANAGE_FIELD, so they are the only two who lose these five. Neither logs
+ * hours nor receives a dispatch.
+ *
+ * Returned or thrown per action, each matching its own existing contract —
+ * the three that already return `ActionResult` return the refusal so the
+ * sentence survives production's redaction of thrown Server Action
+ * messages; the two whose whole contract is a throw keep throwing.
+ */
+const FIELD_ONLY =
+  "Crew hours and dispatch aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 /**
  * Every page that reads a job's hours.
@@ -45,7 +95,9 @@ function revalidateJobLabor(jobId: string) {
  * are malformed-input cases a working form never sends, not refusals a
  * normal user needs explained to them. */
 export async function logTimeEntry(jobId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_FIELD")) return actionFail(FIELD_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   const employeeUserId = String(formData.get("employeeUserId") ?? "");
@@ -180,7 +232,9 @@ export async function logTimeEntry(jobId: string, formData: FormData): Promise<A
  * in here.
  */
 export async function updateTimeEntry(timeEntryId: string, formData: FormData): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_FIELD")) return actionFail(FIELD_ONLY);
+  const { company, ...user } = context;
 
   const timeEntry = await prisma.timeEntry.findUnique({ where: { id: timeEntryId } });
   if (!timeEntry) {
@@ -267,7 +321,9 @@ export async function updateTimeEntry(timeEntryId: string, formData: FormData): 
  * referral number, no document to attach.
  */
 export async function uploadDispatchSlip(jobId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_FIELD")) return actionFail(FIELD_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   const employeeUserId = String(formData.get("employeeUserId") ?? "");
@@ -328,7 +384,11 @@ export async function uploadDispatchSlip(jobId: string, formData: FormData): Pro
 }
 
 export async function deleteDispatchSlip(jobId: string, dispatchSlipId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // Throws, matching this function's own contract below. Same capability
+  // as the upload it reverses.
+  if (!can(context, "MANAGE_FIELD")) throw new Error(FIELD_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   const slip = await prisma.dispatchSlip.findUnique({ where: { id: dispatchSlipId } });
@@ -342,7 +402,12 @@ export async function deleteDispatchSlip(jobId: string, dispatchSlipId: string) 
 }
 
 export async function deleteTimeEntry(jobId: string, timeEntryId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // Throws, matching this function's own contract below (it already throws
+  // `lockedDayMessage` at a signed day). Of the three time-entry writes
+  // this is the one that removes the record rather than changing it.
+  if (!can(context, "MANAGE_FIELD")) throw new Error(FIELD_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   const timeEntry = await prisma.timeEntry.findUnique({ where: { id: timeEntryId } });

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { money as formatMoney } from "@/lib/money";
 import { Prisma, prisma } from "@prova/db";
 import { actionFail as fail, actionOk as ok, isUniqueConstraintError, type ActionResult } from "./shared";
@@ -11,6 +12,31 @@ import { actionFail as fail, actionOk as ok, isUniqueConstraintError, type Actio
  * a guard written in plain language would never reach the person it was
  * written for. `lib/actions/submittals.ts` is the reference; `ActionResult`
  * and its helpers live in `./shared`. */
+
+/**
+ * `/backcharges` demands MANAGE_BILLING and has since it was written. Every
+ * action below now asserts it too — issue #383.
+ *
+ * Nothing is derived here that was not already decided: this is the
+ * ordinary rule, one door and one capability, and the six were recorded as
+ * known debt in lib/action-capability-guards.test.ts's own list rather than
+ * being a new discovery. What was missing was the enforcement. A
+ * `requireCapability` on the page stops the page rendering; a Server Action
+ * is a separate HTTP endpoint with a stable id and answers whoever posts to
+ * it, so the gate on `/backcharges` stopped a reader and never stopped a
+ * writer.
+ *
+ * All six taken together, deliberately. A backcharge is the GC deducting
+ * money from what it owes us, and its row is half of a numbered exchange
+ * the GC also holds; gating the create and leaving the resolve would make
+ * the page half-enforced, which this repo has already argued (about
+ * `/closeout`) is harder to reason about than a consistent state.
+ *
+ * Returned rather than thrown, like every other refusal in this module and
+ * for the reason the paragraph above states.
+ */
+const BILLING_ONLY =
+  "Backcharges aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 class InputError extends Error {}
 
@@ -126,7 +152,9 @@ async function issueBackchargeNumber(tx: Prisma.TransactionClient, jobId: string
 }
 
 export async function createBackcharge(formData: FormData): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return fail(BILLING_ONLY);
+  const { company, ...user } = context;
   return runAction(async () => {
     const jobId = required(formData, "jobId", "Job");
     await assertJob(jobId, company.id);
@@ -216,7 +244,9 @@ export async function createBackcharge(formData: FormData): Promise<ActionResult
  * transcription of a letter and a typo in it is worth fixing.
  */
 export async function updateBackcharge(id: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return fail(BILLING_ONLY);
+  const { company } = context;
   return runAction(async () => {
     const backcharge = await assertBackcharge(id, company.id);
     const locked = backcharge.status !== "RECEIVED";
@@ -298,7 +328,9 @@ export async function updateBackcharge(id: string, formData: FormData): Promise<
  * with no date is worth nothing against a GC holding a signed notice with
  * one. */
 export async function disputeBackcharge(id: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return fail(BILLING_ONLY);
+  const { company } = context;
   return runAction(async () => {
     const backcharge = await assertBackcharge(id, company.id);
     if (backcharge.status !== "RECEIVED") {
@@ -338,7 +370,9 @@ export async function disputeBackcharge(id: string, formData: FormData): Promise
  * holds, free to drift from it.
  */
 export async function resolveBackcharge(id: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return fail(BILLING_ONLY);
+  const { company } = context;
   return runAction(async () => {
     const backcharge = await assertBackcharge(id, company.id);
     if (backcharge.status !== "RECEIVED" && backcharge.status !== "DISPUTED") {
@@ -399,7 +433,9 @@ export async function resolveBackcharge(id: string, formData: FormData): Promise
  * answered.
  */
 export async function reopenBackcharge(id: string): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return fail(BILLING_ONLY);
+  const { company } = context;
   return runAction(async () => {
     const backcharge = await assertBackcharge(id, company.id);
     if (backcharge.status === "RECEIVED" || backcharge.status === "DISPUTED") {
@@ -432,6 +468,10 @@ export async function reopenBackcharge(id: string): Promise<ActionResult> {
  */
 export async function deleteBackcharge(id: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
+  // Capability first, then the owner check below, for the ordering reason
+  // #392 gives on the QuickBooks pushes: both sentences are true and the
+  // one a refused person needs is the one naming the thing they cannot do.
+  if (!can(context, "MANAGE_BILLING")) return fail(BILLING_ONLY);
   return runAction(async () => {
     if (context.role !== "OWNER") {
       // Returned rather than thrown: assertOwner throws, and a thrown
