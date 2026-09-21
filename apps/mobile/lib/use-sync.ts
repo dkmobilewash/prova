@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { tokenOrNull } from "./clerk-token";
 import { clearRefused, flushQueue, listRefused, pendingCount, retryRefused, type RefusedOp } from "./sync-queue";
+import { syncOnce } from "./sync-order";
 import { useStableGetToken } from "./use-stable-get-token";
 
 /** The shared offline plumbing for a screen that queues writes: flush the
@@ -29,26 +30,38 @@ export function useSync(refresh: () => Promise<void>) {
     listRefused().then(setRefused);
   }, []);
 
-  const sync = useCallback(async () => {
-    // Bounded: offline Clerk takes about two and a half minutes to say
-    // "no token" (lib/clerk-token.ts), and `refresh()` — the screen
-    // re-reading its own cache — is queued up behind this line.
-    const token = await tokenOrNull(getToken);
-    if (token) {
-      try {
-        await flushQueue(token);
-      } catch {
-        // 401 or offline — leave queued, retry later.
-      }
-    }
-    // The counts and the REFRESH happen either way. This used to return
-    // early without a token, so a screen reopened with no signal never
-    // re-read its own cache — and Clerk answers null offline, because it
-    // refreshes the session JWT over the network.
-    setPending(await pendingCount());
-    setRefused(await listRefused());
-    await refresh();
-  }, [getToken, refresh]);
+  const sync = useCallback(
+    () =>
+      syncOnce({
+        // THE READ NEVER WAITS ON THE WRITE — see lib/sync-order.ts. This
+        // used to be `await getToken()`, then `await flushQueue(token)`,
+        // and only then the screen's own list. With no signal that put
+        // every queue-backed screen behind a token fetch and a queue
+        // flush aimed at a server that was not answering, so the punch
+        // list, field reports, time, photos, materials, safety and T&M
+        // showed nothing and no "no connection" note, while Home and the
+        // read-only screens showed both.
+        refresh,
+        counters: async () => {
+          setPending(await pendingCount());
+          setRefused(await listRefused());
+        },
+        flush: async () => {
+          // An empty queue costs nothing: no token, no network, no wait.
+          const before = await pendingCount();
+          if (before === 0) return false;
+          const token = await tokenOrNull(getToken);
+          if (!token) return false;
+          try {
+            await flushQueue(token);
+          } catch {
+            // 401 or offline — leave queued, retry later.
+          }
+          return (await pendingCount()) !== before;
+        },
+      }),
+    [getToken, refresh],
+  );
 
   // `sync` is re-created on every render (it closes over `refresh`), so the
   // focus effect reads it through a ref rather than re-firing each time.

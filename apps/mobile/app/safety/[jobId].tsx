@@ -11,6 +11,7 @@ import { Sheet } from "@/components/Sheet";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { OfflineNote } from "@/components/OfflineNote";
+import { emptyFor } from "@/lib/empty-state";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -20,6 +21,11 @@ import type { SafetyIncident, ToolboxTalk } from "@/lib/types";
 
 const CLASSIFICATIONS = ["INJURY", "SKIN_DISORDER", "RESPIRATORY_CONDITION", "POISONING", "HEARING_LOSS", "OTHER_ILLNESS"];
 const OUTCOMES = ["DEATH", "DAYS_AWAY", "RESTRICTED_OR_TRANSFER", "OTHER_RECORDABLE", "FIRST_AID_ONLY"];
+
+/** `emptyFor` speaks the List's prop names; EmptyState takes its own. */
+function titles({ emptyTitle, emptyDescription }: { emptyTitle: string; emptyDescription?: string }) {
+  return { title: emptyTitle, description: emptyDescription };
+}
 
 export default function SafetyScreen() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
@@ -113,7 +119,7 @@ export default function SafetyScreen() {
         </Button>
       </View>
       {talks.length === 0 ? (
-        <EmptyState title="No talks logged" />
+        <EmptyState {...titles(emptyFor(offline, "the safety talks", { title: "No talks logged" }))} />
       ) : (
         talks.map((t) => (
           <Card key={t.id}>
@@ -130,7 +136,7 @@ export default function SafetyScreen() {
         </Button>
       </View>
       {incidents.length === 0 ? (
-        <EmptyState title="No incidents" />
+        <EmptyState {...titles(emptyFor(offline, "the incidents", { title: "No incidents" }))} />
       ) : (
         incidents.map((i) => (
           <Card key={i.id}>

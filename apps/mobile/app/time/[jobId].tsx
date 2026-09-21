@@ -16,6 +16,7 @@ import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
 import { tokenOrNull } from "@/lib/clerk-token";
 import { OfflineNote } from "@/components/OfflineNote";
+import { emptyFor } from "@/lib/empty-state";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import {
@@ -621,8 +622,10 @@ export default function TimeScreen() {
             {item.note ? <Text style={styles.note}>{item.note}</Text> : null}
           </Card>
         )}
-        emptyTitle="No time logged"
-        emptyDescription="Tap “Log time” to record the day's hours."
+        {...emptyFor(offline, "the hours", {
+          title: "No time logged",
+          description: "Tap “Log time” to record the day's hours.",
+        })}
       />
 
       <View style={[styles.footer, styles.footerRow]}>

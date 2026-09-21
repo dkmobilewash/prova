@@ -137,7 +137,13 @@ describe("the cache the phone actually uses", () => {
       // The comment in cached-read.ts quotes the bad pattern on purpose.
       if (file.endsWith("cached-read.ts")) continue;
       for (const line of text.split("\n")) {
-        if (/^\s*if \(!token\b.*\breturn\b/.test(line)) offenders.push(file.slice(APP.length + 1));
+        const code = line.trimStart();
+        if (code.startsWith("//") || code.startsWith("*")) continue;
+        // A BARE `return;` — the loader giving up. `return false` from a
+        // predicate ("is there anything to send?") is a different thing
+        // and is allowed: it does not stand between a screen and its
+        // cache.
+        if (/^if \(!token\b[^)]*\)\s*return;/.test(code)) offenders.push(file.slice(APP.length + 1));
       }
     }
     expect(
@@ -162,13 +168,43 @@ describe("the cache the phone actually uses", () => {
       if (file.endsWith("clerk-token.ts")) continue;
       const text = readFileSync(file, "utf8");
       for (const line of text.split("\n")) {
-        if (line.trimStart().startsWith("*")) continue; // the comment that quotes it
-        if (/\bawait getToken\(\)/.test(line)) offenders.push(file.slice(APP.length + 1));
+        // A comment quoting the bad line is not the bad line — the same
+        // allowance cached-read.ts needs for its own worked example.
+        const code = line.trimStart();
+        if (code.startsWith("//") || code.startsWith("*")) continue;
+        if (/\bawait getToken\(\)/.test(code)) offenders.push(file.slice(APP.length + 1));
       }
     }
     expect(
       offenders,
       `these await Clerk's getToken() directly, which offline blocks for ~2m42s — use tokenOrNull/withToken: ${offenders.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("puts no screen's list behind its queue flush", () => {
+    // ROUND THREE of the same report, 2026-09-20: with no signal the
+    // seven queue-backed screens — punch list, field reports, time,
+    // photos, materials, safety, T&M — showed no rows and no "no
+    // connection" note, while Home, Jobs, drawings and the schedule
+    // showed both. Same cache, same component, same sentence. The
+    // difference was ORDER: those seven refreshed their list only after
+    // awaiting a token and a queue flush aimed at a server that was not
+    // answering, and `flushQueue` hands every caller the SAME in-flight
+    // promise, so one stuck upload holds all of them at once.
+    //
+    // `syncOnce` (lib/sync-order.ts) owns that order now and is tested
+    // against a flush that never resolves. So anything that flushes must
+    // go through it rather than sequencing the two itself.
+    const offenders: string[] = [];
+    for (const file of sources()) {
+      if (file.endsWith("sync-queue.ts") || file.endsWith("sync-order.ts")) continue;
+      const text = readFileSync(file, "utf8");
+      if (!/\bflushQueue\(/.test(text)) continue;
+      if (!text.includes("syncOnce(")) offenders.push(file.slice(APP.length + 1));
+    }
+    expect(
+      offenders,
+      `these flush the queue without syncOnce, so their list can end up behind it: ${offenders.join(", ")}`,
     ).toEqual([]);
   });
 

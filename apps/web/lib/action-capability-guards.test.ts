@@ -527,12 +527,12 @@ const OPEN_BEHIND_A_NEWLY_CLOSED_PAGE: Record<string, Capability> = {
  * sweep. The value of writing them down is that the number is now known
  * and can only go down. */
 const OPEN_BEHIND_AN_ALREADY_GUARDED_PAGE: Record<string, Capability> = {
-  "backcharges.createBackcharge": "MANAGE_BILLING",
-  "backcharges.updateBackcharge": "MANAGE_BILLING",
-  "backcharges.disputeBackcharge": "MANAGE_BILLING",
-  "backcharges.resolveBackcharge": "MANAGE_BILLING",
-  "backcharges.reopenBackcharge": "MANAGE_BILLING",
-  "backcharges.deleteBackcharge": "MANAGE_BILLING",
+  // The six backcharge actions were here until this pass. Paid off whole
+  // rather than in part — a GC's deduction against what it owes is the
+  // highest-risk thing left on the already-guarded pages, and gating some
+  // of six would leave /backcharges half-enforced, which this file's own
+  // /closeout note argues is harder to reason about than a consistent
+  // state. They are in MUST_ASSERT now and executed like everything else.
   "billing.disconnectQuickBooks": "MANAGE_COMPLIANCE",
   "billing.testQuickBooksConnection": "MANAGE_COMPLIANCE",
   "quickbooks.loadQuickBooksAccounts": "MANAGE_COMPLIANCE",
@@ -664,6 +664,287 @@ const MIXED_DOORS: Record<string, { capability: Capability | null; reason: strin
     reason:
       "Gated despite also being reachable from the open job page, and deliberately the odd one out: it had NO guard of any kind, not even assertOwner, while every other delete in that folder had at least one. A daily field report is what a delay claim is argued from months later. Removing evidence is not symmetrical with composing it, so the two-door argument that leaves create and update open does not extend to this.",
   },
+  // Surfaced by the ambiguous-page enumeration added below, and it already
+  // asserts what its strictest door demands, so this records rather than
+  // changes anything. Three doors: /intake (MANAGE_JOBS), /dashboard and
+  // /ask (neither of which refuses the route), so the ordinary rule cannot
+  // settle it. MANAGE_JOBS is right for the same reason /intake takes it —
+  // a drop of GC paperwork IS the correspondence that capability names.
+  "intake.recordIntakeDocument": {
+    capability: "MANAGE_JOBS",
+    reason:
+      "Reached from /intake, which demands MANAGE_JOBS, and from the Ask panel on /dashboard and /ask, which refuse nobody at the route level. It already asserts MANAGE_JOBS, matching the only one of its three doors that demands anything; recorded here so that assertion is EXECUTED by the cases below rather than merely present in the source, which is what it was until now.",
+  },
+};
+
+/* ---------------------------------------------------------------- *
+ * 3b. The third shape: a page that withholds SEVERAL things
+ * ---------------------------------------------------------------- */
+
+/**
+ * `SOFT_GATED_AMBIGUOUS` is where #392 stopped, and stopping there was
+ * right — but it left the actions behind those pages VISIBLE AND
+ * UNDECIDABLE, which is a better place than invisible and is not a
+ * finished one.
+ *
+ * The shape, and why neither existing list fits it. `/jobs/[id]` renders
+ * six sections and withholds three of them on VIEW_JOB_COSTS, two on
+ * MANAGE_JOBS, and one on nothing at all. The page therefore has no single
+ * answer to "which capability do the actions behind it assert", so
+ * `effectiveCapability` yields `null` for it and `soleCapabilityGating`
+ * yields `null` for everything it reaches.
+ *
+ *   - `KNOWN_OPEN` does not fit: that list is keyed on a capability the
+ *     ordinary rule DID derive and the action fails to assert. Here the
+ *     rule derives nothing.
+ *   - `MIXED_DOORS` does not fit either, and this is the subtle one: its
+ *     staleness check requires the doors to actually DISAGREE
+ *     (`capabilities.size < 2` is reported as stale). Six of the entries
+ *     below have exactly ONE door. Their doors do not disagree — there is
+ *     simply more than one gate on the single page they sit behind. A
+ *     MIXED_DOORS entry for them would be reported stale the day it was
+ *     written.
+ *
+ * So the decision is recorded per SECTION instead, because the section is
+ * the thing that actually withholds. `section` names the heading in the
+ * page source the action's own form sits inside, so a reviewer can check
+ * the claim against the file rather than taking it on trust, and so a
+ * later reshuffle of that page has something specific to invalidate.
+ *
+ * TWO OF THE SECTIONS NAMED BELOW WITHHOLD NOTHING, and that is stated
+ * rather than smoothed over. "Schedule" on the Overview tab and "Field
+ * time entries" on Crew & time render for anyone who can open the job. For
+ * those the capability is NOT read off the page — it is the one the
+ * matching Ask command already declares for the very same action, which is
+ * the second half of the rule #392 established with `log_payment` and is
+ * the only derivation available when the page itself says nothing. Where
+ * that is the source, the entry says so and names the command.
+ */
+const SECTION_DECIDED: Record<
+  string,
+  { capability: Capability; section: string; reason: string }
+> = {
+  /* ---- /jobs/[id] — the Overview tab ---- */
+
+  // The "Schedule" section. No wrapper: it renders for every job function.
+  // MANAGE_JOBS comes from the Ask side, where this exact action is already
+  // offered under it.
+  "jobs.updateJobSchedule": {
+    capability: "MANAGE_JOBS",
+    section: "Schedule",
+    reason:
+      "The Schedule section of the Overview tab withholds nothing, so the page cannot supply a capability. The `reschedule_job` Ask command declares MANAGE_JOBS and names `action: \"updateJobSchedule\"` — this very function — so the capability is read from the surface that already decided it rather than invented here. Its own doc comment gives the reasoning too: MANAGE_JOBS is \"jobs themselves\". ACCOUNTING and PAYROLL_COMPLIANCE are the only functions that lose the form, and neither schedules work.",
+  },
+  "jobs.assignCrewMember": {
+    capability: "MANAGE_JOBS",
+    section: "Schedule — Crew",
+    reason:
+      "Same ungated section as updateJobSchedule, and the same capability for the same reason: staffing a job is the job record itself, and it is written as a JobAssignment on Job. FIELD holds MANAGE_JOBS, which is the point — the foreman who runs the crew must keep this. There is no Ask command for it (lib/ask/commands/estimating.ts excludes it by name), so the sibling control in its own section is the derivation.",
+  },
+  "jobs.unassignCrewMember": {
+    capability: "MANAGE_JOBS",
+    section: "Schedule — Crew",
+    reason:
+      "The other half of assignCrewMember, in the same ungated section, taking the same capability. Excluded from the Ask commands by name with the reason that removing somebody from a roster is done where the roster is shown — which is this section.",
+  },
+
+  // The "Contract signature" and "Subcontract agreement" sections, both
+  // wrapped in `showsJobMoney`. The derivation here is the ordinary one:
+  // the capability the section withholds on.
+  "billing.createSignatureRequest": {
+    capability: "VIEW_JOB_COSTS",
+    section: "Contract signature",
+    reason:
+      "Inside `{showsJobMoney && (…)}` on the Overview tab, which is `can(principal, \"VIEW_JOB_COSTS\")`. Not invented and not novel: `docusign.ts`'s sendWithDocuSign, refreshDocuSignEnvelope and voidSentEnvelope are rendered by DocuSignPanel INSIDE this very section and already assert VIEW_JOB_COSTS. Three actions in one section asserting it and two not was the inconsistency.",
+  },
+  "billing.revokeSignatureRequest": {
+    capability: "VIEW_JOB_COSTS",
+    section: "Contract signature",
+    reason:
+      "Same section, same gate, same DocuSign precedent as createSignatureRequest. It kills a live e-sign link a client may be holding, so leaving it as the one control in a withheld section that answers anyone was the worse half of the pair.",
+  },
+  "billing.uploadContractDocument": {
+    capability: "VIEW_JOB_COSTS",
+    section: "Subcontract agreement",
+    reason:
+      "Inside the second `{showsJobMoney && (…)}` section. The uploaded file is the GC-to-sub agreement — the evidence that made the job billable — and a new version is how an amendment is recorded, so it is the contract's paper trail rather than a field document.",
+  },
+  "billing.deleteContractDocument": {
+    capability: "VIEW_JOB_COSTS",
+    section: "Subcontract agreement",
+    reason:
+      "Same section as uploadContractDocument. It already calls assertOwner, and the capability is asserted BEFORE it for the reason #392 gives for the QuickBooks pushes: an owner check only stands in for a capability while the role model has two values, and the message a refused person needs is the one naming the thing they cannot do. It also deletes the blob, so nothing about it is recoverable.",
+  },
+
+  /* ---- /jobs/[id]/crew — the Crew & time tab ---- */
+
+  // The "Field time entries" section. Ungated, exactly as the page's own
+  // doc comment says it has always been. MANAGE_FIELD comes from the Ask
+  // command, which calls `logTimeEntry` directly.
+  "labor.logTimeEntry": {
+    capability: "MANAGE_FIELD",
+    section: "Field time entries",
+    reason:
+      "The section withholds nothing, so the capability is the one the `log_time_entry` Ask command declares — MANAGE_FIELD — and that command imports and calls this exact function from lib/actions/labor.ts, so the two surfaces now agree rather than one being open. Its second door, /settings/assistant, demands MANAGE_COMPLIANCE only because it imports the Ask command registry to list proposals; there is no time form on it. Identical shape to #392's logPayment. MANAGE_FIELD's own doc comment names \"time\".",
+  },
+  "labor.updateTimeEntry": {
+    capability: "MANAGE_FIELD",
+    section: "Field time entries",
+    reason:
+      "Corrects an entry logTimeEntry created, in the same section, so it takes the same capability. Correcting hours is deliberately not available from Ask (the command's own description says corrections are done on the job page), which is why the command cannot be the source here and the sibling it corrects is.",
+  },
+  "labor.deleteTimeEntry": {
+    capability: "MANAGE_FIELD",
+    section: "Field time entries",
+    reason:
+      "Removes an entry from the same section. Hours are what certified payroll and a delay claim are argued from, so of the three this is the one where answering anyone signed in mattered most. Same capability as the create it reverses — a delete is not looser than the write it undoes.",
+  },
+  // The "Union hiring-hall dispatch" section. Also ungated. No Ask command
+  // exists, so the capability is argued from the page and from the
+  // capability doc comments, and the argument is written out because it is
+  // the one genuinely arguable call in this pass.
+  "labor.uploadDispatchSlip": {
+    capability: "MANAGE_FIELD",
+    section: "Union hiring-hall dispatch",
+    reason:
+      "Arguable against MANAGE_COMPLIANCE, and called MANAGE_FIELD deliberately, on ROUTE_CAPABILITY's own stated reasoning for /certifications: PAYROLL_COMPLIANCE holds BOTH capabilities, so nobody who would own this under the compliance reading loses it under this one, while FIELD and PROJECT_MANAGER hold only MANAGE_FIELD and would lose a control they use today. The slip is the staffing record the time entries above it are logged against, on the crew tab, beside them. Reading it as compliance paperwork would take it from the people who receive it.",
+  },
+  "labor.deleteDispatchSlip": {
+    capability: "MANAGE_FIELD",
+    section: "Union hiring-hall dispatch",
+    reason:
+      "Same section and the same capability as the upload it reverses, for the same reason. Nothing is sent to the local either way; the row and the link to any scanned slip are this company's own record of the referral.",
+  },
+
+  /* ---- Ten that ALREADY assert the right capability, and which this
+   * file has never once executed.
+   *
+   * These change no behaviour whatsoever. They are here because the
+   * enumeration above found them and they are the more interesting half of
+   * what it found: every one already carries the guard its section wants,
+   * and every one was reached ONLY through a page withholding several
+   * capabilities — so `soleCapabilityGating` returned `null`, they never
+   * entered MUST_ASSERT, and no case in section 5 ever called them. A
+   * correct guard that nothing exercises is one careless edit from being
+   * an incorrect guard that nothing exercises, and this suite would have
+   * stayed green through it.
+   *
+   * Recording them here costs nothing and buys the execution: each is now
+   * called as every job function lacking the capability, must refuse
+   * before touching the database, and must admit everyone holding it plus
+   * an OWNER. That is the difference between "the source contains the
+   * string" and "the endpoint refuses the person". ---- */
+
+  // Rendered by DocuSignPanel INSIDE the Overview tab's two
+  // `{showsJobMoney && …}` sections, and reachable from the Estimate tab,
+  // which withholds its whole body on the same capability.
+  "docusign.sendWithDocuSign": {
+    capability: "VIEW_JOB_COSTS",
+    section: "Contract signature / Subcontract agreement (DocuSignPanel)",
+    reason:
+      "Already asserts VIEW_JOB_COSTS and has since it was written; recorded so that it is EXECUTED. Its two doors are the Overview tab — which withholds several capabilities section by section, so the ordinary rule derives nothing from it — and the Estimate tab. Both withhold these sections on VIEW_JOB_COSTS. No behaviour change.",
+  },
+  "docusign.refreshDocuSignEnvelope": {
+    capability: "VIEW_JOB_COSTS",
+    section: "Contract signature / Subcontract agreement (DocuSignPanel)",
+    reason:
+      "Same panel, same two doors and same capability as sendWithDocuSign, already asserted. Recorded so it is executed rather than merely believed. No behaviour change.",
+  },
+  "docusign.voidSentEnvelope": {
+    capability: "VIEW_JOB_COSTS",
+    section: "Contract signature / Subcontract agreement (DocuSignPanel)",
+    reason:
+      "Same panel and capability as sendWithDocuSign, already asserted, and it additionally refuses anyone who is not the owner. Recorded so the capability half is executed; the owner half is the panel's own `canVoid` and is a separate axis. No behaviour change.",
+  },
+
+  // The Overview tab's `{showsJobManagement && …}` sections — "Job
+  // details" and "Job status" — where showsJobManagement is
+  // can(principal, "MANAGE_JOBS").
+  "jobDetails.updateJobDetails": {
+    capability: "MANAGE_JOBS",
+    section: "Job details",
+    reason:
+      "Already asserts MANAGE_JOBS, which is exactly what its `{showsJobManagement && …}` section withholds on. Recorded so it is executed: the Overview tab's several gates meant this never entered the derived set and no case here ever called it. No behaviour change.",
+  },
+  "jobDetails.deleteEstimateJob": {
+    capability: "MANAGE_JOBS",
+    section: "Job details",
+    reason:
+      "Same section and capability as updateJobDetails, already asserted, plus an owner check of its own — the form only offers it when `canRemove` is true. Recorded for execution, no behaviour change.",
+  },
+  "jobs.setJobStatus": {
+    capability: "MANAGE_JOBS",
+    section: "Job status",
+    reason:
+      "Already asserts MANAGE_JOBS, the capability its own `{showsJobManagement && …}` section withholds on. Worth executing rather than reading: a job's status is the single most GC-visible field on the record, and this is the only control that moves it. No behaviour change.",
+  },
+  "jobs.recordExecutedSubcontract": {
+    capability: "MANAGE_JOBS",
+    section: "Contract signature — Record executed subcontract",
+    reason:
+      "Nested inside BOTH gates: the `{showsJobMoney && …}` section, and then `{!isContractExecuted && showsJobManagement && …}` around the control itself. MANAGE_JOBS is the inner and narrower of the two, which is what it already asserts, so the recorded capability is the one actually reached. No behaviour change.",
+  },
+
+  // The Crew & time tab's timesheet approval, whose control is passed
+  // `canApprove={can(principal, "MANAGE_COMPLIANCE")}`.
+  "timesheetSignoff.approveTimesheetDay": {
+    capability: "MANAGE_COMPLIANCE",
+    section: "Timesheet sign-off",
+    reason:
+      "Already asserts MANAGE_COMPLIANCE, matching the `canApprove` flag the crew page computes for this exact control. Deliberately NOT the MANAGE_FIELD the rest of that tab takes: approving a signed day turns it into payroll, and the foreman who signed it is not who agrees it. Recorded for execution, no behaviour change.",
+  },
+  "timesheetSignoff.reopenTimesheetDay": {
+    capability: "MANAGE_COMPLIANCE",
+    section: "Timesheet sign-off",
+    reason:
+      "The other half of approveTimesheetDay, same control, same capability, already asserted. Reopening unlocks a day's hours for editing, so it is if anything the more consequential of the two. Recorded for execution, no behaviour change.",
+  },
+};
+
+/**
+ * The other half of the same set: actions behind a page that withholds
+ * several capabilities which this pass did NOT decide.
+ *
+ * This list exists so that "not decided" is a line somebody wrote rather
+ * than a silence, which is the whole rule this feature is built on. The
+ * check below requires every action behind an ambiguous page to be in
+ * exactly one of these two maps — so the next pass starts from a set it
+ * can count instead of re-deriving one, and a NEW action wired to
+ * `/contacts/[id]` or `/dashboard` fails this suite until somebody either
+ * decides it or writes down why not.
+ *
+ * IT MAY ONLY SHRINK, for the same reason `KNOWN_OPEN` may only shrink.
+ */
+const UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE: Record<string, { page: string; reason: string }> = {
+  // `/contacts/[id]` withholds on three capabilities section by section
+  // (MANAGE_ESTIMATING for bid invitations, MANAGE_BILLING for the client
+  // portal, VIEW_JOB_COSTS elsewhere). That is a bigger per-section read
+  // than this pass took on, and the CRM half is a different lane
+  // (WORK-SPLIT.md, the fourth lane) whose actions want announcing before
+  // they are touched. Deciding three of thirteen would leave the page
+  // partly enforced, which this file already argues about /closeout is
+  // harder to reason about than a consistent state.
+  "company.updateContact": { page: "/contacts/[id]", reason: "The contact record itself, reached from a page withholding three different capabilities section by section. Not decided in this pass; wants the whole page read at once rather than one action at a time." },
+  "crm.createContactInteraction": { page: "/contacts/[id]", reason: "CRM interaction log — the fourth lane's feature (WORK-SPLIT.md), gated on the page behind MANAGE_ESTIMATING. Announce before touching; not decided here." },
+  "crm.updateContactInteraction": { page: "/contacts/[id]", reason: "The same People/Interactions section and the same fourth lane as createContactInteraction; it edits a row that action created, so the two are decided together or not at all." },
+  "crm.deleteContactInteraction": { page: "/contacts/[id]", reason: "Same section and same lane as createContactInteraction. Not an evidence record by its own feature's decision — any team member may delete one." },
+  "crm.createContactPerson": { page: "/contacts/[id]", reason: "The People section of the CRM contact page, same lane and same per-section question as the interaction log." },
+  "crm.updateContactPerson": { page: "/contacts/[id]", reason: "The same People section and the same fourth lane as createContactPerson; it edits a row that action created, so the two are decided together or not at all." },
+  "crm.deleteContactPerson": { page: "/contacts/[id]", reason: "The same People section and the same fourth lane as createContactPerson. Removing a person from an account is not an evidence deletion — that feature decided any team member may do it — so it carries no extra weight of its own." },
+  "estimating.createBidInvitation": { page: "/contacts/[id]", reason: "Bid invitations sit in a MANAGE_ESTIMATING section of this page, so the derivation is probably easy — but `/bids` and `/pipeline` read the same rows under the same capability and #79 is in flight on `/bids` right now. Left for a pass that can take the three surfaces together." },
+  "estimating.deleteBidInvitation": { page: "/contacts/[id]", reason: "Same section as createBidInvitation, same reason for leaving it." },
+  "estimating.updateBidInvitationStatus": { page: "/contacts/[id]", reason: "Same section as createBidInvitation. This is the one of the three that changes a status the GC's invitation is tracked by, so it is the first thing the next pass should take." },
+  "billing.enablePortalAccess": { page: "/contacts/[id]", reason: "Grants a client contact access to the portal — an outward-facing grant, and the highest-risk item on this page. Deliberately NOT swept in with the crew and contract work: a grant of access to somebody outside the company deserves its own argument and its own click-through, not a line in a batch." },
+  "billing.revokeClientPortalAccess": { page: "/contacts/[id]", reason: "The other half of enablePortalAccess; goes with it, whichever way that one is decided." },
+  "quickbooks.linkContactToQuickBooks": { page: "/contacts/[id]", reason: "Links a contact to a QuickBooks customer. MANAGE_BILLING is the likely answer given every other QuickBooks action, but its door is this page rather than /settings, so it is a per-section read this pass did not do." },
+
+  // `/dashboard` withholds its money tiles on VIEW_JOB_COSTS and
+  // MANAGE_BILLING. Everything below is reached from it.
+  "ask.cancelAskProposal": { page: "/dashboard", reason: "An Ask card action, also reached from /ask, which withholds nothing. Its guard is not capability-shaped: what it should ask is whether the card's own command is one this person could run (canRunCommand), which follows the card rather than the page. Same argument this file already records for settleAskDraft, and the same lane." },
+  "ask.confirmAskProposal": { page: "/dashboard", reason: "Same as cancelAskProposal — and it already refuses anyone lacking the command's declared capability in a returned sentence, per lib/ask/commands/schedule.ts's own note, so a page-derived capability on top would be the wrong boundary rather than a missing one." },
+  "ask.loadAskProposal": { page: "/dashboard", reason: "Same as cancelAskProposal. A read of a card the asking person already owns." },
+  "ask.prepareAskAttachment": { page: "/dashboard", reason: "Same as cancelAskProposal, in the Ask lane. It prepares an attachment for a card the asking person already owns, so what should guard it is the card's own command rather than the page the card was opened on." },
+  "gettingStarted.hideGettingStarted": { page: "/dashboard", reason: "A per-person preference write — it hides a panel on the person's own dashboard and touches no job, no money and nothing a GC sees. Explicitly the lowest-risk category in this sweep and left for last on purpose. Recorded rather than fixed so that the count stays honest." },
 };
 
 /* ------------------------------------------------------------------ *
@@ -736,16 +1017,32 @@ describe("the walk this file's claims rest on", () => {
   });
 });
 
+/** The pages reaching this action that withhold more than one capability.
+ * Empty for almost everything; non-empty is what makes an action a
+ * per-section judgement rather than a derivation. */
+function ambiguousDoors(action: string): string[] {
+  const doors = reachedBy.get(action);
+  if (!doors) return [];
+  return [...doors.keys()].filter((route) => SOFT_GATED_AMBIGUOUS.has(route)).sort();
+}
+
 /** Every action whose doors agree on one capability, and which must
- * therefore assert it. Derived, never typed out. */
+ * therefore assert it. Derived, never typed out — except for the
+ * per-section decisions, which cannot be derived and are checked against
+ * the code by the same execution cases as everything else. */
 const MUST_ASSERT: { action: string; moduleName: string; capability: Capability }[] = [];
 for (const action of [...reachedBy.keys()].sort()) {
   const moduleName = definingModule.get(action) as string;
   const key = `${moduleName}.${action}`;
   const mixed = MIXED_DOORS[key];
-  const capability = mixed ? mixed.capability : soleCapabilityGating(action);
+  const decided = SECTION_DECIDED[key];
+  const capability = mixed
+    ? mixed.capability
+    : decided
+      ? decided.capability
+      : soleCapabilityGating(action);
   if (!capability) continue;
-  if (!mixed && key in KNOWN_OPEN) continue;
+  if (!mixed && !decided && key in KNOWN_OPEN) continue;
   MUST_ASSERT.push({ action, moduleName, capability });
 }
 
@@ -830,12 +1127,104 @@ describe("every write behind a guarded page answers to the same capability", () 
     expect(stale, `The recorded decisions no longer match the code:\n${stale.join("\n")}`).toEqual([]);
   });
 
+  it("accounts for every action behind a page that withholds several capabilities", () => {
+    // THE COMPLETENESS ASSERTION for the third shape, and the reason it is
+    // the same kind of check as the size assertion above rather than a
+    // list somebody maintains: an action reached from `/jobs/[id]` or
+    // `/contacts/[id]` gets `null` out of `soleCapabilityGating`, which is
+    // indistinguishable from "no page reaches it" everywhere downstream.
+    // Every "no holes found" assertion in this file passes over it. So the
+    // set is enumerated FROM THE WALK and each member is required to be in
+    // exactly one of the two decision maps.
+    //
+    // Add a form to one of those pages and this fails by name until
+    // somebody either gates the action or writes down why not. That is the
+    // difference between debt and a blind spot, and it is the whole reason
+    // this block exists rather than a comment saying the work is unfinished.
+    const undecidedByTheOrdinaryRule = [...reachedBy.keys()]
+      .filter((action) => ambiguousDoors(action).length > 0)
+      .filter((action) => soleCapabilityGating(action) === null)
+      .map((action) => `${definingModule.get(action)}.${action}`)
+      .filter((key) => !(key in MIXED_DOORS) && !(key in KNOWN_OPEN))
+      .sort();
+
+    // It must have found something, or the two assertions below are
+    // vacuously true — the failure mode this whole file is shaped around.
+    expect(
+      undecidedByTheOrdinaryRule.length,
+      `No action was found behind a page that withholds several capabilities. Either every one ` +
+        `has been decided (delete this block and SOFT_GATED_AMBIGUOUS with it) or the walk has ` +
+        `stopped seeing them, which is what it looks like when a page's gate stops matching.`,
+    ).toBeGreaterThanOrEqual(18);
+
+    const unaccounted = undecidedByTheOrdinaryRule.filter(
+      (key) => !(key in SECTION_DECIDED) && !(key in UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE),
+    );
+    expect(
+      unaccounted,
+      `These Server Actions sit behind a page that withholds SOME of its content, and this file ` +
+        `can say nothing about them:\n` +
+        unaccounted.map((k) => `  ${k}`).join("\n") +
+        `\n\nThe ordinary rule cannot decide them — the page has more than one gate, so there is ` +
+        `no single capability to read off it. Read which SECTION the action's own form sits ` +
+        `inside and record it in SECTION_DECIDED, or record in ` +
+        `UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE why it is being left. Absence is not a decision.`,
+    ).toEqual([]);
+
+    // Neither map may claim an action the other does, and neither may hold
+    // a line that is no longer true.
+    const both = Object.keys(SECTION_DECIDED).filter(
+      (key) => key in UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE,
+    );
+    expect(both, `Recorded as both decided and undecided: ${both.join(", ")}`).toEqual([]);
+
+    const wrong: string[] = [];
+    for (const [key, decision] of Object.entries(SECTION_DECIDED)) {
+      const action = key.split(".")[1];
+      if (definingModule.get(action) !== key.split(".")[0]) {
+        wrong.push(`${key} — no such action in that module any more`);
+        continue;
+      }
+      if (ambiguousDoors(action).length === 0) {
+        wrong.push(
+          `${key} — no page reaching it withholds several capabilities any more, so the ` +
+            `ordinary rule decides it; delete this entry`,
+        );
+      }
+      if (!assertsCapability(action, decision.capability)) {
+        wrong.push(`${key} — recorded as ${decision.capability} and does not assert it`);
+      }
+      // A section name that says nothing cannot be checked against the
+      // page, which is the only thing making this a decision rather than
+      // a preference.
+      expect(decision.section.length).toBeGreaterThan(4);
+      expect(decision.reason.length).toBeGreaterThan(80);
+    }
+    for (const [key, entry] of Object.entries(UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE)) {
+      const action = key.split(".")[1];
+      if (definingModule.get(action) !== key.split(".")[0]) {
+        wrong.push(`${key} — no such action in that module any more`);
+        continue;
+      }
+      if (!ambiguousDoors(action).includes(entry.page)) {
+        wrong.push(`${key} — is not reached from ${entry.page} any more`);
+      }
+      for (const capability of CAPABILITIES) {
+        if (assertsCapability(action, capability)) {
+          wrong.push(`${key} — recorded as undecided and now asserts ${capability}; the debt is paid, delete this line`);
+        }
+      }
+      expect(entry.reason.length).toBeGreaterThan(60);
+    }
+    expect(wrong, `The per-section decisions no longer match the code:\n${wrong.join("\n")}`).toEqual([]);
+  });
+
   it("still covers the whole surface this pass claimed to close", () => {
     // A blunt count, because every check above is a "nothing is wrong"
     // assertion and those all pass on an empty set. If a future change
     // unwires a page from its actions, the holes list stays empty and the
     // suite would go quiet about thirty-five real endpoints.
-    expect(MUST_ASSERT.length).toBeGreaterThanOrEqual(69);
+    expect(MUST_ASSERT.length).toBeGreaterThanOrEqual(87);
 
     const byCapability = (capability: Capability) =>
       MUST_ASSERT.filter((entry) => entry.capability === capability).map((e) => e.action);
@@ -936,6 +1325,88 @@ describe("every write behind a guarded page answers to the same capability", () 
       expect(assertsCapability("draftChangeOrderFromDelay", capability)).toBe(false);
     }
   });
+
+  it("gives each Overview and Crew write the capability of the section it sits in", () => {
+    // The same independent hand-written table as the money one above, for
+    // the set this pass decided, and it earns its place for a DIFFERENT
+    // reason here. The money table's job was to catch a page quietly
+    // changing what it withholds. These twelve are not derived from a page
+    // at all — six sit inside a section that withholds nothing — so
+    // without this table the only record of the decision would be the
+    // guard itself, and a guard agrees with whatever it says.
+    //
+    // Two sources, kept apart on purpose, because they are not equally
+    // strong: a section's own `showsJobMoney` wrapper is read off the
+    // file, while an Ask command's declared capability is a decision
+    // somebody made elsewhere and this pass is deferring to.
+    const FROM_THE_SECTIONS_OWN_GATE: Record<string, Capability> = {
+      // Overview → `{showsJobMoney && …}` → can(principal, "VIEW_JOB_COSTS")
+      "billing.createSignatureRequest": "VIEW_JOB_COSTS",
+      "billing.revokeSignatureRequest": "VIEW_JOB_COSTS",
+      "billing.uploadContractDocument": "VIEW_JOB_COSTS",
+      "billing.deleteContractDocument": "VIEW_JOB_COSTS",
+    };
+    const FROM_THE_MATCHING_ASK_COMMAND: Record<string, Capability> = {
+      // reschedule_job declares MANAGE_JOBS and names updateJobSchedule.
+      "jobs.updateJobSchedule": "MANAGE_JOBS",
+      // log_time_entry declares MANAGE_FIELD and calls logTimeEntry.
+      "labor.logTimeEntry": "MANAGE_FIELD",
+    };
+    const FROM_A_SIBLING_IN_THE_SAME_SECTION: Record<string, Capability> = {
+      "jobs.assignCrewMember": "MANAGE_JOBS",
+      "jobs.unassignCrewMember": "MANAGE_JOBS",
+      "labor.updateTimeEntry": "MANAGE_FIELD",
+      "labor.deleteTimeEntry": "MANAGE_FIELD",
+      "labor.uploadDispatchSlip": "MANAGE_FIELD",
+      "labor.deleteDispatchSlip": "MANAGE_FIELD",
+    };
+
+    const derived = new Map(MUST_ASSERT.map((e) => [`${e.moduleName}.${e.action}`, e.capability]));
+    for (const table of [
+      FROM_THE_SECTIONS_OWN_GATE,
+      FROM_THE_MATCHING_ASK_COMMAND,
+      FROM_A_SIBLING_IN_THE_SAME_SECTION,
+    ]) {
+      for (const [key, capability] of Object.entries(table)) {
+        expect(
+          derived.get(key),
+          `${key} should answer to ${capability}. Every one of these is a per-section decision ` +
+            `recorded in SECTION_DECIDED, so a disagreement here means the recorded decision and ` +
+            `the code have parted company — fix whichever is wrong, not whichever is nearer.`,
+        ).toBe(capability);
+        expect(assertsCapability(key.split(".")[1], capability)).toBe(true);
+        // And it really is recorded as a section decision, not arriving
+        // through some other route that happens to agree today.
+        expect(SECTION_DECIDED[key]?.capability).toBe(capability);
+      }
+    }
+
+    // The claim that makes the FIRST table's source real: the two Overview
+    // sections it names withhold on VIEW_JOB_COSTS, and the page says so
+    // itself. If that ever stops being true the four entries above are
+    // quoting a gate that no longer exists.
+    expect(SOFT_GATED_AMBIGUOUS.get("/jobs/[id]")).toEqual(["MANAGE_JOBS", "VIEW_JOB_COSTS"]);
+    expect(SOFT_GATED_AMBIGUOUS.get("/jobs/[id]/crew")).toEqual([
+      "MANAGE_COMPLIANCE",
+      "MANAGE_FIELD",
+    ]);
+
+    // And the backcharge lifecycle, taken whole rather than in part so
+    // `/backcharges` is not left half-enforced — this file's own argument
+    // about `/closeout`, applied. Derived by the ordinary rule (one door,
+    // one capability), so this only pins that all six were taken.
+    for (const action of [
+      "createBackcharge",
+      "updateBackcharge",
+      "disputeBackcharge",
+      "resolveBackcharge",
+      "reopenBackcharge",
+      "deleteBackcharge",
+    ]) {
+      expect(derived.get(`backcharges.${action}`)).toBe("MANAGE_BILLING");
+      expect(assertsCapability(action, "MANAGE_BILLING")).toBe(true);
+    }
+  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -964,9 +1435,21 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   jobber: () => import("./actions/jobber"),
   // DocuSign: disconnect is reachable only from /settings/integrations, so
   // it asserts MANAGE_COMPLIANCE before the owner check. The send, refresh
-  // and void actions are reached from /jobs/[id], which has no single
-  // page capability; they assert VIEW_JOB_COSTS themselves.
+  // and void actions are reached from /jobs/[id], which has no single page
+  // capability; they assert VIEW_JOB_COSTS themselves — and as of this
+  // pass that assertion is EXECUTED rather than taken on trust, via
+  // SECTION_DECIDED. Only `disconnectDocuSign` reached the cases below
+  // before.
   docusign: () => import("./actions/docusign"),
+  // The Overview tab's "Job details" section. Both actions already
+  // asserted MANAGE_JOBS and neither had ever been executed here, because
+  // their only door withholds several capabilities. No behaviour change —
+  // this is the module arriving in the derived set, not a new guard.
+  jobDetails: () => import("./actions/jobDetails"),
+  // The Crew & time tab's timesheet approval. Same story: both already
+  // asserted MANAGE_COMPLIANCE, matching the `canApprove` flag that page
+  // computes for this control, and neither had ever been called here.
+  timesheetSignoff: () => import("./actions/timesheetSignoff"),
   // The QuickBooks import's two actions: reachable only from /settings, so
   // they assert its MANAGE_COMPLIANCE before the owner check and before
   // anything is read.
@@ -1009,6 +1492,17 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // Only the three estimate-tab writes; the catalog actions in the same
   // module sit behind `/catalog` and remain in KNOWN_OPEN.
   estimating: () => import("./actions/estimating"),
+  // Crew & time. Five of the seven actions here are decided per SECTION
+  // rather than per page (SECTION_DECIDED) — `/jobs/[id]/crew` withholds
+  // on two capabilities, so the ordinary rule derives nothing for it. The
+  // two prevailing-wage actions in the same module sit behind
+  // `/jobs/[id]/compliance`, which withholds nothing at all, and are not
+  // in this pass.
+  labor: () => import("./actions/labor"),
+  // Backcharges — a GC's deduction against what it owes us. All six
+  // reachable only from `/backcharges`, which demands MANAGE_BILLING, so
+  // the ordinary rule places all six and every one is executed below.
+  backcharges: () => import("./actions/backcharges"),
   safety: () => import("./actions/safety"),
   certifications: () => import("./actions/certifications"),
   punchLists: () => import("./actions/punchLists"),
