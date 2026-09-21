@@ -106,6 +106,45 @@ true. One mutation initially reported as caught turned out to have failed
 at *setup* on an ambiguous anchor; that is a missing verdict, not a pass,
 and it was fixed and re-run rather than counted.
 
+**The Schedule and crew box is shown to everyone and edited by
+`MANAGE_JOBS`** — Cyrus's call, and worth recording with its reasoning: a
+foreman should be able to see the schedule and who is on the job. That is
+field information, not money. Seeing who is on site tomorrow is not a
+management privilege; *changing* it is. Hiding the box would take away
+something used daily and would read as the product breaking rather than as
+a permission working.
+
+So the section renders for anyone who can open the job, and for someone
+without the capability its contents are plain text instead of a form —
+matching `CompanyLicenses`' `canManage` and `DocuSignPanel`'s
+`canSend`/`canVoid` rather than inventing a third pattern. A control that
+refuses on submit is worse than either hiding it or showing the value: it
+invites the click and then punishes it. **The rendering is courtesy; the
+capability assertion inside the action is the boundary**, and the page
+comment says which line is load-bearing — this repo has just spent a day
+on a doc comment that claimed a boundary the actions did not back up.
+
+**Two corrections to what this PR first claimed, both mine.** Its original
+click-list and Slack note said a FIELD user would stop seeing this box.
+Wrong twice over: the PR touched no page file at all, so nothing was ever
+hidden — and **FIELD holds `MANAGE_JOBS`**, so a foreman keeps the box, the
+form and both crew controls regardless. The roles this actually bites are
+**ACCOUNTING and PAYROLL_COMPLIANCE**, which are precisely the two
+`lib/permissions.ts` names in its own comment as the reason `/jobs/[id]` is
+left open at all, since both must be able to open a job. The real defect
+was narrower and worse than the one described: those two were being offered
+live controls the new guards would refuse on submit. That is what the
+read-only rendering fixes.
+
+`schedule-visibility.test.ts` asserts **both halves together** — that they
+SEE the section and that the action still turns them away — because a test
+of either half alone is satisfied by the wrong fix: rendering-only passes
+if somebody deletes the guard, refusal-only passes if somebody hides the
+section. FIELD and an OWNER are asserted as controls, so the absences mean
+something. 6 further mutations requested, 6 caught, including one that
+hides the whole section — the fix that was considered and rejected, now
+rejected by the suite as well.
+
 **What this deliberately does not close**, stated so the next pass starts
 from a set rather than a search: the writes behind `/contacts/[id]` (the
 CRM lane, plus the client-portal grant, which deserves its own argument

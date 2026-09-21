@@ -20,7 +20,7 @@ import type { JobStatusValue } from "@/lib/job-status-transitions";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
 import { dateInputValue } from "@/lib/jobs/date-input";
 import { viewerTimeZone } from "@/lib/viewerToday";
-import { formatInstant } from "@/lib/render-date";
+import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { formatSignedDate } from "@/lib/signed-date";
 import { SubmitButton } from "@/components/SubmitButton";
 import {
@@ -177,50 +177,107 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
           </section>
         )}
 
+        {/* SCHEDULE AND CREW — SHOWN TO EVERYONE, EDITABLE BY MANAGE_JOBS.
+            Cyrus's call, and the reasoning is worth keeping: a foreman
+            should be able to see the schedule and who is on the job. That
+            is field information, not money. Seeing who is on site tomorrow
+            is not a management privilege; CHANGING it is. Hiding the whole
+            box would take away something a foreman uses daily and would
+            read as the product breaking rather than as a permission
+            working.
+
+            WHICH LINE IS LOAD-BEARING, because this repo has just spent a
+            day on a doc comment that claimed a boundary the actions did
+            not back up: NOT THIS ONE. Everything below is COURTESY — it
+            decides what a person is offered, and a page decides nothing
+            about what an endpoint accepts. The real boundary is the
+            `can(context, "MANAGE_JOBS")` assertion inside
+            `updateJobSchedule`, `assignCrewMember` and
+            `unassignCrewMember` (lib/actions/jobs.ts), which refuses a
+            direct POST from anyone lacking it whatever this file renders.
+            Softening `showsJobManagement` here would change what is on
+            screen and would NOT open the endpoints.
+
+            Why read-only rather than simply leaving the controls up: a
+            control that refuses on submit is worse than either hiding it
+            or showing the value — it invites the click and then punishes
+            it. Same shape as `CompanyLicenses`' `canManage` and
+            `DocuSignPanel`'s `canSend`/`canVoid`: render the information,
+            withhold the control. */}
         <section className="mb-10" data-tour="job-schedule">
           <h2 className="mb-3 text-lg font-semibold text-ink">Schedule</h2>
           <div className="rounded-lg border border-line-card bg-surface p-4">
-            <form action={updateScheduleWithId} className="flex flex-wrap items-end gap-3">
-              <label className="flex flex-col gap-1 text-sm text-ink-label">
-                Start date
-                <input
-                  type="date"
-                  name="startDate"
-                  defaultValue={dateInputValue(job.startDate)}
-                  className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm text-ink-label">
-                End date
-                <input
-                  type="date"
-                  name="endDate"
-                  defaultValue={dateInputValue(job.endDate)}
-                  className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm text-ink-label">
-                Operating location
-                <select
-                  name="operatingLocationId"
-                  defaultValue={job.operatingLocationId ?? ""}
-                  className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
+            {showsJobManagement ? (
+              <form action={updateScheduleWithId} className="flex flex-wrap items-end gap-3">
+                <label className="flex flex-col gap-1 text-sm text-ink-label">
+                  Start date
+                  <input
+                    type="date"
+                    name="startDate"
+                    defaultValue={dateInputValue(job.startDate)}
+                    className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-ink-label">
+                  End date
+                  <input
+                    type="date"
+                    name="endDate"
+                    defaultValue={dateInputValue(job.endDate)}
+                    className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-ink-label">
+                  Operating location
+                  <select
+                    name="operatingLocationId"
+                    defaultValue={job.operatingLocationId ?? ""}
+                    className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
+                  >
+                    <option value="">Unassigned</option>
+                    {companyLocations.map((location) => (
+                      <option key={location.id} value={location.id}>
+                        {location.name ?? `${location.city}, ${location.state}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <SubmitButton
+                  type="submit"
+                  className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
                 >
-                  <option value="">Unassigned</option>
-                  {companyLocations.map((location) => (
-                    <option key={location.id} value={location.id}>
-                      {location.name ?? `${location.city}, ${location.state}`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <SubmitButton
-                type="submit"
-                className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
-              >
-                Save dates
-              </SubmitButton>
-            </form>
+                  Save dates
+                </SubmitButton>
+              </form>
+            ) : (
+              /* The same three facts, as plain text. `formatCalendarDate`
+                 renders in UTC, which is how these are stored — the date a
+                 foreman reads here is the same one the editable field
+                 above shows an estimator. */
+              <dl className="flex flex-wrap gap-x-8 gap-y-3 text-sm">
+                <div className="flex flex-col gap-1">
+                  <dt className="text-ink-label">Start date</dt>
+                  <dd className="text-ink">
+                    {job.startDate ? formatCalendarDate(job.startDate) : "Not set"}
+                  </dd>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <dt className="text-ink-label">End date</dt>
+                  <dd className="text-ink">
+                    {job.endDate ? formatCalendarDate(job.endDate) : "Not set"}
+                  </dd>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <dt className="text-ink-label">Operating location</dt>
+                  <dd className="text-ink">
+                    {job.operatingLocation
+                      ? job.operatingLocation.name ??
+                        `${job.operatingLocation.city}, ${job.operatingLocation.state}`
+                      : "Unassigned"}
+                  </dd>
+                </div>
+              </dl>
+            )}
 
             <div className="mt-4 border-t border-line-row pt-4">
               <p className="mb-2 text-sm font-medium text-ink-label">Crew</p>
@@ -231,27 +288,29 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                   {job.assignments.map((assignment) => (
                     <li key={assignment.id} className="flex items-center justify-between text-sm">
                       <span className="text-ink">{assignment.user.name ?? assignment.user.email}</span>
-                      <RowActions
-                        className="flex shrink-0 items-center justify-end gap-2"
-                        destructive={
-                          <ConfirmDelete
-                            pinned="end"
-                            action={unassignCrewWithId(assignment.userId)}
-                            describe="Takes this person off this job's crew. Their account, and any hours they already logged here, are untouched."
-                            label="Remove"
-                            confirmLabel="Confirm remove"
-                            deleteClassName={rowDeleteClass}
-                            cancelClassName={rowCancelClass}
-                            confirmClassName={rowConfirmClass}
-                          />
-                        }
-                      />
+                      {showsJobManagement && (
+                        <RowActions
+                          className="flex shrink-0 items-center justify-end gap-2"
+                          destructive={
+                            <ConfirmDelete
+                              pinned="end"
+                              action={unassignCrewWithId(assignment.userId)}
+                              describe="Takes this person off this job's crew. Their account, and any hours they already logged here, are untouched."
+                              label="Remove"
+                              confirmLabel="Confirm remove"
+                              deleteClassName={rowDeleteClass}
+                              cancelClassName={rowCancelClass}
+                              confirmClassName={rowConfirmClass}
+                            />
+                          }
+                        />
+                      )}
                     </li>
                   ))}
                 </ul>
               )}
 
-              {unassignedMembers.length > 0 && (
+              {showsJobManagement && unassignedMembers.length > 0 && (
                 <form action={assignCrewWithId} className="flex items-end gap-2">
                   <label className="flex flex-col gap-1 text-sm text-ink-label">
                     Assign teammate
