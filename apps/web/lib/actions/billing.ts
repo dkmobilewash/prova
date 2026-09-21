@@ -498,7 +498,8 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   // `((amount * Number(job.retainagePercent)) / 100).toFixed(2)`, a second
   // float expression that rounded $1,000.35 at 10% to $100.03 while the
   // lump-sum path rounded the same bill to $100.04.
-  const retainageWithheld = retainageWithheldFor(amountValue, job.retainagePercent);
+  const retainageWithheld =
+    job.retainagePercent != null ? ((amount * Number(job.retainagePercent)) / 100).toFixed(2) : null;
 
   // A resubmitted click bills the GC again for the same period at a new
   // invoice number, and retainageWithheld is snapshotted at creation and

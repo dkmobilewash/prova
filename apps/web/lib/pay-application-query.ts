@@ -160,9 +160,7 @@ export function assemblePayApplication(input: PayAppAssemblyInput): PayAppAssemb
   // Earlier PAY APPLICATIONS, not earlier invoices. See
   // `isPayApplicationInvoice` — this one predicate is what keeps both
   // halves of the certificate over the same population.
-  const earlierInvoices = input.invoices.filter(
-    (inv) => inv.number < invoice.number && isPayApplicationInvoice(inv),
-  );
+  const earlierInvoices = input.invoices.filter((inv) => inv.number < invoice.number);
 
   // Every line item this application should show a row for: everything
   // currently on the SOV, plus anything billed on an earlier or later
