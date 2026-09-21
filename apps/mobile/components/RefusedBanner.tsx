@@ -1,24 +1,17 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, typography } from "@/lib/theme";
+import { describeOp } from "@/lib/outbox";
 import type { PendingOp, RefusedOp } from "@/lib/sync-queue";
 
+/** One wording for a queued write, shared with the outbox — a second copy
+ * here is how "A saved item" happened: this file's own switch had a
+ * `default` that swallowed half the op types, so a refused punch item or
+ * material order was shown to somebody as "A saved item" with no way to
+ * tell which. `describeOp` is exhaustive by type, so a new op type is a
+ * compile error rather than a blank line. */
 function describe(op: PendingOp): string {
-  switch (op.type) {
-    case "time:create":
-      return `${op.hours}h on ${op.date}`;
-    case "signoff:create":
-      return `Signature for ${op.date}`;
-    case "delay:create":
-      return `Delay on ${op.date}`;
-    case "media:create":
-      return `Photo from ${op.capturedAt.slice(0, 10)}`;
-    case "field-report:create":
-      return `Report for ${op.reportDate}`;
-    case "ticket:create":
-      return `T&M ticket for ${op.workDate}`;
-    default:
-      return "A saved item";
-  }
+  const { title, detail } = describeOp(op);
+  return detail ? `${title} — ${detail}` : title;
 }
 
 /**

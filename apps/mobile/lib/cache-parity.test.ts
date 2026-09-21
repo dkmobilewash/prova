@@ -15,8 +15,16 @@ import { PREFETCHED_KEYS } from "./prefetch";
  * to fix, found on site rather than by anything that runs.
  */
 
-const APP = join(__dirname, "..", "app");
+const ROOT = join(__dirname, "..");
+const APP = join(ROOT, "app");
 const LIB = join(__dirname);
+
+/** A path as this file talks about it: "app/outbox.tsx", "lib/use-sync.ts".
+ * One spelling, so an exception key and an offender message cannot drift
+ * apart — they did, and an exception silently matched nothing. */
+function rel(file: string): string {
+  return file.slice(ROOT.length + 1);
+}
 
 /** Every source file under `dir`, screens AND the hooks they call.
  *
@@ -48,6 +56,17 @@ function sources(): string[] {
   if (all.filter((f) => f.endsWith(".ts")).length < 10) throw new Error("the lib walk found almost nothing");
   return all;
 }
+
+/** Screens that legitimately call the API without caching, each with its
+ * reason. A screen added to this list is a decision; a screen missing
+ * from it is a bug. */
+/** Files that flush the queue and do NOT owe a cached list to a screen —
+ * the two places where flushing is the job rather than something a list is
+ * waiting behind. Each is checked below for still being that. */
+const FLUSH_WITHOUT_LIST: Record<string, string> = {
+  "app/outbox.tsx": "the screen about the queue itself: it reads the QUEUE, not a cached list, and reloads after Send now",
+  "lib/use-queue-drain.ts": "the background timer; flushing is its whole purpose and it draws nothing",
+};
 
 /** Screens that legitimately call the API without caching, each with its
  * reason. A screen added to this list is a decision; a screen missing
@@ -94,7 +113,7 @@ describe("the cache the phone actually uses", () => {
   it("leaves no screen fetching a list without the cache", () => {
     const offenders: string[] = [];
     for (const file of sources()) {
-      const name = file.slice(APP.length + 1);
+      const name = rel(file).replace(/^app\//, "");
       if (NOT_CACHED[name]) continue;
       const text = readFileSync(file, "utf8");
       const fetches = /api\.list\w+\(/.test(text);
@@ -143,7 +162,7 @@ describe("the cache the phone actually uses", () => {
         // predicate ("is there anything to send?") is a different thing
         // and is allowed: it does not stand between a screen and its
         // cache.
-        if (/^if \(!token\b[^)]*\)\s*return;/.test(code)) offenders.push(file.slice(APP.length + 1));
+        if (/^if \(!token\b[^)]*\)\s*return;/.test(code)) offenders.push(rel(file));
       }
     }
     expect(
@@ -172,7 +191,7 @@ describe("the cache the phone actually uses", () => {
         // allowance cached-read.ts needs for its own worked example.
         const code = line.trimStart();
         if (code.startsWith("//") || code.startsWith("*")) continue;
-        if (/\bawait getToken\(\)/.test(code)) offenders.push(file.slice(APP.length + 1));
+        if (/\bawait getToken\(\)/.test(code)) offenders.push(rel(file));
       }
     }
     expect(
@@ -198,14 +217,28 @@ describe("the cache the phone actually uses", () => {
     const offenders: string[] = [];
     for (const file of sources()) {
       if (file.endsWith("sync-queue.ts") || file.endsWith("sync-order.ts")) continue;
+      const name = rel(file);
+      if (FLUSH_WITHOUT_LIST[name]) continue;
       const text = readFileSync(file, "utf8");
       if (!/\bflushQueue\(/.test(text)) continue;
-      if (!text.includes("syncOnce(")) offenders.push(file.slice(APP.length + 1));
+      if (!text.includes("syncOnce(")) offenders.push(name);
     }
     expect(
       offenders,
       `these flush the queue without syncOnce, so their list can end up behind it: ${offenders.join(", ")}`,
     ).toEqual([]);
+  });
+
+  it("keeps the flush exceptions honest — neither draws a cached list", () => {
+    // The rule above is about a LIST waiting behind a flush. These two
+    // have no cached list, which is the whole of why they are exempt — so
+    // the day one of them grows a `cachedRead`, it stops being exempt.
+    for (const [name, reason] of Object.entries(FLUSH_WITHOUT_LIST)) {
+      const text = readFileSync(join(ROOT, name), "utf8");
+      expect(reason.length, `${name} needs a reason`).toBeGreaterThan(10);
+      expect(text.includes("cachedRead("), `${name} now reads a cached list — route it through syncOnce`).toBe(false);
+      expect(/\bflushQueue\(/.test(text), `${name} no longer flushes — drop the exception`).toBe(true);
+    }
   });
 
   it("keeps the exception list honest — every entry still exists and still skips the cache", () => {

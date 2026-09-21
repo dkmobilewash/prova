@@ -91,7 +91,7 @@ describe("what the day looks like", () => {
 
   it("points every line at the section it is about", () => {
     const lines = summariseToday({ ...base, punchItems: [punch("OPEN")] });
-    expect(lines.filter((l) => l.key !== "pending").every((l) => l.section)).toBe(true);
+    expect(lines.every((l) => l.section)).toBe(true);
   });
 });
 

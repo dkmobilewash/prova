@@ -4,6 +4,7 @@ import { AppState } from "react-native";
 import { tokenOrNull } from "./clerk-token";
 import { clearRefused, flushQueue, listRefused, pendingCount, retryRefused, type RefusedOp } from "./sync-queue";
 import { syncOnce } from "./sync-order";
+import { reconcileReminder } from "./unsent-reminder";
 import { useStableGetToken } from "./use-stable-get-token";
 
 /** The shared offline plumbing for a screen that queues writes: flush the
@@ -43,8 +44,14 @@ export function useSync(refresh: () => Promise<void>) {
         // read-only screens showed both.
         refresh,
         counters: async () => {
-          setPending(await pendingCount());
+          const pending = await pendingCount();
+          setPending(pending);
           setRefused(await listRefused());
+          // The end-of-day reminder tracks the queue rather than a clock:
+          // scheduled the moment something is held, cancelled the moment
+          // the last write goes up. A reminder that fires on an empty
+          // queue is one people learn to ignore.
+          void reconcileReminder(pending);
         },
         flush: async () => {
           // An empty queue costs nothing: no token, no network, no wait.

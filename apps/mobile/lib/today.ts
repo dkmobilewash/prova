@@ -23,8 +23,10 @@ export type TodayLine = {
   /** How it reads: `done` is a thing that is handled, `todo` needs doing,
    * `warn` is something going wrong, `plain` is context. */
   tone: "done" | "todo" | "warn" | "plain";
-  /** Where tapping it goes, relative to the job. */
-  section?: "reports" | "photos" | "punch-list" | "time";
+  /** Where tapping it goes, relative to the job — except "outbox", which
+   * is the one destination that is about the PHONE rather than the job
+   * (app/outbox.tsx) and therefore takes no jobId. */
+  section?: "reports" | "photos" | "punch-list" | "time" | "outbox";
 };
 
 export function dayKey(iso: string): string {
@@ -57,6 +59,9 @@ export function summariseToday(input: TodayInput): TodayLine[] {
       key: "pending",
       label: input.pending === 1 ? "1 change still to send" : `${input.pending} changes still to send`,
       tone: "warn",
+      // Tappable, because "3 changes still to send" is a fact you cannot
+      // act on: which three, how old, and why is that one not moving.
+      section: "outbox",
     });
   }
 

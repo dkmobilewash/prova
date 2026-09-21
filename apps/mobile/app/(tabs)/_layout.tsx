@@ -1,5 +1,6 @@
 import { Tabs } from "expo-router";
 import { usePushRegistration } from "@/lib/use-push-registration";
+import { useQueueDrain } from "@/lib/use-queue-drain";
 import { Icon } from "@/components/Icon";
 import { colors, typography } from "@/lib/theme";
 
@@ -22,6 +23,9 @@ import { colors, typography } from "@/lib/theme";
  */
 export default function TabsLayout() {
   usePushRegistration();
+  // One timer for the app: the queue retries itself while Prova is open,
+  // rather than only when a screen happens to be focused.
+  useQueueDrain();
 
   return (
     <Tabs
