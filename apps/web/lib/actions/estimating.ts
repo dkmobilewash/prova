@@ -22,25 +22,25 @@ import { issueEstimateVersionNumber } from "@/lib/estimating/estimate-version";
 export async function createBidInvitation(contactId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   return runAction(async () => {
-  const projectName = String(formData.get("projectName") ?? "").trim();
-  const dueDateRaw = String(formData.get("dueDate") ?? "").trim();
-  const notes = String(formData.get("notes") ?? "").trim();
-  const tradeScope = tradeScopeFromForm(formData);
-  const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
+    const projectName = String(formData.get("projectName") ?? "").trim();
+    const dueDateRaw = String(formData.get("dueDate") ?? "").trim();
+    const notes = String(formData.get("notes") ?? "").trim();
+    const tradeScope = tradeScopeFromForm(formData);
+    const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
 
-  const result = await createBidInvitationRecord(company.id, {
-    contactId,
-    projectName,
-    dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
-    notes: notes || null,
-    tradeScope,
-    bidAmount,
-  });
-  if (!result.ok) return actionFail(result.error);
+    const result = await createBidInvitationRecord(company.id, {
+      contactId,
+      projectName,
+      dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+      notes: notes || null,
+      tradeScope,
+      bidAmount,
+    });
+    if (!result.ok) return actionFail(result.error);
 
-  revalidatePath(`/contacts/${contactId}`);
-  revalidatePath("/bids");
-  return actionOk;
+    revalidatePath(`/contacts/${contactId}`);
+    revalidatePath("/bids");
+    return actionOk;
   });
 }
 
@@ -53,19 +53,19 @@ export async function updateBidInvitationStatus(
 ): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   return runAction(async () => {
-    const bid = await prisma.bidInvitation.findUnique({ where: { id: bidInvitationId } });
-    if (!bid || bid.companyId !== company.id) {
-      throw new Error("Bid invitation not found");
-    }
+      const bid = await prisma.bidInvitation.findUnique({ where: { id: bidInvitationId } });
+      if (!bid || bid.companyId !== company.id) {
+        throw new Error("Bid invitation not found");
+      }
 
-    const status = enumFromForm(formData, "status", BID_INVITATION_STATUSES);
-    const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
+      const status = enumFromForm(formData, "status", BID_INVITATION_STATUSES);
+      const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
 
-    await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { status, bidAmount } });
+      await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { status, bidAmount } });
 
-    revalidatePath(`/contacts/${bid.contactId}`);
-    revalidatePath("/bids");
-    return actionOk;
+      revalidatePath(`/contacts/${bid.contactId}`);
+      revalidatePath("/bids");
+      return actionOk;
   });
 }
 
@@ -115,42 +115,42 @@ async function duplicateCatalogEntry(companyId: string, description: string) {
 export async function createLineItemCatalogEntry(formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
   return runAction(async () => {
-  const description = String(formData.get("description") ?? "").trim();
-  const unit = String(formData.get("unit") ?? "").trim();
-  const tradeScope = tradeScopeFromForm(formData);
-  const defaultUnitPrice = nullableDecimalFromForm(formData, "defaultUnitPrice");
-  const defaultBudgetedUnitCost = nullableDecimalFromForm(formData, "defaultBudgetedUnitCost");
-  const defaultLaborHours = nullableDecimalFromForm(formData, "defaultLaborHours");
-  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+    const description = String(formData.get("description") ?? "").trim();
+    const unit = String(formData.get("unit") ?? "").trim();
+    const tradeScope = tradeScopeFromForm(formData);
+    const defaultUnitPrice = nullableDecimalFromForm(formData, "defaultUnitPrice");
+    const defaultBudgetedUnitCost = nullableDecimalFromForm(formData, "defaultBudgetedUnitCost");
+    const defaultLaborHours = nullableDecimalFromForm(formData, "defaultLaborHours");
+    const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
 
-  // InputError, not Error: both of these are things a person can fix, and
-  // a thrown one arrives redacted. Same reason the parsers above changed.
-  if (!description) {
-    throw new InputError("Description is required");
-  }
+    // InputError, not Error: both of these are things a person can fix, and
+    // a thrown one arrives redacted. Same reason the parsers above changed.
+    if (!description) {
+      throw new InputError("Description is required");
+    }
 
-  const duplicate = await duplicateCatalogEntry(company.id, description);
-  if (duplicate) {
-    throw new InputError(
-      `"${duplicate.description}" is already in the catalog. Edit that entry instead — a second copy splits its actuals history between the two and can hide a bad price on both.`,
-    );
-  }
+    const duplicate = await duplicateCatalogEntry(company.id, description);
+    if (duplicate) {
+      throw new InputError(
+        `"${duplicate.description}" is already in the catalog. Edit that entry instead — a second copy splits its actuals history between the two and can hide a bad price on both.`,
+      );
+    }
 
-  await prisma.lineItemCatalogEntry.create({
-    data: {
-      companyId: company.id,
-      description,
-      unit: unit || null,
-      tradeScope,
-      defaultUnitPrice,
-      defaultBudgetedUnitCost,
-      defaultLaborHours,
-      craftClassificationId,
-    },
-  });
+    await prisma.lineItemCatalogEntry.create({
+      data: {
+        companyId: company.id,
+        description,
+        unit: unit || null,
+        tradeScope,
+        defaultUnitPrice,
+        defaultBudgetedUnitCost,
+        defaultLaborHours,
+        craftClassificationId,
+      },
+    });
 
-  revalidatePath("/catalog");
-  return actionOk;
+    revalidatePath("/catalog");
+    return actionOk;
   });
 }
 

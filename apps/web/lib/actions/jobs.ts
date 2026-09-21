@@ -117,45 +117,45 @@ export async function addLineItem(jobId: string, formData: FormData): Promise<Ac
   assertEditableDirectly(job);
 
   return runAction(async () => {
-  const description = String(formData.get("description") ?? "").trim();
-  const unit = String(formData.get("unit") ?? "").trim();
-  const quantity = decimalFromForm(formData, "quantity");
-  // Nullable: a cost-only budget line (general conditions, overhead,
-  // contingency) has no client-facing sale price.
-  const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
-  const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
-  // currentEstimatedUnitCost defaults to budgetedUnitCost at creation (app-
-  // level, not a DB default) unless the form explicitly sets a different
-  // value — see the field's doc comment in schema.prisma.
-  const currentEstimatedUnitCost =
-    nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
-  const tradeScope = tradeScopeFromForm(formData);
-  const laborHours = nullableDecimalFromForm(formData, "laborHours");
-  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
-  const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
+    const description = String(formData.get("description") ?? "").trim();
+    const unit = String(formData.get("unit") ?? "").trim();
+    const quantity = decimalFromForm(formData, "quantity");
+    // Nullable: a cost-only budget line (general conditions, overhead,
+    // contingency) has no client-facing sale price.
+    const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
+    const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
+    // currentEstimatedUnitCost defaults to budgetedUnitCost at creation (app-
+    // level, not a DB default) unless the form explicitly sets a different
+    // value — see the field's doc comment in schema.prisma.
+    const currentEstimatedUnitCost =
+      nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
+    const tradeScope = tradeScopeFromForm(formData);
+    const laborHours = nullableDecimalFromForm(formData, "laborHours");
+    const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+    const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
 
-  if (!description) {
-    throw new InputError("Description is required");
-  }
+    if (!description) {
+      throw new InputError("Description is required");
+    }
 
-  await prisma.jobLineItem.create({
-    data: {
-      jobId,
-      description,
-      unit: unit || null,
-      quantity,
-      unitPrice,
-      budgetedUnitCost,
-      currentEstimatedUnitCost,
-      tradeScope,
-      laborHours,
-      craftClassificationId,
-      phaseCodeId,
-    },
-  });
+    await prisma.jobLineItem.create({
+      data: {
+        jobId,
+        description,
+        unit: unit || null,
+        quantity,
+        unitPrice,
+        budgetedUnitCost,
+        currentEstimatedUnitCost,
+        tradeScope,
+        laborHours,
+        craftClassificationId,
+        phaseCodeId,
+      },
+    });
 
-  revalidatePath(`/jobs/${jobId}`);
-  return actionOk;
+    revalidatePath(`/jobs/${jobId}`);
+    return actionOk;
   });
 }
 
@@ -199,40 +199,40 @@ export async function updateLineItem(
   await assertLineItemOnJob(lineItemId, jobId);
 
   return runAction(async () => {
-  const description = String(formData.get("description") ?? "").trim();
-  const unit = String(formData.get("unit") ?? "").trim();
-  const quantity = decimalFromForm(formData, "quantity");
-  const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
-  const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
-  const currentEstimatedUnitCost =
-    nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
-  const tradeScope = tradeScopeFromForm(formData);
-  const laborHours = nullableDecimalFromForm(formData, "laborHours");
-  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
-  const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
+    const description = String(formData.get("description") ?? "").trim();
+    const unit = String(formData.get("unit") ?? "").trim();
+    const quantity = decimalFromForm(formData, "quantity");
+    const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
+    const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
+    const currentEstimatedUnitCost =
+      nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
+    const tradeScope = tradeScopeFromForm(formData);
+    const laborHours = nullableDecimalFromForm(formData, "laborHours");
+    const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+    const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
 
-  if (!description) {
-    throw new InputError("Description is required");
-  }
+    if (!description) {
+      throw new InputError("Description is required");
+    }
 
-  await prisma.jobLineItem.update({
-    where: { id: lineItemId },
-    data: {
-      description,
-      unit: unit || null,
-      quantity,
-      unitPrice,
-      budgetedUnitCost,
-      currentEstimatedUnitCost,
-      tradeScope,
-      laborHours,
-      craftClassificationId,
-      phaseCodeId,
-    },
-  });
+    await prisma.jobLineItem.update({
+      where: { id: lineItemId },
+      data: {
+        description,
+        unit: unit || null,
+        quantity,
+        unitPrice,
+        budgetedUnitCost,
+        currentEstimatedUnitCost,
+        tradeScope,
+        laborHours,
+        craftClassificationId,
+        phaseCodeId,
+      },
+    });
 
-  revalidatePath(`/jobs/${jobId}`);
-  return actionOk;
+    revalidatePath(`/jobs/${jobId}`);
+    return actionOk;
   });
 }
 
@@ -256,20 +256,20 @@ export async function updateLineItemForecast(
   await assertLineItemOnJob(lineItemId, jobId);
 
   return runAction(async () => {
-    const currentEstimatedUnitCost = nullableDecimalFromForm(formData, "currentEstimatedUnitCost", {
-      label: "Current estimated unit cost",
-    });
-    const estimatedCostToComplete = nullableDecimalFromForm(formData, "estimatedCostToComplete", {
-      label: "Estimated cost to complete",
-    });
+      const currentEstimatedUnitCost = nullableDecimalFromForm(formData, "currentEstimatedUnitCost", {
+        label: "Current estimated unit cost",
+      });
+      const estimatedCostToComplete = nullableDecimalFromForm(formData, "estimatedCostToComplete", {
+        label: "Estimated cost to complete",
+      });
 
-    await prisma.jobLineItem.update({
-      where: { id: lineItemId },
-      data: { currentEstimatedUnitCost, estimatedCostToComplete },
-    });
+      await prisma.jobLineItem.update({
+        where: { id: lineItemId },
+        data: { currentEstimatedUnitCost, estimatedCostToComplete },
+      });
 
-    revalidatePath(`/jobs/${jobId}`);
-    return actionOk;
+      revalidatePath(`/jobs/${jobId}`);
+      return actionOk;
   });
 }
 

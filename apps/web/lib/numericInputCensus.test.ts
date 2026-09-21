@@ -118,6 +118,71 @@ describe("the census sees every source file", () => {
  */
 const FORM_NUMBER = /Number\(\s*(?:String\(\s*)?formData\.get\(|Number\(\s*text\(\s*formData/g;
 
+/**
+ * THE FOURTH BLIND SPOT, and the one that took an outside audit to find.
+ *
+ * `FORM_NUMBER` above matches a `Number()` wrapped around a FORM READ. That
+ * is the shape the original fourteen had — and it cannot see a validator
+ * that takes an already-extracted string, which is what a core module does:
+ *
+ *     if (!quantity || Number.isNaN(Number(quantity))) …
+ *
+ * Four of those survived the first pass. One, in
+ * `lib/estimating/catalog-line.ts`, carried a comment saying "the same test
+ * decimalFromForm applies" — true when written, false the moment the parser
+ * moved, and it left the wizard's "Add from catalog" box refusing `2,800`
+ * on the SAME SCREEN where the Qty box beside it had just started taking
+ * it. The original bug, surviving inside the fix for it, behind a sentence
+ * claiming agreement.
+ *
+ * So this matches the validator rather than the read, and it is deliberately
+ * independent of `FORM_NUMBER`: a figure typed by a person is decided by one
+ * parser no matter how many function calls it took to get there.
+ */
+const ADHOC_VALIDATOR = /(?:Number\.isNaN|!\s*Number\.isFinite)\(\s*Number\(/g;
+
+/** Validators that are not about a typed figure, with the reason. */
+const ADHOC_ALLOWED: Record<string, { hits: number; reason: string }> = {
+  "apps/web/lib/time-entry-correction.ts": {
+    hits: 2,
+    reason:
+      "ANOTHER BRANCH'S LANE. `components/TimeEntryFields.tsx` and the labor actions were off " +
+      "limits for this change, and this is their core. Hours and the allowance still refuse a " +
+      "figure with a comma in it; both want the same two-line change. Remove this line with it.",
+  },
+};
+
+describe("one parser, wherever the figure was extracted", () => {
+  it("has no ad-hoc Number.isNaN(Number(x)) validator outside the allowed list", () => {
+    const offenders: string[] = [];
+    const seen = new Map<string, number>();
+    for (const [path, source] of sources()) {
+      if (path === THE_PARSER) continue;
+      if (/\.(test|dbtest)\.tsx?$/.test(path)) continue;
+      const hits = [...withoutComments(source).matchAll(ADHOC_VALIDATOR)];
+      if (hits.length === 0) continue;
+      seen.set(path, hits.length);
+      if (hits.length > (ADHOC_ALLOWED[path]?.hits ?? 0)) offenders.push(`${path} (${hits.length})`);
+    }
+    expect(
+      offenders,
+      "decide a typed figure with lib/numeric-input.ts, however many calls away the form is — " +
+        "a second opinion about what a number is drifts from the first one silently, and did",
+    ).toEqual([]);
+
+    const stale = Object.entries(ADHOC_ALLOWED)
+      .filter(([path, { hits }]) => seen.get(path) !== hits)
+      .map(([path, { hits }]) => `${path}: listed for ${hits}, found ${seen.get(path) ?? 0}`);
+    expect(stale, "an exception that no longer matches the code is a free pass").toEqual([]);
+  });
+
+  it("the validator pattern still matches the shape it was written for", () => {
+    expect([...`if (Number.isNaN(Number(quantity))) {`.matchAll(ADHOC_VALIDATOR)]).toHaveLength(1);
+    expect([...`if (!Number.isFinite(Number(raw))) {`.matchAll(ADHOC_VALIDATOR)]).toHaveLength(1);
+    expect([...`if (Number.isNaN(date.getTime())) {`.matchAll(ADHOC_VALIDATOR)]).toHaveLength(0);
+  });
+});
+
 /** The one module allowed to turn a typed string into a number. */
 const THE_PARSER = "apps/web/lib/numeric-input.ts";
 
@@ -256,6 +321,24 @@ describe("the roster of numeric fields", () => {
  * 3. Every box a figure is typed into.
  * ------------------------------------------------------------------ */
 
+/**
+ * An input's `name`, whether it is a literal, an expression, or absent.
+ *
+ * THE LITERAL-ONLY VERSION OF THIS WAS THE CENSUS'S THIRD BLIND SPOT, and
+ * the one that made its "scope" claim overstated: `name="quantity"` matched,
+ * `name={name as string}` could never match, and an input with no `name` at
+ * all — `CraftTierPicker`'s period box, whose value goes into a hand-built
+ * FormData — had nothing to match. Three real inputs were invisible to a
+ * file whose own header claims it pins scope. A set you cannot build is not
+ * a set whose size means anything.
+ */
+function nameOfInput(attrs: string): { name: string; literal: boolean } {
+  const literal = /name="([a-zA-Z0-9_]+)"/.exec(attrs);
+  if (literal) return { name: literal[1], literal: true };
+  if (/\bname=\{/.test(attrs)) return { name: "(expression)", literal: false };
+  return { name: "(unnamed)", literal: false };
+}
+
 /** The attributes of one `<input …>` tag, braces collapsed so an arrow's
  * `>` inside `{…}` does not end the tag early. */
 function inputTags(source: string): string[] {
@@ -324,6 +407,22 @@ describe("the input scanner sees every input", () => {
  * dropped from the set is a field that can never be missing from it.
  */
 const INPUT_EXCEPTIONS: Record<string, { reason: string }> = {
+  // The four inputs this file cannot name — free text, every one, checked
+  // by reading them rather than by skipping anything it could not parse.
+  // They are LISTED rather than excluded from the walk, because a field
+  // dropped from the set can never be missing from it.
+  "apps/web/components/AskPanel.tsx (unnamed)": {
+    reason: "the Ask question box — free text, and the file input beside it",
+  },
+  "apps/web/components/SearchLauncher.tsx (unnamed)": {
+    reason: "the global search box — free text. Another branch's file this session.",
+  },
+  "apps/web/components/DocuSignPanel.tsx (unnamed)": {
+    reason: "the void reason the signer reads — free text, maxLength 200",
+  },
+  "apps/web/components/JobMediaAnnotator.tsx (unnamed)": {
+    reason: "a photo annotation label — free text, and explicitly not a measurement",
+  },
   "apps/web/components/TimeEntryFields.tsx hours": {
     reason:
       "ANOTHER BRANCH'S FILE. `components/TimeEntryFields.tsx` and `lib/actions/labor.ts` were " +
@@ -342,8 +441,13 @@ describe("every numeric input declares itself, and none is type=number", () => {
     for (const [path, source] of sources()) {
       if (/\.(test|dbtest)\.tsx?$/.test(path)) continue;
       for (const attrs of inputTags(source)) {
-        const name = /name="([a-zA-Z0-9_]+)"/.exec(attrs)?.[1];
-        if (!name || !roster.has(name)) continue;
+        const { name, literal } = nameOfInput(attrs);
+        // A roster name, OR any input whose name this file cannot read.
+        // The second half is the point: an unreadable name is not evidence
+        // that a field is not numeric, so it is checked rather than
+        // skipped, and INPUT_EXCEPTIONS is where a non-numeric one goes.
+        if (literal && !roster.has(name)) continue;
+        if (!literal && /type="(hidden|checkbox|radio|file|date|email|url|tel|password|search)"/.test(attrs)) continue;
         const site = `${path} ${name}`;
         seen.add(site);
         if (INPUT_EXCEPTIONS[site]) continue;
@@ -384,7 +488,7 @@ describe("every numeric input declares itself, and none is type=number", () => {
       if (/\.(test|dbtest)\.tsx?$/.test(path)) continue;
       for (const attrs of inputTags(source)) {
         if (!/type="number"/.test(attrs)) continue;
-        const name = /name=[{"]([a-zA-Z0-9_ ]+)/.exec(attrs)?.[1] ?? "(unnamed)";
+        const { name } = nameOfInput(attrs);
         if (INPUT_EXCEPTIONS[`${path} ${name}`]) continue;
         offenders.push(`${path} ${name}`);
       }
@@ -397,6 +501,20 @@ describe("every numeric input declares itself, and none is type=number", () => {
         'with no error at all. Firefox submits "" for anything it dislikes. Use type="text" with ' +
         "inputMode and let lib/numeric-input.ts decide.",
     ).toEqual([]);
+  });
+
+  it("reads a name that is an expression, and one that is missing", () => {
+    // Three shapes; two were invisible until 2026-09-21, and a fixture is
+    // cheaper than finding that out a second time.
+    expect(nameOfInput('name="quantity" type="text"')).toEqual({ name: "quantity", literal: true });
+    expect(nameOfInput('name={name as string} type="text"')).toEqual({
+      name: "(expression)",
+      literal: false,
+    });
+    expect(nameOfInput('type="text" placeholder="period"')).toEqual({
+      name: "(unnamed)",
+      literal: false,
+    });
   });
 
   it("finds a real offender in a fixture, both ways round", () => {

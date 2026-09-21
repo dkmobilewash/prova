@@ -384,16 +384,16 @@ export async function createInvoice(jobId: string, formData: FormData): Promise<
   await assertJobInCompany(jobId, company.id);
 
   return runAction(async () => {
-    const description = String(formData.get("description") ?? "").trim();
-    const amount = decimalFromForm(formData, "amount", { label: "Amount", maxDecimals: 2 });
-    const dueRaw = String(formData.get("dueAt") ?? "").trim();
-    const dueAt = dueRaw ? new Date(dueRaw) : null;
+      const description = String(formData.get("description") ?? "").trim();
+      const amount = decimalFromForm(formData, "amount", { label: "Amount", maxDecimals: 2 });
+      const dueRaw = String(formData.get("dueAt") ?? "").trim();
+      const dueAt = dueRaw ? new Date(dueRaw) : null;
 
-    const result = await createInvoiceRecord(company.id, jobId, { description, amount, dueAt });
-    if (!result.ok) return actionFail(result.error);
+      const result = await createInvoiceRecord(company.id, jobId, { description, amount, dueAt });
+      if (!result.ok) return actionFail(result.error);
 
-    revalidatePath(`/jobs/${jobId}`);
-    return actionOk;
+      revalidatePath(`/jobs/${jobId}`);
+      return actionOk;
   });
 }
 
@@ -607,31 +607,31 @@ export async function updateJobRetainageTerms(jobId: string, formData: FormData)
   await assertJobInCompany(jobId, company.id);
 
   return runAction(async () => {
-    // A PERCENT, 0 TO 100 — never a fraction of one. This field had no
-    // type, no min, no max and no step, so `0.10` typed by somebody meaning
-    // ten percent was accepted in silence and stored as a tenth of one
-    // percent: on a $105,000 contract that is $105 withheld where $10,500
-    // was intended, on a document the GC receives. Confirmed in a browser
-    // 2026-09-21, reloaded, and still 0.1. The bound is only half the fix —
-    // 0.10 is inside it. The other half is on the screen: the input wears a
-    // `%` that does not vanish when you type, and prints what the rate
-    // comes to in money on THIS job's contract value while you type it.
-    const retainagePercent = nullablePercentFromForm(formData, "retainagePercent", {
-      label: "Retainage",
-    });
-    const completionRaw = String(formData.get("substantialCompletionDate") ?? "").trim();
-    const substantialCompletionDate = completionRaw ? new Date(completionRaw) : null;
-    if (substantialCompletionDate && Number.isNaN(substantialCompletionDate.getTime())) {
-      throw new InputError("That substantial completion date isn't a real date.");
-    }
+      // A PERCENT, 0 TO 100 — never a fraction of one. This field had no
+      // type, no min, no max and no step, so `0.10` typed by somebody meaning
+      // ten percent was accepted in silence and stored as a tenth of one
+      // percent: on a $105,000 contract that is $105 withheld where $10,500
+      // was intended, on a document the GC receives. Confirmed in a browser
+      // 2026-09-21, reloaded, and still 0.1. The bound is only half the fix —
+      // 0.10 is inside it. The other half is on the screen: the input wears a
+      // `%` that does not vanish when you type, and prints what the rate
+      // comes to in money on THIS job's contract value while you type it.
+      const retainagePercent = nullablePercentFromForm(formData, "retainagePercent", {
+        label: "Retainage",
+      });
+      const completionRaw = String(formData.get("substantialCompletionDate") ?? "").trim();
+      const substantialCompletionDate = completionRaw ? new Date(completionRaw) : null;
+      if (substantialCompletionDate && Number.isNaN(substantialCompletionDate.getTime())) {
+        throw new InputError("That substantial completion date isn't a real date.");
+      }
 
-    await prisma.job.update({
-      where: { id: jobId },
-      data: { retainagePercent, substantialCompletionDate },
-    });
+      await prisma.job.update({
+        where: { id: jobId },
+        data: { retainagePercent, substantialCompletionDate },
+      });
 
-    revalidatePath(`/jobs/${jobId}`);
-    return actionOk;
+      revalidatePath(`/jobs/${jobId}`);
+      return actionOk;
   });
 }
 
@@ -828,28 +828,28 @@ export async function createRetainageRelease(jobId: string, formData: FormData):
   const { company, ...user } = context;
 
   return runAction(async () => {
-  const amount = decimalFromForm(formData, "amount", { label: "Amount released", maxDecimals: 2 });
-  const releasedRaw = String(formData.get("releasedAt") ?? "").trim();
-  // Blank falls back to TODAY on the viewer's calendar at UTC midnight,
-  // never `new Date()` — that stored the raw instant of the click, which
-  // the job page then rendered through UTC so a release logged 5pm PT
-  // printed as the NEXT day, on a date that feeds closeout and lien
-  // timing conversations. Entered, not stamped.
-  const releasedAt = releasedRaw
-    ? new Date(releasedRaw)
-    : new Date(`${await viewerToday()}T00:00:00.000Z`);
-  const note = String(formData.get("note") ?? "").trim();
+    const amount = decimalFromForm(formData, "amount", { label: "Amount released", maxDecimals: 2 });
+    const releasedRaw = String(formData.get("releasedAt") ?? "").trim();
+    // Blank falls back to TODAY on the viewer's calendar at UTC midnight,
+    // never `new Date()` — that stored the raw instant of the click, which
+    // the job page then rendered through UTC so a release logged 5pm PT
+    // printed as the NEXT day, on a date that feeds closeout and lien
+    // timing conversations. Entered, not stamped.
+    const releasedAt = releasedRaw
+      ? new Date(releasedRaw)
+      : new Date(`${await viewerToday()}T00:00:00.000Z`);
+    const note = String(formData.get("note") ?? "").trim();
 
-  const result = await createRetainageReleaseRecord(company.id, jobId, {
-    amount,
-    releasedAt,
-    note: note || null,
-    createdByUserId: user.id,
-  });
-  if (!result.ok) return actionFail(result.error);
+    const result = await createRetainageReleaseRecord(company.id, jobId, {
+      amount,
+      releasedAt,
+      note: note || null,
+      createdByUserId: user.id,
+    });
+    if (!result.ok) return actionFail(result.error);
 
-  revalidatePath(`/jobs/${jobId}`);
-  return actionOk;
+    revalidatePath(`/jobs/${jobId}`);
+    return actionOk;
   });
 }
 
