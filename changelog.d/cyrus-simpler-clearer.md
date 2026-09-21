@@ -129,3 +129,27 @@ diff.
 
 Eleven mutations run, eleven caught — two of them only after the census
 that missed them was fixed.
+
+**Clicked, not just built — and that is the part that changed after the
+rebase.** #430's e2e harness landed in the same batch, which means the two
+removed steps could be walked by a real Chromium against a real (throwaway,
+embedded) Postgres rather than argued about. Journey step 3 presses the
+renamed button and lands on `/jobs/new/<id>/items`; step 4 asserts the last
+screen offers exactly one "Done — open the job →", asserts nothing on it
+links to a review step, clicks it and lands on the job. Both green. The
+harness's own fork for "two steps on one branch and three on another" is
+gone with the step it was hedging against: a branch that runs on no branch
+is untested by definition.
+
+**What the rebase cost, and what it found.** `main` at `801b7a0d` does not
+typecheck and fails three tests, all of them `components/landing/*` or
+`app/page.tsx` — #404 merged after three guards that had never seen its
+files. The typecheck error breaks `next build`, and therefore the e2e
+harness, so this PR carries the one-line fix as its own revertable commit
+and files the rest as issue #445. The three remaining failures reproduce on
+plain `main` with a **byte-identical** list, which is the only honest way to
+say "this branch adds none of them".
+
+One of this PR's own fixes was caught by that run rather than by reading:
+the review page is a bare `redirect()` now, so it had to leave
+`pageWidthCensus`'s allowance list, which only ever shrinks.
