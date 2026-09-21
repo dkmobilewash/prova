@@ -49,6 +49,51 @@ vi.mock("next/navigation", () => ({
 const { default: HomePage } = await import("./page");
 const { LandingPage } = await import("@/components/LandingPage");
 
+/** The invented-statistic pattern, defined once and used by BOTH guards
+ * below — the page-wide prose check and the narrower contrast-block one.
+ * Two copies would drift, and the drift would be silent. */
+const INVENTED_STATISTIC = /\d+%|\d+\s*(minutes?|hours?|days?)\s+(saved|per|of)/i;
+
+/**
+ * Returns the page markup with every `data-landing-panel` wrapper REMOVED,
+ * element and contents, so what is left is the page's own prose.
+ *
+ * Depth-counted rather than regex-matched, because a panel is a `<div>`
+ * full of nested `<div>`s and a non-greedy `.*?</div>` would cut at the
+ * first inner close and leave most of a G703 behind — which would look
+ * exactly like it worked. This codebase has paid twice for a parser that
+ * matched slightly the wrong thing and stayed green about it.
+ */
+function stripPanels(source: string): string {
+  let out = source;
+  for (;;) {
+    const attr = out.indexOf('data-landing-panel="');
+    if (attr === -1) return out;
+    const start = out.lastIndexOf("<div", attr);
+    if (start === -1) throw new Error("data-landing-panel attribute with no opening <div>");
+    let depth = 0;
+    let i = start;
+    let end = -1;
+    while (i < out.length) {
+      if (out.startsWith("<div", i)) {
+        depth++;
+        i += 4;
+      } else if (out.startsWith("</div>", i)) {
+        depth--;
+        i += 6;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      } else {
+        i++;
+      }
+    }
+    if (end === -1) throw new Error("unbalanced <div> while stripping a panel wrapper");
+    out = out.slice(0, start) + out.slice(end);
+  }
+}
+
 describe("/ redirects a signed-in visitor and only a signed-in visitor", () => {
   it("requested: throws NEXT_REDIRECT to /dashboard when a session exists", async () => {
     authUserId = "user_123";
@@ -174,6 +219,47 @@ describe("/ landing content renders signed out, with no auth call of its own", (
   });
 
   /**
+   * NO INVENTED STATISTIC ANYWHERE IN THE PAGE'S OWN PROSE — every
+   * section, not just the contrast block.
+   *
+   * This exists because narrowing the older assertion to the contrast
+   * section (which was right on its own terms — a G703 has a real "%"
+   * column) quietly stopped checking nine other sections of marketing
+   * copy. The whole credibility of this page is that there are no made-up
+   * numbers on it, so that is the wrong coverage to trade away, and the
+   * contrast block was never the only place a fabricated statistic could
+   * appear — it was just the only place that existed when the first
+   * version of this test was written.
+   *
+   * The right cut is by KIND, not by section: the drawn documents may
+   * carry real percentages and hour counts (they are the document, and
+   * they say they are illustrative), and every line of prose around them
+   * may not. So the panels are removed and the pattern runs over the rest.
+   *
+   * The vacuity checks are the point of the first half of this test. A
+   * stripper that matched nothing would return the page unchanged and this
+   * would fail for the right reason; a stripper that ate the document
+   * would return almost nothing and pass for entirely the wrong one. Both
+   * are asserted against before the pattern is run at all.
+   */
+  it("carries no invented statistic in its own prose, in any section", () => {
+    const prose = stripPanels(html);
+
+    // 1. Every wrapper is gone — the stripper actually ran.
+    expect(prose).not.toContain("data-landing-panel");
+    // 2. It removed something substantial, not an empty match.
+    expect(html.length - prose.length).toBeGreaterThan(3000);
+    // 3. It did NOT eat the page: prose from the first section and from
+    //    the second-to-last both survive, so the walk stopped at each
+    //    panel's own closing tag rather than running to the end.
+    expect(prose).toContain("The job-site system for union specialty-trade subcontractors.");
+    expect(prose).toContain("Protecting yourself when it goes wrong");
+    expect(prose).toContain("See it on your own job");
+
+    expect(prose).not.toMatch(INVENTED_STATISTIC);
+  });
+
+  /**
    * THE HONESTY LINE IS THE ONE STRING ON THIS PAGE WORTH FAILING A BUILD
    * OVER, which is why it is asserted here even though the wording lives
    * in another lane's file (components/landing/panelChrome.tsx).
@@ -241,21 +327,22 @@ describe("/ landing content renders signed out, with no auth call of its own", (
 
   it("the old-way/new-way contrast names five concrete pains and backs each with a real capability", () => {
     /**
-     * "Never invent a statistic" is about THIS SECTION'S COPY, and until
-     * the panels landed the whole page happened to be the same thing.
+     * The contrast block specifically, and it is NOT the page-wide guard
+     * — that one is "carries no invented statistic in its own prose"
+     * above, which strips the drawn documents and checks everything else.
+     * Read the two together: this one would be a loss of coverage on its
+     * own, and it was one for exactly as long as it took to be reviewed.
      *
-     * It is not any more. A G703 continuation sheet has a "%" column and
-     * an apprentice ratio is a pair of hour counts — those digits are the
-     * documents being drawn, labelled illustrative, not a "37% faster"
-     * claim about a customer. Run page-wide, this assertion now fails on
-     * the product telling the truth, which is the point at which a guard
-     * stops meaning what its name says and starts getting deleted.
+     * Kept alongside it because the two check different things. The
+     * page-wide guard asks "is there a fabricated number in the copy".
+     * This one additionally pins the five old-way lines and their five
+     * answers by name, so the section cannot be quietly hollowed out into
+     * something that still passes a regex.
      *
-     * So it is scoped to the block it was always about. The scope is
-     * derived from the section headings either side of it rather than a
-     * line number, and asserted non-empty first — a slice that silently
-     * came back empty would pass every assertion after it, which is the
-     * empty-question failure CLAUDE.md records twice.
+     * The scope is derived from the section headings either side of it
+     * rather than a line number, and asserted non-empty first — a slice
+     * that silently came back empty would pass every assertion after it,
+     * which is the empty-question failure CLAUDE.md records twice.
      */
     const start = html.indexOf("The old way, and the C Stream way");
     const end = html.indexOf("Getting paid");
@@ -263,7 +350,7 @@ describe("/ landing content renders signed out, with no auth call of its own", (
     expect(end).toBeGreaterThan(start);
     const contrast = html.slice(start, end);
     expect(contrast.length).toBeGreaterThan(500);
-    expect(contrast).not.toMatch(/\d+%|\d+\s*(minutes?|hours?|days?)\s+(saved|per|of)/i);
+    expect(contrast).not.toMatch(INVENTED_STATISTIC);
     for (const line of [
       "Certified payroll is assembled by hand",
       "Certified payroll generates from the hours your crew already logged",
