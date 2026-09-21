@@ -22,7 +22,18 @@ import {
  * value teaches people to stop reading the colour; a 24.6% margin is
  * ordinary and should look ordinary.
  */
+// DEMO ONLY — NEVER MERGE. Reproduces the 2026-09-21 shape: a shell widget
+// that throws during render on every page, so Cyrus can see the ShellRegion
+// fallback with a working page underneath it on a preview. A helper rather
+// than a bare `throw` so the rest of the function is not statically
+// unreachable (no-unreachable fails the build; that is what sank the first
+// cut of this branch).
+function demoThrowOnPurpose() {
+  throw new TypeError("Cannot read properties of undefined (reading 'aria-describedby')");
+}
+
 export function MetricBar({ financials }: { financials: CompanyFinancials }) {
+  demoThrowOnPurpose();
   const marginText =
     financials.grossMarginRate === null
       ? "—"
