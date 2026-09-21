@@ -603,9 +603,44 @@ export async function deleteCostEntry(jobId: string, costEntryId: string) {
   revalidatePath(`/jobs/${jobId}`);
 }
 
+/**
+ * The Schedule section's refusal — MANAGE_JOBS, not the VIEW_JOB_COSTS the
+ * rest of this file asserts, and the difference is the whole point.
+ *
+ * WHERE THIS CAPABILITY COMES FROM, since the page cannot supply it. The
+ * Schedule section of the Overview tab has no `showsJobMoney` wrapper and
+ * no wrapper of any other kind: it renders for every job function, so
+ * there is nothing to read off the file. The derivation is the OTHER
+ * source this feature already uses — the Ask command for the same work.
+ * `reschedule_job` (lib/ask/commands/schedule.ts) declares
+ * `capability: "MANAGE_JOBS"` and names `action: "updateJobSchedule"`,
+ * this exact function; its own doc comment gives the reasoning, "jobs
+ * themselves, per the capability's own doc comment". So the two surfaces
+ * now agree instead of one of them being open — precisely what #392 did
+ * for `log_payment`/`logPayment`. No new rule, no new capability name.
+ *
+ * WHAT IT COSTS, stated rather than discovered later: ACCOUNTING and
+ * PAYROLL_COMPLIANCE are the only two functions without MANAGE_JOBS, so
+ * they are the only two who lose these three controls, and neither
+ * schedules work or staffs a crew. FIELD holds MANAGE_JOBS, which is the
+ * half that matters — the foreman who runs the crew keeps both.
+ *
+ * Thrown rather than returned, matching these three functions' existing
+ * contract (`throw new Error(END_BEFORE_START)` below): the Overview tab
+ * posts to them as plain `<form action={…}>` server actions with nowhere
+ * to render a returned sentence. Production redacts the message, so what a
+ * refused person sees is the error boundary — but the schedule does not
+ * move and the crew does not change, which is the property that matters
+ * here. Issue #383.
+ */
+const JOB_MANAGEMENT_ONLY =
+  "A job's schedule and crew aren't part of your job function. The account owner sets who sees what, on the Team page.";
+
 /** Sets a job's scheduled start/end dates. Either or both may be cleared. */
 export async function updateJobSchedule(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_JOBS")) throw new Error(JOB_MANAGEMENT_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   const startRaw = String(formData.get("startDate") ?? "").trim();
@@ -638,7 +673,15 @@ export async function updateJobSchedule(jobId: string, formData: FormData) {
 
 /** Assigns a company teammate to a job's crew. */
 export async function assignCrewMember(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // Same section as updateJobSchedule above, same capability, same
+  // reasoning — see JOB_MANAGEMENT_ONLY. There is no Ask command to defer
+  // to here (lib/ask/commands/estimating.ts excludes both crew actions by
+  // name), so the derivation is the control standing beside it in the same
+  // ungated section: staffing a job is the job record itself, written as a
+  // JobAssignment on Job.
+  if (!can(context, "MANAGE_JOBS")) throw new Error(JOB_MANAGEMENT_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
 
   const userId = String(formData.get("userId") ?? "");
@@ -679,7 +722,12 @@ export async function assignCrewMember(jobId: string, formData: FormData) {
 
 /** Removes a teammate from a job's crew. */
 export async function unassignCrewMember(jobId: string, userId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // The other half of assignCrewMember, and gated with it rather than left
+  // as the looser of the pair — a remove is not weaker than the add it
+  // reverses.
+  if (!can(context, "MANAGE_JOBS")) throw new Error(JOB_MANAGEMENT_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   await prisma.jobAssignment.deleteMany({ where: { jobId, userId } });

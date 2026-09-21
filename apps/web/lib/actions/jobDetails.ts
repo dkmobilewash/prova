@@ -118,6 +118,17 @@ export async function updateJobDetails(jobId: string, formData: FormData): Promi
 export async function deleteEstimateJob(jobId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
 
+  // CAPABILITY FIRST, OWNER SECOND, and the reorder is the ONLY change
+  // here — the set of people admitted is identical either way, because an
+  // OWNER holds every capability by construction, so no principal exists
+  // whose outcome moves. What changes is which of two true sentences a
+  // refused person is handed, and #392 settled that for the QuickBooks
+  // pushes: the useful one names the thing they cannot do. A
+  // PAYROLL_COMPLIANCE member told "only the account owner can remove a
+  // job" would go and ask to be made an owner, which is not the change
+  // they need and is a worse one to grant.
+  if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+
   // ownerRefusal, not assertOwner: this action's type PROMISES the caller a
   // sentence it can render, and assertOwner throws — which production
   // redacts to a digest. `ownerRefusalCensus.test.ts` fails the build for
@@ -127,8 +138,6 @@ export async function deleteEstimateJob(jobId: string): Promise<ActionResult> {
     "Only the account owner can remove a job, even an empty estimate.",
   );
   if (refusal) return refusal;
-
-  if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
 
   const job = await prisma.job.findUnique({
     where: { id: jobId },

@@ -86,8 +86,41 @@ const JOB_COSTS_ONLY =
  */
 const SIGNATURE_REQUEST_EXPIRY_DAYS = 30;
 
+/**
+ * THE CONTRACT-PAPERWORK FOUR, and why they take VIEW_JOB_COSTS rather
+ * than the MANAGE_BILLING everything else in this module took in #392.
+ *
+ * They are not on the Billing tab. All four sit on the OVERVIEW tab
+ * (`app/(app)/jobs/[id]/(tabs)/page.tsx`), inside its two
+ * `{showsJobMoney && (…)}` sections — "Contract signature" and
+ * "Subcontract agreement" — and `showsJobMoney` is
+ * `can(principal, "VIEW_JOB_COSTS")` (`jobCapabilities`, lib/jobs/job-access.ts).
+ * So this is the ordinary derivation after all: the capability the section
+ * reaching the action already withholds on. The Overview tab withholds two
+ * different capabilities section by section, which is why #392 could not
+ * decide these mechanically and deliberately left them — issue #383.
+ *
+ * It is also not a new judgement about these particular sections.
+ * `DocuSignPanel` renders INSIDE both of them, and the three actions
+ * behind it — `sendWithDocuSign`, `refreshDocuSignEnvelope`,
+ * `voidSentEnvelope` in lib/actions/docusign.ts — already assert
+ * VIEW_JOB_COSTS. Three controls in a section asserting it and two not was
+ * the inconsistency; this removes it rather than inventing a rule.
+ *
+ * Three throw and one returns, each matching its own existing contract —
+ * `uploadContractDocument` returns `ActionResult` because it had to become
+ * a client component to upload the file first, and its own comment below
+ * explains why a thrown message would be a production digest by the time
+ * anyone read it.
+ *
+ * They reuse JOB_COSTS_ONLY above rather than getting a sentence of their
+ * own: it is the same capability being withheld for the same reason, and a
+ * second near-identical string is how two messages drift apart.
+ */
 export async function createSignatureRequest(jobId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
 
   if (job.status !== "ESTIMATE") {
@@ -119,7 +152,13 @@ export async function createSignatureRequest(jobId: string) {
  * else in this app.
  */
 export async function revokeSignatureRequest(requestId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // Same "Contract signature" section as createSignatureRequest, so the
+  // same capability. This one kills a live signing link the client may be
+  // holding, so leaving it open while gating the create would have left
+  // the more consequential half of the pair answering anyone.
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
 
   const request = await prisma.signatureRequest.findUnique({
     where: { id: requestId },
@@ -963,7 +1002,12 @@ export async function uploadContractDocument(
   jobId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // Returned, not thrown — this action's own contract, for the reason the
+  // doc comment above gives. The "Subcontract agreement" section it posts
+  // from withholds on VIEW_JOB_COSTS.
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company, ...user } = context;
   await assertJobInCompany(jobId, company.id);
 
   // Re-checked rather than trusted: a Server Action is an endpoint anyone
@@ -1014,6 +1058,15 @@ export async function uploadContractDocument(
  */
 export async function deleteContractDocument(contractDocumentId: string) {
   const context = await requireCompanyContext();
+  // VIEW_JOB_COSTS BEFORE the owner check, and the order is the same
+  // judgement #392 made on the QuickBooks pushes: the owner check already
+  // makes this unreachable for every non-owner, so this changes no
+  // behaviour today. It is here because an owner check stops standing in
+  // for a capability the moment the role model gains a third value, and
+  // because the section this is posted from withholds on exactly this.
+  // Of the four, this is the one with nothing to undo it — it deletes the
+  // blob as well as the row.
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
   assertOwner(context);
   const { company } = context;
 
