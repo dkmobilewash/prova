@@ -83,7 +83,10 @@ export async function startJob(page: Page, monitor: HealthMonitor, input: NewJob
     await page.locator('input[name="contactName"]').fill(input.gcName);
   }
 
-  await page.getByRole("button", { name: "Continue →" }).click();
+  // "Continue →" until #413. The label names its destination now, which is
+  // the point of the change: a button that creates a real row should not say
+  // the vaguest word available.
+  await page.getByRole("button", { name: "Start the job — add the work next →" }).click();
   await page.waitForURL(/\/jobs\/new\/[^/]+\/items$/);
   await expectHealthy(page, "new job, step 2 (add work)", { monitor });
 
@@ -122,19 +125,26 @@ export function estimateRow(page: Page, description: string): Locator {
 }
 
 /**
- * From step 2 to the job's own page. The wizard has been two steps on one
- * branch and three on another (#413 removes the Review step), so this
- * follows whatever the page offers: a link that opens the job, or a
- * "Continue →" to a Review step that then offers one.
+ * From step 2 — the LAST step — to the job's own page.
+ *
+ * This carried a fork while the wizard was two steps on one branch and three
+ * on another: with no "open the job" link on screen it pressed "Continue →"
+ * and expected a Review step to offer one. #413 removed that step, so the
+ * fork goes with it. A branch kept "just in case" against a shape that no
+ * longer exists is untested by definition — it runs on no branch, and the
+ * first thing it would do on a real regression is hide it behind a click
+ * that happens to work.
+ *
+ * The assertion that the wizard really is two steps long lives here rather
+ * than in a comment: the last screen's button must name where it goes, and
+ * nothing on it may offer a third step.
  */
 export async function finishWizard(page: Page, monitor: HealthMonitor, jobId: string): Promise<void> {
-  const openJob = page.getByRole("link", { name: /open the job/i });
-  if ((await openJob.count()) === 0) {
-    await page.getByRole("link", { name: "Continue →" }).click();
-    await page.waitForURL(/\/jobs\/new\/[^/]+\/review$/);
-    await expectHealthy(page, "new job, review step", { monitor });
-  }
-  await page.getByRole("link", { name: /open the job/i }).click();
+  const openJob = page.getByRole("link", { name: "Done — open the job →" });
+  await expect(openJob, "step 2 is the last step and its button opens the job").toHaveCount(1);
+  await expect(page.getByRole("link", { name: /review/i })).toHaveCount(0);
+
+  await openJob.click();
   await page.waitForURL(new RegExp(`/jobs/${jobId}(\\?|$)`));
   await expectHealthy(page, "job overview after the wizard", { monitor });
 }
