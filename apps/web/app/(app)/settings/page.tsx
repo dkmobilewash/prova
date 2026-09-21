@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import {
@@ -142,10 +143,10 @@ export default async function SettingsPage({
 
   if (currentUser.role !== "OWNER") {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8">
+      <PageShell width="reading">
         <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
         <p className="text-sm text-ink-body" data-tour="settings-owner-only">Only the account owner can manage integrations.</p>
-      </div>
+      </PageShell>
     );
   }
 
@@ -241,7 +242,18 @@ export default async function SettingsPage({
   }));
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    // `reading`, and the width deliberately does not change: this page is
+    // eight stacked forms — company details, licences, insurance policies,
+    // bonding — and a text input stretched to 1272px is HARDER to read, not
+    // easier. Line length is why the cap was here in the first place. What
+    // changes is that the page no longer owns the number: the measure is the
+    // shell's, so when the type scale moves, this moves with it.
+    //
+    // This page's other problem — 4.7 screens of vertical scroll — is a
+    // density and section-structure problem, not a width one, and belongs to
+    // a later phase. Widening it would have made that worse by stretching
+    // every field.
+    <PageShell width="reading">
       <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
 
       {/* The Integrations page is the framework's own surface; QuickBooks
@@ -828,6 +840,6 @@ export default async function SettingsPage({
           </form>
         </details>
       </section>
-    </div>
+    </PageShell>
   );
 }
