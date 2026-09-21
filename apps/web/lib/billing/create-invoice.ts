@@ -1,6 +1,7 @@
 import { prisma } from "@prova/db";
 import type { ActionResultWith } from "@/lib/actions/shared";
 import { issueInvoiceNumber } from "./invoice-number";
+import { retainageWithheldFor } from "./retainage-amount";
 
 /**
  * The body of "bill the client", lifted out of the Server Action so two
@@ -19,7 +20,13 @@ import { issueInvoiceNumber } from "./invoice-number";
  *
  * `retainageWithheld` is snapshotted from the job's current rate at this
  * moment and never recomputed — see Invoice.retainageWithheld in
- * billing.prisma. The formula is the action's own, moved, not restated.
+ * billing.prisma.
+ *
+ * The formula used to live in this file, and saying so is the point: the
+ * pay-application path in lib/actions/billing.ts had its own copy of it,
+ * spelled differently, and the two rounded $1,000.35 at 10% to different
+ * cents. It now lives in ./retainage-amount.ts, which is the only place in
+ * the app that multiplies an amount by a retainage rate.
  */
 export type CreateInvoiceInput = {
   /** Already validated as a decimal string ("12500.00"). */
@@ -36,10 +43,6 @@ export type CreateInvoiceResult = {
 
 export const NOT_INVOICEABLE = "Contract this job before invoicing it";
 
-export function retainageWithheldFor(amount: string, retainagePercent: number | null): string | null {
-  return retainagePercent != null ? (Number(amount) * (retainagePercent / 100)).toFixed(2) : null;
-}
-
 export async function createInvoiceRecord(
   companyId: string,
   jobId: string,
@@ -52,10 +55,10 @@ export async function createInvoiceRecord(
   if (!job) return { ok: false, error: "Job not found" };
   if (job.status === "ESTIMATE") return { ok: false, error: NOT_INVOICEABLE };
 
-  const retainageWithheld = retainageWithheldFor(
-    input.amount,
-    job.retainagePercent == null ? null : Number(job.retainagePercent),
-  );
+  // The Decimal goes in as a Decimal. It used to be pushed through
+  // `Number()` first, which is a lossy step sitting directly in front of
+  // the one operation that has to be exact.
+  const retainageWithheld = retainageWithheldFor(input.amount, job.retainagePercent);
 
   const invoice = await prisma.$transaction(async (tx) =>
     tx.invoice.create({

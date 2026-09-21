@@ -84,9 +84,16 @@ describe("retainage is not receivable", () => {
 
   it("does not leave float dust ageing as an overdue balance", () => {
     // Not a hypothetical: these three numbers are what the app itself
-    // produces. `retainageWithheldFor` is `(amount * pct/100).toFixed(2)`,
-    // so a $1,000.35 invoice at 10% snapshots $100.04, and a GC paying the
-    // net pays $900.31.
+    // produces. `retainageWithheldFor` (lib/billing/retainage-amount.ts)
+    // snapshots $100.04 on a $1,000.35 invoice at 10% — exactly $100.035,
+    // rounded half-up — and a GC paying the net pays $900.31.
+    //
+    // This comment used to spell that formula out as
+    // `(amount * pct/100).toFixed(2)`, which was one of TWO float
+    // expressions live at the time; the other one made the same bill
+    // $100.03. The arithmetic is exact decimal now and there is one of it.
+    // The figures below are unchanged, because half-up is what that
+    // expression happened to produce for this particular amount.
     //
     //   1000.35 - 100.04 - 900.31 === 1.1368683772161603e-13
     //
