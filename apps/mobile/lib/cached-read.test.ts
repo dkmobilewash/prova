@@ -80,3 +80,32 @@ describe("reading a list that may have no signal behind it", () => {
     expect(cached).toMatchObject({ value: ["new"] });
   });
 });
+
+describe("a read that needs a token", () => {
+  it("falls back to the cache when there is no token, instead of showing nothing", async () => {
+    // The device bug: Clerk refreshes the session JWT over the network,
+    // so offline `getToken()` answers null. A screen that bailed on that
+    // never reached its own cache and rendered its empty state — "Nothing
+    // outstanding on this job." on a job with plenty outstanding.
+    const { withToken } = await import("./cached-read");
+
+    await cachedRead("punch-list.job_7", withToken(async () => "token", async () => ["fix the grid"]));
+
+    const offline = await cachedRead(
+      "punch-list.job_7",
+      withToken(
+        async () => null,
+        async () => {
+          throw new Error("should never be called without a token");
+        },
+      ),
+    );
+    expect(offline).toMatchObject({ from: "cache", value: ["fix the grid"] });
+  });
+
+  it("says nothing rather than empty when there is no token AND no cache", async () => {
+    const { withToken } = await import("./cached-read");
+    const first = await cachedRead("safety.job_7", withToken(async () => null, async () => ["never"]));
+    expect(first).toEqual({ from: "nothing" });
+  });
+});

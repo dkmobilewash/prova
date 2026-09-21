@@ -30,12 +30,17 @@ export function useSync(refresh: () => Promise<void>) {
 
   const sync = useCallback(async () => {
     const token = await getToken();
-    if (!token) return;
-    try {
-      await flushQueue(token);
-    } catch {
-      // 401 or offline — leave queued, retry later.
+    if (token) {
+      try {
+        await flushQueue(token);
+      } catch {
+        // 401 or offline — leave queued, retry later.
+      }
     }
+    // The counts and the REFRESH happen either way. This used to return
+    // early without a token, so a screen reopened with no signal never
+    // re-read its own cache — and Clerk answers null offline, because it
+    // refreshes the session JWT over the network.
     setPending(await pendingCount());
     setRefused(await listRefused());
     await refresh();

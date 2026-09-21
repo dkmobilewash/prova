@@ -83,6 +83,41 @@ describe("the cache the phone actually uses", () => {
     expect(offenders, `these screens fetch a list with no offline fallback: ${offenders.join(", ")}`).toEqual([]);
   });
 
+  it("lets no screen bail on a missing token before it reads its cache", () => {
+    // THE REGRESSION THIS EXISTS FOR, found on a phone in Airplane Mode
+    // on 2026-09-20. Every screen was written as
+    //
+    //     const token = await getToken();
+    //     if (!token) return;            // ← never reaches the cache
+    //     const result = await cachedRead(...)
+    //
+    // and Clerk refreshes the session JWT over the NETWORK, so offline
+    // `getToken()` answers null. The punch list therefore fell back to
+    // its initial state and said "Nothing outstanding on this job." —
+    // the exact bug the caching layer was built to kill, reintroduced by
+    // the refactor that unified it.
+    //
+    // The census before this one asked whether a screen CALLS cachedRead.
+    // It does. It could not ask whether the call is REACHABLE, which is a
+    // different question and the one that mattered.
+    const offenders: string[] = [];
+    for (const file of [...files(APP), ...files(join(APP, "..", "lib"))]) {
+      const text = readFileSync(file, "utf8");
+      if (!text.includes("cachedRead(")) continue;
+      // The comment in cached-read.ts quotes the bad pattern on purpose.
+      if (file.endsWith("cached-read.ts")) continue;
+      for (const line of text.split("\n")) {
+        if (/^\s*if \(!token\) return;/.test(line)) {
+          offenders.push(file.slice(APP.length + 1));
+        }
+      }
+    }
+    expect(
+      offenders,
+      `these read through the cache but return early without a token, so offline they never reach it: ${offenders.join(", ")}`,
+    ).toEqual([]);
+  });
+
   it("keeps the exception list honest — every entry still exists and still skips the cache", () => {
     for (const [name, reason] of Object.entries(NOT_CACHED)) {
       const text = readFileSync(join(APP, name), "utf8");
