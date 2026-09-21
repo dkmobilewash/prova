@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { OfflineNote } from "@/components/OfflineNote";
+import { emptyFor } from "@/lib/empty-state";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
@@ -74,8 +75,10 @@ export default function JobsScreen() {
             </Card>
           </Pressable>
         )}
-        emptyTitle="No jobs yet"
-        emptyDescription="Jobs appear here once they're created in the office."
+        {...emptyFor(offline, "the job list", {
+          title: "No jobs yet",
+          description: "Jobs appear here once they're created in the office.",
+        })}
       />
     </View>
   );

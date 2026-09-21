@@ -9,7 +9,7 @@
     "build": "expo export --platform web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run && vitest run --config vitest.screens.config.mts"
   },
   "dependencies": {
     "@clerk/expo": "^4.6.7",
@@ -46,6 +46,8 @@
     "eslint": "^9.17.0",
     "eslint-config-expo": "~57.0.2",
     "typescript": "^5.7.2",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.7",
+    "@types/react-dom": "~19.2.3",
+    "happy-dom": "^20.14.0"
   }
 }

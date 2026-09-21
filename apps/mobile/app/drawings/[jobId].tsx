@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Card } from "@/components/Card";
 import { List } from "@/components/List";
 import { OfflineNote } from "@/components/OfflineNote";
+import { emptyFor } from "@/lib/empty-state";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
@@ -190,12 +191,10 @@ export default function DrawingsScreen() {
             })}
           </Card>
         )}
-        emptyTitle={offline === "nothing" ? "Can't load the drawings right now." : "No drawing sets on this job."}
-        emptyDescription={
-          offline === "nothing"
-            ? "No connection, and this phone hasn't loaded them before."
-            : "Sets and revisions are recorded on the web, off the transmittal."
-        }
+        {...emptyFor(offline, "the drawings", {
+          title: "No drawing sets on this job.",
+          description: "Sets and revisions are recorded on the web, off the transmittal.",
+        })}
       />
 
       {held > 0 ? <Text style={styles.footer}>{formatBytes(held)} of drawings kept on this phone</Text> : null}

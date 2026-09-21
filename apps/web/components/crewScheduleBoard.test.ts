@@ -138,3 +138,87 @@ describe("putting someone on the crew schedule", () => {
     expect(container.querySelector("form")).toBeNull();
   });
 });
+
+/**
+ * Taking somebody off a day that has already gone by.
+ *
+ * Until this, Remove existed only on the next-two-weeks list, and the Ask
+ * registry excluded `unscheduleCrewDay` on the grounds that removal "is
+ * done on /schedule, where the day being removed is visible". Both are
+ * reasonable and together they left a hole: a day in the PAST is visible
+ * on /schedule — in the gap report — and could not be removed anywhere at
+ * all. A plan entered by mistake, or one for a job that was called off,
+ * was permanent.
+ *
+ * The control carries its own argument. This list is a gap report, so the
+ * confirmation has to say what removal does NOT do — it unmakes the plan,
+ * it does not log the hours — or the button becomes a way to make an
+ * awkward gap disappear.
+ */
+const MISSED = {
+  id: "day-7",
+  workDate: "2026-09-18",
+  jobId: "job-a",
+  jobName: "Alder Street",
+  worker: "Ana Reyes",
+  craft: null,
+  note: null,
+};
+
+function renderMissing(canWrite: boolean) {
+  render(
+    createElement(CrewScheduleBoard, {
+      upcoming: [],
+      missingHours: [MISSED],
+      jobs: [{ id: "job-a", name: "Alder Street", clientName: null, status: null }],
+      workers: [{ value: "user:ana", label: "Ana Reyes" }],
+      crafts: [],
+      canWrite,
+    }),
+  );
+}
+
+function buttonSaying(text: string) {
+  return [...container.querySelectorAll("button")].find((b) => b.textContent === text);
+}
+
+describe("a planned day in the past that nobody logged hours against", () => {
+  beforeEach(() => fake.unscheduleCrewDay.mockReset());
+
+  it("can be taken off the schedule, in two steps", async () => {
+    fake.unscheduleCrewDay.mockResolvedValue({ ok: true });
+    renderMissing(true);
+
+    const remove = buttonSaying("Remove");
+    expect(remove, "no way to remove a past planned day").toBeTruthy();
+    act(() => remove!.click());
+
+    // Armed, not done: the confirm is a second, different button.
+    expect(fake.unscheduleCrewDay).not.toHaveBeenCalled();
+    const confirm = buttonSaying("Remove it");
+    expect(confirm).toBeTruthy();
+
+    act(() => confirm!.click());
+    await act(async () => {});
+    expect(fake.unscheduleCrewDay).toHaveBeenCalledWith("day-7");
+  });
+
+  it("says what removing it does not do, because this list is a gap report", async () => {
+    renderMissing(true);
+    // The hint sits on the unarmed control (`describe` -> Hint -> the
+    // tooltip node, present in the DOM and revealed on hover or focus),
+    // so it is read BEFORE the two-step arms.
+    const said = container.querySelector('[role="tooltip"]')?.textContent ?? "";
+    expect(said).toContain("Ana Reyes");
+    expect(said).toContain("2026-09-18");
+    // The sentence that keeps this button honest.
+    expect(said).toMatch(/records no hours/);
+    expect(said).toMatch(/not because the hours were logged/);
+  });
+
+  it("is not offered to somebody who cannot change the schedule", () => {
+    renderMissing(false);
+    expect(buttonSaying("Remove")).toBeFalsy();
+    expect(container.textContent).toContain("Ana Reyes");
+  });
+});

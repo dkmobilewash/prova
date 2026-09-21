@@ -108,12 +108,18 @@ importers:
       '@types/react':
         specifier: 19.0.14
         version: 19.0.14
+      '@types/react-dom':
+        specifier: ~19.2.3
+        version: 19.2.4(@types/react@19.0.14)
       eslint:
         specifier: ^9.17.0
         version: 9.39.5(jiti@2.7.0)
       eslint-config-expo:
         specifier: ~57.0.2
         version: 57.0.2(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
+      happy-dom:
+        specifier: ^20.14.0
+        version: 20.14.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       typescript:
         specifier: ^5.7.2
         version: 5.9.3

@@ -16,6 +16,7 @@ import { uuid } from "@/lib/id";
 import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
 import { JobSections } from "@/components/JobSections";
 import { OfflineNote } from "@/components/OfflineNote";
+import { emptyFor } from "@/lib/empty-state";
 import { colors, typography } from "@/lib/theme";
 import type { DelayRow, FieldReportRow } from "@/lib/types";
 import { useFieldReports } from "@/lib/use-field-reports";
@@ -267,8 +268,11 @@ export default function ReportsScreen() {
             ))}
           </Card>
         )}
-        emptyTitle="No reports yet"
-        emptyDescription="Tap “New report” to file the day's work. The crew and the weather fill in on their own."
+        {...emptyFor(offline, "the field reports", {
+          title: "No reports yet",
+          description:
+            "Tap “New report” to file the day's work. The crew and the weather fill in on their own.",
+        })}
       />
 
       <View style={[styles.footer, styles.footerRow]}>

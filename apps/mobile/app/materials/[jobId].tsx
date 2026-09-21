@@ -10,6 +10,7 @@ import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
+import { emptyFor } from "@/lib/empty-state";
 import { OfflineNote } from "@/components/OfflineNote";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
@@ -102,8 +103,10 @@ export default function MaterialsScreen() {
             </Text>
           </Card>
         )}
-        emptyTitle="Nothing on order"
-        emptyDescription="Tap “Add order” to log a material delivery."
+        {...emptyFor(offline, "the material orders", {
+          title: "Nothing on order",
+          description: "Tap “Add order” to log a material delivery.",
+        })}
       />
 
       <View style={styles.footer}>

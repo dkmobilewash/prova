@@ -13,6 +13,7 @@ import { SignaturePad } from "@/components/SignaturePad";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { OfflineNote } from "@/components/OfflineNote";
+import { emptyFor } from "@/lib/empty-state";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -107,8 +108,10 @@ export default function TicketScreen() {
             ) : null}
           </Card>
         )}
-        emptyTitle="No T&M tickets"
-        emptyDescription="Tap “New ticket” to document and sign the day's extra work."
+        {...emptyFor(offline, "the T&M tickets", {
+          title: "No T&M tickets",
+          description: "Tap “New ticket” to document and sign the day's extra work.",
+        })}
       />
 
       <View style={styles.footer}>
