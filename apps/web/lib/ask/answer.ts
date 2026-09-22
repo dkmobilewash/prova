@@ -39,6 +39,12 @@ import type { WebSuggestion } from "./webSuggestions";
 import { resolvePageJob } from "./page-context-query";
 import { PRIOR_TURNS_RULE, type AskTurn } from "./turns";
 import { runTool } from "./handlers";
+import {
+  CALCULATE_TOOL,
+  CALCULATE_TOOL_NAME,
+  calculate,
+  FigureLedger,
+} from "./calculator";
 import { recordProposal } from "./proposals";
 import { readingLabel } from "./toolLabels";
 import {
@@ -83,11 +89,15 @@ HOW YOU GET FACTS
 
 You have two kinds of tools. READ tools return facts from this company's own data. COMMANDS propose a change: a command resolves what the person named, shows them a card with exactly what will happen, and the person taps to confirm. Nothing is written until they tap. Every fact in your answer must come from a tool call in this conversation. You have no other knowledge of this company: not its jobs, its people, its money, or its schedule. If you did not read it from a tool result just now, you do not know it.
 
-Never do arithmetic. Not addition, not percentages, not differences, not "roughly". Every figure a tool hands you is already computed by the same code that renders the screens this person looks at, so a number you calculate yourself can disagree with their own dashboard — and then they have two answers and no way to tell which is right. If you want a number the tools do not return, say it is not available rather than deriving it.
+Never do arithmetic. Not addition, not percentages, not differences, not "roughly". Every figure a tool hands you is already computed by the same code that renders the screens this person looks at, so a number you calculate yourself can disagree with their own dashboard — and then they have two answers and no way to tell which is right.
+
+THE ONE EXCEPTION IS THE calculate TOOL, AND IT IS NOT A RELAXATION OF THAT RULE. You still do no arithmetic; calculate does it in code. You do not give it numbers — you give it the PATH of a figure inside a tool result you have already been handed this turn, such as receivables.rows[0].outstanding, and it refuses anything else. When the question needs two figures added, subtracted, averaged, counted, or one expressed as a percentage of another, call calculate and say the figure it gives back, exactly as it writes it. Never work it out yourself, and never check its answer against your own.
+
+Call it only for a SUBSET the app does not already total: two GCs out of five, this job against that one. If a tool already returns the total — company-wide AR, retainage held, total hours, any count — that figure wins, because it comes from the code that draws the screens. If calculate refuses, that refusal is the answer; say the figures separately rather than combining them yourself.
 
 Say the number the tool gave you, in the tool's own terms. If a tool reports \`daysOverdue: 42\`, the invoice is 42 days overdue. Do not convert it to weeks or months.
 
-A COUNT IS A NUMBER, and counting a list is arithmetic. Every tool result that contains rows also contains a \`count\`. When you say how many of something there are, that figure must be the \`count\` you were given — never the number of rows you can see, never the number of lines you are about to write, and never a subtotal you worked out. If you group several rows onto one line, the count still describes rows, not lines. If you want a count of some subset — how many are overdue, how many are unpaid — and no tool gave you that exact number, do not produce one: describe the subset without counting it, or say the number is not available.
+A COUNT IS A NUMBER, and counting a list is arithmetic. Every tool result that contains rows also contains a \`count\`. When you say how many of something there are, that figure must be the \`count\` you were given — never the number of rows you can see, never the number of lines you are about to write, and never a subtotal you worked out. If you group several rows onto one line, the count still describes rows, not lines. If you want a count of some subset — how many are overdue, how many are unpaid — and no tool gave you that exact number, do not produce one: call calculate with operation count over the paths of the rows you mean, or describe the subset without counting it.
 
 WHAT YOU MUST NOT CLAIM
 
@@ -353,7 +363,11 @@ function invalid(question: string): string | null {
 function labelFor(names: string[]): string {
   const command = names.find(isCommandName);
   if (command) return `${commandNamed(command).verb}…`;
-  return readingLabel(names.filter((name): name is ToolName => TOOLS.some((tool) => tool.name === name)));
+  const reads = names.filter((name): name is ToolName => TOOLS.some((tool) => tool.name === name));
+  // A batch that is ONLY the calculator would otherwise fall through to
+  // "Reading your records…", which is a lie: it reads nothing.
+  if (reads.length === 0 && names.includes(CALCULATE_TOOL_NAME)) return "Working that out…";
+  return readingLabel(reads);
 }
 
 const toolNames = new Set<string>(TOOLS.map((tool) => tool.name));
@@ -486,8 +500,19 @@ export function offeredTools(principal: Principal): AskToolDefinition[] {
   return [
     ...toolsFor(principal).map(toAskToolDefinition),
     ...commandsFor(principal).map(toToolDefinition),
+    // Offered to everyone, and deliberately without a capability: it reads
+    // nothing. It can only combine figures this person has already been
+    // handed in this same turn, which the capability filter above has
+    // already decided they may see. A capability here would guard a door
+    // that opens onto a room the person is already standing in.
+    ...EXTRA_TOOLS,
   ];
 }
+
+/** Tools that are neither a database read nor a command. One so far. Kept
+ * as a list rather than a lone spread so the census in answer.test.ts can
+ * pin the registry's SIZE to something that cannot drift with it. */
+export const EXTRA_TOOLS: AskToolDefinition[] = [CALCULATE_TOOL];
 
 export async function* streamAnswer(
   ctx: CommandContext,
@@ -595,6 +620,10 @@ export async function* streamAnswer(
 
   const citations: AskCitation[] = [];
   const toolsUsed: ToolName[] = [];
+  // Every number the model is handed this turn, addressable by path. Built
+  // from the CONTENT STRINGS the executor returns, so it holds exactly what
+  // the model could have read and nothing richer — see calculator.ts.
+  const ledger = new FigureLedger();
   // Set synchronously, before the first await in a command's branch, so a
   // batch of two commands running under Promise.all yields one proposal
   // and one refusal rather than two rows.
@@ -645,6 +674,12 @@ export async function* streamAnswer(
     // ctx is closed over here and is not a parameter of any tool schema,
     // so there is no way for the model to ask about anyone else.
     execute: async (name, rawInput, meta) => {
+      // First, because it is neither a read nor a command: no database, no
+      // company scope, nothing but this turn's own figures.
+      if (name === CALCULATE_TOOL_NAME) {
+        return { content: JSON.stringify(calculate(ledger, rawInput)) };
+      }
+
       if (isCommandName(name)) {
         const command = commandNamed(name);
         if (commandSeen) {
@@ -695,13 +730,17 @@ export async function* streamAnswer(
         return { content: JSON.stringify({ unavailable: result.unavailable }) };
       }
       const payload = forModel(result.data);
-      return {
-        content: JSON.stringify(
-          result.summary && typeof payload === "object" && payload !== null
-            ? { ...result.summary, ...payload }
-            : payload,
-        ),
-      };
+      const content = JSON.stringify(
+        result.summary && typeof payload === "object" && payload !== null
+          ? { ...result.summary, ...payload }
+          : payload,
+      );
+      // Recorded AFTER the cap and the summary merge, from the same string
+      // the model gets. A ledger built from `result.data` would resolve
+      // paths to rows the cap removed — figures the model never saw and
+      // therefore cannot have meant.
+      ledger.record(toolName, content);
+      return { content };
     },
   });
 
