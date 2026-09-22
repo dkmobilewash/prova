@@ -11,8 +11,9 @@
  * 2. IT CLAIMS NO ENDORSEMENT. There is no partnership, endorsement or
  *    member-discount program. The rendered page is scanned for the phrases
  *    that would say otherwise, and for the association's logo.
- * 3. IT INVENTS NO NUMBERS. Pricing is undecided: no dollar figure, no
- *    percentage, no counter, outside the illustrative product panels.
+ * 3. IT INVENTS NO NUMBERS. The one figure is the founding price Cyrus set
+ *    ($399/month, flat); no other dollar figure, no percentage, no lock
+ *    length, no counter, outside the illustrative product panels.
  * 4. THE SWITCH WORKS. `WWCCA.enabled = false` turns the route into a 404 —
  *    executed below, not asserted from the source.
  * 5. It renders signed out, with no Clerk mock and no request scope, which is
@@ -158,14 +159,22 @@ describe("/associations/wwcca claims no endorsement", () => {
   });
 });
 
-describe("/associations/wwcca invents no numbers", () => {
-  it("has no price until one is decided", () => {
-    expect(FOUNDING_OFFER.price).toBeNull();
+describe("/associations/wwcca prints one number, the one that was set", () => {
+  it("prints the founding price that was set, and the 60 days as onboarding", () => {
+    expect(FOUNDING_OFFER.price).toBe("$399 per month, per company — flat, with unlimited users.");
+    expect(html).toContain(escapeHtml(FOUNDING_OFFER.price!));
+    expect(html).toContain("The first 60 days are free. That is onboarding, not a trial");
   });
 
-  it("carries no dollar figure, percentage or scarcity counter outside the product panels", () => {
-    expect(prose).not.toMatch(/\$\s?\d/);
-    expect(prose).not.toMatch(/\d\s?%/);
+  /** The price is the ONE dollar figure allowed outside the panels, so it is
+   * removed by its exact text first and the rest must carry none. */
+  it("carries no other dollar figure, percentage, undecided term or scarcity counter outside the panels", () => {
+    const withoutPrice = prose.replace(escapeHtml(FOUNDING_OFFER.price!), "");
+    expect(withoutPrice).not.toBe(prose);
+    expect(withoutPrice).not.toMatch(/\$\s?\d/);
+    expect(prose).not.toMatch(/\d\s?%|percent/i);
+    expect(prose).not.toMatch(/free trial|\btrial period/i);
+    expect(prose).not.toMatch(/\bAI\b|allowance|tokens?\b/);
     expect(prose).not.toMatch(/spots? (left|remaining)|\bonly \d+ left|countdown|hurry|ends (soon|on)/i);
   });
 

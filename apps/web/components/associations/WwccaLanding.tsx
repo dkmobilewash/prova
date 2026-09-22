@@ -348,15 +348,16 @@ export function WwccaLanding() {
       </section>
 
       {/* ------------------------------------------------- the founding offer
-          All copy from FOUNDING_OFFER in ./wwcca.ts. No number, no counter:
-          see that file's header. `price` renders only once it is set. */}
+          All copy from FOUNDING_OFFER in ./wwcca.ts, the price included, and
+          no counter: see that file's header. */}
       <section id="founding" className={`${sectionSpace} scroll-mt-8`}>
         <div className="rounded-2xl border border-brand/40 bg-surface p-6 sm:p-10">
           <h2 className="text-2xl font-semibold text-ink sm:text-3xl">{FOUNDING_OFFER.heading}</h2>
           <p className="mt-4 max-w-3xl text-base leading-relaxed text-ink-body sm:text-lg">{FOUNDING_OFFER.lead}</p>
           {FOUNDING_OFFER.price && (
-            <p className="mt-4 text-xl font-semibold text-ink">{FOUNDING_OFFER.price}</p>
+            <p className="mt-6 text-2xl font-semibold text-ink sm:text-3xl">{FOUNDING_OFFER.price}</p>
           )}
+          <p className="mt-3 max-w-3xl text-base leading-relaxed text-ink-body sm:text-lg">{FOUNDING_OFFER.onboarding}</p>
           <ul className="mt-6 flex flex-col gap-3">
             {FOUNDING_OFFER.terms.map((term) => (
               <li key={term} className="flex gap-3 text-base leading-relaxed text-ink-body">

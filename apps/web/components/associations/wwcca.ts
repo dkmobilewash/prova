@@ -38,10 +38,18 @@
  *
  * ── PRICING ─────────────────────────────────────────────────────────────
  *
- * Pricing is NOT decided. There is no number anywhere on this page and none
- * may be invented. `FOUNDING_OFFER.price` is null until there is one; the
- * layout prints it only when it is set, so a figure can go in later as a
- * one-line edit here.
+ * Set by Cyrus 2026-09-21: $399 per month, per company, flat, unlimited
+ * users, with the first 60 days free as ONBOARDING (the founders load the
+ * member's data and run one real billing cycle through it) — never called
+ * a free trial. That is the only number on this page and it lives in
+ * `FOUNDING_OFFER.price` and `.onboarding` below, nowhere in the layout.
+ *
+ * NOT DECIDED, AND THEREFORE NOT ON THE PAGE: how long the lock lasts, any
+ * discount percentage, and anything about AI allowances. The "locked in"
+ * sentence stays deliberately without a length. page.test.ts fails on a
+ * lifetime promise, a percentage, a second dollar figure, "trial", or an AI
+ * allowance, so adding one of those is a decision somebody has to make in
+ * the test as well as here.
  *
  * The "first 10" limit is stated with its real reason (the founders' own
  * time) and deliberately has NO counter, no "spots left" and no countdown:
@@ -73,16 +81,20 @@ export const WWCCA = {
 /**
  * C Stream's founding-member offer to WWCCA member companies.
  *
- * All the offer copy is here so that when a price is decided it goes in as
- * `price: "..."` and nothing else changes. Keep the framing exactly as it
+ * All the offer copy is here, price included, so a change to the terms is an
+ * edit to this object and never to layout. Keep the framing exactly as it
  * is: C Stream is offering this; the association does not run it.
  */
 export const FOUNDING_OFFER = {
   heading: "Founding-member pricing for the first 10 WWCCA member companies",
   lead: "C Stream is offering founding-member pricing to the first 10 WWCCA member companies.",
-  /** Null until pricing is decided. The layout renders nothing for it while
-   * it is null — do NOT replace it with a placeholder figure. */
-  price: null as string | null,
+  /** The founding price, set by Cyrus 2026-09-21. The layout renders this
+   * string verbatim and renders nothing if it is null. */
+  price: "$399 per month, per company — flat, with unlimited users." as string | null,
+  /** Onboarding, NOT a free trial: the 60 days are the founders doing the
+   * setup and one real billing cycle, which is what makes them free. */
+  onboarding:
+    "The first 60 days are free. That is onboarding, not a trial: we load your data and run one real billing cycle through C Stream with you before the first bill.",
   terms: [
     // NOT a lifetime lock and NOT "for as long as you stay a customer": the
     // pricing research recommends against promising either and it is not
