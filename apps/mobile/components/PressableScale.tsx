@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Animated,
   Pressable,
@@ -30,7 +30,10 @@ export function PressableScale({
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
-  const scale = useRef(new Animated.Value(1)).current;
+  // useState's lazy initialiser, not useRef(...).current: the value is made
+  // once and never replaced, and reading a ref's `current` during render is
+  // what react-hooks/refs refuses — CI's lint went red on exactly that.
+  const [scale] = useState(() => new Animated.Value(1));
 
   const spring = (toValue: number) => {
     Animated.spring(scale, {

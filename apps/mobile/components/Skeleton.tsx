@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { Animated, StyleSheet } from "react-native";
 import { usePalette } from "@/lib/use-palette";
 import { type Palette, radius } from "@/lib/theme";
@@ -20,7 +20,9 @@ export function Skeleton({
 }) {
   const palette = usePalette();
   const styles = makeStyles(palette);
-  const opacity = useRef(new Animated.Value(0.4)).current;
+  // Made once, never replaced — useState rather than a ref read during
+  // render, for the reason PressableScale gives.
+  const [opacity] = useState(() => new Animated.Value(0.4));
 
   useEffect(() => {
     const loop = Animated.loop(

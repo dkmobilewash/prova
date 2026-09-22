@@ -1,6 +1,6 @@
 import { useAuth } from "@clerk/expo";
 import { Redirect, router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GroupedList } from "@/components/GroupedList";
@@ -39,7 +39,7 @@ export default function JobsScreen() {
   const [offline, setOffline] = useState<string | "nothing" | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     // The job list is the first screen after sign-in and the one most
     // likely to be opened in a truck with one bar. An empty list here
     // reads as "you have no jobs", which is never what it means — and
@@ -53,13 +53,17 @@ export default function JobsScreen() {
     setJobs(result.value);
     setOffline(staleNote(result));
     setLoaded(true);
-  };
+  }, [getToken]);
 
   useEffect(() => {
     if (!isSignedIn) return;
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSignedIn, getToken]);
+    // Awaited inside its own async closure, as punch-list/[jobId] does: a
+    // bare `load()` in the effect body is a synchronous setState-in-effect
+    // to react-hooks/set-state-in-effect, and that failed CI's lint.
+    (async () => {
+      await load();
+    })();
+  }, [isSignedIn, load]);
 
   if (!isLoaded) return <Text style={styles.loading}>Loading…</Text>;
   if (!isSignedIn) return <Redirect href="/sign-in" />;
