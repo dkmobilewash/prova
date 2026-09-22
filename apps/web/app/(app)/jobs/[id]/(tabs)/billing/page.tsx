@@ -251,8 +251,12 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                     ceiling is `amount - paidAmount` because a GC is
                     entitled to pay retainage early and the ledger has to
                     accept the cash that arrives. What changed is that the
-                    line above no longer calls that remainder a debt. */}
-                {balance.tone !== "settled" && (
+                    line above no longer calls that remainder a debt.
+                    Only the two tones where the GC still has money to send:
+                    not a credit (the GC is owed money back, and a payment
+                    row against one makes the correction look settled) and
+                    not an overpayment (more cash is the wrong answer). */}
+                {(balance.tone === "owing" || balance.tone === "retainage-only") && (
                   <LogPaymentForm jobId={job.id} invoiceId={invoice.id} />
                 )}
               </div>

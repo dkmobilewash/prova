@@ -24,30 +24,32 @@ import { arBalanceFor } from "./cash-flow";
  * the note on `arBalanceFor`. This module decides what a line SAYS; it
  * decides nothing about what may be recorded.
  *
- * ── TWO CASES THIS DOES NOT HANDLE, AND #434 DOES ───────────────────
+ * ── THE FOLD: #431 AND #434 WERE ONE DECISION WRITTEN TWICE ─────────
  *
- * OPEN COLLISION, written here rather than only in a PR body because a PR
- * body is not where the next person reads. **#434
- * (`cyrus/catalog-owner-credit-payapp`) adds `lib/billing/invoice-balance.ts`,
- * which owns the same two lines on the same two pages as this module.**
- * Neither is complete alone, and each gets the other's case wrong —
- * verified by execution, not by reading:
+ * #434 (`cyrus/catalog-owner-credit-payapp`) arrived with its own module,
+ * `lib/billing/invoice-balance.ts`, owning the same line on the same two
+ * pages. Each got the other's case wrong, verified by execution: this
+ * module called a NEGATIVE-amount credit and an OVERPAYMENT "Paid in full",
+ * in green, on the GC portal; #434's computed a gross `amount - paid` and
+ * painted a settled-net invoice as an uncaptioned amber balance. They were
+ * folded into this file, in this order, and the order is the design:
  *
- *   - THIS module answers "Paid in full", in green, for a NEGATIVE-amount
- *     credit (`amount: -5000, paid: 0`) and for an OVERPAYMENT
- *     (`amount: 1000, paid: 1200`). Both are #434's headline defect, and
- *     one of the two pages is the GC portal.
- *   - #434's module computes a gross `amount - paid`, so a settled-net
- *     invoice is an uncaptioned amber "Balance $10,000.00" — the defect
- *     this module exists to fix.
+ *   1. CREDIT, decided by the AMOUNT before any balance is read. A credit
+ *      with no payment against it has a balance equal to its (negative)
+ *      amount, so a balance-first reading files it under settled — or,
+ *      with a payment recorded against it, under overpaid, which is the
+ *      wrong sentence about the wrong document. #434's reasoning.
+ *   2. OVERPAID, when the GROSS unpaid amount (retainage included) is
+ *      below zero: cash received beyond everything billed. Not an error and
+ *      not paid in full — somebody has to decide whether it is applied
+ *      elsewhere or returned, and that starts with seeing it.
+ *   3. This module's own settled / retainage-only / owing split, with the
+ *      retainage caption on each.
  *
- * **Whichever merges second must FOLD, not replace.** The combined order
- * is: credit (decided by the AMOUNT, before any balance is read — #434's
- * ordering is load-bearing and its reasoning should be read at the source),
- * then overpayment, then this module's settled / retainage-only / owing
- * split, with the retainage caption surviving on all three of the latter.
- * Resolving this by keeping one file and deleting the other re-opens
- * whichever defect that file does not cover.
+ * Neither credit nor overpaid is "settled", so neither can be green, and
+ * the billing tab offers the log-a-payment form only on `owing` and
+ * `retainage-only` — a GC does not pay a credit, and more cash is the
+ * wrong answer to an overpayment.
  *
  * NO FLOAT SUBTRACTION HAPPENS HERE. Both figures come out of
  * `arBalanceFor`, which works in integer cents — the gross one by asking
@@ -56,7 +58,7 @@ import { arBalanceFor } from "./cash-flow";
  * and #409's two-wrong-formulas finding.
  */
 export type InvoiceBalanceLabel = {
-  tone: "settled" | "owing" | "retainage-only";
+  tone: "credit" | "overpaid" | "settled" | "owing" | "retainage-only";
   /** The sentence that replaces the old `Balance $x` / `Paid in full`. */
   headline: string;
   /** Null when there is nothing to explain — i.e. no retainage clause. */
@@ -70,6 +72,10 @@ export const balanceToneClass: Record<InvoiceBalanceLabel["tone"], string> = {
   settled: "text-green-400",
   owing: "text-amber-400",
   "retainage-only": "text-ink-body",
+  // Amber like `owing`: both want somebody to act, and neither may borrow
+  // the green that `settled` alone is allowed.
+  credit: "text-amber-400",
+  overpaid: "text-amber-400",
 };
 
 export function invoiceBalanceLabel(input: {
@@ -82,6 +88,16 @@ export function invoiceBalanceLabel(input: {
   format: (value: number) => string;
 }): InvoiceBalanceLabel {
   const { amount, paidAmount, retainageWithheld, format } = input;
+
+  // 1. Credit — off the amount, before any balance exists to mislead.
+  if (amount < -0.005) {
+    return {
+      tone: "credit",
+      headline: `Credit — ${format(-amount)} owed back`,
+      caption: null,
+    };
+  }
+
   const net = arBalanceFor({ amount, paidAmount, retainageWithheld });
   const gross = arBalanceFor({ amount, paidAmount, retainageWithheld: null });
 
@@ -91,6 +107,15 @@ export function invoiceBalanceLabel(input: {
   const anythingLeft = gross > 0.005;
 
   const heldBack = retainageWithheld === null ? null : format(retainageWithheld);
+
+  // 2. Overpaid — more cash than everything billed, retainage included.
+  if (gross < -0.005) {
+    return {
+      tone: "overpaid",
+      headline: `Overpaid by ${format(-gross)}`,
+      caption: null,
+    };
+  }
 
   if (!anythingLeft) {
     return {
