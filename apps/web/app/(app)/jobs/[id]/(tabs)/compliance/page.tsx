@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import { PageColumn } from "@prova/ui";
 import { RowActions, ConfirmDelete } from "@/components/RowActions";
 import { PrevailingWageDeterminationForm } from "@/components/PrevailingWageDeterminationForm";
 import { requireJob } from "@/lib/jobs/job-access";
@@ -28,7 +29,10 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
   const deletePrevailingWageDeterminationWithId = (determinationId: string) =>
     deletePrevailingWageDetermination.bind(null, jobRef.id, determinationId);
 
+  // A form and a short list of attached documents: reading width. The
+  // layout above is `working`; see PageColumn.
   return (
+    <PageColumn width="reading">
     <section>
       <h2 className="mb-1 text-lg font-semibold text-ink">Prevailing wage determination</h2>
       <p className="mb-3 text-sm text-ink-muted">
@@ -86,5 +90,6 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
 
       <PrevailingWageDeterminationForm jobId={jobRef.id} />
     </section>
+    </PageColumn>
   );
 }

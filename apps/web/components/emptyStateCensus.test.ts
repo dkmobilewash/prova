@@ -43,8 +43,6 @@ const appDir = join(webRoot, "app");
  * able to read back.
  */
 const EMPTY_STATE_EXCEPTIONS: Record<string, string> = {
-  "/dashboard":
-    "the Getting started card is this page's empty state — a checklist ticked from real data, not a single missing list",
   "/ask": "not a list: the assistant box with its example questions is the whole page",
   "/team": "never empty — the owner is always on it, and the invite form is the first thing on the page",
   "/settings": "a set of forms, not a list; each section says in one line what it is for",

@@ -170,14 +170,12 @@ const UNCONVERTED_PAGES = [
   "apps/web/app/(app)/compliance/page.tsx",
   "apps/web/app/(app)/contacts/[id]/page.tsx",
   "apps/web/app/(app)/contacts/page.tsx",
-  "apps/web/app/(app)/dashboard/page.tsx",
   "apps/web/app/(app)/deployment/page.tsx",
   "apps/web/app/(app)/drawings/page.tsx",
   "apps/web/app/(app)/equipment/page.tsx",
   "apps/web/app/(app)/field-reports/page.tsx",
   "apps/web/app/(app)/intake/page.tsx",
   "apps/web/app/(app)/internal/usage/page.tsx",
-  "apps/web/app/(app)/jobs/[id]/(tabs)/layout.tsx",
   "apps/web/app/(app)/jobs/[id]/certified-payroll/page.tsx",
   "apps/web/app/(app)/jobs/[id]/certified-payroll/wh-347/page.tsx",
   "apps/web/app/(app)/jobs/[id]/pay-applications/[invoiceId]/page.tsx",
@@ -316,7 +314,10 @@ describe("page width census", () => {
       "the allowance list changed size. It is allowed to SHRINK as pages move " +
         "to PageShell — delete the line. Adding a line puts a new page back on " +
         "its own width decision, which is the thing this census exists to stop.",
-    ).toBe(51);
+      // 51 until the dashboard (now `working`) and the job-tabs layout (now
+      // `working` for the header and rail, with each tab choosing its own
+      // body width through PageColumn) moved to the shell.
+    ).toBe(49);
     expect(new Set(UNCONVERTED_PAGES).size).toBe(UNCONVERTED_PAGES.length);
   });
 
