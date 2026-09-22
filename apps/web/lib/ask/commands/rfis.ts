@@ -24,15 +24,28 @@ import type {
  *
  * What the model supplies is the person's own words — the subject, the
  * question, a drawing or spec reference they dictated. It never supplies a
- * date: the sent date stays the form's default, the person's calendar day,
- * and blanking it there keeps the RFI a draft, which is the form's rule
- * and not one restated here.
+ * date: the form's sent date starts BLANK (#442), a blank date saves a
+ * draft, and the person enters the date on the day it actually leaves —
+ * the form's rule, not one restated here.
  */
 
 /** A subject taken from the question when the person gave only the
  * question. Cut at a word boundary, and the card says where it came
  * from, because the person edits it on the form either way. */
 const SUBJECT_MAX = 80;
+
+/**
+ * The card's last line, about the one field the card does not carry.
+ *
+ * Exported, and held by a test, because it was FALSE for a day: it said
+ * the sent date "defaults to today" after #442 made RfiForm start the date
+ * BLANK — a blank date saves a draft, and a date nobody chose was a record
+ * nobody could take back. The landing page's Ask demo prints this same
+ * line (components/landing/askDemoScript.ts) and its test holds the two
+ * equal, so the public page cannot say something the card does not.
+ */
+export const RFI_DATE_SENT_NOTE =
+  "set on the form — starts blank, so it saves as a draft until you enter the date you sent it";
 
 export function subjectFromQuestion(question: string): string {
   const oneLine = question.replace(/\s+/g, " ").trim();
@@ -81,7 +94,7 @@ async function resolveRaiseRfi(ctx: CommandContext, input: CommandInput): Promis
   ];
   if (drawingReference) preview.push({ label: "Drawing", value: drawingReference });
   if (specSection) preview.push({ label: "Spec section", value: specSection });
-  preview.push({ label: "Date sent", value: "set on the form — defaults to today; blank keeps it a draft" });
+  preview.push({ label: "Date sent", value: RFI_DATE_SENT_NOTE });
 
   return {
     kind: "ready",
@@ -94,7 +107,7 @@ async function resolveRaiseRfi(ctx: CommandContext, input: CommandInput): Promis
 export const raiseRfiCommand: HandoffCommandDefinition = {
   name: "raise_rfi",
   description:
-    "Prepares an RFI — a question to the GC or architect about a job's drawings or specs — and opens the RFI form with the job, subject, question, drawing reference and spec section filled in. The person reviews and saves it there, where it gets its number. Needs the job and the question in the person's own words; a drawing reference (\"A-501 / 3\") or spec section (\"09 21 16\") only if they said one. Does not send anything, does not choose a date (the form's sent date defaults to today), does not answer, close, edit or delete an existing RFI, and does not invent a question from a topic.",
+    "Prepares an RFI — a question to the GC or architect about a job's drawings or specs — and opens the RFI form with the job, subject, question, drawing reference and spec section filled in. The person reviews and saves it there, where it gets its number. Needs the job and the question in the person's own words; a drawing reference (\"A-501 / 3\") or spec section (\"09 21 16\") only if they said one. Does not send anything, does not choose a date (the form's sent date starts blank, and a blank date saves the RFI as a draft until the person enters the date it was sent), does not answer, close, edit or delete an existing RFI, and does not invent a question from a topic.",
   capability: "MANAGE_JOBS",
   tier: "T3_MONEY_EVIDENCE",
   mode: "HANDOFF",
