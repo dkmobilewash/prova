@@ -53,7 +53,7 @@ export function ApprenticeshipPanel({
         <p className="text-sm text-ink-label">No apprenticeship registrations recorded.</p>
         <p className="mt-2 text-xs text-ink-muted">
           The ratio review above reads who is on which side of a crew from the craft
-          classifications. This is the other half — the programme itself: who sponsors it, the
+          classifications. This is the other half — the program itself: who sponsors it, the
           registration number, classroom hours and the sign-offs that move somebody up a period.
           None of that can be worked out from hours logged, which is why it has to be entered.
         </p>

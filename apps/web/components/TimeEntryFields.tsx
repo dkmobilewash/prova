@@ -1,5 +1,6 @@
 "use client";
 
+import { NoCraftsHint } from "@/components/NoCraftsHint";
 import {
   TIME_ENTRY_PAY_TYPE_OPTIONS,
   type TimeEntryPayType,
@@ -182,6 +183,7 @@ export function TimeEntryFields({
             </option>
           ))}
         </select>
+        <NoCraftsHint craftCount={craftOptions.length} />
       </label>
 
       <label className={labelClass}>

@@ -7,14 +7,26 @@ import { looksLikeEmail, readEmailConfig, sendEmail } from "@prova/integrations"
 import { can } from "@/lib/permissions";
 import { readSupportAddress } from "@/lib/help-config";
 import { outboundEmailAllowance } from "@/lib/outbound-email-limit";
-import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
+import {
+  InputError,
+  actionFail as fail,
+  actionOk as ok,
+  assertOwner,
+  runAction,
+  type ActionResult,
+} from "./shared";
 import { failureEventType, reachedProvider } from "@/components/messageLabels";
 
 /** Actions here RETURN their failures. Production redacts thrown Server
  * Action messages to an opaque digest, and "your email didn't send" is
  * exactly the message a user must be able to read. */
 
-class InputError extends Error {}
+// `InputError` and `runAction` are imported from ./shared rather than
+// declared here. Two classes with the same name are not the same class:
+// `instanceof` is false between them, so a refusal thrown by a shared
+// parser walked straight past a local boundary and reached production as a
+// redacted digest. That is what #407 found on /welcome, and this module
+// held the fifteenth copy of the class it found there.
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -26,14 +38,6 @@ function required(formData: FormData, key: string, label: string) {
   return value;
 }
 
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
-}
 
 /* `emailSendingStatus` used to live here and was deleted rather than wired
  * up. It duplicated what `/messages` already does by calling
