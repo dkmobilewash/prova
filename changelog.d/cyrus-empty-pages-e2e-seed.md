@@ -39,6 +39,15 @@ reports tabs. It now visits every tab and asserts what that tab shows. The
 old Retainage, Field reports, Pay apps order survives as the order of the
 tab rail.
 
+**`jobs-new.spec.ts`** pressed a "Create job" button that never existed
+and waited for a redirect the wizard has never made. This was held back
+for #413, which changed that wizard. #413 merged without touching this
+spec, so it is fixed here against the merged wizard. It now drives
+journey.ts's `startJob`/`finishWizard`, the helpers the journey already
+uses, so the button labels live in one file. It reaches the dashboard
+through the welcome questions, because JOB_CREATE is a brand-new company
+on purpose.
+
 NOT EXECUTED: the signed-in specs need Clerk dev keys that the session that
 wrote this did not have. They were fixed from source. `test:e2e:public`
 and the unit suite were run.
