@@ -34,7 +34,7 @@ const { FieldReportComposer } = await import("@/components/FieldReportComposer")
 const { ReceivablesList, ReceivablesProvider } = await import("@/components/ReceivablesPanel");
 
 describe("PunchListForm with no jobs", () => {
-  const html = renderToStaticMarkup(createElement(PunchListForm, { jobs: [] }));
+  const html = renderToStaticMarkup(createElement(PunchListForm, { jobs: [], people: { users: [], crew: [], backcharges: [] } }));
 
   it("still explains why it cannot be used", () => {
     expect(html).toContain("attach to a job");

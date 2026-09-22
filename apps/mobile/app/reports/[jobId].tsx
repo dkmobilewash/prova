@@ -10,9 +10,17 @@ import { List } from "@/components/List";
 import { RefusedBanner } from "@/components/RefusedBanner";
 import { Sheet } from "@/components/Sheet";
 import * as api from "@/lib/api";
+import { tokenOrNull } from "@/lib/clerk-token";
 import { dayFromClockIn } from "@/lib/clock-session";
 import { uuid } from "@/lib/id";
 import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
+import { JobSections } from "@/components/JobSections";
+import { OfflineNote } from "@/components/OfflineNote";
+import { emptyFor } from "@/lib/empty-state";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 import type { DelayRow, FieldReportRow } from "@/lib/types";
 import { useFieldReports } from "@/lib/use-field-reports";
@@ -63,9 +71,10 @@ function daysOf(reports: FieldReportRow[], delays: DelayRow[]): Day[] {
 }
 
 export default function ReportsScreen() {
+  const { me } = useMe();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const getToken = useStableGetToken();
-  const { reports, pending, error, create, refresh } = useFieldReports(jobId ?? "");
+  const { reports, pending, error, offline, create, refresh } = useFieldReports(jobId ?? "");
   const [delays, setDelays] = useState<DelayRow[]>([]);
   // Delays logged on this phone that the server hasn't returned yet — shown
   // at once as "Syncing…" rather than appearing seconds after Save.
@@ -73,7 +82,10 @@ export default function ReportsScreen() {
   const today = dayFromClockIn(new Date().toISOString());
 
   const loadDelays = useCallback(async () => {
-    const token = await getToken();
+    // Delays are not cached, so this one genuinely has nothing to show
+    // without a token — but it still must not sit on Clerk for two and a
+    // half minutes offline (lib/clerk-token.ts).
+    const token = await tokenOrNull(getToken);
     if (!token || !jobId) return;
     try {
       setDelays(await api.listDelays(jobId, token));
@@ -200,10 +212,18 @@ export default function ReportsScreen() {
     await sync();
   };
 
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["reports/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["reports/[jobId]"]} />;
+
   return (
     <View style={styles.screen}>
+      <JobSections jobId={jobId} active="reports" />
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <OfflineNote state={offline} />
       <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
 
       <List
@@ -259,8 +279,11 @@ export default function ReportsScreen() {
             ))}
           </Card>
         )}
-        emptyTitle="No reports yet"
-        emptyDescription="Tap “New report” to file the day's work. The crew and the weather fill in on their own."
+        {...emptyFor(offline, "the field reports", {
+          title: "No reports yet",
+          description:
+            "Tap “New report” to file the day's work. The crew and the weather fill in on their own.",
+        })}
       />
 
       <View style={[styles.footer, styles.footerRow]}>

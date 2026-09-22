@@ -89,6 +89,7 @@ function PhaseCodeFields({ phaseCode }: { phaseCode?: PhaseCodeData }) {
         Sort order
         <input
           name="sortOrder"
+          type="text"
           defaultValue={String(phaseCode?.sortOrder ?? 0)}
           inputMode="numeric"
           className={`w-20 ${inputClass}`}

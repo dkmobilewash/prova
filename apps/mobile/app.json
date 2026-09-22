@@ -5,7 +5,7 @@
     "scheme": "prova",
     "version": "0.0.1",
     "orientation": "portrait",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "plugins": [
       "expo-router",
@@ -23,7 +23,8 @@
           "cameraPermission": "C Stream uses the camera to take site photos, stamped with the time and place they were taken.",
           "photosPermission": "C Stream adds photos from your library to a job."
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "ios": {
       "supportsTablet": true,
@@ -56,6 +57,7 @@
       "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0f0f0f"
-    }
+    },
+    "backgroundColor": "#0f0f0f"
   }
 }

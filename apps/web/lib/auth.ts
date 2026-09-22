@@ -1,7 +1,8 @@
 import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { Prisma, prisma } from "@prova/db";
+import { prisma } from "@prova/db";
 import { recordLastSeen } from "@/lib/last-seen-stamp";
+import { isUniqueConstraintError } from "@/lib/actions/shared";
 
 /**
  * Loads the signed-in user's Prova User + Company, creating both on first
@@ -218,7 +219,21 @@ export async function adoptCompanyContext(identity: ClerkIdentity) {
     // so the re-read found nothing and threw P2025 — turning a recoverable
     // situation into a 500 whose message named neither cause. Look under
     // both keys, and only give up when neither finds anything.
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    //
+    // THE SAME DEAD-GUARD SHAPE AS #25 AND #26 (see isUniqueConstraintError
+    // in lib/actions/shared.ts): this read `error instanceof
+    // Prisma.PrismaClientKnownRequestError`, which is false at runtime
+    // under Next's bundling — so the whole recovery below was unreachable
+    // and a concurrent first sign-in 500'd with a raw Prisma error instead
+    // of re-reading what the winner created.
+    //
+    // Narrower than what it replaces, deliberately. The original admitted
+    // ANY known request error; the race this describes is a
+    // unique-constraint collision on clerkId or email, which is P2002 and
+    // nothing else. Any other Prisma failure re-reading the user is a
+    // genuine bug and should keep escaping rather than being silently
+    // retried.
+    if (isUniqueConstraintError(error)) {
       const byClerkId = await prisma.user.findUnique({
         where: { clerkId: identity.id },
         include: { company: true },

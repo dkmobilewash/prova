@@ -190,10 +190,9 @@ export function FringeScheduleList({
               <label key={name as string} className={labelClass}>
                 <span className="text-xs">{label as string}</span>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   name={name as string}
-                  step="0.01"
-                  min="0"
                   required={required as boolean}
                   placeholder="per hour"
                   className={`${inputClass} py-1 text-xs`}

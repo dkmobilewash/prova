@@ -126,7 +126,7 @@ export function standingLabel(s: RequirementStanding): string {
     case "SHORT":
       return "short of the requirement";
     case "NO_REQUIREMENT_RECORDED":
-      return "no requirement recorded for this programme";
+      return "no requirement recorded for this program";
     case "NOT_RECORDED":
       return "hours not recorded";
   }

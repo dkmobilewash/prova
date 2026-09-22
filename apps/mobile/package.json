@@ -8,11 +8,13 @@
     "start": "expo start",
     "build": "expo export --platform web",
     "lint": "expo lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run && vitest run --config vitest.screens.config.mts"
   },
   "dependencies": {
     "@clerk/expo": "^4.6.7",
     "@expo/metro-runtime": "~57.0.15",
+    "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~57.0.23",
     "expo-constants": "~57.0.18",
@@ -26,6 +28,7 @@
     "expo-notifications": "~57.0.19",
     "expo-router": "~57.0.21",
     "expo-secure-store": "~57.0.4",
+    "expo-sharing": "~57.0.21",
     "expo-status-bar": "~57.0.1",
     "expo-web-browser": "~57.0.3",
     "query-string": "^8.1.0",
@@ -42,6 +45,9 @@
     "@types/react": "~19.2.17",
     "eslint": "^9.17.0",
     "eslint-config-expo": "~57.0.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.7",
+    "@types/react-dom": "~19.2.3",
+    "happy-dom": "^20.14.0"
   }
 }

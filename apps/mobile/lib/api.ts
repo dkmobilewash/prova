@@ -1,3 +1,4 @@
+import { localToday } from "./local-today";
 import type {
   CreateFieldReportInput,
   Craft,
@@ -7,9 +8,12 @@ import type {
   Job,
   LineItem,
   MaterialOrder,
+  Me,
   Media,
   MediaTag,
+  DrawingSetRow,
   PunchListItem,
+  ScheduleRow,
   RatioWarning,
   SafetyIncident,
   TimeEntry,
@@ -49,6 +53,12 @@ async function request<T>(
     throw new ApiError(data?.error ?? `Request failed (${res.status})`, res.status);
   }
   return data as T;
+}
+
+/** Who is holding this phone and what they may do — derived on the
+ * server, never re-derived here. See app/api/v1/me. */
+export async function getMe(token: string): Promise<Me> {
+  return request(`/api/v1/me`, { token });
 }
 
 export async function listFieldReports(jobId: string, token: string): Promise<FieldReportRow[]> {
@@ -301,7 +311,7 @@ export async function listPunchListItems(jobId: string, token: string): Promise<
 
 export async function createPunchListItem(
   jobId: string,
-  input: { description: string; clientOperationId?: string },
+  input: { description: string; area?: string; clientOperationId?: string },
   token: string,
 ): Promise<PunchListItem> {
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/punch-list`, {
@@ -311,15 +321,43 @@ export async function createPunchListItem(
   });
 }
 
-export async function setPunchListItemDone(
+/**
+ * Moving an item between OPEN and READY_FOR_REVIEW.
+ *
+ * VERIFIED is not reachable from the phone on purpose — see the route's own
+ * comment. Whoever fixed it says it is ready; somebody else agrees.
+ */
+export async function setPunchListItemStatus(
   jobId: string,
   itemId: string,
-  isDone: boolean,
+  status: "OPEN" | "READY_FOR_REVIEW",
   token: string,
 ): Promise<PunchListItem> {
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/punch-list/${encodeURIComponent(itemId)}`, {
     method: "PATCH",
     token,
-    body: { isDone },
+    body: { status },
   });
+}
+
+export async function listDrawings(jobId: string, token: string): Promise<DrawingSetRow[]> {
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/drawings`, { token });
+}
+
+/** The schedule for a window of days. Omitting the dates gets the
+ * server's default: a week either side of today, which is what a phone
+ * wants — the plan ahead and the gaps behind.
+ *
+ * `today` is the PHONE'S calendar date, always sent. Whether a planned
+ * day is past decides whether "no hours logged" is a fact or an
+ * accusation, and UTC answers that wrong for every timezone west of it
+ * after late afternoon. */
+export async function listSchedule(
+  jobId: string,
+  token: string,
+  window?: { from: string; to: string },
+): Promise<ScheduleRow[]> {
+  const parts = [`today=${localToday()}`];
+  if (window) parts.push(`from=${window.from}`, `to=${window.to}`);
+  return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/schedule?${parts.join("&")}`, { token });
 }

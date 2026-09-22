@@ -58,7 +58,7 @@ export const dashboardWalkthrough: Walkthrough = {
       anchor: "dashboard-jobs-empty",
       title: "No jobs yet",
       body:
-        "Your jobs will be listed here. Press “create a job” to add your first one, or bring a spreadsheet of them in from Settings.",
+        "Your jobs will be listed here, and the rest of this page fills in once there is one. Press “Start your first job”, or bring a spreadsheet of them in. The faded rows underneath are only an example.",
     },
     {
       anchor: "dashboard-job-list",

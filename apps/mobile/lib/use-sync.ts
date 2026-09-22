@@ -1,7 +1,10 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
+import { tokenOrNull } from "./clerk-token";
 import { clearRefused, flushQueue, listRefused, pendingCount, retryRefused, type RefusedOp } from "./sync-queue";
+import { syncOnce } from "./sync-order";
+import { reconcileReminder } from "./unsent-reminder";
 import { useStableGetToken } from "./use-stable-get-token";
 
 /** The shared offline plumbing for a screen that queues writes: flush the
@@ -28,18 +31,44 @@ export function useSync(refresh: () => Promise<void>) {
     listRefused().then(setRefused);
   }, []);
 
-  const sync = useCallback(async () => {
-    const token = await getToken();
-    if (!token) return;
-    try {
-      await flushQueue(token);
-    } catch {
-      // 401 or offline — leave queued, retry later.
-    }
-    setPending(await pendingCount());
-    setRefused(await listRefused());
-    await refresh();
-  }, [getToken, refresh]);
+  const sync = useCallback(
+    () =>
+      syncOnce({
+        // THE READ NEVER WAITS ON THE WRITE — see lib/sync-order.ts. This
+        // used to be `await getToken()`, then `await flushQueue(token)`,
+        // and only then the screen's own list. With no signal that put
+        // every queue-backed screen behind a token fetch and a queue
+        // flush aimed at a server that was not answering, so the punch
+        // list, field reports, time, photos, materials, safety and T&M
+        // showed nothing and no "no connection" note, while Home and the
+        // read-only screens showed both.
+        refresh,
+        counters: async () => {
+          const pending = await pendingCount();
+          setPending(pending);
+          setRefused(await listRefused());
+          // The end-of-day reminder tracks the queue rather than a clock:
+          // scheduled the moment something is held, cancelled the moment
+          // the last write goes up. A reminder that fires on an empty
+          // queue is one people learn to ignore.
+          void reconcileReminder(pending);
+        },
+        flush: async () => {
+          // An empty queue costs nothing: no token, no network, no wait.
+          const before = await pendingCount();
+          if (before === 0) return false;
+          const token = await tokenOrNull(getToken);
+          if (!token) return false;
+          try {
+            await flushQueue(token);
+          } catch {
+            // 401 or offline — leave queued, retry later.
+          }
+          return (await pendingCount()) !== before;
+        },
+      }),
+    [getToken, refresh],
+  );
 
   // `sync` is re-created on every render (it closes over `refresh`), so the
   // focus effect reads it through a ref rather than re-firing each time.

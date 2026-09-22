@@ -124,14 +124,16 @@ describe("/dashboard getting-started card", () => {
     expect(section).toContain("Hide this");
   });
 
-  it("sits above the Ask box and the tiles, leaving their order alone", async () => {
+  it("on a company with no jobs, follows the jobs empty state and sits above the Ask box", async () => {
+    // This fake database has no jobs, so this is the brand-new-account
+    // layout; the order with jobs is pinned in new-account.test.ts.
     const html = await render();
+    const emptyAt = html.indexOf('data-tour="dashboard-jobs-empty"');
     const cardAt = html.indexOf("getting-started-heading");
-    const needsAttention = html.indexOf("Needs attention");
-    const browse = html.indexOf("Browse all jobs");
-    expect(cardAt).toBeGreaterThan(-1);
-    expect(cardAt).toBeLessThan(needsAttention);
-    expect(needsAttention).toBeLessThan(browse);
+    const askAt = html.indexOf('data-tour="dashboard-ask"');
+    expect(emptyAt).toBeGreaterThan(-1);
+    expect(emptyAt).toBeLessThan(cardAt);
+    expect(cardAt).toBeLessThan(askAt);
   });
 
   it("ticks steps from the counts", async () => {

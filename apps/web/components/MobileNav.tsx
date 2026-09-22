@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { activeFooterHref, navFooterFor, navGroupsFor } from "@/components/navItems";
 import { useNavAccordion } from "@/components/useNavAccordion";
 import type { Principal } from "@/lib/permissions";
+import type { BusinessScopeAnswers } from "@/lib/businessScope";
 
 /**
  * Navigation on a phone.
@@ -25,15 +26,19 @@ export function MobileNav({
   companyName,
   principal,
   showsInternal = false,
+  businessScope,
 }: {
   companyName: string;
   principal: Principal;
   /** Prova's own operating company only -- see Company.isProvaOperator. */
   showsInternal?: boolean;
+  /** The three onboarding questions' answers, or undefined for "hide
+   * nothing" — see navGroupsFor in navItems.tsx. */
+  businessScope?: BusinessScopeAnswers;
 }) {
   // Filtered here rather than in the layout so the desktop rail and
   // the mobile drawer run the same function on the same input.
-  const groups = navGroupsFor(principal, { showsInternal });
+  const groups = navGroupsFor(principal, { showsInternal, businessScope });
   const footer = navFooterFor(principal);
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -167,12 +172,19 @@ export function MobileNav({
                         // reach a page the rail calls "coming soon", which is
                         // exactly the drift this shared list exists to prevent.
                         if (item.disabled) {
+                          // `text-neutral-600` was 2.29:1 on this ground —
+                          // not dim, unreadable. The label is the only thing
+                          // saying WHICH feature is coming, and this is the
+                          // phone drawer, read in daylight in a truck.
+                          // `ink-muted` is 7.11:1 and still plainly quieter
+                          // than the 12.09:1 the live items carry, so
+                          // "disabled" still reads as disabled.
                           return (
                             <span
                               key={item.href}
                               title={`${item.label} — coming soon`}
                               aria-disabled="true"
-                              className="flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-neutral-600"
+                              className="flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-ink-muted"
                             >
                               <span className="opacity-50">{item.icon}</span>
                               {item.label}

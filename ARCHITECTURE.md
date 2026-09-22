@@ -77,12 +77,16 @@ A single `JobLineItem` row is simultaneously:
   life.
 - **A job-costing line** — actual cost vs. estimated cost is tracked via
   `CostEntry` rows that reference a `JobLineItem` (one per real expense —
-  a receipt, a labor entry), the same way `ChangeOrder` references it.
-  Actual cost is `SUM(costEntries.amount)`, computed, never stored as a
-  duplicate field on the line item. A single `actualCost` column was
-  considered and rejected: it can't tell you *what* it's made of, and a
-  contractor needs the breakdown (materials vs. labor vs. subcontractor),
-  not just a number.
+  a receipt, a subcontractor invoice), the same way `ChangeOrder`
+  references it, **plus** the burdened labor on the `TimeEntry` rows that
+  name the line. Both computed at read time, never stored as a duplicate
+  field. This bullet said actual cost was `SUM(costEntries.amount)` alone
+  until issue #287, which left it understated by most of a self-performed
+  job — see the `CostEntry` section below for the full rule. A single
+  `actualCost` column was considered and rejected, and the reason has only
+  got stronger: it can't tell you *what* it's made of, and a contractor
+  needs the breakdown (materials vs. labor vs. subcontractor), not just a
+  number.
 
 There is no transformation step where an "estimate" becomes a "contract"
 or a "budget." They were never different things.
@@ -415,11 +419,41 @@ it.
 
 Job costing follows the identical pattern as change orders: a new table
 that references `JobLineItem` rather than a new copy of line-item data.
-Each `CostEntry` is one real expense (a receipt, a labor entry) tied to
-the line item it was spent against. "Actual" is `SUM(costEntries.amount)`
-for that line item — always computed at read time, never stored. "Estimated"
-used to mean `quantity * unitPrice` (the sale price); since the WIP fields
-below landed, it means the cost side instead — see `lib/wip.ts`.
+Each `CostEntry` is one real expense (a receipt, a subcontractor invoice)
+tied to the line item it was spent against. "Estimated" used to mean
+`quantity * unitPrice` (the sale price); since the WIP fields below landed,
+it means the cost side instead — see `lib/wip.ts`.
+
+**"Actual" is NOT `SUM(costEntries.amount)`.** It was, and this paragraph
+said so for months while it was wrong. A `CostEntry` is created in exactly
+one place in the product — the manual "log a cost" form — so on a
+self-performed framing or drywall line that sum is the materials and none
+of the crew, which for this trade is most of the money missing. Issue #287.
+
+Actual cost to date is **cost entries plus burdened labor**, composed by
+`lib/labor-job-cost.ts` from the `TimeEntry` rows that name the line, at
+read time, stored nowhere. Materialising `CostEntry` rows from time entries
+would both store derived state and double-count against a manual labor cost
+somebody had already typed; the two are ADDED, and a company doing both
+will double-count, which is correct — nothing here can tell a duplicate
+from two real costs.
+
+Three consequences worth knowing before touching any of this:
+
+- `TimeEntry.lineItemId` is **nullable**, and the log-hours form defaults
+  to "No specific line", so unattached hours are the ordinary shape. They
+  go into the JOB's actual cost and into no line's, which correctly drags
+  `costCoverage` down rather than inventing a line to hold them.
+- Hours whose craft has no effective `FringeRateSchedule` contribute **no
+  dollars**, because `lib/labor-cost.ts` refuses to guess a rate. Every
+  surface reporting a cost figure therefore also reports the unpriced
+  hours behind it — "refused to guess" and "cost nothing" are
+  indistinguishable inside a total, and that is the whole defect.
+- The same rule reaches `/catalog` (where "Update default from actuals"
+  WRITES a unit cost that prices future bids) and `/phase-codes`. Those
+  were missed by #287's first fix and are the reason
+  `lib/jobCostCensus.test.ts` now asserts on the QUERY — a file that
+  selects `CostEntry` rows must select the hours beside them.
 
 Unlike change orders, logging a cost is **not** gated by `Job.status`.
 The ESTIMATE/CONTRACTED gate exists to protect the client-facing
@@ -1042,14 +1076,20 @@ hiring hall's referral authorizing a worker onto this job, which happens
 before any hours are worked and may never result in hours at all (a
 no-show, or a job that gets pulled). The scanned slip (Vercel Blob) is
 optional — some halls dispatch by phone with only a referral number.
+The worker it names is a `User` OR a `CrewMember`, exactly one, enforced
+by the `DispatchSlip_employee_or_crew` CHECK — the same shape as
+`TimeEntry` — because the people a hall dispatches are mostly field crew
+with no login (added 2026-09-21; before that only logins could be
+dispatched).
 
-Deliberately not built in this pass: a dedicated mobile/field time-entry
-app. Every time entry and dispatch slip today goes through the same
-responsive Next.js site as everything else. A real field app (offline
-support, native camera access for slip photos, etc.) is a separate,
-larger effort with its own design pass — the same category as
-QuickBooks data sync or plan-takeoff via computer vision above, not
-something to bolt onto this phase.
+Corrected 2026-09-21: the dedicated mobile/field app this paragraph said
+was deliberately not built now exists as `apps/mobile`, a dedicated Expo
+app on `main` — time entry, timesheet sign-off, punch lists, camera
+capture with GPS, drawings and schedule, offline-first (write outbox,
+cached reads) on the phone's own calendar day. What remains not built is
+its distribution: EAS is configured and the Apple Developer Program is
+enrolled, but no TestFlight build exists. FEATURE-AUDIT Sheets 07 and 25
+carry the same correction.
 
 ## Certified payroll and prevailing wage
 
@@ -1393,10 +1433,14 @@ each page still consults `can()` and still references its flags. It cannot
 tell you a guard wraps the right section — only that a refactor has not
 silently dropped the import and restored the hole with every test green.
 
-What remains genuinely unbuilt is a mobile SURFACE. This is the same
-responsive site, narrowed; an offline-capable field app with camera
-capture is a separate build, not a permission, and FEATURE-AUDIT Sheet 25
-keeps that row at Partial for that reason alone.
+Corrected 2026-09-21: the mobile surface this paragraph calls genuinely
+unbuilt now exists — `apps/mobile`, a dedicated Expo app on `main`
+(FEATURE-AUDIT Sheet 07). Sheet 25 keeps the field-only row at Partial,
+but no longer for that reason: the native app's tabs and screens read
+the same capability map (`screen-capabilities.ts` in `apps/mobile`), so
+the phone shows only what the holder can do. The honest remainder is
+that the field tier has not been walked screen-by-screen on a device,
+and the app is not yet distributed.
 
 Per-company overrides of the capability map are not built. A settings page
 editing a map nothing reads would be worse than the honest absence; where a

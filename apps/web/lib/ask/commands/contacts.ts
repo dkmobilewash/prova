@@ -181,4 +181,18 @@ export const contactExclusions: Exclusion[] = [
   { action: "updateContact", reason: "Editing a contact — including its MSA, prequalification and payment terms — is done on the contact's page, where the record being changed is visible." },
   { action: "createCompanyLocation", reason: ADMIN + " Company locations are settings." },
   { action: "deleteCompanyLocation", reason: "Deletes are never commands (T5)." },
+  {
+    action: "saveBusinessScope",
+    reason:
+      ADMIN +
+      " These three answers decide what the WHOLE COMPANY's nav shows, not just the caller's; an assistant narrowing every teammate's menu on one person's say-so is exactly the kind of owner-only decision this tier excludes.",
+  },
+  {
+    action: "skipBusinessScopeQuestions",
+    reason: "Dismisses a UI prompt on screen; there is nothing for a command to do here.",
+  },
+  {
+    action: "clearBusinessScope",
+    reason: ADMIN + " Same reasoning as saveBusinessScope — the reverse of the same owner-only setting.",
+  },
 ];

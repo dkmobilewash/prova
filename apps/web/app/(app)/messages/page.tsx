@@ -11,6 +11,7 @@ import { StatusLine } from "@/components/StatusLine";
 import { messagesStatus } from "@/lib/status-sentences";
 import { toJobOption } from "@/components/jobLabels";
 import { EmptyState } from "@/components/EmptyState";
+import { viewerToday } from "@/lib/viewerToday";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as every other date
  * in this app. */
@@ -31,7 +32,7 @@ export default async function MessagesPage({
   const { show, draft } = await searchParams;
   const onlyProblems = show === "problems";
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await viewerToday();
   const setupProblem = emailSetupProblem();
 
   // A card from the Ask box (lib/ask/drafts.ts): the composer opens

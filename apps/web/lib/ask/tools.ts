@@ -437,10 +437,11 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "job_labor_cost",
-    // the job page's time entries, priced the way that page prices them
+    // the job page's time entries, priced the way that page prices them —
+    // wageCost + allowanceCost, same as jobWip.actualCostToDate's labor share
     capability: "VIEW_JOB_COSTS",
     description:
-      "Burdened labor cost booked to a job from logged hours — base wage times the pay-type multiplier plus fringes, using the rate schedule in force on each entry's own date. Answers 'what has the crew cost us on this job'. ALWAYS read the priced-hours share beside the total: hours on a craft with no rate schedule covering their date are NOT priced and are excluded from the money, so on a half-configured company the total is real but partial. It does NOT include material, equipment or subcontract cost — those reach a job as cost entries, and job_margin is the tool for total cost.",
+      "Burdened labor cost booked to a job from logged hours: base wage times the pay-type multiplier plus fringes (wageCost), PLUS any per diem and travel pay logged on those days (allowanceCost — TimeEntry.perDiemAmount/.travelPayAmount, real dollars the company pays to have the work done). The total is exactly what /jobs/[id]'s Actual cost figure counts as this job's labor — say so if asked why the two might otherwise seem to disagree. Answers 'what has the crew cost us on this job'. ALWAYS read the priced-hours share beside the total: hours on a craft with no rate schedule covering their date get $0 of WAGE and are excluded from wageCost, so the total can be nonzero from allowances alone while the wage side is still incomplete — that is what shareOfHoursPriced is for, and it must be read alongside the dollar figure, never dropped. It does NOT include material, equipment or subcontract cost — those reach a job as cost entries, and job_margin is the tool for total cost.",
     input_schema: jobFilter,
   },
   {
@@ -522,7 +523,7 @@ export const TOOLS: ToolDefinition[] = [
     // /union-compliance
     capability: "MANAGE_COMPLIANCE",
     description:
-      "Every apprentice enrolled, their programme and sponsor, which period they are in, the on-the-job hours recorded this period against what the programme requires, and how short they are. Answers 'is anybody behind on their hours'. It distinguishes THREE things a summary would flatten into one: hours recorded and short, a programme with no required figure on file so there is nothing to measure against, and a requirement with no hours recorded at all. An enrollment carrying both a completion AND a cancellation date is reported as contradictory rather than resolved by precedence — picking one would hide a data-entry error on a compliance record.",
+      "Every apprentice enrolled, their program and sponsor, which period they are in, the on-the-job hours recorded this period against what the program requires, and how short they are. Answers 'is anybody behind on their hours'. It distinguishes THREE things a summary would flatten into one: hours recorded and short, a program with no required figure on file so there is nothing to measure against, and a requirement with no hours recorded at all. An enrollment carrying both a completion AND a cancellation date is reported as contradictory rather than resolved by precedence — picking one would hide a data-entry error on a compliance record.",
     input_schema: noInput,
   },
   {
@@ -632,7 +633,7 @@ export const TOOLS: ToolDefinition[] = [
     // know where they are working." That is why no cost figure is in here.
     capability: null,
     description:
-      "Each contracted or in-progress job's scheduled start and end, how far through that window today is, and how many days until — or past — the end date. Answers 'where does this job stand against its dates'. IT DOES NOT FORECAST A COMPLETION DATE AND NOTHING IN THIS APP CAN. `scheduleElapsedPercent` is a DATE fact and is not percent complete: percent complete is money spent against money expected and lives in job_margin, and a job can be 80% through its budget and 40% through its programme. Never read one as the other, and do not offer an 'ahead or behind' verdict from the two together — a fit-out job front-loads material cost and a framing job does not, so the gap between them means different things on different work. A job missing a start or end date reports null rather than zero and is counted in `withoutBothDates`.",
+      "Each contracted or in-progress job's scheduled start and end, how far through that window today is, and how many days until — or past — the end date. Answers 'where does this job stand against its dates'. IT DOES NOT FORECAST A COMPLETION DATE AND NOTHING IN THIS APP CAN. `scheduleElapsedPercent` is a DATE fact and is not percent complete: percent complete is money spent against money expected and lives in job_margin, and a job can be 80% through its budget and 40% through its schedule. Never read one as the other, and do not offer an 'ahead or behind' verdict from the two together — a fit-out job front-loads material cost and a framing job does not, so the gap between them means different things on different work. A job missing a start or end date reports null rather than zero and is counted in `withoutBothDates`.",
     input_schema: jobFilter,
   },
   {
@@ -668,7 +669,7 @@ export const TOOLS: ToolDefinition[] = [
     name: "dispatch_slips",
     capability: "MANAGE_COMPLIANCE",
     description:
-      "Union dispatch slips on file — which worker the hall dispatched to which job, on what date, under which craft and local, and whether the actual slip document is attached. Answers 'do we have dispatch on file for this job'. IT IS NOT A CREW SCHEDULE AND MUST NOT BE USED AS ONE: a slip records that somebody WAS dispatched, never that they are on site today or tomorrow. A slip row with no document attached proves nothing in an audit, the same distinction wage_determinations makes.",
+      "Union dispatch slips on file — which worker the hall dispatched to which job, on what date, under which craft and local, and whether the actual slip document is attached. The worker is either a teammate with a login or a field crew member without one, and workerKind says which. Answers 'do we have dispatch on file for this job'. IT IS NOT A CREW SCHEDULE AND MUST NOT BE USED AS ONE: a slip records that somebody WAS dispatched, never that they are on site today or tomorrow. A slip row with no document attached proves nothing in an audit, the same distinction wage_determinations makes.",
     input_schema: jobFilter,
   },
   {
@@ -747,7 +748,7 @@ export const TOOLS: ToolDefinition[] = [
     // level this tool actually varies.
     capability: null,
     description:
-      "How to DO something inside the app, from its own registered 'Walk me through this page' walkthroughs — never a fact about this company's data. Answers 'how do I log a backcharge', 'where do I add a punch list item', 'how do I connect QuickBooks'. Cites the page and quotes its own steps. Filtered to pages this person can actually open — a page they cannot reach is never named, and never invents a step the app does not have. NOT for a question about the company's own records — a number, a list, a status, an amount: use the tool that reads that data instead, never this one. If nothing in the app's own walkthroughs matches, say so rather than guessing at a page.",
+      "How to DO something inside the app, from its own registered 'Walk me through this page' walkthroughs — never a fact about this company's data. Answers 'how do I log a backcharge', 'where do I add a punch list item', 'how do I connect QuickBooks'. Cites the page and quotes its own steps. Filtered to pages this person can actually open — a page they cannot reach is never named, and never invents a step the app does not have. `route` is always a path that opens; say exactly it and never a path of your own, and never one containing square brackets. When a result carries `insideOneJob`, its `route` is the list to START from and NOT the page — that page lives inside one job, so say to open the job from `route` first and then the tab named in `page` (\"A job — billing\" is the Billing tab). NOT for a question about the company's own records — a number, a list, a status, an amount: use the tool that reads that data instead, never this one. If nothing in the app's own walkthroughs matches, say so rather than guessing at a page.",
     input_schema: appHelpFilter,
   },
 ];
@@ -810,7 +811,7 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
    * recorded from the bureau and never derived from the OSHA log. */
   {
     topic: "whether a job will finish on time, or a forecast completion date",
-    why: "nothing forecasts a date. `schedule_status` says where a job stands against the dates somebody entered, which is as far as the data goes. Percent complete is COST-based — money spent against money expected — and a job can be 80% through its budget and nowhere near 80% through its programme.",
+    why: "nothing forecasts a date. `schedule_status` says where a job stands against the dates somebody entered, which is as far as the data goes. Percent complete is COST-based — money spent against money expected — and a job can be 80% through its budget and nowhere near 80% through its schedule.",
   },
   {
     topic: "who is clocked in right now, or who has not clocked out",

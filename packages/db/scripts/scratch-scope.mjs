@@ -91,12 +91,22 @@ export const HANDLED_MODELS = [
   // what clean-test-jobs.mjs counts. Deleting the link deletes nothing in
   // Procore and none of the sub's own records.
   "ProcoreProjectLink",
+  // A job's link to a GC's Autodesk Construction Cloud project, and (by
+  // cascade) the cached RFIs/submittals under it. Same shape as
+  // ProcoreProjectLink for the same reason.
+  "AccProjectLink",
   // A job's link to a CompanyCam project. CASCADE on Job, same shape as
   // ProcoreProjectLink — it would not block the delete, but it carries a
   // jobId, which is what clean-test-jobs.mjs counts. Deleting the link
   // deletes nothing in CompanyCam; the imported photos are ordinary
   // JobMedia rows, handled like every other photo.
   "CompanyCamProjectLink",
+  // A job's link to a Bluebeam Studio Session. CASCADE on Job, same shape
+  // as ProcoreProjectLink and CompanyCamProjectLink — it would not block
+  // the delete, but it carries a jobId, which is what clean-test-jobs.mjs
+  // counts. Deleting the link deletes nothing in Bluebeam; the Studio
+  // Session itself is left exactly as it was.
+  "BluebeamStudioSession",
   "JobAssignment",
   "EquipmentAssignment",
   "EstimateVersion",

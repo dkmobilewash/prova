@@ -123,3 +123,53 @@ describe("addCatalogLine — catalog labor hours are FLAT per line", () => {
     expect(call[0].data.laborHours).not.toBe(0);
   });
 });
+
+/**
+ * The wizard's OTHER quantity box.
+ *
+ * `/jobs/new/<id>/items` has two: "Add a line" (hand-typed) and "Add from
+ * catalog". The first went through `decimalFromForm` and the second comes
+ * here — and when the tolerant parser landed, only the first got it. So for
+ * a few hours the same screen took `2,800` in one box and refused it in the
+ * one underneath, which is the original bug surviving inside its own fix.
+ *
+ * What made it survivable was a comment: this function said "the same test
+ * decimalFromForm applies", which was true when written and stopped being
+ * true without anything going red. These are the cases that stop it being
+ * a comment.
+ */
+describe("addCatalogLine — the quantity box takes what a contractor types", () => {
+  const refusalFor = async (quantity: string) => {
+    fake.prisma.job.findFirst.mockResolvedValue({ id: "job-1", status: "ESTIMATE" });
+    fake.prisma.lineItemCatalogEntry.findFirst.mockResolvedValue(entry);
+    fake.prisma.jobLineItem.create.mockResolvedValue({ id: "li-1" });
+    return addCatalogLine("co-1", { jobId: "job-1", catalogEntryId: "cat-1", quantity });
+  };
+
+  it("takes a thousands comma, the same as the box above it", async () => {
+    const data = await createdLineFor("2,800");
+    expect(data.quantity).toBe("2800");
+  });
+
+  it("takes a figure with spaces around it, off a spreadsheet paste", async () => {
+    expect((await createdLineFor("  1,250.50 ")).quantity).toBe("1250.5");
+  });
+
+  it("refuses a figure it cannot read, with a sentence naming the field", async () => {
+    const result = await refusalFor("two thousand");
+    expect(result.ok).toBe(false);
+    expect(result.ok ? "" : result.error).toContain("Quantity");
+    expect(result.ok ? "" : result.error).not.toBe('"quantity" must be a number');
+  });
+
+  it("no longer hands a Decimal column the literal text 0x10", async () => {
+    // It used to: `Number("0x10")` is 16, so the old gate passed it and the
+    // RAW STRING went to Postgres.
+    const result = await refusalFor("0x10");
+    expect(result.ok).toBe(false);
+  });
+
+  it("refuses a negative quantity, which the old check did not", async () => {
+    expect((await refusalFor("-5")).ok).toBe(false);
+  });
+});

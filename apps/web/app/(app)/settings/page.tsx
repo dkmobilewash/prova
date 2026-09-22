@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import {
@@ -22,6 +23,8 @@ import { CompanyLicenses } from "@/components/CompanyLicenses";
 import { PhaseCodes } from "@/components/PhaseCodes";
 import { CompanyProfileForm } from "@/components/CompanyProfileForm";
 import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
+import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsForm";
+import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
 import { QuickBooksReconcile } from "@/components/QuickBooksReconcile";
 import { QuickBooksImport } from "@/components/QuickBooksImport";
@@ -32,6 +35,8 @@ import {
   type RenewalKind,
 } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
+import { quickBooksConnectCardState, quickBooksSetup } from "@/lib/quickbooks-setup";
+import { ActionForm } from "@/components/ActionForm";
 
 const QB_ERROR_MESSAGES: Record<string, string> = {
   access_denied: "You declined the QuickBooks connection request.",
@@ -44,6 +49,13 @@ const QB_ERROR_MESSAGES: Record<string, string> = {
   not_owner: "Only an owner can connect QuickBooks. Ask an owner on your team to do it.",
   identity_mismatch:
     "That connection attempt finished as a different account than it started as. Sign in as the account you want to connect, then start again.",
+  // /api/quickbooks/start refuses before leaving the app when this install
+  // has no client id/secret/redirect URI — see lib/quickbooks-setup.ts.
+  // Reachable only by typing the URL directly, since the button itself is
+  // gated below; kept as a named message rather than falling through to
+  // "please try again", which would be false — retrying changes nothing
+  // here without someone adding the missing keys.
+  not_configured: "QuickBooks isn't set up on this install yet.",
 };
 
 const INSURANCE_POLICY_TYPE_OPTIONS = [
@@ -132,10 +144,10 @@ export default async function SettingsPage({
 
   if (currentUser.role !== "OWNER") {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8">
+      <PageShell width="reading">
         <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
         <p className="text-sm text-ink-body" data-tour="settings-owner-only">Only the account owner can manage integrations.</p>
-      </div>
+      </PageShell>
     );
   }
 
@@ -197,6 +209,26 @@ export default async function SettingsPage({
     website: company.website,
   };
 
+  // Picked field by field for the same reason companyProfile above is —
+  // this crosses into a client component and has no business carrying
+  // `isProvaOperator` or the timestamps with it.
+  const businessScope: BusinessScopeAnswers = {
+    contractingRelationship: company.contractingRelationship,
+    doesPublicWork: company.doesPublicWork,
+    filesMonthlyPayApps: company.filesMonthlyPayApps,
+  };
+
+  // Whether THIS install has QuickBooks' own client id/secret/redirect URI
+  // — never a hardcoded "QuickBooks is live" claim, which is exactly the
+  // kind of thing that rots the day someone sets or removes a key and
+  // nobody edits a list. Read once, straight from process.env, and only
+  // ever exposed downstream as a boolean/card-state — see
+  // lib/quickbooks-setup.ts for why no variable's value can reach here.
+  const quickBooksCardState = quickBooksConnectCardState(
+    quickBooksSetup(process.env).configured,
+    connection !== null,
+  );
+
   const syncAttempts = rawSyncAttempts.map((attempt) => ({
     id: attempt.id,
     entityType: attempt.entityType,
@@ -211,7 +243,18 @@ export default async function SettingsPage({
   }));
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    // `reading`, and the width deliberately does not change: this page is
+    // eight stacked forms — company details, licences, insurance policies,
+    // bonding — and a text input stretched to 1272px is HARDER to read, not
+    // easier. Line length is why the cap was here in the first place. What
+    // changes is that the page no longer owns the number: the measure is the
+    // shell's, so when the type scale moves, this moves with it.
+    //
+    // This page's other problem — 4.7 screens of vertical scroll — is a
+    // density and section-structure problem, not a width one, and belongs to
+    // a later phase. Widening it would have made that worse by stretching
+    // every field.
+    <PageShell width="reading">
       <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
 
       {/* The Integrations page is the framework's own surface; QuickBooks
@@ -283,6 +326,21 @@ export default async function SettingsPage({
         <CompanyProfileForm company={companyProfile} gaps={companyProfileGaps(companyProfile)} />
       </section>
 
+      {/* What your business needs on screen — the three onboarding
+          questions, answered once at signup (or skipped) and changeable
+          here at any time. See lib/businessScope.ts: this only changes
+          what the rail shows, never what a direct link, a search or Ask
+          can reach. */}
+      <section id="setup" className="mb-10">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Set up for your work</h2>
+        <p className="mb-4 text-sm text-ink-body">
+          Retainage, prevailing wage, certified payroll and a few other menus only apply to some
+          businesses. Answer these and the menu only shows what yours needs — nothing is removed for
+          good: search and Ask can still reach anything, and you can change these any time.
+        </p>
+        <BusinessScopeSettingsForm scope={businessScope} isOwner={currentUser.role === "OWNER"} />
+      </section>
+
       <section className="mb-10" data-tour="settings-quickbooks">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">QuickBooks Online</h2>
         <p className="mb-4 text-sm text-ink-body">
@@ -302,7 +360,19 @@ export default async function SettingsPage({
           QuickBooks.
         </p>
 
-        {connection ? (
+        {quickBooksCardState === "not-set-up" ? (
+          // No keys on this install: say so, offer nothing to press. A
+          // Connect button here would send the browser to
+          // /api/quickbooks/start, which refuses before leaving the app
+          // (see that route) rather than reaching Intuit and failing
+          // there — but a button that always refuses is still a dead
+          // button, so it does not render at all. Same wording shape as
+          // JobberControls' "not-set-up" branch.
+          <p className="max-w-md text-xs text-ink-muted" data-tour="quickbooks-not-set-up">
+            Not set up on this install yet. Whoever runs C Stream for you has to add the
+            QuickBooks app keys before this can connect.
+          </p>
+        ) : connection ? (
           <div className="rounded-lg border border-line-card bg-surface p-4">
             <p className="text-sm text-ink">
               Connected
@@ -720,7 +790,7 @@ export default async function SettingsPage({
 
         <details className="rounded-lg border border-line-card bg-surface p-4">
           <summary className="cursor-pointer text-sm font-medium text-ink-label">Add a bond</summary>
-          <form action={createBond} className="mt-4 flex flex-col gap-3">
+          <ActionForm action={createBond} className="mt-4 flex flex-col gap-3">
             <div className="flex flex-wrap gap-3">
               <label className={labelClass}>
                 Type
@@ -740,11 +810,11 @@ export default async function SettingsPage({
             <div className="flex flex-wrap gap-3">
               <label className={labelClass}>
                 Aggregate bonding capacity (optional)
-                <input name="aggregateBondingCapacity" type="number" step="0.01" className={`w-48 ${inputClass}`} />
+                <input name="aggregateBondingCapacity" type="text" inputMode="decimal" className={`w-48 ${inputClass}`} />
               </label>
               <label className={labelClass}>
                 Single job limit (optional)
-                <input name="singleJobLimit" type="number" step="0.01" className={`w-48 ${inputClass}`} />
+                <input name="singleJobLimit" type="text" inputMode="decimal" className={`w-48 ${inputClass}`} />
               </label>
               <label className={labelClass}>
                 Renewal date (optional)
@@ -768,9 +838,9 @@ export default async function SettingsPage({
             <SubmitButton type="submit" className={`self-start ${addButtonClass}`}>
               Add bond
             </SubmitButton>
-          </form>
+          </ActionForm>
         </details>
       </section>
-    </div>
+    </PageShell>
   );
 }

@@ -8,4 +8,6 @@ export * from "./research";
 export * from "./jobber";
 export * from "./docusign";
 export * from "./procore";
+export * from "./acc";
 export * from "./companycam";
+export * from "./bluebeam";

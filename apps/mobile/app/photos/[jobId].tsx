@@ -1,7 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Image, PixelRatio, StyleSheet, Text, View } from "react-native";
 import ViewShot, { type ViewShotRef } from "react-native-view-shot";
 import { Button } from "@/components/Button";
@@ -26,6 +26,16 @@ import {
 } from "@/lib/photo-stamp";
 import { keepForUpload } from "@/lib/photo-store";
 import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
+import { JobSections } from "@/components/JobSections";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
+import { tokenOrNull } from "@/lib/clerk-token";
+import { OfflineNote } from "@/components/OfflineNote";
+import { emptyFor } from "@/lib/empty-state";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 import type { Media, MediaTag, PunchListItem } from "@/lib/types";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
@@ -58,7 +68,20 @@ type Shot = {
 };
 
 export default function PhotosScreen() {
-  const { jobId } = useLocalSearchParams<{ jobId: string }>();
+  const { me } = useMe();
+  // `punchListItemId` arrives when the punch list sent us here to
+  // photograph a specific fix, so the attachment is already chosen by the
+  // time the sheet opens — the prompt that offered it would be a lie if it
+  // dropped you on an empty picker.
+  // `open=camera` arrives from the Camera tab, which is a doorway rather
+  // than a screen of its own — the capture, the GPS fix, the stamping and
+  // the upload queue all live here, and a second copy of that would be a
+  // second copy of the stamp.
+  const { jobId, punchListItemId, open } = useLocalSearchParams<{
+    jobId: string;
+    punchListItemId?: string;
+    open?: string;
+  }>();
   const getToken = useStableGetToken();
   const [media, setMedia] = useState<Media[]>([]);
   const [tags, setTags] = useState<MediaTag[]>([]);
@@ -66,38 +89,57 @@ export default function PhotosScreen() {
   const [todaysReportId, setTodaysReportId] = useState<string | null>(null);
   const [jobName, setJobName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   // Photos taken on this phone that have not gone up yet.
   const [pending, setPending] = useState<{ clientOperationId: string; uri: string; capturedAt: string }[]>([]);
 
   const load = useCallback(async () => {
-    const token = await getToken();
-    if (!token || !jobId) return;
+    if (!jobId) return;
+    // ONE token for the whole screen, and a deadline on it: offline
+    // `getToken()` takes about two and a half minutes to answer (see
+    // lib/clerk-token.ts), and the cached rows below are exactly what
+    // this screen is opened for when there is no signal.
+    const token = await tokenOrNull(getToken);
     const today = dayFromClockIn(new Date().toISOString());
     await Promise.allSettled([
-      api.listMedia(jobId, token).then(
-        async (m) => {
-          setMedia(m);
+      // The ROWS are cached, not the pictures: a job's photos are tens of
+      // megabytes, and what a foreman needs off-signal is which ones were
+      // taken and when, not to re-view them on a 5-inch screen.
+      cachedRead(cacheKeys.photos(jobId), requireToken(token, (t) => api.listMedia(jobId, t))).then(
+        async (result) => {
           setError(null);
+          if (result.from === "nothing") {
+            setOffline("nothing");
+            return;
+          }
+          setMedia(result.value);
+          setOffline(staleNote(result));
           const queued = await queuedOperationIds();
           setPending((rows) => rows.filter((r) => queued.has(r.clientOperationId)));
         },
-        (e) => setError(e instanceof Error ? e.message : "Failed to load photos"),
       ),
-      api.listMediaTags(token).then(setTags, () => setTags([])),
-      api.listPunchListItems(jobId, token).then(
-        (items) => setPunchItems(items.filter((i) => !i.isDone)),
-        () => setPunchItems([]),
-      ),
-      api.listFieldReports(jobId, token).then(
-        (rs) => setTodaysReportId(rs.find((r) => r.reportDate === today)?.id ?? null),
-        () => setTodaysReportId(null),
-      ),
-      api.listJobs(token).then(
-        (js) => setJobName(js.find((j) => j.id === jobId)?.name ?? ""),
-        () => {},
-      ),
+      // The rest are what the CAPTURE SHEET needs — tags, today's report,
+      // the open punch items. Without a token there is nothing to ask,
+      // and each already falls back to an empty list of its own.
+      ...(token
+        ? [
+            api.listMediaTags(token).then(setTags, () => setTags([])),
+            api.listPunchListItems(jobId, token).then(
+              (items) => setPunchItems(items.filter((i) => i.status === "OPEN")),
+              () => setPunchItems([]),
+            ),
+            api.listFieldReports(jobId, token).then(
+              (rs) => setTodaysReportId(rs.find((r) => r.reportDate === today)?.id ?? null),
+              () => setTodaysReportId(null),
+            ),
+            api.listJobs(token).then(
+              (js) => setJobName(js.find((j) => j.id === jobId)?.name ?? ""),
+              () => {},
+            ),
+          ]
+        : []),
     ]);
   }, [getToken, jobId]);
 
@@ -108,7 +150,7 @@ export default function PhotosScreen() {
   const [caption, setCaption] = useState("");
   const [pickedTags, setPickedTags] = useState<string[]>([]);
   const [attachReport, setAttachReport] = useState(true);
-  const [punchItemId, setPunchItemId] = useState<string | null>(null);
+  const [punchItemId, setPunchItemId] = useState<string | null>(punchListItemId ?? null);
   // ViewShot's own ref: `capture()` on it returns the stamped file's uri.
   const stampRef = useRef<ViewShotRef>(null);
 
@@ -167,6 +209,17 @@ export default function PhotosScreen() {
       now,
     );
   };
+
+  /** Fires once per arrival from the Camera tab. A ref rather than a
+   * dependency, because the shutter must not reopen when this screen
+   * re-renders — which it does on every queue flush. */
+  const cameraOpened = useRef(false);
+  useEffect(() => {
+    if (open !== "camera" || cameraOpened.current) return;
+    cameraOpened.current = true;
+    void takePhoto();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const pickFromLibrary = async () => {
     await afterPick(
@@ -227,9 +280,17 @@ export default function PhotosScreen() {
   const stampScale = layoutWidth / STAMP_WIDTH;
   const lines = shot ? stampLines({ jobName: jobName || "This job", capturedAt: shot.capturedAt, location: shot.location }) : [];
 
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["photos/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["photos/[jobId]"]} />;
+
   return (
     <View style={styles.screen}>
+      <JobSections jobId={jobId} active="photos" />
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <OfflineNote state={offline} />
       {busy ? <Text style={styles.busy}>{busy}</Text> : null}
       <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
 
@@ -273,8 +334,11 @@ export default function PhotosScreen() {
             </Card>
           )
         }
-        emptyTitle="No photos yet"
-        emptyDescription="Tap “Take photo”. Each one is stamped with the time and place it was taken, and goes up when there's signal."
+        {...emptyFor(offline, "the photos", {
+          title: "No photos yet",
+          description:
+            "Tap “Take photo”. Each one is stamped with the time and place it was taken, and goes up when there's signal.",
+        })}
       />
 
       <View style={[styles.footer, styles.footerRow]}>

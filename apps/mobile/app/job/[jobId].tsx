@@ -1,31 +1,48 @@
 import { router, useLocalSearchParams } from "expo-router";
+import { useEffect } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { setCurrentJob } from "@/lib/current-job";
+import { Icon } from "@/components/Icon";
 import { Row } from "@/components/Row";
 import { StatusBadge } from "@/components/StatusBadge";
+import { SCREEN_CAPABILITY } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 
-// One row per field feature. Icons are emoji (the app's existing tab
-// language) so there is no icon asset to add and keep in sync.
+// One row per field feature. Icon names are the app's own vocabulary and
+// resolve in lib/icon-glyphs.ts — never a glyph name here.
 const FEATURES = [
-  { icon: "📋", title: "Field reports", subtitle: "Daily reports, queued offline", path: "reports" },
-  { icon: "📸", title: "Photos", subtitle: "Site photos and videos", path: "photos" },
-  { icon: "🦺", title: "Safety", subtitle: "Toolbox talks and incidents", path: "safety" },
-  { icon: "⏱️", title: "Time", subtitle: "Log the day's hours", path: "time" },
-  { icon: "📦", title: "Materials", subtitle: "Vendors and orders", path: "materials" },
-  { icon: "✅", title: "Punch list", subtitle: "What's left to fix", path: "punch-list" },
-  { icon: "📝", title: "T&M ticket", subtitle: "Signed time & materials", path: "ticket" },
-];
+  { icon: "report", title: "Field reports", subtitle: "Daily reports, queued offline", path: "reports" },
+  { icon: "photos", title: "Photos", subtitle: "Site photos and videos", path: "photos" },
+  { icon: "safety", title: "Safety", subtitle: "Toolbox talks and incidents", path: "safety" },
+  { icon: "time", title: "Time", subtitle: "Log the day's hours", path: "time" },
+  { icon: "materials", title: "Materials", subtitle: "Vendors and orders", path: "materials" },
+  { icon: "punch", title: "Punch list", subtitle: "What's left to fix", path: "punch-list" },
+  { icon: "ticket", title: "T&M ticket", subtitle: "Signed time & materials", path: "ticket" },
+  { icon: "drawings", title: "Drawings", subtitle: "Which revision governs", path: "drawings" },
+  { icon: "schedule", title: "Schedule", subtitle: "Who's on, and who never logged", path: "schedule" },
+] as const;
 
 /** The hub for one job: the job's name and status, then every field feature
  * as a large tappable row. The jobs list now lands here instead of dropping
  * straight into field reports, so the whole field toolkit is one thumb's
  * reach from the tap that opened the job. */
 export default function JobHubScreen() {
+  const { me } = useMe();
   const { jobId, name, status } = useLocalSearchParams<{
     jobId: string;
     name?: string;
     status?: string;
   }>();
+
+  // Opening a job is how you choose one. The jobs list sets this too, but
+  // a notification or a link lands here without passing through it, and
+  // Home, Create and Camera would otherwise still be pointing at whatever
+  // job you were on last week.
+  useEffect(() => {
+    if (jobId) void setCurrentJob({ id: jobId, name: name ?? "Job", status: status ?? null });
+  }, [jobId, name, status]);
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -35,11 +52,14 @@ export default function JobHubScreen() {
       </View>
 
       <View style={styles.panel}>
-        {FEATURES.map((feature, i) => (
+        {/* Only what this person can actually open. A row that leads to a
+            403 is worse than no row: it reads as a broken app rather than
+            as access somebody else decides. */}
+        {FEATURES.filter((feature) => holds(me, SCREEN_CAPABILITY[`${feature.path}/[jobId]`])).map((feature, i) => (
           <View key={feature.path}>
             {i > 0 ? <View style={styles.divider} /> : null}
             <Row
-              icon={<Text style={styles.icon}>{feature.icon}</Text>}
+              icon={<Icon name={feature.icon} />}
               title={feature.title}
               subtitle={feature.subtitle}
               onPress={() => router.push(`/${feature.path}/${jobId}`)}
@@ -47,11 +67,19 @@ export default function JobHubScreen() {
           </View>
         ))}
       </View>
+
+      {me && !holds(me, "MANAGE_FIELD") && !holds(me, "MANAGE_JOBS") ? (
+        <Text style={styles.noneForYou}>
+          Nothing on this job is part of your job function. The account owner sets who sees what, on
+          the Team page.
+        </Text>
+      ) : null}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  noneForYou: { color: colors.inkBody, fontSize: typography.size.sm, lineHeight: 22, paddingTop: 12 },
   screen: { flex: 1, backgroundColor: colors.canvas },
   content: { padding: 16, gap: 16 },
   header: { gap: 8, paddingVertical: 4 },
@@ -68,5 +96,4 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   divider: { height: 1, backgroundColor: colors.lineRow, marginLeft: 56 },
-  icon: { fontSize: 22 },
 });

@@ -78,10 +78,8 @@ export function CraftTierPicker({
 
         {value === "APPRENTICE" && (
           <input
-            type="number"
-            min="1"
-            max="10"
-            step="1"
+            type="text"
+            inputMode="numeric"
             value={period}
             disabled={isPending}
             placeholder="period"

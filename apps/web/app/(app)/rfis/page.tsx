@@ -13,6 +13,7 @@ import { rfisStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { viewerToday } from "@/lib/viewerToday";
 import { ProcoreFeedSection, loadProcoreFeed } from "@/components/ProcoreFeedSection";
+import { ACCFeedSection, loadAccFeed } from "@/components/ACCFeedSection";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as the safety log
  * and daily field reports. Local rendering shows the previous day to
@@ -133,6 +134,8 @@ export default async function RfisPage({
   // The GC's records from Procore, if this company links any (see
   // components/ProcoreFeedSection.tsx).
   const procoreFeed = await loadProcoreFeed(company.id, "RFI", activeJob);
+  // Same, from Autodesk Construction Cloud (see components/ACCFeedSection.tsx).
+  const accFeed = await loadAccFeed(company.id, "RFI", activeJob);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -146,9 +149,9 @@ export default async function RfisPage({
 
       <section className="mb-8" data-tour="rfis-raise">
         {askDraft.kind === "gone" && <AskDraftNotice what="RFI" />}
-        {/* No `today` handed down. The form's sent-date default is
-            localToday() — the browser's day, set after a click opens the
-            form — and the prop this page used to pass was never read. */}
+        {/* No `today` handed down, and the form no longer wants one: its
+            sent date opens BLANK, so a new RFI is a draft until somebody
+            says it left. The prop this page used to pass was never read. */}
         <RfiForm
           jobs={jobs}
           defaultJobId={rfiDraft?.jobId ?? activeJob ?? undefined}
@@ -156,7 +159,11 @@ export default async function RfisPage({
         />
       </section>
 
-      <StatusLine report={status} />
+      {/* At zero-ever the EmptyState below is the whole answer. The status
+          line and the "0 in play" count above it said "nothing" twice more
+          first — three empties stacked on a new account. /bids hides its
+          count the same way; both come back with the first record. */}
+      {(everRaised > 0 || rows.length > 0) && <StatusLine report={status} />}
 
       {jobs.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2" data-tour="rfis-job-filter">
@@ -171,18 +178,20 @@ export default async function RfisPage({
         </div>
       )}
 
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink-label">
-          {rows.length} {showClosed ? "total" : "in play"}
-        </h2>
-        <Link
-          href={filterHref({ show: showClosed ? null : "all" })}
-          data-tour="rfis-show-closed"
-          className="inline-flex min-h-11 items-center text-sm text-link"
-        >
-          {showClosed ? "Hide closed" : "Show closed"}
-        </Link>
-      </div>
+      {(everRaised > 0 || rows.length > 0) && (
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-ink-label">
+            {rows.length} {showClosed ? "total" : "in play"}
+          </h2>
+          <Link
+            href={filterHref({ show: showClosed ? null : "all" })}
+            data-tour="rfis-show-closed"
+            className="inline-flex min-h-11 items-center text-sm text-link"
+          >
+            {showClosed ? "Hide closed" : "Show closed"}
+          </Link>
+        </div>
+      )}
 
       {rows.length === 0 && everRaised === 0 ? (
         <EmptyState
@@ -233,6 +242,8 @@ export default async function RfisPage({
       {/* The GC's records from Procore: a separate section, never merged
           into this company's own log above. */}
       <ProcoreFeedSection feed={procoreFeed} />
+      {/* Same, from Autodesk Construction Cloud. */}
+      <ACCFeedSection feed={accFeed} />
     </div>
   );
 }

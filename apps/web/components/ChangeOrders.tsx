@@ -15,7 +15,11 @@ import {
   submitChangeOrder,
   voidChangeOrder,
 } from "@/lib/actions";
-import { TRADE_SCOPES, type ActionResult } from "@/lib/actions/shared";
+import { TRADE_SCOPE_OPTIONS } from "@/lib/trade-scopes";
+// `import type` on its own line, not `{ TRADE_SCOPE_OPTIONS, type ActionResult }`:
+// an inline `type` specifier still loads the module at runtime, and
+// actions/shared.ts imports prisma. A type-only IMPORT is erased.
+import type { ActionResult } from "@/lib/actions/shared";
 import {
   CONTRACT_EFFECT,
   type ChangeOrderStatus,
@@ -138,9 +142,31 @@ function formatEditValue(field: string, value: string) {
   return value;
 }
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
+/** Today, on the calendar of the person looking at the screen — handed
+ * down from the page rather than worked out here.
+ *
+ * This file had its own `today()`: `new Date().toISOString().slice(0, 10)`,
+ * the UTC day. From 17:00 Mountain that is TOMORROW, so a change order
+ * approved at 6pm recorded "answered Sep 23" on a document the GC quotes
+ * back — and correcting it the next morning hit
+ * `lib/actions/changeOrders.ts`'s "A change order can't be answered before
+ * it was sent", blaming the contractor for typing the right date.
+ *
+ * NOT components/localToday.ts, which is what ~30 other forms use and is
+ * the obvious reach. Its own comment says it may only be called from a
+ * component mounted by a user ACTION: `<Decision>` renders for every
+ * SUBMITTED change order and `<DraftActions>` for every DRAFT, out of the
+ * server render, so a browser-derived day here is a hydration mismatch —
+ * and the hidden `decidedOn` inputs below are CONTROLLED, which is the
+ * loud kind. The page resolves the zone from the request instead
+ * (lib/viewerToday.ts) and the markup is identical on both sides.
+ *
+ * WHY NOTHING CAUGHT THE OLD ONE, which is worth a sentence because the
+ * obvious guess is wrong: it did NOT mismatch. `toISOString()` is UTC in
+ * every process, so the server and the browser rendered the same string —
+ * the same wrong string. A bug that is consistently wrong on both sides of
+ * hydration raises no warning anywhere. */
+type TodayProp = { today: string };
 
 function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderView; lineItems: LineItemChoice[] }) {
   const [kind, setKind] = useState<"ADD" | "EDIT" | "REMOVE">("ADD");
@@ -182,7 +208,7 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
         >
           <label className={labelClass}>
             Description
-            <input name="itemDescription" required className={`${inputClass} w-56`} placeholder="Tile backsplash" />
+            <input name="itemDescription" required className={`${inputClass} w-56`} placeholder="2-hr rated deflection track" />
           </label>
           <label className={labelClass}>
             Unit
@@ -190,23 +216,32 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
           </label>
           <label className={labelClass}>
             Qty
-            <input name="quantity" type="number" step="0.01" defaultValue="1" required className={`${inputClass} w-24`} />
+            <input
+              name="quantity"
+              type="text"
+              inputMode="decimal"
+              defaultValue="1"
+              required
+              className={`${inputClass} w-24`}
+            />
           </label>
           <label className={labelClass}>
             Unit price
-            <input name="unitPrice" type="number" step="0.01" className={`${inputClass} w-28`} />
+            <input name="unitPrice" type="text" inputMode="decimal" className={`${inputClass} w-28`} />
           </label>
           <label className={labelClass}>
             Budgeted unit cost
-            <input name="budgetedUnitCost" type="number" step="0.01" className={`${inputClass} w-32`} />
+            <input name="budgetedUnitCost" type="text" inputMode="decimal" className={`${inputClass} w-32`} />
           </label>
           <label className={labelClass}>
             Trade scope
             <select name="tradeScope" className={`${inputClass} w-48`} defaultValue="">
               <option value="">—</option>
-              {TRADE_SCOPES.map((scope) => (
-                <option key={scope} value={scope}>
-                  {scope.replaceAll("_", " ").toLowerCase()}
+              {/* The shared labels, not the enum lowercased — that printed
+                  "eifs" and "lath plaster". The stored value is unchanged. */}
+              {TRADE_SCOPE_OPTIONS.map((scope) => (
+                <option key={scope.value} value={scope.value}>
+                  {scope.label}
                 </option>
               ))}
             </select>
@@ -235,11 +270,11 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
           </label>
           <label className={labelClass}>
             New qty
-            <input name="quantity" type="number" step="0.01" className={`${inputClass} w-24`} />
+            <input name="quantity" type="text" inputMode="decimal" className={`${inputClass} w-24`} />
           </label>
           <label className={labelClass}>
             New unit price
-            <input name="unitPrice" type="number" step="0.01" className={`${inputClass} w-28`} />
+            <input name="unitPrice" type="text" inputMode="decimal" className={`${inputClass} w-28`} />
           </label>
           <button type="submit" disabled={isPending} className={primaryBtn}>
             {isPending ? "Adding…" : "Add to CO"}
@@ -274,7 +309,7 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
   );
 }
 
-function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
+function Decision({ changeOrder, today }: { changeOrder: ChangeOrderView } & TodayProp) {
   const approve = useActionRunner();
   const reject = useActionRunner();
   const void_ = useActionRunner();
@@ -296,7 +331,7 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
         >
           <label className={labelClass}>
             Decision date
-            <input name="decidedOn" type="date" defaultValue={today()} className={`${inputClass} w-40`} />
+            <input name="decidedOn" type="date" defaultValue={today} className={`${inputClass} w-40`} />
           </label>
           <label className={labelClass}>
             GC notes
@@ -318,7 +353,7 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
           }}
           className="flex items-end gap-2"
         >
-          <input type="hidden" name="decidedOn" value={today()} />
+          <input type="hidden" name="decidedOn" value={today} />
           <button
             type="submit"
             disabled={reject.isPending}
@@ -335,7 +370,7 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
           }}
           className="flex items-end gap-2"
         >
-          <input type="hidden" name="decidedOn" value={today()} />
+          <input type="hidden" name="decidedOn" value={today} />
           <button
             type="submit"
             disabled={void_.isPending}
@@ -454,7 +489,7 @@ function ProposalRow({ proposal, canRemove }: { proposal: ProposalView; canRemov
   );
 }
 
-function DraftActions({ changeOrder }: { changeOrder: ChangeOrderView }) {
+function DraftActions({ changeOrder, today }: { changeOrder: ChangeOrderView } & TodayProp) {
   const submit = useActionRunner();
   const discard = useActionRunner();
 
@@ -470,7 +505,7 @@ function DraftActions({ changeOrder }: { changeOrder: ChangeOrderView }) {
       >
         <label className={labelClass}>
           Date sent to GC
-          <input name="submittedOn" type="date" defaultValue={today()} className={`${inputClass} w-40`} />
+          <input name="submittedOn" type="date" defaultValue={today} className={`${inputClass} w-40`} />
         </label>
         <button
           type="submit"
@@ -504,11 +539,12 @@ function ChangeOrderCard({
   co,
   lineItems,
   docuSign,
+  today,
 }: {
   co: ChangeOrderView;
   lineItems: LineItemChoice[];
   docuSign?: ChangeOrderDocuSign;
-}) {
+} & TodayProp) {
   const envelopes = docuSign?.byChangeOrder[co.id] ?? [];
   return (
     <li className="rounded-md border border-line-card bg-surface p-3">
@@ -583,11 +619,11 @@ function ChangeOrderCard({
       {co.status === "DRAFT" && (
         <>
           <ProposalForms changeOrder={co} lineItems={lineItems} />
-          <DraftActions changeOrder={co} />
+          <DraftActions changeOrder={co} today={today} />
         </>
       )}
 
-      {co.status === "SUBMITTED" && <Decision changeOrder={co} />}
+      {co.status === "SUBMITTED" && <Decision changeOrder={co} today={today} />}
 
       {docuSign && (co.status === "SUBMITTED" || envelopes.length > 0) && (
         <DocuSignPanel
@@ -616,6 +652,7 @@ export function ChangeOrders({
   pendingExposure,
   pendingUnbookable,
   docuSign,
+  today,
 }: {
   jobId: string;
   changeOrders: ChangeOrderView[];
@@ -628,7 +665,7 @@ export function ChangeOrders({
   pendingUnbookable?: number;
   /** Send-with-DocuSign on submitted change orders. Omitted, nothing renders. */
   docuSign?: ChangeOrderDocuSign;
-}) {
+} & TodayProp) {
   const pendingCount = changeOrders.filter((co) => co.status === "SUBMITTED").length;
   const { groups, unbanded } = groupIntoBands(changeOrders);
   const create = useActionRunner();
@@ -673,7 +710,7 @@ export function ChangeOrders({
       >
         <label className={labelClass}>
           New change order
-          <input name="title" required className={`${inputClass} w-64`} placeholder="Add tile backsplash" />
+          <input name="title" required className={`${inputClass} w-64`} placeholder="Add rated head-of-wall at corridor" />
         </label>
         <label className={labelClass}>
           Notes
@@ -712,7 +749,7 @@ export function ChangeOrders({
               </header>
               <ul className="flex flex-col gap-3">
                 {items.map((co) => (
-                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} docuSign={docuSign} />
+                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} docuSign={docuSign} today={today} />
                 ))}
               </ul>
             </section>
@@ -734,7 +771,7 @@ export function ChangeOrders({
               </header>
               <ul className="flex flex-col gap-3">
                 {unbanded.map((co) => (
-                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} docuSign={docuSign} />
+                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} docuSign={docuSign} today={today} />
                 ))}
               </ul>
             </section>

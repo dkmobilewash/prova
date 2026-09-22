@@ -79,7 +79,11 @@ export const notYetRegistered: Exclusion[] = [
   // project list, and the refresh is a button on the page it refreshes.
   { action: "procore.*", reason: ADMIN + " Linking a GC's Procore project to a job: picked from Procore's own live list, so it is page only." },
   { action: "procoreFeed.*", reason: "Refresh from Procore is a button on the page whose GC records it re-reads; nothing to resolve by name." },
+  // ACC (Autodesk Construction Cloud): same shape as Procore's, same reason.
+  { action: "acc.*", reason: ADMIN + " Linking a GC's ACC project to a job: picked from Autodesk's own live list, so it is page only." },
+  { action: "accFeed.*", reason: "Refresh from ACC is a button on the page whose GC records it re-reads; nothing to resolve by name." },
   { action: "companycam.*", reason: ADMIN + " Linking a CompanyCam project to a job and importing its photos: picked from CompanyCam's own live list and pressed a batch at a time, so it is page only." },
+  { action: "bluebeam.*", reason: ADMIN + " Linking a job to a new Bluebeam Studio Session, pushing a local PDF file, or connecting the account: an OAuth sign-in and a file picked from the caller's own computer, so it is page only." },
   { action: "calendarFeed.*", reason: "Creating or regenerating the caller's own calendar-subscription link — a credential, not work on a record, and there is nothing to resolve by name. Never a command." },
   { action: "jobber.*", reason: ADMIN + " Connecting to and importing from Jobber: an OAuth sign-in and a preview a person reads before confirming, so it is page only." },
   { action: "docusign.*", reason: ADMIN + " Sending a contract for signature through DocuSign, voiding one, or connecting the account: correspondence to a GC with a signer's name and email read on the page before it goes, and an OAuth sign-in, so it is page only." },
@@ -95,6 +99,14 @@ export const notYetRegistered: Exclusion[] = [
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },
   { action: "gettingStarted.*", reason: "Hides the dashboard's getting-started card on this browser — a cookie about one card, not work anyone asks the box for. Never a command." },
+  // Global search (lib/search). A read with its own box and its own
+  // keyboard shortcut, not a fact Ask narrates — app_help already answers
+  // "how do I find X" from the same walkthrough registry this reads for
+  // its page half. Registering it as a command would let the model return
+  // a company's own record titles and hrefs as an answer, second-guessing
+  // capability filtering that already runs once, correctly, inside
+  // globalSearch. Never a command.
+  { action: "search.*", reason: "Its own box and shortcut, not a fact for Ask to narrate; app_help already answers 'how do I find X'. Never a command." },
   { action: "prevailingWage.*", reason: "Rule sets are compliance configuration edited on their own page; needs a File for determinations." },
   { action: "apprenticeship.*", reason: "Enrollment and period sign-off are evidence with sign-off dates; page only for now." },
   { action: "unionCompliance.*", reason: "Craft, local and rate configuration; several writes are global reference data. Never a command." },

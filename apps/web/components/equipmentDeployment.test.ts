@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { todayInZone } from "@/lib/viewer-timezone";
 import {
   type AssignmentData,
   contradictions,
@@ -432,4 +435,120 @@ describe("stayLength", () => {
   it("calls a there-and-back-the-same-day trip what it is", () => {
     expect(stayLength(stay({ sentOutOn: "2026-03-01", returnedOn: "2026-03-01" }), "2026-03-10")).toBe("same day");
   });
+});
+
+/* --------------------------------------------- which day is "today"? (#173) */
+
+/**
+ * #155's shape on this vertical: the send-out form defaults its date to the
+ * VIEWER'S calendar day (localToday), and /equipment and /deployment used to
+ * judge every stay against the SERVER'S UTC day. Two clocks, one question.
+ *
+ * The pure functions here were never wrong — they answer honestly for
+ * whatever `today` they are handed. These cases pin what each side of UTC
+ * used to see, so the defect is written down as assertions rather than as a
+ * story: hand deploymentToday/stayLength the UTC day and you get the
+ * reported symptom; hand them the viewer's day and the page agrees with the
+ * form that produced the date.
+ */
+describe("a stay dated on the viewer's own today, judged on each side of UTC (#173)", () => {
+  /** Same fixture discipline as alerts.test.ts's STRADDLES: two real
+   * instants at which the reader's calendar and UTC disagree, one on each
+   * side, because the old behaviour was wrong in both directions and wrong
+   * differently in each. */
+  const STRADDLES = [
+    {
+      where: "Asia/Tokyo",
+      // 08:00 on the 5th in Tokyo; UTC is still on the 4th.
+      instant: new Date("2026-09-04T23:00:00.000Z"),
+      viewerDay: "2026-09-05",
+      utcDay: "2026-09-04",
+    },
+    {
+      where: "America/Los_Angeles",
+      // 18:00 on the 4th in Los Angeles; UTC has already rolled to the 5th.
+      instant: new Date("2026-09-05T01:00:00.000Z"),
+      viewerDay: "2026-09-04",
+      utcDay: "2026-09-05",
+    },
+  ] as const;
+
+  for (const s of STRADDLES) {
+    it(`${s.where}: the fixture actually straddles the boundary`, () => {
+      // #150's lesson: a fixture that cannot reach the condition makes
+      // every assertion below decorative.
+      expect(todayInZone(s.where, s.instant)).toBe(s.viewerDay);
+      expect(s.instant.toISOString().slice(0, 10)).toBe(s.utcDay);
+      expect(s.viewerDay).not.toBe(s.utcDay);
+    });
+  }
+
+  it("east of UTC, the UTC day called a machine already gone 'due out today'", () => {
+    // Tokyo, 08:00 on the 5th: the dispatcher accepts the form's default of
+    // the 5th for a lift that just left. UTC is still on the 4th, so the
+    // page classified the stay as a PLAN and kept the piece in the yard
+    // count — the symptom named in #173.
+    const tokyo = STRADDLES[0];
+    const gone = stay({ sentOutOn: tokyo.viewerDay, returnedOn: null });
+
+    const onUtcDay = deploymentToday([gone], tokyo.utcDay);
+    expect(onUtcDay.kind).toBe("planned"); // the lie: it is already on the truck
+    expect(stayLength(gone, tokyo.utcDay)).toBe("due out Sep 5, 2026");
+
+    const onViewerDay = deploymentToday([gone], tokyo.viewerDay);
+    expect(onViewerDay.kind).toBe("out");
+    expect(stayLength(gone, tokyo.viewerDay)).toBe("out since today");
+  });
+
+  it("west of UTC, the UTC day aged a minutes-old dispatch by a day", () => {
+    // Los Angeles, 18:00 on the 4th: the form defaulted to the 4th, the
+    // UTC clock already says the 5th, and a machine sent out minutes ago
+    // read "out 1 day".
+    const la = STRADDLES[1];
+    const justSent = stay({ sentOutOn: la.viewerDay, returnedOn: null });
+
+    expect(deploymentToday([justSent], la.utcDay).kind).toBe("out");
+    expect(stayLength(justSent, la.utcDay)).toBe("out 1 day"); // dispatched minutes ago
+
+    expect(deploymentToday([justSent], la.viewerDay).kind).toBe("out");
+    expect(stayLength(justSent, la.viewerDay)).toBe("out since today");
+  });
+});
+
+/* ------------------------------------------------------------ the guard */
+
+/**
+ * The cases above cannot see WHICH CLOCK a page reads — deploymentToday is
+ * exactly as correct handed the UTC day as the viewer's, and that was the
+ * entire defect. Nothing above goes red if somebody puts the UTC read back
+ * into either page, so this reads the two pages' source and requires the
+ * viewer's day by name. Same guard, same honesty about its limits, as the
+ * one in alerts.test.ts: static, cannot prove behaviour, catches the
+ * realistic regression — the one that already happened once.
+ */
+describe("/equipment and /deployment date the yard from the viewer's calendar (#173)", () => {
+  const pages = [
+    "app/(app)/equipment/page.tsx",
+    "app/(app)/deployment/page.tsx",
+  ] as const;
+
+  for (const page of pages) {
+    describe(page, () => {
+      // readFileSync THROWS on a moved file rather than matching nothing,
+      // so this guard cannot end up asking an empty question.
+      const source = readFileSync(join(process.cwd(), page), "utf8");
+
+      it("takes today from the viewer", () => {
+        expect(source).toContain('from "@/lib/viewerToday"');
+        expect(source).toContain("const today = await viewerToday()");
+      });
+
+      it("derives no calendar day from the server's clock", () => {
+        // The exact expression both pages carried. `someDate.toISOString()`
+        // on a STORED date is fine and stays — that is rendering a UTC
+        // midnight, not asking the wall clock what day it is.
+        expect(source).not.toMatch(/new Date\(\)\.toISOString\(\)/);
+      });
+    });
+  }
 });

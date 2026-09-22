@@ -11,21 +11,30 @@ import {
   safePagePath,
 } from "@/lib/help-request";
 import { actionFail as fail, type ActionResult } from "./shared";
-import { sendOutboundEmail } from "./messages";
+import { sendHelpRequestEmail } from "./messages";
 
 /**
  * "Ask us" — the one thing this product promised on paper and had no way to
  * do from inside the app.
  *
- * NO NEW CHANNEL, and that is the main decision in this file. It builds a
- * form and hands it to `sendOutboundEmail`, which already gets the hard
- * part right: the message row and its handover event are written BEFORE
- * the provider is called, a failure is recorded with its reason instead of
- * vanishing, and a send the provider accepted-but-could-not-identify is
- * never reported as failed. Re-implementing that ordering here would be a
- * second, worse copy of it — and every one of those properties is exactly
- * what somebody asking for help at 6 AM needs: the question is either in
- * the log as sent, or in the log with a reason it did not go.
+ * NO NEW CHANNEL, and that is the main decision in this file. It builds
+ * the message and hands it to `sendHelpRequestEmail`, which already gets
+ * the hard part right: the message row and its handover event are written
+ * BEFORE the provider is called, a failure is recorded with its reason
+ * instead of vanishing, and a send the provider accepted-but-could-not-
+ * identify is never reported as failed. Re-implementing that ordering
+ * here would be a second, worse copy of it — and every one of those
+ * properties is exactly what somebody asking for help at 6 AM needs: the
+ * question is either in the log as sent, or in the log with a reason it
+ * did not go.
+ *
+ * NOT `sendOutboundEmail` — that action is gated on `MANAGE_JOBS` (#352),
+ * and everyone gets to ask for help regardless of job function.
+ * `sendHelpRequestEmail` is the entry point built for exactly this: no
+ * capability check, no rate cap, and no recipient argument to get wrong —
+ * it always goes to the configured support address, which is what makes
+ * leaving it open to every member safe. See its own comment in
+ * `messages.ts`.
  *
  * The side effect of the reuse is the feature's best property: a help
  * request is a row on `/messages` like any other mail, so "did my question
@@ -67,25 +76,24 @@ export async function requestHelp(formData: FormData): Promise<ActionResult> {
       })
     : null;
 
-  const outbound = new FormData();
-  outbound.set("toAddress", channel.to);
-  outbound.set("subject", helpSubject({ companyName: company.name, pagePath }));
-  outbound.set(
-    "body",
-    helpBody({
+  // Relatedness and recipient are no longer this file's decision: the
+  // relatedType that renders "· about a help request" on /messages (via
+  // relatedLabel's SCREAMING_SNAKE fallback) and the support address
+  // itself are both fixed inside sendHelpRequestEmail now, not built here
+  // and handed across as form fields a caller could alter.
+  const result = await sendHelpRequestEmail({
+    companyId: company.id,
+    jobId: job?.id ?? null,
+    subject: helpSubject({ companyName: company.name, pagePath }),
+    body: helpBody({
       message,
       companyName: company.name,
       pagePath,
       jobName: job?.name ?? null,
       askedBy: { name: user.name, email: user.email },
     }),
-  );
-  // Renders as "· about a help request" on /messages via relatedLabel's
-  // SCREAMING_SNAKE fallback, which already produces exactly that.
-  outbound.set("relatedType", "HELP_REQUEST");
-  if (job) outbound.set("jobId", job.id);
-
-  const result = await sendOutboundEmail(outbound);
+    sentByUserId: user.id,
+  });
   if (result.ok) return result;
 
   // Its error already says what the provider or the network did. What it

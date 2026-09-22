@@ -5,7 +5,6 @@ import { useState, useTransition } from "react";
 import { createSubmittal } from "@/lib/actions";
 import { inputClass, labelClass, type JobOption } from "@/components/RfiFields";
 import { SubmittalFields } from "@/components/SubmittalFields";
-import { localToday } from "@/components/localToday";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 export function SubmittalForm({ jobs, defaultJobId }: { jobs: JobOption[]; defaultJobId?: string }) {
@@ -80,7 +79,13 @@ export function SubmittalForm({ jobs, defaultJobId }: { jobs: JobOption[]; defau
       <div className="grid gap-3 sm:grid-cols-2">
         <label className={labelClass}>
           Date sent
-          <input type="date" name="sentOn" defaultValue={localToday()} className={inputClass} />
+          {/* Blank, like `dueBack` three lines down and like the sentence
+              under this input. `createSubmittal` says it out loud — "Blank
+              means it hasn't gone out yet: registered but not submitted, and
+              deletable" — and a date here creates revision 1, after which
+              only a NOT_SENT submittal can be deleted. Today's date is a
+              claim about the GC's mail, so it is entered, never assumed. */}
+          <input type="date" name="sentOn" defaultValue="" className={inputClass} />
           <span className="text-xs text-ink-muted">
             Blank means it hasn&apos;t gone out yet. Backdate it when you&apos;re entering a package you
             already sent.

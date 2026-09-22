@@ -24,6 +24,18 @@ Vercel deployment and repo settings). Each drives their own agent.
   loading the page and doing the thing. After building anything, give
   Cyrus a numbered click-list with the exact expected result, phrased so
   a wrong result is unmistakable.
+
+  **A machine now does the first pass of that clicking: `pnpm test:e2e`**
+  (from the repo root). It boots a throwaway Postgres, builds the app the
+  way production runs it, signs a real Clerk test user in through a real
+  Chromium, and walks the pilot journey in order — first job, estimate
+  line, executed subcontract, contracted, retainage, first invoice, every
+  job tab, dashboard, jobs list, every nav destination — failing on any
+  page that shows an error boundary or renders nothing. It exists because
+  on 2026-09-21 all four CI checks and 5,800 unit tests were green while
+  creating one invoice crashed every authenticated page. It does not
+  replace the click-list; it is the floor under it. Read
+  `apps/web/e2e/run.mjs`'s header before changing what it touches.
 - Say plainly when something is your fault, what broke, and what changes.
 
 ## Coordination
@@ -35,10 +47,17 @@ Vercel deployment and repo settings). Each drives their own agent.
   lane: post and wait. NEVER post connection strings, keys, or tokens
   anywhere — Signal or a call only.
 - Lanes are in WORK-SPLIT.md. Diego: estimating, job costing,
-  billing/AIA, retainage, WIP, AI, and `apps/web/app/(app)/jobs/[id]/page.tsx`
+  billing/AIA, retainage, WIP, and `apps/web/app/(app)/jobs/[id]/page.tsx`
   (fixed section slots: Retainage → Field Reports → Pay Apps — insert at
   your slot, never at the end). Cyrus: self-contained verticals (safety,
-  vendors, equipment, punch lists, RFIs, submittals). Shared, edit
+  vendors, equipment, punch lists, RFIs, submittals) and **AI** — the Ask
+  assistant (`lib/ask/**`, `Ask*` components), the model integration
+  (`packages/integrations/src/anthropic.ts`, `ask.ts`), AI extraction and
+  AI usage metering. **AI moved from Diego to Cyrus on 2026-09-21**,
+  announced in `#prova-build`; any older line in this repo or its PR
+  history calling AI "Diego's lane" is stale. Where an AI feature sits on
+  Diego's numbers (Ask's `draft_invoice`, the WIP narrative), the logic
+  underneath is Diego's and the AI layer on top is Cyrus's. Shared, edit
   surgically: schema files, `middleware.ts`, `navItems.tsx`,
   `lib/actions/shared.ts`, the actions barrel.
 
@@ -160,6 +179,18 @@ scrollback gets broken by whoever didn't scroll far enough.
   true as of 2026-08-28. `gh auth setup-git` is what makes git push use
   that token; without it the stale keychain entry wins and pushes fail
   with "Invalid username or token".
+
+  **The `workflow` scope in that list is NOT what the keyring holds, as
+  of 2026-09-21.** `gh auth status` on Cyrus's laptop prints `'gist',
+  'read:org', 'repo'` — no `workflow` — so a push touching
+  `.github/workflows/` is rejected exactly as the "older PAT" paragraph
+  above describes. #364 hit this and left its CI job as a diff in the PR
+  body; the E2E journey PR hit it again three weeks later, from this same
+  keyring, because this bullet said the problem was gone. The fix is one
+  interactive command Cyrus runs himself — `gh auth refresh -h github.com
+  -s workflow` — followed by `gh auth setup-git`; an agent cannot complete
+  the device-code prompt. Verify with `gh auth status`, not with this
+  paragraph.
 - `.git/info/exclude` patterns must be anchored with `/` (an unanchored
   `punch-lists*` matched a source directory).
 - CI (`ci.yml`) runs test → lint → typecheck → build. This file used to
@@ -1112,6 +1143,47 @@ scrollback gets broken by whoever didn't scroll far enough.
   If you are on a branch that predates that fix and preflight dies with
   that one line, it is this — run `typecheck`, `lint`, `test` and `build`
   individually rather than hunting it.
+
+- **A DROP AND THE DEPLOY THAT STOPS READING THE COLUMN DO NOT LAND
+  TOGETHER, AND THE GAP IS A PRODUCTION OUTAGE.** 2026-09-20, #378. The
+  migration dropped `PunchListItem.isDone` and `completedAt`; the code that
+  had stopped reading them shipped in the same PR. Both true, and still
+  broken: `migrate.yml` fires on merge and finishes in seconds, while
+  Vercel is still BUILDING the commit that removes the reads. For about two
+  and a half minutes the LIVE build was the old one, selecting a column
+  that no longer existed.
+
+  Measured rather than feared, which is the only reason the size of it is
+  known: columns dropped 07:44:33Z, deploy READY ~07:46, and Vercel's
+  runtime errors for that window are exactly one —
+  `P2022: The column PunchListItem.isDone does not exist`, route
+  `/punch-lists`, one user, and the user was the agent that pushed it. A
+  quiet Sunday morning is the whole reason this cost nothing.
+
+  **The rule this file already had did not cover it.** "Additive
+  migrations only unless you've pinged first" reads as being about losing
+  DATA — and the ping happened, and no data was lost. The hazard is the
+  window, not the drop: an additive migration is invisible to the old
+  build, and a destructive one is fatal to it. Pinging does not shorten the
+  window by a second.
+
+  So, for any column, table or enum value the running code reads:
+
+    1. **PR one takes the reads away** and ships. The column stays.
+    2. **PR two drops it**, once the deploy that stopped reading it is
+       live. Nothing in the gap can break, because nothing reads it.
+
+  Two PRs, and the second one is three lines. That ordering — expand, then
+  contract — is what makes `preflight.sh`'s destructive check survivable
+  advice rather than a speed bump: it refuses the push and says to ping,
+  which is right, but the answer to the ping is "split it", not "override
+  it and merge faster".
+
+  `PREFLIGHT_ALLOW_DESTRUCTIVE=1` remains the deliberate override and is
+  still the right escape hatch for the contract step, when the column is
+  genuinely unread by the deployed build. It was used here for a drop whose
+  reads were removed in the same commit, which is exactly the case it
+  should not have been used for.
 
 - **A fresh worktree has NO `node_modules`, and that is how unverified
   work piles up.** `pnpm install --frozen-lockfile` takes seconds and

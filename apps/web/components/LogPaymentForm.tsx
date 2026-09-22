@@ -98,6 +98,8 @@ export function LogPaymentForm({ jobId, invoiceId }: { jobId: string; invoiceId:
           Amount applied
           <input
             name="amount"
+            type="text"
+            inputMode="decimal"
             placeholder="Amount"
             required
             className={`w-28 ${inputClass}`}

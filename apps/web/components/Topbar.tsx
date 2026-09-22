@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { MobileNav } from "@/components/MobileNav";
+import { SearchLauncher } from "@/components/SearchLauncher";
 import { AskLauncher } from "@/components/AskLauncher";
 import { HelpButton } from "@/components/HelpButton";
 import { helpChannelFromEnv } from "@/lib/help-config";
 import type { Principal } from "@/lib/permissions";
+import type { BusinessScopeAnswers } from "@/lib/businessScope";
 
 /** Dark chrome: the charcoal bar (#171717, same surface as the rail)
  * with the 2px brand-yellow rule under it, per the approved dark
@@ -22,21 +24,32 @@ export function Topbar({
   alertCount,
   principal,
   showsInternal = false,
+  businessScope,
 }: {
   companyName: string;
   alertCount: number;
   principal: Principal;
   /** Prova's own operating company only -- see Company.isProvaOperator. */
   showsInternal?: boolean;
+  /** The three onboarding questions' answers, or undefined for "hide
+   * nothing" — see navGroupsFor in navItems.tsx. */
+  businessScope?: BusinessScopeAnswers;
 }) {
   return (
     <div className="print:hidden flex h-14 shrink-0 items-center justify-between gap-3 border-b-2 border-brand bg-rail px-4 sm:px-6">
       {/* Renders nothing above md — the desktop rail is always visible there. */}
-      <MobileNav companyName={companyName} principal={principal} showsInternal={showsInternal} />
+      <MobileNav companyName={companyName} principal={principal} showsInternal={showsInternal} businessScope={businessScope} />
       <div className="ml-auto flex items-center gap-3">
-        {/* Ask, on every page. It sits FIRST — left of the bell and the
-            avatar — because it is the thing people are meant to reach for,
-            and chrome reads left to right in order of intent. */}
+        {/* Search, on every page, first — left of Ask, the bell and the
+            avatar. It is the safety net that lets features come off the
+            sidebar: if a small contractor's simplified nav hides
+            certified payroll, typing its name here still finds it. That
+            makes it the thing reached for before a question gets asked,
+            which is why it moved ahead of Ask rather than beside it. */}
+        <SearchLauncher />
+        {/* Ask, on every page. It sits after Search — left of the bell and
+            the avatar — because it is the next thing people are meant to
+            reach for, and chrome reads left to right in order of intent. */}
         <AskLauncher />
         {/* Help sits AFTER Ask on purpose: the assistant answers most
             questions and is the cheaper thing to try, so it is reached

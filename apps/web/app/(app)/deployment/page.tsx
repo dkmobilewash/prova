@@ -7,6 +7,7 @@ import {
   dayLabel,
   stayLength,
 } from "@/components/equipmentDeployment";
+import { viewerToday } from "@/lib/viewerToday";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,14 @@ export default async function DeploymentPage() {
     prisma.job.count({ where: { companyId: company.id } }),
   ]);
 
-  const today = new Date().toISOString().slice(0, 10);
+  // The VIEWER'S calendar day, not the server's UTC clock — issue #173.
+  // Every stayLength() on this page is judged against `today`, and the
+  // dates it judges were entered on the dispatcher's own calendar (the
+  // equipment page's form defaults to the viewer's day). Reading the UTC
+  // clock here made "how long has the scaffold been out" wrong by a day
+  // for part of every day, in a direction that depends on the viewer's
+  // side of UTC.
+  const today = await viewerToday();
 
   const allStays: AssignmentData[] = openAssignments.map((a) => ({
     id: a.id,
