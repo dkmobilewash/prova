@@ -1076,6 +1076,11 @@ hiring hall's referral authorizing a worker onto this job, which happens
 before any hours are worked and may never result in hours at all (a
 no-show, or a job that gets pulled). The scanned slip (Vercel Blob) is
 optional — some halls dispatch by phone with only a referral number.
+The worker it names is a `User` OR a `CrewMember`, exactly one, enforced
+by the `DispatchSlip_employee_or_crew` CHECK — the same shape as
+`TimeEntry` — because the people a hall dispatches are mostly field crew
+with no login (added 2026-09-21; before that only logins could be
+dispatched).
 
 Corrected 2026-09-21: the dedicated mobile/field app this paragraph said
 was deliberately not built now exists as `apps/mobile`, a dedicated Expo
