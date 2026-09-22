@@ -181,14 +181,14 @@ export default async function FringeRemittanceDocumentPage({
           <div>
             <span className="font-semibold">Employer / account no. with this fund: </span>
             <Missing>
-              Each fund issues its own employer number and cstream records none. Copy it from last
+              Each fund issues its own employer number and C Stream records none. Copy it from last
               month&apos;s report.
             </Missing>
           </div>
           <div>
             <span className="font-semibold">Remit report and payment to: </span>
             <Missing>
-              cstream records no fund addresses. Each fund&apos;s report and cheque go to that
+              C Stream records no fund addresses. Each fund&apos;s report and check go to that
               fund&apos;s own administrator, not to the hall.
             </Missing>
           </div>
@@ -389,7 +389,7 @@ export default async function FringeRemittanceDocumentPage({
           </p>
           <p className="mt-1 text-[10px] text-black">
             The hours and the money above are computed from the hours actually logged. What follows
-            is every field a remittance carries that cstream cannot fill in.
+            is every field a remittance carries that C Stream cannot fill in.
           </p>
           <ul className="mt-2 flex list-disc flex-col gap-1 pl-4">
             {blocking.map((field) => (
@@ -407,7 +407,7 @@ export default async function FringeRemittanceDocumentPage({
           <div className="border-t border-black pt-1">Telephone</div>
         </div>
         <p className="mt-2 text-[10px] text-black">
-          Signed by hand. cstream does not sign anything on your behalf, and the date on a filing is
+          Signed by hand. C Stream does not sign anything on your behalf, and the date on a filing is
           the date it was signed rather than the date it was printed.
         </p>
       </article>
@@ -425,7 +425,7 @@ export default async function FringeRemittanceDocumentPage({
             <h1 className="text-2xl font-semibold text-ink">Fringe remittance</h1>
             <p className="mt-1 text-sm text-ink-body">
               One report per local, {start} through {end}. Each hall gets its own sheet and its own
-              cheque, so nothing here is totalled across halls.
+              check, so nothing here is totalled across halls.
             </p>
           </div>
           <PrintButton />
@@ -473,7 +473,7 @@ export default async function FringeRemittanceDocumentPage({
             above them.
           </p>
           <p className="mt-1 text-xs text-tag-rose-ink/80">
-            That is a bug in cstream, not something you can fix from this page. Send these lines to
+            That is a bug in C Stream, not something you can fix from this page. Send these lines to
             support; the figures themselves are withheld rather than shown, because a remittance
             that does not reconcile is worse than no remittance.
           </p>
