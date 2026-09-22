@@ -165,6 +165,7 @@ model Job {
   closeoutSubmissionCounter      CloseoutSubmissionCounter?
   outboundMessages               OutboundMessage[]
   proposalClauses                JobProposalClause[]
+  wallRuns                       WallRun[]
 
   @@index([companyId])
   @@index([contactId])
@@ -263,6 +264,13 @@ model JobLineItem {
   sourceCatalogEntryId String?
   sourceCatalogEntry   LineItemCatalogEntry? @relation(fields: [sourceCatalogEntryId], references: [id])
 
+  /// Set when this line was GENERATED from the job's wall schedule — the
+  /// component it totals, across every run of that wall type. It is how a
+  /// re-sync finds the line to update instead of adding a second one.
+  /// SET NULL if the component is deleted: the line stays, now ordinary.
+  wallTypeComponentId String?
+  wallTypeComponent   WallTypeComponent? @relation(fields: [wallTypeComponentId], references: [id], onDelete: SetNull)
+
   /// Set only when this row was created BY a change order (added scope).
   /// Null for line items that were part of the original estimate.
   originChangeOrderId String?
@@ -285,6 +293,7 @@ model JobLineItem {
   @@index([craftClassificationId])
   @@index([sourceCatalogEntryId])
   @@index([phaseCodeId])
+  @@index([wallTypeComponentId])
 }
 
 /// A change order groups: (a) newly added JobLineItems (via

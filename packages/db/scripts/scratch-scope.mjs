@@ -139,6 +139,11 @@ export const HANDLED_MODELS = [
   // del() order. The company-scoped ProposalClause library is not: these
   // scripts never delete a company.
   "JobProposalClause",
+  // A job's wall runs (wall-types.prisma). Required jobId, RESTRICT on Job —
+  // the #227 shape, so it is here AND in both scripts' del() order. The
+  // company-level WallType library is not: these scripts never delete a
+  // company.
+  "WallRun",
   // WH-347 payroll numbers for a job's weeks, and the per-job counter that
   // issues them (#227 shape: jobId-keyed RESTRICT children of Job that no
   // other delete reaches). The numbers are a sequence record, not signed

@@ -1606,6 +1606,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // MANAGE_ESTIMATING — so the walk puts all five in MUST_ASSERT and each
   // is executed below as a principal without it.
   proposals: () => import("./actions/proposals"),
+  // Wall types and wall runs. The library is reachable only from
+  // /wall-types (MANAGE_ESTIMATING); the runs only from the Estimate tab,
+  // which withholds on VIEW_JOB_COSTS. The walk derives each and executes
+  // it as a principal without its capability.
+  wallTypes: () => import("./actions/wallTypes"),
   // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it
   // is reachable from /settings/assistant alone, which demands
   // MANAGE_COMPLIANCE. The card actions (confirm, cancel, settle, load)

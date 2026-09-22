@@ -99,6 +99,8 @@ model Company {
   vendors                   Vendor[]
   equipment                 Equipment[]
   lineItemCatalogEntries    LineItemCatalogEntry[]
+  wallTypes                 WallType[]
+  wallRuns                  WallRun[]
   punchListItems            PunchListItem[]
   tmTickets                 TmTicket[]
   timesheetSignoffs         TimesheetSignoff[]

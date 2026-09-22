@@ -163,6 +163,9 @@ model LineItemCatalogEntry {
   /// actually costed. Never a live link back into those rows.
   jobLineItems JobLineItem[]
 
+  /// Wall-type components priced from this entry. A template link only.
+  wallTypeComponents WallTypeComponent[]
+
   /// What vendors have quoted for this item. Reference data for pricing,
   /// in the same family as this entry's own defaults. Cyrus, Sheet 19.
   ///

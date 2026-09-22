@@ -116,6 +116,15 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/wall-types",
+    label: "Wall types",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path d="M4 3.5v13M8 3.5v13M12 3.5v13M16 3.5v13M3.5 4h13M3.5 16h13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/compliance",
     label: "Compliance",
     icon: (
@@ -639,6 +648,7 @@ export const NAV_GROUPS: NavGroup[] = [
       item("/messages"),
       item("/catalog"),
       item("/proposals"),
+      item("/wall-types"),
     ],
   },
   {
