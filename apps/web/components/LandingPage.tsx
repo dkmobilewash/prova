@@ -359,12 +359,38 @@ export function LandingPage() {
           the subhead, chips, CTAs and panel share the row underneath. The
           right half is full either way, which was the actual problem. */}
       <section className="flex min-h-[78svh] flex-col justify-center gap-8 py-10 sm:gap-10">
-        {/* The clamp, the 1.03 leading and the -0.02em tracking are
-            MEASURED specs carried forward from the scale pass and are not
-            to be traded away for layout convenience. A `lg:` override was
-            tried here and silently dropped the desktop headline from 96px
-            to 72px; the layout is sized to the type instead. */}
-        <h1 className="max-w-4xl text-[clamp(3rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink">
+        {/* THE FLOOR WAS 3rem AND IT MADE THE WHOLE PAGE WIDER THAN A
+            320px PHONE. Measured in real Chromium 2026-09-21, which is the
+            only thing that can see it — happy-dom does no layout:
+
+              device 320 -> window.innerWidth 342   (the page pans sideways)
+              device 360 -> window.innerWidth 360
+              device 375 -> window.innerWidth 375
+
+            Isolated by hiding this element and watching 342 become 320,
+            not inferred. The cause is "subcontractors." — one unbreakable
+            word, 326px wide at 48px, in a 288px content box. A word that
+            cannot fit sets the page's MINIMUM CONTENT WIDTH, the browser
+            widens the layout viewport to hold it, and then
+            `scrollWidth === innerWidth` is true the whole time: the check
+            everybody writes for this passes while the page is 22px wider
+            than the phone. 320 CSS px is iPhone SE 1st gen and 5/5s, and —
+            the bigger audience — any iPhone with Display Zoom on.
+
+            2.5rem is the largest floor that fits: at 40px the word needs
+            288px in 288px. 2.75rem still needs 300. Nothing at or above
+            444px changes, because 9vw passes 40px there and the clamp has
+            not been on its floor since — the measured desktop scale the
+            comment below defends is untouched, and 96px at the top end
+            still is. `e2e/specs/public-layout.public.spec.ts` asserts the
+            layout viewport equals the device at 320 and 375, so this
+            cannot come back unnoticed. */}
+        {/* The clamp's upper end, the 1.03 leading and the -0.02em tracking
+            are MEASURED specs carried forward from the scale pass and are
+            not to be traded away for layout convenience. A `lg:` override
+            was tried here and silently dropped the desktop headline from
+            96px to 72px; the layout is sized to the type instead. */}
+        <h1 className="max-w-4xl text-[clamp(2.5rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink">
           The job-site system for union specialty-trade subcontractors.
         </h1>
         {/* `items-start`, NOT `items-center`. The pay-application panel is

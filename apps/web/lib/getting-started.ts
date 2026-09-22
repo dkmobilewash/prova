@@ -142,7 +142,12 @@ const STEPS: StepDefinition[] = [
     body: "Keep your clients, jobs or crew in a spreadsheet, in Jobber or in QuickBooks? Bring them in instead of typing it all again.",
     doneBody: "",
     href: "/settings/import",
-    linkLabel: "Import a spreadsheet",
+    // The step's own title and body already speak plainly — "Bring in what
+    // you already have", "Bring them in instead of typing it all again" —
+    // and then the button reverted to our word for it. The label is the
+    // part of a step that gets pressed; it should sound like the sentence
+    // above it.
+    linkLabel: "Bring over a spreadsheet",
     optional: true,
     // The importer page and all three of its confirm actions refuse
     // non-owners (app/(app)/settings/import/page.tsx,

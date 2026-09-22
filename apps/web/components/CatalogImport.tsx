@@ -6,6 +6,7 @@ import { MAX_IMPORT_ROWS, parseCatalogImport, splitAgainstExisting } from "@/lib
 import { money } from "@/lib/money";
 import { tradeScopeLabel } from "@/lib/trade-scopes";
 import { SubmitButton } from "@/components/SubmitButton";
+import { ActionForm } from "@/components/ActionForm";
 
 /**
  * Paste a price list, see exactly what will happen, then commit.
@@ -18,6 +19,30 @@ import { SubmitButton } from "@/components/SubmitButton";
  * Parsing here is for display only. The server re-parses the same text with
  * the same function and decides what to write from that, so what lands can
  * never be something the browser invented.
+ *
+ * `canImport` DECIDES WHETHER THE CONTROL EXISTS, AND THE ACTION STILL
+ * REFUSES — the same cosmetic-versus-boundary split `IntakeForwardBox`
+ * documents, and both halves are needed here for a specific reason. The
+ * import is owner-only, but `/catalog` admits anyone with MANAGE_ESTIMATING,
+ * which is exactly what an ESTIMATOR holds. So the person this page is for
+ * could open it, paste two hundred rows out of a supplier's spreadsheet,
+ * preview them, click Add — and be refused. Hiding the button is what stops
+ * the work being done; the action's refusal is what stops the endpoint
+ * answering somebody who posts to it directly.
+ *
+ * HIDDEN, NOT DISABLED. A disabled button beside a live textarea invites the
+ * paste and explains afterwards, which is the same lost afternoon with a
+ * tooltip on it. The section is replaced by a sentence saying who can do
+ * this, so the answer arrives before the typing does.
+ *
+ * AND THE SUBMIT GOES THROUGH `<ActionForm>`, NOT `<form action={…}>`. The
+ * pasted text is React state in this component and nowhere else. A thrown
+ * Server Action message is redacted in production and renders the error
+ * boundary, which UNMOUNTS THIS COMPONENT — so every refusal, including
+ * "nothing readable to import" on an owner's own mistyped paste, took the
+ * paste with it. `importCatalogEntries` returns its refusals now and
+ * `ActionForm` renders them beside the textarea, which still has what was
+ * typed in it.
  */
 
 const inputClass =
@@ -36,7 +61,13 @@ const SAMPLE = `Description,Unit,Unit Price,Cost,Trade
 Corner bead,LF,1.20,0.60,drywall
 Level 5 finish,SF,1.75,0.95,drywall`;
 
-export function CatalogImport({ existingDescriptions }: { existingDescriptions: string[] }) {
+export function CatalogImport({
+  existingDescriptions,
+  canImport,
+}: {
+  existingDescriptions: string[];
+  canImport: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [fileError, setFileError] = useState<string | null>(null);
@@ -60,6 +91,15 @@ export function CatalogImport({ existingDescriptions }: { existingDescriptions: 
     } catch {
       setFileError("Couldn't read that file. Try opening it and pasting the contents instead.");
     }
+  }
+
+  if (!canImport) {
+    return (
+      <p className="text-sm text-ink-muted">
+        Only the account owner can import a price list. You can add entries one at a time below, and
+        save any line on a job with &ldquo;Save as catalog item&rdquo;.
+      </p>
+    );
   }
 
   if (!open) {
@@ -218,7 +258,31 @@ export function CatalogImport({ existingDescriptions }: { existingDescriptions: 
             </div>
           )}
 
-          <form action={importCatalogEntries} className="mt-3 flex flex-wrap items-center gap-3">
+          {/* `<ActionForm>`, the shape #414 established for exactly this:
+              it posts through onSubmit (React 19 calls requestFormReset
+              BEFORE a form's `action` runs, so a refusal lands over fields
+              already snapped back), renders what the action returned, and
+              resets only on success.
+
+              It matters more here than anywhere else it is used. The pasted
+              list is React state in THIS component — a thrown refusal is
+              redacted in production and renders the error boundary, which
+              unmounts the component and takes the paste with it. That was
+              true of "only the account owner can import a price list" at an
+              estimator who can legitimately reach /catalog, and equally of
+              "nothing readable to import" at an owner's own mistyped paste.
+              `resetOnSuccess` is off because there is nothing in this form
+              to reset — one hidden input mirrored from state — and clearing
+              the textarea is `onSuccess`'s job. */}
+          <ActionForm
+            action={importCatalogEntries}
+            resetOnSuccess={false}
+            onSuccess={() => {
+              setText("");
+              setOpen(false);
+            }}
+            className="mt-3 flex flex-wrap items-center gap-3"
+          >
             <input type="hidden" name="csv" value={text} />
             <SubmitButton
               type="submit"
@@ -230,7 +294,7 @@ export function CatalogImport({ existingDescriptions }: { existingDescriptions: 
             <span className="text-xs text-ink-muted">
               Nothing already in the catalog is changed. Up to {MAX_IMPORT_ROWS} rows at a time.
             </span>
-          </form>
+          </ActionForm>
         </div>
       )}
     </section>

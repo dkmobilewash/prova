@@ -83,14 +83,19 @@ export function GettingStartedCard({ checklist }: { checklist: GettingStartedChe
                     {step.linkLabel}
                   </Link>
                   {step.ask && (
+                    /* "the assistant" is a second name for the thing the nav
+                       rail calls "Ask C Stream" — two names for one feature,
+                       and the unfamiliar one was on the card a brand-new
+                       owner reads first. The nav's name wins: it is the one
+                       he can find again. */
                     <p className="text-sm text-ink-body">
-                      Or just tell the assistant in one sentence, like{" "}
+                      Or just say it in one sentence, like{" "}
                       <span className="text-ink">&ldquo;{step.ask.example}&rdquo;</span>.{" "}
                       <Link
                         href={step.ask.href}
                         className="inline-flex min-h-11 items-center font-medium text-link hover:text-link-hover hover:underline"
                       >
-                        Open the assistant
+                        Ask C Stream
                       </Link>
                     </p>
                   )}

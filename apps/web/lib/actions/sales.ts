@@ -6,19 +6,23 @@ import { requireCompanyContext } from "@/lib/auth";
 import { viewerToday } from "@/lib/viewerToday";
 import { prisma } from "@prova/db";
 import {
+  InputError,
   OPPORTUNITY_STAGES,
   SALES_ACTIVITY_TYPES,
   SALES_LEAD_SOURCES,
   actionFail as fail,
   actionOk as ok,
   joinWithConjunction,
+  runAction,
   type ActionResult,
 } from "./shared";
 
-/** Thrown by the form parsers below, caught at each action's boundary and
- * converted to a returned failure — same shape as submittals.ts, the
- * reference implementation for this pattern. */
-class InputError extends Error {}
+// `InputError` and `runAction` are imported from ./shared rather than
+// declared here. Two classes with the same name are not the same class:
+// `instanceof` is false between them, so a refusal thrown by a shared
+// parser walked straight past a local boundary and reached production as a
+// redacted digest. That is what #407 found on /welcome, and this module
+// held the fifteenth copy of the class it found there.
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -66,14 +70,6 @@ function optionalDecimal(formData: FormData, key: string): string | null {
   return optionalNumber(formData, key, { maxDecimals: 2 })?.value ?? null;
 }
 
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
-}
 
 /**
  * The only gate this whole file uses. Two independent checks, deliberately

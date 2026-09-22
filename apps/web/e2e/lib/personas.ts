@@ -22,6 +22,11 @@
  *                 rows — the one spec that submits a form against MAIN
  *                 (failed-save-keeps-input) submits one engineered to be
  *                 REFUSED, on purpose, so it writes nothing.
+ *                 An ESTABLISHED account: its company is seeded already
+ *                 past the onboarding questions, so its OWNER lands on
+ *                 /dashboard, not /welcome (seedDatabase.ts,
+ *                 ESTABLISHED_ACCOUNT_ASKED_AT). Every other company
+ *                 here is brand new and meets that gate.
  *   JOB_CREATE — its own empty company, touched by exactly one spec
  *                 (jobs-new), which is the one spec allowed to create a
  *                 job through the UI. Kept off EMPTY so that spec's write

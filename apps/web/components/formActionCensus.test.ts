@@ -77,12 +77,18 @@ const KNOWN_EXCEPTIONS: Record<string, { sites: number; reason: string }> = {
     sites: 1,
     reason: "the Mark received form is a single button with no fields; the reset has nothing to wipe",
   },
-  "apps/web/components/CatalogImport.tsx": {
-    sites: 1,
-    reason:
-      "the form carries one hidden input mirrored from state; the pasted price list lives in a " +
-      "textarea OUTSIDE the form, so a reset loses nothing the person typed",
-  },
+  /* CatalogImport.tsx was here, and its reason was true about the RESET and
+     wrong about the file. "The pasted price list lives in a textarea OUTSIDE
+     the form, so a reset loses nothing" — correct, and beside the point: the
+     action it posted to threw every refusal it had, including "only the
+     account owner can import a price list" at an estimator who can legitimately
+     reach `/catalog`. A thrown Server Action message is redacted in production
+     and renders the error boundary, and the boundary UNMOUNTS the component
+     the textarea's state lives in. The paste went, for a reason this prop
+     does not cause and this census does not scan for.
+     Converted 2026-09-21 to `<ActionForm>` — #414's component, which is this
+     file's prescribed shape with the error rendering attached — so the
+     exception is paid off rather than reworded. */
 };
 
 const SOURCE = /\.(tsx|ts|jsx|js|mjs)$/;

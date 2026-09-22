@@ -6,7 +6,7 @@ import { deleteDocument } from "@/lib/blob";
 import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
 import { isSignatureLinkDead } from "@/lib/access-tokens";
 import { linkToken } from "@/lib/tokens";
-import { isBlank, parseNumericInput } from "@/lib/numeric-input";
+import { parseNumericInput } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { viewerToday } from "@/lib/viewerToday";
@@ -26,7 +26,7 @@ import { issueContractDocumentVersion } from "@/lib/billing/contract-document-ve
 import { createRetainageReleaseRecord } from "@/lib/billing/retainage-release";
 import { readPaymentEntry } from "@/lib/billing/payment-entry";
 import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
-import { payAppEntryError } from "@/lib/pay-application";
+import { payAppEntryError, payAppRowsFromForm, payAppTotal } from "@/lib/pay-application";
 import { recordAskUsage } from "@/lib/ask/usage";
 import { ASK_DEFAULT_MODEL } from "@prova/integrations";
 import {
@@ -415,19 +415,6 @@ export async function createInvoice(jobId: string, formData: FormData): Promise<
  * production REDACTS thrown Server Action messages, so a refusal that
  * throws shows the user an opaque digest while the $140,000 application
  * they were trying to submit is simply not created, with no explanation. */
-/** One cell of the pay-application grid. Blank is zero — most rows on a
- * schedule of values are untouched in any given period — and anything else
- * has to be a figure, said out loud rather than quietly zeroed. */
-function payApplicationFigure(
-  raw: string | undefined,
-  label: string,
-  options?: { min?: number },
-): { ok: true; n: number } | { ok: false; error: string } {
-  if (raw === undefined || isBlank(raw)) return { ok: true, n: 0 };
-  const parsed = parseNumericInput(raw, { label, maxDecimals: 2, ...options });
-  return parsed.ok ? { ok: true, n: parsed.n } : { ok: false, error: parsed.error };
-}
-
 export async function submitPayApplication(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
@@ -438,31 +425,18 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
     return actionFail("Contract this job before invoicing it");
   }
 
-  const lineItemIds = formData.getAll("lineItemId").map(String);
-  const thisPeriodValues = formData.getAll("thisPeriodBilled").map(String);
-  const materialsStoredValues = formData.getAll("materialsStoredValue").map(String);
-
-  // `Number(x) || 0` USED TO BE HERE, AND IT DROPPED LINES IN SILENCE.
-  // `12,500` typed into This period became NaN, then 0, then was filtered
-  // out by the line below — so a pay application came back short by a line
-  // with nothing anywhere saying which one, on a document the GC receives.
-  // Parsed and reported by row instead.
+  // ONE PARSE, in lib/pay-application.ts, shared with the form. #414's
+  // per-cell parser and its refusals moved there whole — a figure the app
+  // cannot read still names its field rather than being quietly zeroed —
+  // so that what a person is shown before they click and what is written
+  // here cannot come from two different readings of the same boxes.
   //
-  // `min="0"` used to live on the This-period input as markup. It is a
-  // server rule now, for the reason the comment beside the stored-materials
-  // input already gives: native validation gates the submit handler, so the
-  // form refused silently and showed nothing. The rule is unchanged —
-  // negative stored value is the documented way to move value out of stored
-  // once material is installed, and there is no negative-billing mechanism.
-  const rows: Array<{ lineItemId: string; thisPeriodBilled: number; materialsStoredValue: number }> = [];
-  for (const [i, lineItemId] of lineItemIds.entries()) {
-    const billed = payApplicationFigure(thisPeriodValues[i], "This period", { min: 0 });
-    if (!billed.ok) return actionFail(billed.error);
-    const stored = payApplicationFigure(materialsStoredValues[i], "Stored materials");
-    if (!stored.ok) return actionFail(stored.error);
-    if (billed.n === 0 && stored.n === 0) continue;
-    rows.push({ lineItemId, thisPeriodBilled: billed.n, materialsStoredValue: stored.n });
-  }
+  // The `{ min: 0 }` floor that was on This period is gone, deliberately;
+  // `payAppEntryError` below carries the bound that replaced it. See the
+  // note on payAppRowsFromForm.
+  const parsed = payAppRowsFromForm(formData);
+  if (!parsed.ok) return actionFail(parsed.error);
+  const rows = parsed.rows;
 
   if (rows.length === 0) {
     return actionFail("Enter an amount for at least one line item");
@@ -519,13 +493,46 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   const dueRaw = String(formData.get("dueAt") ?? "").trim();
   const dueAt = dueRaw ? new Date(dueRaw) : null;
 
-  const amount = rows.reduce((sum, row) => sum + row.thisPeriodBilled + row.materialsStoredValue, 0);
+  const amount = payAppTotal(rows);
   // The figure that goes on the document, fixed to the two decimal places
   // the Decimal(12, 2) column stores, BEFORE anything is derived from it.
   // The retainage then comes from the amount the GC is actually billed
   // rather than from the running float it was summed out of, so the two
   // numbers on the page cannot disagree about what was billed.
   const amountValue = amount.toFixed(2);
+
+  // THE DOCUMENT-LEVEL GUARD, and the thing this action did not have.
+  // `payAppEntryError` above is per-ROW, and every row of a certificate can
+  // be defensible while what they add up to is not. Store $5,000 one
+  // period; the next period enter the −$5,000 release and omit the matching
+  // positive — half of the two-part entry the form's own instruction
+  // describes — and no row is refusable: the line's stored balance lands at
+  // exactly $0 and nothing exceeds its scheduled value. The invoice came out
+  // at −$5,000.00 with a −$500.00 retainage snapshot beside it, the G702
+  // printed "Current payment due −$4,500.00", and the billing card said
+  // "Paid in full" in green. Reproduced end to end in
+  // lib/pay-application-credit.test.ts.
+  //
+  // WHY THIS ASKS INSTEAD OF REFUSING. A net-negative application is a
+  // CREDIT, and it is the only in-app way to take back an over-bill on an
+  // invoice a GC already has: there is no void, edit or delete invoice
+  // action anywhere in this file, on purpose, because an invoice is an
+  // evidence record that closes rather than deletes.
+  // lib/pay-application.test.ts argues exactly that, and it is right. The
+  // mistake and the correction are INDISTINGUISHABLE IN THE DATA — both are
+  // "completed to date went down" — so what is missing is not a rule but
+  // the person's intent, and the only place to get that is from the person.
+  // The form shows the total and asks as they type; this refuses anything
+  // that arrives without the answer.
+  if (Number(amountValue) < 0 && String(formData.get("confirmCredit") ?? "") !== "on") {
+    return actionFail(
+      `This application comes to ${formatMoney(Number(amountValue))} — that is a credit, not a bill: it asks ` +
+        `the GC for nothing and states that ${formatMoney(-Number(amountValue))} is owed back. If you were ` +
+        `moving installed material out of stored, enter the same amount as a POSITIVE under This period on ` +
+        `that line; that is the other half of the entry. If you did mean a credit, confirm it and submit again.`,
+    );
+  }
+
   // ONE formula, shared with the lump-sum path — see
   // lib/billing/retainage-amount.ts. This line used to be
   // `((amount * Number(job.retainagePercent)) / 100).toFixed(2)`, a second

@@ -4,6 +4,7 @@ import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { TakeoffForm } from "@/components/TakeoffForm";
 import { AddCostEntryForm } from "@/components/AddCostEntryForm";
+import { costCategoryLabel } from "@/components/costCategoryLabels";
 import { LaborHoursField } from "@/components/LaborHoursField";
 import { PhaseCodeField } from "@/components/PhaseCodeField";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -18,6 +19,7 @@ import {
 } from "@/lib/change-order";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
 import { viewerTimeZone } from "@/lib/viewerToday";
+import { todayInZone } from "@/lib/viewer-timezone";
 import { formatInstant } from "@/lib/render-date";
 import { loadJobDocuSign } from "@/lib/docusign/views";
 import { contractExecutionFor, contractIsExecuted } from "@/lib/contract-execution";
@@ -405,7 +407,13 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                     {item.costEntries.map((entry) => (
                       <li key={entry.id} className="flex items-center justify-between text-sm">
                         <span className="text-ink-label">
-                          {entry.description} <span className="text-xs text-ink-muted">({entry.category})</span>
+                          {entry.description}{" "}
+                          {/* Printed the raw enum until 2026-09-21 —
+                              "(SUBCONTRACTOR)", "(MATERIAL)" — beside every
+                              cost a contractor has logged. */}
+                          <span className="text-xs text-ink-muted">
+                            ({costCategoryLabel(entry.category)})
+                          </span>
                         </span>
                         <span className="flex items-center gap-2">
                           <span className="text-ink">{money(Number(entry.amount))}</span>
@@ -803,6 +811,12 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
       ) : (
         <ChangeOrders
           jobId={job.id}
+          // The reader's calendar day, resolved on the SERVER from the
+          // same zone the DocuSign panel above already uses. It is a prop
+          // rather than something the component works out because those
+          // date defaults are server-rendered markup — see the note above
+          // `TodayProp` in components/ChangeOrders.tsx.
+          today={todayInZone(timeZone)}
           changeOrders={changeOrderViews}
           lineItems={changeOrderTargets}
           pendingExposure={money(pendingExposure)}

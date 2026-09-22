@@ -19,6 +19,8 @@
 // honesty of the feature — an app that assumed eight would be asserting
 // law it was never told.
 
+import { formatHours } from "./render-hours";
+
 export type PayType = "STRAIGHT" | "OVERTIME" | "DOUBLE_TIME" | "SHIFT_DIFFERENTIAL";
 
 export const PAY_TYPES: PayType[] = ["STRAIGHT", "OVERTIME", "DOUBLE_TIME", "SHIFT_DIFFERENTIAL"];
@@ -150,6 +152,92 @@ export interface WeekReview {
   /** True when the weekly threshold actually moved hours, so the UI can
    * explain a day whose own daily rule was satisfied. */
   weeklyThresholdApplied: boolean;
+  /**
+   * Hours that crossed the weekly overtime threshold on a day this review
+   * is not allowed to judge — i.e. a day carrying shift-differential
+   * hours. Empty on every week where the threshold's effect is fully
+   * determined, which is almost all of them.
+   *
+   * THIS EXISTS BECAUSE ITS ABSENCE CERTIFIED A WEEK CLEAN THAT WAS EIGHT
+   * HOURS SHORT. A shift-differential day used to contribute ZERO to the
+   * weekly total — the pass summed `day.expected?.STRAIGHT ?? 0` and a
+   * skipped day's `expected` is null — so Monday to Friday's eight-hour
+   * days never reached forty, the threshold never tripped, and the page
+   * printed "Every day matches what the rules imply." over a week owing
+   * overtime premium. The footnote about the Saturday was there the whole
+   * time and said nothing about the other five days, which is what made
+   * it silent rather than merely incomplete.
+   *
+   * WHY IT IS REPORTED RATHER THAN RESOLVED. The hours that cross forty
+   * are the LATEST ones, and when those are the shift-differential hours
+   * the honest expectation is "that premium AND overtime" — a combination
+   * `HoursByPayType` cannot express, since its buckets are exclusive.
+   * Pushing the excess back onto the last judgeable day instead would
+   * report Friday as overtime for hours worked inside the first forty of
+   * the week: a different wrong answer, not a fix. So the week is counted
+   * correctly, the judgeable days keep their correct verdicts, and the
+   * part no rule in this app can settle is named and handed to a person.
+   */
+  weeklyUnresolved: { date: string; hours: number }[];
+}
+
+/**
+ * Whether this review has nothing at all to raise.
+ *
+ * A FUNCTION rather than a condition written inline on the page, because
+ * the condition written inline on the page was `disagreements.length === 0`
+ * and that is how a week eight hours short of its overtime got the green
+ * sentence "Every day matches what the rules imply." A verdict that a
+ * payroll clerk signs under penalty of perjury should not be a `?:` nobody
+ * can execute in a test.
+ */
+export function reviewIsClean(review: WeekReview): boolean {
+  return (
+    review.checked && review.disagreements.length === 0 && review.weeklyUnresolved.length === 0
+  );
+}
+
+/** The sentence for `weeklyUnresolved`, or null when there is nothing to
+ * say. Named hours and named dates — a warning a reader cannot act on is
+ * barely better than the silence it replaced.
+ *
+ * The hours go through `formatHours` (#408) rather than being interpolated
+ * raw. They are a floating-point SUM of `Decimal(5,2)` values on a payroll
+ * screen, which is the exact shape that printed "35.300000000000004" on
+ * the certified-payroll page — and `hoursRenderCensus.test.ts` exists so a
+ * second implementation cannot appear next to that one. A warning about a
+ * DOL finding is the last place to print a number nobody believes. */
+export function weeklyUnresolvedSentence(review: WeekReview): string | null {
+  if (review.weeklyUnresolved.length === 0) return null;
+  // ONE rounding, and it is the renderer's. Two shift-differential days of
+  // 4.1 and 4.2 hours sum to 8.299999999999999 in JavaScript — reachable
+  // here, and pinned in the test — so this deliberately does NOT round2
+  // first and then format: that would be the second hours implementation
+  // `hoursRenderCensus.test.ts` exists to prevent, doing the same job
+  // twice and hiding whether either one works.
+  const total = review.weeklyUnresolved.reduce((sum, row) => sum + row.hours, 0);
+  const dates = review.weeklyUnresolved.map((row) => row.date);
+  const dateList =
+    dates.length === 1
+      ? dates[0]
+      : `${dates.slice(0, -1).join(", ")} and ${dates[dates.length - 1]}`;
+  return (
+    // `formatHours` is called AT the interpolation rather than assigned to
+    // a variable first, so `hoursRenderCensus.test.ts` can see it: that
+    // census reads the text of each interpolation, and a formatted value
+    // behind a plain identifier is indistinguishable to it from a bare
+    // float. Writing it where the census can read it is cheaper than an
+    // exemption, and an exemption for a number that really IS hours is
+    // exactly how that guard would stop guarding.
+    //
+    // Pluralised off the FORMATTED string: "1" is exactly one hour, and a
+    // raw float === 1 is not a question worth asking of a sum.
+    `${formatHours(total)} ${formatHours(total) === "1" ? "hour" : "hours"} past the weekly ` +
+    `overtime threshold fall on ` +
+    `${dateList}, which carries shift-differential hours. This review cannot say what pay type ` +
+    `those hours should carry — check them by hand. The other days are judged on the hours ` +
+    `inside the threshold and are unaffected.`
+  );
 }
 
 function splitDay(
@@ -203,6 +291,13 @@ function addDays(iso: string, days: number) {
  *     at the end of a week, not at the start, and converting the earliest
  *     hours would report Monday as overtime because of Friday.
  *
+ * A shift-differential day takes part in step 1's arithmetic even though
+ * it is not judged by it. Its hours are hours worked, so they count toward
+ * the forty; what this review cannot say is which pay type those hours
+ * should carry, and that is a statement about the day, not about the week.
+ * The two used to be collapsed, and the cost of collapsing them is written
+ * up on `WeekReview.weeklyUnresolved`.
+ *
  * `consecutiveDay` counts within the supplied range only. A run that began
  * before the first date passed in is not visible here, so a seventh
  * consecutive day spanning two weeks is not detected — stated plainly
@@ -229,6 +324,7 @@ export function reviewDays(
     jurisdiction: ruleSet?.jurisdiction ?? null,
     totalHours,
     weeklyThresholdApplied: false,
+    weeklyUnresolved: [] as { date: string; hours: number }[],
   };
 
   if (!ruleSet) {
@@ -268,6 +364,20 @@ export function reviewDays(
   }
 
   const days: DayReview[] = [];
+  /** The hours-band split of every day, INCLUDING the ones not judged.
+   *
+   * Parallel to `days` by index and deliberately not on `DayReview`: for a
+   * judged day it is the same object as `expected`, and for a skipped day
+   * it is an expectation this review is not making. It exists so the
+   * weekly threshold can count a shift-differential day's hours without
+   * anything on screen claiming to know what pay type they should carry.
+   *
+   * Computing it for a skipped day is sound: the daily rule splits a
+   * day's TOTAL HOURS and does not care what pay type was entered. Shift
+   * differential is orthogonal to the hours bands — that is exactly why
+   * the day cannot be judged — so the bands themselves are still knowable.
+   */
+  const bands: HoursByPayType[] = [];
   let consecutive = 0;
   let previous: string | null = null;
 
@@ -278,50 +388,52 @@ export function reviewDays(
     const entered = byDate.get(date) as HoursByPayType;
     const dayTotal = round2(PAY_TYPES.reduce((sum, type) => sum + entered[type], 0));
 
-    if (entered.SHIFT_DIFFERENTIAL > 0) {
-      days.push({
-        date,
-        consecutiveDay: consecutive,
-        totalHours: dayTotal,
-        entered,
-        expected: null,
-        skipped: "SHIFT_DIFFERENTIAL",
-        differs: false,
-      });
-      continue;
-    }
-
     const isSeventh =
       consecutive === 7 &&
       (ruleSet.seventhDayOvertimeAfterHours !== null ||
         ruleSet.seventhDayDoubleTimeAfterHours !== null);
 
-    const expected = splitDay(
+    const band = splitDay(
       dayTotal,
       isSeventh ? ruleSet.seventhDayOvertimeAfterHours : ruleSet.dailyOvertimeAfterHours,
       isSeventh ? ruleSet.seventhDayDoubleTimeAfterHours : ruleSet.dailyDoubleTimeAfterHours,
     );
+    bands.push(band);
 
+    const skipped = entered.SHIFT_DIFFERENTIAL > 0;
     days.push({
       date,
       consecutiveDay: consecutive,
       totalHours: dayTotal,
       entered,
-      expected,
-      skipped: null,
+      expected: skipped ? null : band,
+      skipped: skipped ? "SHIFT_DIFFERENTIAL" : null,
       differs: false,
     });
   }
 
   // The weekly pass. Latest days first — see the note above.
   let weeklyThresholdApplied = false;
+  const weeklyUnresolved: { date: string; hours: number }[] = [];
   const weekly = ruleSet.weeklyOvertimeAfterHours;
   if (weekly !== null) {
-    const straightTotal = days.reduce((sum, day) => sum + (day.expected?.STRAIGHT ?? 0), 0);
+    // Every day's straight band, judged or not. A shift-differential day
+    // contributing zero here is the whole of the bug this replaced.
+    const straightTotal = days.reduce((sum, _day, index) => sum + bands[index].STRAIGHT, 0);
     let excess = round2(straightTotal - weekly);
     for (let i = days.length - 1; i >= 0 && excess > 0; i -= 1) {
       const expected = days[i].expected;
-      if (!expected) continue;
+      if (!expected) {
+        // An unjudged day the excess has reached. Its hours ARE the ones
+        // that crossed forty, so they are consumed rather than passed back
+        // to an earlier day that worked inside the first forty — and named,
+        // because no expectation this type can express is the right one.
+        const reached = Math.min(bands[i].STRAIGHT, excess);
+        if (reached <= 0) continue;
+        weeklyUnresolved.unshift({ date: days[i].date, hours: round2(reached) });
+        excess = round2(excess - reached);
+        continue;
+      }
       const move = Math.min(expected.STRAIGHT, excess);
       if (move <= 0) continue;
       expected.STRAIGHT = round2(expected.STRAIGHT - move);
@@ -338,6 +450,7 @@ export function reviewDays(
   return {
     ...base,
     weeklyThresholdApplied,
+    weeklyUnresolved,
     checked: true,
     reason: null,
     days,

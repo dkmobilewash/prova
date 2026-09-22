@@ -13,6 +13,7 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { formatCalendarDate } from "@/lib/render-date";
 import { cashReceived } from "@/lib/billing/payment-entry";
 import { money } from "@/lib/money";
+import { invoiceBalanceLabel, balanceToneClass } from "@/lib/invoice-balance-label";
 import { SubmitButton } from "@/components/SubmitButton";
 import { createInvoice, deletePayment } from "@/lib/actions";
 import { ActionForm } from "@/components/ActionForm";
@@ -137,7 +138,19 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
         <div className="flex flex-col gap-4">
           {job.invoices.map((invoice) => {
             const paid = invoice.payments.reduce((s, p) => s + Number(p.amount), 0);
-            const balance = Number(invoice.amount) - paid;
+            // ONE definition of "balance", shared with /cash-flow, the
+            // Today receivables tile and the GC's portal. This line used
+            // to be `Number(invoice.amount) - paid` — gross, float, and
+            // painted amber — so an invoice paid to its net-of-retainage
+            // amount showed the sub a debt he was not owed with the
+            // log-a-payment form open beneath it.
+            const balance = invoiceBalanceLabel({
+              amount: Number(invoice.amount),
+              paidAmount: paid,
+              retainageWithheld:
+                invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
+              format: money,
+            });
             return (
               <div key={invoice.id} className="rounded-lg border border-line-card bg-surface p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -148,9 +161,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                   <div className="flex items-center gap-4 text-sm">
                     <span className="text-ink-body">Amount {money(Number(invoice.amount))}</span>
                     <span className="text-ink-body">Paid {money(paid)}</span>
-                    <span className={balance <= 0 ? "text-green-400" : "text-amber-400"}>
-                      {balance <= 0 ? "Paid in full" : `Balance ${money(balance)}`}
-                    </span>
+                    <span className={balanceToneClass[balance.tone]}>{balance.headline}</span>
                     <StatusForm jobId={job.id} invoiceId={invoice.id} status={invoice.status} />
                     <PushInvoiceToQuickBooks
                       invoiceId={invoice.id}
@@ -171,10 +182,11 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                   </Link>
                 )}
                 {invoice.dueAt && <p className="mt-1 text-xs text-ink-muted">Due {formatCalendarDate(invoice.dueAt)}</p>}
-                {invoice.retainageWithheld != null && (
-                  <p className="mt-1 text-xs text-ink-muted">
-                    Retainage withheld this invoice: {money(Number(invoice.retainageWithheld))}
-                  </p>
+                {/* The retainage figure and the balance it explains now
+                    come from the same call, so the page cannot print one
+                    without the other. */}
+                {balance.caption && (
+                  <p className="mt-1 text-xs text-ink-muted">{balance.caption}</p>
                 )}
 
                 {invoice.payments.length > 0 && (
@@ -235,7 +247,18 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                   </ul>
                 )}
 
-                {balance > 0 && <LogPaymentForm jobId={job.id} invoiceId={invoice.id} />}
+                {/* GROSS, deliberately, and unchanged: `logPayment`'s
+                    ceiling is `amount - paidAmount` because a GC is
+                    entitled to pay retainage early and the ledger has to
+                    accept the cash that arrives. What changed is that the
+                    line above no longer calls that remainder a debt.
+                    Only the two tones where the GC still has money to send:
+                    not a credit (the GC is owed money back, and a payment
+                    row against one makes the correction look settled) and
+                    not an overpayment (more cash is the wrong answer). */}
+                {(balance.tone === "owing" || balance.tone === "retainage-only") && (
+                  <LogPaymentForm jobId={job.id} invoiceId={invoice.id} />
+                )}
               </div>
             );
           })}

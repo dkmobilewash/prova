@@ -450,12 +450,21 @@ export function Sidebar({
                           // exactly that case too, not only for a genuinely
                           // unbuilt feature.
                           if (item.disabled) {
+                            // `text-neutral-600` was 2.29:1 on the rail —
+                            // not dim, unreadable, on the label that is the
+                            // only thing saying which feature is coming.
+                            // `ink-muted` is 7.11:1 and still plainly
+                            // quieter than the 12.09:1 a live item carries,
+                            // so "disabled" still reads as disabled.
+                            // MobileNav.tsx carries the same fix; the two
+                            // nav surfaces render the same list and must not
+                            // disagree about what a disabled row looks like.
                             return (
                               <span
                                 key={item.href}
                                 title={`${item.label} — coming soon`}
                                 aria-disabled="true"
-                                className="flex h-11 shrink-0 cursor-not-allowed items-center gap-3 px-4 text-[15px] font-semibold text-neutral-600"
+                                className="flex h-11 shrink-0 cursor-not-allowed items-center gap-3 px-4 text-[15px] font-semibold text-ink-muted"
                               >
                                 <span className="shrink-0 opacity-50">{item.icon}</span>
                                 <span className="truncate whitespace-nowrap">{item.label}</span>
