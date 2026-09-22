@@ -80,9 +80,19 @@ enforcing — you cannot un-bill more than the line has been billed. Two tests
 that asserted the opposite are reversed, with the reasoning, rather than
 deleted.
 
-The "Paid in full" ternary is now `invoiceBalanceState`, which decides a
-credit off the AMOUNT rather than the balance and separates an overpayment
-from a settled invoice — both were green before.
+The "Paid in full" ternary now reads a credit off the AMOUNT rather than the
+balance and separates an overpayment from a settled invoice — both were
+green before. This branch first did that in its own
+`lib/billing/invoice-balance.ts`; #431 had meanwhile merged
+`lib/invoice-balance-label.ts` for the same line on the same two pages,
+netting retainage out of the balance, and each module got the other's case
+wrong. They were FOLDED into #431's file rather than one replacing the
+other: credit first (by amount), then overpaid (against the gross, so early
+retainage is not an overpayment), then #431's settled / retainage-only /
+owing split with its caption. The log-a-payment form now shows only on
+owing and retainage-only — #431's `tone !== "settled"` would have reopened
+it on a credit. Mutation-checked: deleting the credit branch turns three
+tests red, the overpaid branch two, restoring #431's gate one.
 
 #414's per-cell parser moved out of `submitPayApplication` into
 `lib/pay-application.ts`, unchanged — a figure the app cannot read still names
