@@ -288,7 +288,8 @@ export async function removeTeamMember(memberUserId: string): Promise<ActionResu
   } catch (error) {
     /* A teammate with work recorded against them cannot be deleted at all:
        TimeEntry.employeeUser, DispatchSlip.employeeUser and the certification
-       holder are REQUIRED relations, which Prisma defaults to RESTRICT. That
+       holder are RESTRICT relations (the first two nullable now, since a row
+       can name a crew member instead, but still RESTRICT on purpose). That
        refusal comes from the database, and before this it reached the person
        as a redacted digest on a page that then looked broken. Checked by
        `code` rather than `instanceof`, for the reason isUniqueConstraintError

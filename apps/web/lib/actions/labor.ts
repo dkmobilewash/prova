@@ -378,10 +378,38 @@ export async function uploadDispatchSlip(jobId: string, formData: FormData): Pro
   const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
-  const employeeUserId = String(formData.get("employeeUserId") ?? "");
-  const employee = await prisma.user.findUnique({ where: { id: employeeUserId } });
-  if (!employee || employee.companyId !== company.id) {
-    return actionFail("That person isn't on your team.");
+  // WHO THE HALL SENT is a User OR a crew member, the same two-table choice
+  // logTimeEntry makes above and for the same reason. This read only
+  // `employeeUserId` and looked it up in `User`, so the people a hiring hall
+  // actually dispatches — field workers with no login — could not be
+  // recorded at all. `worker` carries `user:<id>` / `crew:<id>`
+  // (lib/worker-select.ts); `employeeUserId` is still accepted when it is
+  // absent, so a form already open in a tab from the old build still files.
+  const legacyUserId = String(formData.get("employeeUserId") ?? "").trim();
+  const worker =
+    parseWorkerValue(formData.get("worker") as string | null) ??
+    (legacyUserId ? ({ kind: "user", userId: legacyUserId } as const) : null);
+
+  let employeeUserId: string | null = null;
+  let crewMemberId: string | null = null;
+  if (worker?.kind === "user") {
+    const employee = await prisma.user.findUnique({ where: { id: worker.userId } });
+    if (!employee || employee.companyId !== company.id) {
+      return actionFail("That person isn't on your team.");
+    }
+    employeeUserId = employee.id;
+  } else if (worker?.kind === "crew") {
+    const member = await prisma.crewMember.findUnique({ where: { id: worker.crewMemberId } });
+    if (!member || member.companyId !== company.id) {
+      return actionFail("That person isn't on your team.");
+    }
+    // The dropdown was rendered before somebody archived them.
+    if (member.archivedAt) {
+      return actionFail("That crew member has been archived, so a dispatch can't be logged for them.");
+    }
+    crewMemberId = member.id;
+  } else {
+    return actionFail("Choose who the hall dispatched.");
   }
 
   const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
@@ -421,7 +449,11 @@ export async function uploadDispatchSlip(jobId: string, formData: FormData): Pro
   await prisma.dispatchSlip.create({
     data: {
       jobId,
+      // Exactly one is set — the branch above guarantees it and the XOR
+      // CHECK "DispatchSlip_employee_or_crew" refuses a row naming both or
+      // neither.
       employeeUserId,
+      crewMemberId,
       craftClassificationId,
       dispatchDate,
       dispatchNumber: dispatchNumber || null,

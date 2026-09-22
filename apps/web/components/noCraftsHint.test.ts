@@ -42,7 +42,7 @@ describe("the time-entry craft picker", () => {
 
 describe("the dispatch craft picker", () => {
   const render = (crafts: { id: string; label: string }[]) =>
-    renderToStaticMarkup(createElement(DispatchSlipForm, { jobId: "j1", employees: [], crafts }));
+    renderToStaticMarkup(createElement(DispatchSlipForm, { jobId: "j1", workers: [], crafts }));
 
   it("with no classifications, links to where they are set up", () => {
     expect(render([])).toContain(SETUP_LINK);

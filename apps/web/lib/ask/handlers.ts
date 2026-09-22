@@ -48,7 +48,7 @@ import { currentAssignment } from "@/components/equipmentDeployment";
 import { can, type Capability, type Principal } from "@/lib/permissions";
 import { refusalFor } from "./access";
 import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
-import { timeEntryWorkerId, timeEntryWorkerName } from "@/lib/worker-name";
+import { NAME_NOT_RECORDED, crewMemberName, timeEntryWorkerId, timeEntryWorkerName } from "@/lib/worker-name";
 import {
   loadPlannedDaysMissingHours,
   loadUpcomingSchedule,
@@ -3228,6 +3228,10 @@ async function dispatchSlips(companyId: string, input: Input): Promise<ToolResul
       note: true,
       job: { select: { name: true } },
       employeeUser: { select: { name: true, email: true } },
+      // A slip names a User OR a crew member (the XOR CHECK on DispatchSlip);
+      // before that migration it could only name a User, so a crew member
+      // dispatched by the hall would read as nobody here.
+      crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
       craftClassification: {
         select: {
           name: true,
@@ -3243,7 +3247,14 @@ async function dispatchSlips(companyId: string, input: Input): Promise<ToolResul
 
   const rows = slips.map((slip) => ({
     job: slip.job.name,
-    worker: slip.employeeUser.name ?? slip.employeeUser.email,
+    worker: slip.employeeUser
+      ? (slip.employeeUser.name ?? slip.employeeUser.email)
+      : slip.crewMember
+        ? crewMemberName(slip.crewMember).label
+        : NAME_NOT_RECORDED,
+    // Which table the person is in, so a crew member and a teammate who share
+    // a name are not read as the same dispatch.
+    workerKind: slip.employeeUser ? ("teammate" as const) : ("crew" as const),
     dispatchedOn: iso(slip.dispatchDate),
     dispatchNumber: slip.dispatchNumber,
     craft: slip.craftClassification?.name ?? null,

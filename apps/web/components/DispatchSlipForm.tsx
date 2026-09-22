@@ -9,7 +9,15 @@ import { NoCraftsHint } from "@/components/NoCraftsHint";
 const field =
   "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 
-export type DispatchSlipEmployee = { id: string; name: string | null; email: string };
+/**
+ * One person a hall can dispatch — a teammate with a login OR a crew member
+ * without one. `value` is `user:<id>` / `crew:<id>` (lib/worker-select.ts),
+ * the same convention and the same list the time-entry form uses, because
+ * the choice decides which TABLE the referral names. It was a bare User id,
+ * which made field crew — the people a hiring hall exists to send — the one
+ * group this form could not record.
+ */
+export type DispatchSlipWorker = { value: string; label: string };
 export type DispatchSlipCraft = { id: string; label: string };
 
 /**
@@ -30,7 +38,7 @@ export type DispatchSlipCraft = { id: string; label: string };
  * file was chosen, rather than the form insisting on one it never needed.
  *
  * The options are PROPS rather than a fetch: the job page already loads
- * this company's members and craft classifications for other sections, so
+ * this company's workers and craft classifications for other sections, so
  * passing them costs nothing and keeps this component free of a round trip
  * the page has already made.
  *
@@ -42,11 +50,11 @@ export type DispatchSlipCraft = { id: string; label: string };
  */
 export function DispatchSlipForm({
   jobId,
-  employees,
+  workers,
   crafts,
 }: {
   jobId: string;
-  employees: DispatchSlipEmployee[];
+  workers: DispatchSlipWorker[];
   crafts: DispatchSlipCraft[];
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -91,11 +99,13 @@ export function DispatchSlipForm({
     >
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-xs text-ink-body">
-          Employee
-          <select name="employeeUserId" required className={field}>
-            {employees.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name ?? member.email}
+          Worker
+          {/* `worker`, not `employeeUserId`: the value says which table the
+              person is in, and a crew id posted as a User id is refused. */}
+          <select name="worker" required className={field}>
+            {workers.map((worker) => (
+              <option key={worker.value} value={worker.value}>
+                {worker.label}
               </option>
             ))}
           </select>

@@ -12,8 +12,8 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { money } from "@/lib/money";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
-import { crewMemberName, timeEntryWorkerName } from "@/lib/worker-name";
-import { workerValue } from "@/lib/worker-select";
+import { NAME_NOT_RECORDED, crewMemberName, timeEntryWorkerName } from "@/lib/worker-name";
+import { workerOptions } from "@/lib/worker-select";
 import { deleteDispatchSlip, deleteTimeEntry } from "@/lib/actions";
 
 const rowDeleteClass = "text-xs text-red-400 hover:underline";
@@ -55,7 +55,7 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
       },
       dispatchSlips: {
         orderBy: { dispatchDate: "desc" },
-        include: { employeeUser: true, craftClassification: { include: { unionLocal: true } } },
+        include: { employeeUser: true, crewMember: true, craftClassification: { include: { unionLocal: true } } },
       },
     },
   });
@@ -84,7 +84,9 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
     showsField ? prisma.tmTicket.findMany({ where: { jobId: jobRef.id }, orderBy: { workDate: "desc" }, take: 20 }) : Promise.resolve([]),
   ]);
   /**
-   * Everybody hours can be logged for, in one list.
+   * Everybody hours can be logged for, in one list — and everybody a hiring
+   * hall can dispatch, which is the same people: the dispatch form takes this
+   * list too, rather than the logins-only one it had.
    *
    * Teammates first, then crew, each alphabetical within its group, with a
    * suffix naming which kind they are. That suffix is not decoration: two
@@ -92,16 +94,7 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
    * decides which TABLE the hour is attributed to and therefore which name
    * prints on a WH-347.
    */
-  const timeEntryWorkers = [
-    ...companyMembers.map((member) => ({
-      value: workerValue({ kind: "user", userId: member.id }),
-      label: `${member.name ?? member.email} (signs in)`,
-    })),
-    ...crewMembers.map((member) => ({
-      value: workerValue({ kind: "crew", crewMemberId: member.id }),
-      label: `${crewMemberName(member).label} (crew)`,
-    })),
-  ];
+  const timeEntryWorkers = workerOptions(companyMembers, crewMembers);
 
   const timeEntryCraftOptions = craftClassifications.map((craft) => ({
     id: craft.id,
@@ -291,7 +284,7 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
               >
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <span className="text-ink">{formatCalendarDate(slip.dispatchDate)}</span>
-                  <span className="text-ink-label">{slip.employeeUser.name ?? slip.employeeUser.email}</span>
+                  <span className="text-ink-label">{dispatchSlipWorkerLabel(slip)}</span>
                   {slip.craftClassification && <span className="text-xs text-ink-muted">{slip.craftClassification.name}</span>}
                   {slip.dispatchNumber && (
                     <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">#{slip.dispatchNumber}</span>
@@ -334,7 +327,7 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
 
         <DispatchSlipForm
           jobId={job.id}
-          employees={companyMembers.map((member) => ({ id: member.id, name: member.name, email: member.email }))}
+          workers={timeEntryWorkers}
           crafts={craftClassifications.map((craft) => ({
             id: craft.id,
             label: `${craft.unionLocal.parentInternational} ${craft.unionLocal.localNumber} — ${craft.name}`,
@@ -343,4 +336,19 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
       </section>
     </div>
   );
+}
+
+/**
+ * Who a dispatch slip names, for this screen. A slip names a User OR a crew
+ * member (the XOR CHECK on DispatchSlip); a login keeps the name-or-email
+ * this row always showed, and a crew member reads their legal name with the
+ * same "(crew)" suffix the form's dropdown used to choose them.
+ */
+function dispatchSlipWorkerLabel(slip: {
+  employeeUser: { name: string | null; email: string } | null;
+  crewMember: { legalFirstName: string; legalMiddleName: string | null; legalLastName: string } | null;
+}): string {
+  if (slip.employeeUser) return slip.employeeUser.name ?? slip.employeeUser.email;
+  if (slip.crewMember) return `${crewMemberName(slip.crewMember).label} (crew)`;
+  return NAME_NOT_RECORDED;
 }
