@@ -7,6 +7,8 @@ import { CertifiedPayrollPanel } from "@/components/landing/CertifiedPayrollPane
 import { ApprenticeRatioPanel } from "@/components/landing/ApprenticeRatioPanel";
 import { JobCostPanel } from "@/components/landing/JobCostPanel";
 import { FactTicker } from "@/components/landing/FactTicker";
+import { AskDemo } from "@/components/landing/AskDemo";
+import { AskCanDo } from "@/components/landing/AskCanDo";
 
 /**
  * The visitor-facing content of the public landing page (app/page.tsx).
@@ -81,6 +83,14 @@ import { FactTicker } from "@/components/landing/FactTicker";
  *   4. Certified payroll
  *   5. Apprentice ratios
  *   6. Whether the job is making money
+ *      — then ASK C STREAM, a twenty-second scene of the assistant raising
+ *        an RFI and logging hours, beside the list of what else it can be
+ *        told to do (components/landing/AskDemo.tsx, AskCanDo.tsx,
+ *        askDemoScript.ts). Placed after the four document panels because
+ *        it is the thing that WRITES those documents' inputs, and before
+ *        the evidence section because the RFI it raises is that evidence.
+ *        It is a ranked section in SECTIONS_IN_ORDER (app/page.test.ts)
+ *        and inside a <Reveal>, so the derived reveal count includes it.
  *   7. Protecting yourself
  *   8. Everything else it does (the rail/tabs)
  *   9. Not generic construction software
@@ -607,6 +617,40 @@ export function LandingPage() {
           panel={<JobCostPanel />}
           panelId="job-cost"
         />
+      </Reveal>
+
+      {/* ------------------------------------------------------ Ask C Stream
+          The assistant, shown rather than described. components/landing/
+          AskDemo.tsx plays a scripted scene of two real commands and
+          AskCanDo.tsx lists the rest; askDemoScript.ts owns every word and
+          holds it to lib/ask/commands.ts in its test. The scene is NOT a
+          `data-landing-panel`: it is prose to the page-wide statistic
+          guard, which is wanted, and it carries its own "Example" line
+          rather than the panels' figures-are-illustrative caption.
+
+          `items-start`, not `items-center`, for the hero's reason: the two
+          columns are different heights and centring one against the other
+          opens a gap under the heading that reads as an empty page. At
+          phone width the words come first and the scene last, the same
+          order CapabilitySection uses — the claim, then the evidence. */}
+      <Reveal className={sectionSpace}>
+        <div className="grid items-start gap-8 lg:grid-cols-2 lg:gap-14">
+          <div className="min-w-0">
+            <h2 className="text-3xl font-semibold leading-tight text-ink sm:text-4xl">
+              Tell it what happened. Approve it with one tap.
+            </h2>
+            <p className="mt-4 max-w-xl text-base leading-relaxed text-ink-body sm:text-lg">
+              Ask C Stream sits in the top bar of every page. Say it in your own words &mdash; an RFI to
+              raise, a crew member&rsquo;s hours, a delivery that came in &mdash; and it shows you the
+              exact record it is about to write, with the job, the names and the figures it read from
+              your account. Nothing is saved until you tap.
+            </p>
+            <AskCanDo className="mt-8 border-t border-line-card pt-6" />
+          </div>
+          <div className="min-w-0 lg:justify-self-end">
+            <AskDemo />
+          </div>
+        </div>
       </Reveal>
 
       {/* -------------------------------------------------------------- 7
