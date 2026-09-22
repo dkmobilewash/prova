@@ -194,4 +194,9 @@ export const messageExclusions: Exclusion[] = [
     reason:
       "T5: deletes are never commands, and a message that reached the provider cannot be deleted at all — owner only, from the row on the log.",
   },
+  {
+    action: "sendHelpRequestEmail",
+    reason:
+      "#352: the internal sender behind help.ts's requestHelp, the 'Ask us for help' panel. Takes no recipient argument and always addresses the configured support inbox — not a command, and not something a model prompt should be able to trigger toward an arbitrary address even if send_email's own address resolution stays honest.",
+  },
 ];

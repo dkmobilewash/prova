@@ -561,10 +561,25 @@ export const NAV_ITEMS: NavItem[] = [
  * last Tuesday. Cyrus asked for them findable. Nothing behind the routes
  * changed then or now.
  *
- * `/safety` and `/material-orders` stay `disabled: true` for the reason
- * the audit gives: not validated yet as a daily need for this persona. A
- * genuinely unbuilt item gets `disabled: true` too, and both surfaces
- * already render it muted and unclickable.
+ * **21 Sep 2026 — Safety and Material orders lose `disabled: true`, the
+ * last two of the eight (NAV-IA-AUDIT.md addendum 2).** They were deferred
+ * on 3 Sep as "not validated yet as a daily need for this persona", which
+ * was a product-scope call and not the rail-crowding one that freed the
+ * other four. Cyrus, who granted that override, ended it: a union sub has
+ * OSHA 300 obligations, and contractors are in the app today.
+ *
+ * The ground the audit could not have had is that the app now CONTRADICTS
+ * this flag. Ask cites `{ label: "Safety", href: "/safety" }`
+ * (lib/ask/handlers.ts) when somebody says a guy cut his hand, and global
+ * search (#386) finds the page too — both shipped after 3 Sep. So a
+ * `disabled: true` on a route two other surfaces send people to is not a
+ * deferral any more, it is the rail telling a contractor "coming soon"
+ * about a page the assistant just told him to open.
+ *
+ * `disabled: true` therefore now means one thing only: NO ROUTE EXISTS
+ * YET. `navDisabledCensus.test.ts` fails the build if a disabled entry has
+ * a real page, so this cannot come back without somebody deleting a test
+ * that says why.
  */
 export type NavGroup = {
   heading: string;
@@ -584,6 +599,7 @@ export type NavGroup = {
 };
 
 import { canReach, type Principal } from "@/lib/permissions";
+import { isHiddenByBusinessScope, type BusinessScopeAnswers } from "@/lib/businessScope";
 
 const byHref = new Map(NAV_ITEMS.map((item) => [item.href, item]));
 const item = (href: string): NavItem => {
@@ -663,7 +679,7 @@ export const NAV_GROUPS: NavGroup[] = [
       item("/compliance"),
       item("/prevailing-wage"),
       item("/union-compliance"),
-      { ...item("/safety"), disabled: true },
+      item("/safety"),
       item("/certifications"),
       item("/team"),
     ],
@@ -685,7 +701,7 @@ export const NAV_GROUPS: NavGroup[] = [
     // A truck.
     icon: groupIcon("M3.5 6.5h8v7h-8zM11.5 9.5h2.8l2.2 2.2v1.8h-5zM6 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM14 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"),
     items: [
-      { ...item("/material-orders"), disabled: true },
+      item("/material-orders"),
       item("/vendors"),
       item("/vendors/pricing"),
       item("/equipment"),
@@ -790,13 +806,33 @@ const INTERNAL_NAV_GROUP: NavGroup = {
  * the same reason NAV_GROUPS itself is shared: a filter applied in one and
  * forgotten in the other is a feature that exists on a phone and not on a
  * laptop.
+ *
+ * `businessScope` ANDs a second, unrelated filter onto the same list —
+ * lib/businessScope.ts's `isHiddenByBusinessScope`, the three onboarding
+ * questions' effect on the rail. Kept as a second predicate rather than
+ * folded into `canReach` on purpose: `canReach` answers a PERMISSION
+ * question (lib/permissions.ts, a security boundary once requireCapability
+ * enforces it on the page) and this answers a DISPLAY question about one
+ * company's shape (never enforced anywhere — a hidden route still renders,
+ * still turns up in search, still gets explained by Ask). Merging the two
+ * would make a UI preference look like access control, which is exactly
+ * the confusion CLAUDE.md's permissions/nav split exists to prevent.
+ * Omitted entirely (no second argument), it defaults to "hide nothing" —
+ * the same as every company that predates this feature or skipped the
+ * prompt, per `hasNoScopeAnswers`.
  */
-export function navGroupsFor(user: Principal, options: { showsInternal?: boolean } = {}): NavGroup[] {
+export function navGroupsFor(
+  user: Principal,
+  options: { showsInternal?: boolean; businessScope?: BusinessScopeAnswers } = {},
+): NavGroup[] {
   const groups = options.showsInternal ? [...NAV_GROUPS, INTERNAL_NAV_GROUP] : NAV_GROUPS;
+  const scope = options.businessScope;
   return groups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => canReach(user, item.href)),
+      items: group.items.filter(
+        (item) => canReach(user, item.href) && !(scope && isHiddenByBusinessScope(item.href, scope)),
+      ),
     }))
     .filter((group) => group.items.length > 0);
 }

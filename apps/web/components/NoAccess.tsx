@@ -19,16 +19,28 @@ const AREA: Record<Capability, string> = {
   MANAGE_COMPLIANCE: "compliance records",
   MANAGE_FIELD: "field operations",
   MANAGE_JOBS: "job records",
+  // Never reached by this component — VERIFY_PUNCH_ITEMS gates two buttons
+  // on a page the same person is meant to use, not the page itself (see
+  // SECTION_ONLY in lib/permissions.test.ts). The entry exists because the
+  // map is exhaustive over Capability, which is what makes adding one
+  // without deciding this impossible.
+  VERIFY_PUNCH_ITEMS: "punch list sign-off",
 };
 
 export function NoAccess({ capability }: { capability: Capability }) {
   return (
     <div className="mx-auto max-w-2xl px-6 py-16">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Not part of your access</h1>
+      {/* "Not part of your access" / "isn't included in your job function" —
+          "access" and "job function" are both this app's own words for its
+          permission model (`lib/permissions.ts`), surfaced raw on the one
+          screen whose entire purpose is to stop a person thinking something
+          is broken. The facts here are unchanged; the sentence is the one a
+          person would say out loud. */}
+      <h1 className="mb-2 text-xl font-semibold text-ink">You&apos;re not set up to see this</h1>
       <p className="mb-4 text-sm text-ink-body">
-        This page covers {AREA[capability]}, which isn&apos;t included in your job function. Nothing
-        is broken and you haven&apos;t done anything wrong — the account owner sets who sees what,
-        on the Team page.
+        This page covers {AREA[capability]}, which isn&apos;t part of what you&apos;ve been set up
+        to see. Nothing is broken and you haven&apos;t done anything wrong — the account owner
+        decides who sees what, on the Team page.
       </p>
       <Link
         href="/dashboard"

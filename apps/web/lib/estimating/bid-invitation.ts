@@ -40,9 +40,11 @@ export type CreateBidInvitationInput = {
   dueDate?: Date | null;
   notes?: string | null;
   tradeScope?: TradeScope | null;
-  /** Already validated as a decimal string. The form does not send one
-   * and the card never does; it is here so the action's behaviour is
-   * unchanged for a client that posts it. */
+  /** Already validated as a decimal string. #133: the contact page's
+   * create form sends this when the person filled it in (optional,
+   * blank by default -- most invitations still arrive unpriced). The
+   * Ask card never sends one; see log_bid_invitation's own comment for
+   * why that stays true. */
   bidAmount?: string | null;
 };
 

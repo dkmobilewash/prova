@@ -91,7 +91,7 @@ describe("closeout readiness, composed from real rows", () => {
     // calls step 5. "Punch list sign-off" is complete from the test above;
     // the punch rows say otherwise, and the real data has to win.
     await prisma.punchListItem.create({
-      data: { companyId, jobId, description: "Open item", isDone: false, raisedByUserId: userId },
+      data: { companyId, jobId, description: "Open item", raisedByUserId: userId },
     });
 
     const row = await job();
@@ -107,9 +107,14 @@ describe("closeout readiness, composed from real rows", () => {
   });
 
   it("returns to ready when the punch item is done", async () => {
+    // `isDone` is gone (20260920030000_punch_item_verification dropped a
+    // stored derivation), and READY_FOR_REVIEW is what ticking that box
+    // always meant. This is the assertion that closeout readiness counts
+    // the same items it counted before: the query moved from
+    // `isDone: false` to `status: "OPEN"`, which is the same set.
     await prisma.punchListItem.updateMany({
       where: { jobId },
-      data: { isDone: true, completedAt: utc("2026-09-02") },
+      data: { status: "READY_FOR_REVIEW", readyAt: utc("2026-09-02") },
     });
     expect((await job()).readiness.stage).toBe("READY_TO_SUBMIT");
   });

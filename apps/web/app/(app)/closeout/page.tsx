@@ -15,12 +15,13 @@ import { money } from "@/lib/money";
 import { can } from "@/lib/permissions";
 import { StatusLine } from "@/components/StatusLine";
 import { closeoutStatus } from "@/lib/status-sentences";
+import { viewerToday } from "@/lib/viewerToday";
 
 export default async function CloseoutPage() {
   const { context, allowed } = await requireCapability("MANAGE_JOBS");
   if (!allowed) return <NoAccess capability="MANAGE_JOBS" />;
   const { company, ...currentUser } = context;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await viewerToday();
 
   const withReadiness = await loadCloseoutJobs(company.id, today);
   const rows = withReadiness;

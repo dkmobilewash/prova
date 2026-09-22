@@ -2,18 +2,21 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
+import { viewerToday } from "@/lib/viewerToday";
 import { prisma } from "@prova/db";
 import { reopenBlockers } from "@/lib/change-order";
 import { causeLabel, formatMinutes, methodLabel, partyLabel } from "@/lib/delays-core";
 import { Prisma } from "@prova/db";
 import {
-  actionFail as fail,
+  InputError,
   actionOk as ok,
   assertEditableViaChangeOrder,
   assertJobInCompany,
   assertLineItemOnJob,
   decimalFromForm,
   nullableDecimalFromForm,
+  runAction as sharedRunAction,
   tradeScopeFromForm,
   type ActionResult,
 } from "./shared";
@@ -47,7 +50,24 @@ import {
  * plain `throw` did — `runAction` only changes what happens to it once it
  * leaves the transaction.
  */
-class InputError extends Error {}
+// `InputError` comes from ./shared rather than being declared here. This
+// module used to hold its own class of that name, and the two were not the
+// same class — `instanceof` is false between them — which is how a refusal
+// from a shared parser escaped a local boundary and reached production as a
+// digest on /welcome (#407).
+//
+// The `decimal()` / `nullableDecimal()` wrappers that used to sit here are
+// gone with it, and that deletion is the same fix rather than a tidy-up.
+// They existed only to catch the bare `Error` the shared decimal parsers
+// threw and rethrow it as this module's class, passing `err.message`
+// through untouched. `decimalFromForm` throws `InputError` itself now, so
+// the call sites below use it directly and the message a person reads is
+// byte-identical to the one the wrapper forwarded.
+//
+// The `require*` wrappers further down are NOT the same thing and stay:
+// `assertJobInCompany` and friends are ownership and state guards, and
+// those still throw a bare `Error` on purpose — see the note at the top of
+// ./shared for where that line is drawn.
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -59,42 +79,18 @@ function required(formData: FormData, key: string, label: string) {
   return value;
 }
 
-/** decimalFromForm/nullableDecimalFromForm throw a plain Error written for a
- * person to read ("quantity" must be a number) — only the throwing was
- * wrong, so they're caught here and turned into InputError rather than
- * reimplemented. One parser, one rule about what a number is. */
-function decimal(formData: FormData, key: string): string {
-  try {
-    return decimalFromForm(formData, key);
-  } catch (err) {
-    throw new InputError(err instanceof Error ? err.message : `"${key}" must be a number`);
-  }
-}
-
-function nullableDecimal(formData: FormData, key: string): string | null {
-  try {
-    return nullableDecimalFromForm(formData, key);
-  } catch (err) {
-    throw new InputError(err instanceof Error ? err.message : `"${key}" must be a number`);
-  }
-}
-
-/** Dates are stored at UTC midnight so comparisons are between calendar
- * days, not instants — same rule as RFIs, submittals and the safety log. */
-function utcMidnight(date: Date) {
-  return new Date(`${date.toISOString().slice(0, 10)}T00:00:00.000Z`);
-}
-
 /**
  * Entered, not stamped. A change order logged after the fact has to record
  * the date it actually went to the GC — stamping `now()` would make every
  * backfilled PCO look same-day and turn the turnaround evidence into
- * fiction. Blank falls back to today, which is the honest default for one
- * being sent right now.
+ * fiction. Blank falls back to today ON THE VIEWER'S CALENDAR, which is
+ * the honest default for one being sent right now — the UTC day of the
+ * click is already tomorrow for any US user after ~5pm, and a decision
+ * dated the wrong day sits on a contract document.
  */
-function enteredDate(formData: FormData, key: string): Date {
+async function enteredDate(formData: FormData, key: string): Promise<Date> {
   const raw = text(formData, key);
-  if (!raw) return utcMidnight(new Date());
+  if (!raw) return new Date(`${await viewerToday()}T00:00:00.000Z`);
   const date = new Date(`${raw}T00:00:00.000Z`);
   if (Number.isNaN(date.getTime())) throw new InputError("That date isn't a real date.");
   return date;
@@ -173,18 +169,50 @@ function assertDraft(changeOrder: { status: string; number: number }) {
   }
 }
 
-/** Runs a body that may raise an InputError, turning it into a returned
- * failure. Anything else is a real bug and is rethrown untouched — same
- * shape as lib/actions/submittals.ts's runAction. */
+/** The shared boundary, with this module's own calling convention kept.
+ *
+ * Every one of the seventeen actions below ends by doing its work and
+ * falling off the end, rather than returning `ok` explicitly — so the
+ * callback here returns `void` where ./shared's `runAction` takes one
+ * returning `ActionResult`. Adapting the signature is a two-line wrapper;
+ * rewriting seventeen call sites to end in `return ok` is a large diff
+ * through live change-order money handling for no behavioural gain.
+ *
+ * What matters is that the CATCH is no longer here. It delegates to the
+ * shared `runAction`, so the class this module converts is the same class
+ * the shared parsers throw — which is the whole point of the change. */
 async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
-  try {
+  return sharedRunAction(async () => {
     await fn();
     return ok;
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
+  });
 }
+
+/**
+ * A change order moves the contract value, so every write here answers to
+ * VIEW_JOB_COSTS — the capability `/jobs/[id]/estimate`, the only page
+ * that reaches them, already withholds its whole body on. That page
+ * refuses a reader by rendering a sentence; it did nothing about these
+ * endpoints, which answer whoever posts to them. Issue #383.
+ *
+ * Thrown as an `InputError` rather than returned, because that is how
+ * every other expected "no" in this file travels: `runAction` turns it
+ * into `{ ok: false, error }` at the boundary, so the sentence reaches the
+ * person instead of being redacted the way a plain throw would be.
+ *
+ * ONE ACTION HERE IS DELIBERATELY NOT GATED — `draftChangeOrderFromDelay`,
+ * and the absence is a decision rather than an omission. Its only door is
+ * `/jobs/[id]/field-reports`, which withholds nothing from anyone: the
+ * foreman who logs the delay is the person who should turn it into a
+ * draft, and FIELD holds no VIEW_JOB_COSTS. It creates a DRAFT and
+ * nothing more — by this file's own rule nothing before APPROVED touches
+ * JobLineItem, so no contract value moves — and every step that would
+ * move one (propose, submit, approve, revise) is gated above. Gating the
+ * draft would delete the feature for exactly the people it was built for
+ * while protecting a number it cannot change.
+ */
+const JOB_COSTS_ONLY =
+  "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 /* ------------------------------------------------------------------ */
 /* Building a draft                                                    */
@@ -196,7 +224,9 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
  */
 export async function createChangeOrder(jobId: string, formData: FormData): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const job = await requireJob(jobId, company.id);
     requireEditableViaChangeOrder(job);
 
@@ -302,13 +332,15 @@ export async function proposeAddedScope(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
     assertDraft(changeOrder);
 
     const description = required(formData, "itemDescription", "Line item description");
     const unit = text(formData, "unit");
-    const budgetedUnitCost = nullableDecimal(formData, "budgetedUnitCost");
+    const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
 
     await prisma.changeOrderProposal.create({
       data: {
@@ -316,10 +348,10 @@ export async function proposeAddedScope(
         changeType: "ADD",
         description,
         unit: unit || null,
-        quantity: decimal(formData, "quantity"),
-        unitPrice: nullableDecimal(formData, "unitPrice"),
+        quantity: decimalFromForm(formData, "quantity"),
+        unitPrice: nullableDecimalFromForm(formData, "unitPrice"),
         budgetedUnitCost,
-        currentEstimatedUnitCost: nullableDecimal(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost,
+        currentEstimatedUnitCost: nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost,
         tradeScope: tradeScopeFromForm(formData),
       },
     });
@@ -337,7 +369,9 @@ export async function proposeLineItemChange(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
     assertDraft(changeOrder);
 
@@ -355,8 +389,8 @@ export async function proposeLineItemChange(
       );
     }
 
-    const quantity = nullableDecimal(formData, "quantity");
-    const unitPrice = nullableDecimal(formData, "unitPrice");
+    const quantity = nullableDecimalFromForm(formData, "quantity");
+    const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
     if (quantity === null && unitPrice === null) {
       throw new InputError("Set a new quantity or a new unit price — otherwise this changes nothing.");
     }
@@ -375,7 +409,9 @@ export async function proposeScopeRemoval(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
     assertDraft(changeOrder);
 
@@ -400,7 +436,9 @@ export async function proposeScopeRemoval(
 
 export async function removeProposal(proposalId: string): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const proposal = await prisma.changeOrderProposal.findUnique({
       where: { id: proposalId },
       include: { changeOrder: { include: { job: true } } },
@@ -419,7 +457,9 @@ export async function removeProposal(proposalId: string): Promise<ActionResult> 
  * voidChangeOrder. */
 export async function deleteChangeOrderDraft(changeOrderId: string): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
     assertDraft(changeOrder);
 
@@ -438,7 +478,9 @@ export async function submitChangeOrder(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
     assertDraft(changeOrder);
 
@@ -448,7 +490,7 @@ export async function submitChangeOrder(
 
     await prisma.changeOrder.update({
       where: { id: changeOrderId },
-      data: { status: "SUBMITTED", submittedOn: enteredDate(formData, "submittedOn") },
+      data: { status: "SUBMITTED", submittedOn: await enteredDate(formData, "submittedOn") },
     });
 
     revalidatePath(`/jobs/${changeOrder.jobId}`);
@@ -468,7 +510,9 @@ export async function approveChangeOrder(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
 
     if (changeOrder.status !== "SUBMITTED") {
@@ -482,7 +526,7 @@ export async function approveChangeOrder(
       throw new InputError(`CO #${changeOrder.number} has already been applied to the budget.`);
     }
 
-    const decidedOn = enteredDate(formData, "decidedOn");
+    const decidedOn = await enteredDate(formData, "decidedOn");
     if (changeOrder.submittedOn && decidedOn < changeOrder.submittedOn) {
       throw new InputError("A change order can't be answered before it was sent.");
     }
@@ -612,7 +656,9 @@ export async function rejectChangeOrder(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
 
     if (changeOrder.status !== "SUBMITTED") {
@@ -621,7 +667,7 @@ export async function rejectChangeOrder(
       );
     }
 
-    const decidedOn = enteredDate(formData, "decidedOn");
+    const decidedOn = await enteredDate(formData, "decidedOn");
     if (changeOrder.submittedOn && decidedOn < changeOrder.submittedOn) {
       throw new InputError("A change order can't be answered before it was sent.");
     }
@@ -649,7 +695,9 @@ export async function voidChangeOrder(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
 
     if (changeOrder.status !== "DRAFT" && changeOrder.status !== "SUBMITTED") {
@@ -660,7 +708,7 @@ export async function voidChangeOrder(
       where: { id: changeOrderId },
       data: {
         status: "VOID",
-        decidedOn: enteredDate(formData, "decidedOn"),
+        decidedOn: await enteredDate(formData, "decidedOn"),
         decisionNotes: text(formData, "decisionNotes") || null,
       },
     });
@@ -689,7 +737,9 @@ export async function reopenChangeOrder(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const changeOrder = await assertChangeOrder(changeOrderId, company.id);
 
     if (changeOrder.status !== "APPROVED") {
@@ -764,7 +814,9 @@ export async function reviseChangeOrder(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { company } = await requireCompanyContext();
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) throw new InputError(JOB_COSTS_ONLY);
+    const { company } = context;
     const original = await assertChangeOrder(changeOrderId, company.id);
 
     if (original.status !== "APPROVED") {

@@ -100,7 +100,14 @@ export function ComplianceDocumentRow({
     const formData = new FormData(event.currentTarget);
     startTransition(async () => {
       try {
-        await updateComplianceDocument(doc.id, formData);
+        const result = await updateComplianceDocument(doc.id, formData);
+        // The action RETURNS its refusals now (a typed amount it cannot
+        // read, for one). Ignoring the result would close the editor over
+        // an unsaved change.
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
         setIsEditing(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Update failed");
@@ -129,7 +136,7 @@ export function ComplianceDocumentRow({
             </label>
             <label className={labelClass}>
               Amount
-              <input name="amount" type="number" step="0.01" defaultValue={doc.amount ?? ""} className={inputClass} />
+              <input name="amount" type="text" inputMode="decimal" defaultValue={doc.amount ?? ""} className={inputClass} />
             </label>
             <label className={labelClass}>
               Effective date

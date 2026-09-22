@@ -1,12 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { takeoffCeiling, takeoffWall } from "@/lib/takeoff";
 import { redirect } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
-import { Prisma, prisma } from "@prova/db";
+import { prisma } from "@prova/db";
 import { pushToUser } from "@/lib/push";
 import { issueContractDocumentVersion } from "@/lib/billing/contract-document-version";
 import { createEstimateJob } from "@/lib/estimating/create-job";
@@ -21,7 +20,8 @@ import {
   jobStatusTransitionRefusal,
   type JobStatusValue,
 } from "@/lib/job-status-transitions";
-import { actionFail, actionOk, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, phaseCodeIdFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { actionFail, actionOk, InputError, runAction, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, isUniqueConstraintError, phaseCodeIdFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { parseNumericInput } from "@/lib/numeric-input";
 
 /**
  * Starts a job against a GC — an EXISTING one by preference, a new one when
@@ -65,8 +65,8 @@ export async function createJob(formData: FormData): Promise<ActionResult> {
 
   // The body lives in lib/estimating/create-job.ts, shared with the Ask
   // command `create_estimate_job`. This action is the form's parse → core →
-  // revalidate → redirect, and behaves exactly as it did: an existing
-  // contact is asserted in-company, a new name is a new contact.
+  // revalidate → redirect; an existing contact is asserted in-company, a
+  // new name is a new contact.
   const created = await createEstimateJob(company.id, {
     jobName,
     scope,
@@ -78,7 +78,16 @@ export async function createJob(formData: FormData): Promise<ActionResult> {
 
   revalidatePath("/dashboard");
   revalidatePath("/contacts");
-  redirect(`/jobs/${created.value.jobId}`);
+  // Used to land on `/jobs/${id}` directly — the job's full management
+  // page, mid-scroll of every section a contracted job eventually grows.
+  // This is the one and only caller of `createJob` (the Ask command hits
+  // `createEstimateJob` above directly and builds its own confirmation
+  // card), so redirecting it into the rest of the bid-creation stepper
+  // instead — add work, then review — changes nothing else that reads
+  // this action. The job exists in the database the moment this redirect
+  // fires, so leaving the wizard here is never data loss: `/jobs/${id}`
+  // still opens the same ESTIMATE-stage job directly, stepper or not.
+  redirect(`/jobs/new/${created.value.jobId}/items`);
 }
 
 /**
@@ -86,49 +95,68 @@ export async function createJob(formData: FormData): Promise<ActionResult> {
  * all read from JobLineItem, this single insert is what "building the
  * estimate" means — nothing else needs to be told about it separately.
  */
-export async function addLineItem(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+/**
+ * The Estimate tab's refusal, in the house voice.
+ *
+ * `/jobs/[id]/estimate` and the bid wizard's pricing step
+ * (`/jobs/new/[jobId]/items`) BOTH withhold their content on
+ * VIEW_JOB_COSTS — a job function without it sees a job's scope and never
+ * its prices. That withholding stops a reader and does nothing about the
+ * endpoint: a Server Action has a stable id and answers whoever posts to
+ * it. Every write below now asserts the capability its own two doors
+ * already withhold on — issue #383.
+ */
+const JOB_COSTS_ONLY =
+  "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
+
+export async function addLineItem(jobId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
   assertEditableDirectly(job);
 
-  const description = String(formData.get("description") ?? "").trim();
-  const unit = String(formData.get("unit") ?? "").trim();
-  const quantity = decimalFromForm(formData, "quantity");
-  // Nullable: a cost-only budget line (general conditions, overhead,
-  // contingency) has no client-facing sale price.
-  const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
-  const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
-  // currentEstimatedUnitCost defaults to budgetedUnitCost at creation (app-
-  // level, not a DB default) unless the form explicitly sets a different
-  // value — see the field's doc comment in schema.prisma.
-  const currentEstimatedUnitCost =
-    nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
-  const tradeScope = tradeScopeFromForm(formData);
-  const laborHours = nullableDecimalFromForm(formData, "laborHours");
-  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
-  const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
+  return runAction(async () => {
+    const description = String(formData.get("description") ?? "").trim();
+    const unit = String(formData.get("unit") ?? "").trim();
+    const quantity = decimalFromForm(formData, "quantity");
+    // Nullable: a cost-only budget line (general conditions, overhead,
+    // contingency) has no client-facing sale price.
+    const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
+    const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
+    // currentEstimatedUnitCost defaults to budgetedUnitCost at creation (app-
+    // level, not a DB default) unless the form explicitly sets a different
+    // value — see the field's doc comment in schema.prisma.
+    const currentEstimatedUnitCost =
+      nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
+    const tradeScope = tradeScopeFromForm(formData);
+    const laborHours = nullableDecimalFromForm(formData, "laborHours");
+    const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+    const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
 
-  if (!description) {
-    throw new Error("Description is required");
-  }
+    if (!description) {
+      throw new InputError("Description is required");
+    }
 
-  await prisma.jobLineItem.create({
-    data: {
-      jobId,
-      description,
-      unit: unit || null,
-      quantity,
-      unitPrice,
-      budgetedUnitCost,
-      currentEstimatedUnitCost,
-      tradeScope,
-      laborHours,
-      craftClassificationId,
-      phaseCodeId,
-    },
+    await prisma.jobLineItem.create({
+      data: {
+        jobId,
+        description,
+        unit: unit || null,
+        quantity,
+        unitPrice,
+        budgetedUnitCost,
+        currentEstimatedUnitCost,
+        tradeScope,
+        laborHours,
+        craftClassificationId,
+        phaseCodeId,
+      },
+    });
+
+    revalidatePath(`/jobs/${jobId}`);
+    return actionOk;
   });
-
-  revalidatePath(`/jobs/${jobId}`);
 }
 
 /** Turns pasted scope-of-work text into draft JobLineItem rows — the
@@ -138,7 +166,9 @@ export async function addLineItem(jobId: string, formData: FormData) {
  * aiDrafted for the UI to prompt review. Never auto-creates a contract or
  * changes job.status itself. */
 export async function draftLineItemsFromScope(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
   const scopeText = String(formData.get("scopeText") ?? "").trim();
 
   // The body lives in lib/estimating/draft-lines.ts, shared with the Ask
@@ -156,45 +186,54 @@ export async function draftLineItemsFromScope(jobId: string, formData: FormData)
 
 
 /** Direct edit of a line item — only while the job is still an ESTIMATE. */
-export async function updateLineItem(jobId: string, lineItemId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+export async function updateLineItem(
+  jobId: string,
+  lineItemId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
   assertEditableDirectly(job);
   await assertLineItemOnJob(lineItemId, jobId);
 
-  const description = String(formData.get("description") ?? "").trim();
-  const unit = String(formData.get("unit") ?? "").trim();
-  const quantity = decimalFromForm(formData, "quantity");
-  const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
-  const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
-  const currentEstimatedUnitCost =
-    nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
-  const tradeScope = tradeScopeFromForm(formData);
-  const laborHours = nullableDecimalFromForm(formData, "laborHours");
-  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
-  const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
+  return runAction(async () => {
+    const description = String(formData.get("description") ?? "").trim();
+    const unit = String(formData.get("unit") ?? "").trim();
+    const quantity = decimalFromForm(formData, "quantity");
+    const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
+    const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
+    const currentEstimatedUnitCost =
+      nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
+    const tradeScope = tradeScopeFromForm(formData);
+    const laborHours = nullableDecimalFromForm(formData, "laborHours");
+    const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+    const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
 
-  if (!description) {
-    throw new Error("Description is required");
-  }
+    if (!description) {
+      throw new InputError("Description is required");
+    }
 
-  await prisma.jobLineItem.update({
-    where: { id: lineItemId },
-    data: {
-      description,
-      unit: unit || null,
-      quantity,
-      unitPrice,
-      budgetedUnitCost,
-      currentEstimatedUnitCost,
-      tradeScope,
-      laborHours,
-      craftClassificationId,
-      phaseCodeId,
-    },
+    await prisma.jobLineItem.update({
+      where: { id: lineItemId },
+      data: {
+        description,
+        unit: unit || null,
+        quantity,
+        unitPrice,
+        budgetedUnitCost,
+        currentEstimatedUnitCost,
+        tradeScope,
+        laborHours,
+        craftClassificationId,
+        phaseCodeId,
+      },
+    });
+
+    revalidatePath(`/jobs/${jobId}`);
+    return actionOk;
   });
-
-  revalidatePath(`/jobs/${jobId}`);
 }
 
 /**
@@ -205,25 +244,40 @@ export async function updateLineItem(jobId: string, lineItemId: string, formData
  * this is internal cost tracking, not a change to what the client agreed
  * to, and real spending/re-forecasting happens throughout the job.
  */
-export async function updateLineItemForecast(jobId: string, lineItemId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+export async function updateLineItemForecast(
+  jobId: string,
+  lineItemId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
   await assertLineItemOnJob(lineItemId, jobId);
 
-  const currentEstimatedUnitCost = nullableDecimalFromForm(formData, "currentEstimatedUnitCost");
-  const estimatedCostToComplete = nullableDecimalFromForm(formData, "estimatedCostToComplete");
+  return runAction(async () => {
+      const currentEstimatedUnitCost = nullableDecimalFromForm(formData, "currentEstimatedUnitCost", {
+        label: "Current estimated unit cost",
+      });
+      const estimatedCostToComplete = nullableDecimalFromForm(formData, "estimatedCostToComplete", {
+        label: "Estimated cost to complete",
+      });
 
-  await prisma.jobLineItem.update({
-    where: { id: lineItemId },
-    data: { currentEstimatedUnitCost, estimatedCostToComplete },
+      await prisma.jobLineItem.update({
+        where: { id: lineItemId },
+        data: { currentEstimatedUnitCost, estimatedCostToComplete },
+      });
+
+      revalidatePath(`/jobs/${jobId}`);
+      return actionOk;
   });
-
-  revalidatePath(`/jobs/${jobId}`);
 }
 
 /** Direct removal of a line item — only while the job is still an ESTIMATE. */
 export async function deleteLineItem(jobId: string, lineItemId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
   assertEditableDirectly(job);
   await assertLineItemOnJob(lineItemId, jobId);
@@ -243,7 +297,11 @@ export async function deleteLineItem(jobId: string, lineItemId: string) {
  * assertEditableViaChangeOrder in ./shared, applied by ./changeOrders).
  */
 export async function markJobContracted(jobId: string): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // The button is on the Estimate tab and the step it completes is a
+  // pricing one — an estimate becoming a contract at an agreed value.
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
 
   // Returned, not thrown. All three of these are things a person can fix,
@@ -493,12 +551,21 @@ export async function setJobStatus(jobId: string, nextStatus: string): Promise<A
  * itself.
  */
 export async function addCostEntry(jobId: string, lineItemId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
   await assertLineItemOnJob(lineItemId, jobId);
 
   const description = String(formData.get("description") ?? "").trim();
-  const amount = decimalFromForm(formData, "amount");
+  // Returned, not thrown: this action promises `ActionResult` and has no
+  // `runAction` boundary of its own.
+  const parsedAmount = parseNumericInput(formData.get("amount"), {
+    label: "Amount",
+    maxDecimals: 2,
+  });
+  if (!parsedAmount.ok) return actionFail(parsedAmount.error);
+  const amount = parsedAmount.value;
   const categoryRaw = String(formData.get("category") ?? "OTHER");
   const category = COST_CATEGORIES.includes(categoryRaw as (typeof COST_CATEGORIES)[number])
     ? (categoryRaw as (typeof COST_CATEGORIES)[number])
@@ -546,7 +613,9 @@ export async function addCostEntry(jobId: string, lineItemId: string, formData: 
 
 /** Removes a mistaken cost entry. */
 export async function deleteCostEntry(jobId: string, costEntryId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   const costEntry = await prisma.costEntry.findUnique({
@@ -562,9 +631,44 @@ export async function deleteCostEntry(jobId: string, costEntryId: string) {
   revalidatePath(`/jobs/${jobId}`);
 }
 
+/**
+ * The Schedule section's refusal — MANAGE_JOBS, not the VIEW_JOB_COSTS the
+ * rest of this file asserts, and the difference is the whole point.
+ *
+ * WHERE THIS CAPABILITY COMES FROM, since the page cannot supply it. The
+ * Schedule section of the Overview tab has no `showsJobMoney` wrapper and
+ * no wrapper of any other kind: it renders for every job function, so
+ * there is nothing to read off the file. The derivation is the OTHER
+ * source this feature already uses — the Ask command for the same work.
+ * `reschedule_job` (lib/ask/commands/schedule.ts) declares
+ * `capability: "MANAGE_JOBS"` and names `action: "updateJobSchedule"`,
+ * this exact function; its own doc comment gives the reasoning, "jobs
+ * themselves, per the capability's own doc comment". So the two surfaces
+ * now agree instead of one of them being open — precisely what #392 did
+ * for `log_payment`/`logPayment`. No new rule, no new capability name.
+ *
+ * WHAT IT COSTS, stated rather than discovered later: ACCOUNTING and
+ * PAYROLL_COMPLIANCE are the only two functions without MANAGE_JOBS, so
+ * they are the only two who lose these three controls, and neither
+ * schedules work or staffs a crew. FIELD holds MANAGE_JOBS, which is the
+ * half that matters — the foreman who runs the crew keeps both.
+ *
+ * Thrown rather than returned, matching these three functions' existing
+ * contract (`throw new Error(END_BEFORE_START)` below): the Overview tab
+ * posts to them as plain `<form action={…}>` server actions with nowhere
+ * to render a returned sentence. Production redacts the message, so what a
+ * refused person sees is the error boundary — but the schedule does not
+ * move and the crew does not change, which is the property that matters
+ * here. Issue #383.
+ */
+const JOB_MANAGEMENT_ONLY =
+  "A job's schedule and crew aren't part of your job function. The account owner sets who sees what, on the Team page.";
+
 /** Sets a job's scheduled start/end dates. Either or both may be cleared. */
 export async function updateJobSchedule(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_JOBS")) throw new Error(JOB_MANAGEMENT_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   const startRaw = String(formData.get("startDate") ?? "").trim();
@@ -597,7 +701,15 @@ export async function updateJobSchedule(jobId: string, formData: FormData) {
 
 /** Assigns a company teammate to a job's crew. */
 export async function assignCrewMember(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // Same section as updateJobSchedule above, same capability, same
+  // reasoning — see JOB_MANAGEMENT_ONLY. There is no Ask command to defer
+  // to here (lib/ask/commands/estimating.ts excludes both crew actions by
+  // name), so the derivation is the control standing beside it in the same
+  // ungated section: staffing a job is the job record itself, written as a
+  // JobAssignment on Job.
+  if (!can(context, "MANAGE_JOBS")) throw new Error(JOB_MANAGEMENT_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
 
   const userId = String(formData.get("userId") ?? "");
@@ -611,7 +723,15 @@ export async function assignCrewMember(jobId: string, formData: FormData) {
     await prisma.jobAssignment.create({ data: { jobId, userId } });
     assigned = true;
   } catch (error) {
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
+    // `isUniqueConstraintError`, NOT `instanceof
+    // Prisma.PrismaClientKnownRequestError` — that instanceof is false at
+    // runtime under Next's bundling, so this guard never fired and the
+    // no-op below never happened: assigning an already-assigned teammate
+    // rethrew a raw Prisma error and 500'd the page (#26). The logic was
+    // always right; only the class test was wrong. See isUniqueConstraintError
+    // in ./shared for the measurement, and inviteTeamMember in ./company.ts
+    // for the sibling fix (#25) that already landed this shape.
+    if (!isUniqueConstraintError(error)) {
       throw error;
     }
     // Already assigned — treat as a no-op rather than an error.
@@ -630,103 +750,16 @@ export async function assignCrewMember(jobId: string, formData: FormData) {
 
 /** Removes a teammate from a job's crew. */
 export async function unassignCrewMember(jobId: string, userId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // The other half of assignCrewMember, and gated with it rather than left
+  // as the looser of the pair — a remove is not weaker than the add it
+  // reverses.
+  if (!can(context, "MANAGE_JOBS")) throw new Error(JOB_MANAGEMENT_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   await prisma.jobAssignment.deleteMany({ where: { jobId, userId } });
 
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/schedule");
-}
-
-/**
- * Creates line items from a measured takeoff.
- *
- * THE QUANTITIES ARE RECOMPUTED HERE, from the dimensions, and never taken
- * from the form. The screen shows a live preview so an estimator can see the
- * numbers before committing them — that preview runs the same pure functions
- * in the browser — but a quantity posted from a client is a number a client
- * chose. These end up in a bid; the arithmetic happens on this side.
- *
- * Lines are created UNPRICED. A takeoff produces quantities, not prices, and
- * filling in a unit price nobody entered is the guess this codebase refuses
- * everywhere else — the estimator prices them, or pulls a price across from
- * the catalog. They are ordinary line items from the moment they exist.
- *
- * Gated by assertEditableDirectly like every other way of adding a line, so
- * a contracted job still only changes through a change order.
- */
-export async function addTakeoffLineItems(
-  jobId: string,
-  formData: FormData,
-): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
-  const job = await assertJobInCompany(jobId, company.id);
-  assertEditableDirectly(job);
-
-  const surface = String(formData.get("surface") ?? "wall");
-  const num = (key: string): number => {
-    const raw = Number(String(formData.get(key) ?? ""));
-    return Number.isFinite(raw) && raw > 0 ? raw : 0;
-  };
-
-  const options = {
-    wastePercent: Number.isFinite(Number(formData.get("wastePercent")))
-      ? Number(formData.get("wastePercent"))
-      : undefined,
-    spacingFt: num("spacingIn") > 0 ? num("spacingIn") / 12 : undefined,
-  };
-
-  // Openings arrive as parallel arrays from repeated inputs. A pair with
-  // either side missing is dropped rather than treated as zero: a half-typed
-  // opening is an unfinished thought, and deducting it as 0 x height would
-  // silently do nothing while looking like it counted.
-  const widths = formData.getAll("openingWidth").map((v) => Number(v));
-  const heights = formData.getAll("openingHeight").map((v) => Number(v));
-  const openings = widths
-    .map((widthFt, i) => ({ widthFt, heightFt: heights[i] }))
-    .filter((o) => Number.isFinite(o.widthFt) && Number.isFinite(o.heightFt) && o.widthFt > 0 && o.heightFt > 0);
-
-  const label = String(formData.get("label") ?? "").trim();
-  const lines =
-    surface === "ceiling"
-      ? takeoffCeiling({ lengthFt: num("lengthFt"), widthFt: num("widthFt") }, options)
-      : takeoffWall(
-          {
-            lengthFt: num("lengthFt"),
-            heightFt: num("heightFt"),
-            sides: String(formData.get("sides")) === "1" ? 1 : 2,
-            openings,
-          },
-          options,
-        );
-
-  const usable = lines.filter((line) => line.quantity > 0);
-  if (usable.length === 0) {
-    // RETURNED, not thrown. A production build redacts a thrown Server Action
-    // message to a digest, so throwing here would put "an error occurred" on
-    // screen for a person who simply left a field blank. The submit button is
-    // disabled in this state, but that is a client-side attribute and a form
-    // that hides a control is not a rule.
-    return actionFail("Those dimensions produce no quantities — check the measurements.");
-  }
-
-  await prisma.$transaction(
-    usable.map((line) =>
-      prisma.jobLineItem.create({
-        data: {
-          jobId,
-          // The label names WHERE it was measured. Without it a bid with four
-          // takeoffs on it has four lines called "Drywall sheets" and no way
-          // to tell which wall any of them came from.
-          description: label ? `${label} — ${line.label}` : line.label,
-          unit: line.unit,
-          quantity: line.quantity,
-        },
-      }),
-    ),
-  );
-
-  revalidatePath(`/jobs/${jobId}`);
-  return actionOk;
 }

@@ -21,13 +21,21 @@ export const newJobWalkthrough: Walkthrough = {
       anchor: "new-job-client",
       title: "Who it is for",
       body:
-        "Pick the contractor or client from the list. If they are not in it yet, press “+ Add a new GC” and type their name.",
+        "Pick the contractor or client from the list. If they are not in it yet, press “+ Add a new GC” and type their name. With no GCs on your account yet, this box has no list to pick from — it shows “No GCs on your account yet — this one will be the first” instead.",
     },
     {
       anchor: "new-job-create",
-      title: "Create it",
+      title: "Start it",
+      // THIS STEP NAMED A BUTTON THAT DOES NOT EXIST AND A DESTINATION IT
+      // DOES NOT GO TO. It said "Press Create job… you land on the job's
+      // page to add prices". There has never been a button reading "Create
+      // job" on this form, and pressing the one that is there goes to the
+      // second screen of the two-step bid wizard, not to the job page. A
+      // tour that mis-names the control it is pointing at is worse than no
+      // tour: it teaches the reader that the help is guessing, and this
+      // reader has no other way to check.
       body:
-        "Press Create job. It starts as an estimate, and you land on the job's page to add prices.",
+        "Press “Start the job — add the work next”. It starts as an estimate, and the next screen is where you put the work on it. Nothing is lost if you stop there — the job is already in your list.",
     },
   ],
 };

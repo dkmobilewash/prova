@@ -6,7 +6,10 @@ import { deleteDocument } from "@/lib/blob";
 import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
 import { isSignatureLinkDead } from "@/lib/access-tokens";
 import { linkToken } from "@/lib/tokens";
+import { parseNumericInput } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
+import { viewerToday } from "@/lib/viewerToday";
 import { money as formatMoney } from "@/lib/money";
 import { prisma, Prisma } from "@prova/db";
 import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
@@ -14,6 +17,7 @@ import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import { createInvoiceRecord } from "@/lib/billing/create-invoice";
+import { retainageWithheldFor } from "@/lib/billing/retainage-amount";
 import { issueInvoiceNumber } from "@/lib/billing/invoice-number";
 // Shared with recordExecutedSubcontract in lib/actions/jobs.ts, the other
 // writer of this table — issue #280. It was private to this file, which is
@@ -22,7 +26,7 @@ import { issueContractDocumentVersion } from "@/lib/billing/contract-document-ve
 import { createRetainageReleaseRecord } from "@/lib/billing/retainage-release";
 import { readPaymentEntry } from "@/lib/billing/payment-entry";
 import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
-import { payAppEntryError } from "@/lib/pay-application";
+import { payAppEntryError, payAppRowsFromForm, payAppTotal } from "@/lib/pay-application";
 import { recordAskUsage } from "@/lib/ask/usage";
 import { ASK_DEFAULT_MODEL } from "@prova/integrations";
 import {
@@ -35,9 +39,34 @@ import {
   decimalFromForm,
   enumFromForm,
   INVOICE_STATUSES,
-  nullableDecimalFromForm,
+  InputError,
+  nullablePercentFromForm,
+  runAction,
   type ActionResultWith,
 } from "./shared";
+
+/**
+ * The refusals, in the house voice (lib/actions/payrollRegister.ts): the
+ * person reading this has done nothing wrong, so it says what the thing is
+ * and who can change it rather than "forbidden".
+ *
+ * Two of them, because the money on a job is withheld by two different
+ * capabilities and the actions here answer to both. `/jobs/[id]/billing`
+ * and `/jobs/[id]/retainage` withhold their whole tab on MANAGE_BILLING;
+ * `/jobs/[id]/estimate` withholds on VIEW_JOB_COSTS. Each action asserts
+ * the capability of the tab it is posted from — issue #383.
+ *
+ * WHY THE GUARD IS NEEDED AT ALL, since the tabs already withhold: a tab
+ * that renders a sentence instead of a form stops a READER. A Server
+ * Action is a separate HTTP endpoint with a stable id and it answers
+ * whoever posts to it, so the withheld tab was never a boundary for the
+ * WRITER. lib/action-capability-guards.test.ts could not see this until
+ * it learned to read a soft gate, and reported green over all of it.
+ */
+const BILLING_ONLY =
+  "Invoices and payments aren't part of your job function. The account owner sets who sees what, on the Team page.";
+const JOB_COSTS_ONLY =
+  "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 /**
  * Creates a client-signing link for a job's contract. Only while ESTIMATE —
@@ -61,8 +90,41 @@ import {
  */
 const SIGNATURE_REQUEST_EXPIRY_DAYS = 30;
 
+/**
+ * THE CONTRACT-PAPERWORK FOUR, and why they take VIEW_JOB_COSTS rather
+ * than the MANAGE_BILLING everything else in this module took in #392.
+ *
+ * They are not on the Billing tab. All four sit on the OVERVIEW tab
+ * (`app/(app)/jobs/[id]/(tabs)/page.tsx`), inside its two
+ * `{showsJobMoney && (…)}` sections — "Contract signature" and
+ * "Subcontract agreement" — and `showsJobMoney` is
+ * `can(principal, "VIEW_JOB_COSTS")` (`jobCapabilities`, lib/jobs/job-access.ts).
+ * So this is the ordinary derivation after all: the capability the section
+ * reaching the action already withholds on. The Overview tab withholds two
+ * different capabilities section by section, which is why #392 could not
+ * decide these mechanically and deliberately left them — issue #383.
+ *
+ * It is also not a new judgement about these particular sections.
+ * `DocuSignPanel` renders INSIDE both of them, and the three actions
+ * behind it — `sendWithDocuSign`, `refreshDocuSignEnvelope`,
+ * `voidSentEnvelope` in lib/actions/docusign.ts — already assert
+ * VIEW_JOB_COSTS. Three controls in a section asserting it and two not was
+ * the inconsistency; this removes it rather than inventing a rule.
+ *
+ * Three throw and one returns, each matching its own existing contract —
+ * `uploadContractDocument` returns `ActionResult` because it had to become
+ * a client component to upload the file first, and its own comment below
+ * explains why a thrown message would be a production digest by the time
+ * anyone read it.
+ *
+ * They reuse JOB_COSTS_ONLY above rather than getting a sentence of their
+ * own: it is the same capability being withheld for the same reason, and a
+ * second near-identical string is how two messages drift apart.
+ */
 export async function createSignatureRequest(jobId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
 
   if (job.status !== "ESTIMATE") {
@@ -94,7 +156,13 @@ export async function createSignatureRequest(jobId: string) {
  * else in this app.
  */
 export async function revokeSignatureRequest(requestId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // Same "Contract signature" section as createSignatureRequest, so the
+  // same capability. This one kills a live signing link the client may be
+  // holding, so leaving it open while gating the create would have left
+  // the more consequential half of the pair answering anyone.
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  const { company } = context;
 
   const request = await prisma.signatureRequest.findUnique({
     where: { id: requestId },
@@ -303,19 +371,30 @@ export async function revokeClientPortalAccess(contactId: string) {
  * `draft_invoice`. This wrapper keeps the form's contract: it throws its
  * refusal, as it always did, because the job page posts to it as a plain
  * form action with no place to render a returned sentence. */
-export async function createInvoice(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+export async function createInvoice(jobId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  // RETURNS its refusals now. It used to throw every one of them, with a
+  // comment here explaining that the tab "posts to it as a plain form
+  // action with nowhere to render a returned sentence" — true when written,
+  // and the reason an Amount of `12,500` produced the redacted digest
+  // paragraph instead of a sentence about commas. The tab posts through
+  // `<ActionForm>` now, which has somewhere to put one.
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
-  const description = String(formData.get("description") ?? "").trim();
-  const amount = decimalFromForm(formData, "amount");
-  const dueRaw = String(formData.get("dueAt") ?? "").trim();
-  const dueAt = dueRaw ? new Date(dueRaw) : null;
+  return runAction(async () => {
+      const description = String(formData.get("description") ?? "").trim();
+      const amount = decimalFromForm(formData, "amount", { label: "Amount", maxDecimals: 2 });
+      const dueRaw = String(formData.get("dueAt") ?? "").trim();
+      const dueAt = dueRaw ? new Date(dueRaw) : null;
 
-  const result = await createInvoiceRecord(company.id, jobId, { description, amount, dueAt });
-  if (!result.ok) throw new Error(result.error);
+      const result = await createInvoiceRecord(company.id, jobId, { description, amount, dueAt });
+      if (!result.ok) return actionFail(result.error);
 
-  revalidatePath(`/jobs/${jobId}`);
+      revalidatePath(`/jobs/${jobId}`);
+      return actionOk;
+  });
 }
 
 /** Submits a full AIA-style pay application: one row per active line item
@@ -337,24 +416,27 @@ export async function createInvoice(jobId: string, formData: FormData) {
  * throws shows the user an opaque digest while the $140,000 application
  * they were trying to submit is simply not created, with no explanation. */
 export async function submitPayApplication(jobId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
+  const { company } = context;
   const job = await assertJobInCompany(jobId, company.id);
 
   if (job.status === "ESTIMATE") {
     return actionFail("Contract this job before invoicing it");
   }
 
-  const lineItemIds = formData.getAll("lineItemId").map(String);
-  const thisPeriodValues = formData.getAll("thisPeriodBilled").map(String);
-  const materialsStoredValues = formData.getAll("materialsStoredValue").map(String);
-
-  const rows = lineItemIds
-    .map((lineItemId, i) => ({
-      lineItemId,
-      thisPeriodBilled: Number(thisPeriodValues[i] || "0") || 0,
-      materialsStoredValue: Number(materialsStoredValues[i] || "0") || 0,
-    }))
-    .filter((row) => row.thisPeriodBilled !== 0 || row.materialsStoredValue !== 0);
+  // ONE PARSE, in lib/pay-application.ts, shared with the form. #414's
+  // per-cell parser and its refusals moved there whole — a figure the app
+  // cannot read still names its field rather than being quietly zeroed —
+  // so that what a person is shown before they click and what is written
+  // here cannot come from two different readings of the same boxes.
+  //
+  // The `{ min: 0 }` floor that was on This period is gone, deliberately;
+  // `payAppEntryError` below carries the bound that replaced it. See the
+  // note on payAppRowsFromForm.
+  const parsed = payAppRowsFromForm(formData);
+  if (!parsed.ok) return actionFail(parsed.error);
+  const rows = parsed.rows;
 
   if (rows.length === 0) {
     return actionFail("Enter an amount for at least one line item");
@@ -411,9 +493,52 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   const dueRaw = String(formData.get("dueAt") ?? "").trim();
   const dueAt = dueRaw ? new Date(dueRaw) : null;
 
-  const amount = rows.reduce((sum, row) => sum + row.thisPeriodBilled + row.materialsStoredValue, 0);
-  const retainageWithheld =
-    job.retainagePercent != null ? ((amount * Number(job.retainagePercent)) / 100).toFixed(2) : null;
+  const amount = payAppTotal(rows);
+  // The figure that goes on the document, fixed to the two decimal places
+  // the Decimal(12, 2) column stores, BEFORE anything is derived from it.
+  // The retainage then comes from the amount the GC is actually billed
+  // rather than from the running float it was summed out of, so the two
+  // numbers on the page cannot disagree about what was billed.
+  const amountValue = amount.toFixed(2);
+
+  // THE DOCUMENT-LEVEL GUARD, and the thing this action did not have.
+  // `payAppEntryError` above is per-ROW, and every row of a certificate can
+  // be defensible while what they add up to is not. Store $5,000 one
+  // period; the next period enter the −$5,000 release and omit the matching
+  // positive — half of the two-part entry the form's own instruction
+  // describes — and no row is refusable: the line's stored balance lands at
+  // exactly $0 and nothing exceeds its scheduled value. The invoice came out
+  // at −$5,000.00 with a −$500.00 retainage snapshot beside it, the G702
+  // printed "Current payment due −$4,500.00", and the billing card said
+  // "Paid in full" in green. Reproduced end to end in
+  // lib/pay-application-credit.test.ts.
+  //
+  // WHY THIS ASKS INSTEAD OF REFUSING. A net-negative application is a
+  // CREDIT, and it is the only in-app way to take back an over-bill on an
+  // invoice a GC already has: there is no void, edit or delete invoice
+  // action anywhere in this file, on purpose, because an invoice is an
+  // evidence record that closes rather than deletes.
+  // lib/pay-application.test.ts argues exactly that, and it is right. The
+  // mistake and the correction are INDISTINGUISHABLE IN THE DATA — both are
+  // "completed to date went down" — so what is missing is not a rule but
+  // the person's intent, and the only place to get that is from the person.
+  // The form shows the total and asks as they type; this refuses anything
+  // that arrives without the answer.
+  if (Number(amountValue) < 0 && String(formData.get("confirmCredit") ?? "") !== "on") {
+    return actionFail(
+      `This application comes to ${formatMoney(Number(amountValue))} — that is a credit, not a bill: it asks ` +
+        `the GC for nothing and states that ${formatMoney(-Number(amountValue))} is owed back. If you were ` +
+        `moving installed material out of stored, enter the same amount as a POSITIVE under This period on ` +
+        `that line; that is the other half of the entry. If you did mean a credit, confirm it and submit again.`,
+    );
+  }
+
+  // ONE formula, shared with the lump-sum path — see
+  // lib/billing/retainage-amount.ts. This line used to be
+  // `((amount * Number(job.retainagePercent)) / 100).toFixed(2)`, a second
+  // float expression that rounded $1,000.35 at 10% to $100.03 while the
+  // lump-sum path rounded the same bill to $100.04.
+  const retainageWithheld = retainageWithheldFor(amountValue, job.retainagePercent);
 
   // A resubmitted click bills the GC again for the same period at a new
   // invoice number, and retainageWithheld is snapshotted at creation and
@@ -439,7 +564,7 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   if (
     lastInvoice &&
     Date.now() - lastInvoice.issuedAt.getTime() < 10_000 &&
-    Number(lastInvoice.amount).toFixed(2) === amount.toFixed(2) &&
+    Number(lastInvoice.amount).toFixed(2) === amountValue &&
     lastInvoice.lineItems.length === rows.length &&
     rows.every((row) =>
       lastInvoice.lineItems.some(
@@ -462,7 +587,7 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
         jobId,
         number: await issueInvoiceNumber(tx, jobId),
         description: description || null,
-        amount: amount.toFixed(2),
+        amount: amountValue,
         dueAt,
         retainageWithheld,
         lineItems: {
@@ -482,20 +607,39 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
 
 /** Sets this job's retainage rate and expected substantial-completion
  * date. Only affects future invoices -- see Invoice.retainageWithheld. */
-export async function updateJobRetainageTerms(jobId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+export async function updateJobRetainageTerms(jobId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
-  const retainagePercent = nullableDecimalFromForm(formData, "retainagePercent");
-  const completionRaw = String(formData.get("substantialCompletionDate") ?? "").trim();
-  const substantialCompletionDate = completionRaw ? new Date(completionRaw) : null;
+  return runAction(async () => {
+      // A PERCENT, 0 TO 100 — never a fraction of one. This field had no
+      // type, no min, no max and no step, so `0.10` typed by somebody meaning
+      // ten percent was accepted in silence and stored as a tenth of one
+      // percent: on a $105,000 contract that is $105 withheld where $10,500
+      // was intended, on a document the GC receives. Confirmed in a browser
+      // 2026-09-21, reloaded, and still 0.1. The bound is only half the fix —
+      // 0.10 is inside it. The other half is on the screen: the input wears a
+      // `%` that does not vanish when you type, and prints what the rate
+      // comes to in money on THIS job's contract value while you type it.
+      const retainagePercent = nullablePercentFromForm(formData, "retainagePercent", {
+        label: "Retainage",
+      });
+      const completionRaw = String(formData.get("substantialCompletionDate") ?? "").trim();
+      const substantialCompletionDate = completionRaw ? new Date(completionRaw) : null;
+      if (substantialCompletionDate && Number.isNaN(substantialCompletionDate.getTime())) {
+        throw new InputError("That substantial completion date isn't a real date.");
+      }
 
-  await prisma.job.update({
-    where: { id: jobId },
-    data: { retainagePercent, substantialCompletionDate },
+      await prisma.job.update({
+        where: { id: jobId },
+        data: { retainagePercent, substantialCompletionDate },
+      });
+
+      revalidatePath(`/jobs/${jobId}`);
+      return actionOk;
   });
-
-  revalidatePath(`/jobs/${jobId}`);
 }
 
 async function assertInvoiceInCompany(invoiceId: string, companyId: string) {
@@ -510,7 +654,9 @@ async function assertInvoiceInCompany(invoiceId: string, companyId: string) {
  * schema.prisma for why this is a plain field rather than derived from
  * payment totals. */
 export async function updateInvoiceStatus(jobId: string, invoiceId: string, formData: FormData) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) throw new Error(BILLING_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
   const invoice = await assertInvoiceInCompany(invoiceId, company.id);
   if (invoice.jobId !== jobId) {
@@ -541,14 +687,28 @@ export async function updateInvoiceStatus(jobId: string, invoiceId: string, form
  * where the repo says otherwise. Cash actually received is derived from
  * `amount - feeAmount` at read time and never stored. */
 export async function logPayment(jobId: string, invoiceId: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // The Ask command `log_payment` calls straight into this action and
+  // already declares MANAGE_BILLING (lib/ask/commands/billing.ts), so this
+  // makes the two agree rather than adding a rule to one of them.
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
   const invoice = await assertInvoiceInCompany(invoiceId, company.id);
   if (invoice.jobId !== jobId) {
     throw new Error("Invoice not found on this job");
   }
 
-  const amount = decimalFromForm(formData, "amount");
+  // Parsed to a RETURNED failure rather than through `decimalFromForm`'s
+  // throw: this action promises `ActionResult` and has no `runAction`
+  // boundary, so a thrown InputError would sail past the contract and be
+  // redacted — the exact shape `ownerRefusalCensus.test.ts` exists for.
+  const parsedAmount = parseNumericInput(formData.get("amount"), {
+    label: "Amount applied",
+    maxDecimals: 2,
+  });
+  if (!parsedAmount.ok) return actionFail(parsedAmount.error);
+  const amount = parsedAmount.value;
   const method = String(formData.get("method") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
 
@@ -640,7 +800,9 @@ export async function logPayment(jobId: string, invoiceId: string, formData: For
 
 /** Removes a mistaken payment entry. */
 export async function deletePayment(jobId: string, paymentId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) throw new Error(BILLING_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   const payment = await prisma.payment.findUnique({
@@ -667,27 +829,41 @@ export async function deletePayment(jobId: string, paymentId: string) {
  * returned sentence — and it sets NEITHER of the core's two options, so
  * the form still accepts a release above the balance held (the core says
  * why that is deliberate) and never compares against a balance it showed. */
-export async function createRetainageRelease(jobId: string, formData: FormData) {
-  const { company, ...user } = await requireCompanyContext();
+export async function createRetainageRelease(jobId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
+  const { company, ...user } = context;
 
-  const amount = decimalFromForm(formData, "amount");
-  const releasedRaw = String(formData.get("releasedAt") ?? "").trim();
-  const releasedAt = releasedRaw ? new Date(releasedRaw) : new Date();
-  const note = String(formData.get("note") ?? "").trim();
+  return runAction(async () => {
+    const amount = decimalFromForm(formData, "amount", { label: "Amount released", maxDecimals: 2 });
+    const releasedRaw = String(formData.get("releasedAt") ?? "").trim();
+    // Blank falls back to TODAY on the viewer's calendar at UTC midnight,
+    // never `new Date()` — that stored the raw instant of the click, which
+    // the job page then rendered through UTC so a release logged 5pm PT
+    // printed as the NEXT day, on a date that feeds closeout and lien
+    // timing conversations. Entered, not stamped.
+    const releasedAt = releasedRaw
+      ? new Date(releasedRaw)
+      : new Date(`${await viewerToday()}T00:00:00.000Z`);
+    const note = String(formData.get("note") ?? "").trim();
 
-  const result = await createRetainageReleaseRecord(company.id, jobId, {
-    amount,
-    releasedAt,
-    note: note || null,
-    createdByUserId: user.id,
+    const result = await createRetainageReleaseRecord(company.id, jobId, {
+      amount,
+      releasedAt,
+      note: note || null,
+      createdByUserId: user.id,
+    });
+    if (!result.ok) return actionFail(result.error);
+
+    revalidatePath(`/jobs/${jobId}`);
+    return actionOk;
   });
-  if (!result.ok) throw new Error(result.error);
-
-  revalidatePath(`/jobs/${jobId}`);
 }
 
 export async function deleteRetainageRelease(jobId: string, releaseId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) throw new Error(BILLING_ONLY);
+  const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
   const release = await prisma.retainageRelease.findUnique({ where: { id: releaseId } });
@@ -776,7 +952,15 @@ export async function testQuickBooksConnection(): Promise<QuickBooksCompanyInfo>
 export async function generateJobWipNarrative(
   jobId: string,
 ): Promise<ActionResultWith<string>> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // VIEW_JOB_COSTS, not MANAGE_BILLING: this button lives on the Estimate
+  // tab, which withholds on VIEW_JOB_COSTS, and the narrative it writes IS
+  // the job's cost and margin position in prose.
+  // Written out rather than through `actionFail`, whose return type is
+  // `ActionResult` and does not narrow to this action's
+  // `ActionResultWith<string>`.
+  if (!can(context, "VIEW_JOB_COSTS")) return { ok: false as const, error: JOB_COSTS_ONLY };
+  const { company, ...user } = context;
   const job = await assertJobInCompany(jobId, company.id);
 
   const lineItems = await prisma.jobLineItem.findMany({
@@ -898,7 +1082,12 @@ export async function uploadContractDocument(
   jobId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // Returned, not thrown — this action's own contract, for the reason the
+  // doc comment above gives. The "Subcontract agreement" section it posts
+  // from withholds on VIEW_JOB_COSTS.
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company, ...user } = context;
   await assertJobInCompany(jobId, company.id);
 
   // Re-checked rather than trusted: a Server Action is an endpoint anyone
@@ -949,6 +1138,15 @@ export async function uploadContractDocument(
  */
 export async function deleteContractDocument(contractDocumentId: string) {
   const context = await requireCompanyContext();
+  // VIEW_JOB_COSTS BEFORE the owner check, and the order is the same
+  // judgement #392 made on the QuickBooks pushes: the owner check already
+  // makes this unreachable for every non-owner, so this changes no
+  // behaviour today. It is here because an owner check stops standing in
+  // for a capability the moment the role model gains a third value, and
+  // because the section this is posted from withholds on exactly this.
+  // Of the four, this is the one with nothing to undo it — it deletes the
+  // blob as well as the row.
+  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
   assertOwner(context);
   const { company } = context;
 

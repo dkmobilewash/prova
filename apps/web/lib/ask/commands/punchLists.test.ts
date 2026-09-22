@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 const fake = vi.hoisted(() => ({
   prisma: {
-    job: { findMany: vi.fn(), findFirst: vi.fn() },
+    job: { findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
     punchListItem: { findMany: vi.fn(), create: vi.fn() },
     $transaction: vi.fn(),
   },
@@ -33,6 +33,10 @@ const THREE = "Ceiling grid out of level, east corridor\nMissing corner bead at 
 beforeEach(() => {
   fake.prisma.job.findMany.mockReset();
   fake.prisma.job.findFirst.mockReset();
+  fake.prisma.job.count.mockReset();
+  // Jobs exist by default, so the no-match test keeps meaning "the search
+  // missed" — findJob's no-jobs-at-all branch has its own test file.
+  fake.prisma.job.count.mockResolvedValue(1);
   fake.prisma.punchListItem.findMany.mockReset();
   fake.prisma.punchListItem.create.mockReset();
   fake.prisma.$transaction.mockReset();
@@ -169,7 +173,7 @@ describe("add_punch_items", () => {
     ]);
     // The open-items query is this job's open rows only.
     expect(fake.prisma.punchListItem.findMany).toHaveBeenCalledWith({
-      where: { companyId: "co-1", jobId: "job-1", isDone: false },
+      where: { companyId: "co-1", jobId: "job-1", status: "OPEN" },
       select: { description: true },
     });
   });

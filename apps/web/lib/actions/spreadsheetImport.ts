@@ -12,7 +12,9 @@ import {
   planClientImport,
   planCrewImport,
   planJobImport,
+  planPhaseCodeImport,
 } from "@/lib/spreadsheet-import";
+import { looksLikeVcf, planVcfImport, vcfWriteCount } from "@/lib/vcf-import";
 import { IMPORT_COLLIDED, IMPORT_TX_OPTIONS, isWriteConflict } from "@/lib/import-shared";
 import { isUniqueConstraintError, ownerRefusal, type ActionResultWith } from "./shared";
 
@@ -69,7 +71,7 @@ function fail(error: string): Extract<ImportResult, { ok: false }> {
 
 function textFrom(formData: FormData): string | ImportResult {
   const text = String(formData.get("csv") ?? "");
-  if (!text.trim()) return fail("Paste your spreadsheet, or choose a CSV file, before confirming.");
+  if (!text.trim()) return fail("Paste your spreadsheet, or choose a file, before confirming.");
   if (importTooLarge(text)) return fail(TOO_LARGE_MESSAGE);
   return text;
 }
@@ -118,6 +120,135 @@ export async function importClients(formData: FormData): Promise<ImportResult> {
         alreadyThere: plan.existing.length,
         skipped: plan.problems.length,
         message: sentence(plan.create.length, "client", "clients", plan.existing.length, plan.problems.length),
+      };
+    }, TX_OPTIONS);
+
+    revalidatePath("/settings/import");
+    revalidatePath("/contacts");
+    return { ok: true, value: summary };
+  } catch (err) {
+    if (isWriteConflict(err)) return fail(COLLIDED);
+    throw err;
+  }
+}
+
+/**
+ * A phone's contacts export (.vcf) -> Contact + ContactPerson.
+ *
+ * The same machinery as importClients — owner + MANAGE_JOBS, raw text
+ * re-planned inside a Serializable transaction against a fresh read — with
+ * the two-level shape a vCard actually holds: a card with a company
+ * creates or matches that company's Contact and attaches the person to it
+ * as a ContactPerson (crm.prisma: the GC is the Contact, the people there
+ * are ContactPerson rows); a card without one becomes a Contact named
+ * after the person, exactly as the clients spreadsheet would. See
+ * lib/vcf-import.ts for the mapping and its refusals.
+ */
+export async function importVcfContacts(formData: FormData): Promise<ImportResult> {
+  const context = await requireCompanyContext();
+  const refusal = ownerRefusal(context, "Only the account owner can import contacts.");
+  if (refusal) return refusal;
+  if (!can(context, "MANAGE_JOBS")) {
+    return fail("Adding clients isn't part of your job function. Ask the account owner.");
+  }
+  const text = textFrom(formData);
+  if (typeof text !== "string") return text;
+  if (!looksLikeVcf(text)) {
+    return fail("That doesn't look like a contacts (.vcf) export. Choose the file your phone exported, or paste a spreadsheet instead.");
+  }
+  const companyId = context.company.id;
+
+  try {
+    const summary = await prisma.$transaction(async (tx) => {
+      // Oldest first, same reason as importJobs: where two contacts share a
+      // name, people attach to the original.
+      const contacts = await tx.contact.findMany({
+        where: { companyId },
+        select: { id: true, name: true },
+        orderBy: { createdAt: "asc" },
+      });
+      const people = await tx.contactPerson.findMany({
+        where: { companyId },
+        select: { name: true, contact: { select: { name: true } } },
+      });
+      const plan = planVcfImport(
+        text,
+        contacts.map((contact) => contact.name),
+        people.map((person) => ({ contactName: person.contact.name, name: person.name })),
+      );
+
+      const contactIdByName = new Map<string, string>();
+      for (const contact of contacts) {
+        const key = nameKey(contact.name);
+        if (!contactIdByName.has(key)) contactIdByName.set(key, contact.id);
+      }
+
+      if (plan.createContacts.length > 0) {
+        const created = await tx.contact.createManyAndReturn({
+          data: plan.createContacts.map((row) => ({
+            companyId,
+            name: row.name,
+            email: row.email,
+            phone: row.phone,
+            address: row.address,
+            // No accountType: a phone export doesn't say GC or vendor, and
+            // guessing would be wrong more often than blank. Set on
+            // /contacts later.
+          })),
+          select: { id: true, name: true },
+        });
+        for (const contact of created) contactIdByName.set(nameKey(contact.name), contact.id);
+      }
+
+      const peopleRows = [
+        ...plan.createContacts.flatMap((contact) =>
+          contact.people.map((person) => ({ contactName: contact.name, person })),
+        ),
+        ...plan.attachPeople.map((person) => ({ contactName: person.contactName, person })),
+      ];
+      if (peopleRows.length > 0) {
+        await tx.contactPerson.createMany({
+          data: peopleRows.map(({ contactName, person }) => {
+            const contactId = contactIdByName.get(nameKey(contactName));
+            if (!contactId) throw new Error(`No contact resolved for card ${person.card}`);
+            return {
+              companyId,
+              contactId,
+              name: person.name,
+              title: person.title,
+              email: person.email,
+              phone: person.phone,
+            };
+          }),
+        });
+      }
+
+      const createdContacts = plan.createContacts.length;
+      const createdPeople = peopleRows.length;
+      const parts = [
+        createdContacts === 0 && createdPeople === 0
+          ? "Nothing new to add — everyone in that file is already here."
+          : `Added ${createdContacts} ${createdContacts === 1 ? "contact" : "contacts"}${
+              createdPeople > 0
+                ? ` and ${createdPeople} ${createdPeople === 1 ? "person" : "people"} at them`
+                : ""
+            }.`,
+      ];
+      if (plan.existing.length > 0) {
+        parts.push(
+          `${plan.existing.length} ${plan.existing.length === 1 ? "was" : "were"} already here and left alone.`,
+        );
+      }
+      if (plan.problems.length > 0) {
+        parts.push(
+          `${plan.problems.length} ${plan.problems.length === 1 ? "card was" : "cards were"} skipped — see the problems listed.`,
+        );
+      }
+      return {
+        created: vcfWriteCount(plan),
+        alreadyThere: plan.existing.length,
+        skipped: plan.problems.length,
+        message: parts.join(" "),
       };
     }, TX_OPTIONS);
 
@@ -219,11 +350,24 @@ export async function importJobs(formData: FormData): Promise<ImportResult> {
   }
 }
 
-/** Crew -> CrewMember. */
+/** Crew -> CrewMember.
+ *
+ * THE ONLY IMPORT ON THIS PAGE THAT IS NOT OWNER-ONLY, apart from the
+ * payroll register, and for the same reason the register is not. Certified
+ * payroll is the office manager's weekly chore; she holds
+ * PAYROLL_COMPLIANCE, which carries MANAGE_FIELD and MANAGE_COMPLIANCE and
+ * not OWNER. Gating this to the owner meant she could import the payroll
+ * REGISTER but could not create the crew members its rows have to match —
+ * the person whose job this is could not do it, and had to wait for
+ * somebody whose job it is not.
+ *
+ * Adding a person to the crew grants nobody a login and no access to
+ * anything; `archiveCrewMember` keeps the owner gate because it is the
+ * one-way door. The argument in full is at the top of
+ * lib/actions/crewMembers.ts, next to the hand-entry path this now matches.
+ */
 export async function importCrew(formData: FormData): Promise<ImportResult> {
   const context = await requireCompanyContext();
-  const refusal = ownerRefusal(context, "Only the account owner can import crew.");
-  if (refusal) return refusal;
   if (!can(context, "MANAGE_FIELD")) {
     return fail("Adding crew isn't part of your job function. Ask the account owner.");
   }
@@ -265,14 +409,73 @@ export async function importCrew(formData: FormData): Promise<ImportResult> {
       };
     }, TX_OPTIONS);
 
+    // `/team` FIRST, because that is where this import is now offered — the
+    // crew list and the "already here" preview both sit on that page, and an
+    // import that left them stale would read as an import that did nothing.
+    revalidatePath("/team");
     revalidatePath("/settings/import");
     revalidatePath("/schedule");
+    revalidatePath("/union-compliance");
     return { ok: true, value: summary };
   } catch (err) {
     if (isWriteConflict(err)) return fail(COLLIDED);
     if (isUniqueConstraintError(err)) {
       return fail(
         "One of those employee numbers was given to someone else on your crew list while this was saving, so nothing was saved. Check the preview and confirm again.",
+      );
+    }
+    throw err;
+  }
+}
+
+/** Cost codes -> PhaseCode. Same guard shape as the three above; the
+ * capability is MANAGE_COMPLIANCE, the one that already owns creating a
+ * phase code by hand on /phase-codes (lib/actions/phase-codes.ts). */
+export async function importPhaseCodes(formData: FormData): Promise<ImportResult> {
+  const context = await requireCompanyContext();
+  const refusal = ownerRefusal(context, "Only the account owner can import cost codes.");
+  if (refusal) return refusal;
+  if (!can(context, "MANAGE_COMPLIANCE")) {
+    return fail("Adding cost codes isn't part of your job function. Ask the account owner.");
+  }
+  const text = textFrom(formData);
+  if (typeof text !== "string") return text;
+  const companyId = context.company.id;
+
+  try {
+    const summary = await prisma.$transaction(async (tx) => {
+      const existing = await tx.phaseCode.findMany({ where: { companyId }, select: { code: true } });
+      const plan = planPhaseCodeImport(
+        text,
+        existing.map((row) => row.code),
+      );
+      if (plan.create.length > 0) {
+        await tx.phaseCode.createMany({
+          data: plan.create.map((row) => ({
+            companyId,
+            code: row.code,
+            name: row.name,
+            unit: row.unit,
+          })),
+        });
+      }
+      return {
+        created: plan.create.length,
+        alreadyThere: plan.existing.length,
+        skipped: plan.problems.length,
+        message: sentence(plan.create.length, "cost code", "cost codes", plan.existing.length, plan.problems.length),
+      };
+    }, TX_OPTIONS);
+
+    revalidatePath("/settings/import");
+    revalidatePath("/phase-codes");
+    revalidatePath("/settings");
+    return { ok: true, value: summary };
+  } catch (err) {
+    if (isWriteConflict(err)) return fail(COLLIDED);
+    if (isUniqueConstraintError(err)) {
+      return fail(
+        "One of those codes was added by someone else on your account while this was saving, so nothing was saved. Check the preview and confirm again.",
       );
     }
     throw err;

@@ -51,5 +51,21 @@ export const submittalsWalkthrough: Walkthrough = {
       body:
         "C Stream only reads these. Press Open in Procore to answer or change one there.",
     },
+    {
+      anchor: "acc-feed",
+      title: "The GC's submittals from Autodesk Construction Cloud",
+      body:
+        "If your GC runs the job in ACC, their submittals show here once the owner links the project. They are the GC's records, not part of your log.",
+    },
+    {
+      anchor: "acc-refresh",
+      title: "Get the latest from ACC",
+      body: "This refreshes by itself when the page opens. Press Refresh from ACC to read it again now.",
+    },
+    {
+      anchor: "acc-feed-list",
+      title: "Open it in ACC",
+      body: "C Stream only reads these. Press Open in ACC to answer or change one there.",
+    },
   ],
 };

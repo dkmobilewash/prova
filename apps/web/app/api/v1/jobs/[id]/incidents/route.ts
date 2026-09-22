@@ -64,6 +64,13 @@ export async function GET(
 ) {
   const context = await requireApiContext();
   if (!context) return jsonError("Not authenticated", 401);
+  // READS are guarded too, and they were not. Every one of these routes
+  // asserted the capability on its POST and left its GET open, so a
+  // bearer token belonging to somebody whose job function excludes field
+  // records could still read a job's — which makes the phone's role shell
+  // cosmetic. Found by the per-handler census in lib/mobile-api-guards.test.ts,
+  // after the same census, written per FILE, reported all seven as guarded.
+  if (!can(context, "MANAGE_FIELD")) return jsonError(FIELD_ONLY, 403);
 
   const { id } = await params;
   const job = await prisma.job.findUnique({ where: { id }, select: { id: true, companyId: true } });

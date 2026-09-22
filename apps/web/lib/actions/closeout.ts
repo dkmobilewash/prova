@@ -1,14 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseNumericInput } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import {
+  InputError,
   actionFail as fail,
   actionOk as ok,
   assertOwner,
   isUniqueConstraintError,
+  runAction,
   type ActionResult,
 } from "./shared";
 
@@ -34,7 +37,12 @@ const JOBS_ONLY =
  * helpers live in `./shared`; `lib/actions/submittals.ts` is the reference.
  */
 
-class InputError extends Error {}
+// `InputError` and `runAction` are imported from ./shared rather than
+// declared here. Two classes with the same name are not the same class:
+// `instanceof` is false between them, so a refusal thrown by a shared
+// parser walked straight past a local boundary and reached production as a
+// redacted digest. That is what #407 found on /welcome, and this module
+// held the fifteenth copy of the class it found there.
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -83,14 +91,6 @@ function isoDay(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
-}
 
 async function assertJob(jobId: string, companyId: string) {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
@@ -240,10 +240,9 @@ export async function setWarrantyPeriod(formData: FormData): Promise<ActionResul
     const startsOn = requiredDate(formData, "startsOn", "Start date");
 
     const monthsRaw = required(formData, "months", "Length in months");
-    const months = Number(monthsRaw);
-    if (!Number.isInteger(months) || months < 1) {
-      return fail("Length has to be a whole number of months, at least 1");
-    }
+    const parsed = parseNumericInput(monthsRaw, { label: "Length", integer: true, min: 1 });
+    if (!parsed.ok) return fail(parsed.error);
+    const months = parsed.n;
     // 50 years. Not a real warranty, and a typo like 120 for 12 would
     // otherwise sit there quietly claiming cover we never gave.
     if (months > 600) {

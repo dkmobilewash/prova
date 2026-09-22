@@ -403,12 +403,13 @@ describe("read-tool capabilities match the pages they cite", () => {
     // money branch, same as change orders.
     estimate_detail: "VIEW_JOB_COSTS",
     document_intake: ROUTE_CAPABILITY["/intake"],
-    // NOT /team's gate, though /team is on the open list and this tool does
-    // read it. It ALSO summarises /certifications, which is MANAGE_FIELD,
-    // and a tool takes the gate of the strictest page it reads from. It was
-    // null until 2026-09-19; #310's citation guard found the disagreement
-    // and Diego chose to gate the tool rather than drop the citation.
-    team_roster: ROUTE_CAPABILITY["/certifications"],
+    // MANAGE_FIELD, matching /certifications — the tool's answer is mostly
+    // that page (certifications on file and what is missing on them), not
+    // the open /team roster it was first reasoned from. tools.test.ts
+    // carried this as "the one worth fixing" while it was null; fixed
+    // 2026-09-19, and ESTIMATOR/ACCOUNTING no longer get a certification
+    // summary their own page would refuse.
+    team_roster: "MANAGE_FIELD",
     // Dispatch slips are union paperwork and render on /union-compliance.
     dispatch_slips: ROUTE_CAPABILITY["/union-compliance"],
     // The EMR is recorded and shown on /compliance, beside the certificates
@@ -428,6 +429,11 @@ describe("read-tool capabilities match the pages they cite", () => {
     // /dashboard is open; the checklist's steps are filtered per person by
     // lib/getting-started.ts, the card's own function.
     getting_started: null,
+    // No one page: WHICH walkthroughs this tool may name is filtered per
+    // person inside the handler (reachableWalkthroughs), against each
+    // matched page's own ROUTE_CAPABILITY — the same rule this file states
+    // for every other row, applied per result instead of once for the tool.
+    app_help: null,
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {

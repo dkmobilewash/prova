@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Dimensions, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { colors, typography } from "@/lib/theme";
+import { useKeyboardHeight } from "@/lib/use-keyboard-height";
 
 /**
  * A bottom sheet for the create/edit forms. The primary action sits in the
@@ -11,6 +12,13 @@ import { colors, typography } from "@/lib/theme";
  * the fields scroll between a fixed title and a fixed primary button. A long
  * form (Log time grew a craft note and chips) used to push its own title up
  * behind the status bar with no way to reach it.
+ *
+ * IT ALSO SITS ON TOP OF THE KEYBOARD RATHER THAN UNDER IT. Reported from
+ * the site on 2026-09-20: typing into "Add item" on the punch list, the
+ * keyboard covered the fields and you could not see what you were writing.
+ * The sheet is pinned to the bottom of the screen, so it rides up by the
+ * keyboard's height and its cap shrinks by the same amount — otherwise a
+ * tall form would simply move the problem to the top of the screen.
  */
 export function Sheet({
   visible,
@@ -30,10 +38,16 @@ export function Sheet({
   /** Greys the primary button out, e.g. until a required choice is made. */
   primaryDisabled?: boolean;
 }) {
+  const keyboard = useKeyboardHeight();
+  // 88% of what is left above the keyboard, not of the whole screen: the
+  // cap is there to leave the status bar and a strip of backdrop reachable,
+  // and both of those shrink when the keyboard is up.
+  const available = Dimensions.get("window").height - keyboard;
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={styles.sheet}>
+      <View style={[styles.sheet, { bottom: keyboard, maxHeight: Math.round(available * 0.88) }]}>
         <View style={styles.grabber} />
         <Text style={styles.title}>{title}</Text>
         <ScrollView
@@ -63,9 +77,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: 0,
-    // Leaves the status bar and a strip of backdrop to tap-to-dismiss.
-    maxHeight: "88%",
+    // `bottom` and `maxHeight` are set inline from the keyboard's height —
+    // see the note above the component.
     backgroundColor: colors.canvas,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
+import { formatHours } from "@/lib/render-hours";
 import { formatCoveragePercent } from "@/lib/wip";
 import { loadPhaseCodeRollup } from "@/lib/phase-code-rollup-query";
 import type { PhaseCodeRollupRow } from "@/lib/phase-code-rollup";
@@ -123,7 +124,22 @@ function Row({ row, uncoded = false }: { row: PhaseCodeRollupRow; uncoded?: bool
           </span>
         )}
       </td>
-      <td className={`${numeric} text-ink`}>{money(row.actualCost)}</td>
+      <td className={`${numeric} text-ink`}>
+        {money(row.actualCost)}
+        {/* #287: actual cost now includes the crew's burdened time. Hours
+            that no wage schedule could price added NOTHING to the figure on
+            the left, and "we had no rate for it" and "it cost nothing" read
+            identically in a variance — which on a phase flagged tracksLabor
+            is the likeliest misreading on this page. */}
+        {row.unpricedLaborHours > 0 && (
+          <span
+            className="ml-1 text-xs text-tag-amber-ink"
+            title={`${formatHours(row.unpricedLaborHours)} hour${row.unpricedLaborHours === 1 ? "" : "s"} logged against this phase have no wage rate behind them, so this total is lower than what the work really cost. Add a fringe rate schedule for that craft and those dates.`}
+          >
+            +{formatHours(row.unpricedLaborHours)} hrs unpriced
+          </span>
+        )}
+      </td>
       <td className={`${numeric} ${varianceClass(row.variance)}`}>{varianceLabel(row.variance)}</td>
     </tr>
   );
@@ -227,6 +243,17 @@ export default async function PhaseCodesPage() {
               <p className="mt-1 text-sm text-ink-body">
                 Every line item on every job carries a phase code, so the totals below are the whole
                 picture.
+              </p>
+            )}
+            {/* Coding is one question; whether the actual column is complete
+                is another, and coverage above cannot answer it. */}
+            {rollup.totals.unpricedLaborHours > 0 && (
+              <p className="mt-1 text-sm text-tag-amber-ink">
+                {formatHours(rollup.totals.unpricedLaborHours)} logged{" "}
+                {rollup.totals.unpricedLaborHours === 1 ? "hour has" : "hours have"} no wage rate
+                behind {rollup.totals.unpricedLaborHours === 1 ? "it" : "them"}, so every actual
+                and variance below is lower than what the work really cost. Add a fringe rate
+                schedule covering the craft and dates those hours were worked.
               </p>
             )}
           </div>

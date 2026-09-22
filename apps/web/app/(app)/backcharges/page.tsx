@@ -8,6 +8,7 @@ import { BackchargeRow } from "@/components/BackchargeRow";
 import { isResponseOverdue, summarizeBackcharges } from "@/lib/backcharges";
 import { money } from "@/lib/money";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as the RFI log and
  * the safety log. Rendering locally shows the previous day to anyone west
@@ -27,7 +28,7 @@ export default async function BackchargesPage({
   const { job: jobFilter, show } = await searchParams;
   const showResolved = show === "all";
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await viewerToday();
 
   // status + contact, not just the name: issue #65 — fifteen jobs, seven of
   // them called "Smith kitchen remodel", and this picker showed seven
@@ -157,8 +158,9 @@ export default async function BackchargesPage({
 
       <p className="mb-4 text-xs text-ink-muted">
         These figures are a log of what the GC has charged us, not a deduction from any pay
-        application — nothing here changes an invoice, a contract value or a WIP number. Netting an
-        accepted backcharge against billing is real work that hasn&apos;t been built.
+        application — nothing here changes an invoice, a contract value or a WIP number. An
+        accepted backcharge is not netted against billing automatically; if the GC deducts it,
+        adjust the invoice yourself.
       </p>
 
       {jobs.length > 0 && (

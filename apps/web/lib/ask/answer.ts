@@ -31,6 +31,8 @@ import {
   type PreviewLine,
 } from "./commands";
 import { pageContextSentence } from "./page-context";
+import { businessScopeContext } from "./business-scope-context";
+import { UNANSWERED_SCOPE } from "@/lib/businessScope";
 import { can } from "@/lib/permissions";
 import { loadAskAttachment, type AskAttachmentRef } from "./attachment";
 import type { WebSuggestion } from "./webSuggestions";
@@ -124,6 +126,14 @@ This does not relax the paragraph above and must never be used to. Naming a capa
 
 Known gaps, so you recognise them:
 ${KNOWN_GAPS.map((gap) => `- ${gap.topic}: ${gap.why}`).join("\n")}
+
+WEB SEARCH
+
+You also have web search. It is for PUBLIC information that is not and never will be in this company's own data — a code requirement, a form number, a government office's phone number, a general fact about the trade or a term you do not recognise. It is never a substitute for this company's own records: a question this app tracks — a job, an invoice, a certificate, a deadline, anything a tool above could answer — is answered from a tool, never from the web, even if a web answer would be faster or the tool comes back empty. A search finding nothing is "we don't have that" for that question, not a reason to guess at a general answer instead.
+
+NEVER put anything about this company into a search: no company name, no job name, no GC, no dollar figure, no person's name, nothing read from a tool result. A search query is built ONLY from words the person themselves used about something outside this company — the trade fact, the form, the regulation. If answering well would require searching for something about THIS company, say what you cannot look up rather than searching for a piece of it.
+
+A person cannot verify a web result the way they can verify their own invoice, so say where it came from and that it needs checking: "found on the web — check before you rely on it," or your own words to that effect, every time you use one. Never state a web result as flatly as a fact from this company's own data, and never let a web search override a number a tool already gave you — the tool is always right about this company.
 
 WHICH TOOLS TO CALL
 
@@ -606,6 +616,12 @@ export async function* streamAnswer(
   const perRequestContext =
     [
       accessContext(ctx.principal),
+      // What kind of contractor this is — the three onboarding answers, so
+      // the wording fits the business rather than the average of every
+      // business. Nothing at all for a company that skipped them, which is
+      // most of them. Costs no database read: the answers came off the
+      // Company row the session had already loaded.
+      businessScopeContext(ctx.businessScope ?? UNANSWERED_SCOPE),
       pageContextSentence(pageJob),
       priorTurns.length > 0 ? PRIOR_TURNS_RULE : null,
       attachment ? ATTACHMENT_RULE : null,
@@ -620,6 +636,12 @@ export async function* streamAnswer(
     question,
     attachment,
     tools: offered,
+    // Offered to EVERY question, gated by the prompt above rather than by
+    // capability — public-web knowledge is not company data, so there is
+    // no ROUTE_CAPABILITY question to ask of it. Off in every test and eval
+    // that does not explicitly turn it on (ask.ts's own default), so this
+    // is the one place production actually spends a search.
+    webSearch: true,
     // ctx is closed over here and is not a parameter of any tool schema,
     // so there is no way for the model to ask about anyone else.
     execute: async (name, rawInput, meta) => {

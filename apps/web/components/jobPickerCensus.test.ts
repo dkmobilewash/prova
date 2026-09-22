@@ -81,7 +81,7 @@ const LABELLED_PICKERS: Record<string, number> = {
   "app/(app)/punch-lists/page.tsx": 1,
   "app/(app)/rfis/page.tsx": 1,
   "app/(app)/submittals/page.tsx": 1,
-  "app/(app)/settings/integrations/page.tsx": 1,
+  "app/(app)/settings/integrations/page.tsx": 4,
 };
 
 /**
@@ -196,7 +196,21 @@ describe("the job-picker census", () => {
     //
     // 26 -> 27 on 2026-09-18: the Procore card's "which of your jobs does
     // this GC project feed" picker on /settings/integrations.
-    expect(expected).toEqual(27);
+    //
+    // 27 -> 28 on 2026-09-19: the CompanyCam card's own "which of your jobs
+    // does this project import into" picker, the same shape as Procore's
+    // and on the same page — /settings/integrations now calls the helper
+    // twice, once per card.
+    //
+    // 28 -> 30 on 2026-09-19/20: the ACC (Autodesk Construction Cloud) and
+    // Bluebeam cards' own "which of your jobs does this GC project/session
+    // feed" pickers — same shape as Procore's and CompanyCam's, both on
+    // the same page, both built in parallel from the same base. Same shape
+    // as the 23 -> 24 entry above: BOTH sides of this merge moved 28 -> 29
+    // independently (a mechanical merge would have kept "29" and been
+    // wrong), so /settings/integrations now calls the helper FOUR times,
+    // one per card, and the number here is the sum of both additions.
+    expect(expected).toEqual(30);
     expect(actual).toEqual(expected);
   });
 

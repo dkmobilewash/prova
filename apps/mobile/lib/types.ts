@@ -92,7 +92,14 @@ export type Media = {
   capturedLatitude: number | null;
   capturedLongitude: number | null;
   capturedAccuracyMeters: number | null;
+  /** What it was taken for, when the person said so at the shutter. */
+  dailyFieldReportId?: string | null;
+  punchListItemId?: string | null;
+  tags?: { id: string; name: string }[];
 };
+
+/** One of the company's photo tags, offered at the shutter. */
+export type MediaTag = { id: string; name: string };
 
 export type ToolboxTalk = {
   id: string;
@@ -240,9 +247,83 @@ export type MaterialOrder = {
   vendorName: string;
 };
 
+export type PunchItemStatus = "OPEN" | "READY_FOR_REVIEW" | "VERIFIED";
+
 export type PunchListItem = {
   id: string;
   description: string;
-  isDone: boolean;
-  completedAt: string | null;
+  /** Three states, not two. The middle one — we say it is fixed, nobody
+   * has checked yet — is the one a foreman needs to see, and a tick box
+   * cannot show it. `isDone` and `completedAt` were dropped from the
+   * server's row and from this type together. */
+  status: PunchItemStatus;
+  area: string | null;
+  dueOn: string | null;
+  assignedName: string | null;
+  /** Photos attached to this item. Zero is what the "add a photo of the
+   * fix" prompt is asking about. */
+  photoCount: number;
+};
+
+export type DrawingRevisionRow = {
+  id: string;
+  label: string;
+  issuedOn: string;
+  receivedOn: string | null;
+  description: string | null;
+  fileUrl: string | null;
+  fileName: string | null;
+};
+
+export type DrawingSetRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  revisions: DrawingRevisionRow[];
+  /** The revision that governs — latest ISSUED, received or not. */
+  currentRevisionId: string | null;
+  /** …and it has not reached site. The state worth carrying on a phone:
+   * the crew is building from the one before it. */
+  currentNotReceived: boolean;
+  latestReceivedRevisionId: string | null;
+};
+
+export type ScheduleRow = {
+  id: string;
+  workDate: string;
+  workerName: string;
+  workerKind: "user" | "crew";
+  workerId: string;
+  craftLabel: string | null;
+  /** Null for a day that has not happened yet — where `false` would read
+   * as an accusation rather than a fact. */
+  hoursLogged: boolean | null;
+};
+
+/** The capabilities the SERVER derives (apps/web/lib/permissions.ts) and
+ * hands to the phone. Deliberately a plain string list rather than a rule
+ * set: the phone must not carry a second copy of who-can-do-what, because
+ * a copy inside an app-store binary goes stale the day a job function
+ * changes and cannot be fixed without a release. */
+export type Capability =
+  | "VIEW_JOB_COSTS"
+  | "VIEW_COMPANY_FINANCIALS"
+  | "MANAGE_ESTIMATING"
+  | "MANAGE_BILLING"
+  | "MANAGE_COMPLIANCE"
+  | "MANAGE_FIELD"
+  | "MANAGE_JOBS"
+  | "VERIFY_PUNCH_ITEMS";
+
+export type Me = {
+  id: string;
+  name: string | null;
+  email: string;
+  role: string;
+  jobFunction: string | null;
+  capabilities: Capability[];
+  /** Narrower than a plain member — the phone says WHY a screen is
+   * missing rather than quietly drawing a smaller app. */
+  restricted: boolean;
+  company: { id: string; name: string };
 };

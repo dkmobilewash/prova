@@ -3,6 +3,7 @@ import {
   isOverdue,
   rankGcs,
   summariseGc,
+  summariseWonValue,
   valueIsPartial,
   winRateLabel,
   type PipelineBid,
@@ -86,6 +87,43 @@ describe("value won", () => {
     );
 
     expect(record.valueWon).toBe(10);
+  });
+});
+
+describe("summariseWonValue (issue #79 -- /bids's own computation, split out of summariseGc so a caller with no `today` can reuse it)", () => {
+  it("counts a won bid with no amount in the unpriced tally, not just out of the sum", () => {
+    const summary = summariseWonValue([
+      { status: "WON", bidAmount: 120_000 },
+      { status: "WON", bidAmount: null },
+    ]);
+
+    expect(summary.valueWon).toBe(120_000);
+    expect(summary.valueWonUnpriced).toBe(1);
+    expect(valueIsPartial(summary)).toBe(true);
+  });
+
+  it("still produces a summary, not undefined/NaN, when every won bid is unpriced", () => {
+    const summary = summariseWonValue([
+      { status: "WON", bidAmount: null },
+      { status: "WON", bidAmount: null },
+    ]);
+
+    expect(summary.valueWon).toBe(0);
+    expect(summary.valueWonUnpriced).toBe(2);
+    expect(valueIsPartial(summary)).toBe(true);
+  });
+
+  it("agrees with summariseGc on the same rows -- one computation, not two", () => {
+    const bids = [
+      bid({ status: "WON", bidAmount: 500 }),
+      bid({ status: "WON", bidAmount: null }),
+      bid({ status: "LOST", bidAmount: 999 }),
+    ];
+
+    const fromGc = summariseGc(bids, TODAY);
+    const standalone = summariseWonValue(bids);
+
+    expect(standalone).toEqual({ valueWon: fromGc.valueWon, valueWonUnpriced: fromGc.valueWonUnpriced });
   });
 });
 

@@ -207,6 +207,7 @@ const SLIPS = [
     note: null,
     job: { name: "Riverside Medical" },
     employeeUser: { name: "Tino Alvarez", email: "tino@example.com" },
+    crewMember: null,
     craftClassification: {
       name: "Drywall Applicator",
       unionLocal: { parentInternational: "United Brotherhood of Carpenters", localNumber: "213" },
@@ -220,6 +221,19 @@ const SLIPS = [
     note: "Hall said they'd fax it",
     job: { name: "Riverside Medical" },
     employeeUser: { name: null, email: "someone@example.com" },
+    crewMember: null,
+    craftClassification: null,
+  },
+  {
+    // A crew member — no login — which is who a hiring hall actually sends,
+    // and who a slip could not name before crewMemberId existed.
+    dispatchNumber: "D-88301",
+    dispatchDate: new Date("2026-09-10T00:00:00.000Z"),
+    fileUrl: "https://example.blob.vercel-storage.com/e.pdf",
+    note: null,
+    job: { name: "Riverside Medical" },
+    employeeUser: null,
+    crewMember: { legalFirstName: "Luis", legalMiddleName: null, legalLastName: "Ortega" },
     craftClassification: null,
   },
 ];
@@ -486,6 +500,12 @@ describe("dispatch_slips", () => {
     expect(rows.find((row) => row.worker === "Tino Alvarez")!.documentAttached).toBe(true);
     expect(rows.find((row) => row.worker === "someone@example.com")!.documentAttached).toBe(false);
     expect((await ask("dispatch_slips")).summary!.withoutTheDocument).toBe(1);
+  });
+
+  it("names a crew member by their legal name, marked as crew", async () => {
+    const rows = (await ask("dispatch_slips")).data as { worker: string; workerKind: string }[];
+    expect(rows.find((row) => row.worker === "Luis Ortega")?.workerKind).toBe("crew");
+    expect(rows.find((row) => row.worker === "Tino Alvarez")?.workerKind).toBe("teammate");
   });
 
   it("builds the local from its parts, since a local has no name field", async () => {

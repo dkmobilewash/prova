@@ -11,6 +11,7 @@ import { submittalsStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { viewerToday } from "@/lib/viewerToday";
 import { ProcoreFeedSection, loadProcoreFeed } from "@/components/ProcoreFeedSection";
+import { ACCFeedSection, loadAccFeed } from "@/components/ACCFeedSection";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as RFIs, the
  * safety log and daily field reports. */
@@ -127,6 +128,8 @@ export default async function SubmittalsPage({
   // The GC's records from Procore, if this company links any (see
   // components/ProcoreFeedSection.tsx).
   const procoreFeed = await loadProcoreFeed(company.id, "SUBMITTAL", activeJob);
+  // Same, from Autodesk Construction Cloud (see components/ACCFeedSection.tsx).
+  const accFeed = await loadAccFeed(company.id, "SUBMITTAL", activeJob);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -142,7 +145,11 @@ export default async function SubmittalsPage({
         <SubmittalForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
       </section>
 
-      <StatusLine report={status} />
+      {/* At zero-ever the EmptyState below is the whole answer. The status
+          line and the "0 in play" count above it said "nothing" twice more
+          first — three empties stacked on a new account. /bids hides its
+          count the same way; both come back with the first record. */}
+      {(everLogged > 0 || rows.length > 0) && <StatusLine report={status} />}
 
       {jobs.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2" data-tour="submittals-job-filter">
@@ -157,18 +164,20 @@ export default async function SubmittalsPage({
         </div>
       )}
 
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink-label">
-          {rows.length} {showApproved ? "total" : "in play"}
-        </h2>
-        <Link
-          href={filterHref({ show: showApproved ? null : "all" })}
-          data-tour="submittals-show-approved"
-          className="text-sm text-link"
-        >
-          {showApproved ? "Hide approved" : "Show approved"}
-        </Link>
-      </div>
+      {(everLogged > 0 || rows.length > 0) && (
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-ink-label">
+            {rows.length} {showApproved ? "total" : "in play"}
+          </h2>
+          <Link
+            href={filterHref({ show: showApproved ? null : "all" })}
+            data-tour="submittals-show-approved"
+            className="text-sm text-link"
+          >
+            {showApproved ? "Hide approved" : "Show approved"}
+          </Link>
+        </div>
+      )}
 
       {rows.length === 0 && everLogged === 0 ? (
         <EmptyState
@@ -218,6 +227,8 @@ export default async function SubmittalsPage({
       {/* The GC's records from Procore: a separate section, never merged
           into this company's own log above. */}
       <ProcoreFeedSection feed={procoreFeed} />
+      {/* Same, from Autodesk Construction Cloud. */}
+      <ACCFeedSection feed={accFeed} />
     </div>
   );
 }

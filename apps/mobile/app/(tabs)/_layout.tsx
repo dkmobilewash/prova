@@ -1,24 +1,100 @@
 import { Tabs } from "expo-router";
-import { Text } from "react-native";
 import { usePushRegistration } from "@/lib/use-push-registration";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
+import { Icon } from "@/components/Icon";
+import { colors, typography } from "@/lib/theme";
 
+/**
+ * Five tabs, which is the iOS ceiling before the bar starts collapsing
+ * into "More" — and the five are chosen so a foreman's whole day is one
+ * tap from anywhere:
+ *
+ *   Home     what today looks like on the job you are on
+ *   Jobs     every job, and how you change which one you are on
+ *   Create   the things you make on site, without hunting for a screen
+ *   Camera   the shutter, because a photo happens while you are holding
+ *            something in the other hand
+ *   Settings the account
+ *
+ * Create and Camera act on the CURRENT JOB (lib/current-job.ts). Without
+ * that they would each need a job picker first, which is two taps and a
+ * scroll before the camera opens — on a phone held in one hand, in the
+ * rain, that is the difference between a photo and no photo.
+ */
 export default function TabsLayout() {
   usePushRegistration();
+  // Create and Camera both make FIELD records. Shown to everybody before
+  // this, so an estimator or a bookkeeper got a Create tab whose every
+  // option 403s — the shell promising work the server will refuse.
+  const { me } = useMe();
+  const field = holds(me, "MANAGE_FIELD");
+  // The queue's drain timer is NOT here: it moved to the root layout so
+  // it keeps running during a handover, when the tabs are not mounted.
 
   return (
-    <Tabs>
+    <Tabs
+      screenOptions={{
+        // The tab bar is chrome, so it takes the rail rather than the
+        // canvas, with a hairline above it instead of the default
+        // translucent blur — which read as a grey smear over a dark page.
+        tabBarStyle: {
+          backgroundColor: colors.rail,
+          borderTopColor: colors.lineCard,
+          borderTopWidth: 1,
+        },
+        tabBarActiveTintColor: colors.brand,
+        tabBarInactiveTintColor: colors.inkMuted,
+        tabBarLabelStyle: { fontSize: typography.size.xs, fontWeight: typography.weight.semibold },
+        headerStyle: { backgroundColor: colors.rail },
+        headerTintColor: colors.brand,
+        headerTitleStyle: {
+          color: colors.ink,
+          fontSize: typography.size.md,
+          fontWeight: typography.weight.semibold,
+        },
+        headerShadowVisible: false,
+        sceneStyle: { backgroundColor: colors.canvas },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: "Jobs",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>🏗️</Text>,
+          title: "Home",
+          tabBarIcon: ({ color, focused }) => <Icon name="home" color={color} filled={focused} size={24} />,
         }}
       />
       <Tabs.Screen
-        name="more"
+        name="jobs"
         options={{
-          title: "More",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>⋯</Text>,
+          title: "Jobs",
+          tabBarIcon: ({ color, focused }) => <Icon name="jobs" color={color} filled={focused} size={24} />,
+        }}
+      />
+      <Tabs.Screen
+        name="create"
+        options={{
+          title: "Create",
+          tabBarIcon: ({ color, focused }) => <Icon name="create" color={color} filled={focused} size={24} />,
+          // `href: null` is how expo-router takes a tab off the bar while
+          // leaving the route reachable — the screen itself still guards,
+          // so a stale deep link lands on a sentence rather than a 403.
+          href: field ? undefined : null,
+        }}
+      />
+      <Tabs.Screen
+        name="camera"
+        options={{
+          title: "Camera",
+          tabBarIcon: ({ color, focused }) => <Icon name="camera" color={color} filled={focused} size={24} />,
+          href: field ? undefined : null,
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: "Settings",
+          tabBarIcon: ({ color, focused }) => <Icon name="settings" color={color} filled={focused} size={24} />,
         }}
       />
     </Tabs>

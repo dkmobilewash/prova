@@ -160,7 +160,7 @@ async function resolveLogTimeEntry(ctx: CommandContext, input: CommandInput): Pr
   };
 }
 
-async function executeLogTimeEntry(_ctx: CommandContext, payload: ResolvedPayload) {
+async function executeLogTimeEntry(ctx: CommandContext, payload: ResolvedPayload) {
   const jobId = str(payload, "jobId");
   const jobName = str(payload, "jobName");
   const employeeUserId = str(payload, "employeeUserId");
@@ -176,7 +176,8 @@ async function executeLogTimeEntry(_ctx: CommandContext, payload: ResolvedPayloa
   );
   if (!result.ok) return { ok: false as const, error: result.error };
   const row = await prisma.timeEntry.findFirst({
-    where: { jobId, employeeUserId, date: utcMidnight(date) },
+    // Belt-and-braces: logTimeEntry already asserted the job in-company.
+    where: { jobId, employeeUserId, date: utcMidnight(date), job: { companyId: ctx.companyId } },
     orderBy: { createdAt: "desc" },
     select: { id: true },
   });
@@ -258,6 +259,22 @@ export const laborExclusions: Exclusion[] = [
   {
     action: "archiveCrewMember",
     reason: "Taking a person off the crew is an owner's roster decision, made on the Team page in front of the name; page only.",
+  },
+  {
+    action: "createCrewMember",
+    // Genuinely tempting — "add Luis Ortega to the crew" is one sentence,
+    // and this is a name with no other consequence. It is page-only anyway
+    // because of what the name IS: a locked identity field. A WH-347 names
+    // this person, the legal name cannot be edited afterwards (a database
+    // trigger refuses it), and the correction path is archive-and-re-add,
+    // which only an owner can do. A transcribed or autocorrected surname
+    // is therefore not a typo, it is a filing somebody has to retire. The
+    // form puts the spelling in front of the person before it is saved.
+    reason: "The legal name is locked once saved and prints on a filed payroll; it is typed and read back on the Team page, never transcribed.",
+  },
+  {
+    action: "updateCrewMember",
+    reason: "Edits a crew record in front of the row it belongs to — and what it may change (the employee number, the craft) is exactly what the screen shows; page only.",
   },
   {
     action: "approveTimesheetDay",

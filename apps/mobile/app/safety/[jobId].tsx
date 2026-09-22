@@ -8,6 +8,14 @@ import { Chip } from "@/components/Chip";
 import { EmptyState } from "@/components/EmptyState";
 import { Field } from "@/components/Field";
 import { Sheet } from "@/components/Sheet";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
+import { OfflineNote } from "@/components/OfflineNote";
+import { emptyFor } from "@/lib/empty-state";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -18,12 +26,21 @@ import type { SafetyIncident, ToolboxTalk } from "@/lib/types";
 const CLASSIFICATIONS = ["INJURY", "SKIN_DISORDER", "RESPIRATORY_CONDITION", "POISONING", "HEARING_LOSS", "OTHER_ILLNESS"];
 const OUTCOMES = ["DEATH", "DAYS_AWAY", "RESTRICTED_OR_TRANSFER", "OTHER_RECORDABLE", "FIRST_AID_ONLY"];
 
+/** `emptyFor` speaks the List's prop names; EmptyState takes its own. */
+function titles({ emptyTitle, emptyDescription }: { emptyTitle: string; emptyDescription?: string }) {
+  return { title: emptyTitle, description: emptyDescription };
+}
+
 export default function SafetyScreen() {
+  const { me } = useMe();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [talks, setTalks] = useState<ToolboxTalk[]>([]);
   const [incidents, setIncidents] = useState<SafetyIncident[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** The line saying this came off the phone, or null when it is fresh;
+   * "nothing" when there was no signal and nothing cached. */
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
 
   const [showTalkForm, setShowTalkForm] = useState(false);
   const [topic, setTopic] = useState("");
@@ -37,15 +54,24 @@ export default function SafetyScreen() {
   const [outcome, setOutcome] = useState("FIRST_AID_ONLY");
 
   const load = async () => {
-    const token = await getToken();
-    if (!token || !jobId) return;
-    try {
-      setTalks(await api.listToolboxTalks(jobId, token));
-      setIncidents(await api.listIncidents(jobId, token));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load safety");
+    if (!jobId) return;
+    // Both lists under one key: half a screen fresh and the other half a
+    // week old is worse than either.
+    const result = await cachedRead(
+      cacheKeys.safety(jobId),
+      withToken(getToken, async (token) => ({
+        talks: await api.listToolboxTalks(jobId, token),
+        incidents: await api.listIncidents(jobId, token),
+      })),
+    );
+    setError(null);
+    if (result.from === "nothing") {
+      setOffline("nothing");
+      return;
     }
+    setTalks(result.value.talks);
+    setIncidents(result.value.incidents);
+    setOffline(staleNote(result));
   };
 
   useEffect(() => {
@@ -85,10 +111,17 @@ export default function SafetyScreen() {
     await sync();
   };
 
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["safety/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["safety/[jobId]"]} />;
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <OfflineNote state={offline} />
 
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>Toolbox talks</Text>
@@ -97,7 +130,7 @@ export default function SafetyScreen() {
         </Button>
       </View>
       {talks.length === 0 ? (
-        <EmptyState title="No talks logged" />
+        <EmptyState {...titles(emptyFor(offline, "the safety talks", { title: "No talks logged" }))} />
       ) : (
         talks.map((t) => (
           <Card key={t.id}>
@@ -114,7 +147,7 @@ export default function SafetyScreen() {
         </Button>
       </View>
       {incidents.length === 0 ? (
-        <EmptyState title="No incidents" />
+        <EmptyState {...titles(emptyFor(offline, "the incidents", { title: "No incidents" }))} />
       ) : (
         incidents.map((i) => (
           <Card key={i.id}>

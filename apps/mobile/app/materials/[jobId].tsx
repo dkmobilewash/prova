@@ -8,6 +8,14 @@ import { Chip } from "@/components/Chip";
 import { Field } from "@/components/Field";
 import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
+import { emptyFor } from "@/lib/empty-state";
+import { OfflineNote } from "@/components/OfflineNote";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -16,11 +24,13 @@ import { useSync } from "@/lib/use-sync";
 import type { MaterialOrder, Vendor } from "@/lib/types";
 
 export default function MaterialsScreen() {
+  const { me } = useMe();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [orders, setOrders] = useState<MaterialOrder[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [description, setDescription] = useState("");
@@ -29,17 +39,25 @@ export default function MaterialsScreen() {
   const [vendorId, setVendorId] = useState<string | null>(null);
 
   const load = async () => {
-    const token = await getToken();
-    if (!token || !jobId) return;
-    try {
-      const [os, vs] = await Promise.all([api.listMaterialOrders(jobId, token), api.listVendors(token)]);
-      setOrders(os);
-      setVendors(vs);
-      if (!vendorId && vs.length > 0) setVendorId(vs[0].id);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load orders");
+    if (!jobId) return;
+    // The vendor list is cached with the orders rather than separately:
+    // an order row is unreadable without the vendor names beside it.
+    const result = await cachedRead(
+      cacheKeys.materials(jobId),
+      withToken(getToken, async (token) => ({
+        orders: await api.listMaterialOrders(jobId, token),
+        vendors: await api.listVendors(token),
+      })),
+    );
+    setError(null);
+    if (result.from === "nothing") {
+      setOffline("nothing");
+      return;
     }
+    setOrders(result.value.orders);
+    setVendors(result.value.vendors);
+    if (!vendorId && result.value.vendors.length > 0) setVendorId(result.value.vendors[0].id);
+    setOffline(staleNote(result));
   };
 
   useEffect(() => {
@@ -69,10 +87,17 @@ export default function MaterialsScreen() {
     await sync();
   };
 
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["materials/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["materials/[jobId]"]} />;
+
   return (
     <View style={styles.screen}>
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <OfflineNote state={offline} />
       <List
         data={orders}
         keyExtractor={(item) => item.id}
@@ -89,8 +114,10 @@ export default function MaterialsScreen() {
             </Text>
           </Card>
         )}
-        emptyTitle="Nothing on order"
-        emptyDescription="Tap “Add order” to log a material delivery."
+        {...emptyFor(offline, "the material orders", {
+          title: "Nothing on order",
+          description: "Tap “Add order” to log a material delivery.",
+        })}
       />
 
       <View style={styles.footer}>

@@ -46,7 +46,7 @@ import { MAX_IMPORT_ROWS, parseCsvRecords, type RowProblem } from "./catalog-imp
 export { MAX_IMPORT_ROWS };
 export type { RowProblem };
 
-export type ImportKind = "clients" | "jobs" | "crew";
+export type ImportKind = "clients" | "jobs" | "crew" | "costCodes";
 
 /* ------------------------------------------------------------------ */
 /* Shared helpers                                                      */
@@ -64,7 +64,11 @@ export function clean(value: string | undefined): string {
   return (value ?? "").trim().replace(/\s+/g, " ");
 }
 
-function normaliseHeader(value: string): string {
+/** Exported for the column-mapping UI (lib/import-mapping.ts) and its own
+ * census test: a mapping preset or a field's display label is only useful
+ * if THIS is the function that will later match it back against a header a
+ * person actually mapped. */
+export function normaliseHeader(value: string): string {
   return value
     .trim()
     .toLowerCase()
@@ -107,6 +111,23 @@ export function readRecords(text: string): Records {
 }
 
 export const NOTHING_TO_IMPORT: RowProblem = { line: 1, message: "Nothing to import." };
+
+/**
+ * One entry in a kind's column-mapping UI: a target field a person can
+ * point at one of their file's columns.
+ *
+ * `label` doubles as the CANONICAL HEADER TEXT the mapping engine writes
+ * into a column when a person picks it explicitly (lib/import-mapping.ts,
+ * `applyColumnMapping`) — writing the label back in is what lets the
+ * existing alias-matching parser (`mapColumns`, above) pick it straight
+ * back up with no second code path. That only works if the label's own
+ * normalised form is already one of the field's aliases, which is asserted
+ * for every kind in `import-mapping.census.test.ts` — a label and an alias
+ * list are two places that can drift apart exactly like every other pair
+ * this file warns about, and a drifted one would fail silently: the
+ * dropdown would look mapped and the column would import as unmapped.
+ */
+export type FieldOption<F extends string> = { field: F; label: string; required: boolean };
 
 /** The catalog importer's cap, applied the same way: readable rows past
  * the limit are left out, and the first one left out is named. */
@@ -258,6 +279,14 @@ export const CLIENT_COLUMNS = {
   address: ["address", "street address", "mailing address"],
 } as const;
 
+export const CLIENT_FIELD_OPTIONS: FieldOption<keyof typeof CLIENT_COLUMNS>[] = [
+  { field: "name", label: "Client name", required: true },
+  { field: "type", label: "Type", required: false },
+  { field: "email", label: "Email", required: false },
+  { field: "phone", label: "Phone", required: false },
+  { field: "address", label: "Address", required: false },
+];
+
 export type ClientRow = {
   line: number;
   name: string;
@@ -408,13 +437,27 @@ export function parseJobStatus(raw: string): SheetJobStatus | undefined {
 }
 
 export const JOB_COLUMNS = {
-  name: ["job", "job name", "name", "project", "project name", "job title"],
+  // "job#" / "job number" is the job-list column header Sage 100
+  // Contractor's own "Entering jobs" documentation names for a job's
+  // identifier (help-sage100contractor.na.sage.com, verified 2026-09-19).
+  // It reads onto our job NAME rather than a separate id, because this app
+  // has no second job-number field to put it in.
+  name: ["job", "job name", "name", "project", "project name", "job title", "job#", "job #", "job number"],
   client: ["client", "client name", "gc", "general contractor", "customer", "customer name", "contact", "company", "builder"],
   status: ["status", "job status", "stage"],
   startDate: ["start", "start date", "starts", "begin", "begin date", "start on"],
   endDate: ["end", "end date", "ends", "finish", "finish date", "completion", "completion date"],
   scope: ["scope", "scope of work", "description", "notes", "work"],
 } as const;
+
+export const JOB_FIELD_OPTIONS: FieldOption<keyof typeof JOB_COLUMNS>[] = [
+  { field: "name", label: "Job name", required: true },
+  { field: "client", label: "Client", required: true },
+  { field: "status", label: "Status", required: false },
+  { field: "startDate", label: "Start date", required: false },
+  { field: "endDate", label: "End date", required: false },
+  { field: "scope", label: "Scope", required: false },
+];
 
 /** Headers that look like a money figure. Never imported (see the note at
  * the top of this file); named in the preview so nobody hunts for why a
@@ -457,7 +500,7 @@ export type JobPlan = {
 export type ExistingJob = { name: string; clientName: string };
 
 function jobKey(name: string, clientName: string) {
-  return `${nameKey(name)} ${nameKey(clientName)}`;
+  return `${nameKey(name)} ${nameKey(clientName)}`;
 }
 
 export function planJobImport(
@@ -673,6 +716,21 @@ export const CREW_COLUMNS = {
   hiredOn: ["hired", "hired on", "hire date", "date hired"],
 } as const;
 
+export const CREW_FIELD_OPTIONS: FieldOption<keyof typeof CREW_COLUMNS>[] = [
+  { field: "legalFirstName", label: "First name", required: true },
+  { field: "legalMiddleName", label: "Middle name", required: false },
+  { field: "legalLastName", label: "Last name", required: true },
+  { field: "employeeNumber", label: "Employee number", required: false },
+  { field: "identifyingNumberLast4", label: "Last 4 of SSN", required: false },
+  { field: "phone", label: "Phone", required: false },
+  { field: "addressLine1", label: "Address", required: false },
+  { field: "addressLine2", label: "Address 2", required: false },
+  { field: "city", label: "City", required: false },
+  { field: "state", label: "State", required: false },
+  { field: "zip", label: "Zip", required: false },
+  { field: "hiredOn", label: "Hire date", required: false },
+];
+
 export type CrewRow = {
   line: number;
   legalFirstName: string;
@@ -712,7 +770,7 @@ export function crewName(person: {
 }
 
 function crewKey(person: Parameters<typeof crewName>[0]) {
-  return [person.legalFirstName, person.legalMiddleName ?? "", person.legalLastName].map(nameKey).join(" ");
+  return [person.legalFirstName, person.legalMiddleName ?? "", person.legalLastName].map(nameKey).join(" ");
 }
 
 export function planCrewImport(text: string, existingCrew: ExistingCrew[]): CrewPlan {
@@ -865,6 +923,128 @@ export function planCrewImport(text: string, existingCrew: ExistingCrew[]): Crew
 }
 
 /* ------------------------------------------------------------------ */
+/* Cost codes -> PhaseCode                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A cost-code / phase-code list, brought in as `PhaseCode` rows.
+ *
+ * `PhaseCode` (packages/db/prisma/schema/jobs.prisma) is company-scoped and
+ * fits an accounting system's cost-code list directly: a code, a name, and
+ * an optional unit. `tracksLabor` and `sortOrder` are left at their schema
+ * defaults (true / 0) — nothing in a cost-code export says which codes take
+ * labour hours, and inventing an answer would be worse than defaulting to
+ * the same "yes" every phase code already starts with when added by hand.
+ *
+ * "Cost Code#" and "Description" are Sage 100 Contractor's own field names
+ * for this screen (sage100contractorhelp.sagecre.com, "Entering cost
+ * codes", verified 2026-09-19) — see lib/import-presets.ts.
+ *
+ * Matched against what a company already has by CODE ONLY, and NOT
+ * case-folded the way a client or job NAME is: `PhaseCode` is unique on
+ * `(companyId, code)` as an exact string (`createPhaseCode` in
+ * lib/actions/phase-codes.ts compares `code` verbatim), so "04112" and
+ * "04112" collide at the database but "04112" and "04112-A" are two
+ * different codes a contractor may deliberately keep distinct by case or
+ * punctuation. Folding case here would report a false "already there" the
+ * database would not agree with.
+ */
+export const PHASE_CODE_COLUMNS = {
+  code: ["code", "cost code", "cost code#", "cost code #", "cost code number", "phase", "phase code", "phase #", "phase number", "cc"],
+  name: ["name", "description", "cost code description", "phase description", "phase name"],
+  unit: ["unit", "uom", "unit of measure"],
+} as const;
+
+export const PHASE_CODE_FIELD_OPTIONS: FieldOption<keyof typeof PHASE_CODE_COLUMNS>[] = [
+  { field: "code", label: "Code", required: true },
+  { field: "name", label: "Name", required: true },
+  { field: "unit", label: "Unit", required: false },
+];
+
+export type PhaseCodeRow = {
+  line: number;
+  code: string;
+  name: string;
+  unit: string | null;
+};
+
+export type PhaseCodePlan = {
+  create: PhaseCodeRow[];
+  existing: ExistingMatch[];
+  problems: RowProblem[];
+  ignoredColumns: string[];
+};
+
+/** Trimmed only — NOT case-folded. See the note above `PHASE_CODE_COLUMNS`. */
+function codeKey(value: string): string {
+  return value.trim();
+}
+
+export function planPhaseCodeImport(text: string, existingCodes: string[]): PhaseCodePlan {
+  const records = readRecords(text);
+  if (!records) return { create: [], existing: [], problems: [NOTHING_TO_IMPORT], ignoredColumns: [] };
+
+  const { mapping, ignoredColumns } = mapColumns(records.header, PHASE_CODE_COLUMNS);
+  const missing = [
+    mapping.code === undefined ? "Code" : null,
+    mapping.name === undefined ? "Name" : null,
+  ].filter(Boolean);
+  if (missing.length > 0) {
+    return {
+      create: [],
+      existing: [],
+      ignoredColumns: [],
+      problems: [
+        {
+          line: 1,
+          message: `No ${missing.join(" or ")} column found. The first row must name the columns — every cost code needs a Code and a Name (or Description).`,
+        },
+      ],
+    };
+  }
+
+  const problems: RowProblem[] = [];
+  let rows: PhaseCodeRow[] = [];
+  for (const { line, cells } of records.body) {
+    const cell = (field: keyof typeof PHASE_CODE_COLUMNS) => {
+      const at = mapping[field];
+      return at === undefined ? undefined : cells[at];
+    };
+    const code = clean(cell("code"));
+    const name = clean(cell("name"));
+    if (code === "" && name === "") continue; // a fully blank line — not a row at all.
+    if (code === "") {
+      problems.push({ line, message: "No code — skipped." });
+      continue;
+    }
+    if (name === "") {
+      problems.push({ line, message: `${code} — no name. Every cost code needs one.` });
+      continue;
+    }
+    const unit = clean(cell("unit"));
+    rows.push({ line, code, name, unit: unit || null });
+  }
+  rows = applyCap(rows, problems);
+
+  const existing = new Set(existingCodes.map(codeKey));
+  const firstLine = new Map<string, number>();
+  const plan: PhaseCodePlan = { create: [], existing: [], problems, ignoredColumns };
+  for (const row of rows) {
+    const key = codeKey(row.code);
+    const earlier = firstLine.get(key);
+    if (earlier !== undefined) {
+      problems.push({ line: row.line, message: `${row.code} — same code as line ${earlier}, so it's only added once.` });
+      continue;
+    }
+    firstLine.set(key, row.line);
+    if (existing.has(key)) plan.existing.push({ line: row.line, label: `${row.code} — ${row.name}` });
+    else plan.create.push(row);
+  }
+  problems.sort((a, b) => a.line - b.line);
+  return plan;
+}
+
+/* ------------------------------------------------------------------ */
 /* Templates                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -882,5 +1062,9 @@ export const IMPORT_TEMPLATES: Record<ImportKind, { fileName: string; csv: strin
   crew: {
     fileName: "c-stream-crew-template.csv",
     csv: "First name,Middle name,Last name,Employee number,Last 4 of SSN,Phone,Address,Address 2,City,State,Zip,Hire date\nMaria,Elena,Lopez,E-104,1234,555-201-4401,12 Oak Ave,,Reno,NV,89501,3/2/2024\n",
+  },
+  costCodes: {
+    fileName: "c-stream-cost-codes-template.csv",
+    csv: "Code,Name,Unit\n04112,Plywood,SF\n",
   },
 };

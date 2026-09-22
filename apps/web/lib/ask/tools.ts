@@ -129,7 +129,10 @@ export type ToolName =
   | "contact_lookup"
   | "job_overview"
   // The dashboard's getting-started card, for a brand-new account.
-  | "getting_started";
+  | "getting_started"
+  // "How do I…", from the app's own registered page walkthroughs — never
+  // a fact about this company's data. See lib/ask/appHelp.ts.
+  | "app_help";
 
 export type ToolDefinition = {
   name: ToolName;
@@ -296,6 +299,20 @@ const oneJob = {
   },
 };
 
+/** app_help: what the person wants to do, in their own words. No enum —
+ * this is matched against free text in the app's own walkthroughs
+ * (lib/ask/appHelp.ts), not against a fixed list of topics. */
+const appHelpFilter = {
+  type: "object" as const,
+  properties: {
+    topic: {
+      type: "string",
+      description:
+        "What the person wants to do or find, in their own words — 'log a backcharge', 'add a punch list item', 'connect QuickBooks'. Matched against the app's own page walkthroughs; not a fact about this company's data.",
+    },
+  },
+};
+
 const safetyYearFilter = {
   type: "object" as const,
   properties: {
@@ -420,10 +437,11 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "job_labor_cost",
-    // the job page's time entries, priced the way that page prices them
+    // the job page's time entries, priced the way that page prices them —
+    // wageCost + allowanceCost, same as jobWip.actualCostToDate's labor share
     capability: "VIEW_JOB_COSTS",
     description:
-      "Burdened labor cost booked to a job from logged hours — base wage times the pay-type multiplier plus fringes, using the rate schedule in force on each entry's own date. Answers 'what has the crew cost us on this job'. ALWAYS read the priced-hours share beside the total: hours on a craft with no rate schedule covering their date are NOT priced and are excluded from the money, so on a half-configured company the total is real but partial. It does NOT include material, equipment or subcontract cost — those reach a job as cost entries, and job_margin is the tool for total cost.",
+      "Burdened labor cost booked to a job from logged hours: base wage times the pay-type multiplier plus fringes (wageCost), PLUS any per diem and travel pay logged on those days (allowanceCost — TimeEntry.perDiemAmount/.travelPayAmount, real dollars the company pays to have the work done). The total is exactly what /jobs/[id]'s Actual cost figure counts as this job's labor — say so if asked why the two might otherwise seem to disagree. Answers 'what has the crew cost us on this job'. ALWAYS read the priced-hours share beside the total: hours on a craft with no rate schedule covering their date get $0 of WAGE and are excluded from wageCost, so the total can be nonzero from allowances alone while the wage side is still incomplete — that is what shareOfHoursPriced is for, and it must be read alongside the dollar figure, never dropped. It does NOT include material, equipment or subcontract cost — those reach a job as cost entries, and job_margin is the tool for total cost.",
     input_schema: jobFilter,
   },
   {
@@ -505,7 +523,7 @@ export const TOOLS: ToolDefinition[] = [
     // /union-compliance
     capability: "MANAGE_COMPLIANCE",
     description:
-      "Every apprentice enrolled, their programme and sponsor, which period they are in, the on-the-job hours recorded this period against what the programme requires, and how short they are. Answers 'is anybody behind on their hours'. It distinguishes THREE things a summary would flatten into one: hours recorded and short, a programme with no required figure on file so there is nothing to measure against, and a requirement with no hours recorded at all. An enrollment carrying both a completion AND a cancellation date is reported as contradictory rather than resolved by precedence — picking one would hide a data-entry error on a compliance record.",
+      "Every apprentice enrolled, their program and sponsor, which period they are in, the on-the-job hours recorded this period against what the program requires, and how short they are. Answers 'is anybody behind on their hours'. It distinguishes THREE things a summary would flatten into one: hours recorded and short, a program with no required figure on file so there is nothing to measure against, and a requirement with no hours recorded at all. An enrollment carrying both a completion AND a cancellation date is reported as contradictory rather than resolved by precedence — picking one would hide a data-entry error on a compliance record.",
     input_schema: noInput,
   },
   {
@@ -615,7 +633,7 @@ export const TOOLS: ToolDefinition[] = [
     // know where they are working." That is why no cost figure is in here.
     capability: null,
     description:
-      "Each contracted or in-progress job's scheduled start and end, how far through that window today is, and how many days until — or past — the end date. Answers 'where does this job stand against its dates'. IT DOES NOT FORECAST A COMPLETION DATE AND NOTHING IN THIS APP CAN. `scheduleElapsedPercent` is a DATE fact and is not percent complete: percent complete is money spent against money expected and lives in job_margin, and a job can be 80% through its budget and 40% through its programme. Never read one as the other, and do not offer an 'ahead or behind' verdict from the two together — a fit-out job front-loads material cost and a framing job does not, so the gap between them means different things on different work. A job missing a start or end date reports null rather than zero and is counted in `withoutBothDates`.",
+      "Each contracted or in-progress job's scheduled start and end, how far through that window today is, and how many days until — or past — the end date. Answers 'where does this job stand against its dates'. IT DOES NOT FORECAST A COMPLETION DATE AND NOTHING IN THIS APP CAN. `scheduleElapsedPercent` is a DATE fact and is not percent complete: percent complete is money spent against money expected and lives in job_margin, and a job can be 80% through its budget and 40% through its schedule. Never read one as the other, and do not offer an 'ahead or behind' verdict from the two together — a fit-out job front-loads material cost and a framing job does not, so the gap between them means different things on different work. A job missing a start or end date reports null rather than zero and is counted in `withoutBothDates`.",
     input_schema: jobFilter,
   },
   {
@@ -636,28 +654,12 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "team_roster",
-    // MANAGE_FIELD, and this is the one citation-vs-capability disagreement
-    // #310's guard found that was worth FIXING rather than recording.
-    //
-    // It was `null`, on the reasoning that /team is open — "a roster of who
-    // works here is not a tier". That is true of the roster and not of what
-    // this tool returns. It also reports how many certifications are on file
-    // and what is missing on them, summarised from /certifications, which
-    // MANAGE_FIELD guards. One tool, two cited pages, and the gate had been
-    // set from the gentler one because the author reasoned about the primary
-    // citation and the secondary never came up.
-    //
-    // The rule that follows, and it is the general one: A TOOL TAKES THE
-    // GATE OF THE STRICTEST PAGE IT READS FROM, not the page its author had
-    // in mind. Diego's call, 2026-09-19.
-    //
-    // The cost, named because it is a real loss rather than a cleanup:
-    // ESTIMATOR and ACCOUNTING hold no MANAGE_FIELD, so neither can ask who
-    // is on the books any more. OWNER, an unset job function,
-    // PROJECT_MANAGER, FIELD and PAYROLL_COMPLIANCE keep it. Dropping the
-    // /certifications citation instead would have kept the tool open and
-    // left it summarising a guarded page, which is the trade that was
-    // declined.
+    // MANAGE_FIELD, matching /certifications exactly — this tool's answer
+    // is mostly that page: certifications on file and what is missing on
+    // them. It was null for a while on the primary citation's reasoning
+    // (/team is open, "a roster of who works here is not a tier") and the
+    // secondary citation never came up, which tools.test.ts recorded as
+    // "the one worth fixing". Fixed 2026-09-19.
     capability: "MANAGE_FIELD",
     description:
       "Everyone with an account on this company: name, email, role, job function, which craft classifications they have actually worked under, how many certifications are on file, and what is missing on them. THERE IS NO PER-PERSON PAY RATE IN THIS APP AND THIS DOES NOT REPORT ONE — a rate belongs to a craft classification and the fringe schedule in force on a given date, which is why job_labor_cost prices an hour rather than a person. What it does report is the blanks that break paperwork downstream: no name on an account is a blank in the name column of a WH-347, and hours with no craft are a blank in the classification column and are invisible to the ratio review.",
@@ -667,7 +669,7 @@ export const TOOLS: ToolDefinition[] = [
     name: "dispatch_slips",
     capability: "MANAGE_COMPLIANCE",
     description:
-      "Union dispatch slips on file — which worker the hall dispatched to which job, on what date, under which craft and local, and whether the actual slip document is attached. Answers 'do we have dispatch on file for this job'. IT IS NOT A CREW SCHEDULE AND MUST NOT BE USED AS ONE: a slip records that somebody WAS dispatched, never that they are on site today or tomorrow. A slip row with no document attached proves nothing in an audit, the same distinction wage_determinations makes.",
+      "Union dispatch slips on file — which worker the hall dispatched to which job, on what date, under which craft and local, and whether the actual slip document is attached. The worker is either a teammate with a login or a field crew member without one, and workerKind says which. Answers 'do we have dispatch on file for this job'. IT IS NOT A CREW SCHEDULE AND MUST NOT BE USED AS ONE: a slip records that somebody WAS dispatched, never that they are on site today or tomorrow. A slip row with no document attached proves nothing in an audit, the same distinction wage_determinations makes.",
     input_schema: jobFilter,
   },
   {
@@ -735,6 +737,20 @@ export const TOOLS: ToolDefinition[] = [
       "The Getting started checklist from the dashboard — the same steps, for this company and for THIS person: name the company, add the first job, bring in a spreadsheet or Jobber (optional), add the crew, put someone on the schedule, log the first day on site, connect QuickBooks (optional). Each step comes back done or not, what it means in the card's own words, its page, and `askCanDo` when a confirm-card command can do it for this person. Steps this person cannot do are left out, exactly as on their card — never call those done. Call this for 'help me finish getting started', 'what's left to set up', 'walk me through setup', or 'complete the get-started list', from ANY page. Answer by saying what is done in one line, then one bullet per OPEN step: when `askCanDo` is set, offer to do it and ask for exactly its `needsFromPerson` (call that command only once they have given it, one per question); otherwise give the step's page to do it there. Renaming the company, inviting people, importing a spreadsheet or Jobber, and connecting QuickBooks are done on their pages — never claim to have done them. `hiddenOnDashboard` true means they hid the card; mention it only if asked where the card went.",
     input_schema: noInput,
   },
+  {
+    name: "app_help",
+    // No single page: the pages this tool may name are filtered per person
+    // INSIDE the handler (reachableWalkthroughs, the same rule canReach()
+    // states for the nav), not by this field. A FIELD member asking "how
+    // do I" must never be taught a billing page's own steps just because
+    // this tool has no one page to gate on — that is exactly the mistake
+    // `capability` on every other tool here exists to prevent, at the
+    // level this tool actually varies.
+    capability: null,
+    description:
+      "How to DO something inside the app, from its own registered 'Walk me through this page' walkthroughs — never a fact about this company's data. Answers 'how do I log a backcharge', 'where do I add a punch list item', 'how do I connect QuickBooks'. Cites the page and quotes its own steps. Filtered to pages this person can actually open — a page they cannot reach is never named, and never invents a step the app does not have. `route` is always a path that opens; say exactly it and never a path of your own, and never one containing square brackets. When a result carries `insideOneJob`, its `route` is the list to START from and NOT the page — that page lives inside one job, so say to open the job from `route` first and then the tab named in `page` (\"A job — billing\" is the Billing tab). NOT for a question about the company's own records — a number, a list, a status, an amount: use the tool that reads that data instead, never this one. If nothing in the app's own walkthroughs matches, say so rather than guessing at a page.",
+    input_schema: appHelpFilter,
+  },
 ];
 
 /**
@@ -795,7 +811,7 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
    * recorded from the bureau and never derived from the OSHA log. */
   {
     topic: "whether a job will finish on time, or a forecast completion date",
-    why: "nothing forecasts a date. `schedule_status` says where a job stands against the dates somebody entered, which is as far as the data goes. Percent complete is COST-based — money spent against money expected — and a job can be 80% through its budget and nowhere near 80% through its programme.",
+    why: "nothing forecasts a date. `schedule_status` says where a job stands against the dates somebody entered, which is as far as the data goes. Percent complete is COST-based — money spent against money expected — and a job can be 80% through its budget and nowhere near 80% through its schedule.",
   },
   {
     topic: "who is clocked in right now, or who has not clocked out",

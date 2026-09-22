@@ -35,6 +35,13 @@ export const CAPABILITIES = [
   /** Jobs themselves and the correspondence around them: RFIs, submittals,
    * drawings, closeout. */
   "MANAGE_JOBS",
+  /** Agreeing that a punch item somebody else marked fixed really is.
+   *
+   * Split out of `MANAGE_FIELD` rather than folded into it, because the
+   * whole value of the Completed-vs-Verified split is that the person who
+   * did the work is not the only witness that it was done. A capability
+   * every field user holds would make the two states decoration. */
+  "VERIFY_PUNCH_ITEMS",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -85,6 +92,10 @@ const BY_FUNCTION: Record<JobFunctionValue, Capability[]> = {
     "VIEW_JOB_COSTS",
     "MANAGE_ESTIMATING",
     "MANAGE_BILLING",
+    // The PM walks the list with the GC. This is the other half of the
+    // FIELD row below: somebody has to be able to verify, and it is not
+    // the crew who fixed it.
+    "VERIFY_PUNCH_ITEMS",
   ],
 
   // The only function that removes anything, and the audit row this
@@ -93,6 +104,9 @@ const BY_FUNCTION: Record<JobFunctionValue, Capability[]> = {
   // Margin, cost and billing are not withheld out of distrust — they are
   // simply not this job, and a phone left on a bench in a jobsite trailer
   // is a genuinely different exposure from a laptop in an office.
+  // VERIFY_PUNCH_ITEMS is absent ON PURPOSE and is the second thing this
+  // function removes. A foreman raises punch items, fixes them and marks
+  // them ready; agreeing that they are done is somebody else's signature.
   FIELD: ["MANAGE_FIELD", "MANAGE_JOBS"],
 
   PAYROLL_COMPLIANCE: ["MANAGE_COMPLIANCE", "MANAGE_FIELD"],

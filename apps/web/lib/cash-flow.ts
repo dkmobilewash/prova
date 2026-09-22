@@ -124,6 +124,18 @@ export function effectiveDueDateFor(input: {
  * due today, all day. Comparing timestamps made the forecast call a
  * midnight-dated invoice overdue by lunchtime while the aging table on the
  * same page still called it current.
+ *
+ * `asOf` MUST BE A CALENDAR DAY AT UTC MIDNIGHT, not the current instant.
+ * Both callers passed a raw `new Date()` and both were wrong the same way:
+ * `dueDate` is a stored UTC midnight, so an instant later the same day
+ * floors to 0 in the morning and to 1 after the UTC day rolls over. West
+ * of UTC that is every evening — at 17:01 in Los Angeles an invoice due
+ * today read "1d overdue", moved into the 1-30 bucket, flipped the
+ * forecast row to Overdue, and put its whole balance on the dashboard's
+ * Overdue invoices tile. Flooring the instant here would not fix it: that
+ * is still the SERVER's day, which is already tomorrow. Use
+ * `viewerAsOf()` (lib/viewerToday.ts) — the reader's calendar day, at UTC
+ * midnight, so this subtraction is exact integer days.
  */
 export function daysPastDueFor(dueDate: Date, asOf: Date): number {
   return Math.floor((asOf.getTime() - dueDate.getTime()) / MS_PER_DAY);
@@ -247,7 +259,12 @@ function monthLabel(date: Date): string {
 /** Builds a forward monthly forecast covering `monthsAhead` calendar months
  * from `asOf`, plus an "OVERDUE" bucket for anything already past its
  * target date. Buckets beyond the window collapse into the last month
- * rather than extending the table indefinitely for a job scheduled years out. */
+ * rather than extending the table indefinitely for a job scheduled years out.
+ *
+ * `asOf` is the reader's calendar day at UTC midnight — see
+ * `daysPastDueFor`. It decides both the OVERDUE cut and which month the
+ * window starts in, so on the last evening of a month the server's own
+ * clock would also start the table in the wrong month. */
 export function calculateCashFlowForecast(
   arInvoices: ArAgingInvoiceResult[],
   retainage: RetainageReceivableInput[],

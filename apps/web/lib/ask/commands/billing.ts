@@ -1,6 +1,7 @@
 import { prisma } from "@prova/db";
 import { logPayment } from "@/lib/actions/billing";
-import { createInvoiceRecord, NOT_INVOICEABLE, retainageWithheldFor } from "@/lib/billing/create-invoice";
+import { createInvoiceRecord, NOT_INVOICEABLE } from "@/lib/billing/create-invoice";
+import { retainageWithheldFor } from "@/lib/billing/retainage-amount";
 import { money } from "@/lib/money";
 import { addDays, parseAmount } from "../numbers";
 import { resolveOpenInvoice, type ResolvedInvoice } from "../resolve";
@@ -77,7 +78,10 @@ async function resolveDraftInvoice(ctx: CommandContext, input: CommandInput): Pr
   const description = input.description ?? "";
   const terms = detail.contact.paymentTermsDays;
   const dueAt = terms != null && terms > 0 ? addDays(ctx.today, terms) : null;
-  const retainagePercent = detail.retainagePercent == null ? null : Number(detail.retainagePercent);
+  // The card must preview the cent the write will actually snapshot, so it
+  // runs the same formula on the same Decimal the write reads — not on a
+  // `Number()` of it.
+  const retainagePercent = detail.retainagePercent;
   const withheld = retainageWithheldFor(amount.value, retainagePercent);
   const lastNumber = detail.invoiceCounter?.lastNumber ?? 0;
 
@@ -89,7 +93,10 @@ async function resolveDraftInvoice(ctx: CommandContext, input: CommandInput): Pr
   if (description) preview.push({ label: "For", value: description });
   preview.push({
     label: "Retainage withheld",
-    value: withheld ? `${money(Number(withheld))} (${retainagePercent}% per the job's terms)` : "none — the job has no retainage rate",
+    // `Number()` for the DISPLAY only. Decimal(5, 2) comes back from
+    // Postgres as "10.00", and "10.00% per the job's terms" reads like a
+    // precision nobody asked for. The arithmetic above never sees this.
+    value: withheld ? `${money(Number(withheld))} (${Number(retainagePercent)}% per the job's terms)` : "none — the job has no retainage rate",
   });
   preview.push({
     label: "Due",
@@ -253,7 +260,7 @@ async function resolveLogPayment(ctx: CommandContext, input: CommandInput): Prom
   };
 }
 
-async function executeLogPayment(_ctx: CommandContext, payload: ResolvedPayload) {
+async function executeLogPayment(ctx: CommandContext, payload: ResolvedPayload) {
   const jobId = str(payload, "jobId");
   const jobName = str(payload, "jobName");
   const invoiceId = str(payload, "invoiceId");
@@ -267,7 +274,9 @@ async function executeLogPayment(_ctx: CommandContext, payload: ResolvedPayload)
   );
   if (!result.ok) return { ok: false as const, error: result.error };
   const row = await prisma.payment.findFirst({
-    where: { invoiceId },
+    // The action above already proved the invoice is in-company; the extra
+    // clause keeps this decoration lookup caller-proof under refactor.
+    where: { invoiceId, invoice: { job: { companyId: ctx.companyId } } },
     orderBy: { receivedAt: "desc" },
     select: { id: true },
   });

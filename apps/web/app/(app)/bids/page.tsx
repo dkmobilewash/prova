@@ -5,6 +5,7 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
 import { formatCalendarDate } from "@/lib/render-date";
+import { summariseWonValue, valueIsPartial } from "@/lib/bid-pipeline";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -57,8 +58,15 @@ export default async function BidsPage({
     include: { contact: true },
   });
 
-  const wonBids = bids.filter((b) => b.status === "WON" && b.bidAmount != null);
-  const totalWonValue = wonBids.reduce((sum, b) => sum + Number(b.bidAmount), 0);
+  // #79: a WON bid with no bidAmount used to be dropped from both the sum
+  // AND the count, so the figure read as a total when it was really a
+  // floor -- and vanished with no explanation at all when every won bid
+  // was unpriced. Reuses /pipeline's already-proven arithmetic
+  // (lib/bid-pipeline.ts) instead of a second, disagreeing computation.
+  const wonCount = bids.filter((b) => b.status === "WON").length;
+  const wonValue = summariseWonValue(
+    bids.map((b) => ({ status: b.status, bidAmount: b.bidAmount === null ? null : Number(b.bidAmount) })),
+  );
 
   // "No bids match this filter" was shown on a brand-new account, where no
   // filter is set and nothing could match anything. The two states need
@@ -126,7 +134,23 @@ export default async function BidsPage({
       {(bids.length > 0 || isFiltered) && (
         <p className="mb-4 text-sm text-ink-body">
           {bids.length} bid{bids.length === 1 ? "" : "s"}
-          {wonBids.length > 0 && <> · {money(totalWonValue)} in won bids with a recorded amount</>}
+          {/* Renders whenever ANY bid is WON, priced or not -- a total that
+              silently disappears because nobody went back and priced the win
+              is worse than a total that says it is incomplete. */}
+          {wonCount > 0 && (
+            <>
+              {" "}
+              ·{" "}
+              {valueIsPartial(wonValue) ? (
+                <span className="text-tag-amber-ink">
+                  at least {money(wonValue.valueWon)} in won bids — {wonValue.valueWonUnpriced} won{" "}
+                  {wonValue.valueWonUnpriced === 1 ? "bid has" : "bids have"} no amount recorded
+                </span>
+              ) : (
+                <>{money(wonValue.valueWon)} in won bids</>
+              )}
+            </>
+          )}
         </p>
       )}
 
@@ -155,8 +179,8 @@ export default async function BidsPage({
             ask="Northside Builders invited us to bid the Oak Ave addition, due October 3"
             sources={
               <p>
-                A bid is logged on the page of whoever asked for the price — a builder, a developer
-                or a homeowner — under Bid invitations. Open the contact, or add them first.
+                A bid is logged on the page of whoever asked for the price — a GC, a developer
+                or a construction manager — under Bid invitations. Open the contact, or add them first.
               </p>
             }
             example={{

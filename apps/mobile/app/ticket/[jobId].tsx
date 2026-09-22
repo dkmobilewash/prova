@@ -10,11 +10,18 @@ import { List } from "@/components/List";
 import { RefusedBanner } from "@/components/RefusedBanner";
 import { Sheet } from "@/components/Sheet";
 import { SignaturePad } from "@/components/SignaturePad";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
+import { OfflineNote } from "@/components/OfflineNote";
+import { emptyFor } from "@/lib/empty-state";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
 import { colors, typography } from "@/lib/theme";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
 import { enqueue } from "@/lib/sync-queue";
-import { useReloadWhenShown } from "@/lib/use-reload-when-shown";
 import { useSync } from "@/lib/use-sync";
 import type { TmTicket } from "@/lib/types";
 
@@ -27,10 +34,12 @@ function localToday(): string {
 }
 
 export default function TicketScreen() {
+  const { me } = useMe();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [tickets, setTickets] = useState<TmTicket[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [workDate, setWorkDate] = useState(localToday());
@@ -39,21 +48,22 @@ export default function TicketScreen() {
   const [signaturePath, setSignaturePath] = useState<string | null>(null);
 
   const load = async () => {
-    const token = await getToken();
-    if (!token || !jobId) return;
-    try {
-      setTickets(await api.listTmTickets(jobId, token));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load tickets");
+    if (!jobId) return;
+    const result = await cachedRead(
+      cacheKeys.tickets(jobId),
+      withToken(getToken, (token) => api.listTmTickets(jobId, token)),
+    );
+    setError(null);
+    if (result.from === "nothing") {
+      setOffline("nothing");
+      return;
     }
+    setTickets(result.value);
+    setOffline(staleNote(result));
   };
 
-  // On first show, on every return to this screen, and when the app comes
-  // back from the background — so rows changed elsewhere don't linger.
-  useReloadWhenShown(load);
 
-  const { pending, sync, refused, dismissRefused } = useSync(load);
+  const { pending, sync, refused, dismissRefused, retrySetAside } = useSync(load);
 
   const canSubmit = !!workDate && !!workDescription.trim() && !!signerName.trim() && signaturePath !== null;
 
@@ -76,11 +86,18 @@ export default function TicketScreen() {
     await sync();
   };
 
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["ticket/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["ticket/[jobId]"]} />;
+
   return (
     <View style={styles.screen}>
       {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <RefusedBanner refused={refused} onDismiss={dismissRefused} />
+      <OfflineNote state={offline} />
+      <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
       <List
         data={tickets}
         keyExtractor={(item) => item.id}
@@ -102,8 +119,10 @@ export default function TicketScreen() {
             ) : null}
           </Card>
         )}
-        emptyTitle="No T&M tickets"
-        emptyDescription="Tap “New ticket” to document and sign the day's extra work."
+        {...emptyFor(offline, "the T&M tickets", {
+          title: "No T&M tickets",
+          description: "Tap “New ticket” to document and sign the day's extra work.",
+        })}
       />
 
       <View style={styles.footer}>

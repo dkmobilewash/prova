@@ -6,6 +6,9 @@
 // the deciding is testable with hand-written inputs, and the row-reading
 // half is where a Decimal or a null silently becomes the wrong thing.
 //
+import { laborCostForRows, type CostEntryCostRow, type DecimalLike, type TimeEntryCostRow } from "./labor-job-cost";
+import type { FringeRateScheduleInput } from "./labor-cost";
+
 // THE ONE THING THIS FILE EXISTS TO GET RIGHT: a line item with no phase
 // code is reported, out loud, as its own row. Most lines have
 // `phaseCodeId = null` — there is no backfill and the schema comment says
@@ -28,9 +31,59 @@ export interface PhaseCodeRollupLine {
    * ever entered. Null and zero are different: null is "nobody has
    * budgeted this", zero is "budgeted at nothing". */
   budgetedCost: number | null;
-  /** SUM(CostEntry.amount) for this line. Always a number: no cost
-   * entries is zero spend, which is a fact rather than an absence. */
+  /** Everything booked against this line: SUM(CostEntry.amount) PLUS the
+   * burdened labor on the TimeEntry rows that name it. Always a number: no
+   * cost at all is zero spend, which is a fact rather than an absence.
+   *
+   * It was cost entries alone until #287 reached this file, which on a
+   * self-performed line meant the materials and none of the crew — and a
+   * cost code exists precisely to be compared against a labor budget. */
   actualCost: number;
+  /** Hours booked to this line that NO wage schedule could price, so they
+   * contributed zero dollars to `actualCost` above.
+   *
+   * Carried rather than folded in, because there is nothing to fold: the
+   * missing dollars are exactly what nobody can compute. Without this the
+   * page cannot tell a genuine underrun from hours nobody had a rate for,
+   * and `PhaseCode.tracksLabor` makes that the likeliest misreading here. */
+  unpricedLaborHours: number;
+}
+
+/**
+ * One Prisma `JobLineItem` row, converted into the line above — including
+ * its labor.
+ *
+ * THE ROW-READING HALF NORMALLY LIVES IN lib/phase-code-rollup-query.ts, and
+ * this is the deliberate exception. The labor composition is the part of
+ * that conversion that was WRONG for two days after #287 was called fixed,
+ * and a query file cannot be unit-tested without a database — so the one
+ * step with a history of being silently wrong sits here, where a test can
+ * reach it, and the query file keeps only the Prisma call and the two
+ * Decimal conversions whose failure modes it documents.
+ *
+ * `timeEntries` is the line's OWN entries, via the back-relation.
+ */
+export function phaseCodeRollupLine(
+  row: {
+    phaseCodeId: string | null;
+    jobId: string;
+    quantity: DecimalLike;
+    budgetedUnitCost: DecimalLike | null;
+    costEntries: readonly CostEntryCostRow[];
+    timeEntries: readonly TimeEntryCostRow[];
+  },
+  schedulesByCraft: ReadonlyMap<string, FringeRateScheduleInput[]>,
+): PhaseCodeRollupLine {
+  const labor = laborCostForRows(row.timeEntries, schedulesByCraft);
+  const manualCost = row.costEntries.reduce((sum, entry) => sum + Number(entry.amount), 0);
+  return {
+    phaseCodeId: row.phaseCodeId,
+    jobId: row.jobId,
+    budgetedCost:
+      row.budgetedUnitCost === null ? null : Number(row.quantity) * Number(row.budgetedUnitCost),
+    actualCost: manualCost + labor.total,
+    unpricedLaborHours: labor.unpricedHours,
+  };
 }
 
 /** A phase code as the company wrote it. Free text, deliberately not
@@ -62,6 +115,10 @@ export interface PhaseCodeRollupRow {
    * understated by however much those lines would have added, and this is
    * the number that says so instead of letting the total look complete. */
   linesWithoutBudget: number;
+  /** Hours in this row with no wage rate behind them. `actualCost` above is
+   * understated by whatever they would have cost — the same shape of caveat
+   * as `linesWithoutBudget`, on the other column. */
+  unpricedLaborHours: number;
 }
 
 export interface PhaseCodeRollup {
@@ -79,6 +136,9 @@ export interface PhaseCodeRollup {
     variance: number;
     lineCount: number;
     jobCount: number;
+    /** Company-wide hours with no wage rate behind them — the one figure
+     * that says whether every variance on this page is qualified. */
+    unpricedLaborHours: number;
   };
   /** Share of BUDGETED cost that is coded to a phase, 0..1 — the honest
    * companion to every figure above, in the same shape `lib/wip.ts` uses
@@ -96,6 +156,7 @@ interface Bucket {
   actualCost: number;
   lineCount: number;
   linesWithoutBudget: number;
+  unpricedLaborHours: number;
   jobIds: Set<string>;
 }
 
@@ -105,6 +166,7 @@ function emptyBucket(): Bucket {
     actualCost: 0,
     lineCount: 0,
     linesWithoutBudget: 0,
+    unpricedLaborHours: 0,
     jobIds: new Set<string>(),
   };
 }
@@ -113,6 +175,7 @@ function add(bucket: Bucket, line: PhaseCodeRollupLine) {
   bucket.lineCount += 1;
   bucket.jobIds.add(line.jobId);
   bucket.actualCost += line.actualCost;
+  bucket.unpricedLaborHours += line.unpricedLaborHours;
   if (line.budgetedCost === null) bucket.linesWithoutBudget += 1;
   else bucket.budgetedCost += line.budgetedCost;
 }
@@ -126,6 +189,7 @@ function row(phase: PhaseCodeMeta | null, bucket: Bucket): PhaseCodeRollupRow {
     jobCount: bucket.jobIds.size,
     lineCount: bucket.lineCount,
     linesWithoutBudget: bucket.linesWithoutBudget,
+    unpricedLaborHours: bucket.unpricedLaborHours,
   };
 }
 
@@ -198,6 +262,7 @@ export function rollUpPhaseCodes(
       budgetedCost: totals.budgetedCost,
       actualCost: totals.actualCost,
       variance: totals.budgetedCost - totals.actualCost,
+      unpricedLaborHours: totals.unpricedLaborHours,
       lineCount: totals.lineCount,
       jobCount: totals.jobIds.size,
     },

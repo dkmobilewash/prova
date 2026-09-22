@@ -8,6 +8,7 @@ import {
   actionFail,
   actionOk,
   InputError,
+  optionalNumberFromForm as optionalNumber,
   ownerRefusal,
   runAction,
   type ActionResult,
@@ -91,11 +92,7 @@ function dateFromForm(formData: FormData, key: string): Date {
 }
 
 function countFromForm(formData: FormData, key: string): number | null {
-  const raw = String(formData.get(key) ?? "").trim();
-  if (!raw) return null;
-  const n = Number(raw);
-  if (!Number.isInteger(n) || n < 0) throw new InputError(`"${key}" must be a whole number of days`);
-  return n;
+  return optionalNumber(formData, key, { integer: true, min: 0, unit: " days" })?.n ?? null;
 }
 
 /** Day counts only mean anything for these two outcomes. The form hides

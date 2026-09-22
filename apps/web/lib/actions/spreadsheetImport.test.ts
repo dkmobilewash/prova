@@ -28,6 +28,9 @@ const state = vi.hoisted(() => ({
   writes: [] as string[],
   txOptions: [] as unknown[],
   failNext: null as string | null,
+  /** Every path revalidated, so "the page this import is offered on gets
+   *  refreshed" is observed rather than assumed. */
+  revalidated: [] as string[],
   /** The Prisma error code the next failure carries, if any. */
   failCode: null as string | null,
   context: {
@@ -151,7 +154,7 @@ const client: Record<string, unknown> = new Proxy(
 );
 
 vi.mock("@prova/db", () => ({ prisma: client, Prisma: {} }));
-vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("next/cache", () => ({ revalidatePath: (path: string) => state.revalidated.push(path) }));
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => state.context }));
 vi.mock("@/lib/permissions", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/permissions")>();
@@ -162,8 +165,10 @@ vi.mock("@/lib/permissions", async (importOriginal) => {
   };
 });
 
-const { importClients, importJobs, importCrew } = await import("./spreadsheetImport");
-const { planClientImport, planCrewImport, planJobImport } = await import("@/lib/spreadsheet-import");
+const { importClients, importJobs, importCrew, importPhaseCodes } = await import("./spreadsheetImport");
+const { planClientImport, planCrewImport, planJobImport, planPhaseCodeImport } = await import(
+  "@/lib/spreadsheet-import"
+);
 
 function form(csv: string) {
   const fd = new FormData();
@@ -181,6 +186,7 @@ function seed() {
   state.txOptions = [];
   state.failNext = null;
   state.failCode = null;
+  state.revalidated = [];
   state.denied = new Set();
   state.context.role = "OWNER";
   state.context.jobFunction = null;
@@ -191,17 +197,19 @@ function seed() {
   table("crewMember").push({
     id: "m_A_maria", companyId: "co_A", legalFirstName: "Maria", legalMiddleName: null, legalLastName: "Lopez", employeeNumber: null,
   });
+  table("phaseCode").push({ id: "pc_A_04112", companyId: "co_A", code: "04112", name: "Plywood" });
   // Theirs — every one of these would match the uploads below by name.
   table("contact").push({ id: "c_B_zenith", companyId: "co_B", name: "Zenith GC" });
   table("job").push({ id: "j_B_harbor", companyId: "co_B", contactId: "c_B_zenith", name: "Harbor" });
   table("crewMember").push({
     id: "m_B_john", companyId: "co_B", legalFirstName: "John", legalMiddleName: null, legalLastName: "Smith", employeeNumber: "E-1",
   });
+  table("phaseCode").push({ id: "pc_B_09250", companyId: "co_B", code: "09250", name: "Drywall" });
 }
 
 beforeEach(seed);
 
-const theirs = () => JSON.stringify(["contact", "job", "crewMember"].map((t) => rows(t, "co_B")));
+const theirs = () => JSON.stringify(["contact", "job", "crewMember", "phaseCode"].map((t) => rows(t, "co_B")));
 
 describe("importClients", () => {
   const CSV = "Name,Type,Email\nacme builders,GC,\nZenith GC,,pm@zenith.co\nNorth Supply,vendor,\n,gc,\nBad,architect,";
@@ -343,6 +351,71 @@ describe("importCrew", () => {
   });
 });
 
+describe("importPhaseCodes", () => {
+  const CSV = ["Code,Name,Unit", "04112,Plywood again,SF", "09250,drywall,SF", "04220,,SF", "17400,Framing,LF"].join(
+    "\n",
+  );
+
+  it("creates only this company's missing codes, matched EXACTLY (not case-folded), and a second run creates nothing", async () => {
+    const before = theirs();
+    const preview = planPhaseCodeImport(
+      CSV,
+      rows("phaseCode", "co_A").map((c) => c.code as string),
+    );
+    const result = await importPhaseCodes(form(CSV));
+    expect(rows("phaseCode", "co_A").slice(1).map((c) => c.code)).toEqual(preview.create.map((r) => r.code));
+    expect(result).toEqual({ ok: true, value: expect.objectContaining({ created: 2, alreadyThere: 1, skipped: 1 }) });
+
+    const created = rows("phaseCode", "co_A").filter((c) => c.id !== "pc_A_04112");
+    expect(created.map((c) => [c.code, c.name, c.unit])).toEqual([
+      // "04112" already exists on co_A (added by seed as "Plywood") — the
+      // upload's own "04112,Plywood again" is left alone, not overwritten.
+      // "09250" is company B's code, matched by exact code only when it is
+      // company A's own row, so co_A's line for 09250 IS new here.
+      ["09250", "drywall", "SF"],
+      ["17400", "Framing", "LF"],
+    ]);
+    // Company B's "09250" is untouched, and never counted as "already here"
+    // for company A.
+    expect(theirs()).toBe(before);
+
+    const again = await importPhaseCodes(form(CSV));
+    expect(again).toEqual({ ok: true, value: expect.objectContaining({ created: 0, alreadyThere: 3, skipped: 1 }) });
+    expect(rows("phaseCode", "co_A")).toHaveLength(3);
+    expect(rows("phaseCode")).toHaveLength(4);
+  });
+
+  it("writes inside one serializable transaction", async () => {
+    await importPhaseCodes(form(CSV));
+    expect(state.writes).toEqual(["phaseCode.createMany@tx"]);
+    expect(state.txOptions).toEqual([expect.objectContaining({ isolationLevel: "Serializable" })]);
+  });
+
+  it("returns a sentence, not a throw, when Postgres refuses an overlapping import (P2034)", async () => {
+    state.failNext = "phaseCode.createMany";
+    state.failCode = "P2034";
+    const result = await importPhaseCodes(form(CSV));
+    expect(result).toEqual({ ok: false, error: expect.stringContaining("at the same moment") });
+    expect(rows("phaseCode", "co_A")).toHaveLength(1);
+  });
+
+  it("is owner-only and answers to MANAGE_COMPLIANCE, before any query", async () => {
+    state.context.role = "MEMBER";
+    expect(await importPhaseCodes(form(CSV))).toEqual({ ok: false, error: expect.stringContaining("Only the account owner") });
+    state.context.role = "OWNER";
+
+    state.denied = new Set(["MANAGE_COMPLIANCE"]);
+    expect(await importPhaseCodes(form(CSV))).toEqual({ ok: false, error: expect.stringContaining("job function") });
+    expect(state.writes).toEqual([]);
+    expect(state.txOptions).toEqual([]);
+
+    // MANAGE_JOBS, the capability the other three imports answer to, does
+    // NOT gate this one.
+    state.denied = new Set(["MANAGE_JOBS"]);
+    expect(await importPhaseCodes(form(CSV))).toEqual({ ok: true, value: expect.anything() });
+  });
+});
+
 describe("every confirm writes inside one serializable transaction, and only there", () => {
   const cases = [
     ["importClients", () => importClients(form("Name\nNew Co")), ["contact.createMany@tx"]],
@@ -352,6 +425,7 @@ describe("every confirm writes inside one serializable transaction, and only the
       ["contact.createManyAndReturn@tx", "job.createMany@tx"],
     ],
     ["importCrew", () => importCrew(form("First,Last\nAna,Ruiz")), ["crewMember.createMany@tx"]],
+    ["importPhaseCodes", () => importPhaseCodes(form("Code,Name\n17400,Framing")), ["phaseCode.createMany@tx"]],
   ] as const;
 
   for (const [name, run, writes] of cases) {
@@ -387,12 +461,67 @@ describe("size", () => {
 describe("who may confirm", () => {
   it("refuses a non-owner before any query", async () => {
     state.context.role = "MEMBER";
-    for (const action of [importClients, importJobs, importCrew]) {
+    // CREW IS NOT IN THIS LIST ANY MORE, and that is the decision rather
+    // than an omission — see the test below and the block at the top of
+    // lib/actions/crewMembers.ts.
+    for (const action of [importClients, importJobs, importPhaseCodes]) {
       const result = await action(form("Name\nX"));
       expect(result).toEqual({ ok: false, error: expect.stringContaining("Only the account owner") });
     }
     expect(state.writes).toEqual([]);
     expect(state.txOptions).toEqual([]);
+  });
+
+  /**
+   * THE OFFICE MANAGER CAN GET THE CREW IN.
+   *
+   * PAYROLL_COMPLIANCE is the job function of the person who runs certified
+   * payroll every week. She could already import the payroll REGISTER —
+   * that import is deliberately not owner-only, for exactly this reason —
+   * and could not create the crew members its rows have to match, because
+   * `importCrew` asked for OWNER. The person whose job this is could not do
+   * it, and the register import she could reach was matching against a list
+   * only somebody else could fill.
+   *
+   * The pair of assertions is the test: she may ADD, and she may not
+   * ARCHIVE. Archiving is the one-way door — there is no un-archive
+   * anywhere in the app — so it keeps the owner gate. A test asserting only
+   * the first half would pass on an action that had dropped its guards
+   * altogether.
+   */
+  it("lets the payroll & compliance manager import crew, owner or not", async () => {
+    state.context.role = "MEMBER";
+    state.context.jobFunction = "PAYROLL_COMPLIANCE";
+    expect(await importCrew(form("First,Last\nLuis,Ortega"))).toEqual({
+      ok: true,
+      value: expect.anything(),
+    });
+    expect(rows("crewMember", "co_A").some((row) => row.legalLastName === "Ortega")).toBe(true);
+  });
+
+  /**
+   * The crew import is offered on `/team` now, not only inside Settings.
+   * `importCrew` revalidated `/settings/import` and `/schedule` and not the
+   * page it is actually on, so a contractor pasting forty names would have
+   * watched the list under the box not change — an import that reads as an
+   * import that did nothing, and an invitation to paste it again.
+   */
+  it("refreshes the page the import is offered on", async () => {
+    expect(await importCrew(form("First,Last\nLuis,Ortega"))).toEqual({ ok: true, value: expect.anything() });
+    expect(state.revalidated).toContain("/team");
+  });
+
+  it("still refuses crew to a job function without MANAGE_FIELD", async () => {
+    state.context.role = "MEMBER";
+    // ACCOUNTING holds billing and financials and no field capability at
+    // all (lib/permissions.ts), so it is the honest negative case — this
+    // is not a capability every member happens to hold.
+    state.context.jobFunction = "ACCOUNTING";
+    expect(await importCrew(form("First,Last\nLuis,Ortega"))).toEqual({
+      ok: false,
+      error: expect.stringContaining("job function"),
+    });
+    expect(state.writes).toEqual([]);
   });
 
   it("asks for MANAGE_JOBS on clients and jobs, and MANAGE_FIELD on crew", async () => {

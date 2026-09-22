@@ -1,16 +1,19 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { Card, StatusBadge } from "@prova/ui";
+import { Card, PageShell, StatusBadge } from "@prova/ui";
 import { JobStatus, Prisma, prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
+import { redirectToOnboardingIfUnasked } from "@/lib/onboarding-gate";
 import { estimateStage } from "@/lib/estimate-stage";
 import { can } from "@/lib/permissions";
 import { money } from "@/lib/money";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { renewalAlerts, renewalTiming } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
+import { viewerAsOf } from "@/lib/viewerToday";
 import { loadTodayDashboard } from "@/lib/today-dashboard";
 import { AskPanel } from "@/components/AskPanel";
+import { EmptyState } from "@/components/EmptyState";
 import { GettingStartedCard } from "@/components/GettingStartedCard";
 import { FullTourOffer } from "@/components/FullTourOffer";
 import { gettingStartedChecklist } from "@/lib/getting-started";
@@ -73,6 +76,14 @@ const HEALTH_TONE: Record<string, string> = {
   unknown: "text-ink-body",
 };
 
+/** Whole literals so Tailwind sees every class. Index = tile count. */
+const NEEDS_ATTENTION_GRID: Record<number, string> = {
+  1: "grid grid-cols-1 gap-3",
+  2: "grid grid-cols-1 gap-3 sm:grid-cols-2",
+  3: "grid grid-cols-1 gap-3 sm:grid-cols-3",
+  4: "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4",
+};
+
 type JobRow = Awaited<ReturnType<typeof loadJobs>>[number];
 
 async function loadJobs(companyId: string, where: Prisma.JobWhereInput) {
@@ -109,6 +120,13 @@ export default async function TodayPage({
 }) {
   const { company, ...currentUser } = await requireCompanyContext();
 
+  // The onboarding gate. THIS MUST STAY THE FIRST THING AFTER
+  // requireCompanyContext() — redirect() throws, so nothing below it runs
+  // when it fires, and this is the one page a fresh signup or sign-in ever
+  // lands on by default (see lib/onboarding-gate.ts's own header for why
+  // that makes this the only page that should ever call it).
+  redirectToOnboardingIfUnasked({ role: currentUser.role, businessScopeAskedAt: company.businessScopeAskedAt });
+
   // Both TRUE for an owner and for a member with no job function set, so
   // this screen is unchanged for everyone who has ever used it. A narrowed
   // function loses the money and keeps the work.
@@ -128,7 +146,12 @@ export default async function TodayPage({
     ];
   }
 
-  const now = new Date();
+  // The READER'S calendar day, at UTC midnight — what the receivables
+  // tile ages against. A raw `new Date()` here put an invoice due TODAY on
+  // the Overdue invoices tile from 17:00 Pacific, at its full value, on
+  // the first screen an owner sees. See the note on `daysPastDueFor` in
+  // lib/cash-flow.ts.
+  const asOf = await viewerAsOf();
 
   // The getting-started card. Hidden-by-cookie is decided HERE, on the
   // server, from the request — so the markup the browser hydrates already
@@ -144,7 +167,7 @@ export default async function TodayPage({
     loadJobs(company.id, where),
     loadJobs(company.id, { companyId: company.id }),
     renewalSourcesForCompany(company.id),
-    loadTodayDashboard(company.id, now),
+    loadTodayDashboard(company.id, asOf),
     gettingStartedHidden ? null : loadGettingStartedCounts(company.id),
   ]);
 
@@ -159,6 +182,56 @@ export default async function TodayPage({
 
   const estimating = allJobs.filter((job) => job.status === "ESTIMATE");
   const pipelineValue = estimating.reduce((sum, job) => sum + jobValue(job), 0);
+
+  // A company with no jobs has nothing for most of this page to say — no
+  // invoice, cost, crew day or GC exists without a job to hang it on — so
+  // it gets the one thing it can do (start a job) and the checklist, and
+  // every section below returns the moment the first job exists. The ONE
+  // company-level figure that can be non-zero before any job is a licence
+  // or certificate running out, so that card still shows when it has
+  // something in it. Presentation only: every figure above is computed
+  // exactly as before, and a company with a job renders the same page.
+  const isNewAccount = allJobs.length === 0;
+
+  // Written once and placed in one of two spots below: beside "Crews
+  // today" for a company with jobs (where it always was), or alone for a
+  // company with none yet that has a document running out.
+  const complianceCard = (
+    <Card>
+      <h3 className="text-sm font-semibold text-ink">Compliance</h3>
+      {expiringSoon.length === 0 ? (
+        <p className="mt-2 text-sm text-ink-body">
+          Nothing expiring. Certificates, licences, policies and bonds are current.
+        </p>
+      ) : (
+        <ul className="mt-3 divide-y divide-line-row">
+          {expiringSoon.slice(0, 6).map((renewal) => (
+            <li key={`${renewal.kind}-${renewal.id}`} className="py-2.5">
+              <p className="text-sm font-medium text-ink">
+                {renewal.title}
+                {renewal.detail && (
+                  <span className="font-normal text-ink-body"> — {renewal.detail}</span>
+                )}
+              </p>
+              <p
+                className={`text-xs ${
+                  renewal.urgency === "EXPIRED"
+                    ? "text-tag-rose-ink"
+                    : "text-tag-amber-ink"
+                }`}
+              >
+                {renewalTiming(renewal)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+
+  // Owner and unrestricted members have all four tiles, and their row is
+  // unchanged; a narrowed job function gets a row sized to what it sees.
+  const needsAttentionTiles = 1 + (showsBilling ? 2 : 0) + (showsJobMoney ? 1 : 0);
 
   const grouped = activeStatus
     ? [{ status: activeStatus, rows: jobs }]
@@ -185,8 +258,8 @@ export default async function TodayPage({
           converted put tables and buttons directly on the page background
           and render unreadable on a light one. */}
       <div className="flex min-h-full bg-canvas">
-        <div className="min-w-0 flex-1 px-6 py-8">
-          <div className="mx-auto max-w-5xl">
+        <div className="min-w-0 flex-1">
+          <PageShell width="working">
             <h1 className="text-xl font-semibold text-ink">Today</h1>
             <p className="mt-1 text-sm text-ink-body">
               What needs a decision, before you go looking for it.
@@ -194,7 +267,52 @@ export default async function TodayPage({
 
             {/* The full tour, offered once to an account with no jobs yet —
                 a brand-new one. Dismissed per browser; see FullTourOffer. */}
-            {allJobs.length === 0 && <FullTourOffer />}
+            {isNewAccount && <FullTourOffer />}
+
+            {/* A brand-new company's first screen leads with the one thing
+                it can do. The example rows are static markup, labelled as
+                an example by EmptyState itself — never data. */}
+            {isNewAccount && (
+              <EmptyState
+                data-tour="dashboard-jobs-empty"
+                className="mt-6"
+                title="No jobs yet"
+                purpose={
+                  <p>
+                    Everything in C Stream hangs off a job: the estimate, the crew&rsquo;s hours, the
+                    invoices, the paperwork. Start your first one and this page fills in with what
+                    is overdue, who is on site today and which jobs are drifting past budget.
+                  </p>
+                }
+                actions={[
+                  { label: "Start your first job", href: "/jobs/new" },
+                  { label: "Bring jobs in from a spreadsheet", href: "/settings/import" },
+                ]}
+                example={{
+                  caption: "What your jobs list looks like once it is in use. Not your data — nothing here is saved.",
+                  rows: [
+                    {
+                      title: "Oak Ave Medical — level 3 framing and drywall",
+                      tag: "In progress",
+                      detail: "Example General Contractor",
+                      meta: showsJobMoney ? "$412,000" : undefined,
+                    },
+                    {
+                      title: "Lincoln HS gym — acoustical ceilings",
+                      tag: "Estimating",
+                      detail: "Sample Builders · Needs pricing",
+                      meta: showsJobMoney ? "$186,500" : undefined,
+                    },
+                    {
+                      title: "Harbor View Lofts — EIFS",
+                      tag: "Contracted",
+                      detail: "Example General Contractor",
+                      meta: showsJobMoney ? "$95,200" : undefined,
+                    },
+                  ],
+                }}
+              />
+            )}
 
             {/* First, and only until the required steps are done or someone
                 hides it on this browser. Everything below keeps its order. */}
@@ -211,12 +329,25 @@ export default async function TodayPage({
               <AskPanel />
             </div>
 
+            {/* Before the first job, the one section with something to say. */}
+            {isNewAccount && expiringSoon.length > 0 && (
+              <section className="mt-6" data-tour="dashboard-field">
+                <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
+                  Needs attention
+                </h2>
+                {complianceCard}
+              </section>
+            )}
+
             {/* ------------------------------------ needs attention --- */}
+            {!isNewAccount && (
             <section className="mt-6" data-tour="dashboard-needs-attention">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Needs attention
               </h2>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {/* As many columns as this viewer has tiles, so a field role's
+                  single tile does not sit alone in a four-wide row. */}
+              <div className={NEEDS_ATTENTION_GRID[needsAttentionTiles]}>
                 {showsBilling && (
                   <StatCard
                     accent="rose"
@@ -262,8 +393,10 @@ export default async function TodayPage({
                 )}
               </div>
             </section>
+            )}
 
             {/* -------------------------------- today in the field ---- */}
+            {!isNewAccount && (
             <section className="mt-8" data-tour="dashboard-field">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Today in the field
@@ -294,41 +427,13 @@ export default async function TodayPage({
                   )}
                 </Card>
 
-                <Card>
-                  <h3 className="text-sm font-semibold text-ink">Compliance</h3>
-                  {expiringSoon.length === 0 ? (
-                    <p className="mt-2 text-sm text-ink-body">
-                      Nothing expiring. Certificates, licences, policies and bonds are current.
-                    </p>
-                  ) : (
-                    <ul className="mt-3 divide-y divide-line-row">
-                      {expiringSoon.slice(0, 6).map((renewal) => (
-                        <li key={`${renewal.kind}-${renewal.id}`} className="py-2.5">
-                          <p className="text-sm font-medium text-ink">
-                            {renewal.title}
-                            {renewal.detail && (
-                              <span className="font-normal text-ink-body"> — {renewal.detail}</span>
-                            )}
-                          </p>
-                          <p
-                            className={`text-xs ${
-                              renewal.urgency === "EXPIRED"
-                                ? "text-tag-rose-ink"
-                                : "text-tag-amber-ink"
-                            }`}
-                          >
-                            {renewalTiming(renewal)}
-                          </p>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </Card>
+                {complianceCard}
               </div>
             </section>
+            )}
 
             {/* ------------------------------------------------ money -- */}
-            {showsBilling && (
+            {showsBilling && !isNewAccount && (
             <section className="mt-8" data-tour="dashboard-money">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Money
@@ -346,14 +451,25 @@ export default async function TodayPage({
                   <h3 className="text-sm font-semibold text-ink">How your GCs pay</h3>
                   {today.gcReliability.length === 0 ? (
                     <p className="mt-2 text-sm text-ink-body">
-                      No invoices raised yet, so there is nothing to judge.
+                      No invoices raised yet, so there is nothing to judge.{" "}
+                      <Link href="/jobs" className="text-link hover:underline">
+                        Open a job
+                      </Link>{" "}
+                      and bill it under Billing — this fills in once a GC has paid one.
                     </p>
                   ) : (
                     <ul className="mt-3 divide-y divide-line-row">
                       {today.gcReliability.slice(0, 6).map((row) => (
                         <li key={row.contactId} className="flex items-baseline justify-between gap-3 py-2.5">
                           <Link href={`/contacts/${row.contactId}`} className="min-w-0">
-                            <span className="block truncate text-sm font-medium text-ink">
+                            {/* NOT `truncate`. The GC's name is the only thing
+                                telling these rows apart, and at 375px this
+                                column is ~215px — enough for about 24
+                                characters, which turns "Turner Construction —
+                                West Region" and "…— East Region" into the same
+                                row. Wrapping costs a line; clipping costs the
+                                answer to the question the card exists for. */}
+                            <span className="block break-words text-sm font-medium text-ink">
                               {row.name}
                             </span>
                             <span className="block text-xs text-ink-body">
@@ -363,12 +479,22 @@ export default async function TodayPage({
                             </span>
                           </Link>
                           <span className="shrink-0 text-right">
-                            <span className="block text-sm font-medium tabular-nums text-ink">
-                              {row.reliability.onTimeRate === null
-                                ? "—"
-                                : `${Math.round(row.reliability.onTimeRate * 100)}%`}
-                            </span>
-                            <span className="block text-xs text-ink-body">on time</span>
+                            {/* A bare em dash in a percentage slot reads as a
+                                broken screen. It means "nobody has paid one of
+                                theirs in full yet", which is a fact about the
+                                account rather than a fault, so it says so. */}
+                            {row.reliability.onTimeRate === null ? (
+                              <span className="block max-w-[7.5rem] text-xs text-ink-body">
+                                Not enough paid yet to say
+                              </span>
+                            ) : (
+                              <>
+                                <span className="block text-sm font-medium tabular-nums text-ink">
+                                  {`${Math.round(row.reliability.onTimeRate * 100)}%`}
+                                </span>
+                                <span className="block text-xs text-ink-body">on time</span>
+                              </>
+                            )}
                           </span>
                         </li>
                       ))}
@@ -382,7 +508,7 @@ export default async function TodayPage({
             {/* ------------------------------------------- job health -- */}
             {/* The sentences here ARE the margin — "forecast 8% past
                 contract value" is the number said out loud. */}
-            {showsJobMoney && (
+            {showsJobMoney && !isNewAccount && (
             <section className="mt-8" data-tour="dashboard-job-health">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Job health
@@ -410,6 +536,8 @@ export default async function TodayPage({
             )}
 
             {/* --------------------------------------- browse all jobs - */}
+            {/* A new account's jobs empty state is at the top of the page. */}
+            {!isNewAccount && (
             <section className="mt-10 border-t border-line-card pt-6">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="text-sm font-semibold text-ink">Browse all jobs</h2>
@@ -475,18 +603,7 @@ export default async function TodayPage({
                 })}
               </div>
 
-              {allJobs.length === 0 ? (
-                <Card className="mt-6" data-tour="dashboard-jobs-empty">
-                  <p className="text-ink-label">No jobs yet.</p>
-                  <p className="mt-1 text-sm text-ink-body">
-                    Start one and you&apos;re estimating —{" "}
-                    <Link href="/jobs/new" className="text-link hover:underline">
-                      create a job
-                    </Link>{" "}
-                    to price up your first scope.
-                  </p>
-                </Card>
-              ) : jobs.length === 0 ? (
+              {jobs.length === 0 ? (
                 <Card className="mt-6 text-sm text-ink-body">
                   {q ? (
                     <>
@@ -565,7 +682,8 @@ export default async function TodayPage({
                 </div>
               )}
             </section>
-          </div>
+            )}
+          </PageShell>
         </div>
 
         <ReceivablesDetailPanel />

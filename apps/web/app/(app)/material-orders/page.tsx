@@ -9,6 +9,7 @@ import { daysLate, orderState } from "@/components/materialOrderLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { materialOrdersStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as RFIs,
  * submittals, the safety log and daily field reports. */
@@ -27,7 +28,7 @@ export default async function MaterialOrdersPage({
   const { job: jobFilter, show } = await searchParams;
   const showDelivered = show === "all";
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await viewerToday();
 
   const [jobRows, vendors, lineItems] = await Promise.all([
     prisma.job.findMany({
@@ -103,6 +104,7 @@ export default async function MaterialOrdersPage({
   const rows = showDelivered
     ? allRows
     : allRows.filter((row) => orderState(row.deliveries) !== "COMPLETE");
+  const hasRecords = everLogged > 0 || rows.length > 0;
 
   // Counted from all rows for this filter, not the visible ones — the
   // default view hides exactly the delivered set, and a tile that falls to
@@ -150,7 +152,14 @@ export default async function MaterialOrdersPage({
         />
       </section>
 
-      <StatusLine report={status} />
+      {/* At zero-ever the EmptyState below is the whole answer. The status
+          line and the "0 outstanding" count above it said "nothing" twice
+          more first, three empties stacked on a new account. /bids hides its
+          count the same way, as #451 did for /rfis, /submittals and
+          /drawings; both come back with the first order. `rows.length` is
+          in the gate as well as `everLogged` so a page that is SHOWING rows
+          can never lose its header, whatever the count query says. */}
+      {hasRecords && <StatusLine report={status} />}
 
       {jobs.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2" data-tour="material-orders-job-filter">
@@ -165,14 +174,16 @@ export default async function MaterialOrdersPage({
         </div>
       )}
 
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink-label">
-          {rows.length} {showDelivered ? "total" : "outstanding"}
-        </h2>
-        <Link href={filterHref({ show: showDelivered ? null : "all" })} className="text-sm text-link">
-          {showDelivered ? "Hide delivered" : "Show delivered"}
-        </Link>
-      </div>
+      {hasRecords && (
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-ink-label">
+            {rows.length} {showDelivered ? "total" : "outstanding"}
+          </h2>
+          <Link href={filterHref({ show: showDelivered ? null : "all" })} className="text-sm text-link">
+            {showDelivered ? "Hide delivered" : "Show delivered"}
+          </Link>
+        </div>
+      )}
 
       {rows.length === 0 && everLogged === 0 ? (
         <EmptyState

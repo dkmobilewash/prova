@@ -20,6 +20,34 @@ model Company {
   phone          String?
   website        String?
 
+  /// The three onboarding questions (issue: "onboarding questions") and the
+  /// nav-display profile they set — see apps/web/lib/businessScope.ts,
+  /// which owns every rule about what these mean and derives the readable
+  /// line settings shows. A SEPARATE thing from the `dbaName`/`ein`/`hq*`
+  /// block above: that is the company's own legal record, printed on
+  /// documents; this is a display preference about which nav groups paint,
+  /// never a security boundary and never touched by lib/permissions.ts.
+  ///
+  /// ALL THREE NULLABLE, and null is not "unset waiting to be filled" — it
+  /// is a first-class answer meaning "show everything," and it is what
+  /// EVERY company that predates this feature has and will keep having. A
+  /// company that answered once and later wants full nav back again clears
+  /// these from Settings; `businessScopeAskedAt` stays set so the onboarding
+  /// prompt does not resurface, only the display these three used to narrow.
+  contractingRelationship ContractingRelationship?
+  doesPublicWork          Boolean?
+  filesMonthlyPayApps     Boolean?
+
+  /// When the onboarding prompt was last answered OR explicitly skipped —
+  /// either way, the prompt does not ask again. Null means "never shown,"
+  /// which is also true of every company that existed before this column,
+  /// so a pre-existing company sees the prompt once rather than never
+  /// again by accident. Set by both saveBusinessScope and
+  /// skipBusinessScopeQuestions (lib/actions/company.ts) — never by the
+  /// three answer fields changing on their own, so clearing them from
+  /// Settings does not make the prompt come back.
+  businessScopeAskedAt DateTime?
+
   /// Which Company is PROVA'S OWN operating company -- the only tenant that
   /// should ever see the internal sales CRM (SalesLead/SalesOpportunity,
   /// sales.prisma). Exactly one row in production should ever be true, set
@@ -27,6 +55,15 @@ model Company {
   /// nothing can compute this from existing data, same as every other flag
   /// in this schema with no source to derive it from.
   isProvaOperator Boolean @default(false)
+
+  /// The unguessable half of this company's inbound intake address:
+  /// `docs-<token>@<INTAKE_INBOUND_DOMAIN>`. The token IS the routing — an
+  /// email to an address whose token matches no row is dropped — so it is
+  /// random (32 hex chars, 128 bits), unique, and regenerable by the owner
+  /// if it leaks. Nullable because companies predate it; the migration
+  /// backfills existing rows and `/intake` fills a null lazily, so a company
+  /// created after the migration gets one the first time the tray is opened.
+  intakeEmailToken String? @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -42,6 +79,10 @@ model Company {
   integrationConnections    IntegrationConnection[]
   docuSignEnvelopes         DocuSignEnvelope[]
   procoreProjectLinks       ProcoreProjectLink[]
+  accProjectLinks           AccProjectLink[]
+  companycamProjectLinks    CompanyCamProjectLink[]
+  bluebeamStudioSessions    BluebeamStudioSession[]
+  calendarFeedTokens        CalendarFeedToken[]
   complianceDocuments       ComplianceDocument[]
   licenses                  CompanyLicense[]
   tradeScopes               CompanyTradeScope[]
@@ -95,6 +136,7 @@ model Company {
   salesStageChanges         SalesStageChange[]
   equipmentAssignments      EquipmentAssignment[]
   crewMembers               CrewMember[]
+  payrollRegisterEntries    PayrollRegisterEntry[]
   crewScheduleDays          CrewScheduleDay[]
   workerCrafts              WorkerCraft[]
   experienceModRates        ExperienceModRate[]
@@ -107,6 +149,14 @@ model Company {
 enum UserRole {
   OWNER
   MEMBER
+}
+
+/// Onboarding question 1 — see Company.contractingRelationship above and
+/// apps/web/lib/businessScope.ts for what each value hides from the nav.
+enum ContractingRelationship {
+  UNDER_GENERAL_CONTRACTORS
+  DIRECT_FOR_OWNERS
+  BOTH
 }
 
 model User {
@@ -160,6 +210,9 @@ model User {
   assignments                          JobAssignment[]
   crewScheduleDays                     CrewScheduleDay[]      @relation("CrewScheduleDayUser")
   crewScheduleDaysCreated              CrewScheduleDay[]      @relation("CrewScheduleDayCreatedBy")
+  companycamLinksCreated               CompanyCamProjectLink[] @relation("CompanyCamLinkedBy")
+  bluebeamSessionsLinked                BluebeamStudioSession[] @relation("BluebeamLinkedBy")
+  calendarFeedTokens                   CalendarFeedToken[]
   workerCrafts                         WorkerCraft[]
   experienceModRatesCreated            ExperienceModRate[]    @relation("ExperienceModRateCreatedBy")
   lienDeadlinesCreated                 LienDeadline[]         @relation("LienDeadlineCreatedBy")
@@ -181,6 +234,10 @@ model User {
   uploadedPrevailingWageDeterminations PrevailingWageDetermination[]
   createdRetainageReleases             RetainageRelease[]
   raisedPunchListItems                 PunchListItem[]
+  assignedPunchListItems               PunchListItem[]               @relation("PunchItemAssignedUser")
+  readiedPunchListItems                PunchListItem[]               @relation("PunchItemReadyBy")
+  verifiedPunchListItems               PunchListItem[]               @relation("PunchItemVerifiedBy")
+  reopenedPunchListItems               PunchListItem[]               @relation("PunchItemReopenedBy")
   createdTmTickets                     TmTicket[]
   signedTimesheets                     TimesheetSignoff[]            @relation("TimesheetSignoffSignedBy")
   approvedTimesheets                   TimesheetSignoff[]            @relation("TimesheetSignoffApprovedBy")

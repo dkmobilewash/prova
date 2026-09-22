@@ -43,16 +43,12 @@ const appDir = join(webRoot, "app");
  * able to read back.
  */
 const EMPTY_STATE_EXCEPTIONS: Record<string, string> = {
-  "/dashboard":
-    "the Getting started card is this page's empty state — a checklist ticked from real data, not a single missing list",
   "/ask": "not a list: the assistant box with its example questions is the whole page",
   "/team": "never empty — the owner is always on it, and the invite form is the first thing on the page",
   "/settings": "a set of forms, not a list; each section says in one line what it is for",
   "/settings/integrations": "a card per connection with its own Connect button; there is no list to be empty",
   "/sales": "operator-only CRM for C Stream's own sales, never seen by a customer",
   "/internal/usage": "operator-only usage figures, never seen by a customer",
-  "/safety":
-    "two independent logs (incidents, toolbox talks) with an always-open form each; no single empty branch to replace",
   "/certifications":
     "a crew-by-requirement matrix whose empty branches depend on crew and requirements separately; not yet converted",
   "/deployment": "a board of crews and gear per job, each empty in its own cell; not yet converted",

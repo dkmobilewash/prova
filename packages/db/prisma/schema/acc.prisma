@@ -1,0 +1,120 @@
+// Autodesk Construction Cloud (ACC): a READ-ONLY feed of a GC's RFIs and
+// submittals into one C Stream job.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// SAME SHAPE AS PROCORE (procore.prisma), on purpose — same kind of vendor
+// (the GC's document-control system of record), same kind of data. Read
+// that file's header first; this one only calls out where ACC differs.
+//
+// WHAT THESE ROWS ARE. A cache of the GC's own records — their RFIs, their
+// submittals — as ACC last showed them to the subcontractor's login. They
+// are NOT this company's evidence records and are deliberately kept out of
+// Rfi and Submittal: those are the sub's own, identity-locked and
+// counter-numbered (CLAUDE.md "Evidence records" and "Sequence numbers").
+// An ACC RFI numbered 14 is the GC's number 14; mixing it into the sub's
+// log would let the GC's numbering and the sub's counter disagree about
+// what "RFI 14" means on this job.
+//
+// So an AccItem is replaced wholesale on every refresh, may be deleted
+// freely, and never gains a field a person types into. The only thing C
+// Stream decides here is WHICH job an ACC project feeds — the link.
+//
+// The connection itself (the OAuth tokens) lives on IntegrationConnection
+// with provider ACC, one per company, like every other provider.
+//
+// NO DRAWING KIND. Procore's feed reads a current drawing set directly.
+// ACC's equivalent (Docs sheets) is published through the Model Derivative
+// API — submit a translation job, poll its manifest, extract derivative
+// URNs — a materially bigger and riskier lift than a GET-and-cache list.
+// Deliberately out of this phase; see packages/integrations/src/acc.ts's
+// notes for the API facts gathered so far. No Issues kind either: ACC
+// Issues has no existing C Stream page to feed without touching
+// jobs/[id]/page.tsx (Diego's lane, fixed section slots) — RFIs and
+// Submittals already have their own self-contained pages, same as Procore.
+
+/// Which ACC project feeds which C Stream job. One project per job and one
+/// job per project within a company, so "where did this RFI come from"
+/// always has one answer.
+///
+/// ON DELETE CASCADE from Job, on purpose: this is not evidence, it is a
+/// pointer at somebody else's system, and a scratch job being deleted
+/// should take its pointer (and the cache under it) with it rather than
+/// refuse. Also listed in scratch-scope.mjs HANDLED_MODELS so the jobId
+/// census in clean-test-jobs.mjs recognises it.
+model AccProjectLink {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String  @unique
+  job       Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  /// ACC's ids, as strings: ACC sends UUIDs for projects and the account
+  /// (hub) they sit under. Nothing here does arithmetic on them.
+  accAccountId   String
+  accAccountName String
+  accProjectId   String
+  accProjectName String
+
+  /// Who linked it. A plain id rather than a relation: a pointer for the
+  /// audit line, not something anything joins through.
+  linkedByUserId String?
+  linkedAt       DateTime @default(now())
+
+  /// The last refresh's time and outcome, written in the same transaction
+  /// as the items it describes (the IntegrationConnection.lastSyncedAt
+  /// argument): "is this stale?" must not need a scan of the items.
+  lastRefreshedAt    DateTime?
+  lastRefreshStatus  IntegrationSyncStatus?
+  /// A sentence for the page — never a payload and never a token.
+  lastRefreshMessage String?
+
+  items AccItem[]
+
+  @@unique([companyId, accProjectId])
+  @@index([companyId])
+}
+
+enum AccItemKind {
+  RFI
+  SUBMITTAL
+}
+
+/// One GC record, as ACC last showed it. Replaced on each refresh.
+model AccItem {
+  id        String         @id @default(cuid())
+  /// Denormalised from the link so every read can be scoped by company in
+  /// the same WHERE, without trusting a join to do the tenant check.
+  companyId String
+  linkId    String
+  link      AccProjectLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  kind  AccItemKind
+  accId String
+
+  /// As ACC shows it: "RFI-014", "SUB-0032.1". Text, never parsed.
+  number        String?
+  title         String
+  /// ACC's own status word ("open", "answered", "in review"). Shown as
+  /// given; nothing in C Stream branches on it.
+  status        String?
+  /// Submittals only: the item's revision/step label. Null for an RFI.
+  revision      String?
+  /// Submittals: the spec section. Null for an RFI — ACC's RFI list has no
+  /// equivalent field.
+  discipline    String?
+  /// Who ACC says holds the ball, as a display name.
+  ballInCourt   String?
+  /// Stored at UTC midnight, like every calendar day in this app.
+  dueDate       DateTime?
+  /// When ACC says the record last changed.
+  accUpdatedAt  DateTime?
+  /// Where to open it in ACC. Built from ids, not taken from a payload URL,
+  /// so a link on this page always points at ACC's own web host.
+  webUrl        String
+
+  fetchedAt DateTime
+
+  @@unique([linkId, kind, accId])
+  @@index([companyId, kind])
+}
