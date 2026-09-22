@@ -47,6 +47,15 @@ const { WWCCA, FOUNDING_OFFER } = await import("@/components/associations/wwcca"
 const { DEFAULTS, cStreamMonthlyPrice } = await import("@/components/associations/wwccaSavings");
 
 const html = renderToStaticMarkup(createElement(WwccaAssociationPage));
+const askDemoScript = await import("@/components/landing/askDemoScript");
+
+/** A <figure> that is one of the four product panels — i.e. every figure
+ * except the Ask demo's, which carries `data-ask-demo="figure"` as its first
+ * attribute. The demo is NOT a panel: it has no illustrative figures in it
+ * and no "Figures are illustrative" caption, and it is prose to every guard
+ * below, which is wanted — stripping it with the panels would hide its words
+ * from the scan. */
+const PANEL_FIGURE = /<figure(?! data-ask-demo)[\s\S]*?<\/figure>/g;
 
 /** The page without its four product panels. The panels are figures of real
  * documents with illustrative money in them, and that is fine and captioned;
@@ -59,7 +68,7 @@ const html = renderToStaticMarkup(createElement(WwccaAssociationPage));
  * its numbers pass as prose or vanish from the scan. It nests no <section>,
  * so the first closing tag is its own. */
 const calculator = html.match(/<section data-savings-calculator[\s\S]*?<\/section>/)?.[0] ?? "";
-const prose = html.replace(/<figure[\s\S]*?<\/figure>/g, "").replace(calculator, "");
+const prose = html.replace(PANEL_FIGURE, "").replace(calculator, "");
 
 /** What renderToStaticMarkup does to text, so a constant can be found in it. */
 const escapeHtml = (text: string) =>
@@ -67,6 +76,47 @@ const escapeHtml = (text: string) =>
 
 const webRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const repoRoot = resolve(webRoot, "../..");
+
+// ---------------------------------------------------------------- guards
+// Every pattern the page is held to, named once, so the rendered page AND
+// every word the Ask demo can show (see "the Ask demo" below) are scanned by
+// the same list rather than two copies that drift.
+
+/** Partnership or association-program language. The independence
+ * disclosure is the one sentence allowed to use it, to deny it. */
+const ENDORSEMENT =
+  /endorse|official partner|in partnership|partnered with|member discount|exclusive|approved by|recommended by|sponsored/i;
+/** Any dollar figure. The founding price is the one allowed outside the
+ * panels and the calculator, and is removed by its exact text first. */
+const DOLLAR = /\$\s?\d/;
+/** Terms that are undecided or advised against. */
+const LIFETIME = /for life|lifetime|as long as you stay/i;
+const UNSET_TERMS = [
+  /\d\s?%|percent/i,
+  /free trial|\btrial period/i,
+  /\bAI\b|allowance|tokens?\b/,
+  /spots? (left|remaining)|\bonly \d+ left|countdown|hurry|ends (soon|on)/i,
+];
+/** Features the product does not have, each easy to imply. */
+const CLAIMS = {
+  filing: [
+    /\bfil(e|es|ed|ing)\b[^.]{0,40}(payroll|WH-347|certified)/i,
+    /(payroll|WH-347|certified)[^.]{0,40}\bfil(e|es|ed|ing)\b/i,
+    /file-ready|ready to file|e-?file|submit(s|ted)? (it |them )?to the/i,
+  ],
+  overtime: [/(calculat|comput|automatic)\w*[^.]{0,30}overtime|overtime[^.]{0,30}(calculat|comput|automatic)/i],
+  remittance: [/(mail|send|submit)\w*[^.]{0,30}(remittance|trust fund)|remittance[^.]{0,30}ready to (mail|send)/i],
+};
+/** How the assistant must never be described. */
+const BANNED = [
+  /fully[\s-]*(AI[\s-]*)?automated/i,
+  /hands[\s-]*free/i,
+  /no data entry/i,
+  /files? (it |them |this )?for you/i,
+  /file[\s-]*ready/i,
+  /automatic(ally)?[^.]{0,20}overtime|overtime[^.]{0,20}automatic/i,
+  /remembers|learns your|gets to know you/i,
+];
 
 describe("/associations/wwcca is not discoverable", () => {
   it("tells search engines not to index it or follow its links", () => {
@@ -164,9 +214,7 @@ describe("/associations/wwcca claims no endorsement", () => {
   it("uses none of the language of a partnership or an association program", () => {
     const withoutDisclosure = prose.replace(escapeHtml(WWCCA.independence), "");
     expect(withoutDisclosure).not.toBe(prose);
-    expect(withoutDisclosure).not.toMatch(
-      /endorse|official partner|in partnership|partnered with|member discount|exclusive|approved by|recommended by|sponsored/i,
-    );
+    expect(withoutDisclosure).not.toMatch(ENDORSEMENT);
   });
 
   it("shows no image but C Stream's own wordmark — no association logo", () => {
@@ -178,7 +226,7 @@ describe("/associations/wwcca claims no endorsement", () => {
     expect(html).toContain("C Stream is offering founding-member pricing to the first 10 WWCCA member companies.");
     expect(html).toContain("a lower price than anyone who comes after them, locked in");
     // Undecided, and advised against: no lifetime promise may appear.
-    expect(html).not.toMatch(/for life|lifetime|as long as you stay/i);
+    expect(html).not.toMatch(LIFETIME);
     expect(html).toContain("the founders&#x27; direct time");
   });
 });
@@ -195,15 +243,12 @@ describe("/associations/wwcca prints one number, the one that was set", () => {
   it("carries no other dollar figure, percentage, undecided term or scarcity counter outside the panels", () => {
     const withoutPrice = prose.replace(escapeHtml(FOUNDING_OFFER.price!), "");
     expect(withoutPrice).not.toBe(prose);
-    expect(withoutPrice).not.toMatch(/\$\s?\d/);
-    expect(prose).not.toMatch(/\d\s?%|percent/i);
-    expect(prose).not.toMatch(/free trial|\btrial period/i);
-    expect(prose).not.toMatch(/\bAI\b|allowance|tokens?\b/);
-    expect(prose).not.toMatch(/spots? (left|remaining)|\bonly \d+ left|countdown|hurry|ends (soon|on)/i);
+    expect(withoutPrice).not.toMatch(DOLLAR);
+    for (const pattern of UNSET_TERMS) expect(prose).not.toMatch(pattern);
   });
 
   it("keeps the illustrative-figures caption on every panel", () => {
-    const figures = html.match(/<figure/g)?.length ?? 0;
+    const figures = html.match(PANEL_FIGURE)?.length ?? 0;
     expect(figures).toBe(4);
     expect(html.match(/Figures are illustrative/g)?.length).toBe(figures);
   });
@@ -227,7 +272,7 @@ describe("/associations/wwcca fills the hero's right half", () => {
   });
 
   it("shows the WH-347 once on the page, not again further down", () => {
-    const figures = html.match(/<figure[\s\S]*?<\/figure>/g) ?? [];
+    const figures = html.match(PANEL_FIGURE) ?? [];
     expect(figures).toHaveLength(4);
     expect(figures.filter((figure) => figure.includes(">Form WH-347<"))).toHaveLength(1);
   });
@@ -251,17 +296,15 @@ describe("/associations/wwcca claims nothing the product does not do", () => {
    * Run over the WHOLE page, panels included: a panel is a claim too.
    */
   it("never says certified payroll is filed or file-ready", () => {
-    expect(html).not.toMatch(/\bfil(e|es|ed|ing)\b[^.]{0,40}(payroll|WH-347|certified)/i);
-    expect(html).not.toMatch(/(payroll|WH-347|certified)[^.]{0,40}\bfil(e|es|ed|ing)\b/i);
-    expect(html).not.toMatch(/file-ready|ready to file|e-?file|submit(s|ted)? (it |them )?to the/i);
+    for (const pattern of CLAIMS.filing) expect(html).not.toMatch(pattern);
   });
 
   it("never claims overtime is calculated", () => {
-    expect(html).not.toMatch(/(calculat|comput|automatic)\w*[^.]{0,30}overtime|overtime[^.]{0,30}(calculat|comput|automatic)/i);
+    for (const pattern of CLAIMS.overtime) expect(html).not.toMatch(pattern);
   });
 
   it("never says the remittance is ready to mail or send", () => {
-    expect(html).not.toMatch(/(mail|send|submit)\w*[^.]{0,30}(remittance|trust fund)|remittance[^.]{0,30}ready to (mail|send)/i);
+    for (const pattern of CLAIMS.remittance) expect(html).not.toMatch(pattern);
   });
 
   /** The regexes above are only worth something if they can see the words
@@ -293,16 +336,6 @@ describe("/associations/wwcca describes the assistant honestly", () => {
    * protect. A regex that matches nothing is only worth something when the
    * text it is about is provably there.
    */
-  const BANNED = [
-    /fully[\s-]*(AI[\s-]*)?automated/i,
-    /hands[\s-]*free/i,
-    /no data entry/i,
-    /files? (it |them |this )?for you/i,
-    /file[\s-]*ready/i,
-    /automatic(ally)?[^.]{0,20}overtime|overtime[^.]{0,20}automatic/i,
-    /remembers|learns your|gets to know you/i,
-  ];
-
   it("says a person taps once to approve anything saved or sent — the sentence the guard protects", () => {
     expect(html.length).toBeGreaterThan(5000);
     expect(html).toContain("Tell it what you need and it does it");
@@ -468,5 +501,106 @@ describe("/associations/wwcca switches off in one line", () => {
     const { default: Disabled } = await import("./page");
     expect(() => Disabled()).toThrow(/NEXT_HTTP_ERROR_FALLBACK;404|NEXT_NOT_FOUND/);
     vi.doUnmock("@/components/associations/wwcca");
+  });
+});
+
+describe("/associations/wwcca the Ask demo", () => {
+  /**
+   * The demo (components/landing/AskDemo.tsx) is mounted beside the
+   * assistant section's words. The server renders ONE still frame of it, so
+   * scanning `html` alone would check the settled hours card and miss every
+   * other frame — the typed RFI question, the form, the saved row. Every
+   * word the scene can show lives in askDemoScript.ts (its header's rule),
+   * so the whole module's string values are collected here, along with the
+   * JSX text in AskDemo.tsx itself ("Ask C Stream", "RFIs", …), and held to
+   * this page's guards.
+   *
+   * FAILS ON EMPTY INPUT: the collection must contain both prompts, the
+   * caption and the scene description, and be more than a floor of strings,
+   * so a refactor that moved the words elsewhere fails here instead of
+   * passing an empty scan.
+   */
+  const strings: string[] = [];
+  const collect = (value: unknown) => {
+    if (typeof value === "string") strings.push(value);
+    else if (Array.isArray(value)) value.forEach(collect);
+    else if (value && typeof value === "object") Object.values(value).forEach(collect);
+  };
+  for (const [name, value] of Object.entries(askDemoScript)) {
+    // CAN_DO is AskCanDo's list, which this page does not render.
+    if (name === "CAN_DO") continue;
+    if (typeof value === "function") continue;
+    collect(value);
+  }
+  strings.push(askDemoScript.sceneDescription());
+  // Every frame of the schedule, so a string only a frame computes (the
+  // "<verb>…" status line) is scanned too.
+  for (let t = 0; t < askDemoScript.TOTAL_MS; t += 20) {
+    const frame = askDemoScript.frameAt(t);
+    if (frame.status) strings.push(frame.status);
+    if (frame.asked) strings.push(frame.asked);
+  }
+  const demoSource = readFileSync(resolve(webRoot, "components/landing/AskDemo.tsx"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const match of demoSource.matchAll(/>\s*([A-Za-z][^<>{}]*?)\s*</g)) strings.push(match[1]);
+  const demoText = strings.join("\n");
+
+  it("is on the page once, beside the assistant's words, top-aligned, and not stripped as a panel", () => {
+    expect(html.match(/data-ask-demo="figure"/g)?.length).toBe(1);
+    expect(prose).toContain('data-ask-demo="figure"');
+    const section = html.slice(html.indexOf("Tell it what you need and it does it") - 400);
+    const grid = section.match(/<div class="([^"]*lg:grid-cols-[^"]*)"/)?.[1] ?? "";
+    expect(grid).toContain("items-start");
+    expect(grid).not.toContain("items-center");
+    expect(section.indexOf('data-ask-demo="figure"')).toBeLessThan(section.indexOf("data-savings-calculator"));
+  });
+
+  it("does not also render AskCanDo — the page keeps one list", () => {
+    expect(html).not.toContain("data-landing-ask-can-do");
+    expect(html).not.toContain("What you can ask it to do");
+  });
+
+  it("collected the demo's words, not an empty set", () => {
+    expect(strings.length).toBeGreaterThan(40);
+    for (const needle of [
+      askDemoScript.RFI.prompt,
+      askDemoScript.HOURS.prompt,
+      askDemoScript.EXAMPLE_CAPTION,
+      askDemoScript.HOURS_OUTCOME.message,
+      `${askDemoScript.RFI.verb}…`,
+      "Ask C Stream",
+      "RFIs",
+    ]) {
+      expect(demoText).toContain(needle);
+    }
+  });
+
+  it("says nothing the page's guards forbid, in any frame", () => {
+    for (const pattern of [ENDORSEMENT, DOLLAR, LIFETIME, ...UNSET_TERMS, ...BANNED, ...Object.values(CLAIMS).flat()]) {
+      expect(demoText, `the Ask demo matches ${pattern}`).not.toMatch(pattern);
+    }
+  });
+
+  /**
+   * THE TWO LISTS NAME THE SAME COMMANDS, GROUP BY GROUP. The landing page
+   * lists the assistant's commands in askDemoScript.ts CAN_DO (AskCanDo);
+   * this page lists them in ASSISTANT_DOES. Both are held to the registry
+   * separately — this one above, CAN_DO in askDemoScript.test.ts — but that
+   * lets them sort the same commands into different groups. Pinned here so
+   * a visitor who reads both pages reads one account of the assistant.
+   */
+  it("groups the same commands as the landing page's list", () => {
+    const landing = readFileSync(resolve(webRoot, "components/associations/WwccaLanding.tsx"), "utf8");
+    const listStart = landing.indexOf("const ASSISTANT_DOES");
+    const list = landing.slice(listStart, landing.indexOf("];", listStart));
+    const onPage = [...list.matchAll(/((?:[ \t]*\/\/[^\n]*\n)+)[ \t]*\{ group: "([^"]+)"/g)].map((m) => ({
+      group: m[2],
+      commands: [...m[1].matchAll(/\b[a-z0-9]+(?:_[a-z0-9]+)+\b/g)].map((c) => c[0]).sort(),
+    }));
+    const canDo = askDemoScript.CAN_DO.map((g) => ({
+      group: g.group,
+      commands: g.items.flatMap((item) => [...item.commands]).sort(),
+    }));
+    expect(onPage.length, "no groups parsed out of ASSISTANT_DOES").toBe(canDo.length);
+    expect(onPage).toEqual(canDo);
   });
 });

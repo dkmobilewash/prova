@@ -6,6 +6,7 @@ import { PayApplicationPanel } from "@/components/landing/PayApplicationPanel";
 import { CertifiedPayrollPanel } from "@/components/landing/CertifiedPayrollPanel";
 import { ApprenticeRatioPanel } from "@/components/landing/ApprenticeRatioPanel";
 import { JobCostPanel } from "@/components/landing/JobCostPanel";
+import { AskDemo } from "@/components/landing/AskDemo";
 import { WwccaSavingsCalculator } from "./WwccaSavingsCalculator";
 import { FOUNDING_OFFER, WWCCA } from "./wwcca";
 
@@ -307,21 +308,41 @@ export function WwccaLanding() {
           page.test.ts. "Ask" is what the app calls the box (/pilot names it
           the same way). */}
       <section className={sectionSpace}>
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand">The assistant</p>
-        <h2 className="mt-2 text-2xl font-semibold leading-tight text-ink sm:text-3xl">
-          Tell it what you need and it does it
-        </h2>
-        {/* ASK DEMO SLOT. An animated demo of the Ask box is being built
-            separately in components/landing/AskDemo.tsx on its own branch.
-            When it lands, this block becomes a two-column grid at `lg`
-            (`grid items-start gap-8 lg:grid-cols-2 lg:gap-14`, the panel
-            rows' shape) with the demo in the second column, beside the
-            words. Deliberately NOT an empty second column until then: a
-            reserved blank half is the bare-right-half hole this page's hero
-            was just rebuilt to close. */}
-        <div className="mt-8">
+        {/* THE ASK DEMO, beside the words. components/landing/AskDemo.tsx
+            is the landing page's scene (two real commands, each confirmed
+            by a tap), reused as-is; every word it shows is in
+            askDemoScript.ts and page.test.ts scans all of it with this
+            page's banned-phrase and claim guards, not just the still frame
+            the server renders.
+
+            `items-start`, NOT `items-center`, for the landing page's reason
+            (its hero-grid note): the demo's height changes as it plays, and
+            centring the words against it would open a hole above them — the
+            207px one, the first time — that also moves with every frame.
+            Top-aligned, the heading sits where the eye starts and does not
+            move. The heading is inside the left column, as on the landing
+            page, so the demo's top lines up with it instead of starting a
+            heading-height lower.
+
+            ONE LIST. The landing page puts AskCanDo (askDemoScript.ts
+            CAN_DO) beside the demo; this page does NOT, because
+            ASSISTANT_DOES below is this page's list and two lists of the
+            same twenty commands would be the same claim made twice.
+            page.test.ts holds the two to the same commands, group by
+            group, so they cannot come to disagree.
+
+            The demo's height varies between frames. Under `lg` it is the
+            last block of the section, so a taller frame pushes the
+            calculator down rather than over anything, and it is `w-full
+            min-w-0` inside a `min-w-0` cell so no frame can widen the page.
+            At `lg` its cell reserves the tallest frame (below). */}
+        <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-14">
           <div className="min-w-0">
-            <p className="max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
+            <p className="text-sm font-semibold uppercase tracking-wide text-brand">The assistant</p>
+            <h2 className="mt-2 text-2xl font-semibold leading-tight text-ink sm:text-3xl">
+              Tell it what you need and it does it
+            </h2>
+            <p className="mt-8 max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
               {/* raise_rfi, draft_invoice, log_time_entry, schedule_crew, send_email */}
               It raises the RFI, drafts the invoice, logs the hours, schedules the crew, sends the
               email.{" "}
@@ -346,6 +367,33 @@ export function WwccaLanding() {
               From hours entered once, it builds the WH-347 payroll grid, the fringe remittance per
               local and fund, and the apprentice ratio per day.
             </p>
+          </div>
+          {/* `lg:flex lg:justify-end`, NOT `lg:justify-self-end`: the
+              latter shrink-wraps the cell to each frame's content, so the
+              demo's left edge moved 189px (822 to 1011 at 1500) as short
+              frames replaced long ones. A full-width flex cell keeps the
+              figure at its own max width every frame, pinned right.
+
+              `lg:min-h-[620px]` RESERVES THE TALLEST FRAME. At `lg` the demo
+              is taller than the words beside it for part of the loop
+              (202px to 580px against a 394px column at 1500), so the row's
+              height followed the frame and the calculator below — on screen
+              at the same time on a desktop — moved 192px up and down every
+              twenty seconds. Measured in a production build over a full
+              loop: tallest frame 618px at 1024 (the narrowest `lg`, where
+              the column is under the figure's 34rem cap), 580px at 1280,
+              1500 and 1920. 620px covers all of them. `lg:items-start` keeps
+              the figure its own height, so the reserve is page background
+              below it — without it the flex cell stretched the frame to
+              620px and the caption floated over an empty box. If the
+              script gains a taller frame, re-measure. Under `lg` there is
+              NO reserve on purpose: the tallest frame is 890px at 320, so a
+              reserve would leave up to 678px of empty page under a short
+              frame; there the demo fills most of the screen while it plays,
+              and nothing overlaps or pans (measured: innerWidth 375/320
+              every frame, scrollWidth equal). */}
+          <div className="min-w-0 lg:flex lg:min-h-[620px] lg:items-start lg:justify-end">
+            <AskDemo />
           </div>
         </div>
       </section>

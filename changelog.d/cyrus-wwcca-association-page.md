@@ -149,12 +149,54 @@ savings calculator from the visitor's own numbers.**
   it strips the panels, asserts it is there to strip, and asserts every
   default renders with its source beside a `<label>`led input. Ends with
   "An estimate from the numbers you enter, not a quote."
-- **The Ask demo is not here.** An animated demo is being built separately
-  in `components/landing/AskDemo.tsx`; the assistant section carries a
-  comment marking where it mounts, deliberately without reserving an empty
-  column for it.
+- **The Ask demo was not here at first;** the section carried a comment
+  marking where it would mount. It is mounted now — see below.
 - Mutation-tested red: clamping the saving at zero, skipping the cents
   rounding, a banned phrase on the page, a command named that the code lacks
   (which passed the first time — the census regex excluded digits, so
   `file_wh347` was never parsed; fixed), a real command dropped, and a
   default losing its source line.
+
+**The Ask demo, beside the assistant's words (Cyrus, 2026-09-22).** #457
+put `components/landing/AskDemo.tsx` on the landing page (about twenty
+seconds, two real commands, each confirmed by a tap). It now sits in the
+assistant section's marked slot, reused as-is.
+
+- **Two columns at `lg`, `items-start`,** with the heading moved into the
+  left column so the demo's top lines up with it (the landing page's shape).
+  Top-aligned for the landing page's 207px-hole reason. Phones stack: the
+  words first, the demo last.
+- **One list.** The landing page puts `AskCanDo` beside the demo; this page
+  does not, because `ASSISTANT_DOES` is its list already. The two lists were
+  checked and do agree: the same four groups and the same twenty commands.
+  A new test pins them to that, group by group, so they cannot drift apart.
+- **The demo's width and height, measured in a production build over a full
+  loop.** The first placement used `lg:justify-self-end` as the landing page
+  does. That shrink-wraps the cell to each frame, so the demo's left edge moved
+  189px (822 to 1011 at 1500) as frames changed. It is now a full-width flex
+  cell pinned right, and the left edge is constant. Height was the larger
+  problem. The demo runs 202 to 580px against a 394px column, so the row
+  followed the frame, and the calculator below moved 192px every loop while it
+  was on screen with it. The cell now reserves the tallest frame at `lg`
+  (`lg:min-h-[620px]`; tallest measured 618px at 1024 and 580px at 1280, 1500
+  and 1920). The calculator's top is fixed across every frame: 3751px at 1500,
+  4177px at 1024. There is no reserve under `lg`: the tallest frame at 320 is
+  890px against a shortest of 212px. At 375 and 320 `window.innerWidth`
+  equalled the device width and `scrollWidth` equalled it too, on every one of
+  ~160 samples across all 26 steps of the loop. There was no overlap. The
+  calculator moves with the demo on a phone, below it, never over it.
+- **The guards see every frame, not just the still.** The server renders one
+  frame (the settled hours card), so `page.test.ts` collects every string
+  value exported by `askDemoScript.ts`, the status lines each frame computes
+  and the JSX text in `AskDemo.tsx`. It holds them to the page's endorsement,
+  dollar, percentage, trial, AI/allowance, scarcity, lifetime, filing,
+  overtime, remittance and banned-assistant patterns, which are now named once
+  and shared rather than inlined per test. The collection must contain both
+  prompts and the caption, and more than 40 strings, so an empty scan fails.
+  The demo is a `<figure>`, so the prose strip now removes only the four
+  panels' figures and leaves the demo in the prose scan. The panel counts
+  (4, each captioned) are unchanged.
+- Mutation-tested red: a banned phrase in a frame the server never renders
+  (the hours prompt), a dollar figure in the RFI question, partnership
+  language in `AskDemo.tsx`'s own JSX, `items-center` on the grid, a command
+  moved between groups, `AskCanDo` rendered alongside, and the demo removed.
