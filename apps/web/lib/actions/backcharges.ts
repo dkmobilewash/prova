@@ -7,7 +7,14 @@ import { viewerToday } from "@/lib/viewerToday";
 import { can } from "@/lib/permissions";
 import { money as formatMoney } from "@/lib/money";
 import { Prisma, prisma } from "@prova/db";
-import { actionFail as fail, actionOk as ok, isUniqueConstraintError, type ActionResult } from "./shared";
+import {
+  InputError,
+  actionFail as fail,
+  actionOk as ok,
+  isUniqueConstraintError,
+  runAction,
+  type ActionResult,
+} from "./shared";
 
 /** Actions in this module RETURN their failures instead of throwing them.
  * Production redacts a thrown Server Action message to an opaque digest, so
@@ -40,7 +47,12 @@ import { actionFail as fail, actionOk as ok, isUniqueConstraintError, type Actio
 const BILLING_ONLY =
   "Backcharges aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
-class InputError extends Error {}
+// `InputError` and `runAction` are imported from ./shared rather than
+// declared here. Two classes with the same name are not the same class:
+// `instanceof` is false between them, so a refusal thrown by a shared
+// parser walked straight past a local boundary and reached production as a
+// redacted digest. That is what #407 found on /welcome, and this module
+// held the fifteenth copy of the class it found there.
 
 const CATEGORIES = [
   "CLEANUP",
@@ -117,14 +129,6 @@ function money(formData: FormData, key: string, label: string): string {
   return parsed.n.toFixed(2);
 }
 
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
-}
 
 async function assertJob(jobId: string, companyId: string) {
   const job = await prisma.job.findUnique({ where: { id: jobId } });

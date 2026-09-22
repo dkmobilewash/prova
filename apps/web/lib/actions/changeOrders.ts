@@ -9,13 +9,14 @@ import { reopenBlockers } from "@/lib/change-order";
 import { causeLabel, formatMinutes, methodLabel, partyLabel } from "@/lib/delays-core";
 import { Prisma } from "@prova/db";
 import {
-  actionFail as fail,
+  InputError,
   actionOk as ok,
   assertEditableViaChangeOrder,
   assertJobInCompany,
   assertLineItemOnJob,
   decimalFromForm,
   nullableDecimalFromForm,
+  runAction as sharedRunAction,
   tradeScopeFromForm,
   type ActionResult,
 } from "./shared";
@@ -49,7 +50,24 @@ import {
  * plain `throw` did — `runAction` only changes what happens to it once it
  * leaves the transaction.
  */
-class InputError extends Error {}
+// `InputError` comes from ./shared rather than being declared here. This
+// module used to hold its own class of that name, and the two were not the
+// same class — `instanceof` is false between them — which is how a refusal
+// from a shared parser escaped a local boundary and reached production as a
+// digest on /welcome (#407).
+//
+// The `decimal()` / `nullableDecimal()` wrappers that used to sit here are
+// gone with it, and that deletion is the same fix rather than a tidy-up.
+// They existed only to catch the bare `Error` the shared decimal parsers
+// threw and rethrow it as this module's class, passing `err.message`
+// through untouched. `decimalFromForm` throws `InputError` itself now, so
+// the call sites below use it directly and the message a person reads is
+// byte-identical to the one the wrapper forwarded.
+//
+// The `require*` wrappers further down are NOT the same thing and stay:
+// `assertJobInCompany` and friends are ownership and state guards, and
+// those still throw a bare `Error` on purpose — see the note at the top of
+// ./shared for where that line is drawn.
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -59,26 +77,6 @@ function required(formData: FormData, key: string, label: string) {
   const value = text(formData, key);
   if (!value) throw new InputError(`${label} is required.`);
   return value;
-}
-
-/** decimalFromForm/nullableDecimalFromForm throw a plain Error written for a
- * person to read ("quantity" must be a number) — only the throwing was
- * wrong, so they're caught here and turned into InputError rather than
- * reimplemented. One parser, one rule about what a number is. */
-function decimal(formData: FormData, key: string): string {
-  try {
-    return decimalFromForm(formData, key);
-  } catch (err) {
-    throw new InputError(err instanceof Error ? err.message : `"${key}" must be a number`);
-  }
-}
-
-function nullableDecimal(formData: FormData, key: string): string | null {
-  try {
-    return nullableDecimalFromForm(formData, key);
-  } catch (err) {
-    throw new InputError(err instanceof Error ? err.message : `"${key}" must be a number`);
-  }
 }
 
 /**
@@ -171,17 +169,23 @@ function assertDraft(changeOrder: { status: string; number: number }) {
   }
 }
 
-/** Runs a body that may raise an InputError, turning it into a returned
- * failure. Anything else is a real bug and is rethrown untouched — same
- * shape as lib/actions/submittals.ts's runAction. */
+/** The shared boundary, with this module's own calling convention kept.
+ *
+ * Every one of the seventeen actions below ends by doing its work and
+ * falling off the end, rather than returning `ok` explicitly — so the
+ * callback here returns `void` where ./shared's `runAction` takes one
+ * returning `ActionResult`. Adapting the signature is a two-line wrapper;
+ * rewriting seventeen call sites to end in `return ok` is a large diff
+ * through live change-order money handling for no behavioural gain.
+ *
+ * What matters is that the CATCH is no longer here. It delegates to the
+ * shared `runAction`, so the class this module converts is the same class
+ * the shared parsers throw — which is the whole point of the change. */
 async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
-  try {
+  return sharedRunAction(async () => {
     await fn();
     return ok;
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
+  });
 }
 
 /**
@@ -336,7 +340,7 @@ export async function proposeAddedScope(
 
     const description = required(formData, "itemDescription", "Line item description");
     const unit = text(formData, "unit");
-    const budgetedUnitCost = nullableDecimal(formData, "budgetedUnitCost");
+    const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
 
     await prisma.changeOrderProposal.create({
       data: {
@@ -344,10 +348,10 @@ export async function proposeAddedScope(
         changeType: "ADD",
         description,
         unit: unit || null,
-        quantity: decimal(formData, "quantity"),
-        unitPrice: nullableDecimal(formData, "unitPrice"),
+        quantity: decimalFromForm(formData, "quantity"),
+        unitPrice: nullableDecimalFromForm(formData, "unitPrice"),
         budgetedUnitCost,
-        currentEstimatedUnitCost: nullableDecimal(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost,
+        currentEstimatedUnitCost: nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost,
         tradeScope: tradeScopeFromForm(formData),
       },
     });
@@ -385,8 +389,8 @@ export async function proposeLineItemChange(
       );
     }
 
-    const quantity = nullableDecimal(formData, "quantity");
-    const unitPrice = nullableDecimal(formData, "unitPrice");
+    const quantity = nullableDecimalFromForm(formData, "quantity");
+    const unitPrice = nullableDecimalFromForm(formData, "unitPrice");
     if (quantity === null && unitPrice === null) {
       throw new InputError("Set a new quantity or a new unit price — otherwise this changes nothing.");
     }
