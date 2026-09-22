@@ -61,7 +61,15 @@ export type GcReliabilityRow = {
 };
 
 
-export async function loadTodayDashboard(companyId: string, now: Date) {
+/**
+ * @param asOf The READER'S calendar day, at UTC midnight —
+ * `viewerAsOf()` from lib/viewerToday.ts, not the current instant. It
+ * reaches `daysPastDueFor`, whose own note says why: an instant makes
+ * "overdue" depend on the time of day, and west of UTC an invoice due
+ * today starts reading as a day late every evening. The parameter was
+ * called `now` and /dashboard passed exactly that.
+ */
+export async function loadTodayDashboard(companyId: string, asOf: Date) {
   const [invoices, activeJobs, retainageHeld, contacts, fringeSchedulesByCraft] =
     await Promise.all([
     prisma.invoice.findMany({
@@ -213,7 +221,7 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
       // Derived rather than stored, so the row says "due in 4 days" where
       // it used to say "no due date" for an invoice that was already late.
       dueIsDerived: row.invoice.dueAt === null,
-      daysOverdue: Math.max(0, daysPastDueFor(effectiveDue, now)),
+      daysOverdue: Math.max(0, daysPastDueFor(effectiveDue, asOf)),
     };
   });
 

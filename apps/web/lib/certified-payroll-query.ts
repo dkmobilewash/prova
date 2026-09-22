@@ -34,3 +34,20 @@ export async function loadCertifiedPayrollWeekEntries(
     orderBy: { date: "asc" },
   });
 }
+
+/** The date of the latest hours logged on this job, on or before
+ * `onOrBefore` — or null when there are none. Scoped by company the same
+ * way as the loader above. Feeds `openingCertifiedPayrollWeek` and the
+ * page's empty state, which points at the week that DOES have hours. */
+export async function loadLatestTimeEntryDate(
+  companyId: string,
+  jobId: string,
+  onOrBefore: Date,
+): Promise<Date | null> {
+  const latest = await prisma.timeEntry.findFirst({
+    where: { jobId, job: { companyId }, date: { lte: onOrBefore } },
+    orderBy: { date: "desc" },
+    select: { date: true },
+  });
+  return latest?.date ?? null;
+}

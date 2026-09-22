@@ -6,6 +6,7 @@ import type { ActionResult } from "@/lib/actions/shared";
 import { RfiFields, fieldInputClass, labelClass, type RfiDefaults } from "@/components/RfiFields";
 import { daysBetween, isOverdue, statusLabel } from "@/components/rfiLabels";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { formatCalendarDay } from "@/lib/render-date";
 import { localToday } from "@/components/localToday";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
@@ -260,9 +261,9 @@ export function RfiRow({
         {/* ink-body, not ink-muted: the muted level is under the 4.5 text floor. */}
         <p className="mt-1 text-xs text-ink-body">
           {showJob && <span className="text-link">{rfi.jobName} · </span>}
-          {rfi.sentOn ? `sent ${rfi.sentOn}` : "not sent"}
-          {rfi.dueBy && ` · due ${rfi.dueBy}`}
-          {rfi.answeredOn && ` · answered ${rfi.answeredOn}`}
+          {rfi.sentOn ? `sent ${formatCalendarDay(rfi.sentOn)}` : "not sent"}
+          {rfi.dueBy && ` · due ${formatCalendarDay(rfi.dueBy)}`}
+          {rfi.answeredOn && ` · answered ${formatCalendarDay(rfi.answeredOn)}`}
           {openDays !== null && ` · ${openDays} day${openDays === 1 ? "" : "s"}`}
         </p>
         <p className="text-xs text-ink-body">
