@@ -257,25 +257,57 @@ describe("/associations/wwcca prints one number, the one that was set", () => {
 
 describe("/associations/wwcca fills the hero's right half", () => {
   /** The hero is everything before the first </section>. Its right half was
-   * bare at desktop width; the WH-347 panel is what fills it. Asserted on
-   * the markup, so moving the panel back down the page fails here. Layout
-   * itself (top alignment, stacking at 320/375) is only measurable in a real
-   * browser — e2e/specs/public-layout.public.spec.ts walks this page at
-   * those widths. */
+   * bare at desktop width; the WH-347 panel filled it first, and since
+   * 2026-09-22 (Cyrus's call) the Ask demo does: the assistant animation is
+   * the first thing a visitor sees, beside the headline at `lg` and ABOVE it
+   * on a phone. Asserted on the markup, so moving the demo back down the
+   * page, or the WH-347 back up, fails here. Layout itself (top alignment,
+   * the phone order, the height reserve holding the headline still while
+   * the demo plays) is only measurable in a real browser —
+   * e2e/specs/public-layout.public.spec.ts walks this page at 320/375/1280,
+   * and the changelog entry carries the measured numbers. */
   const hero = html.slice(0, html.indexOf("</section>"));
 
-  it("puts the certified-payroll panel beside the headline, top-aligned", () => {
+  it("puts the Ask demo beside the headline, top-aligned, with no panel in the hero", () => {
     expect(hero).toContain("The week’s hours, entered once.");
-    expect(hero).toContain("Form WH-347");
+    expect(hero.match(/data-ask-demo="figure"/g)?.length).toBe(1);
+    // The demo is the hero's ONLY figure: the WH-347 panel moved below.
     expect(hero.match(/<figure/g)?.length).toBe(1);
+    expect(hero.match(PANEL_FIGURE)).toBeNull();
+    expect(hero).not.toContain("Form WH-347");
     expect(hero).toMatch(/class="[^"]*\bitems-start\b[^"]*lg:grid-cols-/);
     expect(hero).not.toMatch(/class="[^"]*\bitems-center\b[^"]*lg:grid-cols-/);
   });
 
-  it("shows the WH-347 once on the page, not again further down", () => {
+  /** The cell around the demo, read off the markup: first on a phone and
+   * back to its grid slot at `lg`, while the <h1> stays first in the markup
+   * (a screen reader meets the headline before a pause button); a full-width
+   * flex cell pinned right, never `justify-self-end`, whose fit-content
+   * sizing slid the demo sideways every frame (#459); and a height reserve
+   * under `lg`, where the demo is alone in its row and its height would
+   * otherwise set the headline's y. The reserve's SIZE is a browser
+   * measurement and lives in the component's note; this only insists one
+   * exists on the cell, so a refactor that dropped it fails here. */
+  it("puts the demo first on a phone, pins it right at lg in a fixed-width cell, and reserves its height under lg", () => {
+    const cell = hero.match(/<div class="([^"]*)"><figure data-ask-demo="figure"/)?.[1] ?? "";
+    expect(cell, "no cell wraps the demo figure").not.toBe("");
+    expect(cell).toContain("order-first");
+    expect(cell).toContain("lg:order-none");
+    expect(cell).toContain("lg:flex");
+    expect(cell).toContain("lg:justify-end");
+    expect(cell).not.toContain("justify-self");
+    expect(cell).toContain("lg:items-start");
+    expect(cell).toContain("min-w-0");
+    expect(cell).toMatch(/(^|\s)min-h-\[\d+px\]/);
+    expect(hero.indexOf("<h1")).toBeLessThan(hero.indexOf('data-ask-demo="figure"'));
+  });
+
+  it("shows the WH-347 once on the page, below the hero, not again further down", () => {
     const figures = html.match(PANEL_FIGURE) ?? [];
     expect(figures).toHaveLength(4);
     expect(figures.filter((figure) => figure.includes(">Form WH-347<"))).toHaveLength(1);
+    expect(html.indexOf(">Form WH-347<")).toBeGreaterThan(html.indexOf("</section>"));
+    expect(html).toContain("Certified payroll, from the same hours");
   });
 });
 
@@ -566,8 +598,8 @@ describe("/associations/wwcca switches off in one line", () => {
 
 describe("/associations/wwcca the Ask demo", () => {
   /**
-   * The demo (components/landing/AskDemo.tsx) is mounted beside the
-   * assistant section's words. The server renders ONE still frame of it, so
+   * The demo (components/landing/AskDemo.tsx) is mounted in the hero, beside
+   * the headline. The server renders ONE still frame of it, so
    * scanning `html` alone would check the settled hours card and miss every
    * other frame — the typed RFI question, the form, the saved row. Every
    * word the scene can show lives in askDemoScript.ts (its header's rule),
@@ -604,14 +636,16 @@ describe("/associations/wwcca the Ask demo", () => {
   for (const match of demoSource.matchAll(/>\s*([A-Za-z][^<>{}]*?)\s*</g)) strings.push(match[1]);
   const demoText = strings.join("\n");
 
-  it("is on the page once, beside the assistant's words, top-aligned, and not stripped as a panel", () => {
+  it("is on the page once, in the hero before the assistant's words, and not stripped as a panel", () => {
     expect(html.match(/data-ask-demo="figure"/g)?.length).toBe(1);
     expect(prose).toContain('data-ask-demo="figure"');
-    const section = html.slice(html.indexOf("Tell it what you need and it does it") - 400);
-    const grid = section.match(/<div class="([^"]*lg:grid-cols-[^"]*)"/)?.[1] ?? "";
-    expect(grid).toContain("items-start");
-    expect(grid).not.toContain("items-center");
-    expect(section.indexOf('data-ask-demo="figure"')).toBeLessThan(section.indexOf("data-savings-calculator"));
+    const demoAt = html.indexOf('data-ask-demo="figure"');
+    expect(demoAt).toBeGreaterThan(-1);
+    // In the hero (before the first </section>), and before the assistant
+    // section's heading — the words it used to sit beside now stand alone.
+    expect(demoAt).toBeLessThan(html.indexOf("</section>"));
+    expect(demoAt).toBeLessThan(html.indexOf("Tell it what you need and it does it"));
+    expect(demoAt).toBeLessThan(html.indexOf("data-savings-calculator"));
   });
 
   it("does not also render AskCanDo — the page keeps one list", () => {

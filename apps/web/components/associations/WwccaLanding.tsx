@@ -196,38 +196,45 @@ export function WwccaLanding() {
             <Image src={WWCCA.logoSrc} alt={WWCCA.logoAlt} width={160} height={48} className="h-8 w-auto" />
           </div>
         )}
-        <p className="text-sm font-semibold uppercase tracking-wide text-brand">{WWCCA.eyebrow}</p>
         {/* TWO COLUMNS AT `lg`, because one column left the right half of a
             desktop screen bare: a left-aligned headline, a paragraph and two
             buttons, then ~700px of background beside them — the landing
             page's hole before #404, and the founder's most repeated
             complaint about this product.
 
-            The right half is the headline made visible: the week's hours
-            already laid out as a WH-347 by `buildWh347`. Certified payroll
-            rather than the pay application the landing page leads with,
-            because this headline is about HOURS and the pay application is
-            not built from them. It appears once on the page.
+            THE RIGHT HALF IS THE ASK DEMO (Cyrus, 2026-09-22): the assistant
+            animation is the first thing a visitor sees, sharing the first
+            screen with the headline. It was beside the assistant section's
+            words further down; the WH-347 panel that stood here is now the
+            first PanelRow below. components/landing/AskDemo.tsx is the
+            landing page's scene (two real commands, each confirmed by a
+            tap), reused as-is; every word it can show is in askDemoScript.ts
+            and page.test.ts scans all of it with this page's banned-phrase
+            and claim guards, not just the still frame the server renders.
 
             `items-start`, NOT `items-center`, for the landing page's reason
             (see the note at its hero grid): centring a short column against a
-            tall panel splits the surplus into a hole ABOVE the copy — 207px
-            of it between headline and subhead, the first time. Top-aligned,
-            the words sit where the eye starts. The surplus that top-aligning
-            moves BELOW the buttons is closed with content, not padding: the
-            trades and FROM_THE_HOURS are what make the left column about as
-            tall as the panel. (Measured at 1500px with only headline,
-            paragraph and buttons: a 407px column beside a 726px panel. The
-            line, chips and list step up one size at `lg`, where the 72px
-            headline had left them undersized — the landing page's move.)
+            tall neighbour splits the surplus into a hole ABOVE the copy — 207px
+            of it between headline and subhead, the first time — and the
+            demo's height changes as it plays, so that hole would move with
+            every frame. Top-aligned, the words sit where the eye starts. The
+            surplus that top-aligning moves BELOW the buttons is closed with
+            content, not padding: the trades and FROM_THE_HOURS are what make
+            the left column taller than the demo's tallest frame (see the
+            cell's note), which is what keeps the row's height — and
+            everything below the hero — still while the demo plays.
 
-            Under `lg` it is one column and the panel follows the words, so on
-            a phone the headline, the line and Sign up come first. */}
-        <div className="mt-4 grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,540px)] lg:gap-14">
+            The eyebrow is INSIDE the words column rather than above the
+            grid, so that under `lg`, where the demo comes first (below),
+            nothing sits between the top of the page and the demo. */}
+        <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,540px)] lg:gap-14">
           <div className="flex min-w-0 flex-col gap-8">
-            <h1 className="text-[clamp(2.25rem,7vw,4.5rem)] font-semibold leading-[1.05] tracking-[-0.02em] text-ink">
-              The week&rsquo;s hours, entered once.
-            </h1>
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-wide text-brand">{WWCCA.eyebrow}</p>
+              <h1 className="mt-4 text-[clamp(2.25rem,7vw,4.5rem)] font-semibold leading-[1.05] tracking-[-0.02em] text-ink">
+                The week&rsquo;s hours, entered once.
+              </h1>
+            </div>
             <p className="max-w-2xl text-lg leading-relaxed text-ink-body sm:text-xl lg:text-2xl">
               {/* Receipts: FROM_THE_HOURS, one per document. */}
               Log the crew&rsquo;s hours once. The WH-347, the fringe remittance and the apprentice
@@ -265,16 +272,85 @@ export function WwccaLanding() {
               </ul>
             </div>
           </div>
-          <div className="min-w-0">
-            <CertifiedPayrollPanel />
+          {/* THE ASK DEMO'S CELL. Four things about it, each measured in a
+              production build over a full loop of the scene (26 steps,
+              ~260 samples per width) rather than reasoned about.
+
+              `order-first lg:order-none`: on a phone the demo is FIRST, above
+              the headline — Cyrus's call over a full-width demo above the
+              headline at every width. The markup keeps the headline first
+              (a screen reader meets the <h1> before a pause button); only
+              the visual order flips, and only under `lg`.
+
+              `lg:flex lg:justify-end`, NOT `lg:justify-self-end`: the latter
+              sizes a grid item to fit-content, so the cell resized with each
+              frame and, pinned right, spent all of it on its LEFT edge
+              (189px on this page's first placement, 170.1px on the landing
+              page, #459), and at 1024 the fit-content cell overflowed its
+              own track and painted over the words beside it. A full-width
+              flex cell keeps the figure at the track's width every frame,
+              pinned right. `lg:items-start` keeps the figure its own height
+              rather than stretching it to the row.
+
+              THE RESERVE UNDER `lg` IS THE POINT OF THIS NOTE. On a phone the
+              demo is first and full-width with nothing beside it, so the
+              row's height IS the demo's height — and that swings 558px at
+              375 (211.8 to 769.8) and 738px at 320 (211.8 to 949.8) every
+              loop. Without a reserve the headline, and everything under it,
+              jumps that far on the first screen of the page. The cell
+              therefore reserves the tallest frame, in tiers, because the
+              tallest frame depends on the figure's width (narrower wraps
+              taller): 950px below 375 (949.8 at 320), 780px from 375
+              (769.8 at 375; the figure narrows no further above), 620px from
+              `sm` (603.9 once the figure reaches its 34rem cap, from 592px
+              up). The price is page background between a short frame and the
+              headline — up to 568px at 375 — which is the trade Cyrus made
+              for the demo coming first; the headline's y is then constant.
+
+              AT `lg` THE RESERVE DOES NOT BIND, and that is measured rather
+              than assumed: the words column (eyebrow, headline, line, trades,
+              buttons, FROM_THE_HOURS) is taller than the demo's tallest frame
+              at every `lg` width, so the column sets the row and the section
+              below holds still. The `sm:` tier carries through `lg` as
+              insurance sized from the tallest 34rem-wide frame: if the copy
+              is ever cut below the demo's height, the row holds at 620px
+              instead of following the frame. If the script gains a taller
+              frame, RE-MEASURE — a reserve shorter than the frame is a
+              wobble of exactly the difference (the old assistant-section
+              cell was 3.9px short at 1024 by the time this moved).
+
+              `min-w-0` and the figure's own `w-full min-w-0 max-w-[34rem]`
+              are what stop any frame widening the page: innerWidth equalled
+              the device width and scrollWidth equalled innerWidth on every
+              sample at every width measured. */}
+          <div className="order-first min-h-[950px] min-w-0 min-[375px]:min-h-[780px] sm:min-h-[620px] lg:order-none lg:flex lg:items-start lg:justify-end">
+            <AskDemo />
           </div>
         </div>
       </section>
 
       {/* ------------------------------------------------------ the panels
-          One heading and one line each; the panel is the explanation. */}
+          One heading and one line each; the panel is the explanation.
+
+          The WH-347 leads, because it is the headline's own claim made
+          visible: the week's hours already laid out as a WH-347 by
+          `buildWh347`. It stood in the hero's right half until the Ask demo
+          took that slot (2026-09-22); it appears once on the page, here.
+          `flip` puts it on the LEFT at `lg`, so the page alternates sides
+          from the demo (right) down: WH-347 left, ratio right, pay app
+          left, job cost right. */}
       <section className="border-t border-line-card pt-12 sm:pt-16">
         <div className="flex flex-col gap-16 sm:gap-24">
+          <PanelRow
+            flip
+            heading="Certified payroll, from the same hours"
+            // lib/wh347.ts buildWh347 — groups the week's TimeEntry rows by
+            // worker and day, rate with its fringe beside it. BUILT, never
+            // "filed": page 2 is not built and every form is marked not
+            // fileable (page.test.ts CLAIMS.filing).
+            line="The WH-347 is built from the week's hours as logged: every worker, every day, the rate with its fringe beside it."
+            panel={<CertifiedPayrollPanel />}
+          />
           <PanelRow
             heading="Apprentice ratios, day by day"
             // ApprenticeRatioRule: apprenticeCount / journeymenCount per union
@@ -308,35 +384,23 @@ export function WwccaLanding() {
           page.test.ts. "Ask" is what the app calls the box (/pilot names it
           the same way). */}
       <section className={sectionSpace}>
-        {/* THE ASK DEMO, beside the words. components/landing/AskDemo.tsx
-            is the landing page's scene (two real commands, each confirmed
-            by a tap), reused as-is; every word it shows is in
-            askDemoScript.ts and page.test.ts scans all of it with this
-            page's banned-phrase and claim guards, not just the still frame
-            the server renders.
-
-            `items-start`, NOT `items-center`, for the landing page's reason
-            (its hero-grid note): the demo's height changes as it plays, and
-            centring the words against it would open a hole above them — the
-            207px one, the first time — that also moves with every frame.
-            Top-aligned, the heading sits where the eye starts and does not
-            move. The heading is inside the left column, as on the landing
-            page, so the demo's top lines up with it instead of starting a
-            heading-height lower.
+        {/* ONE COLUMN, since the Ask demo moved up to the hero (2026-09-22).
+            This section used to be a two-column grid with the demo on the
+            right; what is left is the words, which read as a column of
+            their own at `max-w-3xl` rather than as a half-empty grid. Not
+            merged into the hero: the hero's words column is sized to stand
+            taller than the demo's tallest frame (its note says why), and
+            this section's list would make the first screen a wall of text.
+            Not removed: the sentence that keeps the assistant honest lives
+            here and page.test.ts requires it.
 
             ONE LIST. The landing page puts AskCanDo (askDemoScript.ts
             CAN_DO) beside the demo; this page does NOT, because
             ASSISTANT_DOES below is this page's list and two lists of the
             same twenty commands would be the same claim made twice.
             page.test.ts holds the two to the same commands, group by
-            group, so they cannot come to disagree.
-
-            The demo's height varies between frames. Under `lg` it is the
-            last block of the section, so a taller frame pushes the
-            calculator down rather than over anything, and it is `w-full
-            min-w-0` inside a `min-w-0` cell so no frame can widen the page.
-            At `lg` its cell reserves the tallest frame (below). */}
-        <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-14">
+            group, so they cannot come to disagree. */}
+        <div className="max-w-3xl">
           <div className="min-w-0">
             <p className="text-sm font-semibold uppercase tracking-wide text-brand">The assistant</p>
             <h2 className="mt-2 text-2xl font-semibold leading-tight text-ink sm:text-3xl">
@@ -367,33 +431,6 @@ export function WwccaLanding() {
               From hours entered once, it builds the WH-347 payroll grid, the fringe remittance per
               local and fund, and the apprentice ratio per day.
             </p>
-          </div>
-          {/* `lg:flex lg:justify-end`, NOT `lg:justify-self-end`: the
-              latter shrink-wraps the cell to each frame's content, so the
-              demo's left edge moved 189px (822 to 1011 at 1500) as short
-              frames replaced long ones. A full-width flex cell keeps the
-              figure at its own max width every frame, pinned right.
-
-              `lg:min-h-[620px]` RESERVES THE TALLEST FRAME. At `lg` the demo
-              is taller than the words beside it for part of the loop
-              (202px to 580px against a 394px column at 1500), so the row's
-              height followed the frame and the calculator below — on screen
-              at the same time on a desktop — moved 192px up and down every
-              twenty seconds. Measured in a production build over a full
-              loop: tallest frame 618px at 1024 (the narrowest `lg`, where
-              the column is under the figure's 34rem cap), 580px at 1280,
-              1500 and 1920. 620px covers all of them. `lg:items-start` keeps
-              the figure its own height, so the reserve is page background
-              below it — without it the flex cell stretched the frame to
-              620px and the caption floated over an empty box. If the
-              script gains a taller frame, re-measure. Under `lg` there is
-              NO reserve on purpose: the tallest frame is 890px at 320, so a
-              reserve would leave up to 678px of empty page under a short
-              frame; there the demo fills most of the screen while it plays,
-              and nothing overlaps or pans (measured: innerWidth 375/320
-              every frame, scrollWidth equal). */}
-          <div className="min-w-0 lg:flex lg:min-h-[620px] lg:items-start lg:justify-end">
-            <AskDemo />
           </div>
         </div>
       </section>

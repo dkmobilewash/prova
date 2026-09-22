@@ -253,3 +253,91 @@ show the saving per worker per month.
   `expected 9.38 to be -9.38` and `expected 23.45 to be -23.45`; (3) the
   component treating `null` as $0 — the page guard fails with
   `expected 'That is about $0.00 per worker a mont…' to be null`.
+
+**The Ask demo is now the first thing a visitor sees (Cyrus, 2026-09-22).**
+It moved out of the assistant section and into the hero: beside the headline
+at `lg` (headline left, demo right), and ABOVE the headline on a phone, where
+it is first and full width. The WH-347 panel that stood in the hero's right
+half is now the first panel below it, flipped to the left so the page
+alternates sides from the demo down. The assistant section keeps its words
+and its one list; it is a single `max-w-3xl` column now rather than a
+half-empty grid.
+
+**Measured in real Chromium against a production build** (`next build` +
+`next start`), sampling every 100ms at each width: 259-260 samples, all 26
+steps of the scene and one wrap of its clock, so each run saw a full loop.
+Nothing in the unit suite can see any of this — happy-dom does no layout and
+returns zeros from `getBoundingClientRect`. BEFORE is the branch as committed
+at `120528a9` with current `main` merged in, built and served the same way;
+AFTER is this change.
+
+| width | | demo width | demo height (min → max) | its cell's height | y of the first element BELOW THE HERO | y of the first element below the demo's own section |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1500 | before | 544, **delta 0** | 201.9 → 603.9 | 620, delta 0 | 1010.1, delta 0 | 3767.5, delta 0 |
+| 1500 | after | 540, **delta 0** | 201.9 → 603.9 | 620, delta 0 | 999.8, **delta 0** | same element, delta 0 |
+| 1280 | before | 544, **delta 0** | 201.9 → 603.9 | 620, delta 0 | 1010.1, delta 0 | 3767.5, delta 0 |
+| 1280 | after | 540, **delta 0** | 201.9 → 603.9 | 620, delta 0 | 999.8, **delta 0** | same element, delta 0 |
+| 1024 | before | 460, **delta 0** | 201.9 → 623.9 | 620 → 623.9, **delta 3.9** | 1331.3, delta 0 | 4407.2 → 4411.1, **delta 3.9** |
+| 1024 | after | 540, **delta 0** | 201.9 → 603.9 | 620, delta 0 | 1331.3, **delta 0** | same element, delta 0 |
+| 375 | before | 327, **delta 0** | 211.8 → 769.8 | 211.8 → 769.8, **delta 558** | 2001, delta 0 | 6454.9 → 7012.9, **delta 558** |
+| 375 | after | 327, **delta 0** | 211.8 → 769.8 | 780, delta 0 | 1835.1, **delta 0** | same element, delta 0 |
+
+**Nothing below the hero moves, at any of the four widths, before or after.**
+The BEFORE column of that is not a compliment to the old layout — the demo
+sat far down the page, so the hero could not have moved. The movement the old
+layout did have is the last column: the savings calculator, which sat on
+screen with the demo at `lg`, drifted **3.9px** every loop at 1024 (the old
+`lg:min-h-[620px]` was that much shorter than the 623.9px frame the narrower
+1024 track produced), and on a phone it moved **558px** every loop. Both are
+zero now. The headline's own y is constant too — 188px at every `lg` width,
+972px at 375 — which is the number that matters on a phone, where the
+headline is what sits directly under the demo.
+
+**The height reserve is the right size, and the margin is written down so
+the next person does not have to re-derive it.** The cell reserves in three
+tiers, because the tallest frame depends on the figure's width (narrower
+wraps taller). Each tier measured over a full loop:
+
+| viewport | reserve | tallest frame | headroom | what sets the row |
+| --- | --- | --- | --- | --- |
+| 320 | 950px | 949.8 | **0.2px** | the reserve |
+| 375 / 376 | 780px | 769.8 | 10.2px | the reserve |
+| 639 | 780px | 587.9 | 192.1px | the reserve |
+| 640 (`sm`) | 620px | 603.9 | 16.1px | the reserve |
+| 1024 | 620px | 603.9 | 16.1px | **the words column, 1099.3px** |
+| 1280 / 1500 / 1920 | 620px | 603.9 | 16.1px | **the words column, 767.8px** |
+
+So at `lg` the reserve never binds: the words column (eyebrow, headline,
+line, trades, buttons, FROM_THE_HOURS) beats the tallest frame by 495.4px at
+1024 and by 163.9px from 1280 up, and it is the column that sets the row. The
+620px tier is insurance for the day someone cuts that copy — sized off the
+tallest 34rem-wide frame so it would hold the row at 620px instead of letting
+it follow the frame. Under `lg` the reserve is load-bearing and the numbers
+are tight by design: 0.2px of headroom at 320 and 10.2px at 375. **If the
+script gains a taller frame, those two tiers are wrong by exactly the
+difference — re-measure.** The price of the reserve is page background
+between a short frame and the headline: up to 568px at 375, 192.1px at 639.
+That is the trade for the demo coming first.
+
+**The two bugs #459 named have not come back.** The demo's width is constant
+across every frame at every width measured — 540 at `lg`, 327 at 375, 272 at
+320, delta 0 on all 259-260 samples — so nothing slides sideways the way the
+`lg:justify-self-end` cell did (170.1px on the landing page, 189px here). And
+the cell does not overflow its track: at 1024 the figure's right edge is
+1000px and the words column's right edge is 404px, a constant 56px gap (the
+`lg:gap-14`), so the scene never paints over the words beside it.
+`window.innerWidth` equalled the device width and `scrollWidth` equalled
+`innerWidth` on every sample at 320, 375, 376, 639, 640, 1024, 1280, 1500 and
+1920: no horizontal page scroll, ever.
+
+**The guards went up, not down.** `page.test.ts` is 40 tests and 135
+assertions, from 39 and 120. The new one reads the demo's cell off the markup
+and requires `order-first` with `lg:order-none` (phone-first, desktop back in
+its slot), `lg:flex` + `lg:justify-end` with **no** `justify-self` (the #459
+shape, banned rather than described), `lg:items-start`, `min-w-0` and a
+`min-h-[…]` reserve present — the reserve's SIZE is a browser measurement and
+stays in the component's note, but a refactor that dropped it fails here. The
+hero test now requires exactly one `<figure>` in the hero and that it is the
+demo, with no panel figure and no "Form WH-347" text in it; the WH-347 test
+requires that panel to appear exactly once and BELOW the first `</section>`.
+Nothing was relaxed.
