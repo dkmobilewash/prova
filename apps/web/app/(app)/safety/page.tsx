@@ -7,6 +7,7 @@ import { SafetyIncidentRow } from "@/components/SafetyIncidentRow";
 import { ToolboxTalkForm } from "@/components/ToolboxTalkForm";
 import { ToolboxTalkRow } from "@/components/ToolboxTalkRow";
 import { isRecordable } from "@/components/safetyLabels";
+import { EmptyState } from "@/components/EmptyState";
 import { StatusLine } from "@/components/StatusLine";
 import { safetyStatus } from "@/lib/status-sentences";
 import { toJobOption } from "@/components/jobLabels";
@@ -38,6 +39,11 @@ export default async function SafetyPage({
     orderBy: { caseYear: "desc" },
   });
   const knownYears = years.map((y) => y.caseYear);
+  // Whether this company has EVER logged a case, in any year — read off the
+  // query above, no second count. The teaching empty state (with its
+  // example) is for a company that has never used the log; a company whose
+  // only cases are in earlier years gets one plain line for this year.
+  const everLogged = knownYears.length > 0;
   if (!knownYears.includes(thisYear)) knownYears.unshift(thisYear);
 
   const parsedYear = Number(yearParam);
@@ -113,13 +119,41 @@ export default async function SafetyPage({
           </div>
         </div>
 
-        <StatusLine report={status} />
+        {/* ONE "no cases" sentence, never two. The status line and the
+            paragraph under it both said "No cases logged for 2026." —
+            the page said nothing twice. At zero the empty branch below is
+            the whole answer; the status line comes back with the first
+            case, when it has counts to report. */}
+        {incidents.length > 0 && <StatusLine report={status} />}
 
-        {incidents.length === 0 ? (
+        {incidents.length === 0 && !everLogged ? (
+          <EmptyState
+            data-tour="safety-empty"
+            title={`No cases logged for ${activeYear}`}
+            purpose={
+              <p>
+                Every injury on your jobs, first aid included, written down the day it happened —
+                who, where, what, and how it turned out. Each case gets its own number for the year,
+                and the ones marked recordable are your OSHA 300 log. A first-aid case that later turns
+                into lost time is only defensible if it was logged that day.
+              </p>
+            }
+            actions={[
+              { label: "Record an incident", opens: "safety-record-incident" },
+              { label: "Log a toolbox talk", opens: "safety-log-talk" },
+            ]}
+            example={{
+              rows: [
+                { title: "Case 2026-003 — laceration, left hand", tag: "First aid only", detail: "Oak Ave Medical · Level 2 framing", meta: "Sep 14" },
+                { title: "Case 2026-002 — strain lifting board", tag: "Recordable", detail: "Lincoln HS gym · 2 days restricted", meta: "Aug 28" },
+                { title: "Case 2026-001 — debris in eye", tag: "First aid only", detail: "Oak Ave Medical", meta: "Aug 3" },
+              ],
+            }}
+          />
+        ) : incidents.length === 0 ? (
           <p className="text-ink-body">
-            No cases logged for {activeYear}. That is the good outcome — but log the first aid ones too. A
-            first-aid case that later turns into lost time is only defensible if it was written down the day it
-            happened.
+            No cases logged for {activeYear}. Log the first-aid ones too — one that later turns into lost
+            time is only defensible if it was written down the day it happened.
           </p>
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
@@ -153,10 +187,25 @@ export default async function SafetyPage({
       <section data-tour="safety-talks">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Toolbox talks</h2>
         {talks.length === 0 ? (
-          <p className="text-ink-body">
-            Nothing logged yet. Most GC contracts and union agreements require these weekly — the meeting
-            happening isn&apos;t the deliverable, the record of it is.
-          </p>
+          <EmptyState
+            data-tour="safety-talks-empty"
+            title="No toolbox talks logged yet"
+            walkthrough={false}
+            purpose={
+              <p>
+                The record of each safety meeting — the date, the topic, who gave it and who was
+                there. Most GC contracts and union agreements require one a week, and the meeting
+                happening is not the deliverable; the record of it is.
+              </p>
+            }
+            actions={[{ label: "Log a toolbox talk", opens: "safety-log-talk" }]}
+            example={{
+              rows: [
+                { title: "Ladder safety — three points of contact", detail: "Oak Ave Medical · given by the foreman", meta: "Sep 15 · 9 there" },
+                { title: "Silica dust when cutting board", detail: "Lincoln HS gym", meta: "Sep 8 · 7 there" },
+              ],
+            }}
+          />
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {talks.map((talk) => (
