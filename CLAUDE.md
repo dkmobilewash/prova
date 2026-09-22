@@ -47,10 +47,17 @@ Vercel deployment and repo settings). Each drives their own agent.
   lane: post and wait. NEVER post connection strings, keys, or tokens
   anywhere — Signal or a call only.
 - Lanes are in WORK-SPLIT.md. Diego: estimating, job costing,
-  billing/AIA, retainage, WIP, AI, and `apps/web/app/(app)/jobs/[id]/page.tsx`
+  billing/AIA, retainage, WIP, and `apps/web/app/(app)/jobs/[id]/page.tsx`
   (fixed section slots: Retainage → Field Reports → Pay Apps — insert at
   your slot, never at the end). Cyrus: self-contained verticals (safety,
-  vendors, equipment, punch lists, RFIs, submittals). Shared, edit
+  vendors, equipment, punch lists, RFIs, submittals) and **AI** — the Ask
+  assistant (`lib/ask/**`, `Ask*` components), the model integration
+  (`packages/integrations/src/anthropic.ts`, `ask.ts`), AI extraction and
+  AI usage metering. **AI moved from Diego to Cyrus on 2026-09-21**,
+  announced in `#prova-build`; any older line in this repo or its PR
+  history calling AI "Diego's lane" is stale. Where an AI feature sits on
+  Diego's numbers (Ask's `draft_invoice`, the WIP narrative), the logic
+  underneath is Diego's and the AI layer on top is Cyrus's. Shared, edit
   surgically: schema files, `middleware.ts`, `navItems.tsx`,
   `lib/actions/shared.ts`, the actions barrel.
 
