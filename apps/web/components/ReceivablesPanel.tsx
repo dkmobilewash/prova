@@ -73,9 +73,18 @@ export function ReceivablesList() {
     // that has raised none — and absurd to read on your first morning. The
     // count distinguishes them; the list cannot.
     return invoicesRaised === 0 ? (
+      // The way out used to be missing from the one empty state on the
+      // first screen of the first morning. It described a condition — no
+      // invoices — and left the reader to work out for himself that an
+      // invoice is raised from a job's Billing tab, which he has no way of
+      // knowing on day one.
       <p className="text-sm text-ink-body">
         No invoices raised yet. Once you bill a job, what each GC still owes shows up here, longest
-        overdue first.
+        overdue first.{" "}
+        <Link href="/jobs" className="text-link hover:underline">
+          Open a job
+        </Link>{" "}
+        and bill it under Billing.
       </p>
     ) : (
       <p className="text-sm text-ink-body">

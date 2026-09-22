@@ -165,6 +165,11 @@ export default async function UnionCompliancePage({
         {remittance.locals.length === 0 ? (
           <p className="text-sm text-ink-body">
             No hours logged this month against a craft classification, so there is nothing to remit.
+            Hours go on the job, under{" "}
+            <Link href="/jobs" className="text-link hover:underline">
+              Crew &amp; time
+            </Link>
+            , and each one has to name a craft before it can be priced here.
           </p>
         ) : (
           <div className="space-y-4">
@@ -256,7 +261,13 @@ export default async function UnionCompliancePage({
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Apprentice ratio</h2>
 
         {ratioReviews.length === 0 ? (
-          <p className="text-sm text-ink-body">No hours logged this month.</p>
+          <p className="text-sm text-ink-body">
+            No hours logged this month, so there is no ratio to judge. Log them on the job, under{" "}
+            <Link href="/jobs" className="text-link hover:underline">
+              Crew &amp; time
+            </Link>
+            .
+          </p>
         ) : (
           <div className="space-y-4">
             {(flagged.length > 0 || incomplete.length > 0) && (
