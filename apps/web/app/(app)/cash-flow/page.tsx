@@ -4,6 +4,7 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
 import { calculateRetainageSummary } from "@/lib/retainage";
+import { viewerAsOf } from "@/lib/viewerToday";
 import {
   calculateArAgingInvoice,
   calculateCashFlowForecast,
@@ -36,7 +37,12 @@ export default async function CashFlowPage() {
     },
   });
 
-  const asOf = new Date();
+  // The READER'S calendar day, at the UTC midnight every stored date sits
+  // on — not the current instant. See lib/viewerToday.ts and the note on
+  // `daysPastDueFor`: a raw `new Date()` here called an invoice due today
+  // "1d overdue" from 17:00 Pacific, aged it 1-30, and moved its whole
+  // balance into the forecast's Overdue row.
+  const asOf = await viewerAsOf();
 
   const arInvoices = jobs
     .flatMap((job) =>

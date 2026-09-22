@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { viewerToday } from "@/lib/viewerToday";
 import { can } from "@/lib/permissions";
 import { Prisma, prisma } from "@prova/db";
 import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
@@ -60,8 +61,16 @@ function requiredDate(formData: FormData, key: string, label: string): Date {
   return date;
 }
 
-function utcMidnightToday() {
-  return new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+/** Today on the READER'S calendar, at the UTC midnight this app stores
+ * dates on — the fallback when a form leaves an optional date blank.
+ *
+ * `new Date().toISOString().slice(0, 10)` was the server's UTC day, which
+ * west of UTC is already TOMORROW from 17:00. So a date nobody typed was
+ * stamped a day into the future, on a record that is correspondence with a
+ * GC. `viewerToday()` never throws and falls back to UTC, so the floor
+ * here is exactly the old behaviour. */
+async function utcMidnightToday() {
+  return new Date(`${await viewerToday()}T00:00:00.000Z`);
 }
 
 function isoDay(date: Date) {
@@ -187,7 +196,7 @@ export async function recordCloseoutResponse(id: string, formData: FormData): Pr
       return fail("Say whether the GC accepted it or sent it back.");
     }
 
-    const respondedOn = optionalDate(formData, "respondedOn", "Date they answered") ?? utcMidnightToday();
+    const respondedOn = optionalDate(formData, "respondedOn", "Date they answered") ?? (await utcMidnightToday());
     if (respondedOn < submission.submittedOn) {
       return fail("They can't have answered before the package went out.");
     }

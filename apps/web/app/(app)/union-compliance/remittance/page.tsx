@@ -39,6 +39,7 @@ import { PrintButton } from "@/components/PrintButton";
 import { money } from "@/lib/money";
 import { formatHours } from "@/lib/render-hours";
 import { loadRemittance, monthBounds } from "@/lib/union-compliance-query";
+import { viewerToday } from "@/lib/viewerToday";
 import {
   isWhollyUnpriced,
   remittanceReconciliationErrors,
@@ -88,9 +89,13 @@ export default async function FringeRemittanceDocumentPage({
   const { company } = context;
 
   const { month: monthParam, local: localParam } = await searchParams;
+  // The reader's month, not the server's. On the last evening of a month
+  // the UTC clock has already rolled into the next one, so this sheet
+  // defaulted to a month with no hours in it — printed and handed to a
+  // trust fund.
   const month = /^\d{4}-\d{2}$/.test(monthParam ?? "")
     ? (monthParam as string)
-    : new Date().toISOString().slice(0, 7);
+    : (await viewerToday()).slice(0, 7);
   const { start, end } = monthBounds(month);
 
   const report = await loadRemittance(company.id, month);
