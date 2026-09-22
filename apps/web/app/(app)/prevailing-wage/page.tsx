@@ -12,6 +12,7 @@ import { RuleSetRow } from "@/components/RuleSetRow";
 import { DeterminationRuleSetPicker } from "@/components/DeterminationRuleSetPicker";
 import { splitLabel } from "@/components/prevailingWageLabels";
 import { formatHours } from "@/lib/render-hours";
+import { reviewIsClean, weeklyUnresolvedSentence } from "@/lib/prevailing-wage";
 import { viewerToday } from "@/lib/viewerToday";
 
 export default async function PrevailingWagePage({
@@ -127,30 +128,46 @@ export default async function PrevailingWagePage({
                           </span>
                         </p>
 
+                        {/* The green sentence is gated on `reviewIsClean`,
+                            NOT on `disagreements.length === 0`. A week whose
+                            overtime lands on shift-differential hours has no
+                            disagreements to list and is not clean — it used
+                            to print "Every day matches" over a DOL
+                            back-wage finding. See WeekReview.weeklyUnresolved. */}
                         {!employee.review.checked ? (
                           <p className="mt-1 text-sm text-tag-amber-ink">{employee.review.reason}</p>
-                        ) : employee.review.disagreements.length === 0 ? (
-                          <p className="mt-1 text-sm text-tag-green-ink">
-                            Every day matches what the rules imply.
-                            {employee.review.weeklyThresholdApplied &&
-                              " The weekly threshold was reached and the entered hours already reflect it."}
-                          </p>
                         ) : (
-                          <ul className="mt-1 flex flex-col gap-1">
-                            {employee.review.disagreements.map((day) => (
-                              <li key={day.date} className="text-sm text-ink-label">
-                                <span className="font-mono text-xs text-ink-muted">{day.date}</span>{" "}
-                                entered <span className="text-tag-amber-ink">{splitLabel(day.entered)}</span>,
-                                rules imply{" "}
-                                <span className="text-tag-blue-ink">
-                                  {splitLabel(day.expected as Record<string, number>)}
-                                </span>
-                                {day.consecutiveDay === 7 && (
-                                  <span className="text-ink-muted"> · seventh straight day</span>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
+                          <>
+                            {employee.review.weeklyUnresolved.length > 0 && (
+                              <p className="mt-1 text-sm text-tag-amber-ink">
+                                {weeklyUnresolvedSentence(employee.review)}
+                              </p>
+                            )}
+                            {reviewIsClean(employee.review) && (
+                              <p className="mt-1 text-sm text-tag-green-ink">
+                                Every day matches what the rules imply.
+                                {employee.review.weeklyThresholdApplied &&
+                                  " The weekly threshold was reached and the entered hours already reflect it."}
+                              </p>
+                            )}
+                            {employee.review.disagreements.length > 0 && (
+                              <ul className="mt-1 flex flex-col gap-1">
+                                {employee.review.disagreements.map((day) => (
+                                  <li key={day.date} className="text-sm text-ink-label">
+                                    <span className="font-mono text-xs text-ink-muted">{day.date}</span>{" "}
+                                    entered <span className="text-tag-amber-ink">{splitLabel(day.entered)}</span>,
+                                    rules imply{" "}
+                                    <span className="text-tag-blue-ink">
+                                      {splitLabel(day.expected as Record<string, number>)}
+                                    </span>
+                                    {day.consecutiveDay === 7 && (
+                                      <span className="text-ink-muted"> · seventh straight day</span>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </>
                         )}
 
                         {employee.review.days.some((d) => d.skipped === "SHIFT_DIFFERENTIAL") && (
