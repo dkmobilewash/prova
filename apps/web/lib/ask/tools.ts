@@ -539,7 +539,7 @@ export const TOOLS: ToolDefinition[] = [
     // /prevailing-wage
     capability: "MANAGE_COMPLIANCE",
     description:
-      "The prevailing-wage determinations filed against each job, with the jurisdiction and whether the actual document is attached or linked. Answers 'do we have the determination for this job on file'. A determination row with NEITHER a file nor a source link is flagged: it is a determination in name only, and it cannot be produced in an audit. It does not know whether a job is public works, so it cannot tell you a determination is MISSING — only what has been filed.",
+      "The prevailing-wage determinations filed against each job, with the jurisdiction, whether the actual document is attached or linked, and each one's STANDING: in force on the job's bid-advertisement date, the wrong issue for that date, a predetermined increase now due past its expiration, or unchecked because the advertisement date or the document's issue date was never entered. Answers 'do we have the determination for this job on file' and 'is our determination still current'. The standing is derived from dates a person entered on the job's Compliance tab (the published DIR rule: the issue in force on the first advertisement for bids governs the job), never looked up, and no wage rate is known here. A determination row with NEITHER a file nor a source link is flagged: it is a determination in name only, and it cannot be produced in an audit. Whether a job is public works is only what somebody ENTERED (jobIsPublicWorks, null when nobody has), so it cannot tell you a determination is MISSING — only what has been filed and how it stands.",
     input_schema: jobFilter,
   },
   {

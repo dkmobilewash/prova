@@ -16,6 +16,11 @@ import { renewalAlerts, renewalCoverage, renewalCoverageMessage, renewalTiming }
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { serverToday } from "@/lib/serverToday";
 import { viewerToday } from "@/lib/viewerToday";
+import {
+  determinationStanding,
+  determinationStandingLine,
+  type DeterminationMarker,
+} from "@/lib/determination-standing";
 import { daysBetween } from "./dates";
 import {
   arBalanceFor,
@@ -1982,43 +1987,78 @@ async function dailyFieldReports(companyId: string, input: Input): Promise<ToolR
  * to be mistaken for coverage. Flagged rather than counted as filed.
  *
  * What this deliberately does NOT do is say a determination is MISSING.
- * Nothing in the schema records whether a job is public works, so "this job
- * has no determination" is not evidence of a gap — it may simply be private
- * work. Claiming otherwise would put a compliance alarm on a job that never
- * needed one.
+ * The only record of whether a job is public works is what a person
+ * ENTERED on its Compliance tab (`Job.publicWorks`, null when nobody has),
+ * so "this job has no determination" is not evidence of a gap — it may
+ * simply be private work, or nobody has said. Claiming otherwise would put
+ * a compliance alarm on a job that never needed one.
+ *
+ * WHAT IT DOES SAY NOW: each row's STANDING — in force on the job's
+ * bid-advertisement date, the wrong issue for it, a predetermined increase
+ * now due, or unchecked because a date was never entered. Read, not
+ * researched: the same `determinationStanding` the Compliance tab and
+ * /prevailing-wage derive from the entered dates, against the viewer's
+ * day, so the box and the page cannot disagree.
  */
 async function wageDeterminations(companyId: string, input: Input): Promise<ToolResult> {
   const citations = [{ label: "Prevailing wage", href: "/prevailing-wage" }];
   const jobMismatch = await jobNameMismatch(companyId, input.jobName);
   if (jobMismatch) return { data: [], citations, unavailable: jobMismatch };
 
-  const determinations = await prisma.prevailingWageDetermination.findMany({
-    where: { job: { companyId } },
-    select: {
-      jurisdiction: true,
-      fileName: true,
-      fileUrl: true,
-      sourceUrl: true,
-      note: true,
-      createdAt: true,
-      job: { select: { name: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const [determinations, today] = await Promise.all([
+    prisma.prevailingWageDetermination.findMany({
+      where: { job: { companyId } },
+      select: {
+        jurisdiction: true,
+        fileName: true,
+        fileUrl: true,
+        sourceUrl: true,
+        note: true,
+        createdAt: true,
+        determinationRef: true,
+        issuedOn: true,
+        expiresOn: true,
+        expirationMarker: true,
+        job: { select: { name: true, bidAdvertisedOn: true, publicWorks: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    viewerToday(),
+  ]);
 
   const rows = determinations
     .filter((determination) => matchesJobName(determination.job.name, input.jobName))
-    .map((determination) => ({
-      job: determination.job.name,
-      jurisdiction: determination.jurisdiction,
-      fileName: determination.fileName,
-      hasDocument: Boolean(determination.fileUrl),
-      hasSourceLink: Boolean(determination.sourceUrl),
-      // The one that matters. Neither attached nor linked is a row that
-      // proves nothing.
-      producibleInAnAudit: Boolean(determination.fileUrl) || Boolean(determination.sourceUrl),
-      filedOn: iso(determination.createdAt),
-    }));
+    .map((determination) => {
+      const standing = determinationStanding(
+        {
+          issuedOn: determination.issuedOn ?? null,
+          expiresOn: determination.expiresOn ?? null,
+          expirationMarker: (determination.expirationMarker as DeterminationMarker | null | undefined) ?? null,
+        },
+        { bidAdvertisedOn: determination.job.bidAdvertisedOn ?? null },
+        today,
+      );
+      return {
+        job: determination.job.name,
+        // What a person entered, or null for "nobody has said" — never inferred.
+        jobIsPublicWorks: determination.job.publicWorks ?? null,
+        jobBidAdvertisedOn: iso(determination.job.bidAdvertisedOn ?? null),
+        jurisdiction: determination.jurisdiction,
+        determinationRef: determination.determinationRef ?? null,
+        issuedOn: iso(determination.issuedOn ?? null),
+        expiresOn: iso(determination.expiresOn ?? null),
+        expirationMarker: determination.expirationMarker ?? null,
+        fileName: determination.fileName,
+        hasDocument: Boolean(determination.fileUrl),
+        hasSourceLink: Boolean(determination.sourceUrl),
+        // The one that matters. Neither attached nor linked is a row that
+        // proves nothing.
+        producibleInAnAudit: Boolean(determination.fileUrl) || Boolean(determination.sourceUrl),
+        filedOn: iso(determination.createdAt),
+        standing: standing.kind,
+        standingLine: determinationStandingLine(standing).text,
+      };
+    });
 
   return {
     data: rows,
@@ -2026,13 +2066,16 @@ async function wageDeterminations(companyId: string, input: Input): Promise<Tool
       determinations: rows.length,
       withoutDocumentOrLink: rows.filter((row) => !row.producibleInAnAudit).length,
       jobsCovered: new Set(rows.map((row) => row.job)).size,
+      wrongIssue: rows.filter((row) => row.standing === "wrong_issue").length,
+      increaseDue: rows.filter((row) => row.standing === "increase_due").length,
+      unchecked: rows.filter((row) => row.standing === "unchecked").length,
     },
     citations,
     unavailable:
       rows.length === 0
         ? input.jobName
-          ? "No wage determination has been filed against that job. Whether one is required is not recorded anywhere here."
-          : "No wage determination has been filed against any job. Whether any of them are public works is not recorded anywhere here."
+          ? "No wage determination has been filed against that job. Whether one is required is only what somebody entered under Public-works facts on its Compliance tab."
+          : "No wage determination has been filed against any job. Whether any of them are public works is only what somebody entered on each job's Compliance tab."
         : undefined,
   };
 }
