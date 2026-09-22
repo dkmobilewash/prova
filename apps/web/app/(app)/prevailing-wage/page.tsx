@@ -12,6 +12,7 @@ import { RuleSetRow } from "@/components/RuleSetRow";
 import { DeterminationRuleSetPicker } from "@/components/DeterminationRuleSetPicker";
 import { splitLabel } from "@/components/prevailingWageLabels";
 import { formatHours } from "@/lib/render-hours";
+import { viewerToday } from "@/lib/viewerToday";
 
 export default async function PrevailingWagePage({
   searchParams,
@@ -23,7 +24,7 @@ export default async function PrevailingWagePage({
   const { company, ...currentUser } = context;
 
   const { job: jobParam, week: weekParam } = await searchParams;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await viewerToday();
 
   const [ruleSets, determinations, weeks] = await Promise.all([
     loadRuleSets(company.id),

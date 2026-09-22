@@ -99,6 +99,10 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/lib/viewerToday", () => ({
   viewerToday: vi.fn(async () => "2026-09-12"),
   viewerTimeZone: vi.fn(async () => "UTC"),
+  // The same day as a Date, which is what /cash-flow and /dashboard age
+  // invoices against. Nothing here has an invoice, so the value only has
+  // to be the day above.
+  viewerAsOf: vi.fn(async () => new Date("2026-09-12T00:00:00.000Z")),
 }));
 // The empty state's "Walk me through this page" button asks which page it is
 // on, and its Ask button holds a router; neither exists in a bare render.

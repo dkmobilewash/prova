@@ -101,28 +101,20 @@ function buildPayApplication() {
   );
   const withheld = (amount: number) => Number(((amount * RETAINAGE_PERCENT) / 100).toFixed(2));
 
-  // `retainagePercent:` was passed here and `PayAppSummaryInput` no longer
-  // has the field. #409 removed it deliberately — "a rate sitting in the
-  // input of the function that computes retainage is an open invitation to
-  // derive the figure from it live", because the amount held back on an
-  // invoice is a SNAPSHOT taken at creation. This panel was written against
-  // the older signature and merged AFTER it, so `main` itself stopped
-  // typechecking at `801b7a0d`: both PRs were green, and nothing ever
-  // compiled them together, because #404's CI ran before #409 was on main.
-  // A clean `merge-tree` is not the same as a merged result that builds.
+  // No `retainagePercent` here: #409 took it out of `PayAppSummaryInput`
+  // on purpose, and its comment there is worth reading — a rate within
+  // reach of the function that computes retainage invites deriving the
+  // figure live, when the invoice's withheld amount is a snapshot taken
+  // at the rate in force that period. This panel keeps the rate only for
+  // `withheld()` above, which is standing in for that snapshot.
   //
-  // Deleting the argument is the whole fix and moves no pixel — the
-  // function never read it. `RETAINAGE_PERCENT` still drives `withheld()`
-  // two lines up, which is where a rate legitimately belongs: applied to an
-  // amount to produce the snapshot, never handed to the summariser.
-  //
-  // The column's own name is deliberately NOT spelled out above.
-  // `retainage-single-source.test.ts` greps every file for it and requires
-  // the result to match an enumerated list, and it does not strip comments —
-  // so a prose mention of the identifier puts this file in a census about
-  // files that READ the column, which this one does not. Same shape as
-  // #185, arriving from the other side: there a comment disarmed a census,
-  // here it armed one.
+  // That column is named in `lib/pay-application.ts`, not here, and the
+  // omission is deliberate: `retainage-single-source.test.ts` greps RAW
+  // source for the column name, so prose mentioning it registers as a
+  // file that READS it. Naming it here turned that census red with no
+  // code change at all. The census is right to be strict and its
+  // comment-blindness is its own defect — filed separately rather than
+  // patched from inside an unrelated hotfix.
   const summary = calculatePayAppSummary({
     lineItems,
     previousRetainageWithheld: withheld(previousAmount),

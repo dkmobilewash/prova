@@ -19,6 +19,7 @@ import {
 } from "@/lib/change-order";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
 import { viewerTimeZone } from "@/lib/viewerToday";
+import { todayInZone } from "@/lib/viewer-timezone";
 import { formatInstant } from "@/lib/render-date";
 import { loadJobDocuSign } from "@/lib/docusign/views";
 import { contractExecutionFor, contractIsExecuted } from "@/lib/contract-execution";
@@ -810,6 +811,12 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
       ) : (
         <ChangeOrders
           jobId={job.id}
+          // The reader's calendar day, resolved on the SERVER from the
+          // same zone the DocuSign panel above already uses. It is a prop
+          // rather than something the component works out because those
+          // date defaults are server-rendered markup — see the note above
+          // `TodayProp` in components/ChangeOrders.tsx.
+          today={todayInZone(timeZone)}
           changeOrders={changeOrderViews}
           lineItems={changeOrderTargets}
           pendingExposure={money(pendingExposure)}

@@ -12,6 +12,7 @@
     "test:db": "vitest run --config vitest.db.config.mts",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "test:e2e:local": "node e2e/run.mjs",
+    "test:e2e:public": "node e2e/run.mjs --public",
     "ask:eval": "vitest run --config vitest.eval.config.mts"
   },
   "dependencies": {

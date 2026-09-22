@@ -68,6 +68,42 @@ export function nullablePercentFromForm(
   return nullableDecimalFromForm(formData, key, { ...PERCENT_BOUNDS, maxDecimals: 2, ...options });
 }
 
+/*
+ * WHAT ELSE IN THIS FILE THROWS, AND WHY IT IS STILL A BARE `Error`.
+ *
+ * Recorded because the next person to read the parsers above will
+ * reasonably ask whether the sweep was finished, and the answer is that it
+ * stopped on purpose rather than halfway.
+ *
+ * THE FORM PARSERS all raise `InputError`. Two do it directly —
+ * `enumFromForm` and `optionalEnumFromForm` — and the numeric ones do it
+ * through the callback handed to `numericReaders` at the top of this file,
+ * so `decimalFromForm`, `nullableDecimalFromForm`, `nullablePercentFromForm`,
+ * `numberFromForm` and `optionalNumberFromForm` all raise the same class
+ * while none of them contains a `throw` of its own.
+ *
+ * THAT INDIRECTION IS LOAD-BEARING FOR ANYTHING THAT SCANS THIS FILE. A
+ * census looking for a literal `throw new InputError` inside a parser body
+ * finds two of seven, and then reports a smaller problem than it has with
+ * every downstream assertion passing.
+ * `actionErrorBoundaryCensus.test.ts` follows the callback for that reason,
+ * and asserts the resulting roll-call so it cannot quietly shrink again.
+ *
+ * Every one of those turns a string a person typed into a value, and every
+ * one of their messages is an instruction to that person.
+ *
+ * THE OWNERSHIP AND STATE GUARDS below still throw a bare `Error`:
+ * `assertJobInCompany`, `assertLineItemOnJob`, `assertEditableDirectly`,
+ * `assertEditableViaChangeOrder`, `craftClassificationIdFromForm`,
+ * `phaseCodeIdFromForm`, `assertOwner`. They answer a question about a
+ * record, not about a keystroke, and `assertOwner` in particular is half
+ * of a documented pair — see `ownerRefusal` below and
+ * `ownerRefusalCensus.test.ts`, which exists to stop exactly that one
+ * being "tidied". Converting them is a separate decision with its own
+ * call sites to check, and `changeOrders.ts` already wraps the three it
+ * uses by hand where it needs them readable.
+ */
+
 export async function assertJobInCompany(jobId: string, companyId: string) {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!job || job.companyId !== companyId) {
@@ -110,13 +146,12 @@ export async function assertLineItemOnJob(lineItemId: string, jobId: string) {
 
 export const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const;
 
-export const TRADE_SCOPES = [
-  "METAL_FRAMING_DRYWALL",
-  "LATH_PLASTER",
-  "EIFS",
-  "ACOUSTICAL_CEILINGS",
-  "FIREPROOFING",
-] as const;
+/** Moved to `@/lib/trade-scopes` on 2026-09-21 and re-exported here so every
+ * server caller is unchanged. It left because this file imports `prisma` as a
+ * VALUE and is not a "use server" boundary, so a client component importing
+ * this list shipped PrismaClient to the browser — see trade-scopes.ts. */
+export { TRADE_SCOPES } from "@/lib/trade-scopes";
+import { TRADE_SCOPES } from "@/lib/trade-scopes";
 
 /** Empty selection means "untagged" — a valid, common state, not an error. */
 export function tradeScopeFromForm(formData: FormData): (typeof TRADE_SCOPES)[number] | null {
@@ -385,9 +420,21 @@ export type ActionResultWith<T> = { ok: true; value: T } | { ok: false; error: s
  * Lives here rather than in a feature module for the reason `ActionResult`
  * does: `submittals.ts` wrote it locally first, and four more modules
  * converting to the same contract (#251) would have been five structurally
- * identical copies free to drift. The original in `submittals.ts` is
- * deliberately left where it is — it is the documented reference
- * implementation and rewriting it is not this change.
+ * identical copies free to drift.
+ *
+ * THEY DID NOT STAY AT FIVE, AND THEY DID DRIFT. This paragraph used to
+ * end "the original in submittals.ts is deliberately left where it is — it
+ * is the documented reference implementation and rewriting it is not this
+ * change." That was a reasonable call and it cost #407: by 2026-09-21 there
+ * were SIXTEEN declarations of this class name, fifteen of them local, and
+ * `company.ts`'s caught only its own while the parsers in this file threw
+ * this one. Same name, different class, `instanceof` false — so the first
+ * screen a new owner sees answered an empty Save with a digest.
+ *
+ * There is one class now. Every local copy is gone, `submittals.ts`
+ * included, and `actionErrorBoundaryCensus.test.ts` fails the build if a
+ * seventeenth appears. A "reference implementation" that is a second copy
+ * of the thing it references is just a second copy.
  *
  * WHY A CLASS AND NOT A FLAG. The throw has to survive being raised deep
  * inside a `prisma.$transaction` callback, where returning is not an option

@@ -3,12 +3,21 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { INTERACTION_TYPES, actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
+import {
+  INTERACTION_TYPES,
+  InputError,
+  actionFail as fail,
+  actionOk as ok,
+  runAction,
+  type ActionResult,
+} from "./shared";
 
-/** Thrown by the form parsers below, caught at each action's boundary and
- * converted to a returned failure — same shape as submittals.ts, the
- * reference implementation for this pattern. */
-class InputError extends Error {}
+// `InputError` and `runAction` are imported from ./shared rather than
+// declared here. Two classes with the same name are not the same class:
+// `instanceof` is false between them, so a refusal thrown by a shared
+// parser walked straight past a local boundary and reached production as a
+// redacted digest. That is what #407 found on /welcome, and this module
+// held the fifteenth copy of the class it found there.
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -46,14 +55,6 @@ function requiredDate(formData: FormData, key: string, label: string): Date {
   return date;
 }
 
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
-}
 
 async function findInteraction(interactionId: string, companyId: string) {
   const interaction = await prisma.contactInteraction.findUnique({ where: { id: interactionId } });
