@@ -120,11 +120,13 @@ export default async function SafetyPage({
         </div>
 
         {/* ONE "no cases" sentence, never two. The status line and the
-            paragraph under it both said "No cases logged for 2026." —
-            the page said nothing twice. At zero the empty branch below is
-            the whole answer; the status line comes back with the first
-            case, when it has counts to report. */}
-        {incidents.length > 0 && <StatusLine report={status} />}
+            paragraph under it both said "No cases logged for 2026." (#450
+            took it out of the paragraph). On a company that has never
+            logged a case the EmptyState's title says it, so the status line
+            waits; everywhere else the status line owns the sentence and the
+            paragraph under it does not repeat it. copyFixes.test.ts pins the
+            wording, one-empty-sentence.test.ts counts it in the render. */}
+        {(incidents.length > 0 || everLogged) && <StatusLine report={status} />}
 
         {incidents.length === 0 && !everLogged ? (
           <EmptyState
@@ -152,8 +154,11 @@ export default async function SafetyPage({
           />
         ) : incidents.length === 0 ? (
           <p className="text-ink-body">
-            No cases logged for {activeYear}. Log the first-aid ones too — one that later turns into lost
-            time is only defensible if it was written down the day it happened.
+            {/* The StatusLine directly above already says "No cases logged
+                for <year>." — this paragraph used to repeat it word for word. */}
+            That is the good outcome — but log the first aid ones too. A
+            first-aid case that later turns into lost time is only defensible if it was written down the day it
+            happened.
           </p>
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">

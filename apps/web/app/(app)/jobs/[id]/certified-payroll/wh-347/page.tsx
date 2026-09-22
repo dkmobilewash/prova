@@ -320,7 +320,7 @@ export default async function Wh347Page({
           </p>
           <p className="mt-1 text-xs text-tag-rose-ink/80">
             The grid below is real — your hours are in the right boxes for the right days. What
-            follows is every field the form requires that cstream cannot fill in yet.
+            follows is every field the form requires that C Stream cannot fill in yet.
           </p>
           <ul className="mt-3 flex flex-col gap-1.5">
             {form.blocking.map((field) => (
