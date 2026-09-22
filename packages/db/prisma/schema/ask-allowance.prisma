@@ -1,0 +1,81 @@
+/// How much of a PAID monthly AI allowance one company has already claimed.
+///
+/// ONE ROW PER COMPANY PER CALENDAR MONTH (UTC), and the row is a CLAIM
+/// LEDGER, not a report. `AskUsage` next door records what a question cost
+/// AFTER the model answered; this records that a unit was TAKEN before the
+/// model was called at all. The two answer different questions and neither
+/// can be derived from the other:
+///
+///   - AskUsage is written after the money is spent, and its write failure
+///     is deliberately swallowed so a bookkeeping hiccup never costs
+///     somebody their answer. That is correct for a courtesy limit and
+///     useless for a paid cap: a process that dies mid-flight spends the
+///     money and writes no row, so the next question is free.
+///   - A row count is also the `max(n)+1` shape CLAUDE.md is built around.
+///     Allowance derived from surviving rows is REISSUED the moment a row
+///     is deleted. Nothing in this app deletes AskUsage today, and "today"
+///     is exactly the word that made invoice numbering a bug for a year.
+///   - Pages are not rows at all. A 40-page PDF is one AskUsage row and
+///     forty units of a 300-page allowance.
+///
+/// So the numbers here only ever INCREMENT, inside the month they belong
+/// to, and the claim is made with a conditional `updateMany`:
+///
+///     UPDATE ... SET questionsUsed = questionsUsed + n
+///     WHERE questionsUsed <= cap - n
+///
+/// which is one statement, so two concurrent asks for the last unit cannot
+/// both win — under Postgres READ COMMITTED the second re-evaluates the
+/// WHERE against the first's committed row and matches zero rows. That is
+/// the `InvoiceCounter` collision (#224) answered by design rather than
+/// caught by a unique index.
+///
+/// NOT A SEQUENCE COUNTER, and deliberately not named `*Counter`: it issues
+/// no numbers, nothing is unique on its value, and `counterCensus.test.ts`
+/// is about counters that number a table. It is also COMPANY-scoped and
+/// carries no `jobId`, so it is not a RESTRICT child of `Job` and the
+/// scratch cleanup scripts — which delete rows under `Job` and `Contact`
+/// and never touch `Company` — have nothing to do here. Same shape as
+/// `AskUsage`, which is likewise absent from them.
+///
+/// ROLLOVER IS A NEW ROW, NEVER A RESET. Nothing ever decrements or zeroes
+/// a period; next month is a different `periodStart` and therefore a
+/// different row. A reset in place would be the retired-OSHA-case-number
+/// mistake (issue #148) wearing a usage meter.
+///
+/// Append-and-increment only. Nothing deletes a period row.
+model AskAllowancePeriod {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Midnight UTC on the first of the month this row meters. The period is
+  /// a UTC calendar month rather than a rolling 30 days because a person
+  /// has to be able to answer "when does it come back" with a date, and
+  /// "the 1st" is the only answer a rolling window cannot give.
+  periodStart DateTime
+
+  /// Questions CLAIMED this period, including ones whose model call then
+  /// failed. Only increments.
+  questionsUsed Int @default(0)
+  /// Document pages CLAIMED this period, by the same rule.
+  pagesUsed     Int @default(0)
+
+  /// Of the above, the claims whose model call then failed — MARKED, never
+  /// released. Releasing would make the cap defeatable by inducing
+  /// failures, which is the whole reason the unit is claimed up front; and
+  /// the provider bills the tokens of a stream that died halfway. These two
+  /// figures are what makes a human credit possible: an owner can see on
+  /// /settings/assistant that the month included failures and ask for them
+  /// back. Nothing in this app adjusts an allowance automatically, and
+  /// nothing bills for one.
+  failedQuestions Int @default(0)
+  failedPages     Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One row per company per month — and the constraint, not application
+  /// code, is what makes that true when two questions arrive together.
+  @@unique([companyId, periodStart])
+}
