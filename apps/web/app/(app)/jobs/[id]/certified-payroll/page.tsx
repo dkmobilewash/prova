@@ -10,8 +10,9 @@ import { buildCertifiedPayrollSummary, type CertifiedPayrollTimeEntryInput } fro
 import {
   certifiedPayrollWeekStart,
   certifiedPayrollWeekWindow,
+  openingCertifiedPayrollWeek,
 } from "@/lib/certified-payroll-week";
-import { loadCertifiedPayrollWeekEntries } from "@/lib/certified-payroll-query";
+import { loadCertifiedPayrollWeekEntries, loadLatestTimeEntryDate } from "@/lib/certified-payroll-query";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
 import { timeEntryWorkerName, timeEntryWorkerId } from "@/lib/worker-name";
 
@@ -72,10 +73,17 @@ export default async function CertifiedPayrollPage({
     notFound();
   }
 
-  const requestedStart = weekStartParam ? new Date(`${weekStartParam}T00:00:00.000Z`) : new Date();
-  const weekStart = certifiedPayrollWeekStart(
-    Number.isNaN(requestedStart.getTime()) ? new Date() : requestedStart,
+  // Opens on the week of the job's latest hours when no week was asked
+  // for — see openingCertifiedPayrollWeek. Capped at the end of the current
+  // week so a mistyped future date cannot become the default.
+  const now = new Date();
+  const latestEntryDate = await loadLatestTimeEntryDate(
+    company.id,
+    job.id,
+    certifiedPayrollWeekWindow(certifiedPayrollWeekStart(now)).lte,
   );
+  const weekStart = openingCertifiedPayrollWeek({ requested: weekStartParam, latestEntryDate, now });
+  const latestWeekStart = latestEntryDate ? certifiedPayrollWeekStart(latestEntryDate) : null;
   // The Saturday printed in the header is the query's OWN upper bound, not
   // a second computation that happens to agree with it. It did not agree:
   // the header said "– Aug 29" while the query ran to Aug 30, and nothing
@@ -166,10 +174,21 @@ export default async function CertifiedPayrollPage({
         {job.contact.name} · Week of {formatDate(weekStart)} – {formatDate(weekEnd)}
       </p>
       <p className="mt-3 max-w-2xl text-xs text-ink-muted">
-        This is a certified-payroll-style summary of logged hours and computed wages for this job/week — it is not
-        formatted as a federal WH-347 or state-equivalent form. Wage costs use the FringeRateSchedule effective for
-        each craft classification and date; rows without a craft tag or an effective schedule show hours only,
-        flagged below.
+        A summary of logged hours and computed wages for this job and week. The federal form is one click away,
+        below. Wages use the fringe rate schedule set under Union &amp; fringe that is in force for each craft
+        classification on each date; rows without a craft tag or a rate in force show hours only, flagged below.
+      </p>
+      {/* The only way in to the WH-347. It was built, linked BACK to this
+          page, and reachable from nowhere — every mention of it anywhere in
+          the app was a comment or a revalidatePath. routeInboundLinks.test.ts
+          now fails the build for any page nothing links to. */}
+      <p className="mt-3 print:hidden">
+        <Link
+          href={`/jobs/${job.id}/certified-payroll/wh-347?weekStart=${isoDate(weekStart)}`}
+          className="text-sm font-medium text-link hover:underline"
+        >
+          Form WH-347 for this week →
+        </Link>
       </p>
 
       <div className="mb-4 mt-4 flex items-center justify-between gap-3 print:hidden">
@@ -188,7 +207,29 @@ export default async function CertifiedPayrollPage({
       </div>
 
       {employeeSummaries.length === 0 ? (
-        <p className="mt-8 text-sm text-ink-muted">No time entries logged on this job for this week.</p>
+        <div className="mt-8 text-sm text-ink-muted">
+          <p>No time entries logged on this job for this week.</p>
+          {latestWeekStart && latestWeekStart.getTime() !== weekStart.getTime() ? (
+            <p className="mt-2">
+              The latest hours on this job are in the week of {formatDate(latestWeekStart)}.{" "}
+              <Link
+                href={`/jobs/${job.id}/certified-payroll?weekStart=${isoDate(latestWeekStart)}`}
+                className="text-link hover:underline"
+              >
+                Open that week →
+              </Link>
+            </p>
+          ) : (
+            !latestWeekStart && <p className="mt-2">No hours have been logged on this job yet.</p>
+          )}
+          <p className="mt-2">
+            Hours are logged on the job&rsquo;s{" "}
+            <Link href={`/jobs/${job.id}/crew`} className="text-link hover:underline">
+              Crew &amp; time
+            </Link>{" "}
+            tab.
+          </p>
+        </div>
       ) : (
         <div className="mt-4 flex flex-col gap-6">
           {/* Ahead of the summaries rather than as a footnote: this decides

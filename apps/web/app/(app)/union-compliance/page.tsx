@@ -115,6 +115,27 @@ export default async function UnionCompliancePage({
         </Link>
       </div>
 
+      {/* Setup is the LAST section and everything above reads from it, so a
+          new company scrolled past four sections all saying "nothing" before
+          reaching the one thing it could do. A pointer rather than a move:
+          once a local exists, the order below is the right one for a month
+          being reviewed. */}
+      {crafts.length === 0 && (
+        <div className="mb-8 rounded-lg border border-brand bg-surface p-4" data-testid="uc-start-here">
+          <p className="text-sm font-semibold text-ink">
+            {setup.length === 0 ? "Start here: add your local" : "Start here: add your craft classifications"}
+          </p>
+          <p className="mt-1 text-sm text-ink-body">
+            {setup.length === 0
+              ? "Nothing on this page can be worked out until the union local you work under is recorded, with its craft classifications and rates. Every section below reads from it."
+              : "Your local has no craft classifications yet. Hours need a classification before they can be priced for fringe or counted toward a ratio."}
+          </p>
+          <a href="#setup" className="mt-2 inline-block text-sm font-medium text-link hover:underline">
+            Go to locals, classifications and rates ↓
+          </a>
+        </div>
+      )}
+
       {/* ------------------------------------------------ remittance --- */}
       <section className="mb-10" data-tour="uc-remittance">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
@@ -125,6 +146,14 @@ export default async function UnionCompliancePage({
               : "No filing covering this whole month on record"}
           </span>
         </div>
+        {/* The only way in to the printable remittance sheet. Like the
+            WH-347 it was built and linked from nowhere but an Ask citation;
+            routeInboundLinks.test.ts now fails the build for that. */}
+        <p className="mb-3 text-sm">
+          <Link href={`/union-compliance/remittance?month=${month}`} className="font-medium text-link hover:underline">
+            Fringe remittance sheet for this month →
+          </Link>
+        </p>
 
         <p className="mb-3 text-xs text-ink-muted">
           A rate hangs off the <span className="text-ink-body">classification</span>, not its tier,
@@ -298,9 +327,9 @@ export default async function UnionCompliancePage({
 
       {/* --------------------------------------- apprenticeship --- */}
       <section className="mb-10" data-tour="uc-apprenticeships">
-        <h2 className="mb-1 text-sm font-semibold text-ink-label">Apprenticeship programmes</h2>
+        <h2 className="mb-1 text-sm font-semibold text-ink-label">Apprenticeship programs</h2>
         <p className="mb-3 text-xs text-ink-muted">
-          The registration itself — sponsor, programme number, classroom hours and the sign-offs
+          The registration itself — sponsor, program number, classroom hours and the sign-offs
           that close a period. On-the-job hours are read from the timesheets and stored nowhere
           here; a period is closed by a signature, never by an hour count reaching a line.
         </p>
@@ -336,7 +365,7 @@ export default async function UnionCompliancePage({
       </section>
 
       {/* ----------------------------------------------------- setup --- */}
-      <section data-tour="uc-setup">
+      <section id="setup" className="scroll-mt-6" data-tour="uc-setup">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink-label">Locals, classifications and rates</h2>
           <span className="text-xs text-ink-muted">
