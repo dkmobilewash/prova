@@ -279,6 +279,27 @@ describe("who is offered what", () => {
     expect(field).toContain("crew_assignments");
     expect(toolsFor(OWNER).length).toBe(TOOLS.length);
   });
+
+  // The behaviour half of team_roster's gate, 2026-09-19. The census below
+  // says what it DECLARES; this says who actually stops being offered it,
+  // which is the part that was traded away and the part worth a test.
+  //
+  // It answered for everyone until #310's citation guard showed it
+  // summarising /certifications, a MANAGE_FIELD page. Gating it costs the
+  // two functions that hold no MANAGE_FIELD.
+  it("offers team_roster to the field, and no longer to estimating or accounting", () => {
+    expect(toolsFor(FIELD).map((t) => t.name)).toContain("team_roster");
+    expect(toolsFor(OWNER).map((t) => t.name)).toContain("team_roster");
+    expect(toolsFor(ESTIMATOR).map((t) => t.name)).not.toContain("team_roster");
+    expect(toolsFor(ACCOUNTING).map((t) => t.name)).not.toContain("team_roster");
+
+    // A member with no job function set keeps everything — rule 2 in
+    // lib/permissions.ts, "nobody loses anything by this feature shipping".
+    // Gating a tool must not quietly become the exception to that.
+    expect(toolsFor({ role: "MEMBER", jobFunction: null }).map((t) => t.name)).toContain(
+      "team_roster",
+    );
+  });
 });
 
 describe("read-tool capabilities match the pages they cite", () => {
