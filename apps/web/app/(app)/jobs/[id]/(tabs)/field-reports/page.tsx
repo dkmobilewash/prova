@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import { PageColumn } from "@prova/ui";
 import { DailyFieldReports } from "@/components/DailyFieldReports";
 import { DelayLog } from "@/components/DelayLog";
 import { refreshReportWeather } from "@/lib/report-weather";
@@ -65,7 +66,10 @@ export default async function JobFieldReportsPage({ params }: { params: Promise<
     ).map((s) => [s.date.toISOString().slice(0, 10), s.approvedAt ? "Approved" : "Signed"]),
   );
 
+  // A composer and a column of written reports: reading width, for line
+  // length. The layout above is `working`; see PageColumn.
   return (
+    <PageColumn width="reading">
     <DailyFieldReports
       jobId={job.id}
       canDelete={currentUser.role === "OWNER"}
@@ -122,5 +126,6 @@ export default async function JobFieldReportsPage({ params }: { params: Promise<
         }))}
       />
     </DailyFieldReports>
+    </PageColumn>
   );
 }

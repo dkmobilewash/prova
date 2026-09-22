@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { Card, StatusBadge } from "@prova/ui";
+import { Card, PageShell, StatusBadge } from "@prova/ui";
 import { JobStatus, Prisma, prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { redirectToOnboardingIfUnasked } from "@/lib/onboarding-gate";
@@ -13,6 +13,7 @@ import { serverToday } from "@/lib/serverToday";
 import { viewerAsOf } from "@/lib/viewerToday";
 import { loadTodayDashboard } from "@/lib/today-dashboard";
 import { AskPanel } from "@/components/AskPanel";
+import { EmptyState } from "@/components/EmptyState";
 import { GettingStartedCard } from "@/components/GettingStartedCard";
 import { FullTourOffer } from "@/components/FullTourOffer";
 import { gettingStartedChecklist } from "@/lib/getting-started";
@@ -73,6 +74,14 @@ const HEALTH_TONE: Record<string, string> = {
   watch: "text-tag-amber-ink",
   fine: "text-ink-body",
   unknown: "text-ink-body",
+};
+
+/** Whole literals so Tailwind sees every class. Index = tile count. */
+const NEEDS_ATTENTION_GRID: Record<number, string> = {
+  1: "grid grid-cols-1 gap-3",
+  2: "grid grid-cols-1 gap-3 sm:grid-cols-2",
+  3: "grid grid-cols-1 gap-3 sm:grid-cols-3",
+  4: "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4",
 };
 
 type JobRow = Awaited<ReturnType<typeof loadJobs>>[number];
@@ -174,6 +183,56 @@ export default async function TodayPage({
   const estimating = allJobs.filter((job) => job.status === "ESTIMATE");
   const pipelineValue = estimating.reduce((sum, job) => sum + jobValue(job), 0);
 
+  // A company with no jobs has nothing for most of this page to say — no
+  // invoice, cost, crew day or GC exists without a job to hang it on — so
+  // it gets the one thing it can do (start a job) and the checklist, and
+  // every section below returns the moment the first job exists. The ONE
+  // company-level figure that can be non-zero before any job is a licence
+  // or certificate running out, so that card still shows when it has
+  // something in it. Presentation only: every figure above is computed
+  // exactly as before, and a company with a job renders the same page.
+  const isNewAccount = allJobs.length === 0;
+
+  // Written once and placed in one of two spots below: beside "Crews
+  // today" for a company with jobs (where it always was), or alone for a
+  // company with none yet that has a document running out.
+  const complianceCard = (
+    <Card>
+      <h3 className="text-sm font-semibold text-ink">Compliance</h3>
+      {expiringSoon.length === 0 ? (
+        <p className="mt-2 text-sm text-ink-body">
+          Nothing expiring. Certificates, licences, policies and bonds are current.
+        </p>
+      ) : (
+        <ul className="mt-3 divide-y divide-line-row">
+          {expiringSoon.slice(0, 6).map((renewal) => (
+            <li key={`${renewal.kind}-${renewal.id}`} className="py-2.5">
+              <p className="text-sm font-medium text-ink">
+                {renewal.title}
+                {renewal.detail && (
+                  <span className="font-normal text-ink-body"> — {renewal.detail}</span>
+                )}
+              </p>
+              <p
+                className={`text-xs ${
+                  renewal.urgency === "EXPIRED"
+                    ? "text-tag-rose-ink"
+                    : "text-tag-amber-ink"
+                }`}
+              >
+                {renewalTiming(renewal)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+
+  // Owner and unrestricted members have all four tiles, and their row is
+  // unchanged; a narrowed job function gets a row sized to what it sees.
+  const needsAttentionTiles = 1 + (showsBilling ? 2 : 0) + (showsJobMoney ? 1 : 0);
+
   const grouped = activeStatus
     ? [{ status: activeStatus, rows: jobs }]
     : ALL_STATUSES.map((s) => ({ status: s, rows: jobs.filter((job) => job.status === s) })).filter(
@@ -199,8 +258,8 @@ export default async function TodayPage({
           converted put tables and buttons directly on the page background
           and render unreadable on a light one. */}
       <div className="flex min-h-full bg-canvas">
-        <div className="min-w-0 flex-1 px-6 py-8">
-          <div className="mx-auto max-w-5xl">
+        <div className="min-w-0 flex-1">
+          <PageShell width="working">
             <h1 className="text-xl font-semibold text-ink">Today</h1>
             <p className="mt-1 text-sm text-ink-body">
               What needs a decision, before you go looking for it.
@@ -208,7 +267,52 @@ export default async function TodayPage({
 
             {/* The full tour, offered once to an account with no jobs yet —
                 a brand-new one. Dismissed per browser; see FullTourOffer. */}
-            {allJobs.length === 0 && <FullTourOffer />}
+            {isNewAccount && <FullTourOffer />}
+
+            {/* A brand-new company's first screen leads with the one thing
+                it can do. The example rows are static markup, labelled as
+                an example by EmptyState itself — never data. */}
+            {isNewAccount && (
+              <EmptyState
+                data-tour="dashboard-jobs-empty"
+                className="mt-6"
+                title="No jobs yet"
+                purpose={
+                  <p>
+                    Everything in C Stream hangs off a job: the estimate, the crew&rsquo;s hours, the
+                    invoices, the paperwork. Start your first one and this page fills in with what
+                    is overdue, who is on site today and which jobs are drifting past budget.
+                  </p>
+                }
+                actions={[
+                  { label: "Start your first job", href: "/jobs/new" },
+                  { label: "Bring jobs in from a spreadsheet", href: "/settings/import" },
+                ]}
+                example={{
+                  caption: "What your jobs list looks like once it is in use. Not your data — nothing here is saved.",
+                  rows: [
+                    {
+                      title: "Oak Ave Medical — level 3 framing and drywall",
+                      tag: "In progress",
+                      detail: "Example General Contractor",
+                      meta: showsJobMoney ? "$412,000" : undefined,
+                    },
+                    {
+                      title: "Lincoln HS gym — acoustical ceilings",
+                      tag: "Estimating",
+                      detail: "Sample Builders · Needs pricing",
+                      meta: showsJobMoney ? "$186,500" : undefined,
+                    },
+                    {
+                      title: "Harbor View Lofts — EIFS",
+                      tag: "Contracted",
+                      detail: "Example General Contractor",
+                      meta: showsJobMoney ? "$95,200" : undefined,
+                    },
+                  ],
+                }}
+              />
+            )}
 
             {/* First, and only until the required steps are done or someone
                 hides it on this browser. Everything below keeps its order. */}
@@ -225,12 +329,25 @@ export default async function TodayPage({
               <AskPanel />
             </div>
 
+            {/* Before the first job, the one section with something to say. */}
+            {isNewAccount && expiringSoon.length > 0 && (
+              <section className="mt-6" data-tour="dashboard-field">
+                <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
+                  Needs attention
+                </h2>
+                {complianceCard}
+              </section>
+            )}
+
             {/* ------------------------------------ needs attention --- */}
+            {!isNewAccount && (
             <section className="mt-6" data-tour="dashboard-needs-attention">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Needs attention
               </h2>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {/* As many columns as this viewer has tiles, so a field role's
+                  single tile does not sit alone in a four-wide row. */}
+              <div className={NEEDS_ATTENTION_GRID[needsAttentionTiles]}>
                 {showsBilling && (
                   <StatCard
                     accent="rose"
@@ -276,8 +393,10 @@ export default async function TodayPage({
                 )}
               </div>
             </section>
+            )}
 
             {/* -------------------------------- today in the field ---- */}
+            {!isNewAccount && (
             <section className="mt-8" data-tour="dashboard-field">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Today in the field
@@ -308,41 +427,13 @@ export default async function TodayPage({
                   )}
                 </Card>
 
-                <Card>
-                  <h3 className="text-sm font-semibold text-ink">Compliance</h3>
-                  {expiringSoon.length === 0 ? (
-                    <p className="mt-2 text-sm text-ink-body">
-                      Nothing expiring. Certificates, licences, policies and bonds are current.
-                    </p>
-                  ) : (
-                    <ul className="mt-3 divide-y divide-line-row">
-                      {expiringSoon.slice(0, 6).map((renewal) => (
-                        <li key={`${renewal.kind}-${renewal.id}`} className="py-2.5">
-                          <p className="text-sm font-medium text-ink">
-                            {renewal.title}
-                            {renewal.detail && (
-                              <span className="font-normal text-ink-body"> — {renewal.detail}</span>
-                            )}
-                          </p>
-                          <p
-                            className={`text-xs ${
-                              renewal.urgency === "EXPIRED"
-                                ? "text-tag-rose-ink"
-                                : "text-tag-amber-ink"
-                            }`}
-                          >
-                            {renewalTiming(renewal)}
-                          </p>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </Card>
+                {complianceCard}
               </div>
             </section>
+            )}
 
             {/* ------------------------------------------------ money -- */}
-            {showsBilling && (
+            {showsBilling && !isNewAccount && (
             <section className="mt-8" data-tour="dashboard-money">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Money
@@ -417,7 +508,7 @@ export default async function TodayPage({
             {/* ------------------------------------------- job health -- */}
             {/* The sentences here ARE the margin — "forecast 8% past
                 contract value" is the number said out loud. */}
-            {showsJobMoney && (
+            {showsJobMoney && !isNewAccount && (
             <section className="mt-8" data-tour="dashboard-job-health">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
                 Job health
@@ -445,6 +536,8 @@ export default async function TodayPage({
             )}
 
             {/* --------------------------------------- browse all jobs - */}
+            {/* A new account's jobs empty state is at the top of the page. */}
+            {!isNewAccount && (
             <section className="mt-10 border-t border-line-card pt-6">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="text-sm font-semibold text-ink">Browse all jobs</h2>
@@ -510,18 +603,7 @@ export default async function TodayPage({
                 })}
               </div>
 
-              {allJobs.length === 0 ? (
-                <Card className="mt-6" data-tour="dashboard-jobs-empty">
-                  <p className="text-ink-label">No jobs yet.</p>
-                  <p className="mt-1 text-sm text-ink-body">
-                    Start one and you&apos;re estimating —{" "}
-                    <Link href="/jobs/new" className="text-link hover:underline">
-                      create a job
-                    </Link>{" "}
-                    to price up your first scope.
-                  </p>
-                </Card>
-              ) : jobs.length === 0 ? (
+              {jobs.length === 0 ? (
                 <Card className="mt-6 text-sm text-ink-body">
                   {q ? (
                     <>
@@ -600,7 +682,8 @@ export default async function TodayPage({
                 </div>
               )}
             </section>
-          </div>
+            )}
+          </PageShell>
         </div>
 
         <ReceivablesDetailPanel />

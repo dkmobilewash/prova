@@ -1,6 +1,7 @@
 import { JOB_STATUS_LABELS, isJobStatus } from "@/lib/job-status-transitions";
 import { formatCalendarDate } from "@/lib/render-date";
 import { money } from "@/lib/money";
+import { JOB_SUMMARY_GRID, jobSummaryTileCount } from "@/components/jobSummaryGrid";
 import type { JobSummary } from "@/lib/jobs/job-summary";
 
 /**
@@ -26,6 +27,7 @@ export function JobSummaryHeader({
   showsBilling: boolean;
 }) {
   const statusLabel = isJobStatus(summary.status) ? JOB_STATUS_LABELS[summary.status] : summary.status;
+  const gridClass = JOB_SUMMARY_GRID[jobSummaryTileCount(showsJobMoney, showsBilling)];
 
   return (
     <div className="mb-4 rounded-lg border border-line-card bg-surface p-4 print:hidden">
@@ -37,7 +39,7 @@ export function JobSummaryHeader({
       </div>
       <p className="mt-1 text-sm text-ink-body">{summary.contactName}</p>
 
-      <dl className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+      <dl className={`mt-3 ${gridClass}`}>
         {showsJobMoney && (
           <div>
             <dt className="text-xs text-ink-muted">Contract value</dt>
