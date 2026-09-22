@@ -126,16 +126,25 @@ export type DocumentUploadTarget = {
    * action asserts none beyond company membership.
    *
    * MIRRORED, NEVER INVENTED, and that is a deliberate choice rather than
-   * laziness. Four of these five actions are recorded in
-   * `lib/action-capability-guards.test.ts` as open — three because the job
-   * page they are reached from is itself open to every signed-in member,
-   * and `compliance.uploadComplianceDocument` as a listed, counted debt
-   * behind a guarded page. Making the TOKEN stricter than the ACTION would
-   * not close that debt; it would produce a form whose upload step refuses
-   * somebody the recording step would have admitted, which is a harder
-   * failure to diagnose than the open action and does not fix it. Closing
-   * it means closing the action, in the action's own module, and this line
-   * follows it when somebody does.
+   * laziness. Three of these five actions are recorded in
+   * `lib/action-capability-guards.test.ts` as open, because the job page
+   * they are reached from is itself open to every signed-in member. Making
+   * the TOKEN stricter than the ACTION would not close that debt; it would
+   * produce a form whose upload step refuses somebody the recording step
+   * would have admitted, which is a harder failure to diagnose than the
+   * open action and does not fix it. Closing it means closing the action,
+   * in the action's own module, and this line follows it when somebody
+   * does.
+   *
+   * SOMEBODY DID, for `compliance-document`. That entry said null and this
+   * paragraph said "four of these five" until `uploadComplianceDocument`
+   * started asserting MANAGE_COMPLIANCE — it puts a whole document through
+   * the model against a paid allowance, so an open endpoint there is a
+   * spend surface rather than a filing convenience. The line below followed
+   * the action exactly as this note promised it would, which is worth more
+   * than the guard itself: mirroring means the token is refused too, so a
+   * person who cannot use that action never moves the bytes and never
+   * strands a blob nothing collects.
    */
   readonly capability: Capability | null;
   /** What the person is told when that capability is missing. Never
@@ -176,7 +185,11 @@ export const DOCUMENT_UPLOAD_TARGETS: Record<DocumentUploadPurpose, DocumentUplo
   "compliance-document": {
     root: "compliance",
     scope: "company",
-    capability: null,
+    // The second one that is not null, and the only one whose action is
+    // gated because of what it SPENDS rather than what it writes:
+    // `uploadComplianceDocument` sends the whole file to the model against
+    // the company's paid monthly allowance.
+    capability: "MANAGE_COMPLIANCE",
     refusal: "Compliance documents aren't part of your job function.",
   },
 };

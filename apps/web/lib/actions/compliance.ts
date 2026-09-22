@@ -3,16 +3,20 @@
 import { revalidatePath } from "next/cache";
 import {
   DOCUMENT_UPLOAD_MAX_BYTES,
+  DOCUMENT_UPLOAD_TARGETS,
   documentDisplayFileName,
   documentUrlProblem,
   isAllowedDocumentType,
   type DocumentUploadContentType,
 } from "@/lib/document-uploads";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import { extractComplianceDocument } from "@prova/integrations";
 import { ASK_DEFAULT_MODEL } from "@prova/integrations";
 import { recordAskUsage } from "@/lib/ask/usage";
+import { markAskAllowanceFailure } from "@/lib/ask/allowance";
+import { claimDocumentPages } from "@/lib/ask/documentSpend";
 import {
   actionFail,
   actionOk,
@@ -28,6 +32,7 @@ import {
   runAction,
   SETTABLE_LICENSE_STATUSES,
   type ActionResult,
+  type ActionResultWith,
 } from "./shared";
 
 /** Adds a company insurance policy record (GL, workers' comp, auto, umbrella). */
@@ -134,11 +139,40 @@ export async function deleteBond(bondId: string) {
 
 /** Uploads a compliance document (lien waiver, COI, certified payroll,
  * union fringe filing) and has Claude read it into structured fields —
- * see extractComplianceDocument in @prova/integrations. Not owner-gated:
- * any team member can log paperwork they receive from a sub or vendor,
- * same reasoning as addCostEntry. The extracted fields are saved as a
- * normal, editable row (aiExtracted just flags it for review, not a
- * lock) — a bad extraction is fixed the same way a typo would be.
+ * see extractComplianceDocument in @prova/integrations. The extracted
+ * fields are saved as a normal, editable row (aiExtracted just flags it
+ * for review, not a lock) — a bad extraction is fixed the same way a typo
+ * would be.
+ *
+ * IT IS GATED ON MANAGE_COMPLIANCE, AND THAT PARAGRAPH REPLACES ONE THAT
+ * SAID THE OPPOSITE. This comment read "not owner-gated: any team member
+ * can log paperwork they receive from a sub or vendor, same reasoning as
+ * addCostEntry" from the day it was written, and
+ * lib/action-capability-guards.test.ts carried the same action in
+ * OPEN_BEHIND_AN_ALREADY_GUARDED_PAGE — a counted debt, `/compliance`
+ * refusing at the page and this endpoint answering whoever posts to it.
+ *
+ * What changed is not the reasoning about paperwork, it is what a click
+ * costs. This is the most expensive single call in the app — a whole
+ * document into one request, $2.25-$4.50 by this repo's own audit — and it
+ * now spends the company's PAID monthly allowance. "Any team member" is a
+ * defensible answer for logging a row and is not a defensible answer for
+ * spending somebody's month, so the action asserts the capability its own
+ * page already withholds. Nobody loses a screen they use today: an OWNER
+ * holds every capability by construction, and PAYROLL_COMPLIANCE and
+ * EXECUTIVE hold MANAGE_COMPLIANCE, which is who /compliance was already
+ * for. `DOCUMENT_UPLOAD_TARGETS["compliance-document"].capability` follows
+ * it, so the upload TOKEN is refused too and a person who cannot use this
+ * never moves the bytes in the first place.
+ *
+ * THE PAGES ARE COUNTED AND CLAIMED BEFORE THE MODEL IS CALLED — see
+ * lib/ask/documentSpend.ts, which composes lib/ask/pageCount.ts's counter
+ * and lib/ask/allowance.ts's ledger. There is no second ledger and no
+ * second counter: the row this claims against is the row the Ask box
+ * claims against, so a document read here reduces what the assistant has
+ * left. A refused claim takes nothing and no model call happens; a claim
+ * whose call then FAILS is marked rather than released, for the reasons
+ * allowance.ts's header sets out at length.
  *
  * THE FILE NO LONGER PASSES THROUGH HERE — issue #27, and this is the one
  * of the five that needed more than deleting a `File`. It used to refuse
@@ -169,13 +203,28 @@ export async function deleteBond(bondId: string) {
  * digest — so the sentence never arrived. That was survivable while the
  * only failures were ones the file input prevented; it is not survivable
  * now that "storage would not give the file back" is a real outcome a
- * person needs told. `ComplianceUploadForm` renders `result.error`. */
-export async function uploadComplianceDocument(formData: FormData): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+ * person needs told. `ComplianceUploadForm` renders `result.error`.
+ *
+ * ON SUCCESS IT NOW RETURNS WHAT THE DOCUMENT COST, and that is a promise
+ * being kept rather than a nicety. pageCount.ts charges an unreadable PDF a
+ * flat ten pages and its own header says the person "is TOLD, on screen,
+ * that it was charged that and why" — nothing told them until this. The
+ * form renders `result.value.note` beside the pages left in the month. */
+export async function uploadComplianceDocument(
+  formData: FormData,
+): Promise<ComplianceUploadResult> {
+  const context = await requireCompanyContext();
+  // Before the URL is looked at, before the job is read, before a byte
+  // moves: this endpoint spends money and is reachable by anyone with a
+  // session who knows its id.
+  if (!can(context, "MANAGE_COMPLIANCE")) {
+    return uploadFail(DOCUMENT_UPLOAD_TARGETS["compliance-document"].refusal);
+  }
+  const { company, ...user } = context;
 
   const fileUrl = String(formData.get("fileUrl") ?? "").trim();
   if (!fileUrl) {
-    return actionFail("A file is required.");
+    return uploadFail("A file is required.");
   }
   // The owner of a compliance document is the COMPANY, and the company is
   // the caller's own session — there is no id here that came from the
@@ -183,7 +232,7 @@ export async function uploadComplianceDocument(formData: FormData): Promise<Acti
   // folder therefore fails this check outright.
   const problem = documentUrlProblem(fileUrl, "compliance-document", company.id, process.env);
   if (problem) {
-    return actionFail(problem);
+    return uploadFail(problem);
   }
   const fileName = documentDisplayFileName(String(formData.get("fileName") ?? ""));
 
@@ -192,38 +241,70 @@ export async function uploadComplianceDocument(formData: FormData): Promise<Acti
   if (jobIdRaw) {
     const job = await prisma.job.findUnique({ where: { id: jobIdRaw } });
     if (!job || job.companyId !== company.id) {
-      return actionFail("Job not found.");
+      return uploadFail("Job not found.");
     }
     jobId = job.id;
   }
 
   const read = await readStoredDocument(fileUrl);
   if (!read.ok) {
-    return actionFail(read.error);
+    return uploadFail(read.error);
+  }
+
+  // THE PAGES, COUNTED FROM THE BYTES AND CLAIMED BEFORE THE CALL.
+  //
+  // It sits here and not one line earlier on purpose: the count comes out
+  // of the fetched bytes, never out of anything the browser said, so how
+  // much this upload costs is not known until `read` has it. Reading our
+  // own blob spends no model money, so nothing is at risk in doing it
+  // first — and a file refused above never touches the allowance at all.
+  //
+  // Anything other than `ok` here is the hard stop: the sentence says what
+  // ran out or why the document is too big, nothing is charged, and
+  // `extractComplianceDocument` is never reached.
+  const spend = await claimDocumentPages(company.id, read.mediaType, read.buffer);
+  if (!spend.ok) {
+    return uploadFail(spend.error);
   }
 
   // #277 moved the upload to the browser, so there is no putDocument here
   // any more — the blob already exists and `read` is it, fetched back by
   // readStoredDocument above. The metering below is the half of this call
   // that has to survive that restructure.
-  const extraction = await extractComplianceDocument({
-    fileBase64: read.buffer.toString("base64"),
-    mediaType: read.mediaType,
-    fileName: fileName ?? "document",
-    // Metered since 2026-09-14. The most expensive single call in this
-    // app — a 15MB file base64'd into one request, put at $2.25-$4.50 an
-    // upload by audit, against a warm Ask question at $0.05 — and until
-    // now it reported nothing at all.
-    onUsage: (usage) =>
-      recordAskUsage({
-        companyId: company.id,
-        userId: user.id,
-        model: ASK_DEFAULT_MODEL,
-        usage,
-        outcome: "answered",
-        feature: "compliance-extract",
-      }),
-  });
+  let extraction: Awaited<ReturnType<typeof extractComplianceDocument>>;
+  try {
+    extraction = await extractComplianceDocument({
+      fileBase64: read.buffer.toString("base64"),
+      mediaType: read.mediaType,
+      fileName: fileName ?? "document",
+      // Metered since 2026-09-14. The most expensive single call in this
+      // app — a 15MB file base64'd into one request, put at $2.25-$4.50 an
+      // upload by audit, against a warm Ask question at $0.05 — and until
+      // now it reported nothing at all.
+      onUsage: (usage) =>
+        recordAskUsage({
+          companyId: company.id,
+          userId: user.id,
+          model: ASK_DEFAULT_MODEL,
+          usage,
+          outcome: "answered",
+          feature: "compliance-extract",
+        }),
+    });
+  } catch (err) {
+    // MARKED, NOT RELEASED — the same rule `streamAnswer` follows. A unit
+    // you can get back by making calls fail is not a cap, the provider
+    // bills a request that died halfway anyway, and the mark is what lets
+    // an owner see failed reads on /settings/assistant and ask a human for
+    // a credit. Nothing here adjusts an allowance by itself.
+    await markAskAllowanceFailure(spend.claim);
+    console.error("[compliance] the extractor failed after its allowance was claimed", err);
+    return uploadFail(
+      "The assistant couldn't read that document. Its pages are recorded as a failed read on this " +
+        "month's allowance — the account owner can see them on Settings → Assistant and ask C Stream " +
+        "about a credit. Nothing else was saved.",
+    );
+  }
 
   await prisma.complianceDocument.create({
     data: {
@@ -245,7 +326,22 @@ export async function uploadComplianceDocument(formData: FormData): Promise<Acti
   });
 
   revalidatePath("/compliance");
-  return actionOk;
+  // The allowance figures on the owner's own page moved, so the page that
+  // prints them is stale the moment this returns.
+  revalidatePath("/settings/assistant");
+  return { ok: true, value: { note: spend.note, pagesLeft: spend.pagesLeft } };
+}
+
+/** What an upload gives back: the refusal to render, or what the document
+ * cost and what is left. Not exported — a "use server" module may only
+ * export async functions, and nothing outside needs to name it. */
+type ComplianceUploadResult = ActionResultWith<{ note: string; pagesLeft: number }>;
+
+/** `actionFail` declares the plain `ActionResult`, whose success branch has
+ * no `value`, so it does not narrow to this contract. Same local helper
+ * `payrollRegister.ts` writes for the same reason. */
+function uploadFail(error: string): Extract<ComplianceUploadResult, { ok: false }> {
+  return { ok: false, error };
 }
 
 /**
