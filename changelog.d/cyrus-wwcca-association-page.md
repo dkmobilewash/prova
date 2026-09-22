@@ -83,9 +83,11 @@ mutation-tested red.
 
 Two censuses that reached this branch from `main` flagged the page, both
 correctly. `publicRoutes.test.ts` requires every public route to be walked at
-phone width, so the route is in `e2e/lib/publicRoutes.ts` and the public e2e
-job measures it at 320, 375 and 1280 on every PR (it asserts the layout
-viewport, `window.innerWidth`, equals the device width). And
+phone width, so the route is in `e2e/lib/publicRoutes.ts`, and
+`pnpm test:e2e:public` measures it at 320, 375 and 1280 (it asserts the layout
+viewport, `window.innerWidth`, equals the device width). That suite runs
+LOCALLY only: `e2e/run.mjs` mentions a `.github/workflows/e2e.yml`, and no
+such workflow exists on `main` — so no PR check walks this page. And
 `routeInboundLinks.test.ts` requires every page to have an inbound link or a
 reason not to; this one is unlinked on purpose, so it is listed as reached
 from outside the app, and the page's own no-links test exempts that one test
