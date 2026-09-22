@@ -626,6 +626,7 @@ export const estimatingExclusions: Exclusion[] = [
   // createBidInvitation left this list in phase 4c: registered as
   // log_bid_invitation in commands/bids.ts, DIRECT over the lifted core
   // in lib/estimating/bid-invitation.ts.
+  { action: "priceCatalogEntryFromQuotes", reason: "Setting a catalog default from a supplier quote is a pricing decision made on /catalog, where the vendor, the price, the date and the source are all on screen; it is owner-only and moves a number every future bid reads." },
   { action: "updateBidInvitationStatus", reason: "A won/lost decision is made on the bids page where the bid is visible." },
   { action: "deleteBidInvitation", reason: "Deletes are never commands (T5)." },
   // The pre-bid pursuit list (lib/actions/bidPursuits.ts, BidPursuit). The

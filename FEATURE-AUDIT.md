@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**134 items audited — 107 built / 22 partial / 4 missing / 1 descoped**
+**135 items audited — 108 built / 22 partial / 4 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -101,7 +101,7 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 107 |
+| Built | 108 |
 | Partial | 22 |
 | Missing | 4 |
 | Descoped | 1 |
@@ -144,7 +144,7 @@ closing "we track the GC but not who to actually call."*
 | Built | Interaction log per contact (calls, emails, site visits, notes, optional follow-up) | `ContactInteraction` (`crm.prisma`) — dated, entered not stamped; follow-up date and follow-up owner are separate from who logged the entry. Not an evidence record (no counter, no locked fields): any team member can log/edit/delete one, same access as bid invitations. A due/overdue follow-up now surfaces in `/alerts` too — see Sheet 26 |
 | Built | Individual people at an account (name, title, email/phone, who to actually call) | `ContactPerson` (`crm.prisma`), nested under `Contact`. No stored "last contact" — derived at read time from `ContactInteraction.contactPersonId` (optional, `SET NULL` on delete so removing a person never blocks on their call history). `deleteContact`'s guard extended again to count people as account history |
 
-## 03. Estimating & Bidding — 11 built · 0 partial · 0 missing
+## 03. Estimating & Bidding — 12 built · 0 partial · 0 missing
 
 *Updated from the original audit (was 2 built / 1 partial / 5 missing) — the
 catalog, bid tracking, historical bid database, labor hours, and estimate
@@ -161,6 +161,7 @@ versioning all shipped same-day.*
 | Built | Bulk import of a price list into the catalog | Paste from a spreadsheet or upload a CSV; headers matched loosely so an existing price list needs no renaming. Preview shows what will be added, what is already in the catalog, and every row it couldn't read, before anything is written. Existing entries are never overwritten or duplicated |
 | Built | Catalog defaults learn from what jobs actually cost | `JobLineItem.sourceCatalogEntryId` records which template a line came from; `/catalog` reports actual unit cost against the default across every line created from it, flags variance past 15% on 2+ costed lines, and offers a one-click update. Template only — never touches a `JobLineItem`, snapshot or invoice that already exists |
 | Built | On-screen plan takeoff — measure a PDF and get estimate quantities | `/jobs/[id]/takeoff`. Upload a sheet, calibrate its scale against a dimension printed on it, then trace runs, outlines and counts; selected measurements become unpriced line items through the SAME `recipeLines` the typed form uses (`lib/takeoff-plan.ts`, pure, 35 tests). Renders with pdf.js on a canvas with an SVG overlay for the geometry, the pattern `JobMediaAnnotator` set. **Nothing derived is stored** — no feet, square-feet or feet-per-page-width column exists; every figure is recomputed from the traced points and the calibration on each read. Calibrations are APPEND-ONLY and each measurement points at the one it was drawn to, so correcting a scale moves no existing quantity by itself and re-scaling is an explicit act that shows each before/after figure. The scale is read back before saving — named against the standard architectural and engineering scales, with the sheet width in feet and the click-error band — because `lib/takeoff.ts` warns that a measuring tool slightly wrong is worse than none. A ring that crosses itself is refused rather than shoelaced into a plausible number; a quote per MSF has its analogue here in units that are never converted. Wall runs are summed into ONE wall input, since the `wall` recipe takes only the first. Ceilings stay on the typed form: a traced outline has an area, not a length and a width. Measurement only, deliberately — no markup, no sheet register, no revision compare (`NAV-IA-AUDIT.md`) |
+| Built | Supplier quotes price the catalog | The other half of Sheet 19's pricing history, and the button `/vendors/pricing` has been pointing at: `/catalog` shows the cheapest LIVE quote per entry — vendor, price, source, date — and an owner can make it that entry's default cost in one press, with the sale price a separate opt-in that holds the existing margin. The figure is re-derived server-side from the quotes (`lib/catalog-quote-price.ts`); the form carries no numbers. Refuses, in a sentence naming the fix, when every quote has expired or when no live quote is priced in the entry's own unit — a price per MSF is never converted to a price per SF. Template only: no `JobLineItem`, no snapshot, no invoice. Amends the `estimating.prisma` comment that said a quote never writes back into the template; the half that stays permanent is that nothing here is ever summed into a job |
 | Built | Estimate versioning as scope changes pre-award | `EstimateVersion` — manual JSON snapshot checkpoint, not automatic |
 | Built | Estimate-to-contract conversion (winning bid becomes the SOV) | `markJobContracted` — the same line items become the contract, by design |
 
@@ -377,7 +378,7 @@ same reasoning as `/safety` above. Reasoning in `NAV-IA-AUDIT.md`.*
 | --- | --- | --- |
 | Built | Vendor/supplier directory per trade | `Vendor`, `/vendors` |
 | Built | Material order tracking and delivery status per job | `MaterialOrder` + `MaterialOrderDelivery` + `MaterialOrderCounter`, `/material-orders` — numbers issued per job and never reissued, ordered/promised/delivered dates all entered, partial deliveries as their own rows, late and delivery state derived and never stored. Carries no quantity or unit price by design: that would be a second copy of line-item data (see ARCHITECTURE.md), and material cost already lives on `CostEntry`. Nav entry disabled 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
-| Built | Vendor pricing history for estimating | `VendorPriceQuote`, `/vendors/pricing` — what a supplier quoted, on a date entered not stamped, with the source (written quote / invoice / price list / verbal) recorded because the four are not equally trustworthy. Current, expired, stale, cheapest and every movement figure are derived per read, never stored. Compared only WITHIN a unit: MSF is never converted to SF, since the factor is the vendor's to state. Carries no job and no line item by design — a quote is reference data for pricing, and job cost has one home, `CostEntry`. Warns when a `LineItemCatalogEntry` default sits under the cheapest live quote in the same unit, and changes nothing |
+| Built | Vendor pricing history for estimating | `VendorPriceQuote`, `/vendors/pricing` — what a supplier quoted, on a date entered not stamped, with the source (written quote / invoice / price list / verbal) recorded because the four are not equally trustworthy. Current, expired, stale, cheapest and every movement figure are derived per read, never stored. Compared only WITHIN a unit: MSF is never converted to SF, since the factor is the vendor's to state. Carries no job and no line item by design — a quote is reference data for pricing, and job cost has one home, `CostEntry`. Warns when a `LineItemCatalogEntry` default sits under the cheapest live quote in the same unit, and changes nothing — acting on that warning is an owner-confirmed button on `/catalog` (Sheet 03, 2026-09-22), never anything automatic here |
 
 ## 20. Equipment & Tool Tracking — 2 built · 0 partial · 0 missing
 

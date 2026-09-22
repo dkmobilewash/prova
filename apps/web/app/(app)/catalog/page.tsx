@@ -1,7 +1,11 @@
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
-import { createLineItemCatalogEntry, updateCatalogDefaultsFromActuals } from "@/lib/actions";
+import { createLineItemCatalogEntry, priceCatalogEntryFromQuotes, updateCatalogDefaultsFromActuals } from "@/lib/actions";
+import { quotePriceDecision } from "@/lib/catalog-quote-price";
+import type { QuoteData } from "@/components/vendorPricing";
+import { todayInZone } from "@/lib/viewer-timezone";
+import { viewerTimeZone } from "@/lib/viewerToday";
 import { catalogActuals, catalogSourcedLine, type CatalogLineRow } from "@/lib/catalog-actuals";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
@@ -174,6 +178,78 @@ function ActualsLine({
   );
 }
 
+/** What a vendor will actually sell this item for, and the button that makes
+ * it the default cost.
+ *
+ * Built by the SAME `quotePriceDecision` the write calls, for the reason the
+ * actuals badge above gives: a sentence that disagreed with the button under
+ * it would be worse than either being wrong alone. When the decision refuses,
+ * its sentence is what renders — which is how a reader learns that the only
+ * live quote is priced by the MSF while their catalog item is measured in SF.
+ */
+function QuoteLine({
+  entry,
+  quotes,
+  today,
+  isOwner,
+}: {
+  entry: { id: string; unit: string | null; defaultBudgetedUnitCost: unknown; defaultUnitPrice: unknown };
+  quotes: QuoteData[];
+  today: string;
+  isOwner: boolean;
+}) {
+  // Nothing recorded at all is the ordinary state of a new account, and an
+  // empty row per catalog item would be noise rather than news.
+  if (quotes.length === 0) return null;
+
+  const decision = quotePriceDecision(
+    {
+      unit: entry.unit,
+      defaultBudgetedUnitCost: entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
+      defaultUnitPrice: entry.defaultUnitPrice != null ? Number(entry.defaultUnitPrice) : null,
+    },
+    quotes,
+    today,
+    false,
+  );
+
+  if (!decision.ok) {
+    return <p className="mt-1 text-xs text-ink-muted">{decision.error}</p>;
+  }
+
+  const { offer } = decision;
+  return (
+    <div className="mt-1 flex flex-col gap-1">
+      <p className="text-xs text-ink-body">
+        Cheapest live quote {money(offer.unitPrice)}
+        {offer.unitless ? " (no unit given)" : ` per ${offer.unit}`} from {offer.vendorName} —{" "}
+        {offer.sourceLabel.toLowerCase()}, quoted {offer.quotedOn}.{" "}
+        {offer.currentCost != null
+          ? `Your default cost is ${money(offer.currentCost)}.`
+          : "This item has no default cost yet."}
+      </p>
+      {isOwner && (
+        <ActionForm
+          action={priceCatalogEntryFromQuotes.bind(null, entry.id)}
+          className="flex flex-wrap items-center gap-2"
+          errorClassName="w-full text-xs text-tag-rose-ink"
+        >
+          <label className="flex items-center gap-1 text-xs text-ink-body">
+            <input type="checkbox" name="alsoUpdatePrice" className="accent-yellow-500" />
+            also move the sale price, holding margin
+          </label>
+          <SubmitButton
+            type="submit"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+          >
+            Set default cost from this quote
+          </SubmitButton>
+        </ActionForm>
+      )}
+    </div>
+  );
+}
+
 export default async function CatalogPage() {
   const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
@@ -193,12 +269,24 @@ export default async function CatalogPage() {
      non-owner themselves. */
   const isOwner = context.role === "OWNER";
 
+  // The viewer's own calendar day: whether a quote has expired "today" is a
+  // question about where the person reading it is standing.
+  const today = todayInZone(await viewerTimeZone());
+
   const [entries, craftClassifications, fringeSchedulesByCraft, employerBurdenRates] = await Promise.all([
     prisma.lineItemCatalogEntry.findMany({
       where: { companyId: company.id },
       orderBy: { description: "asc" },
       include: {
         craftClassification: { include: { unionLocal: true } },
+        // What vendors have quoted for this item. A cross-lane READ of the
+        // vendors' own records (operations.prisma is Cyrus's file) and never
+        // a write: the price only moves when an owner presses the button
+        // below, and nothing here ever reaches a job.
+        priceQuotes: {
+          include: { vendor: { select: { name: true } } },
+          orderBy: { quotedOn: "desc" },
+        },
         // How work priced from this template actually costed. Read-only —
         // the entry is a template and nothing here writes back to these rows.
         jobLineItems: {
@@ -311,6 +399,24 @@ export default async function CatalogPage() {
                     fringeSchedulesByCraft={fringeSchedulesByCraft}
                     employerBurdenRates={employerBurdenRates}
                     isOwner={isOwner}
+                  />
+                  <QuoteLine
+                    entry={entry}
+                    today={today}
+                    isOwner={isOwner}
+                    quotes={entry.priceQuotes.map((quote) => ({
+                      id: quote.id,
+                      vendorId: quote.vendorId,
+                      vendorName: quote.vendor.name,
+                      catalogEntryId: quote.catalogEntryId,
+                      description: quote.description,
+                      unit: quote.unit,
+                      unitPrice: Number(quote.unitPrice),
+                      quotedOn: quote.quotedOn.toISOString().slice(0, 10),
+                      validUntil: quote.validUntil ? quote.validUntil.toISOString().slice(0, 10) : null,
+                      source: quote.source,
+                      notes: quote.notes,
+                    }))}
                   />
                 </>
               </CatalogEntryRow>
