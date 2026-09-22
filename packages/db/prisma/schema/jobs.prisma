@@ -164,6 +164,7 @@ model Job {
   closeoutSubmissions            CloseoutSubmission[]
   closeoutSubmissionCounter      CloseoutSubmissionCounter?
   outboundMessages               OutboundMessage[]
+  proposalClauses                JobProposalClause[]
 
   @@index([companyId])
   @@index([contactId])

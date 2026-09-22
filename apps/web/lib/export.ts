@@ -219,6 +219,22 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: byCompany,
   },
   {
+    key: "proposalClauses",
+    model: "proposalClause",
+    label: "Proposal clauses",
+    note: "Your standard inclusions, exclusions, clarifications and alternates.",
+    columns: ["id", "kind", "text", "sortOrder", "createdAt", "updatedAt"],
+    scope: byCompany,
+  },
+  {
+    key: "jobProposalClauses",
+    model: "jobProposalClause",
+    label: "Clauses on each job's proposal",
+    note: "The exact wording each bid proposal carried — a copy taken when it was added, so it still reads as it was sent.",
+    columns: ["id", "jobId", "kind", "text", "sortOrder", "createdAt", "updatedAt"],
+    scope: byCompany,
+  },
+  {
     key: "rfis",
     model: "rfi",
     label: "RFIs",

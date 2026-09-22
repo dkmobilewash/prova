@@ -51,6 +51,7 @@ export const notYetRegistered: Exclusion[] = [
   { action: "changeOrders.*", reason: "Change orders move contract value a sent pay application may depend on (T5 decisions, T3 drafts); a later phase." },
   { action: "backcharges.*", reason: MONEY },
   { action: "closeoutSubmissions.*", reason: "Counter-numbered closeout packages go to a GC; phase 3 once retries are safe." },
+  { action: "proposals.*", reason: "Bid proposals are a scope + price + exclusions document built from a job's estimate; clauses are edited where the document is shown. Never a command." },
   { action: "quickbooks.*", reason: ADMIN },
   { action: "integrations.*", reason: ADMIN },
   // company.* was here. createContact became `add_contact`
