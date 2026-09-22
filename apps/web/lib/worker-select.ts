@@ -20,6 +20,8 @@
  * the caller is talking about.
  */
 
+import { crewMemberName } from "@/lib/worker-name";
+
 export type WorkerRef =
   | { kind: "user"; userId: string }
   | { kind: "crew"; crewMemberId: string };
@@ -48,4 +50,34 @@ export function parseWorkerValue(raw: string | null | undefined): WorkerRef | nu
     return { kind: "crew", crewMemberId: text.slice("crew:".length) };
   }
   return null;
+}
+
+/** One entry in a "who" dropdown: the prefixed value and what it reads. */
+export type WorkerOption = { value: string; label: string };
+
+/**
+ * Everybody a job-level "who" dropdown offers, in one list: teammates first,
+ * then crew, in the order given, each with a suffix naming which kind they
+ * are. The suffix is not decoration — two people in a small company share a
+ * first name, and the choice decides which TABLE the record names.
+ *
+ * Shared by the time-entry form and the hiring-hall dispatch form on the
+ * job's Crew & time tab. The dispatch form was given logins only, so field
+ * crew — the people a hall actually dispatches — could not be chosen; one
+ * builder for both is what keeps the two dropdowns offering the same people.
+ */
+export function workerOptions(
+  users: { id: string; name: string | null; email: string }[],
+  crew: { id: string; legalFirstName: string; legalMiddleName: string | null; legalLastName: string }[],
+): WorkerOption[] {
+  return [
+    ...users.map((user) => ({
+      value: workerValue({ kind: "user", userId: user.id }),
+      label: `${user.name ?? user.email} (signs in)`,
+    })),
+    ...crew.map((member) => ({
+      value: workerValue({ kind: "crew", crewMemberId: member.id }),
+      label: `${crewMemberName(member).label} (crew)`,
+    })),
+  ];
 }

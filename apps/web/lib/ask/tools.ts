@@ -669,7 +669,7 @@ export const TOOLS: ToolDefinition[] = [
     name: "dispatch_slips",
     capability: "MANAGE_COMPLIANCE",
     description:
-      "Union dispatch slips on file — which worker the hall dispatched to which job, on what date, under which craft and local, and whether the actual slip document is attached. Answers 'do we have dispatch on file for this job'. IT IS NOT A CREW SCHEDULE AND MUST NOT BE USED AS ONE: a slip records that somebody WAS dispatched, never that they are on site today or tomorrow. A slip row with no document attached proves nothing in an audit, the same distinction wage_determinations makes.",
+      "Union dispatch slips on file — which worker the hall dispatched to which job, on what date, under which craft and local, and whether the actual slip document is attached. The worker is either a teammate with a login or a field crew member without one, and workerKind says which. Answers 'do we have dispatch on file for this job'. IT IS NOT A CREW SCHEDULE AND MUST NOT BE USED AS ONE: a slip records that somebody WAS dispatched, never that they are on site today or tomorrow. A slip row with no document attached proves nothing in an audit, the same distinction wage_determinations makes.",
     input_schema: jobFilter,
   },
   {

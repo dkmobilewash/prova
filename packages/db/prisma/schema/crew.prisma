@@ -180,6 +180,10 @@ model CrewMember {
   /// they never delete.
   payrollRegisterEntries PayrollRegisterEntry[]
 
+  /// Hiring-hall referrals naming this person. RESTRICT, like timeEntries:
+  /// crew members archive, they never delete.
+  dispatchSlips DispatchSlip[]
+
   @@unique([companyId, employeeNumber])
   @@index([companyId])
   @@index([archivedAt])
