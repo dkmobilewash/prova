@@ -39,6 +39,7 @@ vi.mock("next/image", () => ({
 
 const { default: WwccaAssociationPage, metadata } = await import("./page");
 const { WWCCA, FOUNDING_OFFER } = await import("@/components/associations/wwcca");
+const { DEFAULTS, cStreamMonthlyPrice } = await import("@/components/associations/wwccaSavings");
 
 const html = renderToStaticMarkup(createElement(WwccaAssociationPage));
 
@@ -46,7 +47,14 @@ const html = renderToStaticMarkup(createElement(WwccaAssociationPage));
  * documents with illustrative money in them, and that is fine and captioned;
  * everything else on the page is prose and must carry no invented figure.
  * PanelFrame renders each as one <figure>, and figures do not nest. */
-const prose = html.replace(/<figure[\s\S]*?<\/figure>/g, "");
+/** The savings calculator, by its marker. Its figures are the visitor's own
+ * and every default shows its source (asserted below), so it is stripped
+ * from the prose the way the panels are — and it must be THERE to strip,
+ * asserted in its own block, so a renamed marker fails rather than letting
+ * its numbers pass as prose or vanish from the scan. It nests no <section>,
+ * so the first closing tag is its own. */
+const calculator = html.match(/<section data-savings-calculator[\s\S]*?<\/section>/)?.[0] ?? "";
+const prose = html.replace(/<figure[\s\S]*?<\/figure>/g, "").replace(calculator, "");
 
 /** What renderToStaticMarkup does to text, so a constant can be found in it. */
 const escapeHtml = (text: string) =>
@@ -262,6 +270,140 @@ describe("/associations/wwcca claims nothing the product does not do", () => {
 
   it("has no limits section left on it", () => {
     expect(html).not.toContain("What it does not do yet");
+  });
+});
+
+describe("/associations/wwcca describes the assistant honestly", () => {
+  /**
+   * WHAT THE ASSISTANT IS: every write is PROPOSED as a card and a person
+   * taps once to confirm before anything is saved or sent
+   * (lib/actions/ask.ts confirmAskProposal). What it is NOT: "fully
+   * automated", "hands-free", "no data entry" — and it does not FILE anything
+   * (WH-347 page 2 is not built), does not calculate overtime (entered as a
+   * pay type), and has no memory across questions. Scanned over the WHOLE
+   * rendered page, every new component included.
+   *
+   * FAILS ON EMPTY INPUT: a page that rendered nothing would match none of
+   * these, so the block first requires the sentence the guard exists to
+   * protect. A regex that matches nothing is only worth something when the
+   * text it is about is provably there.
+   */
+  const BANNED = [
+    /fully[\s-]*(AI[\s-]*)?automated/i,
+    /hands[\s-]*free/i,
+    /no data entry/i,
+    /files? (it |them |this )?for you/i,
+    /file[\s-]*ready/i,
+    /automatic(ally)?[^.]{0,20}overtime|overtime[^.]{0,20}automatic/i,
+    /remembers|learns your|gets to know you/i,
+  ];
+
+  it("says a person taps once to approve anything saved or sent — the sentence the guard protects", () => {
+    expect(html.length).toBeGreaterThan(5000);
+    expect(html).toContain("Tell it what you need and it does it");
+    expect(html).toContain("You tap once to approve anything that gets saved or sent.");
+  });
+
+  it("uses none of the banned phrasings anywhere on the rendered page", () => {
+    for (const pattern of BANNED) {
+      expect(html, `banned phrasing ${pattern} is on the page`).not.toMatch(pattern);
+    }
+    // The guard can see what it is about: each pattern's own vocabulary is
+    // present in prose form somewhere (the assistant, hours, the WH-347).
+    expect(html).toContain("The assistant");
+    expect(html).toContain("WH-347");
+  });
+
+  /**
+   * THE GROUPED LIST NAMES REAL COMMANDS AND ALL OF THEM. Each group in
+   * ASSISTANT_DOES carries, in the comment beside it, the write commands it
+   * stands for. This reads those names out of the source and compares them
+   * with the `CommandName` union in lib/ask/commands.ts: a command the
+   * page names that the code lacks fails, and a command the code has that
+   * the page does not cover fails too, so the list cannot drift either way.
+   *
+   * SIZE PINNED against a source that cannot drift with the regex: the
+   * union must have exactly as many members as there are `name: "…"` tool
+   * declarations across lib/ask/commands/, so a union parse that found
+   * nothing fails instead of matching an empty page list.
+   */
+  it("names every write command the assistant has, and no command it lacks", () => {
+    const landing = readFileSync(resolve(webRoot, "components/associations/WwccaLanding.tsx"), "utf8");
+    const listStart = landing.indexOf("const ASSISTANT_DOES");
+    const listEnd = landing.indexOf("];", listStart);
+    expect(listStart, "ASSISTANT_DOES moved — update this test").toBeGreaterThan(-1);
+    const onPage = new Set(
+      [...landing.slice(listStart, listEnd).matchAll(/\/\/([^\n]*)/g)].flatMap((m) => m[1].match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []),
+    );
+
+    const commands = readFileSync(resolve(webRoot, "lib/ask/commands.ts"), "utf8");
+    const unionStart = commands.indexOf("export type CommandName");
+    expect(unionStart, "CommandName moved — update this test").toBeGreaterThan(-1);
+    const unionEnd = commands.indexOf(";", unionStart);
+    const inCode = new Set([...commands.slice(unionStart, unionEnd).matchAll(/"([a-z_]+)"/g)].map((m) => m[1]));
+
+    const commandsDir = resolve(webRoot, "lib/ask/commands");
+    const declared = readdirSync(commandsDir)
+      .filter((name) => /^[a-zA-Z]+\.ts$/.test(name))
+      .flatMap((name) => [...readFileSync(join(commandsDir, name), "utf8").matchAll(/^\s+name: "([a-z_]+)"/gm)].map((m) => m[1]));
+    expect(inCode.size, "the union parse and the tool declarations disagree").toBe(new Set(declared).size);
+    expect(inCode.size).toBeGreaterThan(0);
+
+    expect([...onPage].sort()).toEqual([...inCode].sort());
+  });
+});
+
+describe("/associations/wwcca savings calculator", () => {
+  it("is on the page, by the marker the prose guard strips it with, and says it is an estimate", () => {
+    expect(calculator.length).toBeGreaterThan(1000);
+    expect(prose).not.toContain("data-savings-calculator");
+    expect(calculator).toContain("An estimate from the numbers you enter, not a quote.");
+    expect(calculator).toContain("What it would save you");
+  });
+
+  /** EVERY DEFAULT RENDERS WITH ITS SOURCE. The value is in the field, the
+   * source line is beside it, the field is a <label>led input that points
+   * at that line with aria-describedby, and the sourced one links out. */
+  it("renders every default value with its source beside the field", () => {
+    const keys = Object.keys(DEFAULTS) as (keyof typeof DEFAULTS)[];
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) {
+      const def = DEFAULTS[key];
+      const shown = key === "shareRemoved" ? String(Math.round(def.value * 100)) : String(def.value);
+      const input = calculator.match(new RegExp(`<input[^>]*name="${key}"[^>]*>`))?.[0];
+      expect(input, `no input for ${key}`).toBeDefined();
+      expect(input).toContain(`value="${shown}"`);
+      expect(input).toContain('inputMode="decimal"');
+      const id = input!.match(/\bid="([^"]+)"/)?.[1];
+      expect(calculator, `no <label for> on ${key}`).toContain(`<label for="${id}"`);
+      const describedBy = input!.match(/aria-describedby="([^"]+)"/)?.[1];
+      expect(describedBy, `${key} has no aria-describedby`).toBeDefined();
+      const sourceLine = calculator.match(new RegExp(`<p id="${describedBy}"[^>]*>([\\s\\S]*?)</p>`))?.[1] ?? "";
+      expect(sourceLine, `${key}'s source line is not beside its field`).toContain(escapeHtml(def.source));
+      if (def.href) expect(sourceLine).toContain(`href="${def.href}"`);
+    }
+    // The three kinds are all visibly labelled — an unlabelled default is a
+    // number nobody sourced.
+    expect(calculator).toContain("Source:</span>");
+    expect(calculator).toContain("Example:</span>");
+    expect(calculator).toContain("Assumption:</span>");
+    expect(calculator).not.toContain("8.3");
+  });
+
+  it("quotes the offer's price and nothing else as C Stream's cost", () => {
+    expect(cStreamMonthlyPrice()).toBe(399);
+    expect(calculator).toContain("$399.00 a month");
+  });
+
+  it("gives screen readers the result as a sentence in a live region", () => {
+    expect(calculator).toMatch(/<p role="status" aria-live="polite"[^>]*>With these numbers C Stream (saves you|costs you) \$/);
+    expect(calculator).toContain("office hours saved per month");
+  });
+
+  it("puts no white text on the brand yellow, and the bars are hidden from assistive tech", () => {
+    expect(html).not.toMatch(/class="[^"]*\bbg-brand\b[^"]*\btext-white\b/);
+    expect(html).not.toMatch(/class="[^"]*\btext-white\b[^"]*\bbg-brand\b/);
+    expect(calculator).toMatch(/<div aria-hidden="true"[^>]*>[\s\S]*bg-brand[\s\S]*<\/div>/);
   });
 });
 

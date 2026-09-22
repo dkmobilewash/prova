@@ -6,6 +6,7 @@ import { PayApplicationPanel } from "@/components/landing/PayApplicationPanel";
 import { CertifiedPayrollPanel } from "@/components/landing/CertifiedPayrollPanel";
 import { ApprenticeRatioPanel } from "@/components/landing/ApprenticeRatioPanel";
 import { JobCostPanel } from "@/components/landing/JobCostPanel";
+import { WwccaSavingsCalculator } from "./WwccaSavingsCalculator";
 import { FOUNDING_OFFER, WWCCA } from "./wwcca";
 
 /**
@@ -76,6 +77,35 @@ const sectionSpace = "mt-16 sm:mt-24 lg:mt-28";
  * CLAUDE.md names this product for, in wall-and-ceiling vocabulary. A label,
  * not a feature claim. */
 const TRADES = ["Metal framing & drywall", "Lath & plaster", "EIFS", "Acoustical ceilings", "Fireproofing"];
+
+/**
+ * What the assistant will do on a member's say-so, grouped the way a sub's
+ * office is. Each item is one of the write commands registered in
+ * lib/ask/commands.ts (`CommandName`), named in the comment beside it —
+ * nothing is listed that the code cannot do. All twenty commands on `main`
+ * are covered.
+ *
+ * NOT "fully automated", and page.test.ts bans that phrase and its cousins:
+ * every one of these is PROPOSED as a card and a person taps once to confirm
+ * before anything is saved or sent (`confirmAskProposal`, lib/actions/ask.ts;
+ * the model proposes, a person confirms, deterministic code writes). That is
+ * deliberate on a product whose output is certified payroll with federal
+ * penalties behind it. The assistant also has no memory across questions,
+ * so nothing here says "remembers" or "learns".
+ */
+const ASSISTANT_DOES: { group: string; items: string }[] = [
+  // draft_invoice · log_payment · release_retainage
+  { group: "Billing", items: "invoices, payments, retainage release" },
+  // log_time_entry · log_daily_field_report · add_punch_items · schedule_crew ·
+  // reschedule_job · record_material_delivery · send_equipment_to_job ·
+  // bring_equipment_back
+  { group: "Field", items: "hours, daily reports, punch items, crew scheduling, deliveries, equipment" },
+  // raise_rfi · send_email · add_contact
+  { group: "The GC", items: "RFIs, emails, contacts" },
+  // create_estimate_job · draft_estimate_lines · add_catalog_line ·
+  // log_bid_invitation · add_bid_pursuit · set_pursuit_stage
+  { group: "Estimating", items: "estimates, line items, bids" },
+];
 
 /**
  * What one entry of hours produces. In the hero's left column, beside the
@@ -269,6 +299,64 @@ export function WwccaLanding() {
           />
         </div>
       </section>
+
+      {/* ------------------------------------------------- the assistant
+          What it does, in few words, and the one sentence that keeps it
+          honest: a person taps once to approve anything saved or sent.
+          Receipts are on ASSISTANT_DOES; the banned phrasings are in
+          page.test.ts. "Ask" is what the app calls the box (/pilot names it
+          the same way). */}
+      <section className={sectionSpace}>
+        <p className="text-sm font-semibold uppercase tracking-wide text-brand">The assistant</p>
+        <h2 className="mt-2 text-2xl font-semibold leading-tight text-ink sm:text-3xl">
+          Tell it what you need and it does it
+        </h2>
+        {/* ASK DEMO SLOT. An animated demo of the Ask box is being built
+            separately in components/landing/AskDemo.tsx on its own branch.
+            When it lands, this block becomes a two-column grid at `lg`
+            (`grid items-start gap-8 lg:grid-cols-2 lg:gap-14`, the panel
+            rows' shape) with the demo in the second column, beside the
+            words. Deliberately NOT an empty second column until then: a
+            reserved blank half is the bare-right-half hole this page's hero
+            was just rebuilt to close. */}
+        <div className="mt-8">
+          <div className="min-w-0">
+            <p className="max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
+              {/* raise_rfi, draft_invoice, log_time_entry, schedule_crew, send_email */}
+              It raises the RFI, drafts the invoice, logs the hours, schedules the crew, sends the
+              email.{" "}
+              {/* lib/actions/ask.ts confirmAskProposal — the tap is the only
+                  thing that writes, and it is a person's. */}
+              <strong className="font-semibold text-ink">
+                You tap once to approve anything that gets saved or sent.
+              </strong>
+            </p>
+            <dl className="mt-6 grid gap-x-8 gap-y-3 sm:grid-cols-2">
+              {ASSISTANT_DOES.map((row) => (
+                <div key={row.group} className="min-w-0">
+                  <dt className="text-sm font-semibold text-ink-label">{row.group}</dt>
+                  <dd className="mt-0.5 text-sm leading-snug text-ink-body">{row.items}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-6 max-w-2xl text-base leading-relaxed text-ink-body">
+              {/* FROM_THE_HOURS carries the receipts: lib/wh347.ts buildWh347,
+                  lib/fringe-remittance.ts buildRemittanceReport,
+                  lib/apprentice-ratio.ts reviewRatioByDay. */}
+              From hours entered once, it builds the WH-347 payroll grid, the fringe remittance per
+              local and fund, and the apprentice ratio per day.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* -------------------------------------------- the savings calculator
+          The visitor's own numbers; every default shows its source; if
+          C Stream costs more it says so. Formula and defaults in
+          components/associations/wwccaSavings.ts. */}
+      <div className={sectionSpace}>
+        <WwccaSavingsCalculator />
+      </div>
 
       {/* ------------------------------------------------ we load your data
           A service promise from the founders, not a product feature, so it
