@@ -253,9 +253,13 @@ export function WwccaSavingsCalculator() {
  * whichever figure is larger — including "With C Stream" when it costs more. */
 function BarPair({ title, now, withCStream }: { title: string; now: number; withCStream: number }) {
   const max = Math.max(now, withCStream, 1);
+  // The brand bar carries `text-neutral-900` although it holds no text: the
+  // theme-contrast census requires the dark label on every brand fill, and
+  // the honest way to satisfy it is to make it true — any text somebody later
+  // puts on this bar is dark — rather than to exempt a decorative element.
   const rows: { label: string; value: number; fill: string }[] = [
     { label: "What you spend now", value: now, fill: "bg-ink-muted" },
-    { label: "With C Stream", value: withCStream, fill: "bg-brand" },
+    { label: "With C Stream", value: withCStream, fill: "bg-brand text-neutral-900" },
   ];
   return (
     <div className="min-w-0">

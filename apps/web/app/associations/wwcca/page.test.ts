@@ -13,7 +13,12 @@
  *    that would say otherwise, and for the association's logo.
  * 3. IT INVENTS NO NUMBERS. The one figure is the founding price Cyrus set
  *    ($399/month, flat); no other dollar figure, no percentage, no lock
- *    length, no counter, outside the illustrative product panels.
+ *    length, no counter, outside the illustrative product panels and the
+ *    savings calculator — whose figures are the visitor's own, and whose
+ *    every default must render with its source (asserted below).
+ * 7. IT DESCRIBES THE ASSISTANT HONESTLY: a person taps once to approve
+ *    anything saved or sent; "fully automated" and its cousins are banned;
+ *    the commands the page names are exactly the commands the code has.
  * 4. THE SWITCH WORKS. `WWCCA.enabled = false` turns the route into a 404 —
  *    executed below, not asserted from the source.
  * 5. It renders signed out, with no Clerk mock and no request scope, which is
@@ -333,19 +338,19 @@ describe("/associations/wwcca describes the assistant honestly", () => {
     const listEnd = landing.indexOf("];", listStart);
     expect(listStart, "ASSISTANT_DOES moved — update this test").toBeGreaterThan(-1);
     const onPage = new Set(
-      [...landing.slice(listStart, listEnd).matchAll(/\/\/([^\n]*)/g)].flatMap((m) => m[1].match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []),
+      [...landing.slice(listStart, listEnd).matchAll(/\/\/([^\n]*)/g)].flatMap((m) => m[1].match(/\b[a-z0-9]+(?:_[a-z0-9]+)+\b/g) ?? []),
     );
 
     const commands = readFileSync(resolve(webRoot, "lib/ask/commands.ts"), "utf8");
     const unionStart = commands.indexOf("export type CommandName");
     expect(unionStart, "CommandName moved — update this test").toBeGreaterThan(-1);
     const unionEnd = commands.indexOf(";", unionStart);
-    const inCode = new Set([...commands.slice(unionStart, unionEnd).matchAll(/"([a-z_]+)"/g)].map((m) => m[1]));
+    const inCode = new Set([...commands.slice(unionStart, unionEnd).matchAll(/"([a-z0-9_]+)"/g)].map((m) => m[1]));
 
     const commandsDir = resolve(webRoot, "lib/ask/commands");
     const declared = readdirSync(commandsDir)
       .filter((name) => /^[a-zA-Z]+\.ts$/.test(name))
-      .flatMap((name) => [...readFileSync(join(commandsDir, name), "utf8").matchAll(/^\s+name: "([a-z_]+)"/gm)].map((m) => m[1]));
+      .flatMap((name) => [...readFileSync(join(commandsDir, name), "utf8").matchAll(/^\s+name: "([a-z0-9_]+)"/gm)].map((m) => m[1]));
     expect(inCode.size, "the union parse and the tool declarations disagree").toBe(new Set(declared).size);
     expect(inCode.size).toBeGreaterThan(0);
 

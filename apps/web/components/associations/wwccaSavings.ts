@@ -132,15 +132,20 @@ export const DEFAULTS: Record<keyof SavingsInputs, SavingsDefault> = {
       "BLS payroll clerk mean wage $26.29/hr (May 2023), loaded at wages ≈ 70% of employer cost per BLS ECEC. California is about $42.",
     href: "https://www.bls.gov/oes/2023/may/oes433051.htm",
   },
-  // An example, with two public prices for reference and their bias named:
-  // certifiedpayrollpro.com quotes managed certified-payroll services at
-  // $1,000–$5,000/month (a vendor, so biased upward); knowify.com/pricing
-  // lists $99–$399/month.
+  // An example, with two public price lists for reference — READ OFF THE
+  // SITES on 2026-09-21, not from the brief that requested this calculator,
+  // which quoted "$1,000–$5,000/month managed services" for
+  // certifiedpayrollpro.com and "$99–$399" for Knowify. Neither figure is on
+  // those pages today: certifiedpayrollpro.com lists software plans at
+  // $49, $99 and $249 a month plus a per-report fee, and knowify.com/pricing
+  // lists Core $99 and Advanced $329 a month. A reference price the reader
+  // can check and find wrong is worse than none, so the page carries the
+  // checked ones and the date they were checked.
   currentMonthlySpend: {
     value: 750,
     kind: "example",
     source:
-      "use your own. For reference: certified-payroll managed services quote $1,000–$5,000/month (certifiedpayrollpro.com, a vendor); Knowify lists $99–$399/month (knowify.com/pricing).",
+      "use your own. For reference, checked 2026-09-21: Knowify lists $99–$329/month (knowify.com/pricing); CertifiedPayrollPro lists $49–$249/month plus a per-report fee (certifiedpayrollpro.com). Neither includes the office hours.",
   },
   // AN ASSUMPTION. Nobody has measured this; it is the number the visitor
   // should argue with first, which is why it is a field and labelled.

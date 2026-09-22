@@ -144,8 +144,8 @@ describe("every default carries its source", () => {
     expect(DEFAULTS.officeHoursPerWeek.value).toBe(10);
     expect(DEFAULTS.officeHoursPerWeek.source).toMatch(/use your own/i);
     expect(DEFAULTS.currentMonthlySpend.value).toBe(750);
-    expect(DEFAULTS.currentMonthlySpend.source).toContain("$1,000–$5,000");
-    expect(DEFAULTS.currentMonthlySpend.source).toContain("$99–$399");
+    expect(DEFAULTS.currentMonthlySpend.source).toContain("$49–$249");
+    expect(DEFAULTS.currentMonthlySpend.source).toContain("$99–$329");
     expect(DEFAULTS.shareRemoved.value).toBe(0.5);
     expect(DEFAULTS.shareRemoved.kind).toBe("assumption");
     expect(DEFAULTS.crewSize.value).toBe(25);

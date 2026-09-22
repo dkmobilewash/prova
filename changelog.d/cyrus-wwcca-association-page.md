@@ -97,3 +97,64 @@ Known and not fixed here: at 320 the WH-347's narrow grid is wider than its
 272px panel and scrolls sideways inside the panel (Saturday and the total are
 off the right edge until scrolled). The page does not overflow. The panel is
 the landing page's own and does the same there.
+
+**Two sections added (Cyrus, 2026-09-21): the assistant in few words, and a
+savings calculator from the visitor's own numbers.**
+
+- **The assistant, honestly.** "Tell it what you need and it does it — it
+  raises the RFI, drafts the invoice, logs the hours, schedules the crew,
+  sends the email. You tap once to approve anything that gets saved or
+  sent." Then four groups — Billing, Field, The GC, Estimating — and each
+  group's comment in `WwccaLanding.tsx` names the write commands it stands
+  for. `page.test.ts` reads those names out of the source and compares them
+  with the `CommandName` union in `lib/ask/commands.ts`, both ways: a command
+  the page names that the code lacks fails, and a command the code has that
+  the page leaves out fails. The union's size is pinned to the count of tool
+  `name:` declarations across `lib/ask/commands/`, so an empty parse cannot
+  pass. "Fully AI automated" is false — every write is a proposal card and a
+  person's tap runs `confirmAskProposal` — and the test bans it and its
+  cousins ("fully automated", "hands-free", "no data entry", "files for
+  you", "file-ready", "automatic … overtime", "remembers") over the whole
+  rendered page, after first asserting the protected sentence is present, so
+  the guard fails on an empty render rather than passing one. Ask does keep
+  the earlier turns of one sitting (`priorTurns`, `lib/ask/turns.ts`); it
+  keeps nothing across sittings, and the page claims neither.
+- **The calculator.** Five labelled fields, each with its default's
+  provenance printed beside it: crew size 25 (example, for scale; the
+  formula does not use it), office hours per week 10 (example, use your own
+  — NOT the unsourced "8.3 hours/week"), loaded hourly cost $38 (BLS
+  payroll-clerk mean $26.29/hr, May 2023, loaded at wages ≈ 70% of employer
+  cost per BLS ECEC, linked, and the $26.29 re-read off the BLS page on
+  2026-09-21; California about $42), what you pay now $750/month (example,
+  with two public price lists for reference), and the share of office time
+  removed, 50%, labelled an assumption. **The two reference prices are not
+  the ones the brief supplied.** It quoted "$1,000–$5,000/month" for
+  certified-payroll managed services from certifiedpayrollpro.com and
+  "$99–$399/month" for Knowify; both sites were read on 2026-09-21 and
+  neither figure is on them — certifiedpayrollpro.com lists software plans at
+  $49, $99 and $249 a month plus a per-report fee, and knowify.com/pricing
+  lists Core $99 and Advanced $329. The page carries the checked figures with
+  the date, since a reference a committee member can look up and find wrong
+  is worse than none. Formula in `components/associations/wwccaSavings.ts`:
+  now = current + hours × 4.33 × rate; with = $399 + remaining hours × 4.33 ×
+  rate; saving = now − with, monthly and ×12. **If C Stream costs more, the
+  saving is negative and the sentence says "costs you … more" — nothing
+  clamps.** Money is computed in cents and rounded once (render-hours.ts's
+  lesson); inputs are sanitised so empty, text, negative or enormous entries
+  give finite figures. CSS bars, no dependency, `aria-hidden`, with the result
+  as a sentence in a live region and a figures table for screen readers.
+  The $399 is parsed out of `FOUNDING_OFFER.price`, so the calculator cannot
+  quote a price the offer does not. The section is marked
+  `data-savings-calculator`; `page.test.ts` strips it from the prose the way
+  it strips the panels, asserts it is there to strip, and asserts every
+  default renders with its source beside a `<label>`led input. Ends with
+  "An estimate from the numbers you enter, not a quote."
+- **The Ask demo is not here.** An animated demo is being built separately
+  in `components/landing/AskDemo.tsx`; the assistant section carries a
+  comment marking where it mounts, deliberately without reserving an empty
+  column for it.
+- Mutation-tested red: clamping the saving at zero, skipping the cents
+  rounding, a banned phrase on the page, a command named that the code lacks
+  (which passed the first time — the census regex excluded digits, so
+  `file_wh347` was never parsed; fixed), a real command dropped, and a
+  default losing its source line.
