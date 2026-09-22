@@ -32,7 +32,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { COMMANDS, commandNamed, type CommandName } from "@/lib/ask/commands";
-import { subjectFromQuestion } from "@/lib/ask/commands/rfis";
+import { RFI_DATE_SENT_NOTE, subjectFromQuestion } from "@/lib/ask/commands/rfis";
 import { dayLabel } from "@/lib/ask/dates";
 import { parseHours } from "@/lib/ask/numbers";
 import { AskCanDo } from "./AskCanDo";
@@ -112,9 +112,12 @@ describe("the demo performs only commands that exist", () => {
 describe("the card shows the fields the real card shows, and nothing else", () => {
   it("RFI: Job, Subject, Question, Date sent — in resolveRaiseRfi's order", () => {
     expect(RFI_PREVIEW.map((line) => line.label)).toEqual(["Job", "Subject", "Question", "Date sent"]);
-    expect(RFI_PREVIEW.find((line) => line.label === "Date sent")?.value).toBe(
-      "set on the form — defaults to today; blank keeps it a draft",
-    );
+    // The card's own line, not a copy of it: the demo prints whatever the
+    // command prints, and never the "defaults to today" that was false
+    // after #442 made the form start the date blank.
+    const dateLine = RFI_PREVIEW.find((line) => line.label === "Date sent")?.value;
+    expect(dateLine).toBe(RFI_DATE_SENT_NOTE);
+    expect(dateLine).not.toMatch(/defaults? to today/i);
   });
 
   it("RFI: the subject is what subjectFromQuestion derives, so the warning is the true one", () => {

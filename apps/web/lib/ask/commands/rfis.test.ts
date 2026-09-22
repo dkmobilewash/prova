@@ -12,7 +12,7 @@ const fake = vi.hoisted(() => ({
 
 vi.mock("@prova/db", () => ({ prisma: fake.prisma }));
 
-const { raiseRfiCommand, subjectFromQuestion } = await import("./rfis");
+const { raiseRfiCommand, subjectFromQuestion, RFI_DATE_SENT_NOTE } = await import("./rfis");
 
 const ctx = { companyId: "co-1", userId: "u-1", principal: { role: "OWNER", jobFunction: null }, today: "2026-09-09" };
 const riverside = { id: "job-1", name: "Riverside Plaza", status: "IN_PROGRESS", contact: { name: "Turner" } };
@@ -79,6 +79,35 @@ describe("raise_rfi", () => {
     expect(result.preview.map((l) => l.label)).toEqual(["Job", "Subject", "Question", "Drawing", "Spec section", "Date sent"]);
     expect(result.preview.at(-1)?.value).toMatch(/set on the form/);
     expect(result.warnings).toEqual([]);
+  });
+
+  /**
+   * The sent date. #442 made RfiForm start it BLANK, and a blank date saves
+   * a draft — so a card or a tool description saying it "defaults to today"
+   * tells the person, and the model, that saving will stamp a send date
+   * nobody chose. Both said exactly that for a day after #442. Pinned in
+   * both places the words reach: the card's preview line and the
+   * description the model reads before it answers "what will this do?".
+   */
+  it("never tells the person or the model that the sent date defaults to today", async () => {
+    fake.prisma.job.findMany.mockResolvedValue([riverside]);
+    const result = await raiseRfiCommand.resolve(ctx, {
+      jobName: "Riverside",
+      subject: "Head-of-wall at rated corridor",
+      question: "Which head-of-wall detail applies at the rated corridor?",
+    });
+    expect(result.kind).toBe("ready");
+    if (result.kind !== "ready") throw new Error("unreachable");
+    const dateLine = result.preview.find((line) => line.label === "Date sent")?.value;
+    expect(dateLine).toBe(RFI_DATE_SENT_NOTE);
+    const STALE = /defaults? to today/i;
+    expect(dateLine).not.toMatch(STALE);
+    expect(raiseRfiCommand.description).not.toMatch(STALE);
+    // And both say what is true instead: blank, and a draft.
+    expect(dateLine).toMatch(/blank/i);
+    expect(dateLine).toMatch(/draft/i);
+    expect(raiseRfiCommand.description).toMatch(/starts blank/i);
+    expect(raiseRfiCommand.description).toMatch(/draft/i);
   });
 
   it("takes the subject from the question when none was given, and says so on the card", async () => {

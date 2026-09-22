@@ -68,9 +68,17 @@ and the registry guard were each broken on purpose and watched go red.
 Copy is guarded against "fully automated", "hands-free", "no data entry"
 and their cousins, and the example is labelled as one, at rest.
 
-One thing seen and not fixed, because it is the AI lane's: the RFI card's
-last line says the sent date "defaults to today", and `RfiForm.tsx` has
-started the date BLANK since the sent-date-default change ("Blank keeps it
-a draft"). The scene shows the card's line as the card prints it and the
-form as the form opens, which is what a person actually sees — the two
-disagree in the product, not in the drawing.
+**And one thing the demo found in the product, fixed here because the AI
+lane is Cyrus's as of 2026-09-21.** The RFI card's last line said the sent
+date "defaults to today", and so did the tool description the model reads
+— both false since #442 made `RfiForm` start the date BLANK, where a blank
+date saves a draft. A person reading the card, or asking the box what it
+would do, was told that saving would stamp a send date nobody chose, on
+the page whose whole subject is dates being defensible. Both now say the
+date starts blank and the RFI saves as a draft until the date it was sent
+is entered. The line is exported as `RFI_DATE_SENT_NOTE`; `rfis.test.ts`
+pins that neither the preview nor the description says "defaults to
+today" (mutation-tested: restoring the old sentence in either place goes
+red), and the demo's test holds its copy equal to the constant rather than
+to a second literal — the public page cannot say something the card does
+not.

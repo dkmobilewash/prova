@@ -93,8 +93,11 @@ export const RFI = {
   question: "Which head-of-wall detail applies at the rated corridor?",
   /** `subjectFromQuestion(question)` — the trailing "?" dropped. */
   subject: "Which head-of-wall detail applies at the rated corridor",
-  /** The exact line `resolveRaiseRfi` pushes last. */
-  dateSentNote: "set on the form — defaults to today; blank keeps it a draft",
+  /** The exact line `resolveRaiseRfi` pushes last — `RFI_DATE_SENT_NOTE`
+   * in lib/ask/commands/rfis.ts, held equal by askDemoScript.test.ts. Not
+   * imported here, because that module reaches the database and this one
+   * is rendered by the public page. */
+  dateSentNote: "set on the form — starts blank, so it saves as a draft until you enter the date you sent it",
   /** The warning the card carries when the subject was derived. */
   warning: "Subject taken from the question. Change it on the form if it should read differently.",
   /** components/jobLabels.ts jobPickerLabel — name and GC, no status. */
