@@ -159,7 +159,11 @@ export default async function RfisPage({
         />
       </section>
 
-      <StatusLine report={status} />
+      {/* At zero-ever the EmptyState below is the whole answer. The status
+          line and the "0 in play" count above it said "nothing" twice more
+          first — three empties stacked on a new account. /bids hides its
+          count the same way; both come back with the first record. */}
+      {(everRaised > 0 || rows.length > 0) && <StatusLine report={status} />}
 
       {jobs.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2" data-tour="rfis-job-filter">
@@ -174,18 +178,20 @@ export default async function RfisPage({
         </div>
       )}
 
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink-label">
-          {rows.length} {showClosed ? "total" : "in play"}
-        </h2>
-        <Link
-          href={filterHref({ show: showClosed ? null : "all" })}
-          data-tour="rfis-show-closed"
-          className="inline-flex min-h-11 items-center text-sm text-link"
-        >
-          {showClosed ? "Hide closed" : "Show closed"}
-        </Link>
-      </div>
+      {(everRaised > 0 || rows.length > 0) && (
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-ink-label">
+            {rows.length} {showClosed ? "total" : "in play"}
+          </h2>
+          <Link
+            href={filterHref({ show: showClosed ? null : "all" })}
+            data-tour="rfis-show-closed"
+            className="inline-flex min-h-11 items-center text-sm text-link"
+          >
+            {showClosed ? "Hide closed" : "Show closed"}
+          </Link>
+        </div>
+      )}
 
       {rows.length === 0 && everRaised === 0 ? (
         <EmptyState
