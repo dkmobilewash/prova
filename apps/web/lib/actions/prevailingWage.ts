@@ -1,14 +1,31 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { numericReaders } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
+import {
+  InputError,
+  actionFail as fail,
+  actionOk as ok,
+  runAction as sharedRunAction,
+  type ActionResult,
+} from "./shared";
 
 /** Failures are RETURNED — production redacts a thrown Server Action
- * message to a digest. `lib/actions/submittals.ts` is the reference. */
+ * message to a digest. `lib/actions/submittals.ts` is the reference.
+ *
+ * `InputError` is imported rather than declared here: two classes of the
+ * same name are not the same class, and that is how a refusal from a
+ * shared parser walked past a local boundary and reached production as a
+ * digest (#407). */
 
-class InputError extends Error {}
+/** One parser for every typed figure in the app — `lib/numeric-input.ts`.
+ * Raises THIS module's InputError so the local `runAction` catch still
+ * sees it; see numericReaders' header for why that indirection exists. */
+const { optionalNumber } = numericReaders((message) => {
+  throw new InputError(message);
+});
 
 const AUTHORITIES = ["FEDERAL", "STATE", "COUNTY", "CITY"] as const;
 const FREQUENCIES = ["WEEKLY", "BIWEEKLY", "SEMI_MONTHLY", "MONTHLY"] as const;
@@ -53,32 +70,18 @@ function requiredDate(formData: FormData, key: string, label: string): Date {
  * how a seventh-consecutive-day rule is usually written.
  */
 function optionalHours(formData: FormData, key: string, label: string): string | null {
-  const raw = text(formData, key);
-  if (!raw) return null;
-  const value = Number(raw);
-  if (Number.isNaN(value)) throw new InputError(`${label} must be a number`);
-  if (value < 0) throw new InputError(`${label} can't be negative`);
-  if (value > 24) throw new InputError(`${label} can't be more than 24 hours in a day`);
-  return value.toFixed(2);
+  const value = optionalNumber(formData, key, { label, min: 0, max: 24, unit: " hours" });
+  return value === null ? null : value.n.toFixed(2);
 }
 
 function optionalWeeklyHours(formData: FormData, key: string, label: string): string | null {
-  const raw = text(formData, key);
-  if (!raw) return null;
-  const value = Number(raw);
-  if (Number.isNaN(value)) throw new InputError(`${label} must be a number`);
-  if (value < 0) throw new InputError(`${label} can't be negative`);
-  if (value > 168) throw new InputError(`${label} can't be more than 168 hours in a week`);
-  return value.toFixed(2);
+  const value = optionalNumber(formData, key, { label, min: 0, max: 168, unit: " hours" });
+  return value === null ? null : value.n.toFixed(2);
 }
 
 function optionalDays(formData: FormData, key: string, label: string): number | null {
-  const raw = text(formData, key);
-  if (!raw) return null;
-  const value = Number(raw);
-  if (!Number.isInteger(value)) throw new InputError(`${label} must be a whole number of days`);
-  if (value < 0 || value > 365) throw new InputError(`${label} has to be between 0 and 365`);
-  return value;
+  const value = optionalNumber(formData, key, { label, min: 0, max: 365, integer: true, unit: " days" });
+  return value === null ? null : value.n;
 }
 
 /** Only http(s): this string goes into an href, so a javascript: URL would
@@ -114,11 +117,22 @@ function isOverlapError(err: unknown): boolean {
   return message.includes("PrevailingWageRuleSet_no_overlapping_rules");
 }
 
+/** The shared boundary plus this module's one extra case.
+ *
+ * The overlap constraint is a Postgres exclusion constraint Prisma's DSL
+ * cannot express (see `isOverlapError` above), so it arrives as a raw
+ * P2010 rather than as anything typed — it is not an `InputError` and
+ * cannot be made into one at the throw site, because the throw site is the
+ * database.
+ *
+ * Order is preserved by construction rather than by care: the shared
+ * `runAction` gets first refusal and converts `InputError`, rethrowing
+ * everything else, so the overlap branch below sees only what the shared
+ * boundary declined — exactly the sequence the hand-written version had. */
 async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
   try {
-    return await fn();
+    return await sharedRunAction(fn);
   } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
     if (isOverlapError(err)) {
       return fail(
         "Another rule set already covers this jurisdiction over part of those dates. End that one first — two sets of rules in force at once would make a timesheet review depend on which row was read.",

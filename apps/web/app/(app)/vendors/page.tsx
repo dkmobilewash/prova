@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
 import { requireCompanyContext } from "@/lib/auth";
 import { VendorForm } from "@/components/VendorForm";
 import { VendorRow } from "@/components/VendorRow";
@@ -34,7 +35,12 @@ export default async function VendorsPage() {
   const today = serverToday();
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    // A directory: one row per vendor, each carrying a name, a trade, a phone
+    // number and an insurance standing. `working`, because the answer to "how
+    // wide should this be" is "how many of them can you see at once" — the
+    // 768px this page used to pick put four columns of data in 60% of the
+    // screen and wrapped them.
+    <PageShell width="working">
       <h1 className="mb-2 text-xl font-semibold text-ink">Vendors</h1>
       <p className="mb-6 text-sm text-ink-body">
         Suppliers and service vendors you buy from — board and steel suppliers, equipment rental, scaffolding.
@@ -112,6 +118,6 @@ export default async function VendorsPage() {
           </ul>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }

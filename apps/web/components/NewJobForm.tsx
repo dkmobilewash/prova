@@ -119,8 +119,8 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
             </label>
             {contacts.length > 0 && (
               <p className="text-xs text-ink-muted">
-                Only add a new one if they aren&apos;t in the list. A second row for the same GC
-                splits their payment history and their standing terms across two records.
+                Only add a new one if they aren&apos;t in the list. Listing the same GC twice
+                splits their payment history and their retainage terms across the two.
               </p>
             )}
           </>
@@ -151,7 +151,12 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
         data-tour="new-job-create"
         className="mt-2 inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {isPending ? "Creating…" : "Continue →"}
+        {/* "Continue →" said nothing about what pressing it does. It starts
+            the job — a real row, in the jobs list, from this moment — and
+            moves to the screen for putting work on it. A label that names
+            the destination is the difference between a button somebody
+            presses and one somebody hesitates over. */}
+        {isPending ? "Starting it…" : "Start the job — add the work next →"}
       </button>
 
       {error && (

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { actionFail as fail, actionOk as ok, isUniqueConstraintError, type ActionResult } from "./shared";
+import { isBlank, parseNumericInput } from "@/lib/numeric-input";
 
 /** Failures are RETURNED — production redacts a thrown Server Action
  * message to a digest, so a correctable mistake would arrive as the
@@ -27,11 +28,10 @@ function date(formData: FormData, key: string): Date | null {
  * Returns a sentinel so a non-numeric entry can be refused rather than
  * silently becoming null. */
 function hours(formData: FormData, key: string): number | null | "invalid" {
-  const raw = text(formData, key);
-  if (!raw) return null;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0) return "invalid";
-  return n;
+  const raw = formData.get(key);
+  if (isBlank(raw)) return null;
+  const parsed = parseNumericInput(raw, { min: 0 });
+  return parsed.ok ? parsed.n : "invalid";
 }
 
 async function assertUserInCompany(userId: string, companyId: string) {
@@ -50,7 +50,7 @@ export async function createApprenticeshipEnrollment(formData: FormData): Promis
 
   const sponsorName = text(formData, "sponsorName");
   if (!sponsorName) {
-    return fail("Name the sponsor — the JATC, state agency or local that registered the programme.");
+    return fail("Name the sponsor — the JATC, state agency or local that registered the program.");
   }
 
   const enrolledOn = date(formData, "enrolledOn");
@@ -59,7 +59,7 @@ export async function createApprenticeshipEnrollment(formData: FormData): Promis
   const requiredOjt = hours(formData, "requiredOjtHoursPerPeriod");
   const requiredClassroom = hours(formData, "requiredClassroomHoursPerPeriod");
   if (requiredOjt === "invalid" || requiredClassroom === "invalid") {
-    return fail("Hours must be a number, or left blank if the programme hasn't told you.");
+    return fail("Hours must be a number, or left blank if the program hasn't told you.");
   }
 
   const craftClassificationId = text(formData, "craftClassificationId") || null;
@@ -151,7 +151,7 @@ export async function updateApprenticeshipEnrollment(
   const requiredOjt = hours(formData, "requiredOjtHoursPerPeriod");
   const requiredClassroom = hours(formData, "requiredClassroomHoursPerPeriod");
   if (requiredOjt === "invalid" || requiredClassroom === "invalid") {
-    return fail("Hours must be a number, or left blank if the programme hasn't told you.");
+    return fail("Hours must be a number, or left blank if the program hasn't told you.");
   }
 
   const sponsorName = text(formData, "sponsorName");
@@ -203,10 +203,13 @@ export async function recordApprenticeshipPeriod(
   });
   if (existing === null) return fail("That enrolment isn't on this company.");
 
-  const periodNumber = Number(text(formData, "periodNumber"));
-  if (!Number.isInteger(periodNumber) || periodNumber < 1) {
-    return fail("Period number must be a whole number, 1 or above.");
-  }
+  const period = parseNumericInput(formData.get("periodNumber"), {
+    label: "Period number",
+    integer: true,
+    min: 1,
+  });
+  if (!period.ok) return fail(period.error);
+  const periodNumber = period.n;
 
   const classroomHours = hours(formData, "classroomHours");
   if (classroomHours === "invalid") {

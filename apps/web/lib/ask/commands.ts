@@ -1,6 +1,7 @@
 import type { AskToolDefinition } from "@prova/integrations";
 import type { WebSuggestion } from "./webSuggestions";
 import { can, type Capability, type Principal } from "@/lib/permissions";
+import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import { equipmentCommands, equipmentExclusions } from "./commands/equipment";
 import { estimatingCommands, estimatingExclusions } from "./commands/estimating";
 import { notYetRegistered } from "./commands/exclusions";
@@ -104,6 +105,19 @@ export type CommandContext = Actor & {
    * The only "today" a command may use. */
   today: string;
   research?: BidResearcher;
+  /** The three onboarding answers off the Company row — how this business
+   * works, so the model's wording fits the contractor in front of it
+   * (lib/ask/business-scope-context.ts). Comes from the SESSION's company,
+   * never from the request body, for the same reason `companyId` does.
+   *
+   * Optional, and absent means what all-null means: say nothing about
+   * scope, behave as the box did before. Every caller but `/api/ask` omits
+   * it — the confirm tap has no model to tell.
+   *
+   * It reaches the model as one paragraph of context and nothing else. No
+   * command reads it, none may be gated on it, and the offered tool list is
+   * identical whatever it says: this is phrasing, never permission. */
+  businessScope?: BusinessScopeAnswers;
 };
 
 export type PreviewLine = { label: string; value: string };

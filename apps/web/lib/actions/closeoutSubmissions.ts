@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { viewerToday } from "@/lib/viewerToday";
 import { can } from "@/lib/permissions";
 import { Prisma, prisma } from "@prova/db";
-import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
+import { InputError, actionFail as fail, actionOk as ok, runAction, type ActionResult } from "./shared";
 
 /** Every entry point to a closeout package is a page guarded by
  * MANAGE_JOBS, so every write here answers to the same capability.
@@ -31,7 +32,12 @@ const JOBS_ONLY =
  * sessions editing one file is how a merge conflict becomes a stranded
  * commit. */
 
-class InputError extends Error {}
+// `InputError` and `runAction` are imported from ./shared rather than
+// declared here. Two classes with the same name are not the same class:
+// `instanceof` is false between them, so a refusal thrown by a shared
+// parser walked straight past a local boundary and reached production as a
+// redacted digest. That is what #407 found on /welcome, and this module
+// held the fifteenth copy of the class it found there.
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -60,22 +66,22 @@ function requiredDate(formData: FormData, key: string, label: string): Date {
   return date;
 }
 
-function utcMidnightToday() {
-  return new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+/** Today on the READER'S calendar, at the UTC midnight this app stores
+ * dates on — the fallback when a form leaves an optional date blank.
+ *
+ * `new Date().toISOString().slice(0, 10)` was the server's UTC day, which
+ * west of UTC is already TOMORROW from 17:00. So a date nobody typed was
+ * stamped a day into the future, on a record that is correspondence with a
+ * GC. `viewerToday()` never throws and falls back to UTC, so the floor
+ * here is exactly the old behaviour. */
+async function utcMidnightToday() {
+  return new Date(`${await viewerToday()}T00:00:00.000Z`);
 }
 
 function isoDay(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
-}
 
 async function assertJob(jobId: string, companyId: string) {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
@@ -187,7 +193,7 @@ export async function recordCloseoutResponse(id: string, formData: FormData): Pr
       return fail("Say whether the GC accepted it or sent it back.");
     }
 
-    const respondedOn = optionalDate(formData, "respondedOn", "Date they answered") ?? utcMidnightToday();
+    const respondedOn = optionalDate(formData, "respondedOn", "Date they answered") ?? (await utcMidnightToday());
     if (respondedOn < submission.submittedOn) {
       return fail("They can't have answered before the package went out.");
     }

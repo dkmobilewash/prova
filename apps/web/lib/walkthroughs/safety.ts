@@ -24,6 +24,12 @@ export const safetyWalkthrough: Walkthrough = {
         "Every case for the year, each with its own case number. Cases marked Recordable are the ones that go on your OSHA log.",
     },
     {
+      anchor: "safety-empty",
+      title: "Nothing logged yet",
+      body:
+        "No cases this year is the good outcome. Log the first-aid ones anyway — a small injury that later turns into lost time is only defensible if it was written down that day.",
+    },
+    {
       anchor: "safety-years",
       title: "Other years",
       body: "Tap a year to see that year's cases.",
@@ -32,6 +38,11 @@ export const safetyWalkthrough: Walkthrough = {
       anchor: "safety-talks",
       title: "Toolbox talks",
       body: "Every safety meeting you have logged, newest first.",
+    },
+    {
+      anchor: "safety-talks-empty",
+      title: "No talks logged yet",
+      body: "Log each safety meeting the day it happens. The written record is what a GC or an inspector asks to see.",
     },
   ],
 };

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { Hint } from "@/components/Hint";
 import { submitPayApplication, updateInvoiceStatus } from "@/lib/actions";
+import { money } from "@/lib/money";
+import { payAppRowsFromForm, payAppTotal } from "@/lib/pay-application";
 import { formatInstant } from "@/lib/render-date";
 
 const inputClass =
@@ -83,7 +85,19 @@ export function PayApplications({
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  /** What this application currently comes to, from the boxes as typed.
+   * A preview only — `submitPayApplication` re-reads the raw form and
+   * decides from that. Negative is what makes the credit panel appear. */
+  /** What this application currently comes to, from the boxes as typed, or
+   * null while a box holds something the parser cannot read — the server
+   * will name that field on submit, and inventing a total over a figure
+   * nobody could read would be worse than showing none. */
+  const [total, setTotal] = useState<number | null>(0);
   const formRef = useRef<HTMLFormElement>(null);
+  /** What this application would credit the GC, or null when it is not a
+   * credit. A number rather than a boolean so the panel below cannot be
+   * rendered without the figure that justifies it. */
+  const creditAmount = total !== null && total < 0 ? -total : null;
 
   return (
     <section>
@@ -114,10 +128,26 @@ export function PayApplications({
         negative and you bill the same material twice — the running &ldquo;stored to date&rdquo; figure under each
         box is what is still sitting there.
       </p>
+      <p className="mb-3 max-w-2xl text-sm text-ink-muted">
+        <span className="text-ink-body">Billed too much on a line last time?</span> Enter the
+        difference as a <strong className="text-ink-label">negative</strong> under This period on that
+        line and it comes off what you have claimed to date — the same thing a G703 does. You can take
+        back at most what that line has already been billed.
+      </p>
 
       {isOpen && (
         <form
           ref={formRef}
+          // The running total, recomputed from the form's own boxes on every
+          // keystroke, so a person can see their application go negative
+          // while they are still looking at the figure that did it. Read
+          // through `payAppRowsFromForm` — the SAME parse the action uses —
+          // rather than a second expression here, which would be a preview
+          // free to disagree with what the server decides.
+          onChange={(event) => {
+            const parsed = payAppRowsFromForm(new FormData(event.currentTarget));
+            setTotal(parsed.ok ? payAppTotal(parsed.rows) : null);
+          }}
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
@@ -136,6 +166,7 @@ export function PayApplications({
                   return;
                 }
                 formRef.current?.reset();
+                setTotal(0);
                 setIsOpen(false);
               } catch (err) {
                 setError(err instanceof Error ? err.message : "Could not submit the pay application");
@@ -182,26 +213,43 @@ export function PayApplications({
                     </td>
                     <td className="py-1 pr-3 text-right">
                       <input type="hidden" name="lineItemId" value={item.id} />
+                      {/* NO FLOOR ON THIS BOX ANY MORE, and the floor was
+                          not the markup by the time it went — #414 had
+                          already moved `min="0"` into the action as
+                          `{ min: 0 }`, for the good reason that native
+                          validation gates the submit handler and refuses in
+                          silence. Same rule, better placed, and still the
+                          wrong rule: it rested on "there is no
+                          negative-billing mechanism", which is true of the
+                          stored-materials RELEASE beside it and false of a
+                          downward CORRECTION. With the attribute and the
+                          server floor both in place, a line over-billed in
+                          March could not be brought down on any later
+                          application by any route. A G703's column E is
+                          that route. What replaced it is a bound rather
+                          than nothing — see payAppEntryError: you cannot
+                          un-bill more than the line has been billed. */}
                       <input
-                        type="number"
-                        step="0.01"
-                        min="0"
                         name="thisPeriodBilled"
+                        type="text"
+                        inputMode="decimal"
                         placeholder="0.00"
                         className={inputClass}
                       />
                     </td>
                     <td className="py-1 text-right">
-                      {/* No min="0" here, unlike This period. A negative is
-                          the documented way to move value out of stored once
-                          the material is installed (billing.prisma), and the
-                          attribute made that unreachable — native validation
+                      {/* Never had a floor, and the reason is the older
+                          half of the same story: a negative here is the
+                          documented way to move value out of stored once
+                          the material is installed (billing.prisma), and
+                          `min="0"` made that unreachable — native validation
                           gates the submit handler, so the form silently
-                          refused rather than showing anything. */}
+                          refused rather than showing anything. The box next
+                          door has caught up. */}
                       <input
-                        type="number"
-                        step="0.01"
                         name="materialsStoredValue"
+                        type="text"
+                        inputMode="decimal"
                         placeholder="0.00"
                         className={inputClass}
                       />
@@ -220,6 +268,44 @@ export function PayApplications({
             </table>
           </div>
 
+          {/* THE TOTAL, ALWAYS ON SCREEN. It was never shown before: the
+              only way to know what this application came to was to submit
+              it and read the invoice. A document that nets negative could
+              therefore be produced without the figure ever appearing. */}
+          {total !== null && (
+            <p className="text-sm text-ink-body">
+              This application comes to{" "}
+              <span className={`tabular-nums ${creditAmount !== null ? "text-tag-rose-ink" : "text-ink-label"}`}>
+                {money(total)}
+              </span>
+              {" — the sum of the boxes above, before retainage."}
+            </p>
+          )}
+
+          {/* A CREDIT IS A REAL DOCUMENT AND IT IS ALSO WHAT HALF A TWO-PART
+              ENTRY LOOKS LIKE. Nothing in the data tells them apart — both
+              are "completed to date went down" — so the person who typed the
+              figures is asked, here, rather than the app guessing. The
+              action refuses a negative total that arrives without this box
+              ticked, so this is the explanation and not the enforcement. */}
+          {creditAmount !== null && (
+            <div className="rounded-md border border-rose-700 bg-tag-rose p-3">
+              <p className="text-sm text-tag-rose-ink">
+                This is a <strong>credit</strong>, not a bill. It asks the GC for nothing and states that{" "}
+                {money(creditAmount)} is owed back to them.
+              </p>
+              <p className="mt-1 text-xs text-tag-rose-ink">
+                If you were moving installed material out of stored, the other half of that entry is
+                missing: enter the same amount as a <strong>positive</strong> under This period on that
+                line.
+              </p>
+              <label className="mt-2 flex items-center gap-2 text-sm text-tag-rose-ink">
+                <input type="checkbox" name="confirmCredit" className="accent-yellow-500" />
+                Yes — I mean to credit the GC {money(creditAmount)}.
+              </label>
+            </div>
+          )}
+
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <Hint text="Creates the application here and numbers it. It does not email the GC — print or export the G702/G703 below and send it the way this GC wants it.">
@@ -237,6 +323,7 @@ export function PayApplications({
               onClick={() => {
                 setIsOpen(false);
                 setError(null);
+                setTotal(0);
               }}
               className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
             >

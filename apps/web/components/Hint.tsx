@@ -148,29 +148,33 @@ export function Hint({
         if (event.key === "Escape") hide();
       }}
     >
-      {/* `isValidElement` IS LOAD-BEARING AND IS NOT DEFENSIVE PROGRAMMING.
-          `children` is typed as an element, and at a call site inside a
-          client component it always is one. It is NOT one when a SERVER
-          component passes the child across the Flight boundary and React
-          outlines it: `react-server-dom-webpack` defers any element it
-          reaches after a row has already written 3200 bytes, replacing it
-          with a `$L` reference that the client rehydrates as a lazy object
-          — `{ $$typeof: REACT_LAZY_TYPE, _payload, _init }`, which has no
-          `.props` at all. Reading `children.props[...]` on it threw
-          `Cannot read properties of undefined (reading 'aria-describedby')`,
-          and because the only such call site was `MetricBar` in the (app)
-          layout, that took down EVERY authenticated page — permanently,
-          through reloads, with no way back from the UI.
+      {/* THE GUARD IS NOT DEFENSIVENESS — IT IS THE 2026-09-21 OUTAGE.
+          This line read `children.props[...]` unguarded, and a child
+          created by a SERVER component does not always arrive here as an
+          element. React's PRODUCTION Flight serializer defers any element
+          it reaches once the current row has passed 3,200 bytes into a row
+          of its own (`3200 < serializedSize` — twice, in
+          `react-server-dom-webpack-server.edge.production.js`) and writes
+          `"$L<id>"` in its place; the browser turns that back into a LAZY
+          (`createLazyChunkWrapper`, `…client.browser.production.js`), which
+          is `{ $$typeof, _payload, _init }` and has no `.props` at all.
+          React renders a lazy child perfectly well. Reading its props
+          throws, and this component is mounted by the app shell, so the
+          throw took every signed-in page down at once.
 
-          It is a byte count, not a data problem: ~1 in 5 row sizes lands in
-          a window where this fires, so an account could be dead at sign-up
-          having created nothing. See changelog.d for the full derivation.
+          The byte count is why nobody saw it coming: the threshold does
+          not exist in the DEVELOPMENT build of the same file, so no amount
+          of `next dev` can produce it, and on production a few bytes of
+          ordinary data — one invoice moving "$0.00" to "$1,000.00" — moves
+          the row across the line.
 
-          Degrading here loses only the `aria-describedby` link on that one
-          instance; the tooltip still renders and the page still works. A
-          server-component caller should also be a client component so the
-          child is never serialised — that is the better fix at the call
-          site, and this is the guard that makes the class survivable. */}
+          `isValidElement` is false for a lazy, so the hint's text still
+          renders and the control still works; only the `aria-describedby`
+          wiring is lost, for a child this component cannot see into.
+          Losing it is never meant to happen: `hintClientOnly.test.ts`
+          fails the build if any file rendering <Hint> is not a client
+          component, which is what keeps a lazy child out of here. This
+          branch is the floor under that test, not a substitute for it. */}
       {isValidElement<Described>(children)
         ? cloneElement(children, {
             "aria-describedby": [children.props["aria-describedby"], id].filter(Boolean).join(" "),

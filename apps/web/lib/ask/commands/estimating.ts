@@ -7,6 +7,7 @@ import { resolveCatalogEntry, resolveContact, resolveJob } from "../resolve";
 import { dayLabel } from "../dates";
 import { dueDayFor } from "./bids";
 import { keepSuggestions, type WebSuggestion } from "../webSuggestions";
+import { parseNumericInput } from "@/lib/numeric-input";
 import type {
   CommandContext,
   CommandDefinition,
@@ -463,7 +464,10 @@ async function resolveCatalogLine(ctx: CommandContext, input: CommandInput): Pro
   if (!quantity) missing.push("the quantity");
   if (missing.length > 0) return { kind: "need", missing: missing.join(", ") };
 
-  if (Number.isNaN(Number(quantity)) || Number(quantity) <= 0) {
+  // Same parser as the form, so the Ask card and the box on screen cannot
+  // disagree about what a figure means — see lib/numeric-input.ts.
+  const parsedQuantity = parseNumericInput(quantity, { label: "Quantity", min: 0 });
+  if (!parsedQuantity.ok || parsedQuantity.n <= 0) {
     return { kind: "need", missing: "the quantity as a number greater than zero" };
   }
 

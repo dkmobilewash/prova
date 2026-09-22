@@ -22,7 +22,12 @@ test.describe("dashboard, brand-new empty company", () => {
     await expect(page.getByRole("heading", { name: "Getting started" })).toBeVisible();
     await expect(page.getByRole("progressbar", { name: "Getting started progress" })).toBeVisible();
 
-    await expect(page.locator(dataTour("dashboard-jobs-empty"))).toContainText("No jobs yet.");
+    const empty = page.locator(dataTour("dashboard-jobs-empty"));
+    await expect(empty).toContainText("No jobs yet");
+    await expect(empty.getByRole("link", { name: "Start your first job" })).toHaveAttribute("href", "/jobs/new");
+    // Nothing has anything to say before the first job, so none of it shows.
+    await expect(page.getByText("Needs attention")).toHaveCount(0);
+    await expect(page.getByText("Browse all jobs")).toHaveCount(0);
   });
 
   test("every Getting started step link resolves to a real page", async ({ page }) => {

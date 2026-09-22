@@ -52,8 +52,9 @@ function HandoverGate({ children }: { children: React.ReactNode }) {
 /** The one drain timer for the whole app. It reads the session token
  * (useAuth), so it MUST mount inside ClerkProvider — and it must keep
  * running during a handover too, so it sits BESIDE the gate, not inside
- * it. The first cut of this called useQueueDrain() directly in
- * RootLayout, above the provider, and red-screened every launch. */
+ * it. The pre-hotfix code called useQueueDrain() directly in RootLayout,
+ * above the provider, and red-screened every launch with "useAuth can
+ * only be used within the ClerkProvider component". */
 function DrainTimer() {
   useQueueDrain();
   return null;
@@ -92,6 +93,9 @@ export default function RootLayout() {
           glyphs, the dark palette needs light ones, and only the OS knows
           which is showing. */}
       <StatusBar style="auto" />
+      {/* The drain lives HERE rather than on the tabs (where #403 put it)
+          so the queue keeps going during a handover: a crew member's hours
+          must not wait for the foreman to take the phone back. */}
       <DrainTimer />
       <HandoverGate>
         <Stack screenOptions={screenOptions}>

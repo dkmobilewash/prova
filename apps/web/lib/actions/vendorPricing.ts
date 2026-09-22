@@ -1,9 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseNumericInput } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
+import {
+  InputError,
+  actionFail as fail,
+  actionOk as ok,
+  assertOwner,
+  runAction,
+  type ActionResult,
+} from "./shared";
 
 /** Vendor price quotes — what a supplier said something costs, on a date.
  *
@@ -17,7 +25,12 @@ import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } fr
  * and it is `CostEntry`.
  */
 
-class InputError extends Error {}
+// `InputError` and `runAction` are imported from ./shared rather than
+// declared here. Two classes with the same name are not the same class:
+// `instanceof` is false between them, so a refusal thrown by a shared
+// parser walked straight past a local boundary and reached production as a
+// redacted digest. That is what #407 found on /welcome, and this module
+// held the fifteenth copy of the class it found there.
 
 const SOURCES = ["QUOTE", "INVOICE", "PRICE_LIST", "VERBAL"] as const;
 
@@ -53,11 +66,14 @@ function requiredDate(formData: FormData, key: string, label: string): Date {
  * cheapest on the comparison forever. Zero is allowed — "included, no
  * charge" is a real thing on a quote. */
 function unitPriceFromForm(formData: FormData): string {
-  const raw = required(formData, "unitPrice", "Unit price");
-  const value = Number(raw);
-  if (Number.isNaN(value)) throw new InputError(`"${raw}" is not a number`);
-  if (value < 0) throw new InputError("A unit price can't be negative");
-  return raw;
+  required(formData, "unitPrice", "Unit price");
+  const parsed = parseNumericInput(formData.get("unitPrice"), {
+    label: "Unit price",
+    min: 0,
+    maxDecimals: 2,
+  });
+  if (!parsed.ok) throw new InputError(parsed.error);
+  return parsed.value;
 }
 
 function sourceFromForm(formData: FormData): (typeof SOURCES)[number] {
@@ -68,14 +84,6 @@ function sourceFromForm(formData: FormData): (typeof SOURCES)[number] {
   return raw as (typeof SOURCES)[number];
 }
 
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
-}
 
 /** Everything a quote needs, validated together.
  *

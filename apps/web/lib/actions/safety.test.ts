@@ -273,13 +273,28 @@ describe("createSafetyIncident returns its validation failures", () => {
     expect(result.error).toContain("DAYS_AWAY");
   });
 
-  it("returns the day-count sentence when days away is not a whole number", async () => {
-    const result = (await outcome(() => createSafetyIncident(report({ daysAway: "-2" })))) as {
+  it("returns a day-count sentence, and says which way the figure is wrong", async () => {
+    // Both branches, because the old single message ("must be a whole
+    // number of days") was returned for `-2` as well — and -2 IS a whole
+    // number, so the sentence named the wrong problem. One parser now
+    // decides, and it says which.
+    const negative = (await outcome(() => createSafetyIncident(report({ daysAway: "-2" })))) as {
       ok: boolean;
       error: string;
     };
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain("whole number of days");
+    expect(negative.ok).toBe(false);
+    expect(negative.error).toContain("can't be negative");
+
+    const fractional = (await outcome(() => createSafetyIncident(report({ daysAway: "2.5" })))) as {
+      ok: boolean;
+      error: string;
+    };
+    expect(fractional.ok).toBe(false);
+    expect(fractional.error).toContain("whole number");
+
+    // And the thing this all exists for: a day count with a comma in it
+    // saves, rather than refusing a figure a person plainly meant.
+    expect(await outcome(() => createSafetyIncident(report({ daysAway: "1,200" })))).toEqual({ ok: true });
   });
 
   it("returns ok on a valid report, and files the case", async () => {
@@ -523,6 +538,11 @@ describe("every exported action in this module promises a readable refusal", () 
     expect(source.match(/throw new Error\(/g) ?? []).toEqual([]);
     // And the permitted kind is really there, so the check above is not
     // passing on a file that simply stopped validating anything.
-    expect((source.match(/throw new InputError\(/g) ?? []).length).toBeGreaterThanOrEqual(6);
+    // Five, not six: `countFromForm` stopped writing its own `Number()`
+    // check and now goes through `lib/numeric-input.ts` with the module's
+    // own raiser, so the throw moved rather than disappearing. The floor is
+    // here so the check above cannot pass on a file that simply stopped
+    // validating anything.
+    expect((source.match(/throw new InputError\(/g) ?? []).length).toBeGreaterThanOrEqual(5);
   });
 });

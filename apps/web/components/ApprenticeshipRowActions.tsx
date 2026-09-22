@@ -202,13 +202,15 @@ export function ApprenticeshipRowActions({
             Period
             <input
               name="periodNumber"
+              type="text"
+              inputMode="numeric"
               defaultValue={String(nextPeriod)}
               className={`w-20 ${field}`}
             />
           </label>
           <label className="flex flex-col gap-1 text-xs text-ink-body">
             Classroom hours
-            <input name="classroomHours" placeholder="blank" className={`w-28 ${field}`} />
+            <input name="classroomHours" type="text" inputMode="decimal" placeholder="blank" className={`w-28 ${field}`} />
           </label>
           <label className="flex flex-col gap-1 text-xs text-ink-body">
             Signed off on

@@ -45,6 +45,45 @@ import { SEARCH_TYPE_LABELS, type RecordSearchArgs, type SearchProvider, type Se
  * uses (see `lib/bid-pipeline-query.ts`).
  */
 
+/**
+ * Postgres `integer` — the type Prisma's `Int` maps to, and therefore the
+ * only range an RFI, submittal, change-order or invoice `number` column can
+ * hold.
+ */
+const PG_INT_MAX = 2_147_483_647;
+
+/**
+ * The record NUMBER this query is asking for, or null when it is not asking
+ * for one.
+ *
+ * WHY THIS IS NOT `Number(digits)` INLINE, WHICH IS WHAT IT WAS. Four
+ * providers each did `terms.find((t) => /^\d+$/.test(t))` and passed the
+ * result straight to `Number()`. Paste a phone number into the search box
+ * and that is a ten-digit term — 5551234567, comfortably past
+ * `PG_INT_MAX` — handed to Prisma as an `Int` equality filter on a column
+ * that cannot represent it.
+ *
+ * The guard is right whether or not that throws, and this is the part
+ * worth reading: a value outside the column's range CANNOT EQUAL ANY ROW,
+ * so the filter was never going to match. At best it is a branch of an
+ * `OR` that costs a comparison and returns nothing; at worst it is an
+ * error out of the query engine, and a global search that throws is the
+ * one this app hangs on (see `lib/actions/search.ts` and
+ * `SearchLauncher`). Dropping it loses nothing either way.
+ *
+ * Kept as a shared function rather than four copies because four copies is
+ * exactly how three of them get fixed.
+ */
+export function recordNumberTerm(terms: readonly string[]): number | null {
+  const digits = terms.find((term) => /^\d+$/.test(term));
+  if (digits === undefined) return null;
+  const value = Number(digits);
+  // `< 1` also covers "0" and, via the safe-integer check, a digit string
+  // long enough to lose precision on the way through a double.
+  if (!Number.isSafeInteger(value) || value < 1 || value > PG_INT_MAX) return null;
+  return value;
+}
+
 const titleCase = (value: string): string =>
   value
     .toLowerCase()
@@ -190,14 +229,14 @@ const rfiProvider: SearchProvider = {
   gate: "route",
   route: "/rfis",
   async search({ companyId, query, terms, limit }: RecordSearchArgs): Promise<SearchRecordResult[]> {
-    const numberMatch = terms.find((term) => /^\d+$/.test(term));
+    const numberMatch = recordNumberTerm(terms);
     const rfis = await prisma.rfi.findMany({
       where: {
         companyId,
         OR: [
           { subject: { contains: query, mode: "insensitive" } },
           { question: { contains: query, mode: "insensitive" } },
-          ...(numberMatch ? [{ number: Number(numberMatch) }] : []),
+          ...(numberMatch !== null ? [{ number: numberMatch }] : []),
         ],
       },
       select: { id: true, number: true, subject: true, status: true, job: { select: { name: true } } },
@@ -223,14 +262,14 @@ const submittalProvider: SearchProvider = {
   gate: "route",
   route: "/submittals",
   async search({ companyId, query, terms, limit }: RecordSearchArgs): Promise<SearchRecordResult[]> {
-    const numberMatch = terms.find((term) => /^\d+$/.test(term));
+    const numberMatch = recordNumberTerm(terms);
     const submittals = await prisma.submittal.findMany({
       where: {
         companyId,
         OR: [
           { title: { contains: query, mode: "insensitive" } },
           { description: { contains: query, mode: "insensitive" } },
-          ...(numberMatch ? [{ number: Number(numberMatch) }] : []),
+          ...(numberMatch !== null ? [{ number: numberMatch }] : []),
         ],
       },
       select: { id: true, number: true, title: true, job: { select: { name: true } } },
@@ -319,7 +358,7 @@ const changeOrderProvider: SearchProvider = {
   // that reads that exact section, already reviewed at VIEW_JOB_COSTS.
   toolName: "change_order_status",
   async search({ companyId, query, terms, limit }: RecordSearchArgs): Promise<SearchRecordResult[]> {
-    const numberMatch = terms.find((term) => /^\d+$/.test(term));
+    const numberMatch = recordNumberTerm(terms);
     const changeOrders = await prisma.changeOrder.findMany({
       // ChangeOrder has no companyId column of its own — scoped through the
       // job it belongs to, same as invoiceProvider below.
@@ -328,7 +367,7 @@ const changeOrderProvider: SearchProvider = {
         OR: [
           { title: { contains: query, mode: "insensitive" } },
           { description: { contains: query, mode: "insensitive" } },
-          ...(numberMatch ? [{ number: Number(numberMatch) }] : []),
+          ...(numberMatch !== null ? [{ number: numberMatch }] : []),
         ],
       },
       select: { id: true, number: true, title: true, status: true, jobId: true, job: { select: { name: true } } },
@@ -364,13 +403,13 @@ const invoiceProvider: SearchProvider = {
   // — the tool that reads this exact Invoice data.
   toolName: "pay_application_status",
   async search({ companyId, query, terms, limit }: RecordSearchArgs): Promise<SearchRecordResult[]> {
-    const numberMatch = terms.find((term) => /^\d+$/.test(term));
+    const numberMatch = recordNumberTerm(terms);
     const invoices = await prisma.invoice.findMany({
       where: {
         job: { companyId },
         OR: [
           { description: { contains: query, mode: "insensitive" } },
-          ...(numberMatch ? [{ number: Number(numberMatch) }] : []),
+          ...(numberMatch !== null ? [{ number: numberMatch }] : []),
         ],
       },
       select: { id: true, number: true, amount: true, status: true, jobId: true, job: { select: { name: true } } },

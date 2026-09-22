@@ -49,6 +49,51 @@ export function allowedProviders(principal: Principal, providers: readonly Searc
   });
 }
 
+/**
+ * Whether a walkthrough's route is a URL a person can actually be sent to.
+ *
+ * A walkthrough's `route` is a Next.js route PATTERN, not a URL. Six of the
+ * registry's entries are job-detail tabs registered as `/jobs/[id]` and
+ * `/jobs/[id]/{billing,crew,estimate,field-reports,photos}`, and the page
+ * half of `globalSearch` handed the pattern straight to `href`.
+ * `router.push` percent-encodes the brackets, so searching "billing" or
+ * "estimate" offered a Pages result that navigated to
+ * `/jobs/%5Bid%5D/billing` — "This page doesn't exist." Found by the first
+ * pilot contractor, in his first session, on #386.
+ *
+ * WHY THESE ARE EXCLUDED RATHER THAN RESOLVED. The obvious alternative is
+ * to point them at `/jobs`, since their titles already read "A job —
+ * billing". Rejected on two grounds. There is no correct id to fill in —
+ * the query says nothing about WHICH job, and picking one (the most
+ * recently updated, say) would make the same search mean different things
+ * to different people and put a record in front of someone who never asked
+ * for it. And landing on the jobs list does not deliver billing: it trades
+ * a fast, obvious 404 for a slow, silent dead end, which is harder to
+ * report rather than better.
+ *
+ * IT ALSO CLOSES A CAPABILITY HOLE, which is the half nobody reported.
+ * `reachableWalkthroughs` filters pages through `capabilityForRoute`,
+ * which reads `ROUTE_CAPABILITY` — a map keyed on STATIC hrefs, as its own
+ * comment in `lib/ask/appHelp.ts` notes. A dynamic route is absent from it,
+ * so it resolves to null, which means "open". Measured on `origin/main`
+ * before this change: a FIELD member searching "billing" or "estimate" was
+ * offered exactly what an OWNER was, while every other page result did
+ * differ by role. Those six entries were the only ones in the index
+ * bypassing the capability filter, and they are the six that could not be
+ * opened anyway.
+ *
+ * WHAT IT COSTS, stated rather than buried: "billing" and "estimate" now
+ * return no Pages result at all, because this app has no static billing or
+ * estimate page — both live inside a job. That is the honest answer to a
+ * search, and the fix for it is a page, not a link to a page shape.
+ *
+ * `searchPageCensus.test.ts` pins this to the walkthrough registry and to
+ * the page files on disk, so it cannot pass by matching nothing.
+ */
+export function isOpenableRoute(route: string): boolean {
+  return !/\[[^\]]*\]/.test(route);
+}
+
 function queryTerms(query: string): string[] {
   return query
     .toLowerCase()
@@ -96,7 +141,12 @@ export async function globalSearch(
     Promise.resolve(reachableWalkthroughs(args.principal)),
   ]);
 
-  const pageMatches = searchAppHelp(query, reachableForHelp).slice(0, PAGE_RESULTS);
+  // Filtered BEFORE the slice, not after: six unopenable entries taken off
+  // the top would otherwise spend the six-result budget on nothing and
+  // hide the real pages underneath them.
+  const pageMatches = searchAppHelp(query, reachableForHelp)
+    .filter((match) => isOpenableRoute(match.route))
+    .slice(0, PAGE_RESULTS);
   const pages: SearchPageResult[] = pageMatches.map((match) => ({
     kind: "page",
     route: match.route,

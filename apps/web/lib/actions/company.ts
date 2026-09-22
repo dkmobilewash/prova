@@ -23,6 +23,7 @@ import {
 } from "./shared";
 import { normalizeEin, normalizeWebsite } from "@/lib/company-profile";
 import { can } from "@/lib/permissions";
+import { numericReaders, PERCENT_BOUNDS } from "@/lib/numeric-input";
 import { CONTRACTING_RELATIONSHIPS } from "@/lib/businessScope";
 
 /** The job-function refusal for the company record, worded the way
@@ -42,6 +43,12 @@ const COMPLIANCE_ONLY =
 // refusal from those parsers left every action here as a throw and reached
 // production as a digest. `/welcome`'s empty Save was the one a person
 // actually hit. One class, one boundary, no way for the two to disagree.
+
+/** One parser for every typed figure — see `lib/numeric-input.ts`. Raises
+ * THIS module's InputError so the local `runAction` catch still sees it. */
+const { optionalNumber } = numericReaders((message) => {
+  throw new InputError(message);
+});
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -187,17 +194,26 @@ export async function updateCompanyProfile(formData: FormData): Promise<ActionRe
  * and updateContact (#218 added them to create; they previously only
  * existed on the update path). */
 function standingTermsFromForm(formData: FormData) {
-  const defaultRetainagePercent = nullableDecimalFromForm(formData, "defaultRetainagePercent");
-  const paymentTermsDaysRaw = text(formData, "paymentTermsDays");
+  // A percent, so 0-100 and never a fraction of one: this pre-fills
+  // Job.retainagePercent, where 0.10 meaning ten percent used to store a
+  // tenth of one percent all the way onto an invoice.
+  const defaultRetainagePercent = optionalNumber(formData, "defaultRetainagePercent", {
+    label: "Default retainage",
+    ...PERCENT_BOUNDS,
+    maxDecimals: 2,
+  });
+  const paymentTermsDays = optionalNumber(formData, "paymentTermsDays", {
+    label: "Payment terms",
+    integer: true,
+    min: 0,
+    max: 365,
+    unit: " days",
+  });
   const standardFormsUsed = text(formData, "standardFormsUsed");
 
-  if (paymentTermsDaysRaw && Number.isNaN(Number(paymentTermsDaysRaw))) {
-    throw new InputError('"paymentTermsDays" must be a number');
-  }
-
   return {
-    defaultRetainagePercent,
-    paymentTermsDays: paymentTermsDaysRaw ? Number(paymentTermsDaysRaw) : null,
+    defaultRetainagePercent: defaultRetainagePercent?.value ?? null,
+    paymentTermsDays: paymentTermsDays?.n ?? null,
     standardFormsUsed: standardFormsUsed || null,
   };
 }
@@ -272,7 +288,8 @@ export async function removeTeamMember(memberUserId: string): Promise<ActionResu
   } catch (error) {
     /* A teammate with work recorded against them cannot be deleted at all:
        TimeEntry.employeeUser, DispatchSlip.employeeUser and the certification
-       holder are REQUIRED relations, which Prisma defaults to RESTRICT. That
+       holder are RESTRICT relations (the first two nullable now, since a row
+       can name a crew member instead, but still RESTRICT on purpose). That
        refusal comes from the database, and before this it reached the person
        as a redacted digest on a page that then looked broken. Checked by
        `code` rather than `instanceof`, for the reason isUniqueConstraintError

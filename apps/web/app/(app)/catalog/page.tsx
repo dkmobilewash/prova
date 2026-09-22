@@ -1,10 +1,7 @@
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
-import {
-  createLineItemCatalogEntry,
-  updateCatalogDefaultsFromActuals,
-} from "@/lib/actions";
+import { createLineItemCatalogEntry, updateCatalogDefaultsFromActuals } from "@/lib/actions";
 import { catalogActuals, catalogSourcedLine, type CatalogLineRow } from "@/lib/catalog-actuals";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
@@ -14,6 +11,7 @@ import { TRADE_SCOPE_OPTIONS, tradeScopeLabel } from "@/lib/trade-scopes";
 import { money } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
 import { EmptyState } from "@/components/EmptyState";
+import { ActionForm } from "@/components/ActionForm";
 
 type CatalogEntryWithLines = {
   id: string;
@@ -44,9 +42,16 @@ function formatVariancePct(pct: number) {
 function ActualsLine({
   entry,
   fringeSchedulesByCraft,
+  isOwner,
 }: {
   entry: CatalogEntryWithLines;
   fringeSchedulesByCraft: ReadonlyMap<string, FringeRateScheduleInput[]>;
+  /* Whether to render the re-price CONTROL at all. Not a security boundary
+     — `updateCatalogDefaultsFromActuals` refuses a non-owner itself — but
+     the badge above it stays visible either way, because "worth re-pricing"
+     is information an estimator should have even when the button is the
+     owner's. Same split IntakeForwardBox documents. */
+  isOwner: boolean;
 }) {
   // Built by the same function the WRITE uses (#287). A badge that disagreed
   // with the button under it would be worse than either being wrong alone.
@@ -120,15 +125,28 @@ function ActualsLine({
           twice.
         </p>
       )}
-      {actuals.isFlagged && (
-        <form
+      {/* Still no hidden input carrying the figure (#105 finding 3) — the
+          server re-derives it from the line items and this form sends
+          nothing but the margin checkbox. What is shown above is only ever
+          a preview of what the server will work out itself.
+
+          `<ActionForm>`, not `<form action={…}>`, and this is the control
+          that most needed it. `updateCatalogDefaultsFromActuals` threw
+          every refusal it had, and production redacts a thrown Server
+          Action message to a digest — so the two outcomes were "the price
+          changed" and a blank error page. The refusals here are the useful
+          ones: `repriceDecision` re-checks the flag and the sample that
+          made this button appear, because the page may be minutes old, and
+          it names what to do — add a fringe rate schedule covering the
+          craft and dates those hours were worked, or recategorise the cost
+          entry sitting beside logged hours. An owner met those on an
+          ordinary race and saw the digest. */}
+      {actuals.isFlagged && isOwner && (
+        <ActionForm
           action={updateCatalogDefaultsFromActuals.bind(null, entry.id)}
           className="flex flex-wrap items-center gap-2"
+          errorClassName="w-full text-xs text-tag-rose-ink"
         >
-          {/* No hidden input carrying the figure any more (#105 finding 3)
-              — the server re-derives it from the line items, so this form
-              sends nothing but the margin checkbox. What's shown above is
-              only ever a preview of what the server will work out itself. */}
           <label className="flex items-center gap-1 text-xs text-ink-body">
             <input type="checkbox" name="alsoUpdatePrice" className="accent-yellow-500" />
             also move the sale price, holding margin
@@ -139,7 +157,7 @@ function ActualsLine({
           >
             Update default from actuals
           </SubmitButton>
-        </form>
+        </ActionForm>
       )}
     </div>
   );
@@ -149,6 +167,20 @@ export default async function CatalogPage() {
   const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
   const { company } = context;
+  /* THE PAGE ADMITS MORE PEOPLE THAN ITS TWO OWNER-ONLY CONTROLS DO, and
+     that gap is the whole defect. `/catalog` demands MANAGE_ESTIMATING and
+     ESTIMATOR holds it (lib/permissions.ts) — by design; pricing work is
+     what an estimator does. But the price-list import and the re-price
+     button are owner-only in the actions behind them, and neither was
+     gated here. An estimator could paste two hundred rows, click, and get
+     the error boundary with the paste inside it.
+
+     `context.role === "OWNER"` rather than a capability, deliberately:
+     these two are administration, not estimating, and no job function
+     grants or withholds it (see the UserRole/JobFunction note at the top of
+     lib/permissions.ts). Cosmetic, not a boundary — both actions refuse a
+     non-owner themselves. */
+  const isOwner = context.role === "OWNER";
 
   const [entries, craftClassifications, fringeSchedulesByCraft] = await Promise.all([
     prisma.lineItemCatalogEntry.findMany({
@@ -194,7 +226,7 @@ export default async function CatalogPage() {
       </p>
 
       <div className="mb-6" data-tour="catalog-import">
-        <CatalogImport existingDescriptions={entries.map((entry) => entry.description)} />
+        <CatalogImport existingDescriptions={entries.map((entry) => entry.description)} canImport={isOwner} />
       </div>
 
       <section className="mb-8">
@@ -262,7 +294,7 @@ export default async function CatalogPage() {
                       <> · {entry.defaultLaborHours.toString()} hrs/line</>
                     )}
                   </p>
-                  <ActualsLine entry={entry} fringeSchedulesByCraft={fringeSchedulesByCraft} />
+                  <ActualsLine entry={entry} fringeSchedulesByCraft={fringeSchedulesByCraft} isOwner={isOwner} />
                 </>
               </CatalogEntryRow>
             ))}
@@ -272,7 +304,7 @@ export default async function CatalogPage() {
 
       <section className="rounded-lg border border-line-card bg-surface p-4" data-tour="catalog-add">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Add a catalog entry</h2>
-        <form action={createLineItemCatalogEntry} className="flex flex-wrap items-end gap-3">
+        <ActionForm action={createLineItemCatalogEntry} className="flex flex-wrap items-end gap-3">
           <label className="flex flex-1 min-w-[200px] flex-col gap-1 text-sm text-ink-label">
             Description
             <input
@@ -290,34 +322,41 @@ export default async function CatalogPage() {
             />
           </label>
           {/* THESE THREE HAD NO `type` AT ALL, so they defaulted to text and
-              fed `nullableDecimalFromForm`, which refuses anything
-              `Number()` cannot read. Type "1,200" or "$2.85" — the two ways
-              a person actually writes a price — and the action THREW, which
-              on this form is the worst case in the app: it is a plain
-              `<form action={…}>` with no client error handling, so the throw
-              reaches the error boundary, the page is replaced, and every
-              field typed alongside it is gone. The message would have been
-              redacted anyway.
+              fed `nullableDecimalFromForm`, which refused anything `Number()`
+              could not read. Type "1,200" or "$2.85" — the two ways a person
+              actually writes a price — and the action THREW, which on this
+              form was the worst case in the app: a plain `<form action={…}>`
+              with no client error handling, so the throw reached the error
+              boundary, the page was replaced, and every field typed alongside
+              it went with it. The message would have been redacted anyway.
 
-              `type="number"` makes the browser refuse the comma and the
-              dollar sign before anything is submitted; `step="0.01"` is what
-              stops it ALSO rejecting 2.85 (the default step is 1);
-              `inputMode="decimal"` opens a phone straight on a keypad with a
-              decimal point, which `type="number"` alone does not guarantee
-              on Android — the same pairing SafetyIncidentFields documents.
+              THE FIX THAT USED TO BE DESCRIBED HERE WAS `type="number"`, and
+              this paragraph recommended it in as many words: "makes the
+              browser refuse the comma and the dollar sign before anything is
+              submitted". That sentence is true and it is the PROBLEM, not the
+              solution — measured in real Chromium 2026-09-21, setting such a
+              field's value to `2,800` submits an EMPTY STRING, and on a
+              NULLABLE field like these three an empty string is "not set", so
+              the price silently vanished with no error at all. Firefox
+              submits "" for anything it dislikes. Refusing input at the box
+              is only safe when the box refuses visibly, and it does not.
 
-              Browser validation is not the server check, and the server
-              check here is still a throw: `createLineItemCatalogEntry` lives
-              in `lib/actions/estimating.ts`, which is the other lane. Its
-              conversion is reported, not done here. */}
+              So: `type="text"` with `inputMode="decimal"` — what was typed
+              stays on screen and a phone still opens on a keypad — and the
+              server does the deciding, tolerantly, in lib/numeric-input.ts.
+              `1,200` and `$2.85` both save now. `step` went with the type;
+              there is nothing left for it to fix.
+
+              `createLineItemCatalogEntry` returns its refusals rather than
+              throwing them, and this form posts through `<ActionForm>`, so a
+              figure that genuinely is not a number arrives as a sentence
+              under the fields that are still filled in. */}
           <label className="flex flex-col gap-1 text-sm text-ink-label">
             Default unit price
             <input
               name="defaultUnitPrice"
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="0.01"
-              min="0"
               placeholder="optional"
               className="w-32 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
             />
@@ -326,10 +365,8 @@ export default async function CatalogPage() {
             Default budgeted cost
             <input
               name="defaultBudgetedUnitCost"
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="0.01"
-              min="0"
               placeholder="optional"
               className="w-32 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
             />
@@ -346,10 +383,8 @@ export default async function CatalogPage() {
             Default labor hrs — whole line
             <input
               name="defaultLaborHours"
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="0.01"
-              min="0"
               placeholder="optional"
               aria-describedby="defaultLaborHours-help"
               className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
@@ -397,7 +432,7 @@ export default async function CatalogPage() {
           >
             Add entry
           </SubmitButton>
-        </form>
+        </ActionForm>
       </section>
     </div>
   );

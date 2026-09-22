@@ -77,10 +77,15 @@ export function BidWizardLineItems({
                       {price !== null && ` · ${money(price)}/${item.unit || "unit"} · ${money(qty * price)}`}
                     </p>
                   </div>
+                  {/* `confirmLabel` was "Confirm", which says confirm WHAT.
+                      Every other armed delete in the app spells the verb
+                      out, and this component's own default is "Confirm
+                      delete" — this call site opted out of it for no stated
+                      reason and landed on the vaguest of the three. */}
                   <ConfirmDeleteButton
                     action={deleteLineItem.bind(null, jobId, item.id)}
                     label="Remove"
-                    confirmLabel="Confirm"
+                    confirmLabel="Confirm remove"
                     describe="Removes this line from the estimate. It can be added again from here or from the job page."
                   />
                 </li>
@@ -106,13 +111,25 @@ function ManualAddForm({ jobId }: { jobId: string }) {
         const form = event.currentTarget;
         startTransition(async () => {
           try {
-            await addLineItem(jobId, formData);
+            // RETURNED, not thrown. This is the form the whole change came
+            // from: a quantity of `2,800` used to throw out of
+            // `decimalFromForm`, and the `err.message` below rendered the
+            // production digest paragraph — "the specific message is
+            // omitted in production builds" — under a Qty box, on the
+            // second screen of creating a first job. `2,800` now saves; a
+            // figure that genuinely is not a number comes back here as a
+            // sentence naming the field.
+            const result = await addLineItem(jobId, formData);
+            if (!result.ok) {
+              // Nothing typed is lost: no reset happens on this branch, so
+              // every field the contractor filled in is still on screen
+              // next to the reason it didn't save.
+              setError(result.error);
+              return;
+            }
             form.reset();
-          } catch (err) {
-            // Nothing typed is lost: no reset happens on this branch, so
-            // every field the contractor filled in is still on screen next
-            // to the reason it didn't save.
-            setError(err instanceof Error ? err.message : "Couldn't add that line item.");
+          } catch {
+            setError("That didn't save. Reload the page and check before trying again.");
           }
         });
       }}
@@ -126,7 +143,7 @@ function ManualAddForm({ jobId }: { jobId: string }) {
         </label>
         <label className={labelClass}>
           Qty
-          <input name="quantity" defaultValue="1" required inputMode="decimal" className={`${field} w-20`} />
+          <input name="quantity" type="text" defaultValue="1" required inputMode="decimal" className={`${field} w-20`} />
         </label>
         <label className={labelClass}>
           Unit
@@ -134,7 +151,22 @@ function ManualAddForm({ jobId }: { jobId: string }) {
         </label>
         <label className={labelClass}>
           Unit price
-          <input name="unitPrice" placeholder="cost-only" inputMode="decimal" className={`${field} w-28`} />
+          {/* The placeholder read "cost-only" — a phrase from this app's own
+              data model (a budget line with no sale price), sitting in a box
+              as if it were an instruction. Nothing tells the reader it means
+              "leave me empty", so the likeliest reading is that something is
+              required and he does not know what.
+
+              `type="text" inputMode="decimal"` is #414's convention, kept
+              verbatim: `type="number"` drops a typed comma before the server
+              sees it. Only the placeholder changes. */}
+          <input
+            name="unitPrice"
+            type="text"
+            placeholder="Leave blank if not priced"
+            inputMode="decimal"
+            className={`${field} w-28`}
+          />
         </label>
         <button
           type="submit"
@@ -162,10 +194,14 @@ function CatalogAddForm({ jobId, catalogEntries }: { jobId: string; catalogEntri
         const form = event.currentTarget;
         startTransition(async () => {
           try {
-            await addLineItemFromCatalog(jobId, formData);
+            const result = await addLineItemFromCatalog(jobId, formData);
+            if (!result.ok) {
+              setError(result.error);
+              return;
+            }
             form.reset();
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Couldn't add that catalog line.");
+          } catch {
+            setError("That didn't save. Reload the page and check before trying again.");
           }
         });
       }}
@@ -183,7 +219,7 @@ function CatalogAddForm({ jobId, catalogEntries }: { jobId: string; catalogEntri
       </label>
       <label className={labelClass}>
         Qty
-        <input name="quantity" defaultValue="1" required inputMode="decimal" className={`${field} w-20`} />
+        <input name="quantity" type="text" defaultValue="1" required inputMode="decimal" className={`${field} w-20`} />
       </label>
       <button
         type="submit"

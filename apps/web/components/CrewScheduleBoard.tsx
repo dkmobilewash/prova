@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 import { localToday } from "@/components/localToday";
+import { primaryActionClass } from "@/components/emptyStateStyles";
 import { scheduleCrewDay, unscheduleCrewDay } from "@/lib/actions";
 
 /**
@@ -278,6 +279,22 @@ export function CrewScheduleBoard({
               attached to a job. Nothing fills it in for you, and a day nobody planned is not a day
               nobody worked.
             </p>
+            {/* THE WAY OUT, when there is nobody to put on. The page hides
+                "Put someone on" while the company has no people
+                (schedule/page.tsx passes canWrite false), so without this the
+                box was a wall: getting-started step 5 sent a new owner here to
+                "put someone on the schedule" and there was nothing to press. */}
+            {workers.length === 0 && (
+              <div className="mt-4">
+                <p className="mb-3 max-w-xl text-sm text-ink-body">
+                  There is nobody to put on yet. Add your crew on the Team page — foremen, journeymen and
+                  apprentices, no login needed — and they show up here to schedule.
+                </p>
+                <Link href="/team" className={primaryActionClass}>
+                  Add your crew on Team
+                </Link>
+              </div>
+            )}
           </div>
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
