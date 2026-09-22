@@ -164,6 +164,7 @@ describe("/ landing content renders signed out, with no auth call of its own", (
     "Certified payroll, from hours already logged", // 4
     "Apprentice ratios, on the day you go over", // 5
     "Whether the job is actually making money", // 6
+    "Tell it what happened. Approve it with one tap.", // the Ask scene — after the documents, before the evidence
     "Protecting yourself when it goes wrong", // 7
     "Everything else it does", // 8
     "Not generic construction software", // 9
