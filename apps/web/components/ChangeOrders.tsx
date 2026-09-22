@@ -15,7 +15,11 @@ import {
   submitChangeOrder,
   voidChangeOrder,
 } from "@/lib/actions";
-import { TRADE_SCOPES, type ActionResult } from "@/lib/actions/shared";
+import { TRADE_SCOPES } from "@/lib/trade-scopes";
+// `import type` on its own line, not `{ TRADE_SCOPES, type ActionResult }`:
+// an inline `type` specifier still loads the module at runtime, and
+// actions/shared.ts imports prisma. A type-only IMPORT is erased.
+import type { ActionResult } from "@/lib/actions/shared";
 import {
   CONTRACT_EFFECT,
   type ChangeOrderStatus,
