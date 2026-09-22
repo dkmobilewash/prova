@@ -205,10 +205,17 @@ export async function updatePunchListItem(itemId: string, formData: FormData): P
  * Moving an item between states — the body of all three actions below, so
  * the capability rule and the stamps cannot drift apart between them.
  *
- * `isDone` and `completedAt` are NOT written here. A trigger derives them
- * from `status` on every write (`prova_punch_item_status_sync`), which is
- * what stops the boolean six other readers depend on from ever disagreeing
- * with the state this function sets.
+ * `status` is the only record of where an item is, and there is nothing
+ * derived from it to keep in step.
+ *
+ * This comment used to say `isDone` and `completedAt` were kept in sync by a
+ * trigger named `prova_punch_item_status_sync`. Both columns were dropped by
+ * `20260920030000_punch_item_verification` and no such trigger exists —
+ * checked, not assumed: `information_schema.triggers` on a database with
+ * every committed migration applied lists none at all for `PunchListItem`.
+ * Left standing, it sent the next person hunting for a trigger firing
+ * against missing columns, which is a very plausible cause of a page that
+ * will not load and was not this one's.
  */
 async function moveTo(
   context: Awaited<ReturnType<typeof requireCompanyContext>>,

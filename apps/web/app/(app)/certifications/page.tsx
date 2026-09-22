@@ -14,6 +14,7 @@ import {
   summarizeRoster,
   type CertificationKindValue,
 } from "@/lib/certifications";
+import { viewerToday } from "@/lib/viewerToday";
 
 /** Stored at UTC midnight, rendered in UTC — the same rule as every other
  * dated record in this app. Rendering local would show yesterday's date to
@@ -34,7 +35,7 @@ export default async function CertificationsPage({
   const { show } = await searchParams;
   const showEverything = show === "all";
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await viewerToday();
 
   const [workers, certifications, requirementRows, jobs] = await Promise.all([
     prisma.user.findMany({

@@ -1897,7 +1897,7 @@ async function apprenticeshipStanding(companyId: string): Promise<ToolResult> {
       contradictory: rows.filter((row) => row.state === "CONTRADICTORY").length,
     },
     citations,
-    unavailable: rows.length === 0 ? "Nobody is enrolled in an apprenticeship programme here." : undefined,
+    unavailable: rows.length === 0 ? "Nobody is enrolled in an apprenticeship program here." : undefined,
   };
 }
 
@@ -2947,7 +2947,7 @@ async function scheduleStatus(companyId: string, input: Input): Promise<ToolResu
     citations,
     unavailable:
       rows.length === 0
-        ? "No job is contracted or in progress, so there is no programme to be on or off."
+        ? "No job is contracted or in progress, so there is no program to be on or off."
         : undefined,
   };
 }

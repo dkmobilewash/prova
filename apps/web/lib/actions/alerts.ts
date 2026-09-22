@@ -6,7 +6,7 @@ import { loadAlerts } from "@/lib/alerts-query";
 import { snoozeIsUnspent, type AlertSeverity } from "@/lib/alerts";
 import { prisma } from "@prova/db";
 import { viewerToday } from "@/lib/viewerToday";
-import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared";
+import { InputError, actionFail as fail, actionOk as ok, runAction, type ActionResult } from "./shared";
 
 /**
  * Acknowledging an alert. The only writes this feature has.
@@ -20,20 +20,17 @@ import { actionFail as fail, actionOk as ok, type ActionResult } from "./shared"
  * Action message to a digest.
  */
 
-class InputError extends Error {}
+// `InputError` and `runAction` are imported from ./shared rather than
+// declared here. Two classes with the same name are not the same class:
+// `instanceof` is false between them, so a refusal thrown by a shared
+// parser walked straight past a local boundary and reached production as a
+// redacted digest. That is what #407 found on /welcome, and this module
+// held the fifteenth copy of the class it found there.
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
-}
 
 /**
  * A key must look like one this app builds — KIND:subject:fact.
