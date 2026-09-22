@@ -9,11 +9,16 @@ import { money } from "@/lib/money";
 import { bidWizardTotal, hasLeftWizard } from "@/lib/bid-wizard";
 
 /**
- * Step 2 of the bid-creation stepper — see `BidWizardSteps` for the shape.
- * This is deliberately its own route under `/jobs/new`, not a section on
- * `/jobs/[id]`: it is the CREATION shape (linear, one purpose per screen),
- * the job page is the MANAGEMENT shape, and the two stay separate pages on
- * purpose so this branch never has to touch `jobs/[id]/page.tsx`.
+ * Step 2 of the bid-creation stepper, and the LAST one — see
+ * `BidWizardSteps` for the shape and for why the old step 3 ("Review") is
+ * gone. This is deliberately its own route under `/jobs/new`, not a section
+ * on `/jobs/[id]`: it is the CREATION shape (linear, one purpose per
+ * screen), the job page is the MANAGEMENT shape, and the two stay separate
+ * pages on purpose so this branch never has to touch `jobs/[id]/page.tsx`.
+ *
+ * The footer link is the end of the wizard now, so it says where it goes
+ * ("Done — open the job") rather than "Continue", which on the last screen
+ * of something was a promise of a screen that no longer exists.
  */
 export default async function NewJobItemsPage({ params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = await params;
@@ -73,8 +78,8 @@ export default async function NewJobItemsPage({ params }: { params: Promise<{ jo
       {!showsJobMoney ? (
         <p className="rounded-lg border border-line-card bg-surface p-4 text-sm text-ink-body">
           You don&apos;t have access to price this estimate.{" "}
-          <Link href={`/jobs/new/${job.id}/review`} className="text-link hover:underline">
-            Skip to review →
+          <Link href={`/jobs/${job.id}`} className="text-link hover:underline">
+            Open the job →
           </Link>
         </p>
       ) : (
@@ -89,10 +94,10 @@ export default async function NewJobItemsPage({ params }: { params: Promise<{ jo
               (showsJobMoney ? ` · ${money(total)} so far` : "")}
         </p>
         <Link
-          href={`/jobs/new/${job.id}/review`}
+          href={`/jobs/${job.id}`}
           className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
         >
-          Continue →
+          Done — open the job →
         </Link>
       </div>
     </div>

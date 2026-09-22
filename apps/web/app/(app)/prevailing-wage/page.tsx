@@ -64,11 +64,25 @@ export default async function PrevailingWagePage({
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Check a week against the rules</h2>
 
         {weeks.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-line-card bg-surface/50 p-5 text-sm text-ink-body">
-            No hours logged on a job that carries a wage determination. Only those jobs are checked —
-            certified payroll isn&apos;t required on private work, and offering to review every week
-            would bury the ones that matter.
-          </p>
+          <div className="rounded-lg border border-dashed border-line-card bg-surface/50 p-5 text-sm text-ink-body">
+            <p>
+              No hours logged on a job that carries a wage determination. Only those jobs are
+              checked — certified payroll isn&apos;t required on private work, and offering to
+              review every week would bury the ones that matter.
+            </p>
+            {/* Two things have to be true before a week can appear here, so
+                the way out is two links rather than one: the job needs a
+                determination on it, and somebody needs to have logged hours.
+                Naming only the first would send a reader who has already
+                done it round in a circle. */}
+            <p className="mt-3">
+              <Link href="/jobs" className="text-link hover:underline">
+                Open the job
+              </Link>{" "}
+              and add its determination under Compliance, then log the crew&apos;s hours under
+              Crew &amp; time.
+            </p>
+          </div>
         ) : (
           <>
             <div className="mb-4 flex flex-wrap gap-2">
@@ -181,9 +195,17 @@ export default async function PrevailingWagePage({
       <section className="mb-10" data-tour="pw-which-job">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Which rules apply to which job</h2>
         {determinations.length === 0 ? (
+          // This sentence NAMED the way out and then did not give it —
+          // "Upload one on a job first" with nothing to press. A reader who
+          // does not already know that a determination is attached from the
+          // job's Compliance tab has been told what to do and not where.
           <p className="text-sm text-ink-body">
-            No wage determinations recorded yet. Upload one on a job first — the determination is what
-            says the job is prevailing wage at all.
+            No wage determinations recorded yet — the determination is what says the job is
+            prevailing wage at all.{" "}
+            <Link href="/jobs" className="text-link hover:underline">
+              Open the job
+            </Link>{" "}
+            and add it under Compliance.
           </p>
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
