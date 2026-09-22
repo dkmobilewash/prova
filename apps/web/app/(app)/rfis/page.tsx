@@ -149,9 +149,9 @@ export default async function RfisPage({
 
       <section className="mb-8" data-tour="rfis-raise">
         {askDraft.kind === "gone" && <AskDraftNotice what="RFI" />}
-        {/* No `today` handed down. The form's sent-date default is
-            localToday() — the browser's day, set after a click opens the
-            form — and the prop this page used to pass was never read. */}
+        {/* No `today` handed down, and the form no longer wants one: its
+            sent date opens BLANK, so a new RFI is a draft until somebody
+            says it left. The prop this page used to pass was never read. */}
         <RfiForm
           jobs={jobs}
           defaultJobId={rfiDraft?.jobId ?? activeJob ?? undefined}
