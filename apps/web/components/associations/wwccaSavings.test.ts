@@ -11,6 +11,9 @@
  *   5. THE PRICE IS THE OFFER'S. The calculator reads its $399 out of
  *      FOUNDING_OFFER.price, so the two cannot disagree.
  *   6. EVERY DEFAULT HAS A SOURCE LINE, and the sourced one has a URL.
+ *   7. THE PER-WORKER FIGURE IS saving ÷ crew, whole cents, the saving's
+ *      sign — and NULL below one person, never Infinity or NaN. The crew
+ *      size divides; it multiplies nothing.
  */
 
 import { describe, expect, it } from "vitest";
@@ -51,6 +54,8 @@ describe("the savings formula", () => {
     expect(r.withYearly).toBe(14660.4);
     expect(r.savingYearly).toBe(14084.4);
     expect(r.costsMore).toBe(false);
+    // per worker = 1,173.70 ÷ 25 = 46.948 → 46.95
+    expect(r.savingPerWorkerMonthly).toBe(46.95);
   });
 
   it("shows C Stream costing MORE when it does — a negative saving, never clamped", () => {
@@ -63,6 +68,64 @@ describe("the savings formula", () => {
     expect(r.savingMonthly).toBe(-234.46);
     expect(r.savingYearly).toBe(-2813.52);
     expect(r.costsMore).toBe(true);
+    // per worker = −234.46 ÷ 25 = −9.3784 → −9.38: the extra cost per
+    // worker, negative, never clamped.
+    expect(r.savingPerWorkerMonthly).toBe(-9.38);
+  });
+
+  describe("the per-worker figure", () => {
+    it("divides the monthly saving by the crew size and rounds once to the cent", () => {
+      // 117,370 cents ÷ 7 = 16,767.14… → 16,767 cents
+      expect(calculateSavings(inputs({ crewSize: 7 })).savingPerWorkerMonthly).toBe(167.67);
+      // A crew of one gets the whole office saving.
+      expect(calculateSavings(inputs({ crewSize: 1 })).savingPerWorkerMonthly).toBe(1173.7);
+      // A crew of 25 exactly as the page shows it.
+      expect(calculateSavings(inputs({ crewSize: 25 })).savingPerWorkerMonthly).toBe(46.95);
+    });
+
+    it("is null — not Infinity, not NaN, not 0 — for a crew size of 0, empty, text, negative or a fraction below 1", () => {
+      for (const crew of [0, "", "abc", -3, 0.5, "0", "-1", 0.999]) {
+        const r = calculateSavings(inputs({ crewSize: crew as number }));
+        expect(r.savingPerWorkerMonthly, `crew ${JSON.stringify(crew)}`).toBeNull();
+        // And the office figures are untouched by an unusable crew size.
+        expect(r.savingMonthly).toBe(1173.7);
+      }
+    });
+
+    it("is negative and exact when C Stream costs more", () => {
+      // now = 0 + 2 × 4.33 × 38 = 329.08; with = 399 + 329.08 ÷ 2 = 563.54
+      // saving = −234.46; ÷ 10 people = −23.446 → −23.45
+      const r = calculateSavings(inputs({ crewSize: 10, officeHoursPerWeek: 2, currentMonthlySpend: 0 }));
+      expect(r.costsMore).toBe(true);
+      expect(r.savingPerWorkerMonthly).toBe(-23.45);
+      // With everything at zero, the price itself is spread across the crew:
+      // −399 ÷ 4 = −99.75, exactly.
+      const zero = calculateSavings(inputs({ crewSize: 4, officeHoursPerWeek: 0, loadedHourlyCost: 0, currentMonthlySpend: 0, shareRemoved: 0 }));
+      expect(zero.savingPerWorkerMonthly).toBe(-99.75);
+    });
+
+    it("carries no floating-point dust on a large crew", () => {
+      // 117,370 cents ÷ 1,000 = 117.37 cents → 117 cents; a plain float
+      // division would print 1.1737.
+      const thousand = calculateSavings(inputs({ crewSize: 1000 }));
+      expect(thousand.savingPerWorkerMonthly).toBe(1.17);
+      expect(isWholeCents(thousand.savingPerWorkerMonthly!)).toBe(true);
+      // And the decimal case, ÷ 3: 63,717 cents ÷ 3 = 21,239 exactly.
+      const three = calculateSavings(inputs({ crewSize: 3, officeHoursPerWeek: 7.4, loadedHourlyCost: 41.25, currentMonthlySpend: 600, shareRemoved: 0.33 }));
+      expect(three.savingPerWorkerMonthly).toBe(212.39);
+      for (const crew of [3, 7, 13, 999, 12345, INPUT_MAX]) {
+        const v = calculateSavings(inputs({ crewSize: crew })).savingPerWorkerMonthly;
+        expect(v, `crew ${crew}`).not.toBeNull();
+        expect(isWholeCents(v!), `${v} for crew ${crew} is not a whole number of cents`).toBe(true);
+      }
+    });
+
+    it("never multiplies by the crew: the office figures are the same at any crew size", () => {
+      const a = calculateSavings(inputs({ crewSize: 1 }));
+      const b = calculateSavings(inputs({ crewSize: 500 }));
+      expect(a.savingPerWorkerMonthly).not.toBe(b.savingPerWorkerMonthly);
+      expect({ ...a, savingPerWorkerMonthly: null }).toEqual({ ...b, savingPerWorkerMonthly: null });
+    });
   });
 
   it("with everything at zero, C Stream costs exactly its price", () => {
@@ -110,12 +173,25 @@ describe("the savings formula", () => {
       for (const [k, v] of Object.entries(r)) {
         if (typeof v === "number") expect(Number.isFinite(v), `${k} for ${String(bad)}`).toBe(true);
       }
+      // The per-worker figure is the one field allowed to be null, and for
+      // junk crew it must be null — never NaN, never Infinity, and never a
+      // number smuggled past the loop above by not being typeof "number".
+      const perWorker = r.savingPerWorkerMonthly;
+      expect(perWorker === null || Number.isFinite(perWorker), `savingPerWorkerMonthly for ${String(bad)} is ${String(perWorker)}`).toBe(true);
+      expect(Number.isNaN(perWorker as number)).toBe(false);
     }
     // At the ceiling on every field the result is still finite, and negative
     // is allowed to be as negative as the arithmetic makes it.
     const huge = calculateSavings({ crewSize: INPUT_MAX, officeHoursPerWeek: INPUT_MAX, loadedHourlyCost: INPUT_MAX, currentMonthlySpend: INPUT_MAX, shareRemoved: 1 });
     expect(Number.isFinite(huge.nowYearly)).toBe(true);
     expect(Number.isFinite(huge.savingYearly)).toBe(true);
+    expect(Number.isFinite(huge.savingPerWorkerMonthly!)).toBe(true);
+    // A junk crew size on an otherwise sane office yields null: NaN and
+    // Infinity are both junk to sanitise() (it makes them 0), so neither is
+    // ever a divisor. A crew AT the ceiling still divides, to a finite figure.
+    expect(calculateSavings(inputs({ crewSize: Number.NaN })).savingPerWorkerMonthly).toBeNull();
+    expect(calculateSavings(inputs({ crewSize: Number.POSITIVE_INFINITY })).savingPerWorkerMonthly).toBeNull();
+    expect(calculateSavings(inputs({ crewSize: INPUT_MAX })).savingPerWorkerMonthly).toBe(0);
   });
 
   it("sanitise: strips $ , % and spaces, floors at 0, ceilings at the max", () => {
@@ -149,6 +225,14 @@ describe("every default carries its source", () => {
     expect(DEFAULTS.shareRemoved.value).toBe(0.5);
     expect(DEFAULTS.shareRemoved.kind).toBe("assumption");
     expect(DEFAULTS.crewSize.value).toBe(25);
+    // The crew size's source line must say what the field now DOES — it
+    // divides — and must not carry the old "the result is per office, not
+    // per worker" claim, which became false when the per-worker line landed.
+    expect(DEFAULTS.crewSize.kind).toBe("example");
+    expect(DEFAULTS.crewSize.source).toMatch(/divides/);
+    expect(DEFAULTS.crewSize.source).toMatch(/per-worker/);
+    expect(DEFAULTS.crewSize.source).not.toMatch(/the result is per office/);
+    expect(DEFAULTS.crewSize.source).not.toMatch(/shown for scale/i);
   });
 
   it("never uses the unsourced 8.3 hours/week figure", () => {

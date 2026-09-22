@@ -29,6 +29,19 @@ import {
  * line reads "costs you … more". Nothing here clamps at zero (see the
  * formula's header for why).
  *
+ * ── THE PER-WORKER LINE ──────────────────────────────────────────────────
+ *
+ * Directly under the result sentence, in the same live region: "That is
+ * about $47 per worker a month, across 25 people." It is the monthly saving
+ * DIVIDED by the crew size — money per worker per month and nothing else;
+ * no hours-per-worker figure exists to quote. It names the crew size so the
+ * reader can see what it was divided by, follows the result's voice when
+ * C Stream costs more ("about $9.38 per worker a month more"), and is NOT
+ * RENDERED AT ALL when `savingPerWorkerMonthly` is null — a crew size of 0,
+ * empty, text or negative — rather than showing a dash, $0 or $NaN.
+ * Whole dollars from $10 up ("about $47"); `money()`'s two decimals below
+ * that, so a small figure reads "$1.17" and never "$1".
+ *
  * ── WHY IT IS NOT A <figure> ─────────────────────────────────────────────
  *
  * The page's illustrative product panels are <figure>s captioned "Figures
@@ -90,6 +103,30 @@ function initialText(key: Field): string {
 const inputClass =
   "min-h-11 w-full rounded-md border border-line-card bg-canvas px-3 py-2 text-base tabular-nums text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 
+/** Money for the per-worker line: whole dollars from $10 up ("$47"), the
+ * ordinary two-decimal `money()` below that ("$1.17"), so a rounded figure
+ * reads as the "about $47" it is and a small one never reads as "$0". Takes
+ * the absolute value; the sentence carries the sign in words. */
+export function perWorkerMoney(value: number): string {
+  const abs = Math.abs(value);
+  return abs >= 10
+    ? abs.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 })
+    : money(abs);
+}
+
+/** The per-worker sentence, or null when there is no crew to divide by —
+ * in which case the caller renders nothing, not a placeholder. `crew` is the
+ * SANITISED crew size the figure was divided by, named in the sentence so
+ * the reader can check the division. Exported so page.test.ts can hold the
+ * wording for crew 0 and the costs-more case without a browser. */
+export function perWorkerSentence(perWorker: number | null, crew: number): string | null {
+  if (perWorker === null) return null;
+  const people = crew === 1 ? "1 person" : `${crew.toLocaleString("en-US")} people`;
+  return perWorker < 0
+    ? `That is about ${perWorkerMoney(perWorker)} per worker a month more, across ${people}.`
+    : `That is about ${perWorkerMoney(perWorker)} per worker a month, across ${people}.`;
+}
+
 export function WwccaSavingsCalculator() {
   const idBase = useId();
   const [text, setText] = useState<Record<Field, string>>(() => ({
@@ -114,6 +151,7 @@ export function WwccaSavingsCalculator() {
   const resultSentence = result.costsMore
     ? `With these numbers C Stream costs you ${money(-result.savingMonthly)} more per month, ${money(-result.savingYearly)} more per year.`
     : `With these numbers C Stream saves you ${money(result.savingMonthly)} per month, ${money(result.savingYearly)} per year.`;
+  const perWorker = perWorkerSentence(result.savingPerWorkerMonthly, inputs.crewSize);
 
   return (
     <section
@@ -188,6 +226,14 @@ export function WwccaSavingsCalculator() {
             className={`text-lg font-semibold leading-snug sm:text-xl ${result.costsMore ? "text-tag-amber-ink" : "text-ink"}`}
           >
             {resultSentence}
+            {perWorker && (
+              // Inside the live region, so a changed crew size is announced
+              // with the result it divides. Absent entirely when there is
+              // no crew to divide by.
+              <span data-per-worker className="mt-1.5 block text-base font-medium sm:text-lg">
+                {perWorker}
+              </span>
+            )}
           </p>
           <p className="mt-2 text-sm text-ink-body">
             {formatHours(result.hoursSavedPerMonth)} office hours saved per month, out of{" "}

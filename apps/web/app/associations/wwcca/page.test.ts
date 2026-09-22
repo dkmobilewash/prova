@@ -44,7 +44,8 @@ vi.mock("next/image", () => ({
 
 const { default: WwccaAssociationPage, metadata } = await import("./page");
 const { WWCCA, FOUNDING_OFFER } = await import("@/components/associations/wwcca");
-const { DEFAULTS, cStreamMonthlyPrice } = await import("@/components/associations/wwccaSavings");
+const { DEFAULTS, DEFAULT_INPUTS, calculateSavings, cStreamMonthlyPrice } = await import("@/components/associations/wwccaSavings");
+const { perWorkerMoney, perWorkerSentence } = await import("@/components/associations/WwccaSavingsCalculator");
 
 const html = renderToStaticMarkup(createElement(WwccaAssociationPage));
 const askDemoScript = await import("@/components/landing/askDemoScript");
@@ -436,6 +437,65 @@ describe("/associations/wwcca savings calculator", () => {
   it("gives screen readers the result as a sentence in a live region", () => {
     expect(calculator).toMatch(/<p role="status" aria-live="polite"[^>]*>With these numbers C Stream (saves you|costs you) \$/);
     expect(calculator).toContain("office hours saved per month");
+  });
+
+  /**
+   * THE PER-WORKER LINE. The crew size divides the monthly saving and the
+   * page says so, directly under the result and inside the same live
+   * region, naming the crew it divided by. With the defaults that is
+   * $1,173.70 ÷ 25 = $46.95, shown as "about $47" (whole dollars from $10
+   * up). The server renders the defaults only; the crew-0 and costs-more
+   * wordings are held through the exported sentence builder the component
+   * renders from, so the page cannot show "$NaN", "$Infinity" or "$0 per
+   * worker" for an empty crew box.
+   */
+  it("says what the saving is per worker, under the result and inside the live region, naming the crew size", () => {
+    const live = calculator.match(/<p role="status" aria-live="polite"[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "";
+    expect(live).toContain("With these numbers C Stream saves you");
+    expect(live).toContain("That is about $47 per worker a month, across 25 people.");
+    expect(live.indexOf("saves you")).toBeLessThan(live.indexOf("per worker"));
+    expect(live).toContain("data-per-worker");
+    // It is the arithmetic's figure, not a second one: 46.95 rounds to $47.
+    expect(calculateSavings(DEFAULT_INPUTS).savingPerWorkerMonthly).toBe(46.95);
+    // And it is in the calculator (stripped from the prose scan), not loose.
+    expect(prose).not.toContain("per worker");
+    expect(html.match(/per worker a month/g)?.length).toBe(1);
+  });
+
+  it("renders no per-worker line at all when there is no crew to divide by", () => {
+    expect(perWorkerSentence(null, 0)).toBeNull();
+    for (const crew of [0, "", "abc", -3, 0.5]) {
+      const r = calculateSavings({ ...DEFAULT_INPUTS, crewSize: crew as number });
+      expect(perWorkerSentence(r.savingPerWorkerMonthly, crew as number), `crew ${JSON.stringify(crew)}`).toBeNull();
+    }
+    // The wording the page would show never contains the failure spellings.
+    for (const s of [perWorkerSentence(46.95, 25), perWorkerSentence(-9.38, 25)]) {
+      expect(s).not.toMatch(/NaN|Infinity|undefined|null/);
+    }
+  });
+
+  it("follows the result's voice when C Stream costs more: per worker, more", () => {
+    // 2 h/wk, nothing paid today: −$234.46 a month ÷ 25 = −$9.38.
+    const r = calculateSavings({ ...DEFAULT_INPUTS, officeHoursPerWeek: 2, currentMonthlySpend: 0 });
+    expect(r.costsMore).toBe(true);
+    expect(r.savingPerWorkerMonthly).toBe(-9.38);
+    expect(perWorkerSentence(r.savingPerWorkerMonthly, 25)).toBe("That is about $9.38 per worker a month more, across 25 people.");
+    expect(perWorkerSentence(-23.45, 10)).toBe("That is about $23 per worker a month more, across 10 people.");
+    // No minus sign ever reaches the screen; the word "more" carries it.
+    expect(perWorkerSentence(-23.45, 10)).not.toContain("-$");
+    expect(perWorkerSentence(-23.45, 10)).not.toContain("−");
+  });
+
+  it("prints whole dollars from $10 up and cents below, and names one person as a person", () => {
+    expect(perWorkerMoney(46.95)).toBe("$47");
+    expect(perWorkerMoney(10)).toBe("$10");
+    expect(perWorkerMoney(1234.5)).toBe("$1,235");
+    expect(perWorkerMoney(9.99)).toBe("$9.99");
+    expect(perWorkerMoney(1.17)).toBe("$1.17");
+    expect(perWorkerMoney(0)).toBe("$0.00");
+    expect(perWorkerMoney(-9.38)).toBe("$9.38");
+    expect(perWorkerSentence(1173.7, 1)).toBe("That is about $1,174 per worker a month, across 1 person.");
+    expect(perWorkerSentence(1.17, 1000)).toBe("That is about $1.17 per worker a month, across 1,000 people.");
   });
 
   it("puts no white text on the brand yellow, and the bars are hidden from assistive tech", () => {

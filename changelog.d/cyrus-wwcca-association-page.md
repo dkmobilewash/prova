@@ -200,3 +200,56 @@ assistant section's marked slot, reused as-is.
   (the hours prompt), a dollar figure in the RFI question, partnership
   language in `AskDemo.tsx`'s own JSX, `items-center` on the grid, a command
   moved between groups, `AskCanDo` rendered alongside, and the demo removed.
+
+**The crew-size box now does something (Cyrus, 2026-09-22).** It was
+collected, labelled "Shown for scale; the result is per office, not per
+worker", and never read by the formula. Cyrus's call: keep it, and make it
+show the saving per worker per month.
+
+- **What it shows.** Directly under the result sentence, inside the same
+  live region: "That is about $47 per worker a month, across 25 people." It
+  is the monthly saving DIVIDED by the crew size — money per worker per
+  month and nothing else. There is no "hours saved per worker" figure,
+  because nobody has measured one and this page invents no statistic. The
+  crew size is named in the sentence so a reader can see what the figure was
+  divided by. The office figures (hours, rate, spend) are still per office
+  and the crew size touches none of them; a test asserts every other field
+  of the result is identical at crew 1 and crew 500.
+- **When there is no crew to divide by — 0, empty, "abc", negative, or a
+  fraction below 1 — there is no per-worker line at all.** Not a dash, not
+  $0, and never "$NaN" or "$∞". `savingPerWorkerMonthly` is `null` in that
+  case and the component renders nothing for `null`. The existing junk-input
+  test now also requires that field to be null or finite for every junk
+  value, never NaN and never Infinity.
+- **When C Stream costs more, the per-worker line says so in the result's
+  own voice:** "That is about $9.38 per worker a month more, across 25
+  people." Nothing clamps at zero, for the formula header's reason: a
+  calculator that cannot lose is an advertisement. The sign lives in the
+  word "more"; no minus sign reaches the screen.
+- **Rounding.** The saving is already whole cents, so the division is the
+  one place dust can enter and the one rounding it gets (`Math.round` of
+  cents ÷ crew), the file's cents-first discipline. Whole dollars from $10
+  up ("about $47", because $46.95 is an "about"), `money()`'s two decimals
+  below that so a small figure reads "$1.17" and never "$0". Checked by
+  hand: the defaults give $1,173.70 ÷ 25 = $46.95; ÷ 7 = $167.67; ÷ 1,000 =
+  $1.17 with no float dust; the costs-more example −$234.46 ÷ 25 = −$9.38.
+- **The source line is fixed.** "Shown for scale; the result is per office,
+  not per worker" became false the moment this landed, so it now reads: "use
+  your own. The office figures are per office, not per worker; the crew size
+  divides the monthly saving to give the per-worker line." Still an example
+  (25 is the shop size the flat price is written for), still rendered beside
+  the field with `page.test.ts` asserting it. The formula header, the
+  `crewSize` field comment (which said "the formula does not use it") and
+  the component header were all rewritten — a comment left standing after
+  the code grew past it is this repo's most expensive recurring bug.
+- **Mutation-tested red, three ways, each restored and re-run green:**
+  (1) the `crew < 1` guard removed, so the division reaches the result —
+  three tests fail: `crew 0: expected Infinity to be null`,
+  `savingPerWorkerMonthly for : expected false to be true` (the
+  finite-for-junk test), and the page guard
+  `crew 0: expected 'That is about $∞ per worker a month, …' to be null`,
+  which is the literal text the page would have shown; (2) the sign flipped
+  on the costs-more case (`Math.abs` on the saving) — three tests fail,
+  `expected 9.38 to be -9.38` and `expected 23.45 to be -23.45`; (3) the
+  component treating `null` as $0 — the page guard fails with
+  `expected 'That is about $0.00 per worker a mont…' to be null`.

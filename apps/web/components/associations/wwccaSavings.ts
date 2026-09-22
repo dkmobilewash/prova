@@ -12,11 +12,25 @@
  *   with C Stream           = C Stream's price + (hours/month − removed/month) × rate
  *   saving                  = now − with C Stream        (NEGATIVE when it costs more)
  *   yearly                  = each monthly figure × 12
+ *   per worker per month    = saving ÷ crew size         (null when crew size < 1)
  *
  * IF C STREAM COSTS MORE, THE SAVING IS NEGATIVE AND THE PAGE SHOWS IT. There
  * is no clamp at zero anywhere in this file, on purpose: a calculator that
  * cannot say "this is not worth it for you" is an advertisement with input
- * boxes, and this one is shown to the association's own committee.
+ * boxes, and this one is shown to the association's own committee. The
+ * per-worker figure follows the saving's sign for the same reason: when C
+ * Stream costs more, it is the extra cost per worker, and the page says so.
+ *
+ * THE CREW SIZE DIVIDES; IT NEVER MULTIPLIES. Every office figure above is
+ * per office — the hours, the rate and the spend are the payroll office's,
+ * not one per worker — so the crew size touches none of them. Its one job
+ * is the last line: the monthly saving spread across the people on the
+ * crew, so a reader can put the office figure beside a headcount they know.
+ * That is money per worker per month and nothing else; there is no
+ * "hours saved per worker" here because nobody has measured one. A crew
+ * size below 1 (empty, zero, text, negative — `sanitise()` makes them all 0)
+ * has nothing to divide by, and the result is `null`, never Infinity or NaN,
+ * and the page renders no per-worker line at all rather than a dash or $0.
  *
  * ── WHAT IS AND IS NOT A FACT HERE ───────────────────────────────────────
  *
@@ -50,8 +64,9 @@ export const WEEKS_PER_MONTH = 4.33;
 export const INPUT_MAX = 1_000_000;
 
 export interface SavingsInputs {
-  /** People on the crew. Shown for scale; the formula does not use it — see
-   * the note on `crewSize` in DEFAULTS. */
+  /** People on the crew. The one input the office figures do not use: it
+   * DIVIDES the monthly saving to give `savingPerWorkerMonthly`, and touches
+   * nothing else — see the note on `crewSize` in DEFAULTS. */
   crewSize: number;
   /** Office hours per week spent on certified payroll, fringe reports and
    * pay applications. */
@@ -81,6 +96,11 @@ export interface SavingsResult {
   savingYearly: number;
   /** True when C Stream costs more than the current setup. */
   costsMore: boolean;
+  /** `savingMonthly ÷ crew size`, dollars per worker per month rounded to
+   * the cent, with the saving's sign (negative when C Stream costs more).
+   * `null` when the sanitised crew size is below 1 — there is nothing to
+   * divide by, and the component renders no per-worker line for `null`. */
+  savingPerWorkerMonthly: number | null;
 }
 
 /**
@@ -104,14 +124,17 @@ export interface SavingsDefault {
  * changed without its provenance changing in the same place.
  */
 export const DEFAULTS: Record<keyof SavingsInputs, SavingsDefault> = {
-  // For scale only: the figures below are per office, not per worker, and
-  // the formula never multiplies by this. It is on the page because the
-  // visitor's first question is "for a crew of what size?", and 25 is the
-  // size of shop the founding offer's flat price is written for.
+  // The figures below are per office, not per worker, and the formula never
+  // multiplies by this. It DIVIDES by it, once, for the per-worker line
+  // under the result ("about $47 per worker a month, across 25 people"),
+  // so the reader can put the office saving beside a headcount they know.
+  // 25 is the size of shop the founding offer's flat price is written for.
+  // An example, not a source: the visitor's own crew is the right number.
   crewSize: {
     value: 25,
     kind: "example",
-    source: "use your own. Shown for scale; the result is per office, not per worker.",
+    source:
+      "use your own. The office figures are per office, not per worker; the crew size divides the monthly saving to give the per-worker line.",
   },
   // NOT the "8.3 hours/week" figure that circulated internally, which has no
   // source. An example the visitor replaces with their own.
@@ -190,6 +213,7 @@ function toCents(dollars: number): number {
 }
 
 export function calculateSavings(raw: SavingsInputs, price = cStreamMonthlyPrice()): SavingsResult {
+  const crew = sanitise(raw.crewSize);
   const hoursPerWeek = sanitise(raw.officeHoursPerWeek);
   const rate = sanitise(raw.loadedHourlyCost);
   const current = sanitise(raw.currentMonthlySpend);
@@ -204,6 +228,13 @@ export function calculateSavings(raw: SavingsInputs, price = cStreamMonthlyPrice
   const withCents = toCents(price) + toCents((officeHoursPerMonth - hoursSavedPerMonth) * rate);
   const savingCents = nowCents - withCents;
 
+  // Per worker: the UNROUNDED-dollar saving is already whole cents, so the
+  // division is the one place dust can enter and the one rounding it gets.
+  // Below one person there is nothing to divide by — `sanitise()` has made
+  // empty, text and negative crew sizes 0 — and the answer is null, never a
+  // division by zero dressed up as a number.
+  const savingPerWorkerCents = crew >= 1 ? Math.round(savingCents / crew) : null;
+
   return {
     officeHoursPerMonth: Math.round(officeHoursPerMonth * 100) / 100,
     hoursSavedPerMonth: Math.round(hoursSavedPerMonth * 100) / 100,
@@ -214,5 +245,6 @@ export function calculateSavings(raw: SavingsInputs, price = cStreamMonthlyPrice
     withYearly: (withCents * 12) / 100,
     savingYearly: (savingCents * 12) / 100,
     costsMore: savingCents < 0,
+    savingPerWorkerMonthly: savingPerWorkerCents === null ? null : savingPerWorkerCents / 100,
   };
 }
