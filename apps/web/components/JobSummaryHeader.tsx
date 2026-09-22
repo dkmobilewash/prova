@@ -60,7 +60,9 @@ export function JobSummaryHeader({
         )}
         <div>
           <dt className="text-xs text-ink-muted">Crew</dt>
-          <dd className="text-ink">
+          {/* Assigned OR has logged hours — see crewHeadcount. It counted
+              assignments only, and showed 0 above 35 logged hours. */}
+          <dd className="text-ink" title="Assigned to this job, or has logged hours on it">
             {summary.crewSize} {summary.crewSize === 1 ? "person" : "people"}
           </dd>
         </div>

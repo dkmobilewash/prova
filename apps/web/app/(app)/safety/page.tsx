@@ -117,7 +117,9 @@ export default async function SafetyPage({
 
         {incidents.length === 0 ? (
           <p className="text-ink-body">
-            No cases logged for {activeYear}. That is the good outcome — but log the first aid ones too. A
+            {/* The StatusLine directly above already says "No cases logged
+                for <year>." — this paragraph used to repeat it word for word. */}
+            That is the good outcome — but log the first aid ones too. A
             first-aid case that later turns into lost time is only defensible if it was written down the day it
             happened.
           </p>
