@@ -101,6 +101,12 @@ const isProtectedRoute = createRouteMatcher([
 // WWCCA members, and a sign-up page you must sign in to read recruits
 // nobody. It reads no database and renders the same for everyone.
 //
+// /associations/wwcca is deliberately NOT protected here either, for the
+// same reason: the association's committee must be able to open it without
+// an account. Public is not the same as published — it is noindex and
+// linked from nowhere until the association approves the use of its name
+// (app/associations/wwcca/page.test.ts enforces both).
+//
 // /api/integrations/webhooks/[provider] is deliberately NOT protected here.
 // A provider's servers have no Clerk session, so requiring one would reject
 // every real delivery. That route is written on the assumption that anyone
