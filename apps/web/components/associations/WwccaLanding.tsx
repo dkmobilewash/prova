@@ -136,6 +136,20 @@ const NOT_YET: { title: string; body: string }[] = [
   },
 ];
 
+/**
+ * Beside the WH-347 panel in the hero. Moved up with the panel from the
+ * panel section, receipts and all; change a line only with its feature.
+ */
+const HERO_PAYROLL_POINTS: string[] = [
+  // lib/wh347.ts buildWh347 — groups the job's TimeEntry rows by worker and
+  // day; the day columns and S/O rows are in OUTPUTS below, not repeated here
+  "Built from the hours logged against the job that week, grouped by worker and day — not retyped from a timesheet",
+  // FringeRateSchedule: baseWage + pension + vacation + healthWelfare + training, effectiveFrom
+  "Fringe rates by craft and effective date — pension, vacation, health & welfare, training",
+  // Wh347BlockingField / WH347_BLOCKING_FIELD_REASON
+  "When a field is missing it names the field and marks the week not ready to file, instead of printing a form that is wrong",
+];
+
 /** One panel beside the words it is evidence for. `flip` alternates the side
  * at desktop only; on a phone the panel always follows the words. */
 function PanelRow({
@@ -193,26 +207,81 @@ export function WwccaLanding() {
           Font floor 2.25rem at phone width, and every headline word is short.
           At 320px PageShell leaves 272px of content; a long word at a large
           clamp is what widened the landing page's layout viewport to 342px
-          on 2026-09-21. */}
+          on 2026-09-21. The floor is unchanged by the two-column layout
+          below: under `lg` the grid is one column and the headline has the
+          full content width, exactly as before. */}
       <section className="py-12 sm:py-16 lg:py-20">
         <p className="text-sm font-semibold uppercase tracking-wide text-brand">{WWCCA.eyebrow}</p>
-        <h1 className="mt-4 max-w-4xl text-[clamp(2.25rem,7vw,4.5rem)] font-semibold leading-[1.05] tracking-[-0.02em] text-ink">
-          The week&rsquo;s hours, entered once.
-        </h1>
-        <p className="mt-6 max-w-3xl text-lg leading-relaxed text-ink-body sm:text-xl">
-          {/* Receipts: OUTPUTS above, one per document. */}
-          On a union public job, the same hours end up on the certified payroll, the trust-fund
-          remittance and the apprentice-ratio check &mdash; and the pay application is built by hand
-          from the schedule of values. In C Stream the hours are logged once and all three are built
-          from them, and the pay application comes off the same job&rsquo;s schedule of values.
-        </p>
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-          <Link href="/sign-up" className={cta}>
-            Sign up
-          </Link>
-          <a href="#founding" className={ctaQuiet}>
-            The founding-member offer
-          </a>
+        {/* TWO COLUMNS AT `lg`, because one column left the right half of a
+            desktop screen bare: a left-aligned headline, a paragraph and two
+            buttons, then ~700px of background beside them. That is the
+            founder's most repeated complaint about this product, and the
+            landing page had the same hole until #404.
+
+            The right half is the page's own claim made visible — the week's
+            hours already turned into a WH-347 by `buildWh347`. Certified
+            payroll rather than the pay application the landing page leads
+            with, because this page's headline is about HOURS and the pay
+            application is the one document on this page NOT built from them
+            (see OUTPUTS). The panel is moved up from the panel section, not
+            copied: it appears once on the page.
+
+            `items-start`, NOT `items-center`, for the landing page's reason
+            (see the note at its hero grid): centring a short column against
+            a tall panel splits the surplus into a hole ABOVE the copy — 207px
+            of it between headline and subhead, the first time. Top-aligned,
+            the words sit where the eye starts and the panel's extra height
+            falls below the buttons. Do not close any gap with padding.
+
+            Under `lg` it is one column and the panel follows the buttons, so
+            on a phone the headline, the paragraph and Sign up come first. */}
+        <div className="mt-4 grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,540px)] lg:gap-14">
+          <div className="min-w-0">
+            <h1 className="text-[clamp(2.25rem,7vw,4.5rem)] font-semibold leading-[1.05] tracking-[-0.02em] text-ink">
+              The week&rsquo;s hours, entered once.
+            </h1>
+            <p className="mt-6 max-w-3xl text-lg leading-relaxed text-ink-body sm:text-xl">
+              {/* Receipts: OUTPUTS above, one per document. */}
+              On a union public job, the same hours end up on the certified payroll, the trust-fund
+              remittance and the apprentice-ratio check &mdash; and the pay application is built by hand
+              from the schedule of values. In C Stream the hours are logged once and all three are built
+              from them, and the pay application comes off the same job&rsquo;s schedule of values.
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+              <Link href="/sign-up" className={cta}>
+                Sign up
+              </Link>
+              <a href="#founding" className={ctaQuiet}>
+                The founding-member offer
+              </a>
+            </div>
+            {/* What the panel beside it shows, in words. The column needs
+                real content to be as tall as the panel: with only the
+                headline, paragraph and buttons it was ~407px against the
+                panel's ~726px at 1500px wide, and the ~320px under the
+                buttons was the landing page's third "looks empty" — the
+                one it fixed with its paperwork list, not with padding.
+                Two of these three lines sat beside this panel when it was
+                lower down the page; receipts in HERO_PAYROLL_POINTS. */}
+            <div className="mt-10 border-t border-line-card pt-6">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                The certified payroll, from those hours
+              </h2>
+              <ul className="mt-4 flex flex-col gap-3">
+                {HERO_PAYROLL_POINTS.map((point) => (
+                  <li key={point} className="flex gap-3 text-sm leading-relaxed text-ink-body sm:text-base">
+                    <span aria-hidden className="mt-0.5 shrink-0 text-brand">
+                      &#8212;
+                    </span>
+                    <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <div className="min-w-0">
+            <CertifiedPayrollPanel />
+          </div>
         </div>
       </section>
 
@@ -248,20 +317,6 @@ export function WwccaLanding() {
 
         <div className="mt-12 flex flex-col gap-16 sm:gap-24">
           <PanelRow
-            heading="Certified payroll from hours already logged"
-            lead="Every week, every worker, every prevailing-wage job. Built from the time entries rather than retyped from timesheets."
-            points={[
-              // lib/wh347.ts — WH347_DAY_COUNT = 7, S/O rows
-              "A WH-347 sheet with seven dated day columns and straight time and overtime on their own rows",
-              // FringeRateSchedule: baseWage + pension + vacation + healthWelfare + training, effectiveFrom
-              "Fringe rates by craft and effective date — pension, vacation, health & welfare, training",
-              // Wh347BlockingField / WH347_BLOCKING_FIELD_REASON
-              "When a field is missing it names the field and marks the week not ready to file, instead of printing a form that is wrong",
-            ]}
-            panel={<CertifiedPayrollPanel />}
-          />
-          <PanelRow
-            flip
             heading="Apprentice ratios, on the day you go over"
             lead="A compliant month does not undo a Tuesday you ran two apprentices to one journeyman. The check is daily, in hours, off the hours the crew logged."
             points={[
@@ -275,6 +330,7 @@ export function WwccaLanding() {
             panel={<ApprenticeRatioPanel />}
           />
           <PanelRow
+            flip
             heading="The pay application, off the schedule of values"
             lead="The schedule of values is the job's own line items, so the application is built from the job instead of retyped into the GC's forms."
             points={[
@@ -288,7 +344,6 @@ export function WwccaLanding() {
             panel={<PayApplicationPanel />}
           />
           <PanelRow
-            flip
             heading="Whether the job is making money, while it is still running"
             lead="The same hours, costed at burdened rates against the line they were logged to."
             points={[

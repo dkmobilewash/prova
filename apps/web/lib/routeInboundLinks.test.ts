@@ -70,6 +70,8 @@ const REACHED_FROM_OUTSIDE: Record<string, string> = {
   "/jobs/new/[jobId]/review":
     "the bid wizard's old step 3, removed by #413 and kept as a redirect to /jobs/[id] so an open tab or history entry does not 404; delete the page and this line together",
   "/pilot": "the public pilot page, handed to prospects as a bare link",
+  "/associations/wwcca":
+    "the WWCCA member page, unlinked ON PURPOSE until the association approves the use of its name; shown to its committee as a bare link. app/associations/wwcca/page.test.ts fails if anything links to it",
   "/quickbooks/disconnected": "Intuit's disconnect landing URL, registered in Intuit's developer dashboard",
   "/sign-in/[[...sign-in]]": "Clerk's sign-in route, reached by Clerk's own redirects and the middleware",
   "/sign-up/[[...sign-up]]": "Clerk's sign-up route, reached by Clerk's own redirects",

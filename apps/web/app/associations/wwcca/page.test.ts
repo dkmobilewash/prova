@@ -76,7 +76,15 @@ describe("/associations/wwcca is not discoverable", () => {
    */
   it("is linked from nowhere in the app", () => {
     const roots = ["apps/web/app", "apps/web/components", "apps/web/lib", "apps/web/public", "packages/ui/src"];
-    const allowed = ["apps/web/app/associations/", "apps/web/components/associations/"];
+    const allowed = [
+      "apps/web/app/associations/",
+      "apps/web/components/associations/",
+      // The inbound-link census NAMES this route in its list of pages reached
+      // from outside the app — the opposite of a link, and a test file that
+      // renders nothing. Exempted by exact path, not by "*.test.ts", so a
+      // test that did start rendering a link somewhere is still caught.
+      "apps/web/lib/routeInboundLinks.test.ts",
+    ];
     const files: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
@@ -182,6 +190,30 @@ describe("/associations/wwcca prints one number, the one that was set", () => {
     const figures = html.match(/<figure/g)?.length ?? 0;
     expect(figures).toBe(4);
     expect(html.match(/Figures are illustrative/g)?.length).toBe(figures);
+  });
+});
+
+describe("/associations/wwcca fills the hero's right half", () => {
+  /** The hero is everything before the first </section>. Its right half was
+   * bare at desktop width; the WH-347 panel is what fills it. Asserted on
+   * the markup, so moving the panel back down the page fails here. Layout
+   * itself (top alignment, stacking at 320/375) is only measurable in a real
+   * browser — e2e/specs/public-layout.public.spec.ts walks this page at
+   * those widths. */
+  const hero = html.slice(0, html.indexOf("</section>"));
+
+  it("puts the certified-payroll panel beside the headline, top-aligned", () => {
+    expect(hero).toContain("The week’s hours, entered once.");
+    expect(hero).toContain("Form WH-347");
+    expect(hero.match(/<figure/g)?.length).toBe(1);
+    expect(hero).toMatch(/class="[^"]*\bitems-start\b[^"]*lg:grid-cols-/);
+    expect(hero).not.toMatch(/class="[^"]*\bitems-center\b[^"]*lg:grid-cols-/);
+  });
+
+  it("shows the WH-347 once on the page, not again further down", () => {
+    const figures = html.match(/<figure[\s\S]*?<\/figure>/g) ?? [];
+    expect(figures).toHaveLength(4);
+    expect(figures.filter((figure) => figure.includes(">Form WH-347<"))).toHaveLength(1);
   });
 });
 
