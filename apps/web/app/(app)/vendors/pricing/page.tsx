@@ -13,6 +13,7 @@ import {
   priceMovement,
   unitLabel,
 } from "@/components/vendorPricing";
+import { viewerToday } from "@/lib/viewerToday";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ export default async function VendorPricingPage() {
   // what has expired is the UTC date. (The user's own calendar date is only
   // used for FORM DEFAULTS, in components mounted by a click — see
   // components/localToday.ts.)
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await viewerToday();
 
   const quotes: QuoteData[] = rows.map((row) => ({
     id: row.id,

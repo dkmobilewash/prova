@@ -65,3 +65,30 @@ export function certifiedPayrollWeekWindow(weekStart: Date): { gte: Date; lte: D
   lte.setUTCDate(lte.getUTCDate() + 6);
   return { gte, lte };
 }
+
+/** The week the certified-payroll page opens on.
+ *
+ * A `?weekStart=` the reader asked for always wins. WITHOUT one, the page
+ * used to open on the CURRENT week — and a contractor's hours are almost
+ * always last week's, because payroll is run after the week closes. So the
+ * first thing a new user saw was "No time entries logged on this job for
+ * this week." with the hours one click away behind "← Previous week" and
+ * nothing saying so. Found by clicking a demo job whose 35.3 hours sat in
+ * the week before.
+ *
+ * So with no request it opens on the week of the job's LATEST logged hours,
+ * falling back to the current week only when the job has none.
+ * `latestEntryDate` is expected to be capped at the end of the current week
+ * by the caller, so a mistyped future date cannot become the default.
+ */
+export function openingCertifiedPayrollWeek(input: {
+  requested: string | undefined;
+  latestEntryDate: Date | null;
+  now: Date;
+}): Date {
+  if (input.requested) {
+    const requested = new Date(`${input.requested}T00:00:00.000Z`);
+    if (!Number.isNaN(requested.getTime())) return certifiedPayrollWeekStart(requested);
+  }
+  return certifiedPayrollWeekStart(input.latestEntryDate ?? input.now);
+}

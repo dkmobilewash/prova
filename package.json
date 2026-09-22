@@ -13,6 +13,7 @@
     "test": "turbo run test",
     "test:db": "pnpm --filter @prova/web run test:db",
     "test:e2e": "pnpm --filter @prova/web run test:e2e:local",
+    "test:e2e:public": "pnpm --filter @prova/web run test:e2e:public",
     "db:generate": "pnpm --filter @prova/db generate",
     "db:migrate": "pnpm --filter @prova/db migrate:dev",
     "db:studio": "pnpm --filter @prova/db studio",

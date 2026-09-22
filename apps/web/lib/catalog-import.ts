@@ -1,4 +1,4 @@
-import { TRADE_SCOPES } from "./actions/shared";
+import { TRADE_SCOPES } from "./trade-scopes";
 
 /**
  * Turning a price list into catalog entries.

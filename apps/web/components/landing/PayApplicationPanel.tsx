@@ -101,26 +101,22 @@ function buildPayApplication() {
   );
   const withheld = (amount: number) => Number(((amount * RETAINAGE_PERCENT) / 100).toFixed(2));
 
+  // No `retainagePercent` here: #409 took it out of `PayAppSummaryInput`
+  // on purpose, and its comment there is worth reading — a rate within
+  // reach of the function that computes retainage invites deriving the
+  // figure live, when the invoice's withheld amount is a snapshot taken
+  // at the rate in force that period. This panel keeps the rate only for
+  // `withheld()` above, which is standing in for that snapshot.
+  //
+  // That column is named in `lib/pay-application.ts`, not here, and the
+  // omission is deliberate: `retainage-single-source.test.ts` greps RAW
+  // source for the column name, so prose mentioning it registers as a
+  // file that READS it. Naming it here turned that census red with no
+  // code change at all. The census is right to be strict and its
+  // comment-blindness is its own defect — filed separately rather than
+  // patched from inside an unrelated hotfix.
   const summary = calculatePayAppSummary({
     lineItems,
-    // `retainagePercent` WAS HERE AND IT DOES NOT TYPECHECK. #409 deleted
-    // that field from PayAppSummaryInput — it was supplied by every caller
-    // and read by nothing, which is this repo's "written, documented and
-    // never called" shape in the version that costs money: a live rate
-    // inside the function that computes retainage is an invitation to
-    // derive the figure from it, and the withheld column on Invoice is a
-    // SNAPSHOT that must never be recomputed. (Named in prose rather than
-    // spelled exactly: retainage-single-source.test.ts matches that column
-    // name as a bare token and does not strip comments, so writing it here
-    // adds this file to a census allowlist over a note about it.) #404 was
-    // written before that
-    // landed and merged after it, so `main` itself has not typechecked
-    // since. Deleting the line changes no figure on this panel — nothing
-    // ever read it — and RETAINAGE_PERCENT still drives `withheld()` two
-    // lines up, which is where this panel's illustrative numbers come from.
-    //
-    // Fixed from another branch because main was red and nothing could go
-    // green behind it; reported rather than done quietly.
     previousRetainageWithheld: withheld(previousAmount),
     thisPeriodRetainageWithheld: withheld(thisPeriodAmount),
   });

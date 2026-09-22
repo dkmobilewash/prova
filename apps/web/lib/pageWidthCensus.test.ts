@@ -207,18 +207,18 @@ const UNCONVERTED_PAGES = [
   "apps/web/app/(app)/union-compliance/remittance/page.tsx",
   "apps/web/app/(app)/vendors/pricing/page.tsx",
   "apps/web/app/esign/[token]/page.tsx",
-  // The public marketing page, outside the app shell entirely — no sidebar,
-  // full-bleed sections, and being rewritten in #404 as this landed. It is on
-  // the list rather than exempted by a pattern because an exemption pattern
-  // is how the next new page escapes too.
+  // `apps/web/app/page.tsx` — the public marketing page — WAS here, with the
+  // note that it was "being rewritten in #404 as this landed". #404 landed
+  // and converted it, so the line is gone and the count below dropped by one.
+  // The list only shrinks; that is the whole discipline.
   //
-  // AND IT IS THE REASON THIS CENSUS WALKS THE FILESYSTEM. The pre-scan that
-  // built this list used `git ls-files 'apps/web/app/**/page.tsx'`, whose
-  // `**/` requires at least one directory, so a route file at the root of
-  // `app/` was never a candidate and the list was written one short. The walk
-  // found it on the first run. Nothing is ever missing from a directory you
-  // do not walk — including the one you thought you were walking.
-  "apps/web/app/page.tsx",
+  // ITS OTHER HALF IS WHY THIS CENSUS WALKS THE FILESYSTEM, and that lesson
+  // outlives the entry. The pre-scan that built this list used
+  // `git ls-files 'apps/web/app/**/page.tsx'`, whose `**/` requires at least
+  // one directory, so a route file at the ROOT of `app/` was never a
+  // candidate and the list was written one short. The walk found it on the
+  // first run. Nothing is ever missing from a directory you do not walk —
+  // including the one you thought you were walking.
   "apps/web/app/pilot/page.tsx",
   "apps/web/app/portal/[token]/jobs/[jobId]/page.tsx",
   "apps/web/app/portal/[token]/page.tsx",
@@ -316,7 +316,7 @@ describe("page width census", () => {
       "the allowance list changed size. It is allowed to SHRINK as pages move " +
         "to PageShell — delete the line. Adding a line puts a new page back on " +
         "its own width decision, which is the thing this census exists to stop.",
-    ).toBe(52);
+    ).toBe(51);
     expect(new Set(UNCONVERTED_PAGES).size).toBe(UNCONVERTED_PAGES.length);
   });
 
