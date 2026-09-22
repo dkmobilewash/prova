@@ -114,6 +114,39 @@ export default async function AssistantAuditPage() {
             against those limits — a document extraction costs many times what a question does, so a row count is the
             wrong instrument for it.
           </p>
+          {/* THE NUMBER-PROVENANCE GUARD'S FIRING RATE (lib/ask/provenance.ts).
+              Every figure an answer says out loud has to appear in a tool
+              result of that same question or in the question itself; one
+              that does not gets the whole answer held back.
+
+              On the page because a guard whose firing rate nobody can see
+              is a guard nobody trusts. Zero for a month is either "the
+              model is behaving" or "the check is broken", and those are
+              indistinguishable unless the number is somewhere a person
+              looks — which is the same reasoning as the `readable` flag
+              above, where printing a reassuring zero was the defect.
+
+              The FIGURES are deliberately not here. What was held back was
+              held back because this app could not vouch for it, and listing
+              it on a screen would be showing it after all; the offending
+              number and the question go to the runtime log. */}
+          <p className="mb-3 text-sm text-ink-body" data-ask="usage-blocked">
+            {usage.blockedAnswers === 0 ? (
+              <>
+                <span className="text-tag-green-ink">No answers were held back.</span> Every figure the
+                assistant said out loud traced back to something it had read.
+              </>
+            ) : (
+              <>
+                <span className="text-tag-amber-ink">
+                  {usage.blockedAnswers} {usage.blockedAnswers === 1 ? "answer was" : "answers were"} held back
+                </span>{" "}
+                because a number in {usage.blockedAnswers === 1 ? "it" : "them"} could not be traced back to
+                your records. The person was told to ask again; nothing wrong was shown. The figure and the
+                question are in this deployment&apos;s server log.
+              </>
+            )}
+          </p>
           </>
         ) : (
           <p className="mb-3 text-sm text-red-300" data-ask="usage-unreadable">

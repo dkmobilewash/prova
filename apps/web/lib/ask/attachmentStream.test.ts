@@ -28,7 +28,19 @@ vi.mock("@prova/integrations", () => ({
   },
 }));
 
-vi.mock("./usage", () => ({
+/* Partial, via importOriginal, rather than a two-key object: `streamAnswer`
+   also reads PROVENANCE_OUTCOME from here for the number-provenance guard,
+   and a mock that omits it throws at the moment the guard fires rather than
+   at import — so the failure lands on whichever test happens to trip it.
+   The two functions below are still replaced; nothing else is.
+
+   Worth knowing while reading this file: the scripted answer "Oct 10." has
+   a figure in it and no tool result behind it, so on the questions here
+   that carry no attachment the guard holds it back. That is correct and it
+   is not what these tests assert — they assert what `streamAnswer` HANDS
+   the model, which happens before any of it. */
+vi.mock("./usage", async (importOriginal) => ({
+  ...((await importOriginal()) as object),
   askAllowance: async () => ({ ok: true }),
   recordAskUsage: (...args: unknown[]) => recordAskUsage(...(args as [])),
 }));

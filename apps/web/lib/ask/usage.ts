@@ -128,6 +128,26 @@ export async function askAllowance(companyId: string, userId: string, now: Date 
 export type AskUsageOutcome = "answered" | "proposal" | "clarify" | `error:${string}`;
 
 /**
+ * The outcome written when the number-provenance guard holds an answer back
+ * (lib/ask/provenance.ts).
+ *
+ * A STRING IN AN EXISTING COLUMN RATHER THAN A NEW TABLE, deliberately.
+ * `outcome` is free-form precisely so a new reason needs no migration, and
+ * this is exactly that case. It buys the RATE — how often the guard fires,
+ * on /settings/assistant, which is the figure that decides whether anybody
+ * trusts it — with no schema change and nothing for the demo database to
+ * drift behind.
+ *
+ * What it does NOT buy is the detail. The offending figure and the question
+ * go to the runtime log and nowhere else; storing a figure the app has just
+ * decided it cannot vouch for, in a table an owner reads, would be putting
+ * the untraceable number back on a screen by another route. If the rate
+ * turns out to be worth investigating case by case, that is a table and a
+ * migration and a decision, not a column quietly repurposed.
+ */
+export const PROVENANCE_OUTCOME: AskUsageOutcome = "error:number_provenance";
+
+/**
  * Which model caller a row is.
  *
  * Until 2026-09-14 this table held Ask and nothing else, while three other
@@ -241,6 +261,20 @@ export type UsageSummary = {
   /** Every model call in the window, all features. This is the one that
    * maps to the Anthropic invoice, which is what the column was for. */
   calls: number;
+  /**
+   * Answers the number-provenance guard held back, out of `questions`.
+   *
+   * THE RATE IS THE POINT. A guard nobody can see the firing rate of is a
+   * guard nobody trusts: at zero for a month it is either working or
+   * broken, and those look identical from the outside; climbing, it is
+   * either catching a real regression in the model's behaviour or refusing
+   * good answers, and which one it is decides whether to tighten the rule
+   * or the prompt. Neither question can be asked without this number.
+   *
+   * Counted from the same rows as everything else on that page, so the
+   * figure and the limits cannot disagree about what a question is.
+   */
+  blockedAnswers: number;
   inputTokens: number;
   outputTokens: number;
   /** Per feature, so the bill can be attributed rather than just totalled.
@@ -273,7 +307,13 @@ export async function usageSummary(companyId: string, now: Date = new Date()): P
   // rendered.
   const groups = await prisma.askUsage
     .groupBy({
-      by: ["userId", "feature"],
+      // `outcome` is grouped BY rather than counted in a second query, so
+      // the held-back figure comes off the same rows as the call and token
+      // totals beside it. Everything below sums across groups already, so
+      // splitting them further changes no other number on the page — which
+      // is the whole reason this was cheaper than another round trip on a
+      // page somebody opens to find out why the box is behaving oddly.
+      by: ["userId", "feature", "outcome"],
       where: { companyId, createdAt: { gte: since } },
       _count: { _all: true },
       _sum: { inputTokens: true, outputTokens: true },
@@ -287,6 +327,7 @@ export async function usageSummary(companyId: string, now: Date = new Date()): P
       readable: false,
       questions: 0,
       calls: 0,
+      blockedAnswers: 0,
       inputTokens: 0,
       outputTokens: 0,
       byFeature: [],
@@ -327,6 +368,7 @@ export async function usageSummary(companyId: string, now: Date = new Date()): P
     readable: true,
     questions: groups.reduce((n, g) => n + (g.feature === "ask" ? g._count._all : 0), 0),
     calls: groups.reduce((n, g) => n + g._count._all, 0),
+    blockedAnswers: groups.reduce((n, g) => n + (g.outcome === PROVENANCE_OUTCOME ? g._count._all : 0), 0),
     inputTokens: groups.reduce((n, g) => n + (g._sum.inputTokens ?? 0), 0),
     outputTokens: groups.reduce((n, g) => n + (g._sum.outputTokens ?? 0), 0),
     byFeature: [...perFeature.values()].sort((a, b) => b.calls - a.calls),

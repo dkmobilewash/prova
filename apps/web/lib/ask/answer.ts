@@ -13,7 +13,8 @@ import {
 } from "@prova/integrations";
 import type { Principal } from "@/lib/permissions";
 import { accessContext, refusalFor } from "./access";
-import { askAllowance, recordAskUsage, type AskUsageOutcome } from "./usage";
+import { askAllowance, PROVENANCE_OUTCOME, recordAskUsage, type AskUsageOutcome } from "./usage";
+import { checkNumberProvenance, describeUnaccounted } from "./provenance";
 import {
   type BidResearcher,
   canRunCommand,
@@ -238,6 +239,81 @@ export function forModel(data: unknown): unknown {
     note: `Showing the first ${MAX_ROWS_PER_TOOL} of ${count}. Say that the list is longer than what you are showing, and use count for how many there are.`,
   };
 }
+
+/**
+ * The exact string a read tool's result reaches the model as.
+ *
+ * Lifted out of the executor below so the provenance corpus can build the
+ * same BYTES rather than a lookalike. The number-provenance guard asks
+ * "could the model have read this figure from what it was given", and the
+ * answer depends on `forModel`'s row cap and on the summary being merged in
+ * — so a corpus that serialised its fixtures its own way would be grading
+ * the guard against a source the model never sees.
+ */
+export function toolResultContent(result: { data: unknown; summary?: Record<string, number> }): string {
+  const payload = forModel(result.data);
+  return JSON.stringify(
+    result.summary && typeof payload === "object" && payload !== null
+      ? { ...result.summary, ...payload }
+      : payload,
+  );
+}
+
+/**
+ * WHAT THE PERSON WILL ACTUALLY READ, assembled from the stream exactly as
+ * `components/AskPanel.tsx` assembles it.
+ *
+ * This exists because of the scope half of CLAUDE.md's census scar: a check
+ * can have the right pattern and be looking at the wrong text, and no size
+ * assertion sees that. The number-provenance guard is only worth anything if
+ * the string it checks is the string that reaches the screen — not the raw
+ * concatenation of every `text` delta, which includes the "let me check…"
+ * preamble that `reset` throws away.
+ *
+ * So the four rules are AskPanel's four rules, and
+ * `provenanceScope.test.ts` fails the build if that component stops
+ * following them:
+ *
+ *   - text before `answering` is PROVISIONAL and goes to the progress slot;
+ *   - `answering` clears the progress and makes what follows the answer;
+ *   - `reset` clears both, because what streamed was preamble;
+ *   - at `done`, an answer that never got `answering` — a refusal, a
+ *     clarifying question, anything that called no tool — is whatever is in
+ *     the progress slot.
+ */
+export type ShownAnswer = { provisional: boolean; progress: string; answer: string };
+
+export const NOTHING_SHOWN: ShownAnswer = { provisional: true, progress: "", answer: "" };
+
+export function showing(shown: ShownAnswer, event: { type: string; delta?: string }): ShownAnswer {
+  switch (event.type) {
+    case "answering":
+      return { ...shown, provisional: false, progress: "" };
+    case "reset":
+      return { ...shown, progress: "", answer: "" };
+    case "text":
+      return shown.provisional
+        ? { ...shown, progress: shown.progress + (event.delta ?? "") }
+        : { ...shown, answer: shown.answer + (event.delta ?? "") };
+    default:
+      return shown;
+  }
+}
+
+/** The text on screen once the stream has ended. */
+export function shownText(shown: ShownAnswer): string {
+  return (shown.provisional && shown.progress ? shown.progress : shown.answer).trim();
+}
+
+/** Said when the guard holds an answer back.
+ *
+ * IT DOES NOT REPEAT THE FIGURE, and that is the point rather than an
+ * oversight: the whole reason the answer is being withheld is that its
+ * numbers are not ones this app can vouch for, and putting one in the
+ * refusal would be showing it after all. The offending figure goes to the
+ * runtime log, where an engineer reads it and a GC does not. */
+export const PROVENANCE_REFUSAL =
+  "That answer had a number in it I couldn't trace back to your records, so I'm not showing it. Ask again, or open the page the figure would have come from.";
 
 /** Turns a failure from the conversation into something worth reading on a
  * phone. The underlying reasons are deliberately not shown verbatim — they
@@ -595,6 +671,12 @@ export async function* streamAnswer(
 
   const citations: AskCitation[] = [];
   const toolsUsed: ToolName[] = [];
+  /** Every `content` string the model was handed this turn — the sources
+   * the number-provenance guard checks the answer against. The strings, not
+   * the objects: what the model could read is the JSON it was sent, after
+   * `forModel` capped the rows, and a guard checking a richer set than the
+   * model was given would pass figures the model could not have seen. */
+  const toolTexts: string[] = [];
   // Set synchronously, before the first await in a command's branch, so a
   // batch of two commands running under Promise.all yields one proposal
   // and one refusal rather than two rows.
@@ -644,7 +726,28 @@ export async function* streamAnswer(
     webSearch: true,
     // ctx is closed over here and is not a parameter of any tool schema,
     // so there is no way for the model to ask about anyone else.
+    //
+    // Wrapped so every `content` the model is handed is also recorded for
+    // the number-provenance guard. Recording the outcome HERE rather than at
+    // each return inside is what makes the recorded set exhaustive by
+    // construction: a branch added later cannot forget to register itself,
+    // which is the shape of failure this repo keeps paying for.
     execute: async (name, rawInput, meta) => {
+      const outcome = await runOne(name, rawInput, meta);
+      toolTexts.push(outcome.content);
+      return outcome;
+    },
+  });
+
+  /** One tool call. The body is unchanged from when this was the `execute`
+   * arrow itself; it is a named function only so the wrapper above can
+   * record what it returned. */
+  async function runOne(
+    name: string,
+    rawInput: unknown,
+    meta: AskToolCallMeta,
+  ): Promise<AskToolOutcome<AskHalt>> {
+    {
       if (isCommandName(name)) {
         const command = commandNamed(name);
         if (commandSeen) {
@@ -694,16 +797,9 @@ export async function* streamAnswer(
       if (result.unavailable) {
         return { content: JSON.stringify({ unavailable: result.unavailable }) };
       }
-      const payload = forModel(result.data);
-      return {
-        content: JSON.stringify(
-          result.summary && typeof payload === "object" && payload !== null
-            ? { ...result.summary, ...payload }
-            : payload,
-        ),
-      };
-    },
-  });
+      return { content: toolResultContent(result) };
+    }
+  }
 
   // The loop reports what the question cost once, just before it ends;
   // the row is written with the outcome the terminal event names, and it
@@ -714,11 +810,17 @@ export async function* streamAnswer(
     await recordAskUsage({ companyId: ctx.companyId, userId: ctx.userId, model: ASK_DEFAULT_MODEL, usage, outcome });
   };
 
+  // What is on screen, tracked the way the panel tracks it, so the guard
+  // below checks the string the person will read rather than every delta
+  // that crossed the wire.
+  let shown = NOTHING_SHOWN;
+
   for await (const event of events) {
     switch (event.type) {
       case "text":
       case "reset":
       case "answering":
+        shown = showing(shown, event);
         yield event;
         break;
       case "tools":
@@ -735,7 +837,75 @@ export async function* streamAnswer(
         await record(`error:${event.reason}`);
         yield { type: "error", error: messageFor(event.reason) };
         return;
-      case "done":
+      case "done": {
+        /* THE NUMBER-PROVENANCE GUARD. Every figure the answer says out
+         * loud must appear in a tool result of this turn or in the person's
+         * own question; lib/ask/provenance.ts is the rule and the reasoning.
+         *
+         * WHY IT IS CHECKED HERE AND NOT BEFORE THE TEXT STREAMS. It cannot
+         * be: the guard needs the whole answer, and the whole answer is not
+         * known until the model has finished writing it. Buffering the last
+         * pass instead would add its full streaming time — measured at
+         * 8-11s to the end of a multi-tool question — to every GOOD answer
+         * to spare a rare bad one a second on screen, and streaming is the
+         * reason this is a route handler rather than a Server Action at all.
+         *
+         * So the answer is RETRACTED rather than withheld, using the
+         * mechanism the loop already has for exactly this: an `error` event
+         * clears the answer in AskPanel (`setAnswer("")`), the same way
+         * `exhausted` and an API failure clear a half-written turn. `reset`
+         * goes first so the intent is explicit and any future client that
+         * handles one and not the other still ends up blank.
+         *
+         * What the person does NOT get: the figure as an answer, a citation
+         * link implying it was sourced, a line in their transcript, or a
+         * prior turn the next question could quote. `done` never fires, and
+         * every one of those hangs off `done` in the panel.
+         *
+         * What they DO briefly get, said plainly rather than left for
+         * somebody to find: the text is on screen while it streams. That is
+         * the cost of not buffering, it is the same window the "let me
+         * check…" preamble already occupies, and whether it is worth
+         * closing is Cyrus's call with the latency figures above.
+         *
+         * TWO KINDS OF ANSWER ARE NOT CHECKED AT ALL, because their real
+         * source is invisible to this process and every honest answer would
+         * be refused:
+         *   - a web-search answer. The search runs server-side inside the
+         *     model's own response and never reaches `execute`, so its
+         *     figures are in no tool text. The prompt already makes these
+         *     answers say where they came from and that they need checking.
+         *   - an answer about an ATTACHED FILE. The figures are in the
+         *     person's own document, which is a PDF or an image here, not
+         *     text this code can read.
+         * Both are named in the log line so the firing rate is read against
+         * the right denominator. */
+        const answerText = shownText(shown);
+        const searched = (usage?.webSearches ?? 0) > 0;
+        const guarded = !searched && !attachment;
+        if (guarded) {
+          const report = checkNumberProvenance(answerText, toolTexts, question);
+          if (!report.ok) {
+            // Ids, the question and the figures — the three things needed to
+            // work out whether the guard was right. Never the answer itself:
+            // the point of holding it back is that its numbers do not go in
+            // front of people, and a log line is read by people.
+            console.error("[ask] answer held back: a number was not traceable to a tool result", {
+              companyId: ctx.companyId,
+              userId: ctx.userId,
+              question,
+              unaccounted: describeUnaccounted(report),
+              figuresChecked: report.checked,
+              valuesOffered: report.offered,
+              toolResults: toolTexts.length,
+              toolsUsed,
+            });
+            await record(PROVENANCE_OUTCOME);
+            yield { type: "reset" };
+            yield { type: "error", error: PROVENANCE_REFUSAL };
+            return;
+          }
+        }
         await record("answered");
         // Citations only where a tool actually ran. An answer built from
         // no data — a refusal to guess, a clarifying question — must not
@@ -746,6 +916,7 @@ export async function* streamAnswer(
           toolsUsed,
         };
         return;
+      }
     }
   }
 }
