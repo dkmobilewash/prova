@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageShell } from "@prova/ui";
 import { requireCompanyContext } from "@/lib/auth";
 import { loadJobSummary } from "@/lib/jobs/job-summary";
 import { jobCapabilities } from "@/lib/jobs/job-access";
@@ -59,7 +60,16 @@ export default async function JobTabsLayout({
   ];
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8 print:max-w-none print:px-0 print:py-0">
+    // `working` for the header and the tab rail, and the WIDEST a tab body
+    // can be. This used to be `mx-auto max-w-3xl` around all of it, so every
+    // tab — the billing register, the estimate's line items, the photo grid —
+    // was a 768px column with half the screen empty beside it, and no tab
+    // could do anything about it. Now a tab chooses: a list or a table
+    // renders straight into this width; a form or a short document narrows
+    // itself with `<PageColumn width="reading">` (Compliance, Retainage,
+    // Field reports). `print:px-0 print:py-0` keep the printed Overview
+    // summary flush to the paper, as before.
+    <PageShell width="working" className="print:px-0 print:py-0">
       <JobSummaryHeader summary={summary} showsJobMoney={showsJobMoney} showsBilling={showsBilling} />
       <JobSectionNav tabs={tabs} />
       {/* NOT wrapped in print:hidden here — the Overview tab's printable
@@ -69,6 +79,6 @@ export default async function JobTabsLayout({
           Overview's own print:hidden wrapper around its non-summary
           content, unchanged from the monolith). */}
       {children}
-    </div>
+    </PageShell>
   );
 }

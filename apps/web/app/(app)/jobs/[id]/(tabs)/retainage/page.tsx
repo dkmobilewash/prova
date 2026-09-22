@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageColumn } from "@prova/ui";
 import { RowActions, ConfirmDelete } from "@/components/RowActions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
@@ -77,17 +79,25 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
     substantialCompletionDate: job.substantialCompletionDate,
   });
 
+  // Nothing withheld on any invoice and no release logged: the three
+  // figures would all read $0.00 and "Log release" would offer to release
+  // money nobody is holding. Said once, in words, with the way to change it.
+  // Decided from the same summary the figures come from, so it cannot
+  // disagree with them.
+  const nothingYet = retainageSummary.totalWithheld === 0 && job.retainageReleases.length === 0;
+
   const timeZone = await viewerTimeZone();
   const updateJobRetainageTermsWithId = updateJobRetainageTerms.bind(null, job.id);
   const createRetainageReleaseWithId = createRetainageRelease.bind(null, job.id);
   const deleteRetainageReleaseWithId = (releaseId: string) => deleteRetainageRelease.bind(null, job.id, releaseId);
 
   return (
+    <PageColumn width="reading">
     <section>
       <h2 className="mb-1 text-lg font-semibold text-ink">Retainage</h2>
       <p className="mb-3 text-sm text-ink-muted">
-        Withheld amounts are snapshotted onto each invoice when it&rsquo;s created from the rate below — changing
-        the rate only affects invoices created after the change.
+        Each invoice keeps the retainage worked out when it was created, at the rate below. Changing the rate
+        only affects invoices you create after the change.
       </p>
 
       <ActionForm action={updateJobRetainageTermsWithId} resetOnSuccess={false} className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-line-card bg-surface p-3">
@@ -114,6 +124,16 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
         </SubmitButton>
       </ActionForm>
 
+      {nothingYet ? (
+        <p className="rounded-lg border border-line-card bg-surface p-4 text-sm text-ink-body" data-retainage-empty="">
+          Nothing withheld yet. Retainage comes off each invoice you create on the{" "}
+          <Link href={`/jobs/${job.id}/billing`} className="text-link hover:underline">
+            Billing tab
+          </Link>
+          , at the rate above.
+        </p>
+      ) : (
+      <>
       <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-line-card bg-surface p-4 sm:grid-cols-3">
         <div>
           <p className="text-xs text-ink-muted">Total withheld</p>
@@ -206,6 +226,9 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
           Log release
         </SubmitButton>
       </ActionForm>
+      </>
+      )}
     </section>
+    </PageColumn>
   );
 }

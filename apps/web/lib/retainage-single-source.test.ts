@@ -193,6 +193,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/ask/handlers.cashFlowForecast.test.ts":
     "Fakes the invoice rows the forecast's retainage half is built from, including one job with no substantial completion date.",
   "lib/actions/ask.dbtest.ts": "Asserts the snapshot on the invoice a tapped card created, and seeds the snapshots a release card is made from, against real rows.",
+  "app/(app)/jobs/[id]/job-tab-widths.test.ts":
+    "Renders the Retainage tab from fake invoices carrying the column, to pin when the \"nothing withheld yet\" sentence replaces the figures and when it must not.",
   "app/(app)/cash-flow/page.test.ts":
     "Renders the page with money on it — the assembly rather than the arithmetic, which is where #288 actually lived.",
   "app/(app)/evening-dates.test.ts":
