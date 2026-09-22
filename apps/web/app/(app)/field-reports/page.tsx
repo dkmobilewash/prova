@@ -15,6 +15,7 @@ import {
   weekSummaryText,
 } from "@/components/fieldReportWeeks";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
 import {
   fieldReportJobWhere,
   fieldReportsFilterHref,
@@ -77,10 +78,26 @@ export default async function FieldReportsPage({
     take: REPORT_LIMIT + 1,
   });
 
-  // Dates are stored and rendered at UTC midnight, so "today" for deciding
-  // which days are over is the UTC date. The USER'S calendar date is only
-  // used for form defaults — see components/localToday.ts.
-  const today = new Date().toISOString().slice(0, 10);
+  // WHICH DAYS ARE OVER — and that is the reader's question, not the
+  // server's.
+  //
+  // This line used to argue the opposite: "dates are stored and rendered
+  // at UTC midnight, so today is the UTC date". The first half is true and
+  // still is; the conclusion does not follow, and lib/viewer-timezone.ts
+  // says why at length — a stored value here is a plain CALENDAR DAY, and
+  // the UTC midnight is only how a date with no time gets into Postgres.
+  //
+  // The cost of the old reading is specific to this page. `today` decides
+  // which weekdays have FINISHED (`d < today` in fieldReportWeeks.ts), so
+  // west of UTC the current day counted as over from 17:00 — and a foreman
+  // still on site at 5pm found today already named as a day nobody filed,
+  // with the week's coverage dropped to match. That is the same claim #397
+  // removed from the first screen: today is not over, so nothing is
+  // claimed about it.
+  //
+  // localToday() is still only for form defaults; this is the server-side
+  // counterpart that does not break hydration.
+  const today = await viewerToday();
 
   const truncated = rows.length > REPORT_LIMIT;
   const shownRows = truncated ? rows.slice(0, REPORT_LIMIT) : rows;

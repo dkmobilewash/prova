@@ -37,7 +37,19 @@ import { E2E_FAKE_BLOB_TOKEN } from "./lib/fakeBlobToken.mjs";
 // doesn't), and import.meta throws a SyntaxError under that loader.
 const repoRoot = path.resolve(__dirname, "../../..");
 const webRoot = path.resolve(__dirname, "..");
-const PORT = 3100;
+/**
+ * 3100 unless `E2E_PORT` says otherwise, and the override is a scar rather
+ * than a nicety: this was a bare literal, so two runs on one machine — two
+ * agents, or a laptop run beside a CI job on a self-hosted runner — collide,
+ * and the second one gets `next start`'s "port already used" through
+ * Playwright's webServer. That surfaces as a suite-wide timeout with no
+ * results, which reads as a BROKEN SUITE rather than as a busy port. Two
+ * sessions lost time to it on 2026-09-21.
+ *
+ * `baseURL` and `webServer.url` below both derive from this, so the port
+ * cannot be changed in one place and missed in the other.
+ */
+const PORT = Number(process.env.E2E_PORT ?? 3100);
 
 // AT CONFIG LOAD, not only in global-setup.ts. Read out of the installed
 // runner (playwright@1.63.0 lib/runner/index.js, `createGlobalSetupTasks`):
@@ -73,7 +85,17 @@ export default defineConfig({
   // The HTML report always writes, CI or not — a local failure deserves
   // the same "open the report" instruction as a CI one, rather than a
   // click-list step that only works in one of the two places it's given.
-  reporter: [["html", { open: "never", outputFolder: path.join(webRoot, "playwright-report") }], ["list"]],
+  reporter: [
+    ["html", { open: "never", outputFolder: path.join(webRoot, "playwright-report") }],
+    // The JSON report is what `e2e/verdicts.mjs` counts. An exit code cannot
+    // tell a run where everything passed from a run that collected nothing
+    // or skipped everything, and CI reads only the exit code — see
+    // CLAUDE.md's "a verifier that cannot distinguish refuted from never
+    // ran" entry. It writes inside the HTML report's folder so the CI
+    // artifact upload carries both without a second path.
+    ["json", { outputFile: path.join(webRoot, "playwright-report/results.json") }],
+    ["list"],
+  ],
   timeout: 30_000,
   expect: { timeout: 10_000 },
   use: {
@@ -85,7 +107,13 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-      testIgnore: "**/*.mobile.spec.ts",
+      // `*.public.spec.ts` belongs to playwright.public.config.ts, which
+      // runs it at three viewports with a setup that seeds the rows those
+      // pages read and mints no Clerk user. Without this line the default
+      // `testDir` glob would sweep those specs into this project too, where
+      // their fixtures do not exist — and a spec that runs in two suites
+      // gets fixed for one of them.
+      testIgnore: ["**/*.mobile.spec.ts", "**/*.public.spec.ts"],
     },
     {
       // "Chromium only, plus one mobile viewport" — a narrow Chromium

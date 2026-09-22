@@ -10,6 +10,7 @@ import { money } from "@/lib/money";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { renewalAlerts, renewalTiming } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
+import { viewerAsOf } from "@/lib/viewerToday";
 import { loadTodayDashboard } from "@/lib/today-dashboard";
 import { AskPanel } from "@/components/AskPanel";
 import { EmptyState } from "@/components/EmptyState";
@@ -145,7 +146,12 @@ export default async function TodayPage({
     ];
   }
 
-  const now = new Date();
+  // The READER'S calendar day, at UTC midnight — what the receivables
+  // tile ages against. A raw `new Date()` here put an invoice due TODAY on
+  // the Overdue invoices tile from 17:00 Pacific, at its full value, on
+  // the first screen an owner sees. See the note on `daysPastDueFor` in
+  // lib/cash-flow.ts.
+  const asOf = await viewerAsOf();
 
   // The getting-started card. Hidden-by-cookie is decided HERE, on the
   // server, from the request — so the markup the browser hydrates already
@@ -161,7 +167,7 @@ export default async function TodayPage({
     loadJobs(company.id, where),
     loadJobs(company.id, { companyId: company.id }),
     renewalSourcesForCompany(company.id),
-    loadTodayDashboard(company.id, now),
+    loadTodayDashboard(company.id, asOf),
     gettingStartedHidden ? null : loadGettingStartedCounts(company.id),
   ]);
 

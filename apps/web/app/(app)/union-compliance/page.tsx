@@ -18,6 +18,7 @@ import { loadApprenticeships, loadTeamForApprenticeship } from "@/lib/apprentice
 import { ApprenticeshipForm } from "@/components/ApprenticeshipForm";
 import { ApprenticeshipPanel } from "@/components/ApprenticeshipPanel";
 import { WorkerCraftsPanel } from "@/components/WorkerCraftsPanel";
+import { viewerToday } from "@/lib/viewerToday";
 
 const STATUS_TONE: Record<string, string> = {
   WITHIN: "text-tag-green-ink",
@@ -45,9 +46,15 @@ export default async function UnionCompliancePage({
   const { company, ...currentUser } = context;
 
   const { month: monthParam } = await searchParams;
+  // One day, read once, used for the default month, the apprenticeship
+  // period and the rate-schedule cut below. On the server's UTC day all
+  // three were a day ahead of the reader every evening — and on the last
+  // evening of a month the default month was the NEXT one, so this page
+  // opened on an empty remittance sheet.
+  const today = await viewerToday();
   const month = /^\d{4}-\d{2}$/.test(monthParam ?? "")
     ? (monthParam as string)
-    : new Date().toISOString().slice(0, 7);
+    : today.slice(0, 7);
   const { start, end } = monthBounds(month);
 
   const [setup, remittance, ratioReviews, apprenticeships, team, workerCrafts] = await Promise.all([
@@ -57,7 +64,7 @@ export default async function UnionCompliancePage({
     // Not scoped to the selected month: an indenture runs for years, and
     // the current period's hours are counted from the last sign-off, not
     // from whichever month this page happens to be showing.
-    loadApprenticeships(company.id, new Date().toISOString().slice(0, 10)),
+    loadApprenticeships(company.id, today),
     loadTeamForApprenticeship(company.id),
     loadWorkerCrafts(company.id),
   ]);
@@ -65,7 +72,6 @@ export default async function UnionCompliancePage({
   const crafts = setup.flatMap((local) => local.crafts);
   const untiered = crafts.filter((craft) => craft.tier === null);
   const unpriced = crafts.filter((craft) => craft.schedules.length === 0);
-  const today = new Date().toISOString().slice(0, 10);
   const flagged = ratioReviews.filter((r) => r.summary.daysOver > 0);
   const incomplete = ratioReviews.filter((r) => r.summary.daysIncomplete > 0);
 
