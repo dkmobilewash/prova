@@ -6,6 +6,7 @@ import {
   type RatioEntryInput,
   type RatioRuleInput,
 } from "@/lib/apprentice-ratio";
+import { formatHours } from "@/lib/render-hours";
 import { DEMO_JOB, PanelFrame } from "./panelChrome";
 
 /**
@@ -150,10 +151,12 @@ export function ApprenticeRatioPanel({ className }: { className?: string }) {
                   </span>
                   <span className="tabular-nums text-ink-muted">
                     {" "}
-                    · {day.journeymanHours} jrny / {day.apprenticeHours} appr
-                    {day.allowedApprenticeHours !== null && ` (allows ${day.allowedApprenticeHours})`}
+                    · {formatHours(day.journeymanHours)} jrny /{" "}
+                    {formatHours(day.apprenticeHours)} appr
+                    {day.allowedApprenticeHours !== null &&
+                      ` (allows ${formatHours(day.allowedApprenticeHours)})`}
                     {day.unclassifiedHours > 0 &&
-                      ` · ${day.unclassifiedHours} hrs unclassified: ${day.unclassifiedNames.join(", ")}`}
+                      ` · ${formatHours(day.unclassifiedHours)} hrs unclassified: ${day.unclassifiedNames.join(", ")}`}
                   </span>
                 </li>
               );

@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { formatHoursOrNull } from "@/lib/render-hours";
+
 /**
  * The shared frame for the four landing-page panels beside it in this folder
  * (PayApplicationPanel, CertifiedPayrollPanel, ApprenticeRatioPanel,
@@ -124,11 +126,18 @@ export function calendarDate(date: Date): string {
 }
 
 /** Hours as the WH-347 sheet prints them — "8", "7.5", never "8.00" and
- * never "0" for a blank cell. Same one-liner as `hoursCell` on
- * `jobs/[id]/certified-payroll/wh-347/page.tsx`, which is page-local there. */
+ * never "0" for a blank cell.
+ *
+ * This was a FOURTH copy of the arithmetic, which is the exact thing
+ * `lib/render-hours.ts` exists to prevent and which `hoursRenderCensus`
+ * caught on merge. The panels on this page run the product's real
+ * functions on purpose; rounding hours was the one place they quietly
+ * stopped doing that, and a marketing page printing
+ * `35.300000000000004` to a prospect is the demo of the bug rather than
+ * the demo of the fix. The blank for null is the WH-347 rule — a dash in
+ * a box a federal reviewer reads as a number is worse than nothing. */
 export function hoursCell(hours: number | null): string {
-  if (hours == null) return "";
-  return String(Number(hours.toFixed(2)));
+  return formatHoursOrNull(hours);
 }
 
 /** "75.6%" — the continuation sheet's own `percent()` on the pay-application
