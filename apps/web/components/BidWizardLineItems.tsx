@@ -77,10 +77,15 @@ export function BidWizardLineItems({
                       {price !== null && ` · ${money(price)}/${item.unit || "unit"} · ${money(qty * price)}`}
                     </p>
                   </div>
+                  {/* `confirmLabel` was "Confirm", which says confirm WHAT.
+                      Every other armed delete in the app spells the verb
+                      out, and this component's own default is "Confirm
+                      delete" — this call site opted out of it for no stated
+                      reason and landed on the vaguest of the three. */}
                   <ConfirmDeleteButton
                     action={deleteLineItem.bind(null, jobId, item.id)}
                     label="Remove"
-                    confirmLabel="Confirm"
+                    confirmLabel="Confirm remove"
                     describe="Removes this line from the estimate. It can be added again from here or from the job page."
                   />
                 </li>
@@ -146,7 +151,22 @@ function ManualAddForm({ jobId }: { jobId: string }) {
         </label>
         <label className={labelClass}>
           Unit price
-          <input name="unitPrice" type="text" placeholder="cost-only" inputMode="decimal" className={`${field} w-28`} />
+          {/* The placeholder read "cost-only" — a phrase from this app's own
+              data model (a budget line with no sale price), sitting in a box
+              as if it were an instruction. Nothing tells the reader it means
+              "leave me empty", so the likeliest reading is that something is
+              required and he does not know what.
+
+              `type="text" inputMode="decimal"` is #414's convention, kept
+              verbatim: `type="number"` drops a typed comma before the server
+              sees it. Only the placeholder changes. */}
+          <input
+            name="unitPrice"
+            type="text"
+            placeholder="Leave blank if not priced"
+            inputMode="decimal"
+            className={`${field} w-28`}
+          />
         </label>
         <button
           type="submit"

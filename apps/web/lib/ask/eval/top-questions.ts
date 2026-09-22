@@ -348,7 +348,7 @@ export const TOP_QUESTIONS: TopQuestion[] = [
     "are we going to finish Riverside on time?",
     "job_margin",
     "finish on time",
-    "Nothing forecasts a completion DATE. `schedule_status` now answers where a job stands against its dates, which is as far as the data goes; `job_margin`'s percent complete is cost-based — money spent against money expected — and a job can be 80% through its budget and nowhere near 80% through its programme. Reading one as the other is exactly the mistake a schedule question invites.",
+    "Nothing forecasts a completion DATE. `schedule_status` now answers where a job stands against its dates, which is as far as the data goes; `job_margin`'s percent complete is cost-based — money spent against money expected — and a job can be 80% through its budget and nowhere near 80% through its schedule. Reading one as the other is exactly the mistake a schedule question invites.",
   ),
   t("q-intake-unfiled", "what came in this week that nobody has filed yet?", "document_intake"),
   // WAS A GAP until LienDeadline existed: there was no lien, preliminary

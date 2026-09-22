@@ -3,7 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { Prisma, prisma } from "@prova/db";
-import { actionFail as fail, actionOk as ok, assertOwner, type ActionResult } from "./shared";
+import {
+  InputError,
+  actionFail as fail,
+  actionOk as ok,
+  assertOwner,
+  runAction,
+  type ActionResult,
+} from "./shared";
 import { can } from "@/lib/permissions";
 
 /** Every entry point to these records is a page guarded by MANAGE_FIELD,
@@ -27,10 +34,12 @@ const FIELD_ONLY =
  * there. `lib/actions/submittals.ts` is the reference implementation.
  */
 
-/** Thrown by the parsers below, caught at each action's boundary and
- * converted to a returned failure. Anything else that throws is a real
- * bug and is rethrown. */
-class InputError extends Error {}
+// `InputError` and `runAction` are imported from ./shared rather than
+// declared here. Two classes with the same name are not the same class:
+// `instanceof` is false between them, so a refusal thrown by a shared
+// parser walked straight past a local boundary and reached production as a
+// redacted digest. That is what #407 found on /welcome, and this module
+// held the fifteenth copy of the class it found there.
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -63,14 +72,6 @@ function isoDay(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
-}
 
 async function findOrder(orderId: string, companyId: string) {
   const order = await prisma.materialOrder.findUnique({

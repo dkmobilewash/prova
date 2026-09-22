@@ -38,7 +38,7 @@ export function MoneyRail({ stages }: { stages: MoneyRailStage[] }) {
             <p className="mt-1 text-lg font-semibold tabular-nums text-yellow-400">
               {figureText(stage.figure)}
             </p>
-            <p className="mt-0.5 text-xs text-neutral-500">{stage.detail}</p>
+            <p className="mt-0.5 text-xs text-ink-muted">{stage.detail}</p>
           </li>
         ))}
       </ol>

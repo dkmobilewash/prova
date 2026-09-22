@@ -26,6 +26,7 @@ import { Hint } from "@/components/Hint";
 import { money } from "@/lib/money";
 import {
   MIN_EARNED_COVERAGE,
+  hasNothingToSay,
   marginIsHealthy,
   type CompanyFinancials,
 } from "@/lib/company-financials";
@@ -45,8 +46,23 @@ import {
  * above the healthy threshold. Colouring a number green regardless of its
  * value teaches people to stop reading the colour; a 24.6% margin is
  * ordinary and should look ordinary.
+ *
+ * AND IT RENDERS NOTHING UNTIL IT HAS A FIGURE, which is a usability fix
+ * rather than a tidy-up. On a brand-new account all four read
+ * "$0.00 / — / $0.00 / $0.00", and those 52px come off the bottom of the
+ * scroll port on EVERY screen — measured on `/jobs/new/[id]/items` at a
+ * 740px-tall window, where the page's own "Continue" button sat below the
+ * port with the bar occupying the pixels where it would otherwise have
+ * been. A bar with nothing to report was pushing the primary control of
+ * the screen out of sight. It comes back the instant any of the four
+ * becomes a number, so nothing a reader has ever seen disappears on them.
+ *
+ * Deliberately NOT "hide the zeros and keep the bar": a 52px empty strip
+ * costs the same pixels and says less than nothing.
  */
 export function MetricBar({ financials }: { financials: CompanyFinancials }) {
+  if (hasNothingToSay(financials)) return null;
+
   const marginText =
     financials.grossMarginRate === null
       ? "—"
@@ -126,17 +142,26 @@ function Metric({
         tabIndex={0}
         className="flex shrink-0 items-baseline gap-2 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
       >
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        {/* `text-slate-500` until 2026-09-21, and it was 3.66:1 on this
+            ground — below the 4.5:1 floor, at 10px, uppercase, in a truck
+            in daylight, on the one strip of text that says WHICH of four
+            money figures you are reading. Exactly the scar
+            `theme-contrast.test.ts`'s own header records ("a muted grey at
+            2.4:1 that was carrying stat-tile labels"), which that census
+            cannot see because it matches `bg-brand` and nothing maps a raw
+            grey back to the ground under it. `ink-muted` is 6.9:1 here and
+            is the token the config sanctions for exactly this job. */}
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
           {label}
         </span>
         <span
           className={`text-sm font-semibold tabular-nums ${
-            tone === "good" ? "text-green-400" : "text-slate-100"
+            tone === "good" ? "text-green-400" : "text-ink"
           }`}
         >
           {value}
         </span>
-        {hint && <span className="text-[10px] text-slate-500">{hint}</span>}
+        {hint && <span className="text-[10px] text-ink-muted">{hint}</span>}
       </span>
     </Hint>
   );

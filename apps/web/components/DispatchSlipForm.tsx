@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { uploadDispatchSlip } from "@/lib/actions";
 import { singleFileFrom, uploadDocumentFile } from "@/lib/document-upload-client";
+import { NoCraftsHint } from "@/components/NoCraftsHint";
 
 const field =
   "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -113,6 +114,7 @@ export function DispatchSlipForm({
               </option>
             ))}
           </select>
+          <NoCraftsHint craftCount={crafts.length} />
         </label>
         <label className="flex flex-col gap-1 text-xs text-ink-body">
           Dispatch #

@@ -90,17 +90,17 @@ export const REMITTANCE_BLOCKING_FIELD_REASON: Record<RemittanceBlockingField, s
   employerEin:
     "No EIN is recorded on the company record. Most funds key the employer's account to it, and it is what a delinquency notice quotes back at you. An owner records it at Settings → Company.",
   fundEmployerNumber:
-    "Each trust fund issues this employer its own account number and prints it at the top of that fund's report. cstream records no fund account numbers, so every fund line below is unnumbered — copy them from last month's report before sending.",
+    "Each trust fund issues this employer its own account number and prints it at the top of that fund's report. C Stream records no fund account numbers, so every fund line below is unnumbered — copy them from last month's report before sending.",
   fundRemitAddress:
-    "Each fund's report and cheque go to that fund's own address, which is usually a third-party administrator rather than the hall itself. cstream records no fund addresses, so there is nothing here to address an envelope from.",
+    "Each fund's report and check go to that fund's own address, which is usually a third-party administrator rather than the hall itself. C Stream records no fund addresses, so there is nothing here to address an envelope from.",
   memberIdNumber:
-    "A fund credits hours to a member by their member number, not by their name. cstream records no member identifiers, so every line below identifies a person by name alone and the fund will have to match them by hand.",
+    "A fund credits hours to a member by their member number, not by their name. C Stream records no member identifiers, so every line below identifies a person by name alone and the fund will have to match them by hand.",
   memberName:
     "At least one member on this report has no name recorded on their account. A fund cannot credit hours to \"Name not recorded\", and those hours sit uncredited against that person's vesting and their health & welfare eligibility.",
   unpricedHours:
     "Some hours on this report have no rate schedule in force on the day they were worked. They are shown as unpriced rather than as $0.00, and the total below is short by whatever they turn out to be worth.",
   duesCheckoff:
-    "Many halls collect working dues and other wage deductions on this same report. cstream does not model them, so this sheet covers employer fringe contributions only — check the hall's own form before sending.",
+    "Many halls collect working dues and other wage deductions on this same report. C Stream does not model them, so this sheet covers employer fringe contributions only — check the hall's own form before sending.",
 };
 
 /** The parts of `Company` a remittance header prints. Structural rather

@@ -100,6 +100,28 @@ describe("the company-wide retainage population", () => {
  *   scalar. These were left alone in the #97 PR deliberately: folding them
  *   in is a refactor of four files across two lanes, and they are correct
  *   today.
+ *
+ * THREE ENTRIES LEFT THIS LIST ON 2026-09-21, AND THAT IS A FINDING RATHER
+ * THAN A LOSS. When the scan started stripping comments, `lib/retainage.ts`,
+ * `lib/pay-application.ts` and `lib/billing/retainage-amount.ts` stopped
+ * matching — because not one of them had ever contained a code occurrence
+ * of the column. Every hit was a doc comment, and the notes they carried
+ * here said so in their own words: "documentation only, no query", "names
+ * the column in its header". The allowlist had been carrying three
+ * phantoms, each enumerated as a file that reads a column it does not
+ * read, which is a small lie a reader of this list would have believed.
+ *
+ * `retainage-amount.ts` is the one that looks alarming to drop and is not:
+ * it is THE FORMULA, and the guard on it was never this list. It is pinned
+ * by `it("is defined in exactly one file")` at the bottom, which searches
+ * for `export function retainageWithheldFor` and is unaffected by any of
+ * this. Its name also never matched `COLUMN` in code — `retainageWithheldFor`
+ * fails the `(?![A-Za-z])` boundary on purpose.
+ *
+ * The distinction this list now draws, and it is the right one: naming the
+ * column in a TYPE FIELD is code and stays enumerated (`lib/cash-flow.ts`
+ * and `lib/gc-reliability.ts`, which declare it as an input field so the AR
+ * balance can be net of it). Naming it in a sentence is not.
  */
 const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   // -------------------------------------------------- the one source ---
@@ -116,7 +138,17 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   // layout's own doc comment) so each section could fetch only its own
   // data. Its retainage reads split into three, all per-job:
   "app/(app)/jobs/[id]/(tabs)/retainage/page.tsx": "The Retainage tab itself — same calculateRetainageSummary call the old page made, now with its own targeted query.",
-  "app/(app)/jobs/[id]/(tabs)/billing/page.tsx": "Per-invoice retainageWithheld, printed on each invoice row in the Billing tab — never summed into a total here.",
+  "app/(app)/jobs/[id]/(tabs)/billing/page.tsx":
+    "Per-invoice retainageWithheld, printed on each invoice row in the Billing tab — never summed into a total here. Since the silent-wrong-numbers fix it reaches the screen through invoiceBalanceLabel rather than being subtracted inline: the row used to print a GROSS `amount - paid` in amber, so an invoice paid to its net-of-retainage amount showed a debt nobody owed.",
+  "app/portal/[token]/jobs/[jobId]/page.tsx":
+    "THE GC'S OWN VIEW of the same per-invoice figure, and the reason this row exists at all: it printed the identical uncaptioned gross balance to the other side of the table. Now calls invoiceBalanceLabel, so the sub and his GC are shown the same arithmetic. Per-invoice; never a total.",
+  "components/ReceivablesPanel.tsx":
+    "Captions the Today tile's `outstanding`, which is NET via arBalanceFor while Invoiced and Paid are gross. The panel carries the figure so the three numbers reconcile on screen; it does no arithmetic with it and never sums it.",
+  "components/receivablesFigures.test.ts":
+    "Renders that panel and does the subtraction — the executable half of the line above.",
+  "lib/invoice-balance-label.ts":
+    "Decides what one invoice's balance line SAYS, for the two pages above. Takes the snapshot as an input and hands it to arBalanceFor; adds no formula of its own, and never sees more than one invoice.",
+  "lib/invoice-balance-label.test.ts": "Pins that decision, including the settled-net invoice.",
   "lib/jobs/job-summary.ts": "The always-visible summary header's retainage-held figure — the same calculateRetainageSummary call, over a leaner per-job query shared by every tab.",
   "lib/pay-application-query.ts":
     "Assembles one pay application. PR #156 moved this out of the page so the G702 arithmetic could be tested without a database; the page now renders what this returns.",
@@ -133,16 +165,12 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
     "WRITES the snapshot for a plain invoice: createInvoice's body, lifted so the form and the draft_invoice card share one write and one formula. Never reads a total. Declared in RETAINAGE_WRITERS below.",
   "lib/billing/retainage-write.dbtest.ts":
     "Proves BOTH write paths snapshot the same cent for the same bill, against a real Postgres, and reads the G702 back through loadPayApplication. The behavioural half that this census and the formula's unit test cannot reach.",
-  "lib/billing/retainage-amount.ts":
-    "THE FORMULA — the only expression in this product that multiplies an amount by a retainage rate, in exact decimal. Names the column in its header to say what it produces; computes no total and touches no database.",
   "lib/billing/payment-entry.test.ts":
     "A TEST FIXTURE, and the only reason it names the column at all: #288 made retainageWithheld required on ReliabilityInvoiceInput, so every fixture building one must now state it. This one passes null — a job with no retainage terms — because its subject is the recorded platform fee and it makes no claim about retainage. Reads no total and exercises no retainage behaviour. Added when the fee work and #288 were merged together; each was green alone and only this type disagreed.",
   "lib/billing/retainage-release.ts":
     "READS one job's snapshots to sum them the way the job page does — the same calculateRetainageSummary call over the same rows — for the release_retainage card's three figures and for the ceiling and the stale-card check on its tap. Per-job by necessity; never a total. Arrived with phase 4d of the Ask build.",
   "lib/actions/quickbooks.ts": "Maps one invoice's snapshot into a QuickBooks memo.",
   "lib/export.ts": "Names the column in the Invoice CSV export.",
-  "lib/pay-application.ts": "Pure G702 arithmetic — documentation only, no query.",
-  "lib/retainage.ts": "Per-job arithmetic — documentation only, no query.",
   "lib/cash-flow.ts":
     "Pure arithmetic, no query — names the column as an INPUT FIELD so the AR balance can be net of it (#288). `arBalanceFor` is the one place that subtraction happens; every AR surface imports it rather than mirroring it.",
   "lib/gc-reliability.ts":
@@ -167,6 +195,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
     "Renders the Retainage tab from fake invoices carrying the column, to pin when the \"nothing withheld yet\" sentence replaces the figures and when it must not.",
   "app/(app)/cash-flow/page.test.ts":
     "Renders the page with money on it — the assembly rather than the arithmetic, which is where #288 actually lived.",
+  "app/(app)/evening-dates.test.ts":
+    "Sets the column to null on the one invoice it renders /cash-flow and /dashboard with, so an invoice due today ages on its full amount and the day, not the retainage, is what the test is about.",
   "lib/cash-flow.test.ts":
     "Pins the AR balance as net of retainage, and the forecast identity that no dollar is in both halves (#288).",
   "lib/gc-reliability.test.ts": "Pins that a retainage-bearing invoice can settle, and that a genuine shortfall still cannot (#288).",
@@ -183,6 +213,96 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
  * (QuickBooks' integer form) and not `invoiceRetainageWithheld` (a pure
  * function's parameter). */
 const COLUMN = /retainageWithheld(?![A-Za-z])/;
+
+/**
+ * EVERY SOURCE-TEXT ASSERTION IN THIS FILE READS CODE, NEVER PROSE, and
+ * this helper is how. It used to live 130 lines below, next to the one
+ * assertion that thought to call it.
+ *
+ * It exists for two opposite hazards, and until 2026-09-21 this file was
+ * only defended against one of them:
+ *
+ *   DISARMING (#185, the scar this helper was written for). A POSITIVE
+ *   assertion — "this file must contain X" — is satisfied by a comment
+ *   QUOTING X. A census disarmed that way is green and means nothing.
+ *
+ *   PUNISHING DOCUMENTATION, which is the half nobody had noticed. A
+ *   NEGATIVE or ENUMERATING assertion — "every file naming the column is
+ *   declared below" — counts a file that merely WRITES ABOUT the column as
+ *   a file that reads it.
+ *
+ * The second one is not theoretical and it is not cheap. On 2026-09-21 it
+ * cost three people time in one afternoon, independently, none of them
+ * aware of the others: a comment added to `components/landing/
+ * PayApplicationPanel.tsx` turned this suite red on a hotfix that was
+ * unblocking a red `main`, with no code change at all; the agent on #434
+ * hit the identical thing and reworded rather than edit another lane's
+ * census; and #431 hit the neighbouring version of it in
+ * `hoursRenderCensus`. All three responded the same way — they REWORDED
+ * PROSE TO GET PAST A GREP.
+ *
+ * That is the failure worth naming. This census protects a genuinely
+ * dangerous column and is right to be strict, but a guard that taxes
+ * people for DOCUMENTING the thing it protects trains them to stop
+ * documenting it, and this repo's most expensive bugs are all of the shape
+ * "a sentence nobody wrote down". A comment naming the column cannot
+ * produce a duplicate query; only code can. So the scan reads code.
+ *
+ * SAFE HERE, ESTABLISHED RATHER THAN ASSUMED. A naive `//` strip also eats
+ * the rest of any line whose `//` sits inside a string or a regex — a URL,
+ * a JSX literal — which for this census would hide a real read that
+ * happened to follow one. That case does not exist in the scanned set: of
+ * the nine lines across 1,351 files that contain both the column and a
+ * comment opener, every one has only whitespace before the delimiter, so
+ * every one is a genuine comment. Re-derive it with
+ * `grep -rn --include='*.ts' --include='*.tsx' retainageWithheld apps
+ * packages | grep -F '//'` before assuming it still holds.
+ *
+ * It is not left resting on that remaining true, though. The `(^|[^:])`
+ * guard below is this repo's house form — `counterCensus`, `jobCostCensus`,
+ * `ownerRefusalCensus`, `pageWidthCensus`, `workerNameCensus`,
+ * `timeEntryWriteCensus`, `dateRenderCensus` and `hoursRenderCensus` all
+ * spell it that way — and it refuses to treat the `//` of a `https://` as a
+ * comment opener. This file had its own bespoke variant without the guard;
+ * nine siblings against one is not a close call.
+ *
+ * The stripper is checked rather than trusted, two ways: every declared
+ * writer must still contain the formula call AFTER stripping (below), and
+ * the three assertions immediately following this comment pin the
+ * behaviours the whole fix rests on.
+ */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+
+describe("the comment stripper the scans below are built on", () => {
+  it("removes the column from a line comment and from a block comment", () => {
+    // The incident, reduced: prose about the column, in a file that does
+    // not read it. Both comment forms, because the three phantoms this fix
+    // removed from the allowlist used one each.
+    expect(withoutComments("// Invoice.retainageWithheld is snapshotted")).not.toMatch(COLUMN);
+    expect(withoutComments("/** SUM(Invoice.retainageWithheld) per job */")).not.toMatch(COLUMN);
+  });
+
+  it("leaves a real read standing", () => {
+    // Without this the fix would be a repeal rather than a correction: a
+    // stripper that ate code would empty every scan below it and pass
+    // everything, which is the scratch-cleanup scar exactly.
+    expect(withoutComments("select: { retainageWithheld: true },")).toMatch(COLUMN);
+    expect(withoutComments("  retainageWithheld: invoice.retainageWithheld,")).toMatch(COLUMN);
+  });
+
+  it("does not mistake the // of a URL for a comment opener", () => {
+    // No line in the scanned set needs this today — that was checked, and
+    // the doc comment above says how to re-check it. It is here so the fix
+    // does not silently depend on that staying true: the day somebody puts
+    // a link in a string on the same line as a read, this guard is already
+    // in place rather than being diagnosed from a confusing green.
+    expect(withoutComments('const doc = "https://x/g702"; const { retainageWithheld } = row;')).toMatch(
+      COLUMN,
+    );
+  });
+});
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -243,7 +363,14 @@ function workspaceSourceRoots(): string[] {
 const SCANNED = workspaceSourceRoots().flatMap((root) => sourceFiles(root));
 
 describe("every file that reads the retainage column is accounted for", () => {
-  const found = SCANNED.filter((file) => COLUMN.test(readFileSync(file, "utf8")))
+  // COMMENTS STRIPPED, AND THE REASON IS WRITTEN OUT AT `withoutComments`
+  // ABOVE — read it there rather than re-deriving it a fourth time. The
+  // short version: this scan asks "which files READ the column", and a
+  // file that only writes ABOUT the column in prose is not one of them.
+  // Scanning raw source made three people reword documentation in a single
+  // afternoon to get past this grep, which is a worse outcome than the
+  // duplicate query the census exists to prevent.
+  const found = SCANNED.filter((file) => COLUMN.test(withoutComments(readFileSync(file, "utf8"))))
     .map((file) => relative(WEB, file))
     .sort();
 
@@ -271,7 +398,12 @@ describe("the two callers that render a company-wide total", () => {
   // side, that both ask the one loader for the COMPANY-WIDE figure.
   for (const path of ["lib/company-financials-query.ts", "lib/today-dashboard.ts"]) {
     it(`${path} asks lib/retainage-query.ts rather than the database`, () => {
-      const source = readFileSync(join(WEB, path), "utf8");
+      // Stripped, and here it is the #185 direction rather than the
+      // documentation one: this is a POSITIVE assertion, so raw source
+      // would let a comment reading "we call loadRetainageHeld" satisfy it
+      // in a file that had stopped calling it. A census a comment can
+      // satisfy is a census that has stopped asking.
+      const source = withoutComments(readFileSync(join(WEB, path), "utf8"));
       expect(source).toContain("loadRetainageHeld");
     });
   }
@@ -293,8 +425,18 @@ describe("the two callers that render a company-wide total", () => {
   //
   // company-financials-query.ts keeps the strict form. It has no per-invoice
   // question to ask, so naming the column there is still a defect on sight.
-  it("lib/company-financials-query.ts does not name the column at all", () => {
-    expect(readFileSync(join(WEB, "lib/company-financials-query.ts"), "utf8")).not.toMatch(COLUMN);
+  it("lib/company-financials-query.ts does not name the column in code", () => {
+    // The title said "at all" until 2026-09-21, and "at all" is the part
+    // that had to go. The defect this guards against is a QUERY, which is
+    // code, and stripping costs it nothing — a real read still trips it.
+    // What "at all" cost was the single most useful comment anybody could
+    // write in this file: "the retainageWithheld column is deliberately
+    // not read here; ask loadRetainageHeld". That comment would have
+    // turned the suite red, in the one file where a reader most needs to
+    // find it.
+    expect(withoutComments(readFileSync(join(WEB, "lib/company-financials-query.ts"), "utf8"))).not.toMatch(
+      COLUMN,
+    );
   });
 });
 
@@ -316,7 +458,13 @@ describe("the two callers that render a company-wide total", () => {
  * column in its Prisma include.
  */
 describe("the contact page hands the column to the calculator", () => {
-  const source = readFileSync(join(WEB, "app/(app)/contacts/[id]/page.tsx"), "utf8");
+  // Stripped for the #185 reason, which bites hardest on assertions shaped
+  // like these three: each one demands that a literal appear in the file,
+  // and a comment QUOTING that literal — including this file's own prose
+  // about what it checks, pasted into that page — would satisfy every one
+  // of them while the wiring was gone. That is precisely the regression
+  // the doc comment above says this describe block exists to catch.
+  const source = withoutComments(readFileSync(join(WEB, "app/(app)/contacts/[id]/page.tsx"), "utf8"));
 
   it("passes retainageWithheld into calculatePaymentReliability's input", () => {
     expect(source).toContain("calculatePaymentReliability");
@@ -359,22 +507,6 @@ const RETAINAGE_WRITERS: Record<string, string> = {
   "lib/ask/commands/billing.ts":
     "Writes nothing; PREVIEWS the figure on the draft_invoice card before the tap. It has to run the identical formula or the card promises a cent the write does not deliver, which is worse than showing none.",
 };
-
-/**
- * Comments stripped, so a doc comment QUOTING the old expression — which
- * three files in this fix deliberately do, because the next person needs to
- * see what was wrong — cannot fail the arithmetic assertion below, and
- * cannot satisfy the positive one either.
- *
- * #185 is the scar: a census was disarmed by a comment that quoted its own
- * pattern. This is the same hazard pointed the other way, and the stripper
- * is checked rather than trusted — every writer must still contain the
- * formula call after stripping, which a stripper that ate the code could
- * not produce.
- */
-function withoutComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
-}
 
 /**
  * The rate used as an ARITHMETIC OPERAND: `x * rate`, `rate / x`, with a

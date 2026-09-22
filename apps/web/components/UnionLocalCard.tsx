@@ -145,7 +145,7 @@ export function UnionLocalCard({
             />
           </label>
           <label className={`${labelClass} min-w-[14rem] flex-1`}>
-            <span className="text-xs">Programme standard</span>
+            <span className="text-xs">Program standard</span>
             <input
               type="text"
               name="programStandardReference"
