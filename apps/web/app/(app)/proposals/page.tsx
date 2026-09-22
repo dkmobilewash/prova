@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { EmptyState } from "@/components/EmptyState";
@@ -23,7 +24,7 @@ export default async function ProposalsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <PageShell width="working">
       <h1 className="mb-2 text-xl font-semibold text-ink">Proposal clauses</h1>
       <p className="mb-6 text-sm text-ink-body">
         The inclusions, exclusions, clarifications and alternates you repeat on every bid. Add them
@@ -62,6 +63,6 @@ export default async function ProposalsPage() {
         Removing a clause from the library is owner-only. Proposals are built per job — open a job and
         choose <span className="text-ink-label">Proposal</span>, or go to <Link href="/bids" className="text-link hover:underline">Bids</Link>.
       </p>
-    </div>
+    </PageShell>
   );
 }

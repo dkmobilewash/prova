@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
@@ -61,7 +62,9 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
   const timeZone = await viewerTimeZone();
 
   return (
-    <div className="mx-auto max-w-4xl p-6 print:p-0">
+    // A document, so "reading" — and `print:p-0` so the printed page runs to
+    // the browser's own margins, the way the G702/G703 does.
+    <PageShell width="reading" className="print:p-0">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
         <Link href={`/jobs/${job.id}/estimate`} className="text-sm text-link hover:underline">
           ← Back to the estimate
@@ -147,6 +150,6 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
         </p>
         <JobProposalClauseBuilder jobId={job.id} library={library} />
       </section>
-    </div>
+    </PageShell>
   );
 }
