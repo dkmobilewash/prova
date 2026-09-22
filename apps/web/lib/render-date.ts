@@ -74,6 +74,25 @@ export function formatCalendarDate(date: Date, style: DateStyle = "medium"): str
   return date.toLocaleDateString("en-US", { ...STYLES[style], timeZone: "UTC" });
 }
 
+/** The same plain calendar day, arriving as the `YYYY-MM-DD` string a
+ * `<input type="date">` and `date.toISOString().slice(0, 10)` both produce.
+ *
+ * The list pages hand their rows ISO strings rather than `Date` objects, so
+ * before this existed the only two ways to render one were to build the
+ * `Date` at the call site — which is `new Date(iso)`, local midnight, the
+ * day-early bug — or to print the raw string. Several rows printed the raw
+ * string: an RFI read "sent 2026-09-21" on a page whose own example rows
+ * say "asked Sep 4".
+ *
+ * `T00:00:00.000Z` is not decoration. `new Date("2026-09-21")` is UTC
+ * midnight by spec and `new Date("2026-09-21T00:00:00")` is LOCAL midnight,
+ * one character apart and a day apart west of UTC, so the instant is
+ * pinned here once instead of at every call site.
+ */
+export function formatCalendarDay(iso: string, style: DateStyle = "medium"): string {
+  return formatCalendarDate(new Date(`${iso}T00:00:00.000Z`), style);
+}
+
 /** A real moment, rendered on the calendar of the person reading it.
  *
  * `timeZone` comes from `viewerTimeZone()` in lib/viewerToday.ts, which
