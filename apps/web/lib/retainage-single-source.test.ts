@@ -153,6 +153,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/pay-application-query.ts":
     "Assembles one pay application. PR #156 moved this out of the page so the G702 arithmetic could be tested without a database; the page now renders what this returns.",
   "lib/pay-application-query.test.ts": "Pins that assembly, including the removed-line close-out.",
+  "lib/pay-application-credit.test.ts":
+    "Drives submitPayApplication for real over a faked database and reads the snapshot it wrote. Names the column only to assert the figure on the invoice — a −$5,000 credit carries a −$500.00 snapshot — and to prove a refused application wrote none. No query and no second formula: the write under test is retainageWithheldFor, unchanged.",
   "lib/alerts-query.ts": "RETAINAGE_RELEASE alerts — one alert per job, with its name.",
   "lib/ask/handlers.ts":
     "TWO read tools, both per-job by necessity. retainage_held builds the per-job rows the way /cash-flow builds its table and takes the COMPANY-WIDE total from loadRetainageHeld rather than summing them — the rows carry job names, which a scalar cannot; cash_flow_forecast feeds calculateRetainageSummary per job into the forecast the same way that page does. Neither derives a company total from this column. Arrived with roadmap item 4 of the Ask build.",

@@ -5,7 +5,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
-import { ActionResult, actionFail, actionOk, InputError, runAction, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { ActionResult, actionFail, actionOk, InputError, runAction, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, ownerRefusal, tradeScopeFromForm } from "./shared";
 import { catalogActuals, catalogSourcedLine, repriceDecision } from "@/lib/catalog-actuals";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import { addCatalogLine } from "@/lib/estimating/catalog-line";
@@ -331,10 +331,26 @@ export async function saveEstimateVersion(jobId: string, formData: FormData) {
  * the margin checkbox — see repriceDecision in lib/catalog-actuals.ts, which
  * also re-checks the flag and the sample size that made this button appear,
  * since the page that rendered it may be minutes old.
+ *
+ * RETURNS ITS REFUSALS RATHER THAN THROWING THEM, as of 2026-09-21, and the
+ * conversion is not cosmetic. Every refusal in here was a `throw`, which
+ * production redacts to a digest, on a control reachable by somebody it
+ * always refuses: `/catalog` demands MANAGE_ESTIMATING and ESTIMATOR holds
+ * it, so an estimator can open the page and click this. The owner case is
+ * not even the common one — `repriceDecision` refuses the OWNER on an
+ * ordinary race, when the page is minutes old and a costed line has landed
+ * since, and that sentence (which names the fringe schedule to add, or the
+ * cost entry to recategorise) was thrown away too. `ownerRefusal` is the
+ * right guard now that this declares `ActionResult`; `assertOwner` throws
+ * and belongs only in the throw-style actions — see shared.ts.
  */
-export async function updateCatalogDefaultsFromActuals(entryId: string, formData: FormData) {
+export async function updateCatalogDefaultsFromActuals(
+  entryId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
-  assertOwner(user, "Only the account owner can re-price the catalog");
+  const refusal = ownerRefusal(user, "Only the account owner can re-price the catalog.");
+  if (refusal) return refusal;
 
   const [entry, fringeSchedulesByCraft] = await Promise.all([
     prisma.lineItemCatalogEntry.findUnique({
@@ -363,7 +379,12 @@ export async function updateCatalogDefaultsFromActuals(entryId: string, formData
     loadFringeSchedulesByCraft(company.id),
   ]);
   if (!entry || entry.companyId !== company.id) {
-    throw new Error("Catalog entry not found");
+    // Returned rather than thrown like its siblings elsewhere: this
+    // function now promises a readable refusal, and half-keeping the promise
+    // is how a person ends up looking at a digest for one branch and a
+    // sentence for the next. Reachable by an ordinary stale tab — the entry
+    // was deleted from another window.
+    return actionFail("Catalog entry not found — it may have been deleted. Reload the page.");
   }
 
   const actuals = catalogActuals(
@@ -377,7 +398,13 @@ export async function updateCatalogDefaultsFromActuals(entryId: string, formData
     String(formData.get("alsoUpdatePrice") ?? "") === "on",
   );
   if (!decision.ok) {
-    throw new Error(decision.error);
+    // THE REFUSAL THE OWNER ACTUALLY MEETS. `repriceDecision` re-checks the
+    // flag and the sample that made this button render, because the page may
+    // be minutes old, and its messages are the useful ones — add a fringe
+    // rate schedule for that craft and dates, recategorise the Labor cost
+    // entry, the variance has closed. Every one of them was thrown, and so
+    // redacted to a digest in production.
+    return actionFail(decision.error);
   }
 
   // Only ever the entry's own defaults — no JobLineItem is in scope here.
@@ -391,6 +418,7 @@ export async function updateCatalogDefaultsFromActuals(entryId: string, formData
   await prisma.lineItemCatalogEntry.update({ where: { id: entryId }, data });
 
   revalidatePath("/catalog");
+  return actionOk;
 }
 
 /**
@@ -407,19 +435,36 @@ export async function updateCatalogDefaultsFromActuals(entryId: string, formData
  * two "5/8in Type X board" rows at different prices is worse than one that
  * refused the second. Updating a price stays where it already lives: the
  * entry's own controls, and the actuals loop.
+ *
+ * RETURNS ITS REFUSALS RATHER THAN THROWING THEM, as of 2026-09-21, and on
+ * this action that is the difference between a sentence and a lost
+ * afternoon. THE INPUT IS A PASTE — two hundred rows out of a supplier's
+ * spreadsheet, living in `CatalogImport`'s React state and nowhere else.
+ * Every refusal here was a `throw`; production redacts a thrown Server
+ * Action message to a digest, so the person got the error boundary, and the
+ * error boundary UNMOUNTS THE COMPONENT HOLDING THE PASTE. No reason, and
+ * nothing to go back to.
+ *
+ * Who meets it: `/catalog` demands MANAGE_ESTIMATING and nothing else, and
+ * ESTIMATOR holds that (lib/permissions.ts). So the one job function this
+ * page exists for is the one this action always refuses. The page no longer
+ * renders the control to them at all — that is the other half, and the more
+ * important one — but a page guard stops a page rendering and does nothing
+ * about the endpoint behind it.
  */
-export async function importCatalogEntries(formData: FormData) {
+export async function importCatalogEntries(formData: FormData): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
-  assertOwner(user, "Only the account owner can import a price list");
+  const refusal = ownerRefusal(user, "Only the account owner can import a price list.");
+  if (refusal) return refusal;
 
   const text = String(formData.get("csv") ?? "");
   if (!text.trim()) {
-    throw new Error("Paste a price list, or choose a CSV file, before importing");
+    return actionFail("Paste a price list, or choose a CSV file, before importing.");
   }
 
   const { rows } = parseCatalogImport(text);
   if (rows.length === 0) {
-    throw new Error("Nothing readable to import — check the preview for what went wrong");
+    return actionFail("Nothing readable to import — check the preview for what went wrong.");
   }
 
   const existing = await prisma.lineItemCatalogEntry.findMany({
@@ -432,7 +477,7 @@ export async function importCatalogEntries(formData: FormData) {
   );
 
   if (fresh.length === 0) {
-    throw new Error("Every item in that list is already in the catalog — nothing to add");
+    return actionFail("Every item in that list is already in the catalog — nothing to add.");
   }
 
   await prisma.lineItemCatalogEntry.createMany({
@@ -448,4 +493,5 @@ export async function importCatalogEntries(formData: FormData) {
   });
 
   revalidatePath("/catalog");
+  return actionOk;
 }

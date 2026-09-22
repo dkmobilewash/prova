@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { invoiceBalanceLabel } from "./invoice-balance-label";
+import { balanceToneClass, invoiceBalanceLabel } from "./invoice-balance-label";
 import { money } from "./money";
 import { arBalanceFor } from "./cash-flow";
 
@@ -94,5 +96,106 @@ describe("invoiceBalanceLabel", () => {
   it("does not report a rounding cent as an amount owing", () => {
     const result = label({ amount: 0.004, paidAmount: 0, retainageWithheld: null });
     expect(result.tone).toBe("settled");
+  });
+});
+
+/**
+ * #434's cases, carried over when its `lib/billing/invoice-balance.ts` was
+ * folded into this module. The credit that announced itself as PAID IN
+ * FULL, in green, on two pages — one of them the GC portal — and the
+ * overpayment that did the same.
+ */
+describe("invoiceBalanceLabel — credits and overpayments (from #434)", () => {
+  it("does not call a credit paid in full", () => {
+    // The reproduction: the −$5,000.00 invoice a release-without-its-
+    // positive produced. Its balance is −5000, which `balance <= 0` read as
+    // settled.
+    const result = label({ amount: -5000, paidAmount: 0, retainageWithheld: null });
+    expect(result.tone).toBe("credit");
+    expect(result.headline).toBe("Credit — $5,000.00 owed back");
+    expect(result.headline).not.toMatch(/paid in full/i);
+  });
+
+  it("reads a credit carrying its negative retainage snapshot as a credit", () => {
+    // A −$5,000 pay application at 10% writes a −$500.00 snapshot.
+    const result = label({ amount: -5000, paidAmount: 0, retainageWithheld: -500 });
+    expect(result.tone).toBe("credit");
+    expect(result.headline).toContain("$5,000.00");
+  });
+
+  it("reads the credit off the AMOUNT, not the balance", () => {
+    // A credit with a payment recorded against it has a gross balance of
+    // −$5,500, which is the overpaid branch — the wrong sentence about the
+    // wrong document. Credit must be decided first.
+    expect(label({ amount: -5000, paidAmount: 500, retainageWithheld: null }).tone).toBe("credit");
+  });
+
+  it("separates an overpayment from a settled invoice", () => {
+    // A GC paying $12,500 against a $12,000 invoice is not the same event
+    // as paying it exactly, and the difference is somebody's to act on.
+    const result = label({ amount: 12_000, paidAmount: 12_500, retainageWithheld: null });
+    expect(result.tone).toBe("overpaid");
+    expect(result.headline).toBe("Overpaid by $500.00");
+  });
+
+  it("measures an overpayment against the GROSS amount, retainage included", () => {
+    // $100,000 billed, $10,000 retainage, $100,200 paid: $200 over. Paying
+    // the retainage early is allowed and is not an overpayment.
+    expect(label({ paidAmount: 100_200 }).headline).toBe("Overpaid by $200.00");
+    expect(label({ paidAmount: 100_000 }).tone).toBe("settled");
+  });
+
+  it("still says paid in full for the ordinary settled invoice", () => {
+    const result = label({ amount: 12_000, paidAmount: 12_000, retainageWithheld: null });
+    expect(result).toEqual({ tone: "settled", headline: "Paid in full", caption: null });
+  });
+
+  it("tolerates half a cent, because these are Decimal columns through JS numbers", () => {
+    expect(label({ amount: 1000.35, paidAmount: 1000.3500000001, retainageWithheld: null }).tone).toBe("settled");
+    expect(label({ amount: -0.001, paidAmount: 0, retainageWithheld: null }).tone).toBe("settled");
+  });
+
+  it("never spends the green on a credit or an overpayment", () => {
+    expect(balanceToneClass.credit).not.toBe(balanceToneClass.settled);
+    expect(balanceToneClass.overpaid).not.toBe(balanceToneClass.settled);
+  });
+});
+
+/**
+ * Static guards on the two call sites. Neither page is rendered here, so
+ * what these catch is the realistic regression: the `balance <= 0` ternary
+ * coming back, or the payment form reopening on a credit.
+ *
+ * Comments stripped before scanning (the #185 rule): each page carries a
+ * note recording what it used to say, which is the exact string searched
+ * for.
+ */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+const read = (path: string) => stripComments(readFileSync(join(process.cwd(), path), "utf8"));
+
+describe("the pages that render an invoice's money line", () => {
+  for (const path of [
+    "app/(app)/jobs/[id]/(tabs)/billing/page.tsx",
+    "app/portal/[token]/jobs/[jobId]/page.tsx",
+  ]) {
+    it(`${path} decides through invoiceBalanceLabel and colours by tone`, () => {
+      const source = read(path);
+      // The CALL, not the import.
+      expect(source).toContain("invoiceBalanceLabel({");
+      expect(source).toContain("balanceToneClass[balance.tone]");
+      expect(source).not.toContain('balance <= 0 ? "Paid in full"');
+      expect(source).not.toContain("Number(invoice.amount) - paid");
+    });
+  }
+
+  it("offers the log-a-payment form only while the GC still has money to send", () => {
+    const source = read("app/(app)/jobs/[id]/(tabs)/billing/page.tsx");
+    expect(source).toContain(
+      '(balance.tone === "owing" || balance.tone === "retainage-only") && (\n                  <LogPaymentForm',
+    );
+    // The gate #431 shipped, which reopened the form on a credit.
+    expect(source).not.toContain('balance.tone !== "settled"');
   });
 });
