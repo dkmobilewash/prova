@@ -15,8 +15,8 @@ import {
   submitChangeOrder,
   voidChangeOrder,
 } from "@/lib/actions";
-import { TRADE_SCOPES } from "@/lib/trade-scopes";
-// `import type` on its own line, not `{ TRADE_SCOPES, type ActionResult }`:
+import { TRADE_SCOPE_OPTIONS } from "@/lib/trade-scopes";
+// `import type` on its own line, not `{ TRADE_SCOPE_OPTIONS, type ActionResult }`:
 // an inline `type` specifier still loads the module at runtime, and
 // actions/shared.ts imports prisma. A type-only IMPORT is erased.
 import type { ActionResult } from "@/lib/actions/shared";
@@ -186,7 +186,7 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
         >
           <label className={labelClass}>
             Description
-            <input name="itemDescription" required className={`${inputClass} w-56`} placeholder="Tile backsplash" />
+            <input name="itemDescription" required className={`${inputClass} w-56`} placeholder="2-hr rated deflection track" />
           </label>
           <label className={labelClass}>
             Unit
@@ -215,9 +215,11 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
             Trade scope
             <select name="tradeScope" className={`${inputClass} w-48`} defaultValue="">
               <option value="">—</option>
-              {TRADE_SCOPES.map((scope) => (
-                <option key={scope} value={scope}>
-                  {scope.replaceAll("_", " ").toLowerCase()}
+              {/* The shared labels, not the enum lowercased — that printed
+                  "eifs" and "lath plaster". The stored value is unchanged. */}
+              {TRADE_SCOPE_OPTIONS.map((scope) => (
+                <option key={scope.value} value={scope.value}>
+                  {scope.label}
                 </option>
               ))}
             </select>
@@ -684,7 +686,7 @@ export function ChangeOrders({
       >
         <label className={labelClass}>
           New change order
-          <input name="title" required className={`${inputClass} w-64`} placeholder="Add tile backsplash" />
+          <input name="title" required className={`${inputClass} w-64`} placeholder="Add rated head-of-wall at corridor" />
         </label>
         <label className={labelClass}>
           Notes

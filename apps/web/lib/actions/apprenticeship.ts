@@ -50,7 +50,7 @@ export async function createApprenticeshipEnrollment(formData: FormData): Promis
 
   const sponsorName = text(formData, "sponsorName");
   if (!sponsorName) {
-    return fail("Name the sponsor — the JATC, state agency or local that registered the programme.");
+    return fail("Name the sponsor — the JATC, state agency or local that registered the program.");
   }
 
   const enrolledOn = date(formData, "enrolledOn");
@@ -59,7 +59,7 @@ export async function createApprenticeshipEnrollment(formData: FormData): Promis
   const requiredOjt = hours(formData, "requiredOjtHoursPerPeriod");
   const requiredClassroom = hours(formData, "requiredClassroomHoursPerPeriod");
   if (requiredOjt === "invalid" || requiredClassroom === "invalid") {
-    return fail("Hours must be a number, or left blank if the programme hasn't told you.");
+    return fail("Hours must be a number, or left blank if the program hasn't told you.");
   }
 
   const craftClassificationId = text(formData, "craftClassificationId") || null;
@@ -151,7 +151,7 @@ export async function updateApprenticeshipEnrollment(
   const requiredOjt = hours(formData, "requiredOjtHoursPerPeriod");
   const requiredClassroom = hours(formData, "requiredClassroomHoursPerPeriod");
   if (requiredOjt === "invalid" || requiredClassroom === "invalid") {
-    return fail("Hours must be a number, or left blank if the programme hasn't told you.");
+    return fail("Hours must be a number, or left blank if the program hasn't told you.");
   }
 
   const sponsorName = text(formData, "sponsorName");
