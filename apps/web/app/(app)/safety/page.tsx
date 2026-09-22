@@ -42,7 +42,8 @@ export default async function SafetyPage({
   // Whether this company has EVER logged a case, in any year — read off the
   // query above, no second count. The teaching empty state (with its
   // example) is for a company that has never used the log; a company whose
-  // only cases are in earlier years gets one plain line for this year.
+  // only cases are in earlier years gets the status line for this year and
+  // the reminder under it.
   const everLogged = knownYears.length > 0;
   if (!knownYears.includes(thisYear)) knownYears.unshift(thisYear);
 

@@ -11,9 +11,11 @@ and whether it gives you anything to press.
   a case now gets one `EmptyState` with a marked example (three cases, with
   the same `2026-NNN` case numbers the real log uses) and the page's own
   Record an incident button as its primary. Toolbox talks get their own.
-  A company whose only cases are in earlier years gets one plain sentence
-  for this year and no teaching example. The status line comes back with
-  the first case. `/safety` is off `EMPTY_STATE_EXCEPTIONS`.
+  A company whose only cases are in earlier years gets the status line
+  ("No cases logged for 2026.") and #450's reminder under it, with no
+  teaching example — so the sentence appears once in either case, which
+  both `copyFixes.test.ts` (#450, wording) and
+  `one-empty-sentence.test.ts` (render count) hold. `/safety` is off `EMPTY_STATE_EXCEPTIONS`.
 - **`/rfis`, `/submittals`, `/drawings`** stacked three empties on a new
   account: the status line, then a "0 in play · Show closed" header, then
   the `EmptyState` title. Both lines above it now wait for the first
