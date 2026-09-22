@@ -647,7 +647,39 @@ export function LandingPage() {
             </p>
             <AskCanDo className="mt-8 border-t border-line-card pt-6" />
           </div>
-          <div className="min-w-0 lg:justify-self-end">
+          {/* `lg:flex lg:justify-end`, NOT `lg:justify-self-end`: the latter
+              shrink-wraps the cell to each frame's content, so the demo's
+              left edge moved 170.1px every loop (750->920.1 at 1500,
+              448->618.1 at 1024) and its width breathed 373.9->544. At 1024
+              that fit-content cell also OVERFLOWED its 452px track by 36px:
+              elementFromPoint across that strip returned the figure, so the
+              scene painted over the column of words beside it. A full-width
+              flex cell keeps the figure at its own max width every frame,
+              pinned right — measured constant x and width across a full loop
+              at 1024, 1280, 1500 and 1920, with a constant 56px gap (the
+              `lg:gap-14`) to the words. `lg:items-start` keeps the figure its
+              own height rather than stretching it to the row.
+
+              NO `lg:min-h-[...]` HERE, AND THAT IS MEASURED RATHER THAN
+              FORGOTTEN. WwccaLanding.tsx reserves 620px because its demo is
+              the tallest thing in its row. On THIS page it is not: the left
+              column (heading, paragraph and AskCanDo's four groups) is taller
+              than the demo's tallest frame at every `lg` width, so the row
+              height never follows the frame and nothing below the section
+              moves — the next section's y held to a delta of 0.0px over a
+              full loop at both 1500 and 1024, before and after this change.
+              A reserve would bind on nothing.
+
+              The margin is 165.1px at 1024 (789px column, 623.9px frame) but
+              only 7.1px from 1280 up (625px column, 617.9px frame), where the
+              section is at its 1088px cap and the numbers stop changing. So
+              if AskCanDo loses an item or the heading loses a line, RE-MEASURE
+              before assuming this still holds: once the column drops under the
+              tallest frame the row starts following it and the reserve becomes
+              the fix. Under `lg` there is deliberately no reserve either — the
+              tallest frame is 733.8px at 375, and reserving that would strand
+              up to 522px of empty page under a short frame. */}
+          <div className="min-w-0 lg:flex lg:items-start lg:justify-end">
             <AskDemo />
           </div>
         </div>
