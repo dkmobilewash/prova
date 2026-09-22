@@ -92,3 +92,32 @@ every `lineHeight` the scanned files declare, so a pattern that matches
 nothing fails loudly instead of passing everything. Both halves were
 mutation-tested — restoring the ratio goes red, blinding the pattern goes
 red on the count.
+
+**The door stops being Google-only.** Sign-in offered one button —
+Continue with Google — which quietly decided who could use the app: a
+framer whose email the office never linked to a Google account had no way
+in at all. The screen now leads with email and password, keeps Google
+underneath, and carries a reset path (email a 6-digit code, set a new
+password, sign in) because the person who has forgotten a password is
+holding the phone, not sitting at a desk. Nothing was needed in the Clerk
+dashboard: the production instance already allows `password`,
+`email_code` and `reset_password_email_code` as first factors — read from
+its own public config rather than assumed.
+
+**It signs people IN and deliberately does not sign them UP.** Creating an
+account here would make a company rather than join one: `requireCompanyContext`
+gives an address it has never seen its own empty company, so a new crew
+member would land in an app with no jobs and reasonably call it broken.
+The screen says so instead — "The office adds you first" — and a test
+fails if a Create-account control ever appears.
+
+Two smaller decisions worth the words. The screen imports `useSignIn`
+from `@clerk/expo/legacy`: the root export in 4.6 is Clerk's new resource
+shape (`signIn.password()`, `signIn.finalize()`, errors returned rather
+than thrown), and adopting that is a deliberate migration, not something
+to do by autocomplete. And Clerk's own error text is mapped to this app's
+voice for the two codes that decide what a person does next — an unknown
+email sends them to the office, a wrong password sends them to the reset
+— while password-rule errors pass Clerk's sentence through untouched,
+since the minimum length lives in the dashboard and any copy repeating it
+here would go stale the day it changes.
