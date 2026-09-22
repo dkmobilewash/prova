@@ -142,17 +142,54 @@ const KNOWN: Record<string, { count: number; because: string }> = {
       "whenever it renders, and the marketing/auth pages below size " +
       "themselves the same way independently of it.",
   },
-  "apps/web/app/page.tsx": {
+  // `app/page.tsx` HELD THIS ENTRY UNTIL 2026-09-22 and holds no viewport
+  // unit at all now: #457 moved the landing markup into
+  // `components/LandingPage.tsx`, and `app/page.tsx` renders it. The census
+  // caught the move by its per-file count rather than by anybody noticing,
+  // which is the whole argument for counting per file instead of asserting
+  // membership — an entry for a file that no longer matches is a claim
+  // about code that has gone, and the next reader would have believed it.
+  "apps/web/components/LandingPage.tsx": {
     count: 1,
-    because: "Outside `(app)`: no topbar, no sidebar, no metric bar, no scroll port to escape.",
+    because:
+      "`min-h-[78svh]` on the landing hero. Outside `(app)`: no topbar, no " +
+      "sidebar, no metric bar, no scroll port to escape. Rendered by " +
+      "`app/page.tsx`, which is itself outside the shell.",
+  },
+  "apps/web/app/global-error.tsx": {
+    count: 1,
+    because:
+      "`<body class=\"min-h-screen\">`. A global error boundary replaces the " +
+      "whole document — it renders its own `<html>` and `<body>` — so there " +
+      "is no shell, no `<main>` and no scroll port in existence when this " +
+      "markup is on screen.",
+  },
+  "apps/web/components/CompanySetupGate.tsx": {
+    count: 1,
+    because:
+      "`<main class=\"flex min-h-screen …\">`, the onboarding questions. " +
+      "Rendered ONLY by `app/welcome/page.tsx`, which sits outside the " +
+      "`(app)` route group on purpose — that file's own header explains why " +
+      "(the card it replaced painted over whatever page the person was on). " +
+      "No shell renders behind it, so there is no port to size against.",
+  },
+  "apps/web/components/SearchLauncher.tsx": {
+    count: 2,
+    because:
+      "The global search panel: `max-h-[calc(100dvh-4.5rem)]` on the panel " +
+      "itself and `max-h-[60vh]` on the results list inside it. Same shape " +
+      "as HelpButton.tsx and AskLauncher.tsx — the panel's own class string " +
+      "is `fixed left-1/2 top-14 z-50 …`, and the results list is a child " +
+      "of it, so both are inside a `position: fixed` subtree and excluded " +
+      "from every ancestor's scrollable overflow.",
   },
   "apps/web/app/sign-in/[[...sign-in]]/page.tsx": {
     count: 1,
-    because: "Same as app/page.tsx — the Clerk sign-in page, outside the shell.",
+    because: "Outside the `(app)` shell — the Clerk sign-in page.",
   },
   "apps/web/app/sign-up/[[...sign-up]]/page.tsx": {
     count: 1,
-    because: "Same as app/page.tsx — the Clerk sign-up page, outside the shell.",
+    because: "Outside the `(app)` shell — the Clerk sign-up page.",
   },
   "apps/web/components/HelpButton.tsx": {
     count: 1,
