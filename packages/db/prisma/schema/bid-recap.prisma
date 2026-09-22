@@ -1,0 +1,98 @@
+// The bid recap: what turns a priced line-item list into the number a GC is
+// actually asked to pay. Diego's lane (estimating).
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// WHY THIS EXISTS. Until now a job's "contract value" was the bare sum of
+// quantity × unitPrice. That is the DIRECT cost of the work and it is not a
+// bid: it carries no markup on the material, no overhead, no profit, no sales
+// tax, no bond premium, no contingency. Every estimating product in the market
+// has this layer (OST calls them Section Markups) and this one had nothing —
+// so the number on the estimate screen was one an estimator had to mark up in
+// their head, or in a spreadsheet beside it.
+//
+// WHY THE PERCENTAGES ARE STORED AND THE MONEY IS NOT. Every figure the recap
+// produces is derived at read time by apps/web/lib/bid-recap.ts from these
+// rates and the job's current lines. A stored total is wrong the moment a line
+// changes, and derived state is never stored here (CLAUDE.md). The one
+// exception is `appliedAt`/`appliedTotal` below, which record an EVENT — what
+// was written into the line prices, and when — rather than a live figure.
+
+/// The markup and mark-on rates for one job's bid. One row per job.
+///
+/// Pre-filled from CompanyBidDefaults when first opened, exactly as
+/// Job.retainagePercent is pre-filled from Contact.defaultRetainagePercent:
+/// a starting point, never a value enforced from elsewhere afterwards.
+///
+/// Every rate is NULLABLE and null means "not applied" — not zero, and not a
+/// default of somebody else's. A blank overhead box has to read as "this bid
+/// carries no overhead" rather than as an unfinished setup that the app
+/// quietly filled in.
+model JobBidRecap {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String  @unique
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// Markup per cost type — what each kind of direct cost is sold at above
+  /// what it costs. Material and subcontracted work are commonly marked up at
+  /// different rates from self-performed labor, which is the whole reason
+  /// this is four fields rather than one.
+  materialMarkupPercent      Decimal? @db.Decimal(5, 2)
+  laborMarkupPercent         Decimal? @db.Decimal(5, 2)
+  subcontractorMarkupPercent Decimal? @db.Decimal(5, 2)
+  otherMarkupPercent         Decimal? @db.Decimal(5, 2)
+
+  /// Applied after the markups, in the order the fields are listed here and
+  /// in lib/bid-recap.ts — the order is load-bearing and is documented there.
+  escalationPercent  Decimal? @db.Decimal(5, 2)
+  /// Sales tax, applied to MATERIAL only. Labor is not taxed in this model.
+  materialTaxPercent Decimal? @db.Decimal(5, 2)
+  overheadPercent    Decimal? @db.Decimal(5, 2)
+  /// Profit computes on the total INCLUDING overhead, so overhead is part of
+  /// the cost base rather than a share of profit. OST's convention.
+  profitPercent      Decimal? @db.Decimal(5, 2)
+  /// Bond premium, on the taxed and marked-up sum.
+  bondPercent        Decimal? @db.Decimal(5, 2)
+  contingencyPercent Decimal? @db.Decimal(5, 2)
+
+  /// When the recap was spread into the line prices, and the total it wrote.
+  ///
+  /// AN EVENT, NOT A DERIVED FIGURE. Applying the recap raises each line's
+  /// unitPrice pro-rata so the line items sum to the bid — because
+  /// `contractValue` is one number doing two jobs in this app (what we bid and
+  /// what the contract is worth), and after award it must be the number the GC
+  /// agreed to. These two columns are what let the screen say "applied on the
+  /// 4th at $184,320" and refuse to apply the same recap twice.
+  appliedAt    DateTime?
+  appliedTotal Decimal?  @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+/// The company's own default markup rates, used to pre-fill a new job's recap.
+/// One row per company. Same fields, same nullability, same meaning.
+model CompanyBidDefaults {
+  id        String  @id @default(cuid())
+  companyId String  @unique
+  company   Company @relation(fields: [companyId], references: [id])
+
+  materialMarkupPercent      Decimal? @db.Decimal(5, 2)
+  laborMarkupPercent         Decimal? @db.Decimal(5, 2)
+  subcontractorMarkupPercent Decimal? @db.Decimal(5, 2)
+  otherMarkupPercent         Decimal? @db.Decimal(5, 2)
+
+  escalationPercent  Decimal? @db.Decimal(5, 2)
+  materialTaxPercent Decimal? @db.Decimal(5, 2)
+  overheadPercent    Decimal? @db.Decimal(5, 2)
+  profitPercent      Decimal? @db.Decimal(5, 2)
+  bondPercent        Decimal? @db.Decimal(5, 2)
+  contingencyPercent Decimal? @db.Decimal(5, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

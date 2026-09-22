@@ -6,6 +6,12 @@ export const settingsWalkthrough: Walkthrough = {
   title: "Settings",
   steps: [
     {
+      anchor: "settings-bid-defaults",
+      title: "Your usual markup",
+      body:
+        "What you normally add to the cost of a job — markup by kind of cost, then overhead, profit, tax, bond and contingency. A new job starts from these; changing them never moves a bid you have already built.",
+    },
+    {
       anchor: "settings-owner-only",
       title: "Owner only",
       body:

@@ -1511,8 +1511,12 @@ async function undo(companyId) {
     );
     await del("jobProposalClause", () =>
       prisma.jobProposalClause.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     await del("wallRun", () =>
       prisma.wallRun.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("jobBidRecap", () =>
+      prisma.jobBidRecap.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
     await del("warrantyServiceRequest", () =>
       prisma.warrantyServiceRequest.deleteMany({ where: { jobId: { in: jobIds } } }),
