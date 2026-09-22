@@ -99,12 +99,17 @@ describe("payAppEntryError", () => {
     expect(payAppEntryError(input)).toMatch(/stored/i);
   });
 
-  it("refuses a negative billed amount, which has no mechanism behind it", () => {
-    // min="0" on the thisPeriodBilled input is a client-side claim only; a
-    // crafted POST goes straight past it and Number("-5000") parses fine.
-    // Unlike materialsStoredValue there is no negative-billing concept, so
-    // this is enforced rather than merely decorated.
-    const input: PayAppLineItemInput = {
+  it("refuses taking back more than the line was ever billed", () => {
+    // THIS TEST SAID THE OPPOSITE UNTIL 2026-09-21, and the sentence it
+    // asserted — "there is no negative-billing concept" — was what kept an
+    // over-billed line uncorrectable. It is not true of a CORRECTION. Column
+    // E of a G703 goes negative to take back an over-bill, and this app has
+    // no void, edit or delete invoice action to do it any other way.
+    //
+    // What survives is the bound. $5,000 taken back off a line that has
+    // never been billed a cent leaves it at −$5,000 completed to date, which
+    // is not a figure a continuation sheet can carry.
+    const beyondWhatWasBilled: PayAppLineItemInput = {
       ...LINE,
       previousBilled: 0,
       thisPeriodBilled: -5000,
@@ -112,7 +117,35 @@ describe("payAppEntryError", () => {
       materialsStoredValue: 0,
     };
 
-    expect(payAppEntryError(input)).toMatch(/negative/i);
+    const error = payAppEntryError(beyondWhatWasBilled);
+    // Both figures named, so a PM can see which one is wrong rather than
+    // being told the entry is invalid.
+    expect(error).toContain("$5,000.00");
+    expect(error).toContain("$0.00");
+    expect(error).toContain("Metal stud framing");
+  });
+
+  it("allows a correction down to exactly what the line has been billed, and no further", () => {
+    const correcting = (thisPeriodBilled: number): PayAppLineItemInput => ({
+      ...LINE,
+      previousBilled: 60000,
+      thisPeriodBilled,
+      previousMaterialsStored: 0,
+      materialsStoredValue: 0,
+    });
+
+    // The real case: $60,000 claimed in March where $50,000 was built.
+    expect(payAppEntryError(correcting(-10000))).toBeNull();
+    expect(calculatePayAppLineItem(correcting(-10000)).totalCompletedAndStoredToDate).toBe(50000);
+
+    // All the way back to zero is legitimate — a line billed entirely in
+    // error is reversed in full.
+    expect(payAppEntryError(correcting(-60000))).toBeNull();
+    expect(calculatePayAppLineItem(correcting(-60000)).totalCompletedAndStoredToDate).toBe(0);
+
+    // A cent past it is not. The half-cent tolerance is for float dust in
+    // scheduledValue, not a licence here either.
+    expect(payAppEntryError(correcting(-60000.01))).toMatch(/more than/i);
   });
 
   it("does not measure an unpriced line against a zero scheduled value", () => {
@@ -170,13 +203,28 @@ describe("payAppEntryError", () => {
     expect(payAppEntryError(at(100000.01))).toMatch(/scheduled value/i);
   });
 
-  it("still refuses a correcting application that over-releases, but allows one that nets negative", () => {
+  it("leaves a correcting application that nets negative acceptable at the ROW level", () => {
     // A pure credit — releasing stored material the sub was over-billed for
     // — has to stay possible. There is no void, edit or delete invoice
     // action anywhere in billing.ts, so a LATER application carrying the
     // negative is the only in-app way to correct an already-sent 140%
-    // invoice. A blanket "invoice amount cannot be negative" refusal would
-    // close that door; it is deliberately not implemented.
+    // invoice.
+    //
+    // THIS COMMENT USED TO END "a blanket 'invoice amount cannot be
+    // negative' refusal would close that door; it is deliberately not
+    // implemented", AND THAT ABSENCE TURNED OUT TO COST SOMETHING. With no
+    // document-level check of any kind, the same shape reached by mistake —
+    // the −$5,000 stored release with its matching positive left off —
+    // produced a −$5,000.00 invoice, a −$500.00 retainage snapshot and a
+    // G702 reading "Current payment due −$4,500.00", with every row here
+    // returning null, correctly.
+    //
+    // The conclusion was right and the inference from it was wrong: a
+    // blanket refusal WOULD close the door, so `submitPayApplication` asks
+    // instead of refusing — a negative total needs the submission to say a
+    // credit is what was meant. Nothing about the ROW guard changes, which
+    // is what this test still pins. See lib/pay-application-credit.test.ts
+    // for the document half, driven through the action.
     const credit: PayAppLineItemInput = {
       ...LINE,
       previousBilled: 100000,
@@ -197,38 +245,109 @@ describe("payAppEntryError", () => {
  * attribute or the filter that made the documented mechanism unreachable,
  * with every other test still green.
  */
-const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+/** COMMENTS ARE STRIPPED BEFORE ANY OF THIS IS SCANNED, and this file
+ * needed it the moment the inputs below acquired a paragraph explaining
+ * which floor went and why: that paragraph contains the literal `min="0"`,
+ * sitting inside the 200 characters `attributesBefore` reads, so the
+ * assertion that the attribute is gone failed on the note recording that it
+ * had gone. The mirror image of #185, where a comment quoting a pattern
+ * DISARMED a census. Either way a scan that reads prose is answering a
+ * question about prose. Same helper `ownerRefusalCensus.test.ts` uses. */
+const stripComments = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+const read = (path: string) => stripComments(readFileSync(join(process.cwd(), path), "utf8"));
 
 describe("the negative-materials path stays reachable", () => {
   const form = read("components/PayApplications.tsx");
 
-  /** The 200 characters of markup immediately before a named input. */
-  const attributesBefore = (name: string) => {
+  /**
+   * THE WHOLE `<input …/>` TAG a named field sits in — both sides of the
+   * `name`, not the 200 characters before it.
+   *
+   * It read `form.slice(at - 200, at)`, and mutation testing caught that
+   * going vacuous: putting `type="number" min="0"` back on the This-period
+   * box left every assertion here GREEN. #414 reordered these inputs to put
+   * `name` FIRST, so the attributes each assertion is about had moved
+   * behind the anchor it measured from and there was nothing to find. The
+   * window was never wrong about anything — it had stopped looking at the
+   * attributes at all, which is the failure mode this repo keeps paying
+   * for: a check answering a question nobody asked.
+   *
+   * Reading the tag has no window to get wrong, and it fails loudly if the
+   * markup ever stops being a self-closing input.
+   */
+  const attributesOf = (name: string) => {
     const at = form.indexOf(`name="${name}"`);
-    expect(at).toBeGreaterThan(-1);
-    return form.slice(Math.max(0, at - 200), at);
+    expect(at, `no input named ${name}`).toBeGreaterThan(-1);
+    const open = form.lastIndexOf("<input", at);
+    const close = form.indexOf("/>", at);
+    expect(open, `no opening <input before name="${name}"`).toBeGreaterThan(-1);
+    expect(close, `no closing /> after name="${name}"`).toBeGreaterThan(open);
+    return form.slice(open, close + 2);
   };
 
   it("does not put min=0 on the stored-materials input", () => {
-    expect(attributesBefore("materialsStoredValue")).not.toContain('min="0"');
+    expect(attributesOf("materialsStoredValue")).not.toContain('min="0"');
+    expect(attributesOf("materialsStoredValue")).toContain('type="text"');
   });
 
-  it("DOES keep the floor on this period's billed amount — in the ACTION now, not the markup", () => {
-    // Guards against a fix that strips both. There is no negative-billing
-    // mechanism; only stored materials get released with a negative.
+  it("keeps NO floor on this period's billed amount — the third state of this assertion", () => {
+    // THIS TEST HAS NOW SAID THREE DIFFERENT THINGS, and the sequence is
+    // worth more than any one of them:
     //
-    // MOVED 2026-09-21, and moved for the reason the comment beside the
-    // stored-materials input has always given: `min="0"` is native
-    // validation, which gates the submit handler, so the form refused in
-    // silence and showed nothing. The floor is the same floor; it is
-    // enforced where it can say so. `type="number"` went with it — measured
-    // in real Chromium, it discards a thousands comma before the server
-    // sees it, and on Firefox submits an empty string.
-    const action = read("lib/actions/billing.ts");
-    expect(attributesBefore("thisPeriodBilled")).not.toContain('type="number"');
-    expect(action).toContain('payApplicationFigure(thisPeriodValues[i], "This period", { min: 0 })');
-    // And no floor on stored, which is the whole point of the pair.
-    expect(action).toContain('payApplicationFigure(materialsStoredValues[i], "Stored materials")');
+    //   1. "DOES keep min=0" — the markup attribute, against a fix that
+    //      stripped both boxes. Guarding #95's release mechanism.
+    //   2. #414 moved the floor into the ACTION as `{ min: 0 }`, because
+    //      native validation gates the submit handler and so refused in
+    //      silence. Same rule, better placed, and this test followed it.
+    //   3. The rule itself was wrong. Every version rested on "there is no
+    //      negative-billing mechanism", which is true of the stored-material
+    //      RELEASE and false of a downward CORRECTION — and nobody had asked
+    //      about corrections. A line over-billed in March could not be
+    //      brought down on any later application, by any route, ever. A
+    //      G703's column E is that route.
+    //
+    // So the floor is gone from both places, and what replaced it is a BOUND
+    // rather than nothing: you cannot un-bill more than the line has been
+    // billed. Enforced on the server, where a crafted POST meets it too.
+    const parse = read("lib/pay-application.ts");
+    expect(attributesOf("thisPeriodBilled")).not.toContain('min="0"');
+    // #414's measurement stands and must keep standing: type="number"
+    // discards a thousands comma before the server sees it, and Firefox
+    // submits an empty string for anything it dislikes.
+    expect(attributesOf("thisPeriodBilled")).not.toContain('type="number"');
+    // Positive as well as negative: an assertion that only ever says what
+    // is ABSENT passes just as happily over an input that has stopped
+    // existing, or over a window that has stopped containing it.
+    expect(attributesOf("thisPeriodBilled")).toContain('type="text"');
+    expect(attributesOf("thisPeriodBilled")).toContain('inputMode="decimal"');
+    expect(parse).toContain('payAppFigure(thisPeriodValues[i], "This period")');
+    expect(parse).not.toMatch(/payAppFigure\(thisPeriodValues\[i\], "This period", \{ min: 0 \}\)/);
+    // Stored never had one, which was the whole point of the pair; now they
+    // agree, for two different reasons that happen to land in the same place.
+    expect(parse).toContain('payAppFigure(materialsStoredValues[i], "Stored materials")');
+    // And the bound that replaced the floor is real, not merely absent.
+    expect(parse).toContain("input.previousBilled + input.thisPeriodBilled < -CENT_TOLERANCE");
+  });
+
+  it("reads the grid through one parse, shared by the form and the action", () => {
+    // #414 wrote the per-cell parser inside submitPayApplication. It moved to
+    // lib/pay-application.ts UNCHANGED so the form can show a running total
+    // from the same reading the server decides on — a second expression here
+    // would be a preview free to disagree with the write.
+    expect(read("lib/actions/billing.ts")).toContain("payAppRowsFromForm(formData)");
+    expect(form).toContain("payAppRowsFromForm");
+    expect(read("lib/actions/billing.ts")).not.toContain("function payApplicationFigure");
+  });
+
+  it("shows what the application comes to, and asks before submitting a credit", () => {
+    // The document-level half of the negative-pay-application defect. The
+    // total was never on screen at all, so an application could net negative
+    // without the figure ever appearing — and `confirmCredit` is what
+    // `submitPayApplication` requires before writing one.
+    expect(form).toContain("This application comes to");
+    expect(form).toContain('name="confirmCredit"');
   });
 
   it("shows the running stored-to-date figure beside the input", () => {
@@ -254,10 +373,31 @@ describe("submitPayApplication keeps negative rows", () => {
   const source = read("lib/actions/billing.ts");
 
   it("no longer drops a row whose only content is a negative", () => {
-    expect(source).not.toContain("row.thisPeriodBilled > 0 || row.materialsStoredValue > 0");
+    // The parse moved into pay-application.ts (one reading of the boxes,
+    // shared with the form), so the filter is checked THERE now — a check
+    // pointed at the file the code left is a check that has stopped
+    // looking, and it would keep passing forever.
+    const parse = read("lib/pay-application.ts");
+    expect(parse).not.toContain("row.thisPeriodBilled > 0 || row.materialsStoredValue > 0");
+    // #414 rewrote the drop as a `continue` inside the parse loop, so the
+    // shape to pin is that one — and what matters about it is unchanged:
+    // BOTH cells must be zero. `&&`, never `||`, or a row carrying only the
+    // negative release vanishes and #95's double bill is back.
+    expect(parse).toContain("if (billed.n === 0 && stored.n === 0) continue;");
+    expect(source).toContain("payAppRowsFromForm");
   });
 
   it("calls the guard", () => {
     expect(source).toContain("payAppEntryError");
+  });
+
+  it("refuses a negative TOTAL that does not say it is a credit", () => {
+    // The per-row guard above cannot see this: each row is fine and the
+    // certificate is not. Pinned as source rather than behaviour only
+    // because the behaviour is already executed against the real action in
+    // lib/pay-application-credit.test.ts — this catches the edit that
+    // deletes the condition while that file's mocks still satisfy it.
+    expect(source).toContain('formData.get("confirmCredit")');
+    expect(source).toMatch(/Number\(amountValue\)\s*<\s*0/);
   });
 });

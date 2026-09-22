@@ -1,10 +1,7 @@
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
-import {
-  createLineItemCatalogEntry,
-  updateCatalogDefaultsFromActuals,
-} from "@/lib/actions";
+import { createLineItemCatalogEntry, updateCatalogDefaultsFromActuals } from "@/lib/actions";
 import { catalogActuals, catalogSourcedLine, type CatalogLineRow } from "@/lib/catalog-actuals";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
@@ -45,9 +42,16 @@ function formatVariancePct(pct: number) {
 function ActualsLine({
   entry,
   fringeSchedulesByCraft,
+  isOwner,
 }: {
   entry: CatalogEntryWithLines;
   fringeSchedulesByCraft: ReadonlyMap<string, FringeRateScheduleInput[]>;
+  /* Whether to render the re-price CONTROL at all. Not a security boundary
+     — `updateCatalogDefaultsFromActuals` refuses a non-owner itself — but
+     the badge above it stays visible either way, because "worth re-pricing"
+     is information an estimator should have even when the button is the
+     owner's. Same split IntakeForwardBox documents. */
+  isOwner: boolean;
 }) {
   // Built by the same function the WRITE uses (#287). A badge that disagreed
   // with the button under it would be worse than either being wrong alone.
@@ -121,15 +125,28 @@ function ActualsLine({
           twice.
         </p>
       )}
-      {actuals.isFlagged && (
-        <form
+      {/* Still no hidden input carrying the figure (#105 finding 3) — the
+          server re-derives it from the line items and this form sends
+          nothing but the margin checkbox. What is shown above is only ever
+          a preview of what the server will work out itself.
+
+          `<ActionForm>`, not `<form action={…}>`, and this is the control
+          that most needed it. `updateCatalogDefaultsFromActuals` threw
+          every refusal it had, and production redacts a thrown Server
+          Action message to a digest — so the two outcomes were "the price
+          changed" and a blank error page. The refusals here are the useful
+          ones: `repriceDecision` re-checks the flag and the sample that
+          made this button appear, because the page may be minutes old, and
+          it names what to do — add a fringe rate schedule covering the
+          craft and dates those hours were worked, or recategorise the cost
+          entry sitting beside logged hours. An owner met those on an
+          ordinary race and saw the digest. */}
+      {actuals.isFlagged && isOwner && (
+        <ActionForm
           action={updateCatalogDefaultsFromActuals.bind(null, entry.id)}
           className="flex flex-wrap items-center gap-2"
+          errorClassName="w-full text-xs text-tag-rose-ink"
         >
-          {/* No hidden input carrying the figure any more (#105 finding 3)
-              — the server re-derives it from the line items, so this form
-              sends nothing but the margin checkbox. What's shown above is
-              only ever a preview of what the server will work out itself. */}
           <label className="flex items-center gap-1 text-xs text-ink-body">
             <input type="checkbox" name="alsoUpdatePrice" className="accent-yellow-500" />
             also move the sale price, holding margin
@@ -140,7 +157,7 @@ function ActualsLine({
           >
             Update default from actuals
           </SubmitButton>
-        </form>
+        </ActionForm>
       )}
     </div>
   );
@@ -150,6 +167,20 @@ export default async function CatalogPage() {
   const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
   const { company } = context;
+  /* THE PAGE ADMITS MORE PEOPLE THAN ITS TWO OWNER-ONLY CONTROLS DO, and
+     that gap is the whole defect. `/catalog` demands MANAGE_ESTIMATING and
+     ESTIMATOR holds it (lib/permissions.ts) — by design; pricing work is
+     what an estimator does. But the price-list import and the re-price
+     button are owner-only in the actions behind them, and neither was
+     gated here. An estimator could paste two hundred rows, click, and get
+     the error boundary with the paste inside it.
+
+     `context.role === "OWNER"` rather than a capability, deliberately:
+     these two are administration, not estimating, and no job function
+     grants or withholds it (see the UserRole/JobFunction note at the top of
+     lib/permissions.ts). Cosmetic, not a boundary — both actions refuse a
+     non-owner themselves. */
+  const isOwner = context.role === "OWNER";
 
   const [entries, craftClassifications, fringeSchedulesByCraft] = await Promise.all([
     prisma.lineItemCatalogEntry.findMany({
@@ -195,7 +226,7 @@ export default async function CatalogPage() {
       </p>
 
       <div className="mb-6" data-tour="catalog-import">
-        <CatalogImport existingDescriptions={entries.map((entry) => entry.description)} />
+        <CatalogImport existingDescriptions={entries.map((entry) => entry.description)} canImport={isOwner} />
       </div>
 
       <section className="mb-8">
@@ -263,7 +294,7 @@ export default async function CatalogPage() {
                       <> · {entry.defaultLaborHours.toString()} hrs/line</>
                     )}
                   </p>
-                  <ActualsLine entry={entry} fringeSchedulesByCraft={fringeSchedulesByCraft} />
+                  <ActualsLine entry={entry} fringeSchedulesByCraft={fringeSchedulesByCraft} isOwner={isOwner} />
                 </>
               </CatalogEntryRow>
             ))}
