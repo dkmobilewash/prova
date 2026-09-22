@@ -15,7 +15,7 @@ import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
 import { useMe } from "@/lib/use-me";
-import { type Palette, radius, space, typography } from "@/lib/theme";
+import { leadingFor, type Palette, radius, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -270,7 +270,7 @@ function makeStyles(p: Palette) {
     emptyBody: {
       color: p.colors.inkBody,
       fontSize: typography.size.md,
-      lineHeight: typography.leading.normal,
+      lineHeight: leadingFor(typography.size.md),
       textAlign: "center",
     },
     box: {

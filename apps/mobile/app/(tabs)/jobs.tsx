@@ -16,7 +16,7 @@ import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { setCurrentJob } from "@/lib/current-job";
 import { emptyFor } from "@/lib/empty-state";
 import { shortDay } from "@/lib/local-today";
-import { type Palette, space, typography } from "@/lib/theme";
+import { leadingFor, type Palette, space, typography } from "@/lib/theme";
 import type { Job } from "@/lib/types";
 import { useCurrentJob } from "@/lib/use-current-job";
 import { usePalette } from "@/lib/use-palette";
@@ -160,7 +160,7 @@ function makeStyles(p: Palette) {
     emptyBody: {
       color: p.colors.inkBody,
       fontSize: typography.size.md,
-      lineHeight: typography.leading.normal,
+      lineHeight: leadingFor(typography.size.md),
       textAlign: "center",
     },
   });

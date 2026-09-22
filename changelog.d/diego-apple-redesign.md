@@ -72,3 +72,23 @@ type. The call now lives in a `DrainTimer` component rendered beside the
 handover gate — inside the provider, outside the gate, because a crew
 member's hours must keep draining while the tabs are unmounted — and the
 rails test pins all three of those properties out of the source.
+
+**And a phone found what no test could: every empty-state description was
+clipped to its top pixel.** `typography.leading` holds RATIOS (1.35);
+React Native's `lineHeight` takes POINTS. `lineHeight:
+typography.leading.normal` therefore drew a 1.35-point line, so the text
+under "No reports yet", "No photos yet", "Nothing on order", "Nobody is
+scheduled on this job." and the outbox's own empty line rendered as a
+smear of glyph-tops that reads as blank space rather than as a bug. It
+type-checked, it linted, and 193 tests passed over it, because happy-dom
+does no layout — a clipped line and a drawn one are the same DOM. It was
+found by walking the click-list on a real phone through iPhone Mirroring.
+
+One site was already on `main` (`EmptyState`); this branch had added three
+more. All four now call `leadingFor(size)`, which multiplies the ratio
+into points, and `design-tokens.test.ts` gains a fourth census: a ratio
+reaching any `lineHeight` fails the build, and the parse must account for
+every `lineHeight` the scanned files declare, so a pattern that matches
+nothing fails loudly instead of passing everything. Both halves were
+mutation-tested — restoring the ratio goes red, blinding the pattern goes
+red on the count.

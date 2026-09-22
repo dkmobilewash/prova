@@ -88,4 +88,48 @@ describe("shapes and sources stay tokenised", () => {
     }
     expect(offenders, `off-scale gaps: ${offenders.join(", ")}`).toEqual([]);
   });
+
+  /**
+   * 4. LINE HEIGHTS ARE POINTS, NEVER A RATIO, and this one is a scar
+   *    rather than a preference. `typography.leading` holds ratios
+   *    (1.2/1.35/1.5); React Native's `lineHeight` takes POINTS. Handing
+   *    it the ratio type-checks, lints clean, and draws a 1.35-point line
+   *    — the glyphs are clipped to their top pixel, so the screen reads
+   *    as blank rather than broken. It shipped on four styles covering
+   *    five screens (every empty-state description) and NOTHING here
+   *    could see it: happy-dom does no layout, so a clipped line and a
+   *    drawn one are the same DOM. A phone found it.
+   *
+   *    The size assertion is the other half, per CLAUDE.md: a pattern
+   *    that matches nothing passes every check under it, so the parse
+   *    must account for every `lineHeight` the files declare.
+   */
+  it("gives every lineHeight points rather than a leading ratio", () => {
+    const values: string[] = [];
+    let declared = 0;
+    for (const file of files) {
+      const text = readFileSync(file, "utf8");
+      declared += (text.match(/lineHeight:/g) ?? []).length;
+      for (const match of text.matchAll(/lineHeight:\s*([^,\n}]+)/g)) {
+        values.push(`${file.slice(root.length + 1)}: ${match[1].trim()}`);
+      }
+    }
+
+    expect(values.length, "the parse lost a lineHeight declaration").toBe(declared);
+    expect(values.length, "no lineHeight found at all — the pattern is dead").toBeGreaterThan(8);
+
+    const offenders = values.filter((entry) => {
+      const value = entry.slice(entry.indexOf(": ") + 2);
+      if (/\bleading\b/.test(value)) return true; // a ratio, in a points field
+      if (value.startsWith("leadingFor(")) return false;
+      // A literal, or an expression starting in one (`44 * stampScale`).
+      // Anything under 12 points cannot be a line of readable text.
+      const points = Number.parseFloat(value);
+      return !Number.isFinite(points) || points < 12;
+    });
+    expect(
+      offenders,
+      `these render clipped text — use leadingFor(size): ${offenders.join(", ")}`,
+    ).toEqual([]);
+  });
 });

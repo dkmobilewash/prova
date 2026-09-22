@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Icon } from "@/components/Icon";
 import type { IconName } from "@/lib/icon-glyphs";
-import { type Palette, space, typography } from "@/lib/theme";
+import { leadingFor, type Palette, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 
 /** The "nothing here" state, with a way out phrased in the description. Big
@@ -56,7 +56,7 @@ function makeStyles(p: Palette) {
     description: {
       color: p.colors.inkBody,
       fontSize: typography.size.md,
-      lineHeight: typography.leading.normal,
+      lineHeight: leadingFor(typography.size.md),
       textAlign: "center",
     },
   });

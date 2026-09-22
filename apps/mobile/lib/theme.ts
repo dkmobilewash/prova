@@ -215,3 +215,25 @@ export const shadow = {
  * keeps it as a floor, not an aim — a foreman's glove is bigger than a
  * fingertip. Primary actions run taller than this (see Button). */
 export const hitTarget = 44;
+
+/**
+ * A line height in POINTS, which is the only thing React Native's
+ * `lineHeight` accepts.
+ *
+ * `typography.leading` is a RATIO. Handing one straight to `lineHeight`
+ * type-checks, lints clean, and renders a 1.35-POINT line — the text is
+ * clipped to the top pixel or two of its glyphs, so the screen reads as
+ * blank space rather than as a defect. Every empty-state description on
+ * the phone shipped that way and no test could see it: happy-dom does no
+ * layout, so a clipped line and a drawn one are the same DOM. It was
+ * found by looking at a real phone (#427's click-list), on five screens.
+ *
+ * `design-tokens.test.ts` now fails the build if a ratio reaches a
+ * `lineHeight`. This is what to use instead.
+ */
+export function leadingFor(
+  size: number,
+  ratio: number = typography.leading.normal,
+): number {
+  return Math.round(size * ratio);
+}
