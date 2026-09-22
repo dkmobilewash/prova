@@ -21,6 +21,31 @@
  * offer, made to the association's members by name — never the
  * association's program.
  *
+ * ── WHAT THE ASSOCIATION MUST APPROVE BEFORE THIS PAGE GOES LIVE ─────────
+ *
+ * Nothing below is done until the WWCCA says yes IN WRITING. Until then the
+ * page stays noindex, unlinked, and shown only on request:
+ *
+ *   1. Use of the association's name on the page ("For WWCCA member
+ *      contractors", and the name in the offer and the disclosure).
+ *   2. The founding-member offer made to its members by name: $399 per
+ *      month per company, flat, unlimited users, the first 60 days free as
+ *      onboarding, limited to the first 10 member companies.
+ *   3. Use of the WWCCA logo, with written permission — `logoSrc` below.
+ *   4. Linking to the page from anywhere, or letting search engines index
+ *      it (both are code changes, deliberately; see THE SWITCH).
+ *
+ * ── THE LOGO ────────────────────────────────────────────────────────────
+ *
+ * `logoSrc` is a SLOT, and it is null. A trade association's logo may not
+ * be used without its written permission, and showing it before then would
+ * imply exactly the endorsement this file exists to rule out. When it is
+ * null the hero renders no lockup and leaves no gap. Set it ONLY after
+ * permission is in writing, to a file the association itself supplied and
+ * committed under public/ — never downloaded, copied or hotlinked from its
+ * website — and change page.test.ts's null pin in the same commit, with the
+ * permission referenced in the PR.
+ *
  * ── THE SWITCH ──────────────────────────────────────────────────────────
  *
  * `enabled: false` makes the route 404 (app/associations/wwcca/page.tsx
@@ -70,12 +95,17 @@ export const WWCCA = {
   eyebrow: "For WWCCA member contractors",
 
   /**
-   * The disclosure. Printed near the foot of the page, in plain words,
+   * The disclosure. One line near the foot of the page, in plain words,
    * because the relationship described in the header is exactly what a
    * careful reader will wonder about, and the honest answer costs nothing.
    */
   independence:
-    "C Stream is an independent company. This page is written for members of the Western Wall & Ceiling Contractors Association; it is not published, sponsored or endorsed by the WWCCA, and nothing on it should be read as the association's recommendation.",
+    "C Stream is an independent company. This page is not published, sponsored or endorsed by the WWCCA.",
+
+  /** THE LOGO SLOT — null until the association gives written permission.
+   * See THE LOGO in the header; page.test.ts pins this to null. */
+  logoSrc: null as string | null,
+  logoAlt: "Western Wall & Ceiling Contractors Association",
 } as const;
 
 /**
@@ -86,24 +116,21 @@ export const WWCCA = {
  * is: C Stream is offering this; the association does not run it.
  */
 export const FOUNDING_OFFER = {
-  heading: "Founding-member pricing for the first 10 WWCCA member companies",
+  heading: "Founding-member pricing",
   lead: "C Stream is offering founding-member pricing to the first 10 WWCCA member companies.",
   /** The founding price, set by Cyrus 2026-09-21. The layout renders this
    * string verbatim and renders nothing if it is null. */
   price: "$399 per month, per company — flat, with unlimited users." as string | null,
   /** Onboarding, NOT a free trial: the 60 days are the founders doing the
    * setup and one real billing cycle, which is what makes them free. */
-  onboarding:
-    "The first 60 days are free. That is onboarding, not a trial: we load your data and run one real billing cycle through C Stream with you before the first bill.",
+  onboarding: "The first 60 days are free. That is onboarding, not a trial: we load your data and run one real billing cycle with you.",
   terms: [
     // NOT a lifetime lock and NOT "for as long as you stay a customer": the
     // pricing research recommends against promising either and it is not
     // decided. This is the sentence the exact terms replace when they are.
     "Founding members get a lower price than anyone who comes after them, locked in.",
-    "We load your data for you — crew list, open jobs, and each job's schedule of values — so you start on your own jobs, not a blank screen.",
+    "Why ten: the first ten get the founders' direct time, and a say in what gets built next.",
   ],
-  whyTen:
-    "Why ten: the first ten get the founders' direct time. That means setup done for you, and a say in what gets built next. Two people build C Stream, and that is as many companies as two people can do that for properly.",
   /**
    * How to ask. There is no contact form and no public address on purpose —
    * /pilot makes the same call — so the route to a person is the one the
@@ -112,14 +139,7 @@ export const FOUNDING_OFFER = {
    * that panel's own promise, quoted rather than improved on).
    */
   howToAsk: [
-    { title: "Sign up", body: "It takes a minute. Your company gets its own private account." },
-    {
-      title: "Ask for founding-member terms",
-      body: "Press Help on any screen and use “Or ask a person.” Say you are a WWCCA member. One of the two founders answers, within one business day.",
-    },
-    {
-      title: "We walk you through it and load your data",
-      body: "A walkthrough on your own work, then we put your crew, your open jobs and their schedules of values in for you.",
-    },
+    { title: "Sign up", body: "Your company gets its own private account." },
+    { title: "Press Help, then “Or ask a person”", body: "Say you are a WWCCA member. A founder answers within one business day." },
   ],
 } as const;

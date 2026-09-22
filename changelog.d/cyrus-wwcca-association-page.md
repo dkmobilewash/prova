@@ -6,10 +6,8 @@ Ceiling Contractors Association, shaped after Siteline's per-association
 pages and narrowed to the one argument that is ours: on a union public job
 the same hours feed the WH-347, the trust-fund remittance and the
 apprentice-ratio check, and the pay application comes off the same job's
-schedule of values. It reuses the landing page's four product panels, names
-what the product does NOT do yet (WH-347 page 2, overtime is entered not
-calculated, the remittance sheet's missing fund and member numbers, no
-payroll), offers to load a member's data for them, and carries C Stream's
+schedule of values. It reuses the landing page's four product panels,
+offers to load a member's data for them, and carries C Stream's
 founding-member offer to the first 10 member companies: $399 per month per
 company, flat, unlimited users, with the first 60 days free as onboarding
 (we load the data and run one real billing cycle), and no counter. The lock
@@ -38,33 +36,60 @@ application. They do not — a G702/G703 bills against the schedule of values
 — so the page says the pay application comes off the same job's line items,
 which is true (`scheduledValueFor` in `lib/pay-application-query.ts`).
 
-**The hero had an empty right half at desktop width, and now carries the
-WH-347.** At ~1500px the top of the page was a left-aligned headline, a
-paragraph and two buttons, with nothing beside them — the landing page's hole
-before #404. The hero is now two columns at `lg`: the words on the left, and
-on the right `CertifiedPayrollPanel`, the week's hours already turned into a
-WH-347 by `buildWh347`. Certified payroll rather than the pay application,
-because the headline is about hours and the pay application is the one
-document on this page not built from them. The panel MOVED up from the panel
-section rather than being copied, so the WH-347 appears once; the three rows
-left below still alternate sides.
+**Remodelled before the committee sees it (Cyrus, 2026-09-21): shorter, no
+limits section, a two-column hero, and a logo slot that is OFF.**
 
-`items-start`, not `items-center`, with the landing page's reason in a
-comment. Top-aligning alone moved the surplus under the buttons — measured at
-1500x950: left column 407px against a 726px panel, ~320px of bare background
-beside the panel's lower half, which is the landing page's third "looks
-empty". Closed with content, not padding: three lines on what the certified
-payroll does sit under the buttons (two of them are the ones that sat beside
-this panel lower down). After: left column 672px, panel 726px.
+- **The hero had an empty right half at ~1500px** — a left-aligned headline,
+  a paragraph and two buttons, then bare background: the landing page's hole
+  before #404. It is now two columns at `lg`, with `CertifiedPayrollPanel`
+  (the week's hours laid out as a WH-347 by `buildWh347`) on the right.
+  Certified payroll, not the pay application the landing page leads with,
+  because the headline is about hours and the pay application is not built
+  from them. `items-start`, not `items-center`, with the landing page's
+  reason in a comment. Top-aligning alone moved the surplus under the
+  buttons (407px column beside a 726px panel); that was closed with content,
+  not padding: the trades and a three-item "From one entry of hours" list.
+  After: 624px beside 726px at 1500x950.
+- **"What it does not do yet" is gone,** replaced by a stricter rule rather
+  than a silence: every claim on the page is true as written, each carries
+  its receipt in a comment, and nothing implies a missing feature. The page
+  says C Stream BUILDS the WH-347; it never says certified payroll is filed
+  or file-ready (page 2, the Statement of Compliance, is not built), never
+  that overtime is calculated (it is entered), and never that the
+  remittance is ready to mail (it holds no fund numbers or addresses).
+- **Visible words outside the panels: 1,152 before, 329 after** (whole
+  page including panels: 1,991 to 1,168), counted from the server-rendered
+  markup. One line per idea; the four panels carry the detail.
+- **Tailored:** the trades as a member names them (metal framing & drywall,
+  lath & plaster, EIFS, acoustical ceilings, fireproofing), and the ratio
+  line speaks of a local's JATC standards (`ApprenticeRatioRule` records
+  each local's rule with where it is written down). Nothing is said about
+  the WWCCA itself beyond its name.
+- **The logo slot:** `WWCCA.logoSrc` in `components/associations/wwcca.ts`,
+  `null`. While null the hero renders no lockup and no gap. A trade
+  association's logo needs its written permission, and showing it earlier
+  would imply the endorsement this page exists to rule out. `wwcca.ts` now
+  carries the list of what the association must approve, logo included.
 
-Phone widths, measured in a real Chromium against a production build: at 375
-and 320 the panel stacks below the copy, and `window.innerWidth` is 375 and
-320 — the layout viewport itself, not only `scrollWidth`. The route is now in
-`e2e/lib/publicRoutes.ts`, which `publicRoutes.test.ts` had started demanding
-once `main`'s public-route census reached this branch; so the public e2e job
-walks this page at 320, 375 and 1280 on every PR. `page.test.ts` fails if the
-WH-347 figure leaves the hero, if it appears twice, or if the hero grid is
-`items-center`.
+The checks. `page.test.ts` now fails if: the WH-347 leaves the hero or
+appears twice; the hero grid is `items-center`; the page says payroll is
+filed / file-ready, overtime is calculated, or the remittance is ready to
+mail (whole page, panels included, and it asserts the documents are still
+NAMED so those regexes cannot pass on a page that stopped mentioning them);
+the limits section comes back; or `logoSrc` is anything but null. A second
+test sets a logo and confirms the slot renders, so it works when it is
+needed. Every one of the claim guards and the `items-start` guard was
+mutation-tested red.
+
+Two censuses that reached this branch from `main` flagged the page, both
+correctly. `publicRoutes.test.ts` requires every public route to be walked at
+phone width, so the route is in `e2e/lib/publicRoutes.ts` and the public e2e
+job measures it at 320, 375 and 1280 on every PR (it asserts the layout
+viewport, `window.innerWidth`, equals the device width). And
+`routeInboundLinks.test.ts` requires every page to have an inbound link or a
+reason not to; this one is unlinked on purpose, so it is listed as reached
+from outside the app, and the page's own no-links test exempts that one test
+file by exact path.
 
 Known and not fixed here: at 320 the WH-347's narrow grid is wider than its
 272px panel and scrolls sideways inside the panel (Saturday and the total are

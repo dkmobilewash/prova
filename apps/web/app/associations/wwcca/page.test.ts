@@ -18,6 +18,9 @@
  *    executed below, not asserted from the source.
  * 5. It renders signed out, with no Clerk mock and no request scope, which is
  *    the proof it makes no auth call (same method as /pilot's test).
+ * 6. IT CLAIMS NOTHING THE PRODUCT DOES NOT DO — no filing, no calculated
+ *    overtime, no mail-ready remittance — and the association's logo slot
+ *    stays null until the association gives written permission.
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -217,10 +220,76 @@ describe("/associations/wwcca fills the hero's right half", () => {
   });
 });
 
-describe("/associations/wwcca names its limits", () => {
-  it("says the WH-347 prints page 1 only and overtime is not calculated", () => {
-    expect(html).toContain("The WH-347 prints page 1 only");
-    expect(html).toContain("Overtime is entered, not calculated");
+describe("/associations/wwcca claims nothing the product does not do", () => {
+  /**
+   * The "What it does not do yet" section was removed on Cyrus's direction
+   * (it is a marketing page). What replaced it is a rule, not a silence:
+   * nothing on the page may say or imply a feature that is missing. The
+   * three it would be easiest to imply, each a real gap today:
+   *
+   *   - FILING. lib/wh347.ts builds page 1 only and marks every form not
+   *     fileable (page 2, the Statement of Compliance, is not built). So the
+   *     page may say C Stream BUILDS the WH-347 — never file / file-ready /
+   *     submit / ready to file.
+   *   - OVERTIME. It is entered as a pay type, never calculated.
+   *   - MAILING THE REMITTANCE. The report holds no fund account numbers or
+   *     addresses, so it is never "ready to mail" or "send to the fund".
+   *
+   * Run over the WHOLE page, panels included: a panel is a claim too.
+   */
+  it("never says certified payroll is filed or file-ready", () => {
+    expect(html).not.toMatch(/\bfil(e|es|ed|ing)\b[^.]{0,40}(payroll|WH-347|certified)/i);
+    expect(html).not.toMatch(/(payroll|WH-347|certified)[^.]{0,40}\bfil(e|es|ed|ing)\b/i);
+    expect(html).not.toMatch(/file-ready|ready to file|e-?file|submit(s|ted)? (it |them )?to the/i);
+  });
+
+  it("never claims overtime is calculated", () => {
+    expect(html).not.toMatch(/(calculat|comput|automatic)\w*[^.]{0,30}overtime|overtime[^.]{0,30}(calculat|comput|automatic)/i);
+  });
+
+  it("never says the remittance is ready to mail or send", () => {
+    expect(html).not.toMatch(/(mail|send|submit)\w*[^.]{0,30}(remittance|trust fund)|remittance[^.]{0,30}ready to (mail|send)/i);
+  });
+
+  /** The regexes above are only worth something if they can see the words
+   * they are about: the page must still name each document, so a rewrite
+   * that dropped them would fail here rather than pass vacuously. */
+  it("still names the documents those rules are about", () => {
+    expect(prose).toContain("WH-347");
+    expect(prose).toContain("Fringe remittance");
+    expect(prose).toContain("Apprentice ratio");
+  });
+
+  it("has no limits section left on it", () => {
+    expect(html).not.toContain("What it does not do yet");
+  });
+});
+
+describe("/associations/wwcca logo slot", () => {
+  /**
+   * PINNED TO NULL. A trade association's logo may not be used without its
+   * written permission, and showing it before then implies the endorsement
+   * this page exists to rule out. Change this line ONLY in the commit that
+   * adds a logo file the association supplied, with the written permission
+   * referenced in the PR. See THE LOGO in components/associations/wwcca.ts.
+   */
+  it("is off: logoSrc is null until the WWCCA gives written permission", () => {
+    expect(WWCCA.logoSrc).toBeNull();
+    expect(html).not.toContain("data-association-logo");
+  });
+
+  it("renders the lockup when a logo is set — the slot works when it is needed", async () => {
+    vi.resetModules();
+    vi.doMock("@/components/associations/wwcca", async (importOriginal) => {
+      const real = await importOriginal<typeof import("@/components/associations/wwcca")>();
+      return { ...real, WWCCA: { ...real.WWCCA, logoSrc: "/example-logo.png" } };
+    });
+    const { default: WithLogo } = await import("./page");
+    const withLogo = renderToStaticMarkup(createElement(WithLogo));
+    expect(withLogo).toContain("data-association-logo");
+    expect(withLogo).toContain('src="/example-logo.png"');
+    vi.doUnmock("@/components/associations/wwcca");
+    vi.resetModules();
   });
 });
 
