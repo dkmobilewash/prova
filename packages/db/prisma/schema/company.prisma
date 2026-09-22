@@ -140,6 +140,7 @@ model Company {
   crewScheduleDays          CrewScheduleDay[]
   workerCrafts              WorkerCraft[]
   experienceModRates        ExperienceModRate[]
+  employerBurdenRates       EmployerBurdenRate[]
   lienDeadlines             LienDeadline[]
   workerCertifications      WorkerCertification[]
   requiredCertifications    CertificationRequirement[]
@@ -215,6 +216,7 @@ model User {
   calendarFeedTokens                   CalendarFeedToken[]
   workerCrafts                         WorkerCraft[]
   experienceModRatesCreated            ExperienceModRate[]    @relation("ExperienceModRateCreatedBy")
+  employerBurdenRatesCreated           EmployerBurdenRate[]   @relation("EmployerBurdenRateCreatedBy")
   lienDeadlinesCreated                 LienDeadline[]         @relation("LienDeadlineCreatedBy")
   bidPursuitsCreated                   BidPursuit[]           @relation("BidPursuitCreatedBy")
   connectedQuickBooks                  QuickBooksConnection[]

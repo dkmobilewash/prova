@@ -7,6 +7,16 @@
 // multiply the BASE wage only -- fringe benefits (pension, vacation,
 // health & welfare, training) are paid at their flat per-hour rate
 // regardless of pay type.
+//
+// WHAT IS NOT IN HERE, SAID OUT LOUD BECAUSE A SCREEN ONCE CLAIMED IT WAS.
+// No employer FICA, no FUTA/SUTA, no workers' compensation premium. This file
+// has always been accurate about that; the job-cost caption was not, and read
+// "costed at the craft's burdened rate" while none of those were in the
+// figure. The employer's share lives in lib/employer-burden.ts and is added
+// by the job-costing path (lib/labor-job-cost.ts) ON TOP of what this returns
+// -- never inside it, because the certified payroll (WH-347) and the fringe
+// remittance want exactly this figure and an employer tax folded in here
+// would put a wrong number on a federal form.
 
 export type TimeEntryPayType = "STRAIGHT" | "OVERTIME" | "DOUBLE_TIME" | "SHIFT_DIFFERENTIAL";
 
@@ -103,8 +113,40 @@ export function findEffectiveFringeRateSchedule(
   );
 }
 
-/** Computes the burdened wage cost for one TimeEntry, or null if no
- * schedule is effective for its craft/date -- never guesses a rate. */
+/** The BASE-WAGE half of one entry's cost -- hours x base wage x the
+ * pay-type multiplier, with no fringes in it -- or null when no schedule is
+ * effective, on the same refuse-to-guess rule as below.
+ *
+ * It exists for ONE caller: lib/employer-burden.ts, whose percentage is
+ * applied to the base wage and NOT to the fringes (bona fide plan
+ * contributions are generally outside the wage base employer payroll taxes
+ * are computed on -- a modelling choice for a CPA to confirm, stated at
+ * length in that file's header). Exported rather than recomputed there so
+ * that the pay-type multiplier table has exactly one home: an overtime hour's
+ * burden has to follow the same 1.5x this file already applies, and a second
+ * copy of that table is how the two drift.
+ *
+ * NOT a public costing figure on its own. Nothing should render this: base
+ * wage without fringes is not a number anybody on a job is asking for. */
+export function calculateTimeEntryBaseWage(
+  entry: TimeEntryLaborCostInput,
+  schedule: FringeRateScheduleInput | null,
+): number | null {
+  if (!schedule) return null;
+  return entry.hours * schedule.baseWage * PAY_TYPE_BASE_MULTIPLIER[entry.payType];
+}
+
+/** Computes the wage cost for one TimeEntry -- base wage at its pay-type
+ * multiplier plus the four CBA fringes -- or null if no schedule is
+ * effective for its craft/date; never guesses a rate.
+ *
+ * "Burdened" in this function's NAME means base-plus-fringes and has meant
+ * that since it was written, which the file header states and lib/wip.ts
+ * repeats. It does NOT include employer FICA, FUTA/SUTA or workers' comp:
+ * those are lib/employer-burden.ts, added on top by the job-costing path
+ * only, and deliberately NOT here -- a certified payroll (WH-347) and a
+ * fringe remittance both want exactly this figure and would be wrong with an
+ * employer tax inside it. */
 export function calculateTimeEntryLaborCost(
   entry: TimeEntryLaborCostInput,
   schedule: FringeRateScheduleInput | null,

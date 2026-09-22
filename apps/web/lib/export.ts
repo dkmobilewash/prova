@@ -443,6 +443,10 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "CrewMember",
       "CraftClassification",
       "FringeRateSchedule",
+      // The employer burden percentage. It belongs with the pay rates rather
+      // than with compliance: it is half of what an hour costs, and without
+      // it the hours file cannot be repriced to the figure this app shows.
+      "EmployerBurdenRate",
       "PrevailingWageDetermination",
       "PrevailingWageRuleSet",
       "CompanyUnionAgreement",

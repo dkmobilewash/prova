@@ -610,7 +610,7 @@ export function LandingPage() {
             // lib/wip.ts — calculateLineItemWip / calculateJobWip
             "Budget, current estimate, actual and earned revenue per line item — not one number for the whole job",
             // lib/labor-job-cost.ts — burdened labour from logged hours
-            "Labour costed at burdened rates from the hours logged against the line, base wage plus fringes",
+            "Labour costed from the hours logged against the line — base wage plus fringes, plus the employer burden percentage you record",
             // jobWip.laborHourCoverage — the amber caveat, drawn in the panel
             "When some hours are unpriced it says so on the figure, instead of quietly reporting a number it cannot stand behind",
           ]}

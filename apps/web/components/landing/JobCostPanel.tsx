@@ -2,6 +2,7 @@ import { money } from "@/lib/money";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
 import {
   lineItemCostToDate,
+  NO_EMPLOYER_BURDEN,
   unassignedLaborCost,
   type CostEntryCostRow,
   type TimeEntryCostRow,
@@ -200,14 +201,23 @@ function buildWip() {
       budgetedUnitCost: line.budgetedUnitCost,
       currentEstimatedUnitCost: line.currentEstimatedUnitCost,
       estimatedCostToComplete: null,
-      ...lineItemCostToDate(line.id, line.costEntries, jobTimeEntries, SCHEDULES_BY_CRAFT),
+      ...lineItemCostToDate(
+        line.id,
+        line.costEntries,
+        jobTimeEntries,
+        SCHEDULES_BY_CRAFT,
+        // No company behind this panel, so no recorded employer burden — the
+        // same default every real company starts on, and the reason the
+        // caption above says "wage and fringes".
+        NO_EMPLOYER_BURDEN,
+      ),
     }),
   }));
 
   const job = calculateJobWip(
     lines.map((line) => line.wip),
     BILLED_TO_DATE,
-    unassignedLaborCost(jobTimeEntries, SCHEDULES_BY_CRAFT),
+    unassignedLaborCost(jobTimeEntries, SCHEDULES_BY_CRAFT, NO_EMPLOYER_BURDEN),
   );
   return { lines, job };
 }
@@ -226,7 +236,15 @@ export function JobCostPanel({ className }: { className?: string }) {
     <PanelFrame
       title="Job costing & WIP"
       meta={`${DEMO_JOB.name} · Estimate tab`}
-      caption="Cost-to-cost percentage of completion per line item, with logged hours costed at the craft's burdened rate."
+      /* "burdened rate" until 2026-09-22, and it was the screen lying about
+         the arithmetic rather than the arithmetic being wrong. To a
+         contractor "burdened" means fully loaded — employer FICA, FUTA/SUTA
+         and workers' comp included — and none of those were in the figure.
+         This panel is illustrative and has no company behind it, so it
+         records no EmployerBurdenRate and says what it computes. The real
+         screen says the same sentence when no rate is recorded and names the
+         percentage once one is (lib/employer-burden.ts, laborCostBasisLabel). */
+      caption="Cost-to-cost percentage of completion per line item, with logged hours costed at the craft's wage and fringe rates."
       className={className}
     >
       {/* The job tiles: grid-cols-2 sm:grid-cols-4 on the page; here two

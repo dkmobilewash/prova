@@ -106,6 +106,10 @@ vi.mock("@prova/db", async (importOriginal) => ({
     fringeRateSchedule: {
       findMany: async () => [SCHEDULE],
     },
+    // No employer burden recorded: this file's whole point is that the
+    // Ask tool and the job page quote the SAME total, and they must still
+    // do so on the default every company starts on.
+    employerBurdenRate: { findMany: async () => [] },
     // Also mocked in the OLD craftClassification.findMany shape the
     // pre-#375 handler read its schedules through, purely so this file can
     // be run unmodified against that handler to confirm the numeric
