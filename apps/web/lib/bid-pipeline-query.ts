@@ -47,7 +47,23 @@ export async function loadBidPipeline(
   today: string,
 ): Promise<PipelineOverview> {
   const contacts = await prisma.contact.findMany({
-    where: { companyId },
+    // THE FILTER BELONGS IN THE WHERE, NOT IN THE LOOP. This read used to
+    // be `where: { companyId }` — every contact on the account, with every
+    // bid invitation nested under it — and then threw away the ones with no
+    // invitations in JavaScript, twenty lines down. A sub's contact book is
+    // its vendors, suppliers, architects, inspectors and its GCs; only the
+    // last group can ever reach this page, and the others were being read
+    // out of Postgres and shipped across the pooler on every render. The
+    // nested read is the more expensive half of that: Prisma resolves
+    // `bidInvitations` as a second query keyed `WHERE "contactId" IN (…)`,
+    // so a discarded contact widens that IN-list too.
+    //
+    // This matters per SAVE, not just per page load. A Server Action that
+    // calls revalidatePath re-renders the whole route (CLAUDE.md, issue
+    // #61: action flight is always a root render), so every pursuit added
+    // or edited on /pipeline re-ran the entire contact-book scan to redraw
+    // a section no pursuit write can change.
+    where: { companyId, bidInvitations: { some: {} } },
     select: {
       id: true,
       name: true,
@@ -69,7 +85,10 @@ export async function loadBidPipeline(
   for (const contact of contacts) {
     // A contact with no invitations is not a bidding relationship, and
     // listing every vendor and developer here would bury the GCs who
-    // actually invite us.
+    // actually invite us. Belt and braces now that the where-clause says
+    // the same thing — the same shape lib/moneyRail.ts keeps `isLive` for:
+    // the database narrows, and the definition stays here in code where a
+    // test can read it.
     if (contact.bidInvitations.length === 0) continue;
 
     const bids: PipelineBid[] = contact.bidInvitations.map((invitation) => ({
