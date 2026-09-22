@@ -138,11 +138,23 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   // layout's own doc comment) so each section could fetch only its own
   // data. Its retainage reads split into three, all per-job:
   "app/(app)/jobs/[id]/(tabs)/retainage/page.tsx": "The Retainage tab itself — same calculateRetainageSummary call the old page made, now with its own targeted query.",
-  "app/(app)/jobs/[id]/(tabs)/billing/page.tsx": "Per-invoice retainageWithheld, printed on each invoice row in the Billing tab — never summed into a total here.",
+  "app/(app)/jobs/[id]/(tabs)/billing/page.tsx":
+    "Per-invoice retainageWithheld, printed on each invoice row in the Billing tab — never summed into a total here. Since the silent-wrong-numbers fix it reaches the screen through invoiceBalanceLabel rather than being subtracted inline: the row used to print a GROSS `amount - paid` in amber, so an invoice paid to its net-of-retainage amount showed a debt nobody owed.",
+  "app/portal/[token]/jobs/[jobId]/page.tsx":
+    "THE GC'S OWN VIEW of the same per-invoice figure, and the reason this row exists at all: it printed the identical uncaptioned gross balance to the other side of the table. Now calls invoiceBalanceLabel, so the sub and his GC are shown the same arithmetic. Per-invoice; never a total.",
+  "components/ReceivablesPanel.tsx":
+    "Captions the Today tile's `outstanding`, which is NET via arBalanceFor while Invoiced and Paid are gross. The panel carries the figure so the three numbers reconcile on screen; it does no arithmetic with it and never sums it.",
+  "components/receivablesFigures.test.ts":
+    "Renders that panel and does the subtraction — the executable half of the line above.",
+  "lib/invoice-balance-label.ts":
+    "Decides what one invoice's balance line SAYS, for the two pages above. Takes the snapshot as an input and hands it to arBalanceFor; adds no formula of its own, and never sees more than one invoice.",
+  "lib/invoice-balance-label.test.ts": "Pins that decision, including the settled-net invoice.",
   "lib/jobs/job-summary.ts": "The always-visible summary header's retainage-held figure — the same calculateRetainageSummary call, over a leaner per-job query shared by every tab.",
   "lib/pay-application-query.ts":
     "Assembles one pay application. PR #156 moved this out of the page so the G702 arithmetic could be tested without a database; the page now renders what this returns.",
   "lib/pay-application-query.test.ts": "Pins that assembly, including the removed-line close-out.",
+  "lib/pay-application-credit.test.ts":
+    "Drives submitPayApplication for real over a faked database and reads the snapshot it wrote. Names the column only to assert the figure on the invoice — a −$5,000 credit carries a −$500.00 snapshot — and to prove a refused application wrote none. No query and no second formula: the write under test is retainageWithheldFor, unchanged.",
   "lib/alerts-query.ts": "RETAINAGE_RELEASE alerts — one alert per job, with its name.",
   "lib/ask/handlers.ts":
     "TWO read tools, both per-job by necessity. retainage_held builds the per-job rows the way /cash-flow builds its table and takes the COMPANY-WIDE total from loadRetainageHeld rather than summing them — the rows carry job names, which a scalar cannot; cash_flow_forecast feeds calculateRetainageSummary per job into the forecast the same way that page does. Neither derives a company total from this column. Arrived with roadmap item 4 of the Ask build.",
@@ -181,6 +193,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/ask/handlers.cashFlowForecast.test.ts":
     "Fakes the invoice rows the forecast's retainage half is built from, including one job with no substantial completion date.",
   "lib/actions/ask.dbtest.ts": "Asserts the snapshot on the invoice a tapped card created, and seeds the snapshots a release card is made from, against real rows.",
+  "app/(app)/jobs/[id]/job-tab-widths.test.ts":
+    "Renders the Retainage tab from fake invoices carrying the column, to pin when the \"nothing withheld yet\" sentence replaces the figures and when it must not.",
   "app/(app)/cash-flow/page.test.ts":
     "Renders the page with money on it — the assembly rather than the arithmetic, which is where #288 actually lived.",
   "app/(app)/evening-dates.test.ts":

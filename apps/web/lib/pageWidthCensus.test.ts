@@ -170,20 +170,17 @@ const UNCONVERTED_PAGES = [
   "apps/web/app/(app)/compliance/page.tsx",
   "apps/web/app/(app)/contacts/[id]/page.tsx",
   "apps/web/app/(app)/contacts/page.tsx",
-  "apps/web/app/(app)/dashboard/page.tsx",
   "apps/web/app/(app)/deployment/page.tsx",
   "apps/web/app/(app)/drawings/page.tsx",
   "apps/web/app/(app)/equipment/page.tsx",
   "apps/web/app/(app)/field-reports/page.tsx",
   "apps/web/app/(app)/intake/page.tsx",
   "apps/web/app/(app)/internal/usage/page.tsx",
-  "apps/web/app/(app)/jobs/[id]/(tabs)/layout.tsx",
   "apps/web/app/(app)/jobs/[id]/certified-payroll/page.tsx",
   "apps/web/app/(app)/jobs/[id]/certified-payroll/wh-347/page.tsx",
   "apps/web/app/(app)/jobs/[id]/pay-applications/[invoiceId]/page.tsx",
   "apps/web/app/(app)/jobs/[id]/photo-report/page.tsx",
   "apps/web/app/(app)/jobs/new/[jobId]/items/page.tsx",
-  "apps/web/app/(app)/jobs/new/[jobId]/review/page.tsx",
   "apps/web/app/(app)/jobs/new/page.tsx",
   "apps/web/app/(app)/lien-deadlines/page.tsx",
   "apps/web/app/(app)/material-orders/page.tsx",
@@ -316,7 +313,17 @@ describe("page width census", () => {
       "the allowance list changed size. It is allowed to SHRINK as pages move " +
         "to PageShell — delete the line. Adding a line puts a new page back on " +
         "its own width decision, which is the thing this census exists to stop.",
-    ).toBe(51);
+      // 52 at the base both branches forked from. Main took the root landing
+      // page (`app/page.tsx`) off; #413 removed the bid wizard's "Review"
+      // step — the page is a bare `redirect()` now and sets no width at all,
+      // so it leaves the list the way the list is meant to be left. The
+      // ratchet below is what caught it: a converted page left on this list
+      // is a build failure, and a page that stopped existing as a page counts
+      // as converted for that purpose. Then #452 moved the dashboard (now
+      // `working`) and the job-tabs layout (`working` for the header and
+      // rail, each tab choosing its own body width through PageColumn) to
+      // the shell. All four removals together: 48.
+    ).toBe(48);
     expect(new Set(UNCONVERTED_PAGES).size).toBe(UNCONVERTED_PAGES.length);
   });
 

@@ -10,7 +10,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * `/submittals` and `/drawings` stacked three empties — a status line ("No
  * open RFIs."), a zero count header ("0 in play · Show closed"), then the
  * EmptyState's own title. `/bids` already hid its count at zero; these now
- * do the same.
+ * do the same. `/material-orders` joined them later (status line "Nothing
+ * on order yet.", "0 outstanding", then the EmptyState of the same name).
  *
  * The other half matters as much: a company that HAS records must keep
  * every line it had. So each page is rendered twice — on an empty database,
@@ -175,6 +176,19 @@ const LIST_PAGES: ListCase[] = [
     header: />0 (?:<!-- -->)?sets</,
     status: "No drawing sets yet.",
   },
+  {
+    // Added 2026-09-21, the fourth of the plan's "triple nothing" pages:
+    // "Nothing on order yet." (status line), "0 outstanding", then the
+    // EmptyState titled "Nothing on order yet".
+    route: "/material-orders",
+    model: "materialOrder",
+    load: async (params) => {
+      const { default: Page } = await import("@/app/(app)/material-orders/page");
+      return renderToStaticMarkup(await Page({ searchParams: Promise.resolve(params) }));
+    },
+    header: />0 (?:<!-- -->)?outstanding</,
+    status: "Nothing on order yet.",
+  },
 ];
 
 for (const page of LIST_PAGES) {
@@ -197,3 +211,53 @@ for (const page of LIST_PAGES) {
     });
   });
 }
+
+// ------------------------------------------- /material-orders, rows shown --
+
+describe("/material-orders, a filter showing rows while the count reads 0", () => {
+  /**
+   * #451 found correspondence-dates.test.ts faking a count of 0 while rows
+   * are listed. A gate on the count alone would then drop the header off a
+   * page full of orders. The page gates on "ever logged OR rows shown", and
+   * this is the case that tells the two apart.
+   */
+  it("keeps the status line and the count header", async () => {
+    seed.job = { findMany: [JOB] };
+    seed.vendor = { findMany: [{ id: "vendor-1", name: "Valley Lumber Supply" }] };
+    seed.materialOrder = {
+      count: 0,
+      findMany: [
+        {
+          id: "order-1",
+          number: 1,
+          jobId: JOB.id,
+          job: { name: JOB.name },
+          lineItemId: null,
+          lineItem: null,
+          vendorId: "vendor-1",
+          vendor: { name: "Valley Lumber Supply" },
+          description: "Framing lumber package",
+          vendorReference: null,
+          notes: null,
+          orderedOn: new Date("2026-09-01T00:00:00.000Z"),
+          promisedFor: null,
+          orderedBy: null,
+          deliveries: [],
+        },
+      ],
+    };
+    const { default: Page } = await import("@/app/(app)/material-orders/page");
+    const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ job: JOB.id }) }));
+    expect(html).toContain("Framing lumber package");
+    expect(html).not.toContain("data-empty-state");
+    expect(html).toMatch(/>1 (?:<!-- -->)?outstanding</);
+    expect(html, "the status line went missing on a page listing an order").toContain("data-status=");
+  });
+
+  it("never logged anything: 'Nothing on order yet' is said once, by the EmptyState", async () => {
+    const { default: Page } = await import("@/app/(app)/material-orders/page");
+    const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain('data-tour="material-orders-empty"');
+    expect(count(html, /Nothing on order yet/)).toBe(1);
+  });
+});

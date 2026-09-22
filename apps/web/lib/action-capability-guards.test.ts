@@ -991,8 +991,20 @@ describe("the walk this file's claims rest on", () => {
 
     // And it must have found SOMETHING. An equality between two empty
     // sets is the exact failure the paragraph above describes.
-    expect(PAGES_THAT_WITHHOLD.length).toBeGreaterThanOrEqual(9);
-    expect(SOFT_GATED.size).toBeGreaterThanOrEqual(5);
+    //
+    // 9 until 2026-09-21, when the bid wizard's "Review" step — which
+    // withheld its total behind VIEW_JOB_COSTS — became a redirect and
+    // stopped withholding anything. This floor moved because a page really
+    // did leave the set, which is this assertion working rather than
+    // failing: the number is meant to be unmissable when it changes, and
+    // whoever moves it has to be able to say which page and why.
+    expect(PAGES_THAT_WITHHOLD.length).toBeGreaterThanOrEqual(8);
+    // 5 until the same change, and one below it for the same one page:
+    // "Review" withheld behind exactly one capability, so it was in this
+    // set too. The equality above is the assertion that actually catches a
+    // pattern going blind; these two floors only catch a walk that finds
+    // NOTHING, and both still do.
+    expect(SOFT_GATED.size).toBeGreaterThanOrEqual(4);
 
     // Named, because a count is not a claim about WHICH. These three are
     // the tabs issue #383 is about: each returns a single sentence and

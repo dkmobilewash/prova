@@ -256,7 +256,7 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
                   <div className="flex min-w-0 flex-1 flex-col gap-1">
                     <span className="text-slate-100">{formatCalendarDate(ticket.workDate)}</span>
                     <span className="text-slate-300">{ticket.workDescription}</span>
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-ink-muted">
                       Signed by {ticket.signerName}, {formatInstant(ticket.signedAt, timeZone)}
                       {ticket.signaturePath ? "" : " (typed name — signed before the phone took drawn signatures)"}
                     </span>

@@ -133,7 +133,7 @@ export function TimeEntryRow({
               locked={{ employeeLabel: entry.employeeLabel, dateLabel: entry.dateLabel }}
             />
           </div>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-ink-muted">
             The person and the day worked can&rsquo;t be corrected — an hour logged against the wrong
             name or the wrong day is a different record. Remove this entry and log the right one.
           </p>
@@ -172,18 +172,18 @@ export function TimeEntryRow({
         <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
           {timeEntryPayTypeLabel(entry.payType)}
         </span>
-        {entry.craftLabel && <span className="text-xs text-slate-500">{entry.craftLabel}</span>}
-        {entry.lineItemLabel && <span className="text-xs text-slate-500">{entry.lineItemLabel}</span>}
+        {entry.craftLabel && <span className="text-xs text-ink-muted">{entry.craftLabel}</span>}
+        {entry.lineItemLabel && <span className="text-xs text-ink-muted">{entry.lineItemLabel}</span>}
         {entry.estimatedCostLabel && (
-          <span className="text-xs text-slate-500">Est. cost {entry.estimatedCostLabel}</span>
+          <span className="text-xs text-ink-muted">Est. cost {entry.estimatedCostLabel}</span>
         )}
         {entry.perDiemAmount != null && (
-          <span className="text-xs text-slate-500">Per diem {money(Number(entry.perDiemAmount))}</span>
+          <span className="text-xs text-ink-muted">Per diem {money(Number(entry.perDiemAmount))}</span>
         )}
         {entry.travelPayAmount != null && (
-          <span className="text-xs text-slate-500">Travel {money(Number(entry.travelPayAmount))}</span>
+          <span className="text-xs text-ink-muted">Travel {money(Number(entry.travelPayAmount))}</span>
         )}
-        {entry.note && <span className="text-xs text-slate-500">— {entry.note}</span>}
+        {entry.note && <span className="text-xs text-ink-muted">— {entry.note}</span>}
         {entry.lastCorrectedLabel && (
           /* The trace the issue asks for: that a correction happened, when,
              and by whom. It deliberately does not claim to say what the

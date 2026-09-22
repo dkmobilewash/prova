@@ -178,3 +178,34 @@ export function PageShell({ width, children, className = "", ...rest }: Props) {
     </div>
   );
 }
+
+/**
+ * A BODY INSIDE A SHELL THAT ANOTHER FILE ALREADY OPENED.
+ *
+ * The job pages are the case: `jobs/[id]/(tabs)/layout.tsx` owns the page
+ * container (the header and the tab rail, at `working`), and each tab is the
+ * `children` of that layout. A tab cannot render a second `PageShell` — it
+ * would add a second set of gutters — and before this existed it could not
+ * choose a width at all, because the layout capped every tab at 768px.
+ *
+ * So a tab whose body is a form or a short document narrows ITSELF with
+ * `<PageColumn width="reading">`, and a tab that is a list or a table
+ * renders straight into the layout's `working` width. Same two intents as
+ * `PageShell`, from the same `MEASURE`, so a "reading" tab is exactly as
+ * wide as a "reading" page.
+ *
+ * Left-aligned rather than centred: it sits under the header and the tab
+ * rail, whose left edge it shares, so the eye does not have to find where
+ * the body starts. No gutters, because the layout's shell already has them.
+ * `print:max-w-none` keeps a printed tab at the paper's width, which is what
+ * the layout's old `print:max-w-none` did for every tab.
+ */
+export function PageColumn({
+  width,
+  children,
+}: {
+  width: "reading" | "working";
+  children: ReactNode;
+}) {
+  return <div className={`${MEASURE[width]} print:max-w-none`}>{children}</div>;
+}

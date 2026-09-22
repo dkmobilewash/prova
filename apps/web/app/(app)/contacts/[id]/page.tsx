@@ -194,7 +194,13 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           score, just today&apos;s numbers.
         </p>
         {reliability.invoiceCount === 0 ? (
-          <p className="text-sm text-ink-body">No invoices yet.</p>
+          <p className="text-sm text-ink-body">
+            No invoices yet, so there is nothing to judge {contact.name} on.{" "}
+            <Link href="/jobs" className="text-link hover:underline">
+              Open one of their jobs
+            </Link>{" "}
+            and bill it under Billing.
+          </p>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div>
@@ -548,7 +554,15 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
       <section>
         <h2 className="mb-3 text-lg font-semibold text-ink">Jobs</h2>
         {contact.jobs.length === 0 ? (
-          <p className="text-ink-body">No jobs for this contact yet.</p>
+          // The one page in the app about a single GC, with no way to start
+          // a job for them on it. `/jobs/new` is where every other empty
+          // state in the app sends a reader who has none.
+          <p className="text-ink-body">
+            No jobs for {contact.name} yet.{" "}
+            <Link href="/jobs/new" className="text-link hover:underline">
+              Start a bid for them →
+            </Link>
+          </p>
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {contact.jobs.map((job) => {

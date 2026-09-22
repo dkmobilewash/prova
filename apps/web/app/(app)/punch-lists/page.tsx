@@ -221,9 +221,37 @@ export default async function PunchListsPage({
           />
         ) : items.length === 0 ? (
           <p className="text-ink-body">
-            {showDone || openCount > 0
-              ? "Nothing here."
-              : "Nothing open. Add what you find on the walkthrough — grid out of level, missing corner bead, touch-up paint."}
+            {showDone || openCount > 0 ? (
+              // "Nothing here." was the barest string in the app — two
+              // words, no way out, on a list that is empty only because a
+              // filter is on. The filter chips are above the fold, but a
+              // reader who does not connect the empty list to the chip he
+              // tapped is stuck looking at a page that appears broken. Both
+              // escapes are named, and only when they apply.
+              <>
+                Nothing to show{activeJob ? " on this job" : ""} with the filters you have on.
+                {activeJob && (
+                  <>
+                    {" "}
+                    <Link href={filterHref({ job: null })} className="text-link hover:underline">
+                      Show every job
+                    </Link>
+                    .
+                  </>
+                )}
+                {!showDone && (
+                  <>
+                    {" "}
+                    <Link href={filterHref({ show: "all" })} className="text-link hover:underline">
+                      Show verified items
+                    </Link>
+                    .
+                  </>
+                )}
+              </>
+            ) : (
+              "Nothing open. Add what you find on the walkthrough — grid out of level, missing corner bead, touch-up paint."
+            )}
           </p>
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
