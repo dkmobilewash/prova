@@ -65,3 +65,27 @@ export async function viewerTimeZone(): Promise<string> {
 export async function viewerToday(): Promise<string> {
   return todayInZone(await viewerTimeZone());
 }
+
+/** The same day as `viewerToday()`, as the UTC-midnight instant that every
+ * dated record in this app is stored at.
+ *
+ * For the callers that compare against a Date rather than a YYYY-MM-DD —
+ * `daysPastDueFor` in lib/cash-flow.ts and the receivables half of
+ * lib/today-dashboard.ts, which is all of them today.
+ *
+ * WHY A HELPER RATHER THAN `new Date()` AT THE CALL SITE, which is what
+ * both of those had. `daysPastDueFor` floors the gap between an instant
+ * and a UTC-midnight due date, so handing it the current instant makes the
+ * answer depend on the time of day: at 17:01 in Los Angeles an invoice due
+ * TODAY is 24 hours and one minute past its stored midnight, floors to 1,
+ * and reads "1d overdue" on a page an owner uses to decide who to chase.
+ * Flooring the instant to ITS OWN UTC midnight does not fix that — that is
+ * the same wrong day, just tidier. The day has to come from the reader's
+ * calendar, and then the comparison is exact integer days because both
+ * sides are midnights.
+ *
+ * Inherits viewerTimeZone()'s floor: no cookie and no header gives UTC,
+ * which is the behaviour these callers already had, and it never throws. */
+export async function viewerAsOf(): Promise<Date> {
+  return new Date(`${await viewerToday()}T00:00:00.000Z`);
+}

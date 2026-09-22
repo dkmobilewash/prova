@@ -222,3 +222,41 @@ describe("a planned day in the past that nobody logged hours against", () => {
     expect(container.textContent).toContain("Ana Reyes");
   });
 });
+
+/**
+ * A job and nobody to put on it — the dead end getting-started step 5 used
+ * to land on. The page hides "Put someone on" while the company has no
+ * people (schedule/page.tsx passes canWrite false), so the empty box has to
+ * carry the way forward itself: to Team, where crew is added.
+ */
+describe("the schedule with a job and nobody to put on it", () => {
+  function renderEmpty(workers: { value: string; label: string }[]) {
+    render(
+      createElement(CrewScheduleBoard, {
+        upcoming: [],
+        missingHours: [],
+        jobs: [{ id: "job-a", name: "Alder Street", clientName: null, status: null }],
+        workers,
+        crafts: [],
+        canWrite: workers.length > 0,
+      }),
+    );
+  }
+
+  it("links to Team, where crew is added, instead of ending in a box with nothing to press", () => {
+    renderEmpty([]);
+    // Anti-vacuity: the empty box itself rendered.
+    expect(container.textContent).toContain("Nobody is on the schedule for the next two weeks.");
+    const link = container.querySelector<HTMLAnchorElement>('a[href="/team"]');
+    expect(link, "no way from the empty schedule to where crew is added").toBeTruthy();
+    expect(link!.textContent).toBe("Add your crew on Team");
+    expect(buttonSaying("Put someone on")).toBeUndefined();
+  });
+
+  it("does not send somebody who already has crew off to Team — they get the button", () => {
+    renderEmpty([{ value: "crew:marco", label: "Marco Silva" }]);
+    expect(container.textContent).toContain("Nobody is on the schedule for the next two weeks.");
+    expect(container.querySelector('a[href="/team"]')).toBeNull();
+    expect(buttonSaying("Put someone on")).toBeTruthy();
+  });
+});

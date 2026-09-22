@@ -30,17 +30,21 @@ export default async function PipelinePage() {
   const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
 
-  const today = new Date().toISOString().slice(0, 10);
-  // The pursuit flags ("bid date passed", "soon", "untouched") are judged on
-  // the READER'S calendar: the create form's date floor is localToday(), and
-  // on UTC's day an evening entry for tomorrow in Los Angeles read as passed
-  // the moment it was saved. The bid_pursuits Ask tool uses the same call,
-  // so the screen and the answer agree. The invitation figures below keep
-  // `today` (UTC), unchanged, matching their own Ask tool.
-  const pursuitDay = await viewerToday();
+  // ONE day for both halves of this page.
+  //
+  // The pursuit flags ("bid date passed", "soon", "untouched") were moved
+  // to the READER'S calendar first, for a reason that was always just as
+  // true of the invitations beside them: the create form's date floor is
+  // localToday(), and on UTC's day an evening entry for tomorrow in Los
+  // Angeles read as passed the moment it was saved. The invitations kept
+  // the server's UTC day, "matching their own Ask tool" — so a bid due
+  // TODAY was badged "past the date they asked for" from 17:00 Pacific,
+  // and this page held two different answers to what day it is, eight
+  // lines apart. The Ask tool it was matching was wrong in the same way.
+  const today = await viewerToday();
   const [{ rows, live }, pursuits, invitations] = await Promise.all([
     loadBidPipeline(context.company.id, today),
-    loadBidPursuits(context.company.id, pursuitDay),
+    loadBidPursuits(context.company.id, today),
     loadLinkableInvitations(context.company.id),
   ]);
 

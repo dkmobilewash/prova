@@ -8,6 +8,14 @@
  *   pnpm test:e2e -- --skip-build          reuse the last `next build`
  *   pnpm test:e2e -- specs/journey.spec.ts any other Playwright args
  *
+ *   pnpm test:e2e:public       NO CLERK INSTANCE NEEDED — every page
+ *                              reachable without signing in, at 320, 375
+ *                              and a 1280 control
+ *     (e2e/playwright.public.config.ts. This mode reads no .env at all and
+ *      forces a placeholder Clerk key over anything in the environment, so
+ *      it cannot quietly start depending on a real instance. It is what
+ *      .github/workflows/e2e.yml's `public` job runs, with no secrets.)
+ *
  * What it does, in order, and why each step is where it is:
  *
  *   1. Reads ONLY the Clerk keys out of apps/web/.env (the DEVELOPMENT
@@ -71,7 +79,19 @@ const fail = (line) => {
 // A bare `--` means nothing to Playwright and is dropped.
 const argv = process.argv.slice(2).filter((arg) => arg !== "--");
 const skipBuild = argv.includes("--skip-build") || process.env.E2E_SKIP_BUILD === "1";
-const playwrightArgs = argv.filter((arg) => arg !== "--skip-build");
+/**
+ * `--public` runs ONLY the half of the suite that needs no Clerk instance
+ * (e2e/playwright.public.config.ts) — every page reachable without signing
+ * in, at 320, 375 and a 1280 control.
+ *
+ * It does not merely skip the Clerk keys, it REFUSES to use any: the
+ * placeholders below are forced over whatever is in the environment or in
+ * apps/web/.env. A mode whose whole claim is "this needs no credentials"
+ * must not be able to quietly pick one up and start depending on it — and
+ * this is the mode CI runs with no secrets at all.
+ */
+const publicOnly = argv.includes("--public") || process.env.E2E_PUBLIC_ONLY === "1";
+const playwrightArgs = argv.filter((arg) => arg !== "--skip-build" && arg !== "--public");
 
 // ------------------------------------------------------------- Clerk keys
 /** Minimal .env reader: KEY=value, optional quotes, comments ignored. */
@@ -99,11 +119,22 @@ const CLERK_KEYS = [
   "NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL",
 ];
 
-const dotenv = readDotenv(path.join(webRoot, ".env"));
+// In --public mode apps/web/.env is not read AT ALL. The placeholders are
+// the ones ci.yml already commits to this repository — a publishable key
+// whose Frontend API domain is `clerk.example.com`, which resolves nowhere.
+// That is the point: if any part of the public suite ever started needing a
+// real Clerk instance, it would fail here rather than silently borrow the
+// developer's own.
+const dotenv = publicOnly ? {} : readDotenv(path.join(webRoot, ".env"));
 const clerk = {};
-for (const key of CLERK_KEYS) {
-  const value = process.env[key] ?? dotenv[key];
-  if (value) clerk[key] = value;
+if (publicOnly) {
+  clerk.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_Y2xlcmsuZXhhbXBsZS5jb20k";
+  clerk.CLERK_SECRET_KEY = "sk_test_dummydummydummydummydummydummydummydummy";
+} else {
+  for (const key of CLERK_KEYS) {
+    const value = process.env[key] ?? dotenv[key];
+    if (value) clerk[key] = value;
+  }
 }
 if (!clerk.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || !clerk.CLERK_SECRET_KEY) {
   fail(
@@ -118,7 +149,11 @@ clerk.NEXT_PUBLIC_CLERK_SIGN_IN_URL ??= "/sign-in";
 clerk.NEXT_PUBLIC_CLERK_SIGN_UP_URL ??= "/sign-up";
 clerk.NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL ??= "/dashboard";
 clerk.NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL ??= "/dashboard";
-log(`clerk: ${clerk.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY.slice(0, 8)}… (development instance)`);
+log(
+  publicOnly
+    ? "clerk: NONE — --public forces a placeholder key and reads no .env; no Clerk API is contacted and no user is minted."
+    : `clerk: ${clerk.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY.slice(0, 8)}… (development instance)`,
+);
 
 // ---------------------------------------------------------------- database
 const freePort = () =>
@@ -240,8 +275,9 @@ try {
     if (exitCode !== 0) throw new Error(`next build exited ${exitCode}`);
   }
 
-  log("playwright: driving the browser…");
-  exitCode = await run("pnpm", ["exec", "playwright", "test", "--config", "e2e/playwright.config.ts", ...playwrightArgs], {
+  const config = publicOnly ? "e2e/playwright.public.config.ts" : "e2e/playwright.config.ts";
+  log(`playwright: driving the browser (${config})…`);
+  exitCode = await run("pnpm", ["exec", "playwright", "test", "--config", config, ...playwrightArgs], {
     cwd: webRoot,
     env,
   });
