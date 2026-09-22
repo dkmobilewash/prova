@@ -114,7 +114,11 @@ export default async function DrawingsPage({
         <DrawingSetForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
       </section>
 
-      <StatusLine report={status} />
+      {/* At zero-ever the EmptyState below is the whole answer. The status
+          line and the "0 sets" count above it said "nothing" twice more
+          first — three empties stacked on a new account. /bids hides its
+          count the same way; both come back with the first record. */}
+      {(everLogged > 0 || rows.length > 0) && <StatusLine report={status} />}
 
       {jobs.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2" data-tour="drawings-job-filter">
@@ -129,9 +133,11 @@ export default async function DrawingsPage({
         </div>
       )}
 
-      <h2 className="mb-3 text-sm font-semibold text-ink-label">
-        {rows.length} {rows.length === 1 ? "set" : "sets"}
-      </h2>
+      {(everLogged > 0 || rows.length > 0) && (
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">
+          {rows.length} {rows.length === 1 ? "set" : "sets"}
+        </h2>
+      )}
 
       {rows.length === 0 && everLogged === 0 ? (
         <EmptyState

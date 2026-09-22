@@ -27,7 +27,7 @@ export const unionComplianceWalkthrough: Walkthrough = {
       anchor: "uc-apprenticeships",
       title: "Apprentice records",
       body:
-        "Press Register an apprenticeship to record an apprentice's sponsor, programme number and classroom hours. Their on-the-job hours come from the timesheets.",
+        "Press Register an apprenticeship to record an apprentice's sponsor, program number and classroom hours. Their on-the-job hours come from the timesheets.",
     },
     {
       anchor: "uc-worker-crafts",

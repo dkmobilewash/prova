@@ -328,31 +328,33 @@ describe("/drawings after the UTC day has rolled over", () => {
 /* ------------------------------------------------------------ the guard */
 
 /**
- * The renders above prove the behaviour on three pages. This proves the
- * expression is gone, which is the cheap half and the one that names the
- * mistake for whoever reintroduces it.
+ * The renders above prove the behaviour on three pages. This proves these
+ * three ASK for the reader's day, which is the positive half a census
+ * cannot give: an absence scan proves nobody derives a day from the server
+ * clock, not that the right day is used instead.
  *
- * The file list is written out rather than derived on purpose: a glob that
- * stopped matching would leave this describe asserting nothing at all, which
- * is the failure mode this repo keeps paying for. `readFileSync` throws on a
- * path that moves, so the list cannot rot quietly.
+ * THE OTHER HALF USED TO BE HERE AND WAS WRONG. This block also banned
+ * `new Date().toISOString()`, over a list of three files written out by
+ * hand, pinned with `toHaveLength(3)`. Its comment defended the hardcoding:
+ * a glob that stopped matching would leave the describe asserting nothing.
+ * True, and beside the point — at the moment it was written ELEVEN other
+ * pages carried that exact expression, and a hand-written list cannot
+ * report a file that is not on it. Nothing is ever missing from a list you
+ * wrote yourself.
+ *
+ * The ban now lives in `lib/viewerDayCensus.test.ts`, which derives its
+ * file set from `tsconfig.json` and `package.json`, asserts that set
+ * against `git ls-files`, and parses rather than greps. Read its header
+ * before adding anything here.
  */
 describe("the correspondence pages take their day from the reader", () => {
   const pages = ["app/(app)/rfis/page.tsx", "app/(app)/submittals/page.tsx", "app/(app)/drawings/page.tsx"];
 
-  it("is three pages, all of them read", () => {
-    expect(pages).toHaveLength(3);
-    for (const page of pages) {
-      expect(readFileSync(join(process.cwd(), page), "utf8").length).toBeGreaterThan(0);
-    }
-  });
-
-  it.each(pages)("%s asks viewerToday() and derives no day from the server clock", (page) => {
+  it.each(pages)("%s asks viewerToday()", (page) => {
+    // `readFileSync` throws on a path that moved, so a renamed page fails
+    // loudly here rather than silently dropping out of the check.
     const source = readFileSync(join(process.cwd(), page), "utf8");
+    expect(source.length).toBeGreaterThan(0);
     expect(source).toContain("await viewerToday()");
-    // `new Date()` alone is fine — an instant is the one thing UTC is right
-    // about. It is `.toISOString()` on top of it, turning an instant into a
-    // calendar day, that was the defect.
-    expect(source).not.toMatch(/new Date\(\)\.toISOString\(\)/);
   });
 });

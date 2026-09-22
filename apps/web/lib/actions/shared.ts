@@ -146,13 +146,12 @@ export async function assertLineItemOnJob(lineItemId: string, jobId: string) {
 
 export const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const;
 
-export const TRADE_SCOPES = [
-  "METAL_FRAMING_DRYWALL",
-  "LATH_PLASTER",
-  "EIFS",
-  "ACOUSTICAL_CEILINGS",
-  "FIREPROOFING",
-] as const;
+/** Moved to `@/lib/trade-scopes` on 2026-09-21 and re-exported here so every
+ * server caller is unchanged. It left because this file imports `prisma` as a
+ * VALUE and is not a "use server" boundary, so a client component importing
+ * this list shipped PrismaClient to the browser — see trade-scopes.ts. */
+export { TRADE_SCOPES } from "@/lib/trade-scopes";
+import { TRADE_SCOPES } from "@/lib/trade-scopes";
 
 /** Empty selection means "untagged" — a valid, common state, not an error. */
 export function tradeScopeFromForm(formData: FormData): (typeof TRADE_SCOPES)[number] | null {

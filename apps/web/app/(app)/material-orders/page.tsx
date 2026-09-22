@@ -9,6 +9,7 @@ import { daysLate, orderState } from "@/components/materialOrderLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { materialOrdersStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as RFIs,
  * submittals, the safety log and daily field reports. */
@@ -27,7 +28,7 @@ export default async function MaterialOrdersPage({
   const { job: jobFilter, show } = await searchParams;
   const showDelivered = show === "all";
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await viewerToday();
 
   const [jobRows, vendors, lineItems] = await Promise.all([
     prisma.job.findMany({

@@ -122,7 +122,7 @@ describe("measuring against a requirement", () => {
     expect(standing(1800, null)).toBe("NO_REQUIREMENT_RECORDED");
     expect(shortfall(1800, null)).toBeNull();
     expect(standingLabel(standing(1800, null))).toBe(
-      "no requirement recorded for this programme",
+      "no requirement recorded for this program",
     );
   });
 

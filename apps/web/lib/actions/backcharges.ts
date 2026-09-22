@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { parseNumericInput } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
+import { viewerToday } from "@/lib/viewerToday";
 import { can } from "@/lib/permissions";
 import { money as formatMoney } from "@/lib/money";
 import { Prisma, prisma } from "@prova/db";
@@ -108,8 +109,16 @@ function requiredDate(formData: FormData, key: string, label: string): Date {
   return date;
 }
 
-function utcMidnightToday() {
-  return new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+/** Today on the READER'S calendar, at the UTC midnight this app stores
+ * dates on — the fallback when a form leaves an optional date blank.
+ *
+ * `new Date().toISOString().slice(0, 10)` was the server's UTC day, which
+ * west of UTC is already TOMORROW from 17:00. So a date nobody typed was
+ * stamped a day into the future, on a record that is correspondence with a
+ * GC. `viewerToday()` never throws and falls back to UTC, so the floor
+ * here is exactly the old behaviour. */
+async function utcMidnightToday() {
+  return new Date(`${await viewerToday()}T00:00:00.000Z`);
 }
 
 function money(formData: FormData, key: string, label: string): string {
@@ -342,7 +351,7 @@ export async function disputeBackcharge(id: string, formData: FormData): Promise
       return fail("This backcharge has already been answered.");
     }
 
-    const disputedOn = optionalDate(formData, "disputedOn", "Date we objected") ?? utcMidnightToday();
+    const disputedOn = optionalDate(formData, "disputedOn", "Date we objected") ?? (await utcMidnightToday());
     if (disputedOn < backcharge.issuedOn) {
       return fail("We can't have objected before the GC issued the backcharge.");
     }
@@ -385,7 +394,7 @@ export async function resolveBackcharge(id: string, formData: FormData): Promise
     }
 
     const outcome = enumFrom(formData, "outcome", OUTCOMES, "Outcome");
-    const resolvedOn = optionalDate(formData, "resolvedOn", "Date it was resolved") ?? utcMidnightToday();
+    const resolvedOn = optionalDate(formData, "resolvedOn", "Date it was resolved") ?? (await utcMidnightToday());
 
     if (resolvedOn < backcharge.issuedOn) {
       return fail("It can't have been resolved before the GC issued it.");

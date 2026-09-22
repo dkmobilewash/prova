@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { createRfi, settleAskDraft } from "@/lib/actions";
 import { RfiFields, type JobOption } from "@/components/RfiFields";
-import { localToday } from "@/components/localToday";
 import type { RfiDraft } from "@/lib/ask/drafts";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
@@ -16,8 +15,8 @@ export function RfiForm({
   jobs: JobOption[];
   defaultJobId?: string;
   /** A card from the Ask box: the form opens with these filled in, and
-   * tells the card it saved. The sent date is NOT part of it — it stays
-   * the form's own default below. */
+   * tells the card it saved. The sent date is NOT part of it — a draft
+   * proposed by the assistant has not been sent to anybody either. */
   draft?: RfiDraft;
 }) {
   const [isOpen, setIsOpen] = useState(draft !== undefined);
@@ -98,7 +97,15 @@ export function RfiForm({
           drawingReference: draft?.drawingReference ?? null,
           specSection: draft?.specSection ?? null,
           dueBy: null,
-          sentOn: localToday(),
+          // BLANK, and this is the safe side of a one-way door rather than
+          // a preference. A sent date makes the new RFI SENT, and `updateRfi`
+          // refuses SENT -> draft while `deleteRfi` takes drafts only — so a
+          // date nobody chose is a record nobody can take back, on the page
+          // whose whole subject is dates being defensible. The helper text
+          // under this field has always said "Blank keeps it a draft"; the
+          // form never once started there. Draft first, then "Mark sent" on
+          // the day it actually leaves.
+          sentOn: null,
         }}
       />
 
