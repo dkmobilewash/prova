@@ -29,6 +29,21 @@ export type OverdueInvoice = {
   number: number;
   amount: number;
   paid: number;
+  /**
+   * Retainage snapshotted on this invoice. Null means the contract has no
+   * retainage clause; 0 means it has one and this invoice withheld
+   * nothing. The two are different and must not be collapsed — see the
+   * field comment in billing.prisma.
+   *
+   * CARRIED BECAUSE `outstanding` IS NET OF IT AND THE OTHER TWO FIGURES
+   * ARE GROSS. Without this the receivables panel printed Invoiced
+   * $100,000 / Paid $85,000 / Outstanding $5,000 and had nothing on hand
+   * to caption the missing $10,000 with. `/cash-flow` reports the same
+   * subtraction and captions it (`ArAgingSummary.retainageExcluded`), and
+   * the `outstanding_invoices` Ask tool names it separately for exactly
+   * this reason; this tile was the one AR surface that could not.
+   */
+  retainageWithheld: number | null;
   outstanding: number;
   dueOn: string | null;
   /** True when the date came from the GC's payment terms rather than the
@@ -177,15 +192,17 @@ export async function loadTodayDashboard(companyId: string, asOf: Date) {
       // /cash-flow reports it as retainage receivable. Mirroring the rule
       // by hand is how this tile and that page disagreed about overdue
       // invoices twice already.
+      // Read once and passed on, rather than read here and re-read by the
+      // panel: the figure that was subtracted has to be the figure that is
+      // captioned, or the caption is its own second opinion.
+      const retainageWithheld =
+        invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null;
       return {
         invoice,
         amount,
         paid,
-        outstanding: arBalanceFor({
-          amount,
-          paidAmount: paid,
-          retainageWithheld: invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
-        }),
+        retainageWithheld,
+        outstanding: arBalanceFor({ amount, paidAmount: paid, retainageWithheld }),
       };
     })
     // A rounding cent should not appear as an unpaid invoice.
@@ -216,6 +233,7 @@ export async function loadTodayDashboard(companyId: string, asOf: Date) {
       number: row.invoice.number,
       amount: row.amount,
       paid: row.paid,
+      retainageWithheld: row.retainageWithheld,
       outstanding: row.outstanding,
       dueOn: effectiveDue.toISOString().slice(0, 10),
       // Derived rather than stored, so the row says "due in 4 days" where

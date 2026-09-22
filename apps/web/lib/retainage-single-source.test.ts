@@ -138,7 +138,17 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   // layout's own doc comment) so each section could fetch only its own
   // data. Its retainage reads split into three, all per-job:
   "app/(app)/jobs/[id]/(tabs)/retainage/page.tsx": "The Retainage tab itself — same calculateRetainageSummary call the old page made, now with its own targeted query.",
-  "app/(app)/jobs/[id]/(tabs)/billing/page.tsx": "Per-invoice retainageWithheld, printed on each invoice row in the Billing tab — never summed into a total here.",
+  "app/(app)/jobs/[id]/(tabs)/billing/page.tsx":
+    "Per-invoice retainageWithheld, printed on each invoice row in the Billing tab — never summed into a total here. Since the silent-wrong-numbers fix it reaches the screen through invoiceBalanceLabel rather than being subtracted inline: the row used to print a GROSS `amount - paid` in amber, so an invoice paid to its net-of-retainage amount showed a debt nobody owed.",
+  "app/portal/[token]/jobs/[jobId]/page.tsx":
+    "THE GC'S OWN VIEW of the same per-invoice figure, and the reason this row exists at all: it printed the identical uncaptioned gross balance to the other side of the table. Now calls invoiceBalanceLabel, so the sub and his GC are shown the same arithmetic. Per-invoice; never a total.",
+  "components/ReceivablesPanel.tsx":
+    "Captions the Today tile's `outstanding`, which is NET via arBalanceFor while Invoiced and Paid are gross. The panel carries the figure so the three numbers reconcile on screen; it does no arithmetic with it and never sums it.",
+  "components/receivablesFigures.test.ts":
+    "Renders that panel and does the subtraction — the executable half of the line above.",
+  "lib/invoice-balance-label.ts":
+    "Decides what one invoice's balance line SAYS, for the two pages above. Takes the snapshot as an input and hands it to arBalanceFor; adds no formula of its own, and never sees more than one invoice.",
+  "lib/invoice-balance-label.test.ts": "Pins that decision, including the settled-net invoice.",
   "lib/jobs/job-summary.ts": "The always-visible summary header's retainage-held figure — the same calculateRetainageSummary call, over a leaner per-job query shared by every tab.",
   "lib/pay-application-query.ts":
     "Assembles one pay application. PR #156 moved this out of the page so the G702 arithmetic could be tested without a database; the page now renders what this returns.",
