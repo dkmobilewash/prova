@@ -69,6 +69,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { listGitFiles } from "../test/git-files";
 import { decimalFromForm, InputError, nullableDecimalFromForm } from "./actions/shared";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -98,21 +99,15 @@ function sources(): Map<string, string> {
 
 /** The independent list: git's index, not this file's walk. */
 function sourcesByGit(): string[] {
-  return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "--", "apps", "packages"], {
-    cwd: repoRoot,
-    encoding: "utf8",
-    maxBuffer: 32 * 1024 * 1024,
-  })
-    .split("\n")
-    .filter((p) => p && SOURCE.test(p) && !p.includes("node_modules/"))
-    // DEDUPED, and not for tidiness: during an unresolved merge `git
-    // ls-files --cached` prints a conflicted path ONCE PER STAGE — three
-    // lines for one file — so this list stopped equalling the walk and
-    // the census went red about a merge rather than about the code. A
-    // red that is really "you are mid-merge" is a red nobody believes
-    // the day it is real. errorBoundaryCoverage already does this.
-    .filter((p, i, all) => all.indexOf(p) === i)
-    .sort();
+  // Through the shared helper because it DEDUPES: during an unresolved
+  // merge `git ls-files --cached` prints a conflicted path once per
+  // stage, and this list then stopped equalling the walk — the census
+  // going red about a merge rather than about the code. See
+  // test/git-files.ts, which builds a conflicted repository to prove it.
+  return listGitFiles(
+    ["--cached", "--others", "--exclude-standard", "--", "apps", "packages"],
+    repoRoot,
+  ).filter((p) => SOURCE.test(p) && !p.includes("node_modules/"));
 }
 
 /** Comments out, line count kept — so a paragraph quoting the old pattern
