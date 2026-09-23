@@ -1,0 +1,83 @@
+// The employer burden percentage — the cost of an hour BEYOND the wage and
+// the CBA fringes, as the owner records it once a year.
+//
+// Its own file, like emr.prisma and certifications.prisma, so this lane's
+// migrations do not collide with anyone else's schema edits.
+//
+// WHY THIS EXISTS. `lib/labor-cost.ts` prices a logged hour as base wage ×
+// pay-type multiplier + the four CBA fringes (pension, vacation, health &
+// welfare, training) and stops. There is no employer FICA in it, no
+// FUTA/SUTA, no workers' compensation premium. That arithmetic is correct
+// for what it claims — a certified payroll and a fringe remittance both want
+// exactly that figure — but the job-cost screens presented it as the
+// "burdened rate", which to a contractor means fully loaded. So
+// `actualCostToDate` was understated, and cost-to-cost percent complete was
+// OVERSTATED, which is the direction that hurts.
+//
+// WHY IT IS A RATE A PERSON TYPES IN, NOT A CALCULATION. Employer FICA is a
+// published rate with a wage base per employee per calendar year; FUTA/SUTA
+// is per-state, per-employer, with its own wage base and an experience
+// rating; workers' comp is a manual rate per class code times the EMR times
+// whatever the carrier actually wrote. This app holds none of those inputs —
+// no per-employee year-to-date wages, no state unemployment account, no
+// class-code rate sheet. A figure derived here would be a number the
+// company's CPA has never seen. What a contractor DOES have is the
+// percentage their accountant gives them, and that is what this table holds.
+//
+// WHAT IT IS APPLIED TO, AND THAT THIS IS A MODELLING CHOICE. The percentage
+// multiplies the BASE WAGE only — not the fringes. Bona fide contributions
+// to a benefit plan are generally outside FICA wages, so burdening them
+// again would double-count. THAT IS A MODELLING CHOICE A CPA SHOULD CONFIRM,
+// NOT A TAX RULE ANYONE HERE VERIFIED. It is stated in lib/employer-burden.ts
+// and on the screen where the rate is entered, so nobody has to read a
+// schema comment to find out what their number is being multiplied by.
+
+/// One employer-burden percentage, for one company, from one date.
+///
+/// Company-scoped, not job-scoped and not craft-scoped: FICA, unemployment
+/// and comp are employer-level costs. A company that genuinely needs a
+/// per-craft burden has a different product requirement and should not get
+/// it by accident from a table shaped like this one.
+///
+/// UNIQUE ON (companyId, effectiveDate): one rate per start date. Re-running
+/// the calculation for the same date is an EDIT of that row, not a second
+/// row — two rows on one date would leave "which burden applies" with no
+/// honest answer.
+///
+/// THERE IS NO `isCurrent` COLUMN, and no "the company's burden rate" field
+/// on Company. Which rate applies is DERIVED from the dates (CLAUDE.md:
+/// derived state is never stored), and it is derived per TIME ENTRY, not
+/// once per page: hours worked in March are costed at March's rate even
+/// after April's has been recorded. A stored flag would disagree with the
+/// dates the day a new rate starts, and nobody would be there to flip it.
+model EmployerBurdenRate {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// The first day this percentage applies to. ENTERED from whatever the
+  /// accountant worked it out against, never stamped — `now()` would be the
+  /// day somebody typed, not the day the rate took effect. UTC midnight,
+  /// rendered in UTC, same as every other date in this app.
+  effectiveDate DateTime
+
+  /// The percentage itself, as a percentage and never as a fraction: 15.5
+  /// means 15.5%, not 1550%. Three decimal places because a burden worked
+  /// out from a payroll summary routinely lands on something like 28.375.
+  /// Decimal, not Float, so 15.5 is 15.5.
+  percent Decimal @db.Decimal(6, 3)
+
+  /// What the percentage covers and where it came from — "FICA 7.65, FUTA/
+  /// SUTA 2.1, comp 9.4, per Hernandez CPA 2026 review". Free text and
+  /// optional: the app never parses it. It exists because a bare number on
+  /// a screen a year later is a number nobody can defend to a GC.
+  note String?
+
+  createdByUserId String?
+  createdBy       User?   @relation("EmployerBurdenRateCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, effectiveDate])
+}

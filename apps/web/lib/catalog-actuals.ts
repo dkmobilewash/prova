@@ -15,8 +15,10 @@
 
 import {
   laborCostForRows,
+  NO_EMPLOYER_BURDEN,
   type CostEntryCostRow,
   type DecimalLike,
+  type EmployerBurdenRates,
   type TimeEntryCostRow,
 } from "./labor-job-cost";
 import type { FringeRateScheduleInput } from "./labor-cost";
@@ -314,8 +316,9 @@ export interface CatalogLineRow {
 export function catalogSourcedLine(
   row: CatalogLineRow,
   schedulesByCraft: ReadonlyMap<string, FringeRateScheduleInput[]>,
+  burdenRates: EmployerBurdenRates = NO_EMPLOYER_BURDEN,
 ): CatalogSourcedLine {
-  const labor = laborCostForRows(row.timeEntries, schedulesByCraft);
+  const labor = laborCostForRows(row.timeEntries, schedulesByCraft, burdenRates);
   return {
     quantity: Number(row.quantity),
     costEntryTotal: row.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),

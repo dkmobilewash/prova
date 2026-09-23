@@ -82,6 +82,25 @@ model Job {
   /// the note that it came from the web.
   bidResearch Json?
 
+  /// Four ENTERED public-works facts, recorded on the job's Compliance tab.
+  /// Nothing derives them: the geocoder guesses a county and a prevailing-
+  /// wage determination area is not a guess; whether a job is public works
+  /// is what the awarding body said, not what the GC's name suggests.
+  ///
+  /// The site's county, as written on the call for bids.
+  siteCounty      String?
+  /// Whether this is public works (paid in whole or in part out of public
+  /// funds, Labor Code 1720). Null = not recorded, which is NOT "private".
+  publicWorks     Boolean?
+  /// The awarding body's first advertisement for bids — the date that picks
+  /// which prevailing-wage determination governs the whole job (8 CCR
+  /// 16000; DIR's FAQ). ENTERED from the call for bids, UTC midnight, never
+  /// stamped. `lib/determination-standing.ts` reads it; nothing writes it
+  /// but a person.
+  bidAdvertisedOn DateTime?
+  /// The awarding body, as written on the call for bids. Free text.
+  awardingBody    String?
+
   /// The Jobber job or quote this was imported from (Jobber ids are global
   /// and name their type, so one column holds both). Null for everything
   /// else. See jobberId on Contact.

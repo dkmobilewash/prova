@@ -1,102 +1,105 @@
+import { useMemo, useState } from "react";
 import { Tabs } from "expo-router";
-import { usePushRegistration } from "@/lib/use-push-registration";
-import { holds } from "@/lib/capabilities";
-import { useMe } from "@/lib/use-me";
+import { CaptureSheet } from "@/components/CaptureSheet";
+import { FloatingCaptureButton } from "@/components/FloatingCaptureButton";
 import { Icon } from "@/components/Icon";
-import { colors, typography } from "@/lib/theme";
+import { holds } from "@/lib/capabilities";
+import { useCurrentJob } from "@/lib/use-current-job";
+import { useMe } from "@/lib/use-me";
+import { usePushRegistration } from "@/lib/use-push-registration";
+import { typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 
 /**
- * Five tabs, which is the iOS ceiling before the bar starts collapsing
- * into "More" — and the five are chosen so a foreman's whole day is one
- * tap from anywhere:
+ * Three destinations plus one button — the whole of the app's top level.
  *
  *   Home     what today looks like on the job you are on
  *   Jobs     every job, and how you change which one you are on
- *   Create   the things you make on site, without hunting for a screen
- *   Camera   the shutter, because a photo happens while you are holding
- *            something in the other hand
- *   Settings the account
+ *   More     the account, the outbox, the reminder
+ *   ＋        the capture sheet: Photo first, then everything a field day
+ *            produces, filed against the CURRENT JOB
  *
- * Create and Camera act on the CURRENT JOB (lib/current-job.ts). Without
- * that they would each need a job picker first, which is two taps and a
- * scroll before the camera opens — on a phone held in one hand, in the
- * rain, that is the difference between a photo and no photo.
+ * Create and Camera used to be tabs. They were doorways — the Create tab
+ * was a launcher and the Camera tab redirected away the moment it was
+ * focused — and two of five slots for doorways is how a foreman's thumb
+ * gets a busy bar. One button opens the same actions in a sheet, and
+ * Photo still opens the shutter directly (?open=camera), so a photo stays
+ * two taps from anywhere. The button is gated by MANAGE_FIELD exactly as
+ * the old tabs were: an estimator sees three tabs and no button.
+ *
+ * The queue's drain timer is NOT here: it lives in the root layout so it
+ * keeps running during a handover, when the tabs are not mounted.
  */
 export default function TabsLayout() {
   usePushRegistration();
-  // Create and Camera both make FIELD records. Shown to everybody before
-  // this, so an estimator or a bookkeeper got a Create tab whose every
-  // option 403s — the shell promising work the server will refuse.
+
+  const palette = usePalette();
   const { me } = useMe();
+  const { job } = useCurrentJob();
   const field = holds(me, "MANAGE_FIELD");
-  // The queue's drain timer is NOT here: it moved to the root layout so
-  // it keeps running during a handover, when the tabs are not mounted.
+  const [captureOpen, setCaptureOpen] = useState(false);
+
+  const screenOptions = useMemo(
+    () => ({
+      // The tab bar is chrome, so it takes the rail rather than the
+      // canvas, with a hairline above it instead of the default
+      // translucent blur — which read as a grey smear over a dark page.
+      tabBarStyle: {
+        backgroundColor: palette.colors.rail,
+        borderTopColor: palette.colors.lineCard,
+        borderTopWidth: 1,
+      },
+      tabBarActiveTintColor: palette.colors.brand,
+      tabBarInactiveTintColor: palette.colors.inkMuted,
+      tabBarLabelStyle: { fontSize: typography.size.xs, fontWeight: typography.weight.semibold },
+      headerStyle: { backgroundColor: palette.colors.rail },
+      headerTintColor: palette.colors.brand,
+      headerTitleStyle: {
+        color: palette.colors.ink,
+        fontSize: typography.size.md,
+        fontWeight: typography.weight.semibold,
+      },
+      headerShadowVisible: false,
+      sceneStyle: { backgroundColor: palette.colors.canvas },
+    }),
+    [palette],
+  );
 
   return (
-    <Tabs
-      screenOptions={{
-        // The tab bar is chrome, so it takes the rail rather than the
-        // canvas, with a hairline above it instead of the default
-        // translucent blur — which read as a grey smear over a dark page.
-        tabBarStyle: {
-          backgroundColor: colors.rail,
-          borderTopColor: colors.lineCard,
-          borderTopWidth: 1,
-        },
-        tabBarActiveTintColor: colors.brand,
-        tabBarInactiveTintColor: colors.inkMuted,
-        tabBarLabelStyle: { fontSize: typography.size.xs, fontWeight: typography.weight.semibold },
-        headerStyle: { backgroundColor: colors.rail },
-        headerTintColor: colors.brand,
-        headerTitleStyle: {
-          color: colors.ink,
-          fontSize: typography.size.md,
-          fontWeight: typography.weight.semibold,
-        },
-        headerShadowVisible: false,
-        sceneStyle: { backgroundColor: colors.canvas },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Home",
-          tabBarIcon: ({ color, focused }) => <Icon name="home" color={color} filled={focused} size={24} />,
-        }}
-      />
-      <Tabs.Screen
-        name="jobs"
-        options={{
-          title: "Jobs",
-          tabBarIcon: ({ color, focused }) => <Icon name="jobs" color={color} filled={focused} size={24} />,
-        }}
-      />
-      <Tabs.Screen
-        name="create"
-        options={{
-          title: "Create",
-          tabBarIcon: ({ color, focused }) => <Icon name="create" color={color} filled={focused} size={24} />,
-          // `href: null` is how expo-router takes a tab off the bar while
-          // leaving the route reachable — the screen itself still guards,
-          // so a stale deep link lands on a sentence rather than a 403.
-          href: field ? undefined : null,
-        }}
-      />
-      <Tabs.Screen
-        name="camera"
-        options={{
-          title: "Camera",
-          tabBarIcon: ({ color, focused }) => <Icon name="camera" color={color} filled={focused} size={24} />,
-          href: field ? undefined : null,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: "Settings",
-          tabBarIcon: ({ color, focused }) => <Icon name="settings" color={color} filled={focused} size={24} />,
-        }}
-      />
-    </Tabs>
+    <>
+      <Tabs screenOptions={screenOptions}>
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: "Home",
+            // Home draws its own greeting block inside the safe area — a
+            // static header above "Good morning" is chrome between the
+            // person and the day.
+            headerShown: false,
+            tabBarIcon: ({ color, focused }) => <Icon name="home" color={color} filled={focused} size={24} />,
+          }}
+        />
+        <Tabs.Screen
+          name="jobs"
+          options={{
+            title: "Jobs",
+            // Jobs draws its own large title inside the safe area.
+            headerShown: false,
+            tabBarIcon: ({ color, focused }) => <Icon name="jobs" color={color} filled={focused} size={24} />,
+          }}
+        />
+        <Tabs.Screen
+          name="settings"
+          options={{
+            title: "More",
+            // More draws its own large title inside the safe area.
+            headerShown: false,
+            tabBarIcon: ({ color, focused }) => <Icon name="more" color={color} filled={focused} size={24} />,
+          }}
+        />
+      </Tabs>
+      {field ? <FloatingCaptureButton onPress={() => setCaptureOpen(true)} /> : null}
+      <CaptureSheet visible={captureOpen} onClose={() => setCaptureOpen(false)} job={job} />
+    </>
   );
 }

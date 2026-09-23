@@ -235,11 +235,42 @@ model PrevailingWageDetermination {
   sourceUrl String?
   note      String?
 
+  /// What the determination DOCUMENT says about itself, ENTERED off the
+  /// document by a person. All nullable and additive: every row that
+  /// existed before these columns has none of them and is reported as
+  /// "unchecked" rather than judged. Nothing here is a wage rate — there is
+  /// no rate column and none is planned; the rate is read off the linked
+  /// document by a person.
+  ///
+  /// The document's own number, e.g. "SC-023-31-2, issue 2026-1".
+  determinationRef String?
+  /// The issue date printed on the determination. DIR issues general
+  /// determinations twice a year (22 Feb / 22 Aug) and each takes effect
+  /// ten days later; the standing line derives the effective window from
+  /// this date rather than storing it (lib/determination-standing.ts).
+  issuedOn         DateTime?
+  /// The expiration date printed on the determination.
+  expiresOn        DateTime?
+  /// The mark after that expiration date: SINGLE (holds for the life of
+  /// the project) or DOUBLE (a predetermined increase applies to work after
+  /// `expiresOn`). NONE = the document carries no mark. Null = not recorded,
+  /// which the standing line reports as unchecked rather than guessing.
+  expirationMarker DeterminationExpirationMarker?
+
   uploadedByUserId String?
   uploadedByUser   User?    @relation(fields: [uploadedByUserId], references: [id])
   createdAt        DateTime @default(now())
 
   @@index([jobId])
+}
+
+/// The asterisk a DIR general prevailing wage determination prints after
+/// its expiration date. What each one means is a published DIR rule, quoted
+/// in lib/determination-standing.ts with its source.
+enum DeterminationExpirationMarker {
+  NONE
+  SINGLE
+  DOUBLE
 }
 
 /// A global reference table (not scoped to a Company) — the same union

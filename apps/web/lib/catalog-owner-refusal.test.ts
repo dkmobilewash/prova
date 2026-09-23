@@ -68,6 +68,7 @@ const prisma = {
   fringeRateSchedule: {
     findMany: async () => db.fringeSchedules,
   },
+  employerBurdenRate: { findMany: async () => [] },
 };
 
 const context = {
