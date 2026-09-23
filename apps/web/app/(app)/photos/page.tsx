@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EmptyState } from "@/components/EmptyState";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { viewerTimeZone } from "@/lib/viewerToday";
@@ -7,7 +8,7 @@ import { parseLocatedFilter, parseSharedFilter, photosFilterHref } from "@/lib/j
 import { photoReportHref, selectionFromSharedFilter } from "@/lib/photo-report";
 import { NoAccess } from "@/components/NoAccess";
 import { JobMediaCapture } from "@/components/JobMediaCapture";
-import { JobMediaCard } from "@/components/JobMediaCard";
+import { JobMediaGallery } from "@/components/JobMediaGallery";
 import { JobMediaTagDatalist } from "@/components/JobMediaTagDatalist";
 import { JobMediaTagManager } from "@/components/JobMediaTagManager";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
@@ -57,9 +58,14 @@ import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
  * REVIEW it, because the decisions end up scattered across weeks and
  * across people. The safeguard the sharing feature rests on is that a sub
  * can see what the GC can see, and this is where they see it: pick the job
- * chip, pick "Shared with client", and the page is exactly the portal
+ * chip, pick "Shared by link", and the page is exactly the portal
  * gallery for that GC. "Not shared" is the same query inverted, for
  * checking that nothing was published by accident.
+ *
+ * THE GRID ITSELF IS A CLIENT COMPONENT NOW (`JobMediaGallery`), because
+ * picking several captures is state and this page is a server component.
+ * Everything above it — the four filter rows, the cap line, the empty
+ * states — is unchanged and still server-rendered.
  */
 
 /** Five screens of the three-across grid. Larger than the job page's dozen
@@ -163,24 +169,32 @@ export default async function PhotosPage({
       </p>
 
       {jobs.length === 0 ? (
-        <div className="rounded-lg border border-line-card bg-surface p-6">
-          <p className="text-sm text-ink-label">
-            There are no jobs yet, and a photo is always filed against one.
-          </p>
-          <Link
-            href="/jobs/new"
-            className="mt-3 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
-          >
-            Create a job
-          </Link>
-        </div>
+        <EmptyState
+          data-tour="photos-no-jobs"
+          title="No photos yet"
+          purpose={
+            <p>
+              Before, during and after pictures for every job, filed against the job instead of
+              lost in someone&apos;s camera roll — tagged in your own words (&ldquo;rough
+              plumbing&rdquo;, &ldquo;before&rdquo;), and shareable with the GC through their job
+              link. A photo always belongs to a job, so start with one.
+            </p>
+          }
+          actions={[{ label: "Create a job", href: "/jobs/new" }]}
+          example={{
+            rows: [
+              { title: "Smith kitchen remodel — 14 photos", tag: "before", detail: "Sep 2 · taken on site, location recorded", meta: "3 shared" },
+              { title: "Oak Ave addition — 22 photos", tag: "rough framing", detail: "Sep 10 · inside the walls before drywall", meta: "not shared" },
+            ],
+          }}
+        />
       ) : (
         <>
           {/* Rendered once for the whole page: every card's tag input points
               its `list` attribute at this one element. */}
           <JobMediaTagDatalist names={tags.map((tag) => tag.name)} />
 
-          <div className="mb-3 flex flex-wrap gap-2">
+          <div className="mb-3 flex flex-wrap gap-2" data-tour="photos-job-filter">
             <Link
               href={photosFilterHref({ tag: activeTag, shared: activeShared, located: activeLocated })}
               className={chip(!activeJob)}
@@ -207,7 +221,7 @@ export default async function PhotosPage({
               tag chip keeps whatever job is chosen and each job chip keeps
               whatever tag is chosen, so the two narrow together. */}
           {filterableTags.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-2">
+            <div className="mb-3 flex flex-wrap gap-2" data-tour="photos-tag-filter">
               <Link
                 href={photosFilterHref({
                   job: activeJob,
@@ -261,7 +275,7 @@ export default async function PhotosPage({
               not — two numbers on one row of chips, counting different
               populations, and no room to say which. The gallery's own
               "showing N of M" line already states the filtered total. */}
-          <div className="mb-3 flex flex-wrap gap-2">
+          <div className="mb-3 flex flex-wrap gap-2" data-tour="photos-shared-filter">
             <Link
               href={photosFilterHref({ job: activeJob, tag: activeTag, located: activeLocated })}
               className={chip(!activeShared)}
@@ -277,7 +291,12 @@ export default async function PhotosPage({
               })}
               className={chip(activeShared === "yes")}
             >
-              Shared with client
+              {/* "SHARED BY LINK", not "Shared with client", matching the
+                  card's badge and for the customer's reason: the portal
+                  link goes to whoever the sub sends it to, so naming one
+                  audience describes the state too narrowly. The mechanism
+                  is the part that is true of every reader. */}
+              Shared by link
             </Link>
             <Link
               href={photosFilterHref({
@@ -319,7 +338,7 @@ export default async function PhotosPage({
               the job chip while the tag counts beside it did not. The
               gallery's own "showing N of M" line already states the
               filtered total. */}
-          <div className="mb-3 flex flex-wrap gap-2">
+          <div className="mb-3 flex flex-wrap gap-2" data-tour="photos-location-filter">
             <Link
               href={photosFilterHref({ job: activeJob, tag: activeTag, shared: activeShared })}
               className={chip(!activeLocated)}
@@ -356,7 +375,7 @@ export default async function PhotosPage({
               chosen. On the job page it is always there, because the job is
               the page. */}
           {activeJob ? (
-            <div className="mb-8 rounded-lg border border-line-card bg-surface p-4">
+            <div className="mb-8 rounded-lg border border-line-card bg-surface p-4" data-tour="photos-add">
               <JobMediaCapture jobId={activeJob} />
               {/* ONLY WITH A JOB CHOSEN, because a photo report is one
                   JOB's document — the header names the job and the client,
@@ -378,13 +397,13 @@ export default async function PhotosPage({
               </p>
             </div>
           ) : (
-            <p className="mb-8 text-sm text-ink-body">
+            <p className="mb-8 text-sm text-ink-body" data-tour="photos-pick-job">
               Pick a job above to add photos, or open the job itself.
             </p>
           )}
 
           {media.length === 0 ? (
-            <div className="rounded-lg border border-line-card bg-surface p-6">
+            <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="photos-empty">
               {/* THE VISIBILITY FILTER GETS THE FIRST WORD when it is on,
                   because it is then the likeliest reason the gallery is
                   empty and — unlike the other two — the emptiness is itself
@@ -401,10 +420,10 @@ export default async function PhotosPage({
               <p className="text-sm text-ink-label">
                 {activeShared === "yes"
                   ? activeJob
-                    ? "Nothing on this job is shared with the client."
-                    : "Nothing here is shared with a client."
+                    ? "Nothing on this job is shared by its portal link."
+                    : "Nothing here is shared by a portal link."
                   : activeShared === "no"
-                    ? "Nothing here is being held back from the client."
+                    ? "Nothing here is being kept off the portal link."
                     : /* Below the visibility filter and above the tag one,
                          because an empty "Has a location" gallery is the
                          likeliest of the remaining three to be surprising —
@@ -485,12 +504,8 @@ export default async function PhotosPage({
               </p>
             </div>
           ) : (
-            <>
-              <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {media.map((item) => (
-                  <JobMediaCard key={item.id} media={item} />
-                ))}
-              </ul>
+            <div data-tour="photos-gallery">
+              <JobMediaGallery media={media} />
               {total > PHOTO_LIMIT && (
                 <p className="mt-3 text-sm text-ink-body">
                   Showing the {PHOTO_LIMIT} most recent of {total}.{" "}
@@ -499,7 +514,7 @@ export default async function PhotosPage({
                     : "Pick a job or a tag above to narrow this down."}
                 </p>
               )}
-            </>
+            </div>
           )}
         </>
       )}

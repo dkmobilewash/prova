@@ -346,6 +346,17 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/lien-deadlines",
+    label: "Lien deadlines",
+    icon: (
+      // A calendar page with a flag: a date somebody else set, to be kept.
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <rect x="3.5" y="4.5" width="13" height="12" rx="1" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M3.5 8h13M7 3v3M13 3v3M8 11v4M8 11h4l-1 1 1 1H8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/safety",
     label: "Safety",
     icon: (
@@ -387,6 +398,22 @@ export const NAV_ITEMS: NavItem[] = [
           strokeWidth="1.4"
           strokeLinecap="round"
         />
+      </svg>
+    ),
+  },
+  {
+    href: "/phase-codes",
+    label: "Phase codes",
+    icon: (
+      // A stack of labelled bars: buckets of work, each with its own total.
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M3.5 5.5h9M3.5 10h13M3.5 14.5h6"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+        <path d="M16.5 4.5v3M15 6h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -455,6 +482,22 @@ export const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  {
+    href: "/settings/integrations",
+    label: "Integrations",
+    // Two plugs meeting: things this company connects to.
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M7.5 3.5v3M12.5 3.5v3M5.5 6.5h9v2.5a4.5 4.5 0 0 1-9 0V6.5ZM10 13.5v3"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    ),
+  },
   // The next TWO are not in NAV_ITEMS's usual home in a NAV_GROUPS group
   // below -- both are for Prova's own operating company only
   // (Company.isProvaOperator), never a tenant, so they are appended
@@ -518,10 +561,25 @@ export const NAV_ITEMS: NavItem[] = [
  * last Tuesday. Cyrus asked for them findable. Nothing behind the routes
  * changed then or now.
  *
- * `/safety` and `/material-orders` stay `disabled: true` for the reason
- * the audit gives: not validated yet as a daily need for this persona. A
- * genuinely unbuilt item gets `disabled: true` too, and both surfaces
- * already render it muted and unclickable.
+ * **21 Sep 2026 — Safety and Material orders lose `disabled: true`, the
+ * last two of the eight (NAV-IA-AUDIT.md addendum 2).** They were deferred
+ * on 3 Sep as "not validated yet as a daily need for this persona", which
+ * was a product-scope call and not the rail-crowding one that freed the
+ * other four. Cyrus, who granted that override, ended it: a union sub has
+ * OSHA 300 obligations, and contractors are in the app today.
+ *
+ * The ground the audit could not have had is that the app now CONTRADICTS
+ * this flag. Ask cites `{ label: "Safety", href: "/safety" }`
+ * (lib/ask/handlers.ts) when somebody says a guy cut his hand, and global
+ * search (#386) finds the page too — both shipped after 3 Sep. So a
+ * `disabled: true` on a route two other surfaces send people to is not a
+ * deferral any more, it is the rail telling a contractor "coming soon"
+ * about a page the assistant just told him to open.
+ *
+ * `disabled: true` therefore now means one thing only: NO ROUTE EXISTS
+ * YET. `navDisabledCensus.test.ts` fails the build if a disabled entry has
+ * a real page, so this cannot come back without somebody deleting a test
+ * that says why.
  */
 export type NavGroup = {
   heading: string;
@@ -541,6 +599,7 @@ export type NavGroup = {
 };
 
 import { canReach, type Principal } from "@/lib/permissions";
+import { isHiddenByBusinessScope, type BusinessScopeAnswers } from "@/lib/businessScope";
 
 const byHref = new Map(NAV_ITEMS.map((item) => [item.href, item]));
 const item = (href: string): NavItem => {
@@ -598,10 +657,18 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Financials",
-    description: "Money in and money held back: cash coming in, backcharges you are claiming, and the company settings behind them.",
+    description: "Money in, money held back, and what the work is costing: cash coming in, backcharges you are claiming, the lien deadlines that protect getting paid, budget against actual by phase code, and the company settings behind them.",
     // A bank note.
     icon: groupIcon("M3.5 6.5h13v7h-13zM10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM6 10h.01M14 10h.01"),
-    items: [item("/cash-flow"), item("/backcharges"), item("/settings")],
+    // Phase codes next to cash flow: both are company-wide money read
+    // across the whole book rather than one job, and both answer to
+    // VIEW_COMPANY_FINANCIALS.
+    // Lien deadlines beside backcharges: both are the sub defending money
+    // the GC is holding, one by objecting and one by preserving the right
+    // to lien.
+    // Settings USED to be last in this group and is not in any group now:
+    // see NAV_FOOTER below.
+    items: [item("/cash-flow"), item("/phase-codes"), item("/backcharges"), item("/lien-deadlines")],
   },
   {
     heading: "Compliance & safety",
@@ -612,7 +679,7 @@ export const NAV_GROUPS: NavGroup[] = [
       item("/compliance"),
       item("/prevailing-wage"),
       item("/union-compliance"),
-      { ...item("/safety"), disabled: true },
+      item("/safety"),
       item("/certifications"),
       item("/team"),
     ],
@@ -634,13 +701,58 @@ export const NAV_GROUPS: NavGroup[] = [
     // A truck.
     icon: groupIcon("M3.5 6.5h8v7h-8zM11.5 9.5h2.8l2.2 2.2v1.8h-5zM6 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM14 15.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"),
     items: [
-      { ...item("/material-orders"), disabled: true },
+      item("/material-orders"),
       item("/vendors"),
       item("/vendors/pricing"),
       item("/equipment"),
     ],
   },
 ];
+
+/**
+ * Integrations joined it the same day, also on Cyrus's call: its page
+ * existed but was only reachable from a link inside Settings.
+ *
+ * Pinned to the BOTTOM of the rail and of the mobile drawer, outside every
+ * group, so it is always on screen and never behind a collapsed heading.
+ *
+ * Moved 2026-09-18 on Cyrus's call. Settings sat last inside Financials,
+ * which starts collapsed — and Cyrus, the account owner, looked for it
+ * and could not find it. Bottom-left is where people look for settings in
+ * nearly every app they already use, and it is not a place in the money
+ * pipeline the group headings describe; it is the account itself.
+ */
+export const NAV_FOOTER: NavItem[] = [item("/settings/integrations"), item("/settings")];
+
+/** Footer items shown to the account owner only, because their page says
+ * "only the account owner can manage integrations" to anyone else — a
+ * button to a page that only refuses is a door that will not open. */
+const OWNER_ONLY_FOOTER = new Set(["/settings/integrations"]);
+
+/** Whether this person gets a door to `href` from the app: its capability,
+ * plus the owner-only pages above. The footer uses it, and so does the
+ * full tour (lib/walkthroughs/full-tour.ts), which drops a stop the viewer
+ * could not open rather than walk them to a refusal. */
+export function canOpen(user: Principal, href: string): boolean {
+  return canReach(user, href) && (!OWNER_ONLY_FOOTER.has(href) || user.role === "OWNER");
+}
+
+/** The footer items this person can reach — same rule as navGroupsFor,
+ * plus the owner-only pages above. */
+export function navFooterFor(user: Principal): NavItem[] {
+  return NAV_FOOTER.filter((entry) => canOpen(user, entry.href));
+}
+
+/** Which footer item is the current page: the LONGEST matching href, so
+ * /settings/integrations lights Integrations, not Settings as well. */
+export function activeFooterHref(items: NavItem[], pathname: string): string | null {
+  let best: string | null = null;
+  for (const entry of items) {
+    const matches = pathname === entry.href || pathname.startsWith(`${entry.href}/`);
+    if (matches && (!best || entry.href.length > best.length)) best = entry.href;
+  }
+  return best;
+}
 
 /**
  * The heading of the group that holds the current page, or null when no
@@ -675,7 +787,7 @@ export function activeGroupHeading(groups: NavGroup[], pathname: string): string
  * Prova's own operator, and this person is its OWNER). */
 const INTERNAL_NAV_GROUP: NavGroup = {
   heading: "Internal",
-  description: "Prova's own sales pipeline — selling Prova itself. Only visible to the operating company.",
+  description: "C Stream's own sales pipeline — selling C Stream itself. Only visible to the operating company.",
   icon: item("/sales").icon,
   items: [item("/sales"), item("/internal/usage")],
 };
@@ -694,13 +806,33 @@ const INTERNAL_NAV_GROUP: NavGroup = {
  * the same reason NAV_GROUPS itself is shared: a filter applied in one and
  * forgotten in the other is a feature that exists on a phone and not on a
  * laptop.
+ *
+ * `businessScope` ANDs a second, unrelated filter onto the same list —
+ * lib/businessScope.ts's `isHiddenByBusinessScope`, the three onboarding
+ * questions' effect on the rail. Kept as a second predicate rather than
+ * folded into `canReach` on purpose: `canReach` answers a PERMISSION
+ * question (lib/permissions.ts, a security boundary once requireCapability
+ * enforces it on the page) and this answers a DISPLAY question about one
+ * company's shape (never enforced anywhere — a hidden route still renders,
+ * still turns up in search, still gets explained by Ask). Merging the two
+ * would make a UI preference look like access control, which is exactly
+ * the confusion CLAUDE.md's permissions/nav split exists to prevent.
+ * Omitted entirely (no second argument), it defaults to "hide nothing" —
+ * the same as every company that predates this feature or skipped the
+ * prompt, per `hasNoScopeAnswers`.
  */
-export function navGroupsFor(user: Principal, options: { showsInternal?: boolean } = {}): NavGroup[] {
+export function navGroupsFor(
+  user: Principal,
+  options: { showsInternal?: boolean; businessScope?: BusinessScopeAnswers } = {},
+): NavGroup[] {
   const groups = options.showsInternal ? [...NAV_GROUPS, INTERNAL_NAV_GROUP] : NAV_GROUPS;
+  const scope = options.businessScope;
   return groups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => canReach(user, item.href)),
+      items: group.items.filter(
+        (item) => canReach(user, item.href) && !(scope && isHiddenByBusinessScope(item.href, scope)),
+      ),
     }))
     .filter((group) => group.items.length > 0);
 }

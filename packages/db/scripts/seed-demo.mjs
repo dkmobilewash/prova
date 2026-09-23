@@ -86,6 +86,19 @@ const day = (offsetDays) => {
 };
 const iso = (d) => d.toISOString().slice(0, 10);
 
+/**
+ * A sequence counter only ever goes UP — including when this seed sets one.
+ *
+ * `max(number)` over the surviving rows is the right value for a job this run
+ * just created, and can be the WRONG one for a job that already had a
+ * counter: change-order drafts are deletable (`deleteChangeOrderDraft`), so a
+ * job's highest surviving number can sit below the highest it ever issued,
+ * and writing that back down reissues a number a GC has already been quoted.
+ * Only reachable under `--force`, which seeds on top of an existing set —
+ * which is to say, on the one run nobody is watching closely.
+ */
+const raise = (existing, highest) => Math.max(existing ?? 0, highest);
+
 async function main() {
   const company = process.env.SEED_COMPANY_ID
     ? await prisma.company.findUnique({ where: { id: process.env.SEED_COMPANY_ID } })
@@ -400,6 +413,48 @@ async function main() {
     ],
   });
 
+  // THE COUNTER THOSE NUMBERS CAME FROM. Without this the demo dataset
+  // shipped invoices #1, #1 and #2 and no InvoiceCounter row at all, and
+  // "Create invoice" was PERMANENTLY dead on every seeded job — not flaky,
+  // permanently. `issueInvoiceNumber` upserts `lastNumber: 1`, the insert
+  // collides with the seeded #1 on @@unique([jobId, number]), and because the
+  // bump and the insert are one `$transaction` the counter rolls back with
+  // it. So the next attempt issues 1 again, and the next, forever. Demo
+  // project and previews only — production seeds nothing — which is to say
+  // it was broken in exactly the two places testers land.
+  //
+  // DERIVED FROM THE ROWS, not written as a literal, and that is the part
+  // worth keeping: the six counters this file already seeded were right for
+  // months while these two were missing, because each one is a hand-written
+  // number sitting next to the rows it has to agree with. Adding a fourth
+  // invoice above cannot leave this behind.
+  //
+  // Written out longhand, naming `prisma.invoiceCounter.upsert` literally,
+  // rather than through a `prisma[accessor]` helper shared with the change
+  // orders below. A dynamic accessor is invisible to a source scan, and the
+  // guard that now polices this file (apps/web/lib/counterCensus.test.ts) is
+  // a source scan — a helper here would have fixed the seed and left the
+  // guard unable to see the fix, which is the shape this repo keeps paying
+  // for.
+  for (const group of await prisma.invoice.groupBy({
+    by: ["jobId"],
+    where: { job: { companyId: company.id, name: { contains: MARK } } },
+    _max: { number: true },
+  })) {
+    const highest = group._max.number;
+    if (highest == null) continue;
+    const existing = await prisma.invoiceCounter.findUnique({
+      where: { jobId: group.jobId },
+      select: { lastNumber: true },
+    });
+    const lastNumber = raise(existing?.lastNumber, highest);
+    await prisma.invoiceCounter.upsert({
+      where: { jobId: group.jobId },
+      create: { jobId: group.jobId, lastNumber },
+      update: { lastNumber },
+    });
+  }
+
   // ---------------------------------------------------------- field reports
   // A fortnight of days with a deliberate gap: the missing-day banner and
   // the week summary are the whole point of that page and both need holes
@@ -509,6 +564,30 @@ async function main() {
     },
   });
 
+  // Same defect, same fix, one section up: `issueChangeOrderNumber` would
+  // have issued 1 against a seeded CO #1 and rolled its own bump back on the
+  // unique violation. "New change order" was dead on the demo job for the
+  // same reason "Create invoice" was — ChangeOrder carries the same
+  // @@unique([jobId, number]).
+  for (const group of await prisma.changeOrder.groupBy({
+    by: ["jobId"],
+    where: { job: { companyId: company.id, name: { contains: MARK } } },
+    _max: { number: true },
+  })) {
+    const highest = group._max.number;
+    if (highest == null) continue;
+    const existing = await prisma.changeOrderCounter.findUnique({
+      where: { jobId: group.jobId },
+      select: { lastNumber: true },
+    });
+    const lastNumber = raise(existing?.lastNumber, highest);
+    await prisma.changeOrderCounter.upsert({
+      where: { jobId: group.jobId },
+      create: { jobId: group.jobId, lastNumber },
+      update: { lastNumber },
+    });
+  }
+
   // --------------------------------------------------------------- submittals
   // Numbers come from the counter row, never from a count of surviving
   // rows — the same rule the app enforces, and a seed that fakes them would
@@ -576,13 +655,19 @@ async function main() {
     ["Corridor 2-02: touch-up paint at return air grille", false, null],
   ];
   for (const [description, isDone, doneAt] of punch) {
+    // `isDone` in the table above is now the demo's shorthand for "the
+    // crew has been back to it": READY_FOR_REVIEW, waiting on somebody to
+    // agree. The columns it used to write were dropped by
+    // 20260920030000_punch_item_verification, and a state without its
+    // stamp is refused by a CHECK constraint, so the date goes in
+    // `readyAt` where the app reads it.
     await prisma.punchListItem.create({
       data: {
         companyId: company.id,
         jobId: riverside.id,
         description,
-        isDone,
-        completedAt: doneAt === null ? null : day(doneAt),
+        status: isDone ? "READY_FOR_REVIEW" : "OPEN",
+        readyAt: isDone ? day(doneAt ?? -1) : null,
         raisedByUserId: user?.id ?? null,
       },
     });
@@ -1368,6 +1453,12 @@ async function undo(companyId) {
     await del("equipmentAssignment", () =>
       prisma.equipmentAssignment.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    // Sign-offs first: a live one makes the day-lock triggers refuse to
+    // delete that day's hours, its daily report and its delays.
+    await del("timesheetSignoff", () =>
+      prisma.timesheetSignoff.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("delayEvent", () => prisma.delayEvent.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("dailyFieldReport", () =>
       prisma.dailyFieldReport.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
@@ -1439,6 +1530,20 @@ async function undo(companyId) {
       prisma.drawingRevision.deleteMany({ where: { set: { jobId: { in: jobIds } } } }),
     );
     await del("drawingSet", () => prisma.drawingSet.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("crewScheduleDay", () => prisma.crewScheduleDay.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("lienDeadline", () => prisma.lienDeadline.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // Cascades to its cached ProcoreItem rows. Nothing in Procore changes.
+    await del("procoreProjectLink", () => prisma.procoreProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // Cascades to its cached AccItem rows. Same shape as ProcoreProjectLink
+    // — nothing in ACC changes.
+    await del("accProjectLink", () => prisma.accProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // CASCADE on Job, same shape as ProcoreProjectLink — the link is a
+    // pointer at CompanyCam, not evidence. Nothing in CompanyCam changes.
+    await del("companyCamProjectLink", () => prisma.companyCamProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // CASCADE on Job, same shape as ProcoreProjectLink and
+    // CompanyCamProjectLink — the link is a pointer at Bluebeam, not
+    // evidence. Nothing in Bluebeam changes.
+    await del("bluebeamStudioSession", () => prisma.bluebeamStudioSession.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("timeEntry", () => prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("safetyIncident", () =>
       prisma.safetyIncident.deleteMany({ where: { jobId: { in: jobIds } } }),
@@ -1529,6 +1634,10 @@ async function undo(companyId) {
     await del("signatureRequest", () =>
       prisma.signatureRequest.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    // RESTRICT on Job; its ContractDocument/ChangeOrder links are SET NULL.
+    await del("docuSignEnvelope", () =>
+      prisma.docuSignEnvelope.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     await del("retainageRelease", () =>
       prisma.retainageRelease.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
@@ -1540,6 +1649,14 @@ async function undo(companyId) {
     // blocks the job delete on its own.
     await del("estimateVersionCounter", () =>
       prisma.estimateVersionCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    // WH-347 payroll numbers and their per-job counter -- the #227 shape:
+    // jobId-keyed RESTRICT children nothing else's delete reaches.
+    await del("wh347PayrollNumber", () =>
+      prisma.wh347PayrollNumber.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("wh347PayrollCounter", () =>
+      prisma.wh347PayrollCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
     await del("dispatchSlip", () =>
       prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }),

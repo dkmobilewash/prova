@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import { timeEntryWorkerName } from "@/lib/worker-name";
+import { isValidSignaturePath } from "@/lib/signature-path";
 
 export const dynamic = "force-dynamic";
+
+const FIELD_ONLY =
+  "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
@@ -23,6 +28,7 @@ function toJson(t: {
   snapshot: unknown;
   signerName: string;
   signedAt: Date;
+  signaturePath: string | null;
 }) {
   return {
     id: t.id,
@@ -31,6 +37,7 @@ function toJson(t: {
     snapshot: t.snapshot,
     signerName: t.signerName,
     signedAt: t.signedAt.toISOString(),
+    hasSignature: t.signaturePath !== null,
   };
 }
 
@@ -40,6 +47,11 @@ export async function GET(
 ) {
   const context = await requireApiContext();
   if (!context) return jsonError("Not authenticated", 401);
+  // Hours and T&M are field records, and the equivalent web surface has
+  // withheld on MANAGE_FIELD since #396. These two routes asserted
+  // nothing at all: the phone's role shell would have been decoration
+  // without them, because a hidden tab is not a guard.
+  if (!can(context, "MANAGE_FIELD")) return jsonError(FIELD_ONLY, 403);
 
   const { id } = await params;
   const job = await prisma.job.findUnique({ where: { id }, select: { id: true, companyId: true } });
@@ -59,6 +71,11 @@ export async function POST(
 ) {
   const context = await requireApiContext();
   if (!context) return jsonError("Not authenticated", 401);
+  // Hours and T&M are field records, and the equivalent web surface has
+  // withheld on MANAGE_FIELD since #396. These two routes asserted
+  // nothing at all: the phone's role shell would have been decoration
+  // without them, because a hidden tab is not a guard.
+  if (!can(context, "MANAGE_FIELD")) return jsonError(FIELD_ONLY, 403);
 
   const { id } = await params;
   const job = await prisma.job.findUnique({ where: { id }, select: { id: true, companyId: true } });
@@ -80,6 +97,15 @@ export async function POST(
 
   const signerName = String(input.signerName ?? "").trim();
   if (!signerName) return jsonError("The client's name is required to sign", 400);
+
+  // The drawn signature. Optional here so a phone still running an older
+  // build (typed name only) is not stranded; the current phone requires it.
+  // When sent, it must be exactly the path shape the phone draws.
+  let signaturePath: string | null = null;
+  if (input.signaturePath !== undefined && input.signaturePath !== null && input.signaturePath !== "") {
+    if (!isValidSignaturePath(input.signaturePath)) return jsonError("The signature could not be read. Clear it and sign again.", 400);
+    signaturePath = input.signaturePath;
+  }
 
   // Idempotent create: a retried offline POST replays instead of duplicating.
   const clientOperationId = String(input.clientOperationId ?? "").trim() || undefined;
@@ -135,6 +161,7 @@ export async function POST(
       workDescription,
       snapshot,
       signerName,
+      signaturePath,
       signedAt: new Date(),
       createdByUserId: context.id,
       clientOperationId,

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  isRatioBreach,
   ratioLabel,
+  reviewDayByLocal,
   reviewRatioByDay,
   summarizeRatio,
+  type CraftTier,
   type RatioEntryInput,
   type RatioRuleInput,
 } from "./apprentice-ratio";
@@ -157,5 +160,66 @@ describe("ratioLabel", () => {
     expect(
       ratioLabel({ apprenticeCount: 2, journeymenCount: 1, programStandardReference: null }),
     ).toBe("2 apprentices per 1 journeyman");
+  });
+});
+
+describe("reviewDayByLocal — one job, one day, per local", () => {
+  const rule = { apprenticeCount: 1, journeymenCount: 3, programStandardReference: null };
+  const rules = new Map([["L1", rule]]);
+  const at = (tier: CraftTier | null, hours: number, local: string | null, name = "W") => ({
+    date: "2026-09-18",
+    hours,
+    tier,
+    employeeName: name,
+    unionLocalId: local,
+    unionLocalLabel: local ? `Local ${local}` : null,
+  });
+
+  it("is within the ratio at 1 apprentice to 3 journeymen", () => {
+    const [local] = reviewDayByLocal(
+      [at("JOURNEYMAN", 1, "L1"), at("JOURNEYMAN", 1, "L1"), at("JOURNEYMAN", 1, "L1"), at("APPRENTICE", 1, "L1")],
+      rules,
+    );
+    expect(local.day.status).toBe("WITHIN");
+    expect(isRatioBreach(local.day)).toBe(false);
+  });
+
+  it("breaches at 2 apprentices to 3 journeymen, and names the excess", () => {
+    const [local] = reviewDayByLocal(
+      [
+        at("JOURNEYMAN", 1, "L1"),
+        at("JOURNEYMAN", 1, "L1"),
+        at("JOURNEYMAN", 1, "L1"),
+        at("APPRENTICE", 1, "L1"),
+        at("APPRENTICE", 1, "L1"),
+      ],
+      rules,
+    );
+    expect(local.day.status).toBe("OVER");
+    expect(local.day.excessApprenticeHours).toBe(1);
+    expect(isRatioBreach(local.day)).toBe(true);
+  });
+
+  it("calls apprentices with no journeyman a breach of its own", () => {
+    const [local] = reviewDayByLocal([at("APPRENTICE", 8, "L1")], rules);
+    expect(local.day.status).toBe("NO_JOURNEYMAN");
+    expect(isRatioBreach(local.day)).toBe(true);
+  });
+
+  it("folds an entry with no craft into every local as unclassified, never as a pass", () => {
+    const days = reviewDayByLocal(
+      [at("APPRENTICE", 1, "L1"), at("JOURNEYMAN", 1, "L2"), at(null, 1, null, "Untagged")],
+      rules,
+    );
+    expect(days).toHaveLength(2);
+    for (const local of days) {
+      expect(local.day.status).toBe("INCOMPLETE");
+      expect(local.day.unclassifiedNames).toEqual(["Untagged"]);
+      expect(isRatioBreach(local.day)).toBe(false);
+    }
+  });
+
+  it("returns nothing when no entry names a local — there is no rule to measure against", () => {
+    expect(reviewDayByLocal([at(null, 8, null)], rules)).toEqual([]);
   });
 });

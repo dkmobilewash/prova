@@ -3,11 +3,14 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { DrawingSetForm } from "@/components/DrawingSetForm";
+import { EmptyState } from "@/components/EmptyState";
 import { DrawingSetRow } from "@/components/DrawingSetRow";
 import { setState, unreceivedRevisions } from "@/components/drawingLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { drawingsStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
+import { ProcoreFeedSection, loadProcoreFeed } from "@/components/ProcoreFeedSection";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as every other
  * dated record in this app. */
@@ -25,7 +28,12 @@ export default async function DrawingsPage({
   const { company, ...currentUser } = context;
   const { job: jobFilter } = await searchParams;
 
-  const today = new Date().toISOString().slice(0, 10);
+  // The READER'S calendar day, not the server's UTC one — see /rfis. There
+  // is no overdue comparison on this page: `today` ends up in
+  // `daysToReachUs`, so measuring it in UTC added a day to "waiting N days"
+  // every Pacific afternoon. That is the number somebody quotes at the GC
+  // about a revision that never arrived, so it does not get to be a day out.
+  const today = await viewerToday();
 
   // status + contact, not just the name: issue #65 — fifteen jobs, seven of
   // them called "Smith kitchen remodel", and this picker showed seven
@@ -69,6 +77,11 @@ export default async function DrawingsPage({
 
   // Per set, with how many issues each is missing — "which sets, and how
   // far behind" is what someone chases the GC with.
+  // Whether this company has EVER logged one, not whether the current
+  // filter shows any — the teaching empty state is for the first, and a
+  // filter that happens to match nothing keeps its plain line.
+  const everLogged = activeJob ? await prisma.drawingSet.count({ where: { companyId: company.id } }) : rows.length;
+
   const behind = rows
     .filter((r) => setState(r.revisions) === "BEHIND")
     .map((r) => ({ name: r.name, jobName: r.jobName, missing: unreceivedRevisions(r.revisions).length }));
@@ -82,6 +95,10 @@ export default async function DrawingsPage({
       active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
     }`;
 
+  // The GC's records from Procore, if this company links any (see
+  // components/ProcoreFeedSection.tsx).
+  const procoreFeed = await loadProcoreFeed(company.id, "DRAWING", activeJob);
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="mb-2 text-xl font-semibold text-ink">Drawings</h1>
@@ -93,14 +110,18 @@ export default async function DrawingsPage({
         set.
       </p>
 
-      <section className="mb-8">
+      <section className="mb-8" data-tour="drawings-add">
         <DrawingSetForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
       </section>
 
-      <StatusLine report={status} />
+      {/* At zero-ever the EmptyState below is the whole answer. The status
+          line and the "0 sets" count above it said "nothing" twice more
+          first — three empties stacked on a new account. /bids hides its
+          count the same way; both come back with the first record. */}
+      {(everLogged > 0 || rows.length > 0) && <StatusLine report={status} />}
 
       {jobs.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap gap-2" data-tour="drawings-job-filter">
           <Link href={filterHref(null)} className={chip(!activeJob)}>
             All jobs
           </Link>
@@ -112,18 +133,40 @@ export default async function DrawingsPage({
         </div>
       )}
 
-      <h2 className="mb-3 text-sm font-semibold text-ink-label">
-        {rows.length} {rows.length === 1 ? "set" : "sets"}
-      </h2>
+      {(everLogged > 0 || rows.length > 0) && (
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">
+          {rows.length} {rows.length === 1 ? "set" : "sets"}
+        </h2>
+      )}
 
-      {rows.length === 0 ? (
-        <p className="text-ink-body">
-          No drawing sets yet. Add one per discipline the job issues separately — the log of which
-          revision governed on which date is what answers &ldquo;why did the crew build it that
-          way.&rdquo;
-        </p>
+      {rows.length === 0 && everLogged === 0 ? (
+        <EmptyState
+          data-tour="drawings-empty"
+          title="No drawings yet"
+          purpose={
+            <p>
+              The plans for each job and which version is current. When the architect or designer
+              sends a revised set, log it here, so nobody on site builds from last month&apos;s
+              pages — and you can show which version was in force on the day something was built.
+            </p>
+          }
+          actions={
+            jobs.length === 0
+              ? [{ label: "Create a job", href: "/jobs/new" }]
+              : [{ label: "Add a drawing set", opens: "drawings-add" }]
+          }
+          example={{
+            rows: [
+              { title: "Architectural", tag: "Current, in hand", detail: "Smith kitchen remodel · Rev C issued Sep 3", meta: "3 revisions" },
+              { title: "Structural", tag: "Not received", detail: "Oak Ave addition · Rev B issued Sep 10, not in hand", meta: "2 revisions" },
+              { title: "Electrical", tag: "Current, in hand", detail: "Oak Ave addition · Rev A", meta: "1 revision" },
+            ],
+          }}
+        />
+      ) : rows.length === 0 ? (
+        <p className="text-ink-body">No drawing sets on this job yet.</p>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="drawings-list">
           {rows.map((set) => (
             <DrawingSetRow
               key={set.id}
@@ -135,6 +178,10 @@ export default async function DrawingsPage({
           ))}
         </ul>
       )}
+
+      {/* The GC's records from Procore: a separate section, never merged
+          into this company's own log above. */}
+      <ProcoreFeedSection feed={procoreFeed} />
     </div>
   );
 }

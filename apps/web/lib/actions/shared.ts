@@ -6,30 +6,103 @@
 // imported directly by the domain files and never re-exported from index.ts.
 
 import { prisma } from "@prova/db";
+import { numericReaders, PERCENT_BOUNDS, type NumericInputOptions } from "@/lib/numeric-input";
 
-export function decimalFromForm(formData: FormData, key: string): string {
-  const raw = formData.get(key);
-  const value = typeof raw === "string" ? raw.trim() : "";
-  if (!value || Number.isNaN(Number(value))) {
-    throw new Error(`"${key}" must be a number`);
-  }
-  return value;
+const { number, optionalNumber } = numericReaders((message) => {
+  throw new InputError(message);
+});
+
+/** The same two readers, for the action modules that already throw THIS
+ * module's `InputError` (safety, phase codes) rather than a private copy.
+ * `optionalNumberFromForm` returns null for a blank field and never for a
+ * bad one — a bad one raises. */
+export const numberFromForm = number;
+export const optionalNumberFromForm = optionalNumber;
+
+/**
+ * A required number from a form, parsed the way a person types it.
+ *
+ * THROWS `InputError`, NOT `Error`, AND THAT IS THE WHOLE POINT OF THE
+ * CHANGE. Production redacts a thrown Server Action message to a digest
+ * (see `ActionResult` below), so the old plain `throw new Error` meant a
+ * quantity of `2,800` produced the "specific message is omitted in
+ * production builds" paragraph on the second screen of creating a first
+ * job. `InputError` is what `runAction` converts into a returned
+ * `{ ok: false, error }` the form can render.
+ *
+ * Tolerance and bounds both live in `lib/numeric-input.ts` — one parser,
+ * one rule about what a number is, for the fourteen places that each had
+ * their own.
+ */
+export function decimalFromForm(formData: FormData, key: string, options?: NumericInputOptions): string {
+  return number(formData, key, options).value;
 }
 
 /** Like decimalFromForm, but an empty field is valid and means "not set"
  * (null) rather than an error — used for unitPrice (cost-only budget
  * lines have none) and the WIP cost fields (optional until entered). */
-export function nullableDecimalFromForm(formData: FormData, key: string): string | null {
-  const raw = formData.get(key);
-  const value = typeof raw === "string" ? raw.trim() : "";
-  if (!value) {
-    return null;
-  }
-  if (Number.isNaN(Number(value))) {
-    throw new Error(`"${key}" must be a number`);
-  }
-  return value;
+export function nullableDecimalFromForm(
+  formData: FormData,
+  key: string,
+  options?: NumericInputOptions,
+): string | null {
+  return optionalNumber(formData, key, options)?.value ?? null;
 }
+
+/**
+ * A percentage — 0 to 100, never a fraction of one.
+ *
+ * `Job.retainagePercent` went through `nullableDecimalFromForm` with no
+ * bounds at all, so `0.10` typed by somebody meaning ten percent stored a
+ * tenth of one percent and every invoice afterwards withheld a hundredth
+ * of what the contract said, with nothing on any screen to contradict it.
+ * The bound is half the fix; the other half is the `%` the input now wears,
+ * because no bound can tell 0.10-meaning-a-tenth-of-a-percent apart from
+ * 0.10-typed-by-somebody-thinking-in-fractions.
+ */
+export function nullablePercentFromForm(
+  formData: FormData,
+  key: string,
+  options?: NumericInputOptions,
+): string | null {
+  return nullableDecimalFromForm(formData, key, { ...PERCENT_BOUNDS, maxDecimals: 2, ...options });
+}
+
+/*
+ * WHAT ELSE IN THIS FILE THROWS, AND WHY IT IS STILL A BARE `Error`.
+ *
+ * Recorded because the next person to read the parsers above will
+ * reasonably ask whether the sweep was finished, and the answer is that it
+ * stopped on purpose rather than halfway.
+ *
+ * THE FORM PARSERS all raise `InputError`. Two do it directly —
+ * `enumFromForm` and `optionalEnumFromForm` — and the numeric ones do it
+ * through the callback handed to `numericReaders` at the top of this file,
+ * so `decimalFromForm`, `nullableDecimalFromForm`, `nullablePercentFromForm`,
+ * `numberFromForm` and `optionalNumberFromForm` all raise the same class
+ * while none of them contains a `throw` of its own.
+ *
+ * THAT INDIRECTION IS LOAD-BEARING FOR ANYTHING THAT SCANS THIS FILE. A
+ * census looking for a literal `throw new InputError` inside a parser body
+ * finds two of seven, and then reports a smaller problem than it has with
+ * every downstream assertion passing.
+ * `actionErrorBoundaryCensus.test.ts` follows the callback for that reason,
+ * and asserts the resulting roll-call so it cannot quietly shrink again.
+ *
+ * Every one of those turns a string a person typed into a value, and every
+ * one of their messages is an instruction to that person.
+ *
+ * THE OWNERSHIP AND STATE GUARDS below still throw a bare `Error`:
+ * `assertJobInCompany`, `assertLineItemOnJob`, `assertEditableDirectly`,
+ * `assertEditableViaChangeOrder`, `craftClassificationIdFromForm`,
+ * `phaseCodeIdFromForm`, `assertOwner`. They answer a question about a
+ * record, not about a keystroke, and `assertOwner` in particular is half
+ * of a documented pair — see `ownerRefusal` below and
+ * `ownerRefusalCensus.test.ts`, which exists to stop exactly that one
+ * being "tidied". Converting them is a separate decision with its own
+ * call sites to check, and `changeOrders.ts` already wraps the three it
+ * uses by hand where it needs them readable.
+ */
 
 export async function assertJobInCompany(jobId: string, companyId: string) {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
@@ -73,13 +146,12 @@ export async function assertLineItemOnJob(lineItemId: string, jobId: string) {
 
 export const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const;
 
-export const TRADE_SCOPES = [
-  "METAL_FRAMING_DRYWALL",
-  "LATH_PLASTER",
-  "EIFS",
-  "ACOUSTICAL_CEILINGS",
-  "FIREPROOFING",
-] as const;
+/** Moved to `@/lib/trade-scopes` on 2026-09-21 and re-exported here so every
+ * server caller is unchanged. It left because this file imports `prisma` as a
+ * VALUE and is not a "use server" boundary, so a client component importing
+ * this list shipped PrismaClient to the browser — see trade-scopes.ts. */
+export { TRADE_SCOPES } from "@/lib/trade-scopes";
+import { TRADE_SCOPES } from "@/lib/trade-scopes";
 
 /** Empty selection means "untagged" — a valid, common state, not an error. */
 export function tradeScopeFromForm(formData: FormData): (typeof TRADE_SCOPES)[number] | null {
@@ -106,6 +178,40 @@ export async function craftClassificationIdFromForm(formData: FormData, companyI
     throw new Error("Craft classification not found");
   }
   return craft.id;
+}
+
+/** The same ownership check as `craftClassificationIdFromForm` above, for
+ * the phase code beside it on the same forms, and deliberately the same
+ * shape rather than a cleverer one.
+ *
+ * The id arrives from a `<select>` in a browser, so it is a claim rather
+ * than a fact: without this lookup a caller could post any company's phase
+ * code id and have it stored on their own line item, which would then read
+ * back as a code they do not have and land in somebody's budget report.
+ * Scoped by `companyId` in the same `where`, so the scope cannot be dropped
+ * in a later edit without deleting the predicate that finds the row.
+ *
+ * Throws rather than returning an ActionResult because both call sites do —
+ * `createLineItem` and `updateLineItem` are throw-style and already end on
+ * `throw new Error("Description is required")`. Converting one argument of
+ * one of them would leave a function that reports two ways. A stale form
+ * posting a retired-and-deleted id is the only way to reach it, and a phase
+ * code cannot be deleted at all.
+ *
+ * A RETIRED code is accepted on purpose. It is not offered in the picker,
+ * but a line already coded to one must survive being edited for any other
+ * reason — a retired code is evidence of how work on an invoiced job was
+ * coded, and silently dropping it on save would rewrite that. */
+export async function phaseCodeIdFromForm(formData: FormData, companyId: string): Promise<string | null> {
+  const raw = String(formData.get("phaseCodeId") ?? "").trim();
+  if (!raw) return null;
+  const phase = await prisma.phaseCode.findFirst({
+    where: { id: raw, companyId },
+  });
+  if (!phase) {
+    throw new Error("Phase code not found");
+  }
+  return phase.id;
 }
 
 export function assertOwner(user: { role: string }, message?: string) {
@@ -161,10 +267,27 @@ export const COMPLIANCE_DOCUMENT_TYPES = [
   "UNION_AGREEMENT",
 ] as const;
 
+/**
+ * A `<select>` or radio group's value, checked against the list the form
+ * offered.
+ *
+ * Throws `InputError` (declared further down this file), NOT a bare
+ * `Error`, and the difference reached a user. This threw `Error` until
+ * 2026-09-21, so an action wrapped in `runAction` — which converts only
+ * `InputError` — rethrew it, and production redacted it to a digest. The
+ * first screen a new owner sees (`/welcome` → `saveBusinessScope`) did
+ * exactly that on a Save with no radio chosen: "Application error", a
+ * digest, and no way forward. Pinned by lib/businessScope-save.test.ts.
+ *
+ * The message is still the parser's — a field name and a constant list —
+ * so an action that can say something better checks for the empty case
+ * itself first, as `saveBusinessScope` now does. This is the floor, not
+ * the sentence.
+ */
 export function enumFromForm<T extends readonly string[]>(formData: FormData, key: string, allowed: T): T[number] {
   const raw = String(formData.get(key) ?? "");
   if (!allowed.includes(raw as T[number])) {
-    throw new Error(`"${key}" must be one of: ${allowed.join(", ")}`);
+    throw new InputError(`"${key}" must be one of: ${allowed.join(", ")}`);
   }
   return raw as T[number];
 }
@@ -204,7 +327,8 @@ export function optionalEnumFromForm<T extends readonly string[]>(
   const raw = String(formData.get(key) ?? "").trim();
   if (!raw) return null;
   if (!allowed.includes(raw as T[number])) {
-    throw new Error(`"${key}" must be one of: ${allowed.join(", ")}`);
+    // InputError for the same reason enumFromForm's is — see its comment.
+    throw new InputError(`"${key}" must be one of: ${allowed.join(", ")}`);
   }
   return raw as T[number];
 }
@@ -296,9 +420,21 @@ export type ActionResultWith<T> = { ok: true; value: T } | { ok: false; error: s
  * Lives here rather than in a feature module for the reason `ActionResult`
  * does: `submittals.ts` wrote it locally first, and four more modules
  * converting to the same contract (#251) would have been five structurally
- * identical copies free to drift. The original in `submittals.ts` is
- * deliberately left where it is — it is the documented reference
- * implementation and rewriting it is not this change.
+ * identical copies free to drift.
+ *
+ * THEY DID NOT STAY AT FIVE, AND THEY DID DRIFT. This paragraph used to
+ * end "the original in submittals.ts is deliberately left where it is — it
+ * is the documented reference implementation and rewriting it is not this
+ * change." That was a reasonable call and it cost #407: by 2026-09-21 there
+ * were SIXTEEN declarations of this class name, fifteen of them local, and
+ * `company.ts`'s caught only its own while the parsers in this file threw
+ * this one. Same name, different class, `instanceof` false — so the first
+ * screen a new owner sees answered an empty Save with a digest.
+ *
+ * There is one class now. Every local copy is gone, `submittals.ts`
+ * included, and `actionErrorBoundaryCensus.test.ts` fails the build if a
+ * seventeenth appears. A "reference implementation" that is a second copy
+ * of the thing it references is just a second copy.
  *
  * WHY A CLASS AND NOT A FLAG. The throw has to survive being raised deep
  * inside a `prisma.$transaction` callback, where returning is not an option

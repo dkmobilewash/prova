@@ -3,6 +3,7 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { FieldReportComposer } from "@/components/FieldReportComposer";
+import { EmptyState } from "@/components/EmptyState";
 import { FieldReportEntry } from "@/components/FieldReportEntry";
 import { WeekSummary } from "@/components/WeekSummary";
 import {
@@ -13,7 +14,13 @@ import {
   weekLabel,
   weekSummaryText,
 } from "@/components/fieldReportWeeks";
-import { toJobOption } from "@/components/jobLabels";
+import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
+import {
+  fieldReportJobWhere,
+  fieldReportsFilterHref,
+  resolveFieldReportJobFilter,
+} from "@/lib/field-report-jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -30,38 +37,67 @@ const REPORT_LIMIT = 400;
  * whole week across every job at once, which is the unit a schedule dispute
  * is actually argued in.
  */
-export default async function FieldReportsPage() {
+export default async function FieldReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ job?: string }>;
+}) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company, ...currentUser } = context;
+  const { job: jobFilter } = await searchParams;
 
-  const [rows, jobs] = await Promise.all([
-    prisma.dailyFieldReport.findMany({
-      where: { companyId: company.id },
-      include: {
-        job: { select: { id: true, name: true } },
-        filedBy: { select: { name: true, email: true } },
-      },
-      orderBy: { reportDate: "desc" },
-      // One more than we render, purely so the page can TELL whether it
-      // was truncated. Without that it grouped a cut-off set into weeks
-      // and named real filed reports as days nobody filed — see knownFrom
-      // below.
-      take: REPORT_LIMIT + 1,
-    }),
-    // status + contact, not just the name: issue #65 — seven jobs sharing
-    // one placeholder name made every picker seven identical rows.
-    prisma.job.findMany({
-      where: { companyId: company.id },
-      select: { id: true, name: true, status: true, contact: { select: { name: true } } },
-      orderBy: { name: "asc" },
-    }),
-  ]);
+  // Jobs first, rather than the Promise.all this used to be: the report
+  // query's own `where` depends on whether `?job=` names a job this company
+  // actually has. The same shape as /punch-lists, deliberately — an id that
+  // is not in this list is treated as no filter at all, so a stale link
+  // shows the whole log rather than an empty page that reads as a company
+  // that has never filed anything.
+  //
+  // status + contact, not just the name: issue #65 — seven jobs sharing
+  // one placeholder name made every picker seven identical rows.
+  const jobs = await prisma.job.findMany({
+    where: { companyId: company.id },
+    select: { id: true, name: true, status: true, contact: { select: { name: true } } },
+    orderBy: { name: "asc" },
+  });
+  const jobOptions = jobs.map(toJobOption);
+  const activeJob = resolveFieldReportJobFilter(jobs, jobFilter);
 
-  // Dates are stored and rendered at UTC midnight, so "today" for deciding
-  // which days are over is the UTC date. The USER'S calendar date is only
-  // used for form defaults — see components/localToday.ts.
-  const today = new Date().toISOString().slice(0, 10);
+  const rows = await prisma.dailyFieldReport.findMany({
+    where: { companyId: company.id, ...fieldReportJobWhere(activeJob) },
+    include: {
+      job: { select: { id: true, name: true } },
+      filedBy: { select: { name: true, email: true } },
+    },
+    orderBy: { reportDate: "desc" },
+    // One more than we render, purely so the page can TELL whether it
+    // was truncated. Without that it grouped a cut-off set into weeks
+    // and named real filed reports as days nobody filed — see knownFrom
+    // below.
+    take: REPORT_LIMIT + 1,
+  });
+
+  // WHICH DAYS ARE OVER — and that is the reader's question, not the
+  // server's.
+  //
+  // This line used to argue the opposite: "dates are stored and rendered
+  // at UTC midnight, so today is the UTC date". The first half is true and
+  // still is; the conclusion does not follow, and lib/viewer-timezone.ts
+  // says why at length — a stored value here is a plain CALENDAR DAY, and
+  // the UTC midnight is only how a date with no time gets into Postgres.
+  //
+  // The cost of the old reading is specific to this page. `today` decides
+  // which weekdays have FINISHED (`d < today` in fieldReportWeeks.ts), so
+  // west of UTC the current day counted as over from 17:00 — and a foreman
+  // still on site at 5pm found today already named as a day nobody filed,
+  // with the week's coverage dropped to match. That is the same claim #397
+  // removed from the first screen: today is not over, so nothing is
+  // claimed about it.
+  //
+  // localToday() is still only for form defaults; this is the server-side
+  // counterpart that does not break hydration.
+  const today = await viewerToday();
 
   const truncated = rows.length > REPORT_LIMIT;
   const shownRows = truncated ? rows.slice(0, REPORT_LIMIT) : rows;
@@ -90,6 +126,13 @@ export default async function FieldReportsPage() {
 
   const weeks = groupIntoWeeks(reports, today, knownFrom);
 
+  // 44px tall, same as /punch-lists' — this is the first thing somebody on
+  // site taps to get to their own job.
+  const chip = (active: boolean) =>
+    `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
+    }`;
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <h1 className="mb-2 text-xl font-semibold text-ink">Field reports</h1>
@@ -105,20 +148,67 @@ export default async function FieldReportsPage() {
       </p>
 
       <div className="mb-8">
-        <FieldReportComposer jobs={jobs.map(toJobOption)} />
+        {/* The filtered job is an explicit choice, so it is also the job the
+            composer starts on — the same handover /punch-lists makes. With
+            no filter the composer decides for itself, and only when there
+            is exactly one active job to decide between. */}
+        <FieldReportComposer jobs={jobOptions} defaultJobId={activeJob ?? undefined} />
       </div>
 
-      {weeks.length === 0 ? (
-        <div className="rounded-lg border border-line-card bg-surface p-6">
-          <p className="text-ink-label">Nothing filed yet.</p>
-          <p className="mt-2 text-sm text-ink-body">
-            One entry a day: who was on site, what got done, the weather, and anything that
-            cost time. The weather and delay fields are the ones a claim is argued from
-            months later, when nobody remembers whether it rained.
-          </p>
+      {/* The job filter /punch-lists and /photos both have and this page did
+          not, which mattered more here than on either of them: this is the
+          log a GC asks for by job, and reading it meant scrolling a company-
+          wide week and picking out the right rows by eye. */}
+      {jobOptions.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-2" data-tour="field-reports-job-filter">
+          <Link href={fieldReportsFilterHref(null)} className={chip(!activeJob)}>
+            All jobs
+          </Link>
+          {jobOptions.map((j) => (
+            <Link
+              key={j.id}
+              href={fieldReportsFilterHref(j.id)}
+              className={chip(activeJob === j.id)}
+            >
+              {jobPickerLabel(j)}
+            </Link>
+          ))}
         </div>
+      )}
+
+      {weeks.length === 0 ? (
+        <EmptyState
+          data-tour="field-reports-empty"
+          title={activeJob ? "Nothing filed on this job yet" : "No field reports yet"}
+          purpose={
+            <p>
+              A short daily log for each job: who was on site, what got done, the weather, and
+              anything that held you up. Thirty seconds at the end of the day, and months later
+              it answers &ldquo;when did the drywall go up?&rdquo; or &ldquo;why did it take an
+              extra week?&rdquo; without anyone having to remember.
+            </p>
+          }
+          actions={
+            jobOptions.length === 0
+              ? [{ label: "Create a job", href: "/jobs/new" }]
+              : [{ label: "Log a day", opens: "field-reports-log-day" }]
+          }
+          ask={
+            jobOptions.length === 0
+              ? undefined
+              : `Log today on ${jobOptions[0].name}: crew of 3, framed the back wall, rain in the afternoon`
+          }
+          example={{
+            caption: "What a week of reports looks like. Not your data — nothing here is saved.",
+            rows: [
+              { title: "Mon, Sep 8 — Smith kitchen remodel", detail: "Crew of 3 · demo done, dumpster swapped · sunny", meta: "full day" },
+              { title: "Tue, Sep 9 — Smith kitchen remodel", detail: "Crew of 2 · rough plumbing moved · rain after 2pm", tag: "Delay", meta: "lost 2 hrs" },
+              { title: "Wed, Sep 10 — Smith kitchen remodel", detail: "Crew of 3 · inspection passed · framing patched", meta: "full day" },
+            ],
+          }}
+        />
       ) : (
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-8" data-tour="field-reports-weeks">
           {weeks.map((week) => {
             // One summary per job in the week — a GC gets the week for
             // their project, not for every project we ran that week.
@@ -148,7 +238,12 @@ export default async function FieldReportsPage() {
 
                   {week.missing.length > 0 && (
                     <p className="mt-2 rounded bg-tag-amber px-2 py-1.5 text-xs text-tag-amber-ink">
-                      Nothing filed on any job for {week.missing.map(dayLabel).join(" · ")}.
+                      {/* "any job" is only true of the unfiltered page.
+                          Filtered, these are days THIS job filed nothing —
+                          a different and much stronger claim, and one a
+                          schedule dispute gets argued from. */}
+                      Nothing filed on {activeJob ? "this job" : "any job"} for{" "}
+                      {week.missing.map(dayLabel).join(" · ")}.
                       Days still to come aren&apos;t counted, and neither is today — only days
                       that are over and unrecorded.
                     </p>

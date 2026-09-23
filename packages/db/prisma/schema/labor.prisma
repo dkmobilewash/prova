@@ -37,13 +37,15 @@ model TimeEntry {
   /// recordedBy pair. A relation NAME changes nothing in SQL: the foreign key
   /// is still "TimeEntry_employeeUserId_fkey" on the same column, so this
   /// carries no migration of its own.
-  employeeUser   User?  @relation("TimeEntryEmployee", fields: [employeeUserId], references: [id], onDelete: Restrict)
+  employeeUser   User?   @relation("TimeEntryEmployee", fields: [employeeUserId], references: [id], onDelete: Restrict)
 
   /// The crew member this entry is for, when the worker has no login. See
-  /// crew.prisma. NULL on every row today and read by nothing — this ships
-  /// deliberately unwired, and the report and crew.prisma both say so, so
-  /// that it is not mistaken for the "written, documented, never called"
-  /// defect CLAUDE.md warns about.
+  /// crew.prisma. WIRED since #292 (corrected 2026-09-18 — this line said
+  /// "NULL on every row today and read by nothing" for a week after that
+  /// stopped being true): the phone's time screen writes it through
+  /// POST /api/v1/jobs/[id]/time-entries, which checks the crew member is
+  /// this company's and not archived, and the crew schedule and the Ask
+  /// tools read it.
   ///
   /// employeeUserId is now NULLABLE — the relaxation this comment held back.
   /// An entry names a User (employeeUserId) OR a crew member (crewMemberId),
@@ -62,7 +64,8 @@ model TimeEntry {
   /// THERE IS A DATABASE TRIGGER AGAIN. `prova_time_entry_identity_lock`, a
   /// BEFORE UPDATE trigger installed by
   /// 20260913120000_add_time_entry_correction, refuses any UPDATE that changes
-  /// jobId, employeeUserId or date, and refuses a crewMemberId that is already
+  /// jobId, employeeUserId or date (and, since 20260918130000, the three
+  /// clock-capture columns below), and refuses a crewMemberId that is already
   /// set from becoming a different one (NULL -> an id is still allowed: that
   /// is attribution, not reassignment). It is the trigger
   /// 20260905183000_add_crew_members deliberately did not ship, and the reason
@@ -91,6 +94,17 @@ model TimeEntry {
   date    DateTime
   hours   Decimal          @db.Decimal(5, 2)
   payType TimeEntryPayType @default(STRAIGHT)
+
+  /// Clock-capture evidence: the timestamps the phone recorded when this
+  /// interval was clocked in and out, and the unpaid break subtracted from
+  /// the worked duration. IMMUTABLE after creation — a correction fixes
+  /// `hours` (the authoritative figure), never these. The phone computes
+  /// DURATION only and never derives the pay-type split (lib/prevailing-wage.ts:
+  /// TimeEntry.payType is entered by a person, nothing rewrites it). All three
+  /// are null for web/typed/backfill entries that were not clocked.
+  clockStartedAt    DateTime?
+  clockEndedAt      DateTime?
+  clockBreakMinutes Int?
 
   /// Flat daily allowances, independent of hours/payType — a per diem or
   /// travel day is still one row on this date for this employee/job, not
@@ -151,8 +165,30 @@ model DispatchSlip {
   jobId String
   job   Job    @relation(fields: [jobId], references: [id])
 
-  employeeUserId String
-  employeeUser   User   @relation(fields: [employeeUserId], references: [id])
+  /// WHO THE HALL SENT: a User (employeeUserId) OR a crew member
+  /// (crewMemberId), never both and never neither — the XOR CHECK
+  /// "DispatchSlip_employee_or_crew" in 20260921120000_allow_crew_dispatch_slips
+  /// enforces it, the same shape as TimeEntry's since #412.
+  ///
+  /// employeeUserId was REQUIRED until that migration, which made the one
+  /// person a hiring hall exists to send — a field worker with no login — the
+  /// one person this form could not record. It was loosened, not replaced:
+  /// the column, its index and its foreign key are unchanged, so a build that
+  /// still reads it keeps working through the deploy window (CLAUDE.md, #378).
+  ///
+  /// onDelete: Restrict is spelled out rather than left to Prisma's default,
+  /// and that is load-bearing: an OPTIONAL relation defaults to SET NULL, so
+  /// leaving it off would have made the migration drop and re-add this
+  /// foreign key — and a SET NULL on a user delete would then trip the XOR
+  /// check instead of the RESTRICT removeTeamMember explains to the owner.
+  employeeUserId String?
+  employeeUser   User?   @relation(fields: [employeeUserId], references: [id], onDelete: Restrict)
+
+  /// The crew member dispatched, when the worker has no login. RESTRICT for
+  /// the reason TimeEntry.crewMemberId gives: crew members archive, they
+  /// never delete, and a referral on file must not lose the person it names.
+  crewMemberId String?
+  crewMember   CrewMember? @relation(fields: [crewMemberId], references: [id], onDelete: Restrict)
 
   craftClassificationId String?
   craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
@@ -168,6 +204,7 @@ model DispatchSlip {
 
   @@index([jobId])
   @@index([employeeUserId])
+  @@index([crewMemberId])
   @@index([craftClassificationId])
 }
 
@@ -198,11 +235,42 @@ model PrevailingWageDetermination {
   sourceUrl String?
   note      String?
 
+  /// What the determination DOCUMENT says about itself, ENTERED off the
+  /// document by a person. All nullable and additive: every row that
+  /// existed before these columns has none of them and is reported as
+  /// "unchecked" rather than judged. Nothing here is a wage rate — there is
+  /// no rate column and none is planned; the rate is read off the linked
+  /// document by a person.
+  ///
+  /// The document's own number, e.g. "SC-023-31-2, issue 2026-1".
+  determinationRef String?
+  /// The issue date printed on the determination. DIR issues general
+  /// determinations twice a year (22 Feb / 22 Aug) and each takes effect
+  /// ten days later; the standing line derives the effective window from
+  /// this date rather than storing it (lib/determination-standing.ts).
+  issuedOn         DateTime?
+  /// The expiration date printed on the determination.
+  expiresOn        DateTime?
+  /// The mark after that expiration date: SINGLE (holds for the life of
+  /// the project) or DOUBLE (a predetermined increase applies to work after
+  /// `expiresOn`). NONE = the document carries no mark. Null = not recorded,
+  /// which the standing line reports as unchecked rather than guessing.
+  expirationMarker DeterminationExpirationMarker?
+
   uploadedByUserId String?
   uploadedByUser   User?    @relation(fields: [uploadedByUserId], references: [id])
   createdAt        DateTime @default(now())
 
   @@index([jobId])
+}
+
+/// The asterisk a DIR general prevailing wage determination prints after
+/// its expiration date. What each one means is a published DIR rule, quoted
+/// in lib/determination-standing.ts with its source.
+enum DeterminationExpirationMarker {
+  NONE
+  SINGLE
+  DOUBLE
 }
 
 /// A global reference table (not scoped to a Company) — the same union
@@ -246,13 +314,13 @@ model UnionLocal {
   tradeJurisdiction   String?
   createdAt           DateTime @default(now())
 
-  craftClassifications CraftClassification[]
-  apprenticeRatioRules ApprenticeRatioRule[]
-  companyAgreements    CompanyUnionAgreement[]
+  craftClassifications      CraftClassification[]
+  apprenticeRatioRules      ApprenticeRatioRule[]
+  companyAgreements         CompanyUnionAgreement[]
+  apprenticeshipEnrollments ApprenticeshipEnrollment[]
 
   @@unique([companyId, parentInternational, localNumber])
   @@index([companyId])
-  apprenticeshipEnrollments ApprenticeshipEnrollment[]
 }
 
 /// One CBA between a Company and a UnionLocal. `complianceDocument` links
@@ -327,18 +395,61 @@ model CraftClassification {
   /// step rather than to price it.
   apprenticePeriod Int?
 
-  createdAt    DateTime   @default(now())
+  createdAt DateTime @default(now())
 
-  fringeRateSchedules FringeRateSchedule[]
-  jobLineItems        JobLineItem[]
-  catalogEntries      LineItemCatalogEntry[]
-  timeEntries         TimeEntry[]
-  dispatchSlips       DispatchSlip[]
+  fringeRateSchedules       FringeRateSchedule[]
+  jobLineItems              JobLineItem[]
+  catalogEntries            LineItemCatalogEntry[]
+  timeEntries               TimeEntry[]
+  dispatchSlips             DispatchSlip[]
+  apprenticeshipEnrollments ApprenticeshipEnrollment[]
+  crewScheduleDays          CrewScheduleDay[]
+  workerCrafts              WorkerCraft[]
 
   @@unique([unionLocalId, name])
   @@index([unionLocalId])
   @@index([companyId])
-  apprenticeshipEnrollments ApprenticeshipEnrollment[]
+}
+
+/// Which crafts a person can be logged under — "Tino works as a Journeyman
+/// Carpenter". It drives one thing: the phone's craft picker shows a worker
+/// only their own crafts, so a foreman is not choosing from every craft the
+/// company has (teardown D-12, filtered by the worker, kept deliberately
+/// simple). A worker with no rows here is shown every craft rather than
+/// none, so a company that has not set this up is never blocked.
+///
+/// It is NOT a certification record and proves nothing to an agency —
+/// WorkerCertification is the safety-card table, and this is separate from
+/// it on purpose. Nor is it enforced when an hour is saved: the phone's
+/// offline queue stops at the first refused write, so a server-side refusal
+/// would strand every entry queued behind it. What a filing reads is the
+/// craft on the TimeEntry itself.
+///
+/// A person is a login (userId) OR a crew member (crewMemberId), never both
+/// and never neither — the same XOR as TimeEntry, CHECKed in the migration.
+/// Cascades from every parent: a row means nothing once its craft or its
+/// person is gone, and nothing reads it historically.
+model WorkerCraft {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  craftClassificationId String
+  craftClassification   CraftClassification @relation(fields: [craftClassificationId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  crewMemberId String?
+  crewMember   CrewMember? @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([craftClassificationId, userId])
+  @@unique([craftClassificationId, crewMemberId])
+  @@index([companyId])
+  @@index([userId])
+  @@index([crewMemberId])
 }
 
 /// Effective-dated, not a flat current-rate field: CBA rates typically
@@ -403,4 +514,177 @@ model ApprenticeRatioRule {
 
   @@index([unionLocalId])
   @@index([companyId])
+}
+
+/// A foreman's signature on one job's hours for one day, and the office's
+/// approval of it — the step that turns typed hours into a payroll record.
+///
+/// THE DAY'S STATE IS DERIVED, NEVER STORED (CLAUDE.md: derived state is never
+/// stored). The newest sign-off for (jobId, date) with `reopenedAt` NULL is the
+/// live one: no live sign-off = OPEN; live and `approvedAt` NULL = SUBMITTED;
+/// live and approved = APPROVED. There is no status column to disagree with
+/// the timestamps.
+///
+/// APPEND-ONLY. Reopening does not delete or un-sign anything: it stamps
+/// `reopenedAt` on the row, which leaves it in the history, and the next
+/// signature is a NEW row. A partial unique index in the migration allows only
+/// one live (un-reopened) sign-off per job per day. A BEFORE UPDATE trigger,
+/// `prova_timesheet_signoff_lock`, refuses any change to what was signed and
+/// lets `approvedAt` and `reopenedAt` be set once each.
+///
+/// WHILE A DAY HAS A LIVE SIGN-OFF, ITS HOURS ARE LOCKED. The trigger
+/// `prova_time_entry_day_lock` on TimeEntry refuses an INSERT, UPDATE or
+/// DELETE of an entry on a signed day. The API and the actions check first so
+/// that people see a sentence; the trigger is the rule. Cleanup scripts delete
+/// sign-offs BEFORE time entries for exactly that reason.
+model TimesheetSignoff {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// The day signed for. UTC midnight, the same as TimeEntry.date.
+  date DateTime
+
+  /// The printed name under the signature.
+  signerName     String
+  /// The drawn signature: an SVG path in exactly one shape, `M<x> <y>` and
+  /// `L<x> <y>` in whole pixels on a 320x160 box. The server refuses anything
+  /// else, so a signature can never carry markup into a page that draws it.
+  signaturePath  String
+  signedByUserId String?
+  signedByUser   User?    @relation("TimesheetSignoffSignedBy", fields: [signedByUserId], references: [id])
+  signedAt       DateTime
+
+  /// What the signature covered, counted at signing: the number of entries
+  /// and their total hours. Nothing can change under a live sign-off, so
+  /// these can only disagree with the entries after a reopen — which is
+  /// exactly when you want to know what was signed originally.
+  entryCount Int
+  totalHours Decimal @db.Decimal(7, 2)
+
+  /// The day's crew by craft at signing, from its TimeEntry rows:
+  /// `{ headcount, hours, byCraft: [{ craft, headcount, hours }] }`.
+  manpower       Json?
+  /// The daily report and its delays as they stood at signing — work
+  /// performed, weather, other trades, and each DelayEvent. Null when no
+  /// report had been filed. Nothing can change under a live sign-off, so
+  /// this only differs from the live rows after a reopen, which is exactly
+  /// when you want to know what was signed.
+  reportSnapshot Json?
+
+  approvedAt       DateTime?
+  approvedByUserId String?
+  approvedByUser   User?     @relation("TimesheetSignoffApprovedBy", fields: [approvedByUserId], references: [id])
+
+  reopenedAt       DateTime?
+  reopenedByUserId String?
+  reopenedByUser   User?     @relation("TimesheetSignoffReopenedBy", fields: [reopenedByUserId], references: [id])
+  reopenReason     String?
+
+  /// Idempotency key from the phone, so a retried offline POST replays
+  /// instead of signing twice.
+  clientOperationId String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([companyId, clientOperationId])
+  @@index([companyId])
+  @@index([jobId, date])
+  @@index([signedByUserId])
+  @@index([approvedByUserId])
+  @@index([reopenedByUserId])
+}
+
+enum DelayCause {
+  WEATHER
+  GC_SCHEDULE
+  OTHER_TRADE
+  MATERIAL
+  INSPECTION
+  DESIGN_RFI
+  SITE_ACCESS
+  EQUIPMENT
+  OTHER
+}
+
+enum DelayResponsibleParty {
+  GC
+  OWNER
+  OTHER_TRADE
+  SUPPLIER
+  OURSELVES
+  NOBODY
+}
+
+enum NotificationMethod {
+  PHONE
+  EMAIL
+  TEXT
+  IN_PERSON
+  MEETING
+  OTHER
+}
+
+/// One thing that cost the crew time on one job on one day — the record a
+/// delay claim or a change order is argued from months later.
+///
+/// Replaces the free-text DailyFieldReport.delays. Keyed on (jobId, date)
+/// rather than on a report, so a delay can be logged before the day's report
+/// exists, and it is locked by the same day sign-off as the hours and the
+/// report (`prova_delay_event_day_lock`). The one change that trigger lets
+/// through on a signed day is `changeOrderId`: drafting a change order from a
+/// delay is exactly what the office does after the day is signed.
+model DelayEvent {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// The day it happened. UTC midnight, like every date that matters.
+  date DateTime
+
+  cause            DelayCause
+  responsibleParty DelayResponsibleParty
+  /// "Acme Electric", "the GC's super" — who, in words, when the category
+  /// is not enough.
+  responsibleName  String?
+
+  /// Minutes after midnight, site time. Optional: a delay is often known
+  /// only as "most of the morning".
+  startMinute Int?
+  endMinute   Int?
+
+  workersAffected Int?
+  /// Crew-hours lost. Entered, or worked out from workers x (end - start)
+  /// when those are given and this is left blank.
+  hoursLost       Decimal? @db.Decimal(7, 2)
+
+  description String
+
+  /// Whether, how, when and to whom the GC was told. Null method = not yet.
+  gcNotifiedHow NotificationMethod?
+  gcNotifiedWho String?
+  gcNotifiedAt  DateTime?
+
+  /// The change order drafted from this delay, if one was.
+  changeOrderId String?
+  changeOrder   ChangeOrder? @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
+
+  loggedByUserId String?
+  loggedBy       User?   @relation("DelayEventLoggedBy", fields: [loggedByUserId], references: [id])
+
+  /// Idempotency key from the phone.
+  clientOperationId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, clientOperationId])
+  @@index([companyId])
+  @@index([jobId, date])
+  @@index([changeOrderId])
+  @@index([loggedByUserId])
 }

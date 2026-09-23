@@ -30,13 +30,10 @@ import { assemblePayApplication, type PayAppAssemblyInput } from "./pay-applicat
  * understatement; test 3 below is what pins that.
  */
 
-const RETAINAGE = "10";
-
 /** Fixture A — L2 removed by a deductive change order, never billed. */
 function fixtureNeverBilled(invoiceId: string): PayAppAssemblyInput {
   return {
     invoiceId,
-    retainagePercent: RETAINAGE,
     lineItems: [
       {
         id: "L1",
@@ -80,7 +77,6 @@ function fixtureNeverBilled(invoiceId: string): PayAppAssemblyInput {
 function fixtureBilledThenRemoved(invoiceId: string): PayAppAssemblyInput {
   return {
     invoiceId,
-    retainagePercent: RETAINAGE,
     lineItems: [
       {
         id: "L1",
@@ -212,7 +208,6 @@ describe("lines that are not removed", () => {
     // contract value for a line that never had any.
     const view = assemble({
       invoiceId: "inv1",
-      retainagePercent: null,
       lineItems: [
         { id: "L1", description: "General conditions", quantity: "1", unitPrice: null, isDeleted: false },
       ],
@@ -230,5 +225,124 @@ describe("lines that are not removed", () => {
     expect(row.scheduledValue).toBe(0);
     expect(row.percentOfScheduledValue).toBeNull();
     expect(row.description).toBe("General conditions");
+  });
+});
+
+/**
+ * The lump-sum invoice that put a NEGATIVE figure on a G702.
+ *
+ * A job can be billed two ways: `submitPayApplication` writes an invoice
+ * WITH line items against the schedule of values, `createInvoice` writes a
+ * lump-sum bill with none. Both can carry a retainage snapshot, and both
+ * used to count as an "earlier invoice" here — but only one of them has
+ * line items for `previousBilled` to be summed from. So a lump-sum bill put
+ * its retainage on one side of the certificate and nothing on the other.
+ *
+ * Reproduced before anything was changed, on the numbers below: line 7 of
+ * the form, LESS PREVIOUS CERTIFICATES FOR PAYMENT, printed -$1,000.00.
+ *
+ * WHAT WAS AND WAS NOT WRONG, because the difference decides how alarmed to
+ * be. `currentPaymentDue` cancels the term algebraically —
+ * (TCSD - thisRet - prevRet) - (prevTCSD - prevRet) — so the AMOUNT ASKED
+ * FOR was right the whole time. What was wrong is every line a GC
+ * reconciles against their own ledger: retainage to date, total earned less
+ * retainage, previous certificates, and balance to finish. A negative on
+ * line 7 is what gets the application handed back.
+ */
+describe("a lump-sum invoice on the same job as a pay application", () => {
+  /** $100,000 of framing. Invoice #1 is a lump-sum bill for $10,000 at 10%;
+   * invoice #2 is a real pay application for $50,000 at 10%. */
+  function lumpSumThenPayApp(invoiceId: string): PayAppAssemblyInput {
+    return {
+      invoiceId,
+      lineItems: [
+        { id: "L1", description: "Metal stud framing", quantity: "1", unitPrice: "100000", isDeleted: false },
+      ],
+      invoices: [
+        { id: "inv1", number: 1, retainageWithheld: "1000", lineItems: [] },
+        {
+          id: "inv2",
+          number: 2,
+          retainageWithheld: "5000",
+          lineItems: [{ lineItemId: "L1", thisPeriodBilled: "50000", materialsStoredValue: "0" }],
+        },
+      ],
+    };
+  }
+
+  it("does not print a negative 'less previous certificates for payment'", () => {
+    const { summary } = assemble(lumpSumThenPayApp("inv2"));
+
+    // Today: -1000. There is no previous certificate on this contract —
+    // invoice #1 was never certified against the schedule of values.
+    expect(summary.previousCertificatesForPayment).toBe(0);
+  });
+
+  it("does not inflate retainage to date with retainage from outside the SOV", () => {
+    const { summary } = assemble(lumpSumThenPayApp("inv2"));
+
+    expect(summary.retainageToDate).toBe(5000); // today: 6000
+    expect(summary.totalEarnedLessRetainage).toBe(45000); // today: 44000
+    expect(summary.balanceToFinishIncludingRetainage).toBe(55000); // today: 56000
+  });
+
+  it("asks the GC for the same money it always did", () => {
+    // This is the assertion that keeps the fix honest. The amount requested
+    // was never wrong, so a "fix" that moves it has broken something else.
+    expect(assemble(lumpSumThenPayApp("inv2")).summary.currentPaymentDue).toBe(45000);
+    expect(assemble(lumpSumThenPayApp("inv2")).summary.totalCompletedAndStoredToDate).toBe(50000);
+    expect(assemble(lumpSumThenPayApp("inv2")).summary.contractSumToDate).toBe(100000);
+  });
+
+  it("is still recognised as a lump-sum bill when it is the one being viewed", () => {
+    const view = assemble(lumpSumThenPayApp("inv1"));
+
+    // The page prints no certificate for one of these — it says in words
+    // that there is no per-line breakdown. That flag must not change.
+    expect(view.isPayApplication).toBe(false);
+    // And its own snapshot must not land in a retainage total over line
+    // items it contributed nothing to. Today: 1000.
+    expect(view.summary.retainageToDate).toBe(0);
+  });
+
+  it("skips a lump-sum bill sandwiched between two pay applications", () => {
+    const input: PayAppAssemblyInput = {
+      invoiceId: "inv3",
+      lineItems: [
+        { id: "L1", description: "Metal stud framing", quantity: "1", unitPrice: "100000", isDeleted: false },
+      ],
+      invoices: [
+        {
+          id: "inv1",
+          number: 1,
+          retainageWithheld: "3000",
+          lineItems: [{ lineItemId: "L1", thisPeriodBilled: "30000", materialsStoredValue: "0" }],
+        },
+        { id: "inv2", number: 2, retainageWithheld: "1000", lineItems: [] },
+        {
+          id: "inv3",
+          number: 3,
+          retainageWithheld: "2000",
+          lineItems: [{ lineItemId: "L1", thisPeriodBilled: "20000", materialsStoredValue: "0" }],
+        },
+      ],
+    };
+    const { summary } = assemble(input);
+
+    // $30,000 certified previously, less the $3,000 retained on it.
+    expect(summary.previousCertificatesForPayment).toBe(27000); // today: 26000
+    expect(summary.retainageToDate).toBe(5000); // today: 6000
+    expect(summary.currentPaymentDue).toBe(18000); // unchanged, as above
+  });
+
+  it("leaves a job billed only by pay applications exactly as it was", () => {
+    // The control. Every invoice here has line items, so the new predicate
+    // excludes nothing and these are the same figures the suite above
+    // already pins.
+    const { summary } = assemble(fixtureNeverBilled("inv2"));
+
+    expect(summary.previousCertificatesForPayment).toBe(45000);
+    expect(summary.retainageToDate).toBe(8000);
+    expect(summary.currentPaymentDue).toBe(27000);
   });
 });

@@ -86,6 +86,27 @@ export type CreatePunchListItemsInput = {
   /** The signed-in person, from the caller's own context; never a form
    * field (see PunchListItem.raisedByUserId in operations.prisma). */
   raisedByUserId: string | null;
+  /**
+   * Applied to every item created in this call — where they are, who is
+   * fixing them and when they are due.
+   *
+   * The page's form carries these because a walkthrough is where they are
+   * known: standing in the unit, the area and the person are obvious and
+   * five minutes later at a desk they are a guess. The Ask command path
+   * passes nothing and gets the defaults, which is right — a pasted list
+   * from an email has no area in it.
+   *
+   * Validated by the CALLER, which is the only place that knows the
+   * company: `readItemFields` in lib/actions/punchLists.ts checks the
+   * assignee is ours before any of this arrives.
+   */
+  defaults?: {
+    area?: string | null;
+    dueOn?: Date | null;
+    assignedUserId?: string | null;
+    assignedCrewMemberId?: string | null;
+    assignedName?: string | null;
+  };
 };
 
 export type CreatePunchListItemsResult = {
@@ -116,7 +137,13 @@ export async function createPunchListItems(
     for (const description of descriptions) {
       created.push(
         await tx.punchListItem.create({
-          data: { companyId, jobId, description, raisedByUserId: input.raisedByUserId },
+          data: {
+            companyId,
+            jobId,
+            description,
+            raisedByUserId: input.raisedByUserId,
+            ...(input.defaults ?? {}),
+          },
           select: { id: true, description: true },
         }),
       );

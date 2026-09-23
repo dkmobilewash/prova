@@ -3,7 +3,9 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { IntakeDropZone } from "@/components/IntakeDropZone";
+import { IntakeForwardBox } from "@/components/IntakeForwardBox";
 import { IntakeTable, type IntakeRow } from "@/components/IntakeTable";
+import { ensureIntakeEmailToken, intakeEmailAddress, intakeInboundDomain } from "@/lib/intake/inbound";
 import { countIntake, intakeSummarySentence } from "@/lib/intake/review";
 import { applyLearning, describeLearning, learnFromCorrections } from "@/lib/intake/learn";
 import { toJobOption } from "@/components/jobLabels";
@@ -63,6 +65,17 @@ export default async function IntakePage() {
   if (!allowed) return <NoAccess capability="MANAGE_JOBS" />;
   const { company } = context;
 
+  // The forward-by-email address. The domain is per-install configuration;
+  // without it there is no address to show and the section is absent — an
+  // address that bounces teaches people the feature is broken. The token is
+  // backfilled by migration for companies that existed and minted here,
+  // idempotently, for ones created since (a conditional write that a second
+  // concurrent open loses harmlessly).
+  const inboundDomain = intakeInboundDomain(process.env);
+  const forwardAddress = inboundDomain
+    ? intakeEmailAddress(await ensureIntakeEmailToken(company.id), inboundDomain)
+    : null;
+
   const [jobs, tray, trayTotal, filed, dismissed, decisions] = await Promise.all([
     prisma.job.findMany({
       where: { companyId: company.id },
@@ -92,6 +105,8 @@ export default async function IntakePage() {
         jobHint: true,
         jobId: true,
         status: true,
+        emailFrom: true,
+        emailSubject: true,
       },
     }),
     prisma.documentIntake.count({ where: { companyId: company.id, status: "PROPOSED" } }),
@@ -170,9 +185,13 @@ export default async function IntakePage() {
         you confirm every row, and you can overrule any answer on the row itself.
       </p>
 
-      <section className="mb-8">
+      <section className="mb-8" data-tour="intake-drop">
         <IntakeDropZone companyId={company.id} />
       </section>
+
+      {forwardAddress && (
+        <IntakeForwardBox address={forwardAddress} isOwner={context.role === "OWNER"} />
+      )}
 
       {/* WHAT IT LEARNED, said out loud. Cyrus asked for this by name, and
           it is the half that makes the rest acceptable: a screen that
@@ -186,7 +205,7 @@ export default async function IntakePage() {
           have learned" panel on a new account teaches the reader that the
           feature does nothing. */}
       {learnedLines.length > 0 && (
-        <section className="mb-8 rounded-lg border border-line-card bg-surface p-4">
+        <section className="mb-8 rounded-lg border border-line-card bg-surface p-4" data-tour="intake-learned">
           <h2 className="mb-1 text-sm font-semibold text-ink-label">What this has picked up from you</h2>
           <p className="mb-3 text-xs text-ink-muted">
             Taken from what you filed, not from anything we were told. It only fills a blank — a
@@ -207,7 +226,7 @@ export default async function IntakePage() {
           rather than "filed automatically": nothing here has been filed, and
           a headline claiming otherwise above a table of rows that have not
           been is the copy that survives a demo and not a customer. */}
-      <section className="mb-4 flex flex-wrap items-end justify-between gap-3">
+      <section className="mb-4 flex flex-wrap items-end justify-between gap-3" data-tour="intake-summary">
         <div>
           <p className="text-lg font-semibold text-ink">{intakeSummarySentence(counts)}</p>
           <p className="mt-0.5 text-xs text-ink-muted">
@@ -226,7 +245,7 @@ export default async function IntakePage() {
       {rows.length === 0 ? (
         /* A real empty state with a way out, not a shrug. The two links are
            where the paperwork this tray is full of ends up being read. */
-        <div className="rounded-lg border border-line-card bg-surface p-8 text-center">
+        <div className="rounded-lg border border-line-card bg-surface p-8 text-center" data-tour="intake-empty">
           <p className="text-base font-medium text-ink">Nothing waiting for you</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-ink-body">
             {counts.filed > 0 || counts.dismissed > 0

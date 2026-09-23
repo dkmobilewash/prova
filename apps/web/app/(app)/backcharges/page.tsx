@@ -3,10 +3,12 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { BackchargeForm } from "@/components/BackchargeForm";
+import { EmptyState } from "@/components/EmptyState";
 import { BackchargeRow } from "@/components/BackchargeRow";
 import { isResponseOverdue, summarizeBackcharges } from "@/lib/backcharges";
 import { money } from "@/lib/money";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as the RFI log and
  * the safety log. Rendering locally shows the previous day to anyone west
@@ -26,7 +28,7 @@ export default async function BackchargesPage({
   const { job: jobFilter, show } = await searchParams;
   const showResolved = show === "all";
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await viewerToday();
 
   // status + contact, not just the name: issue #65 — fifteen jobs, seven of
   // them called "Smith kitchen remodel", and this picker showed seven
@@ -49,6 +51,11 @@ export default async function BackchargesPage({
     orderBy: [{ jobId: "asc" }, { number: "desc" }],
     include: { job: { select: { name: true } }, loggedByUser: { select: { name: true } } },
   });
+
+  // Whether this company has EVER logged one, not whether the current
+  // filter shows any — the teaching empty state is for the first, and a
+  // filter that happens to match nothing keeps its plain line.
+  const everLogged = await prisma.backcharge.count({ where: { companyId: company.id } });
 
   const rows = backcharges.map((bc) => ({
     id: bc.id,
@@ -114,11 +121,11 @@ export default async function BackchargesPage({
         usually short, and an objection is worth nothing without the date it went out.
       </p>
 
-      <section className="mb-8">
+      <section className="mb-8" data-tour="backcharges-log">
         <BackchargeForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
       </section>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-4">
+      <div className="mb-4 grid gap-3 sm:grid-cols-4" data-tour="backcharges-totals">
         <div className="rounded-lg border border-line-card bg-surface p-4">
           <p className="font-mono text-xl font-semibold text-ink">{money(summary.openClaimed)}</p>
           <p className="text-xs text-ink-muted">
@@ -151,12 +158,13 @@ export default async function BackchargesPage({
 
       <p className="mb-4 text-xs text-ink-muted">
         These figures are a log of what the GC has charged us, not a deduction from any pay
-        application — nothing here changes an invoice, a contract value or a WIP number. Netting an
-        accepted backcharge against billing is real work that hasn&apos;t been built.
+        application — nothing here changes an invoice, a contract value or a WIP number. An
+        accepted backcharge is not netted against billing automatically; if the GC deducts it,
+        adjust the invoice yourself.
       </p>
 
       {jobs.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap gap-2" data-tour="backcharges-job-filter">
           <Link href={filterHref({ job: null })} className={chip(!activeJob)}>
             All jobs
           </Link>
@@ -177,14 +185,38 @@ export default async function BackchargesPage({
         </Link>
       </div>
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && everLogged === 0 ? (
+        <EmptyState
+          data-tour="backcharges-empty"
+          title="No backcharges yet"
+          purpose={
+            <p>
+              Money someone takes off what they owe you — a builder charging you for cleanup, a
+              repair to another trade&apos;s work, a punch item they finished themselves. Log it
+              the day it arrives, with the amount and the date, so you can dispute it in writing
+              before the deadline instead of finding a short payment months later.
+            </p>
+          }
+          actions={
+            jobs.length === 0
+              ? [{ label: "Create a job", href: "/jobs/new" }]
+              : [{ label: "Log a backcharge", opens: "backcharges-log" }]
+          }
+          example={{
+            rows: [
+              { title: "#2 Site cleanup, week of Sep 1", tag: "Disputed", detail: "Oak Ave addition · objection sent Sep 5", meta: "$450.00" },
+              { title: "#1 Drywall damage by another trade", tag: "Accepted", detail: "Oak Ave addition · taken off pay app 2", meta: "$180.00" },
+            ],
+          }}
+        />
+      ) : rows.length === 0 ? (
         <p className="text-ink-body">
           {showResolved
             ? "No backcharges logged. That is worth being sure of rather than assuming — a deduction sheet stapled to a pay application is still a backcharge."
             : "Nothing unresolved. Switch to “Show resolved” for the ones already closed out."}
         </p>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="backcharges-list">
           {rows.map((bc) => (
             <BackchargeRow
               key={bc.id}

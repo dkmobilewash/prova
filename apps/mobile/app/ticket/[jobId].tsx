@@ -1,13 +1,25 @@
 import { useAuth } from "@clerk/expo";
 import { useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { DateField } from "@/components/DateField";
 import { Field } from "@/components/Field";
+import { JobContextChip } from "@/components/JobContextChip";
 import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
-import { colors, typography } from "@/lib/theme";
+import { SignaturePad } from "@/components/SignaturePad";
+import { SyncStatus } from "@/components/SyncStatus";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
+import { emptyFor } from "@/lib/empty-state";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
+import { type Palette, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
 import { enqueue } from "@/lib/sync-queue";
@@ -23,55 +35,78 @@ function localToday(): string {
 }
 
 export default function TicketScreen() {
+  const { me } = useMe();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [tickets, setTickets] = useState<TmTicket[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [workDate, setWorkDate] = useState(localToday());
   const [workDescription, setWorkDescription] = useState("");
   const [signerName, setSignerName] = useState("");
+  const [signaturePath, setSignaturePath] = useState<string | null>(null);
 
   const load = async () => {
-    const token = await getToken();
-    if (!token || !jobId) return;
-    try {
-      setTickets(await api.listTmTickets(jobId, token));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load tickets");
+    if (!jobId) return;
+    const result = await cachedRead(
+      cacheKeys.tickets(jobId),
+      withToken(getToken, (token) => api.listTmTickets(jobId, token)),
+    );
+    setError(null);
+    if (result.from === "nothing") {
+      setOffline("nothing");
+      return;
     }
+    setTickets(result.value);
+    setOffline(staleNote(result));
   };
 
-  useEffect(() => {
-    (async () => {
-      await load();
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId]);
 
-  const { pending, sync } = useSync(load);
+  const { pending, sync, refused, dismissRefused, retrySetAside } = useSync(load);
+
+  const canSubmit = !!workDate && !!workDescription.trim() && !!signerName.trim() && signaturePath !== null;
 
   const submit = async () => {
-    if (!jobId || !workDate || !workDescription.trim() || !signerName.trim()) return;
-    setWorkDescription("");
-    setSignerName("");
-    setShowForm(false);
-    await enqueue({
-      type: "ticket:create",
+    if (!jobId || !canSubmit || !signaturePath) return;
+    const op = {
+      type: "ticket:create" as const,
       jobId,
       clientOperationId: uuid(),
       workDate,
       workDescription: workDescription.trim(),
       signerName: signerName.trim(),
-    });
+      signaturePath,
+    };
+    setWorkDescription("");
+    setSignerName("");
+    setSignaturePath(null);
+    setShowForm(false);
+    await enqueue(op);
     await sync();
   };
 
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["ticket/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["ticket/[jobId]"]} />;
+
   return (
     <View style={styles.screen}>
-      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      <View style={styles.chipWrap}>
+        <JobContextChip />
+      </View>
+      <SyncStatus
+        pending={pending}
+        state={offline}
+        refused={refused}
+        onDismiss={dismissRefused}
+        onRetry={retrySetAside}
+      />
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <List
         data={tickets}
@@ -80,7 +115,10 @@ export default function TicketScreen() {
           <Card>
             <View style={styles.head}>
               <Text style={styles.date}>{item.workDate}</Text>
-              <Text style={styles.signer}>Signed: {item.signerName}</Text>
+              <Text style={styles.signer}>
+                Signed: {item.signerName}
+                {item.hasSignature === false ? " (typed)" : ""}
+              </Text>
             </View>
             <Text style={styles.description}>{item.workDescription}</Text>
             {item.snapshot ? (
@@ -91,8 +129,10 @@ export default function TicketScreen() {
             ) : null}
           </Card>
         )}
-        emptyTitle="No T&M tickets"
-        emptyDescription="Tap “New ticket” to document and sign the day's extra work."
+        {...emptyFor(offline, "the T&M tickets", {
+          title: "No T&M tickets",
+          description: "Tap “New ticket” to document and sign the day's extra work.",
+        })}
       />
 
       <View style={styles.footer}>
@@ -107,8 +147,9 @@ export default function TicketScreen() {
         title="New T&M ticket"
         primaryLabel="Sign & save"
         onPrimary={submit}
+        primaryDisabled={!canSubmit}
       >
-        <Field label="Date" placeholder="YYYY-MM-DD" value={workDate} onChangeText={setWorkDate} />
+        <DateField label="Date" value={workDate} onChange={setWorkDate} max={localToday()} />
         <Field
           label="What was done"
           placeholder="Describe the extra work"
@@ -118,23 +159,28 @@ export default function TicketScreen() {
         />
         <Field
           label="Client's name"
-          placeholder="Their typed name is the signature"
+          placeholder="Printed under their signature"
           value={signerName}
           onChangeText={setSignerName}
         />
+        <Text style={styles.label}>Client&rsquo;s signature</Text>
+        <SignaturePad key={showForm ? "open" : "closed"} onChange={setSignaturePath} />
       </Sheet>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
-  head: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  date: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  signer: { color: colors.inkMuted, fontSize: typography.size.sm },
-  description: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
-  summary: { color: colors.inkMuted, fontSize: typography.size.sm, marginTop: 4 },
-  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    chipWrap: { padding: space.md, paddingBottom: 0 },
+    error: { color: p.colors.tagRoseInk, padding: space.md, paddingBottom: 0, fontSize: typography.size.sm },
+    head: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    date: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+    signer: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    description: { color: p.colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
+    label: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    summary: { color: p.colors.inkMuted, fontSize: typography.size.sm, marginTop: 4 },
+    footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
+  });
+}

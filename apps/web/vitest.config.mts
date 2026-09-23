@@ -26,8 +26,34 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   test: {
     environment: "node",
+    // Web Storage where the runtime gives none — see vitest.setup.ts.
+    setupFiles: ["./vitest.setup.ts"],
     include: ["**/*.test.ts"],
     exclude: ["node_modules/**", ".next/**"],
+    /* VITEST'S 5000ms DEFAULT IS TOO TIGHT FOR THIS SUITE, AND THE COST IS
+       NOT A SLOW TEST — IT IS THAT "THE SUITE IS GREEN" STOPPED MEANING
+       ANYTHING. On 2026-09-21, five DIFFERENT files timed out at exactly
+       5000ms across runs on one machine, each passing in seconds when run
+       alone: correspondence-dates, field-reports-core,
+       billing/retainage-amount, ask/attachmentStream, ask/injection.batch.
+       Three separate reviewers reported it independently and each had to
+       re-run in isolation to find out whether their own diff was at fault.
+
+       That is the expensive part. A suite that fails on a different file
+       every run trains everyone to re-run rather than read, and a red that
+       is usually noise is a red nobody believes on the day it is real.
+
+       These tests are not slow: the same files finish in 1-6s in isolation.
+       They are page renders and property sweeps competing for CPU when
+       several turbo runs or agents share the machine, which is now normal
+       here. 30s leaves roughly a 5x margin over the slowest legitimate file
+       while still catching a genuine hang — an infinite loop or an awaited
+       promise that never settles blows through 30s exactly as it blows
+       through 5s.
+
+       If a single test ever legitimately needs longer, give THAT test its
+       own timeout argument rather than raising this again. */
+    testTimeout: 30_000,
   },
   resolve: {
     alias: {

@@ -163,6 +163,7 @@ async function main() {
     closeoutSubmission: prisma.closeoutSubmission.count({ where: { jobId: { in: jobIds } } }),
     closeoutSubmissionCounter: prisma.closeoutSubmissionCounter.count({ where: { jobId: { in: jobIds } } }),
     signatureRequest: prisma.signatureRequest.count({ where: { jobId: { in: jobIds } } }),
+    docuSignEnvelope: prisma.docuSignEnvelope.count({ where: { jobId: { in: jobIds } } }),
     contractDocument: prisma.contractDocument.count({ where: { jobId: { in: jobIds } } }),
     retainageRelease: prisma.retainageRelease.count({ where: { jobId: { in: jobIds } } }),
     estimateVersion: prisma.estimateVersion.count({ where: { jobId: { in: jobIds } } }),
@@ -226,6 +227,28 @@ async function main() {
     const lineIds = lineItems.map((l) => l.id);
     await del("costEntry", () => prisma.costEntry.deleteMany({ where: { lineItemId: { in: lineIds } } }));
     await del("equipmentAssignment", () => prisma.equipmentAssignment.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("crewScheduleDay", () => prisma.crewScheduleDay.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("lienDeadline", () => prisma.lienDeadline.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // Cascades to its cached ProcoreItem rows. Nothing in Procore changes.
+    await del("procoreProjectLink", () => prisma.procoreProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // Cascades to its cached AccItem rows. Same shape as ProcoreProjectLink
+    // — nothing in ACC changes.
+    await del("accProjectLink", () => prisma.accProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // CASCADE on Job, same shape as ProcoreProjectLink — the link is a
+    // pointer at CompanyCam, not evidence. Nothing in CompanyCam changes.
+    await del("companyCamProjectLink", () => prisma.companyCamProjectLink.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // CASCADE on Job, same shape as ProcoreProjectLink and
+    // CompanyCamProjectLink — the link is a pointer at Bluebeam, not
+    // evidence. Nothing in Bluebeam changes.
+    await del("bluebeamStudioSession", () => prisma.bluebeamStudioSession.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // Sign-offs first: a live one makes the TimeEntry day-lock trigger refuse
+    // to delete that day's hours.
+    await del("timesheetSignoff", () =>
+      prisma.timesheetSignoff.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    // After the sign-offs: a live one makes the day-lock triggers refuse to
+    // delete that day's delays (and its daily report, below).
+    await del("delayEvent", () => prisma.delayEvent.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("timeEntry", () => prisma.timeEntry.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("dailyFieldReport", () => prisma.dailyFieldReport.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("tmTicket", () => prisma.tmTicket.deleteMany({ where: { jobId: { in: jobIds } } }));
@@ -282,6 +305,9 @@ async function main() {
     await del("closeoutSubmission", () => prisma.closeoutSubmission.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("closeoutSubmissionCounter", () => prisma.closeoutSubmissionCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("signatureRequest", () => prisma.signatureRequest.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // RESTRICT on Job. Its links to ContractDocument and ChangeOrder are SET
+    // NULL, so it can go before or after those; it must go before the job.
+    await del("docuSignEnvelope", () => prisma.docuSignEnvelope.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("contractDocument", () => prisma.contractDocument.deleteMany({ where: { jobId: { in: jobIds } } }));
     // ContractDocumentVersionCounter is RESTRICT on Job and is NOT reached by
     // deleting the contract documents -- it is keyed on jobId, so a job whose
@@ -294,6 +320,12 @@ async function main() {
     // deleting the versions does not reach it, so it outlives them and
     // blocks the job delete on its own.
     await del("estimateVersionCounter", () => prisma.estimateVersionCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // WH-347 payroll numbers and their per-job counter: both keyed on
+    // jobId, RESTRICT on Job, and not reached by deleting anything else --
+    // the #227 shape again, which is why both are here AND in
+    // HANDLED_MODELS AND in seed-demo.mjs.
+    await del("wh347PayrollNumber", () => prisma.wh347PayrollNumber.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("wh347PayrollCounter", () => prisma.wh347PayrollCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("dispatchSlip", () => prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("prevailingWageDetermination", () => prisma.prevailingWageDetermination.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("jobAssignment", () => prisma.jobAssignment.deleteMany({ where: { jobId: { in: jobIds } } }));

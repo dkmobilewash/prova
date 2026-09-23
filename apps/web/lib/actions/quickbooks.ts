@@ -15,13 +15,17 @@ import {
   getInvoice,
   getInvoicesByIds,
   listAccounts,
-  refreshTokens,
   upsertInvoice,
   type QuickBooksAccount,
   upsertPayment,
   getPayment,
 } from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
+// Lifted into its own module when the QuickBooks import became a second
+// caller: a "use server" file may only export Server Actions, and a token
+// getter must never be one.
+import { accessTokenFor } from "@/lib/quickbooks-token";
 import {
   quickBooksSideFrom,
   reconcileAll,
@@ -53,6 +57,11 @@ import {
   type ActionResult,
 } from "./shared";
 
+/** Same sentence as lib/actions/billing.ts's, for the same reason: a push
+ * is an invoice or a payment leaving this company for its books. */
+const BILLING_ONLY =
+  "Invoices and payments aren't part of your job function. The account owner sets who sees what, on the Team page.";
+
 /**
  * Pushing accounting data to QuickBooks.
  *
@@ -77,58 +86,6 @@ import {
  * only representation that survives both. */
 function toCents(value: unknown): number {
   return Math.round(Number(value) * 100);
-}
-
-async function accessTokenFor(companyId: string) {
-  const connection = await prisma.quickBooksConnection.findUnique({ where: { companyId } });
-  if (!connection) return null;
-
-  if (connection.accessTokenExpiresAt.getTime() - Date.now() >= 60_000) {
-    return { accessToken: connection.accessToken, realmId: connection.realmId };
-  }
-
-  // A refresh that fails is not a transient error and no retry fixes it:
-  // Intuit rolls refresh tokens roughly every 100 days, and a person can
-  // revoke the connection from inside QuickBooks at any moment. Either way
-  // the only cure is somebody reconnecting.
-  //
-  // This used to throw straight out of here. In a production build Next
-  // redacts a thrown Server Action message to a digest, so the person got
-  // an opaque error on whatever page they were on and NOTHING anywhere said
-  // the QuickBooks connection was the reason. Recording the state and
-  // returning null turns a mystery into a sentence on the Integrations
-  // page.
-  let refreshed;
-  try {
-    refreshed = await refreshTokens(connection.refreshToken);
-  } catch (error) {
-    const detail =
-      error instanceof QuickBooksApiError
-        ? error.detail
-        : "QuickBooks refused to renew the connection.";
-    await prisma.quickBooksConnection.update({
-      where: { companyId },
-      data: { status: "NEEDS_REAUTH", statusDetail: detail, statusAt: new Date() },
-    });
-    return null;
-  }
-
-  await prisma.quickBooksConnection.update({
-    where: { companyId },
-    data: {
-      accessToken: refreshed.accessToken,
-      refreshToken: refreshed.refreshToken,
-      accessTokenExpiresAt: refreshed.accessTokenExpiresAt,
-      refreshTokenExpiresAt: refreshed.refreshTokenExpiresAt,
-      // A successful refresh clears it. Leaving a stale NEEDS_REAUTH on a
-      // working connection would be its own lie, and this codebase has been
-      // bitten by exactly that shape more than once.
-      status: "CONNECTED",
-      statusDetail: null,
-      statusAt: new Date(),
-    },
-  });
-  return { accessToken: refreshed.accessToken, realmId: connection.realmId };
 }
 
 async function log(input: {
@@ -437,6 +394,15 @@ async function resolveIncomeItemId(
  */
 export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
+  // MANAGE_BILLING BEFORE the owner check, and the order is the point:
+  // both messages are true, but the one a refused person needs is the one
+  // that names the thing they cannot do. The owner check alone already
+  // makes this unreachable for every non-owner, so this changes no
+  // behaviour today — it is here because an owner check stops standing in
+  // for a capability the moment the role model gains a third value, and
+  // because `/jobs/[id]/billing`, this action's only door, withholds on
+  // exactly this. Issue #383.
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
   const refusal = ownerRefusal(context, "Only the account owner can push to QuickBooks");
   if (refusal) return refusal;
   const { company, ...user } = context;
@@ -1121,6 +1087,15 @@ export async function reconcileQuickBooksInvoices(): Promise<
  */
 export async function pushPaymentToQuickBooks(paymentId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
+  // MANAGE_BILLING BEFORE the owner check, and the order is the point:
+  // both messages are true, but the one a refused person needs is the one
+  // that names the thing they cannot do. The owner check alone already
+  // makes this unreachable for every non-owner, so this changes no
+  // behaviour today — it is here because an owner check stops standing in
+  // for a capability the moment the role model gains a third value, and
+  // because `/jobs/[id]/billing`, this action's only door, withholds on
+  // exactly this. Issue #383.
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
   const refusal = ownerRefusal(context, "Only the account owner can push to QuickBooks");
   if (refusal) return refusal;
   const { company, ...user } = context;

@@ -1,10 +1,20 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseNumericInput } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
+import { viewerToday } from "@/lib/viewerToday";
+import { can } from "@/lib/permissions";
 import { money as formatMoney } from "@/lib/money";
 import { Prisma, prisma } from "@prova/db";
-import { actionFail as fail, actionOk as ok, isUniqueConstraintError, type ActionResult } from "./shared";
+import {
+  InputError,
+  actionFail as fail,
+  actionOk as ok,
+  isUniqueConstraintError,
+  runAction,
+  type ActionResult,
+} from "./shared";
 
 /** Actions in this module RETURN their failures instead of throwing them.
  * Production redacts a thrown Server Action message to an opaque digest, so
@@ -12,7 +22,37 @@ import { actionFail as fail, actionOk as ok, isUniqueConstraintError, type Actio
  * written for. `lib/actions/submittals.ts` is the reference; `ActionResult`
  * and its helpers live in `./shared`. */
 
-class InputError extends Error {}
+/**
+ * `/backcharges` demands MANAGE_BILLING and has since it was written. Every
+ * action below now asserts it too — issue #383.
+ *
+ * Nothing is derived here that was not already decided: this is the
+ * ordinary rule, one door and one capability, and the six were recorded as
+ * known debt in lib/action-capability-guards.test.ts's own list rather than
+ * being a new discovery. What was missing was the enforcement. A
+ * `requireCapability` on the page stops the page rendering; a Server Action
+ * is a separate HTTP endpoint with a stable id and answers whoever posts to
+ * it, so the gate on `/backcharges` stopped a reader and never stopped a
+ * writer.
+ *
+ * All six taken together, deliberately. A backcharge is the GC deducting
+ * money from what it owes us, and its row is half of a numbered exchange
+ * the GC also holds; gating the create and leaving the resolve would make
+ * the page half-enforced, which this repo has already argued (about
+ * `/closeout`) is harder to reason about than a consistent state.
+ *
+ * Returned rather than thrown, like every other refusal in this module and
+ * for the reason the paragraph above states.
+ */
+const BILLING_ONLY =
+  "Backcharges aren't part of your job function. The account owner sets who sees what, on the Team page.";
+
+// `InputError` and `runAction` are imported from ./shared rather than
+// declared here. Two classes with the same name are not the same class:
+// `instanceof` is false between them, so a refusal thrown by a shared
+// parser walked straight past a local boundary and reached production as a
+// redacted digest. That is what #407 found on /welcome, and this module
+// held the fifteenth copy of the class it found there.
 
 const CATEGORIES = [
   "CLEANUP",
@@ -69,26 +109,26 @@ function requiredDate(formData: FormData, key: string, label: string): Date {
   return date;
 }
 
-function utcMidnightToday() {
-  return new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+/** Today on the READER'S calendar, at the UTC midnight this app stores
+ * dates on — the fallback when a form leaves an optional date blank.
+ *
+ * `new Date().toISOString().slice(0, 10)` was the server's UTC day, which
+ * west of UTC is already TOMORROW from 17:00. So a date nobody typed was
+ * stamped a day into the future, on a record that is correspondence with a
+ * GC. `viewerToday()` never throws and falls back to UTC, so the floor
+ * here is exactly the old behaviour. */
+async function utcMidnightToday() {
+  return new Date(`${await viewerToday()}T00:00:00.000Z`);
 }
 
 function money(formData: FormData, key: string, label: string): string {
   const raw = required(formData, key, label);
-  const value = Number(raw);
-  if (Number.isNaN(value)) throw new InputError(`${label} must be a number`);
-  if (value <= 0) throw new InputError(`${label} has to be more than $0`);
-  return value.toFixed(2);
+  const parsed = parseNumericInput(raw, { label, maxDecimals: 2 });
+  if (!parsed.ok) throw new InputError(parsed.error);
+  if (parsed.n <= 0) throw new InputError(`${label} has to be more than $0`);
+  return parsed.n.toFixed(2);
 }
 
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
-}
 
 async function assertJob(jobId: string, companyId: string) {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
@@ -126,7 +166,9 @@ async function issueBackchargeNumber(tx: Prisma.TransactionClient, jobId: string
 }
 
 export async function createBackcharge(formData: FormData): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return fail(BILLING_ONLY);
+  const { company, ...user } = context;
   return runAction(async () => {
     const jobId = required(formData, "jobId", "Job");
     await assertJob(jobId, company.id);
@@ -216,7 +258,9 @@ export async function createBackcharge(formData: FormData): Promise<ActionResult
  * transcription of a letter and a typo in it is worth fixing.
  */
 export async function updateBackcharge(id: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return fail(BILLING_ONLY);
+  const { company } = context;
   return runAction(async () => {
     const backcharge = await assertBackcharge(id, company.id);
     const locked = backcharge.status !== "RECEIVED";
@@ -298,14 +342,16 @@ export async function updateBackcharge(id: string, formData: FormData): Promise<
  * with no date is worth nothing against a GC holding a signed notice with
  * one. */
 export async function disputeBackcharge(id: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return fail(BILLING_ONLY);
+  const { company } = context;
   return runAction(async () => {
     const backcharge = await assertBackcharge(id, company.id);
     if (backcharge.status !== "RECEIVED") {
       return fail("This backcharge has already been answered.");
     }
 
-    const disputedOn = optionalDate(formData, "disputedOn", "Date we objected") ?? utcMidnightToday();
+    const disputedOn = optionalDate(formData, "disputedOn", "Date we objected") ?? (await utcMidnightToday());
     if (disputedOn < backcharge.issuedOn) {
       return fail("We can't have objected before the GC issued the backcharge.");
     }
@@ -338,7 +384,9 @@ export async function disputeBackcharge(id: string, formData: FormData): Promise
  * holds, free to drift from it.
  */
 export async function resolveBackcharge(id: string, formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return fail(BILLING_ONLY);
+  const { company } = context;
   return runAction(async () => {
     const backcharge = await assertBackcharge(id, company.id);
     if (backcharge.status !== "RECEIVED" && backcharge.status !== "DISPUTED") {
@@ -346,7 +394,7 @@ export async function resolveBackcharge(id: string, formData: FormData): Promise
     }
 
     const outcome = enumFrom(formData, "outcome", OUTCOMES, "Outcome");
-    const resolvedOn = optionalDate(formData, "resolvedOn", "Date it was resolved") ?? utcMidnightToday();
+    const resolvedOn = optionalDate(formData, "resolvedOn", "Date it was resolved") ?? (await utcMidnightToday());
 
     if (resolvedOn < backcharge.issuedOn) {
       return fail("It can't have been resolved before the GC issued it.");
@@ -399,7 +447,9 @@ export async function resolveBackcharge(id: string, formData: FormData): Promise
  * answered.
  */
 export async function reopenBackcharge(id: string): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return fail(BILLING_ONLY);
+  const { company } = context;
   return runAction(async () => {
     const backcharge = await assertBackcharge(id, company.id);
     if (backcharge.status === "RECEIVED" || backcharge.status === "DISPUTED") {
@@ -432,6 +482,10 @@ export async function reopenBackcharge(id: string): Promise<ActionResult> {
  */
 export async function deleteBackcharge(id: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
+  // Capability first, then the owner check below, for the ordering reason
+  // #392 gives on the QuickBooks pushes: both sentences are true and the
+  // one a refused person needs is the one naming the thing they cannot do.
+  if (!can(context, "MANAGE_BILLING")) return fail(BILLING_ONLY);
   return runAction(async () => {
     if (context.role !== "OWNER") {
       // Returned rather than thrown: assertOwner throws, and a thrown

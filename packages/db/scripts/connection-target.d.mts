@@ -23,6 +23,7 @@ export type ConnectionProblem = {
 
 export function neonEndpointId(host: string): string | null;
 export function isPooled(host: string): boolean;
+export function scratchProblem(connectionString: string | undefined | null, name: string): string | null;
 export function describe(connectionString: string | undefined | null): ConnectionTarget | null;
 export function sameDatabase(
   a: ConnectionTarget | null,

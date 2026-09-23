@@ -1,6 +1,9 @@
 import { prisma } from "@prova/db";
 import { calculateJobWip, calculateLineItemWip } from "./wip";
 import { wipScheduleTable, type WipScheduleJob, type WipScheduleRow } from "./wip-schedule";
+import { lineItemCostToDate, unassignedLaborCost } from "./labor-job-cost";
+import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "./fringe-schedules-query";
+import { loadEmployerBurdenRates } from "./employer-burden-query";
 
 /**
  * Loads the WIP schedule for a company.
@@ -31,30 +34,38 @@ import { wipScheduleTable, type WipScheduleJob, type WipScheduleRow } from "./wi
  * touch retainage at all.
  */
 export async function loadWipSchedule(companyId: string): Promise<WipScheduleRow[]> {
-  const jobs = await prisma.job.findMany({
-    where: { companyId, status: { in: ["CONTRACTED", "IN_PROGRESS"] } },
-    orderBy: { name: "asc" },
-    select: {
-      name: true,
-      status: true,
-      contact: { select: { name: true } },
-      lineItems: {
-        where: { isDeleted: false },
-        select: {
-          quantity: true,
-          unitPrice: true,
-          budgetedUnitCost: true,
-          currentEstimatedUnitCost: true,
-          estimatedCostToComplete: true,
-          costEntries: { select: { amount: true } },
+  const [jobs, fringeSchedulesByCraft, employerBurdenRates] = await Promise.all([
+    prisma.job.findMany({
+      where: { companyId, status: { in: ["CONTRACTED", "IN_PROGRESS"] } },
+      orderBy: { name: "asc" },
+      select: {
+        name: true,
+        status: true,
+        contact: { select: { name: true } },
+        lineItems: {
+          where: { isDeleted: false },
+          select: {
+            id: true,
+            quantity: true,
+            unitPrice: true,
+            budgetedUnitCost: true,
+            currentEstimatedUnitCost: true,
+            estimatedCostToComplete: true,
+            costEntries: { select: { amount: true } },
+          },
         },
+        // amount only. Naming the retainage column here would put this file
+        // in the way of lib/retainage-single-source.test.ts, and correctly so
+        // -- see the header.
+        invoices: { select: { amount: true } },
+        // Hours are job cost (issue #287) -- see the same note in
+        // lib/company-financials-query.ts for why this is fetched per JOB.
+        timeEntries: { select: TIME_ENTRY_COST_SELECT },
       },
-      // amount only. Naming the retainage column here would put this file
-      // in the way of lib/retainage-single-source.test.ts, and correctly so
-      // -- see the header.
-      invoices: { select: { amount: true } },
-    },
-  });
+    }),
+    loadFringeSchedulesByCraft(companyId),
+    loadEmployerBurdenRates(companyId),
+  ]);
 
   const scheduleJobs: WipScheduleJob[] = jobs.map((job) => {
     const lineItems = job.lineItems.map((line) =>
@@ -66,7 +77,13 @@ export async function loadWipSchedule(companyId: string): Promise<WipScheduleRow
           line.currentEstimatedUnitCost === null ? null : Number(line.currentEstimatedUnitCost),
         estimatedCostToComplete:
           line.estimatedCostToComplete === null ? null : Number(line.estimatedCostToComplete),
-        actualCostToDate: line.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
+        ...lineItemCostToDate(
+          line.id,
+          line.costEntries,
+          job.timeEntries,
+          fringeSchedulesByCraft,
+          employerBurdenRates,
+        ),
       }),
     );
     const billedToDate = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
@@ -75,7 +92,11 @@ export async function loadWipSchedule(companyId: string): Promise<WipScheduleRow
       name: job.name,
       customer: job.contact.name,
       status: job.status,
-      wip: calculateJobWip(lineItems, billedToDate),
+      wip: calculateJobWip(
+        lineItems,
+        billedToDate,
+        unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft, employerBurdenRates),
+      ),
     };
   });
 

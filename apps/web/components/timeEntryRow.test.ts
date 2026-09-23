@@ -94,6 +94,7 @@ const entry: TimeEntryRowData = {
   craftLabel: null,
   estimatedCostLabel: null,
   lastCorrectedLabel: null,
+  lockedLabel: null,
 };
 
 function row(overrides: Partial<TimeEntryRowData> = {}, deleteAction = () => {}) {
@@ -124,6 +125,13 @@ describe("a field time entry row", () => {
     expect(container.textContent).toContain("Mike Alvarez");
     expect(container.textContent).toContain("10h");
     expect(liveControls()).toEqual(["Edit", "Remove"]);
+  });
+
+  it("offers neither Edit nor Remove on a signed day, and says why", () => {
+    render(row({ lockedLabel: "Signed" }));
+    expect(liveControls()).toEqual([]);
+    expect(container.textContent).toContain("Signed · locked");
+    expect(container.textContent).toContain("10h");
   });
 
   it("does NOT delete on the first click — Remove arms a second step", () => {

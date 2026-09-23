@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import {
@@ -19,10 +20,17 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { CompanyLicenses } from "@/components/CompanyLicenses";
+import { PhaseCodes } from "@/components/PhaseCodes";
+import { EmployerBurdenRates } from "@/components/EmployerBurdenRates";
+import { employerBurdenStanding } from "@/lib/employer-burden";
+import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import { CompanyProfileForm } from "@/components/CompanyProfileForm";
 import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
+import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsForm";
+import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
 import { QuickBooksReconcile } from "@/components/QuickBooksReconcile";
+import { QuickBooksImport } from "@/components/QuickBooksImport";
 import {
   classifyRenewal,
   renewalTiming,
@@ -30,6 +38,8 @@ import {
   type RenewalKind,
 } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
+import { quickBooksConnectCardState, quickBooksSetup } from "@/lib/quickbooks-setup";
+import { ActionForm } from "@/components/ActionForm";
 
 const QB_ERROR_MESSAGES: Record<string, string> = {
   access_denied: "You declined the QuickBooks connection request.",
@@ -42,6 +52,13 @@ const QB_ERROR_MESSAGES: Record<string, string> = {
   not_owner: "Only an owner can connect QuickBooks. Ask an owner on your team to do it.",
   identity_mismatch:
     "That connection attempt finished as a different account than it started as. Sign in as the account you want to connect, then start again.",
+  // /api/quickbooks/start refuses before leaving the app when this install
+  // has no client id/secret/redirect URI — see lib/quickbooks-setup.ts.
+  // Reachable only by typing the URL directly, since the button itself is
+  // gated below; kept as a named message rather than falling through to
+  // "please try again", which would be false — retrying changes nothing
+  // here without someone adding the missing keys.
+  not_configured: "QuickBooks isn't set up on this install yet.",
 };
 
 const INSURANCE_POLICY_TYPE_OPTIONS = [
@@ -52,7 +69,9 @@ const INSURANCE_POLICY_TYPE_OPTIONS = [
 ] as const;
 
 const BOND_TYPE_OPTIONS = [
-  { value: "LICENSE_BOND", label: "License bond" },
+  // "Licence" is this app's rendered voice everywhere else on this page
+  // (Contractor licences, licence bond) — the enum stays LICENSE_BOND.
+  { value: "LICENSE_BOND", label: "Licence bond" },
   { value: "PERFORMANCE_PAYMENT_CAPACITY", label: "Performance/payment capacity" },
 ] as const;
 
@@ -128,14 +147,14 @@ export default async function SettingsPage({
 
   if (currentUser.role !== "OWNER") {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8">
+      <PageShell width="reading">
         <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
-        <p className="text-sm text-ink-body">Only the account owner can manage integrations.</p>
-      </div>
+        <p className="text-sm text-ink-body" data-tour="settings-owner-only">Only the account owner can manage integrations.</p>
+      </PageShell>
     );
   }
 
-  const [connection, locations, insurancePolicies, bonds, licences, accountMappings, rawSyncAttempts, classifications] = await Promise.all([
+  const [connection, locations, insurancePolicies, bonds, licences, accountMappings, rawSyncAttempts, classifications, phaseCodes, employerBurdenRates] = await Promise.all([
     prisma.quickBooksConnection.findUnique({
       where: { companyId: company.id },
       include: { connectedByUser: true },
@@ -166,6 +185,18 @@ export default async function SettingsPage({
       orderBy: [{ jurisdictionName: "asc" }, { code: "asc" }],
       select: { jurisdictionName: true, code: true, label: true },
     }),
+    // Phase codes, in the company's own reading order — which is neither
+    // alphabetical nor code order, hence sortOrder first. The line count
+    // comes back with them so the Retire button can say what it is about
+    // to leave behind rather than the reader having to guess.
+    prisma.phaseCode.findMany({
+      where: { companyId: company.id },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+      include: { _count: { select: { lineItems: true } } },
+    }),
+    // The employer-burden percentages. Which one is IN FORCE is derived from
+    // the dates below, never stored — see lib/employer-burden.ts.
+    loadEmployerBurdenRates(company.id),
   ]);
 
   // Picked field by field rather than spread: this crosses into a client
@@ -184,6 +215,26 @@ export default async function SettingsPage({
     website: company.website,
   };
 
+  // Picked field by field for the same reason companyProfile above is —
+  // this crosses into a client component and has no business carrying
+  // `isProvaOperator` or the timestamps with it.
+  const businessScope: BusinessScopeAnswers = {
+    contractingRelationship: company.contractingRelationship,
+    doesPublicWork: company.doesPublicWork,
+    filesMonthlyPayApps: company.filesMonthlyPayApps,
+  };
+
+  // Whether THIS install has QuickBooks' own client id/secret/redirect URI
+  // — never a hardcoded "QuickBooks is live" claim, which is exactly the
+  // kind of thing that rots the day someone sets or removes a key and
+  // nobody edits a list. Read once, straight from process.env, and only
+  // ever exposed downstream as a boolean/card-state — see
+  // lib/quickbooks-setup.ts for why no variable's value can reach here.
+  const quickBooksCardState = quickBooksConnectCardState(
+    quickBooksSetup(process.env).configured,
+    connection !== null,
+  );
+
   const syncAttempts = rawSyncAttempts.map((attempt) => ({
     id: attempt.id,
     entityType: attempt.entityType,
@@ -198,7 +249,18 @@ export default async function SettingsPage({
   }));
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    // `reading`, and the width deliberately does not change: this page is
+    // eight stacked forms — company details, licences, insurance policies,
+    // bonding — and a text input stretched to 1272px is HARDER to read, not
+    // easier. Line length is why the cap was here in the first place. What
+    // changes is that the page no longer owns the number: the measure is the
+    // shell's, so when the type scale moves, this moves with it.
+    //
+    // This page's other problem — 4.7 screens of vertical scroll — is a
+    // density and section-structure problem, not a width one, and belongs to
+    // a later phase. Widening it would have made that worse by stretching
+    // every field.
+    <PageShell width="reading">
       <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
 
       {/* The Integrations page is the framework's own surface; QuickBooks
@@ -206,7 +268,7 @@ export default async function SettingsPage({
           an account mapping and reconciliation the generic page has no place
           for. The link exists so there is one route to look for connections
           from, rather than two pages neither of which mentions the other. */}
-      <p className="mb-6 text-sm text-ink-body">
+      <p className="mb-6 text-sm text-ink-body" data-tour="settings-integrations">
         <Link href="/settings/integrations" className="text-link hover:text-link-hover">
           Integrations
         </Link>{" "}
@@ -225,11 +287,22 @@ export default async function SettingsPage({
       {/* Findable without asking anyone, which is most of the point: the
           research found four vendors where getting your history out meant a
           support ticket, a sales call, or nothing at all. */}
-      <p className="mb-6 text-sm text-ink-body">
+      <p className="mb-6 text-sm text-ink-body" data-tour="settings-export">
         <Link href="/settings/export" className="text-link hover:text-link-hover">
-          Export your data
+          Export core records
         </Link>{" "}
-        — every job, price, cost and hour, as CSV or one JSON file.
+        — jobs, prices, costs, hours and correspondence, as CSV or one JSON file. The page
+        names what it does not cover.
+      </p>
+
+      {/* The way in, beside the way out. Owner-only like export. */}
+      <p className="mb-6 text-sm text-ink-body" data-tour="settings-import">
+        <Link href="/settings/import" className="text-link hover:text-link-hover">
+          Import from a spreadsheet
+        </Link>{" "}
+        — bring in your clients, jobs and crew from Excel, Google Sheets or a QuickBooks export,
+        with a preview before anything is saved. With QuickBooks Online connected, the QuickBooks
+        section below can bring your customers, vendors and products in directly.
       </p>
 
       {qb === "connected" && (
@@ -248,7 +321,7 @@ export default async function SettingsPage({
           "Settings → Company" — two of them in red on a document a trust
           fund receives. `companyPointer.test.ts` fails the build if that
           instruction and this heading ever stop agreeing. */}
-      <section id="company" className="mb-10">
+      <section id="company" className="mb-10" data-tour="settings-company">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Company</h2>
         <p className="mb-4 text-sm text-ink-body">
           Your own company record. This is where the WH-347 certified payroll form, a union
@@ -259,7 +332,22 @@ export default async function SettingsPage({
         <CompanyProfileForm company={companyProfile} gaps={companyProfileGaps(companyProfile)} />
       </section>
 
-      <section className="mb-10">
+      {/* What your business needs on screen — the three onboarding
+          questions, answered once at signup (or skipped) and changeable
+          here at any time. See lib/businessScope.ts: this only changes
+          what the rail shows, never what a direct link, a search or Ask
+          can reach. */}
+      <section id="setup" className="mb-10">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Set up for your work</h2>
+        <p className="mb-4 text-sm text-ink-body">
+          Retainage, prevailing wage, certified payroll and a few other menus only apply to some
+          businesses. Answer these and the menu only shows what yours needs — nothing is removed for
+          good: search and Ask can still reach anything, and you can change these any time.
+        </p>
+        <BusinessScopeSettingsForm scope={businessScope} isOwner={currentUser.role === "OWNER"} />
+      </section>
+
+      <section className="mb-10" data-tour="settings-quickbooks">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">QuickBooks Online</h2>
         <p className="mb-4 text-sm text-ink-body">
           Connects your QuickBooks Online company so invoices can be pushed to it. Deliberately
@@ -268,8 +356,29 @@ export default async function SettingsPage({
           pretend to — a sync that quietly loses an edit is worse than one that never claimed
           to carry it.
         </p>
+        {/* The one exception, and it is not a sync: a one-time import of the
+            contractor's customers, vendors and products when they start, so
+            a new company is not typed in by hand. Read-only toward
+            QuickBooks — see lib/actions/quickbooksImport.ts. */}
+        <p className="mb-4 text-sm text-ink-body">
+          Starting out? Once it is connected you can also bring your QuickBooks customers, vendors
+          and products and services into C Stream, once, with a preview first. That only reads
+          QuickBooks.
+        </p>
 
-        {connection ? (
+        {quickBooksCardState === "not-set-up" ? (
+          // No keys on this install: say so, offer nothing to press. A
+          // Connect button here would send the browser to
+          // /api/quickbooks/start, which refuses before leaving the app
+          // (see that route) rather than reaching Intuit and failing
+          // there — but a button that always refuses is still a dead
+          // button, so it does not render at all. Same wording shape as
+          // JobberControls' "not-set-up" branch.
+          <p className="max-w-md text-xs text-ink-muted" data-tour="quickbooks-not-set-up">
+            Not set up on this install yet. Whoever runs C Stream for you has to add the
+            QuickBooks app keys before this can connect.
+          </p>
+        ) : connection ? (
           <div className="rounded-lg border border-line-card bg-surface p-4">
             <p className="text-sm text-ink">
               Connected
@@ -309,6 +418,19 @@ export default async function SettingsPage({
               <QuickBooksTestConnectionButton />
             </RowActions>
 
+            {/* Its own anchor so /settings/import and the getting-started
+                step can link straight to it. */}
+            <div id="quickbooks-import" className="mt-6 scroll-mt-6 border-t border-line-row pt-4">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-body">
+                Bring in what you already have
+              </h3>
+              <p className="mb-3 text-xs text-ink-muted">
+                Customers become clients, vendors become vendors, and products and services become
+                catalog entries. Read-only: nothing in QuickBooks is changed.
+              </p>
+              <QuickBooksImport />
+            </div>
+
             <div className="mt-6 border-t border-line-row pt-4">
               <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-body">
                 Chart of accounts
@@ -347,16 +469,22 @@ export default async function SettingsPage({
           // A plain link (not next/link, so it's never hover-prefetched, and
           // not a Server Action form — see app/api/quickbooks/start/route.ts
           // for why this needs to be a real GET navigation).
-          <a
-            href="/api/quickbooks/start"
-            className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
-          >
-            Connect QuickBooks
-          </a>
+          <div id="quickbooks-import" className="scroll-mt-6">
+            <a
+              href="/api/quickbooks/start"
+              className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
+            >
+              Connect QuickBooks
+            </a>
+            <p className="mt-2 text-xs text-ink-muted" data-tour="qbo-import-connect-first">
+              Want to bring your QuickBooks customers, vendors and products in? Connect first — an
+              Import from QuickBooks button appears here once you are back.
+            </p>
+          </div>
         )}
       </section>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="settings-locations">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Company locations</h2>
         <p className="mb-4 text-sm text-ink-body">
           Offices, yards, and warehouses this company operates out of. Jobs can be tagged with the
@@ -461,7 +589,7 @@ export default async function SettingsPage({
         </details>
       </section>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="settings-licences">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Contractor licences</h2>
         <p className="mb-4 text-sm text-ink-body">
           One row per licence you hold, not per state — some jurisdictions have no state licence at
@@ -489,7 +617,48 @@ export default async function SettingsPage({
         />
       </section>
 
+      {/* Phase codes sit here, after the licences and before the insurance,
+          because this is where the company's own reference data lives. The
+          report they feed is its own page — this section is the vocabulary,
+          not the numbers. */}
+      <section id="phase-codes" className="mb-10" data-tour="settings-phase-codes">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Phase codes</h2>
+        <p className="mb-4 text-sm text-ink-body">
+          Your own cost codes, exactly as you write them on your own budget — a number and a name,
+          like <span className="text-ink-label">04112 — Plywood - SF</span>. Free text on purpose:
+          nothing here is checked against MasterFormat or any other standard list, so your reports
+          read the way your budget already does. Coding a line item to one of these is what lets{" "}
+          <Link href="/phase-codes" className="text-link hover:text-link-hover">
+            Phase codes
+          </Link>{" "}
+          total budget against actual for the same phase across every job.
+        </p>
+        <PhaseCodes
+          phaseCodes={phaseCodes.map((phaseCode) => ({
+            id: phaseCode.id,
+            code: phaseCode.code,
+            name: phaseCode.name,
+            unit: phaseCode.unit,
+            tracksLabor: phaseCode.tracksLabor,
+            isActive: phaseCode.isActive,
+            sortOrder: phaseCode.sortOrder,
+            lineItemCount: phaseCode._count.lineItems,
+          }))}
+          canManage={currentUser.role === "OWNER"}
+        />
+      </section>
+
+      {/* Directly under phase codes because it is the other half of the same
+          question — what a job actually costs. Every write here is
+          owner-only, which this page already is. */}
       <section className="mb-10">
+        <EmployerBurdenRates
+          standing={employerBurdenStanding(employerBurdenRates, serverToday())}
+          canDelete={currentUser.role === "OWNER"}
+        />
+      </section>
+
+      <section className="mb-10" data-tour="settings-insurance">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Insurance policies</h2>
         <p className="mb-4 text-sm text-ink-body">
           This company&apos;s own coverage — the source data per-job certificates of insurance would
@@ -582,10 +751,10 @@ export default async function SettingsPage({
         </details>
       </section>
 
-      <section>
+      <section data-tour="settings-bonding">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Bonding</h2>
         <p className="mb-4 text-sm text-ink-body">
-          License bonds and overall performance/payment bonding capacity, and who to contact to
+          Licence bonds and overall performance/payment bonding capacity, and who to contact to
           increase it or pull a bond for a specific job.
         </p>
 
@@ -637,7 +806,7 @@ export default async function SettingsPage({
 
         <details className="rounded-lg border border-line-card bg-surface p-4">
           <summary className="cursor-pointer text-sm font-medium text-ink-label">Add a bond</summary>
-          <form action={createBond} className="mt-4 flex flex-col gap-3">
+          <ActionForm action={createBond} className="mt-4 flex flex-col gap-3">
             <div className="flex flex-wrap gap-3">
               <label className={labelClass}>
                 Type
@@ -657,11 +826,11 @@ export default async function SettingsPage({
             <div className="flex flex-wrap gap-3">
               <label className={labelClass}>
                 Aggregate bonding capacity (optional)
-                <input name="aggregateBondingCapacity" type="number" step="0.01" className={`w-48 ${inputClass}`} />
+                <input name="aggregateBondingCapacity" type="text" inputMode="decimal" className={`w-48 ${inputClass}`} />
               </label>
               <label className={labelClass}>
                 Single job limit (optional)
-                <input name="singleJobLimit" type="number" step="0.01" className={`w-48 ${inputClass}`} />
+                <input name="singleJobLimit" type="text" inputMode="decimal" className={`w-48 ${inputClass}`} />
               </label>
               <label className={labelClass}>
                 Renewal date (optional)
@@ -685,9 +854,9 @@ export default async function SettingsPage({
             <SubmitButton type="submit" className={`self-start ${addButtonClass}`}>
               Add bond
             </SubmitButton>
-          </form>
+          </ActionForm>
         </details>
       </section>
-    </div>
+    </PageShell>
   );
 }

@@ -1,7 +1,9 @@
 import { prisma } from "@prova/db";
 import {
+  reviewDayByLocal,
   reviewRatioByDay,
   summarizeRatio,
+  type LocalDayRatio,
   type CraftTier,
   type DayRatio,
   type RatioEntryInput,
@@ -14,7 +16,7 @@ import {
   type RemittanceReport,
 } from "@/lib/fringe-remittance";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
-import { timeEntryWorkerName, timeEntryWorkerId } from "@/lib/worker-name";
+import { crewMemberName, payrollWorkerName, timeEntryWorkerName, timeEntryWorkerId } from "@/lib/worker-name";
 
 /**
  * Fetching and normalising for the union compliance page.
@@ -197,6 +199,82 @@ export type JobRatioReview = {
 };
 
 /**
+ * The month's time entries with the job, craft, local and worker each one
+ * names — in the shape a nested `select` returns.
+ *
+ * It WAS a nested select: one `timeEntry.findMany` with five relations
+ * under it, which Prisma resolves as six queries run one after another.
+ * This runs inside the alert count in the (app) layout, so on every page
+ * and after every Server Action, and once the alert engine's job read was
+ * flattened it was the longest wait left there (measured 2026-09-18). Now
+ * the entries are read, then each relation's rows by id all at once — the
+ * same lookups Prisma made (by the foreign key, `WHERE "id" IN (...)`),
+ * without the queue. A null foreign key maps to null, exactly as the
+ * nested relation did; nothing here adds or drops a row.
+ */
+async function loadRatioEntries(companyId: string, start: string, end: string) {
+  const rows = await prisma.timeEntry.findMany({
+    where: {
+      job: { companyId },
+      date: { gte: new Date(`${start}T00:00:00.000Z`), lte: new Date(`${end}T00:00:00.000Z`) },
+    },
+    select: {
+      date: true,
+      hours: true,
+      jobId: true,
+      craftClassificationId: true,
+      employeeUserId: true,
+      crewMemberId: true,
+    },
+  });
+  if (rows.length === 0) return [];
+
+  const idsOf = (key: "jobId" | "craftClassificationId" | "employeeUserId" | "crewMemberId") => [
+    ...new Set(rows.map((row) => row[key]).filter((id): id is string => id !== null)),
+  ];
+  const [jobs, crafts, users, crewMembers] = await Promise.all([
+    prisma.job.findMany({
+      where: { id: { in: idsOf("jobId") } },
+      select: { id: true, name: true },
+    }),
+    prisma.craftClassification.findMany({
+      where: { id: { in: idsOf("craftClassificationId") } },
+      select: { id: true, tier: true, unionLocalId: true, unionLocal: true },
+    }),
+    prisma.user.findMany({
+      where: { id: { in: idsOf("employeeUserId") } },
+      select: { id: true, name: true, email: true },
+    }),
+    prisma.crewMember.findMany({
+      where: { id: { in: idsOf("crewMemberId") } },
+      select: { id: true, legalFirstName: true, legalMiddleName: true, legalLastName: true },
+    }),
+  ]);
+
+  const jobById = new Map(jobs.map(({ id, ...job }) => [id, job]));
+  const craftById = new Map(crafts.map(({ id, ...craft }) => [id, craft]));
+  const userById = new Map(users.map(({ id, ...user }) => [id, user]));
+  const crewMemberById = new Map(crewMembers.map(({ id, ...member }) => [id, member]));
+  const lookup = <T>(byId: Map<string, T>, id: string | null): T | null =>
+    id === null ? null : (byId.get(id) ?? null);
+
+  return rows.map((row) => {
+    // A required relation: the job exists, or the foreign key would not.
+    const job = jobById.get(row.jobId);
+    if (!job) throw new Error(`time entry names job ${row.jobId}, which was not found`);
+    return {
+      date: row.date,
+      hours: row.hours,
+      jobId: row.jobId,
+      job,
+      craftClassification: lookup(craftById, row.craftClassificationId),
+      employeeUser: lookup(userById, row.employeeUserId),
+      crewMember: lookup(crewMemberById, row.crewMemberId),
+    };
+  });
+}
+
+/**
  * The ratio for every job with hours in a month, per union local.
  *
  * Per local because the rule is per local. Hours logged against a craft
@@ -210,35 +288,23 @@ export type JobRatioReview = {
 export async function loadRatioReviews(companyId: string, month: string): Promise<JobRatioReview[]> {
   const { start, end } = monthBounds(month);
 
-  const entries = await prisma.timeEntry.findMany({
-    where: {
-      job: { companyId },
-      date: { gte: new Date(`${start}T00:00:00.000Z`), lte: new Date(`${end}T00:00:00.000Z`) },
-    },
-    select: {
-      date: true,
-      hours: true,
-      jobId: true,
-      job: { select: { name: true } },
-      craftClassification: {
-        select: { tier: true, unionLocalId: true, unionLocal: true },
-      },
-      employeeUser: { select: { name: true, email: true } },
-      crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
-    },
-  });
-
-  // Ordered oldest first so the Map below ends up holding the NEWEST rule
-  // for each local. The schema permits several rows per local and this Map
-  // keys on unionLocalId, so without an explicit order the ratio would be
-  // decided by whichever row the database happened to return last — an
-  // answer that could change between reads with nothing to explain it.
-  // setApprenticeRatioRule now replaces rather than adds, so in practice
-  // there is one; this makes the read safe regardless.
-  const rules = await prisma.apprenticeRatioRule.findMany({
-    where: { companyId },
-    orderBy: { createdAt: "asc" },
-  });
+  // The month's entries and the company's ratio rules do not depend on
+  // each other, so they are read together rather than one after the other.
+  //
+  // Rules are ordered oldest first so the Map below ends up holding the
+  // NEWEST rule for each local. The schema permits several rows per local
+  // and this Map keys on unionLocalId, so without an explicit order the
+  // ratio would be decided by whichever row the database happened to
+  // return last — an answer that could change between reads with nothing
+  // to explain it. setApprenticeRatioRule now replaces rather than adds, so
+  // in practice there is one; this makes the read safe regardless.
+  const [entries, rules] = await Promise.all([
+    loadRatioEntries(companyId, start, end),
+    prisma.apprenticeRatioRule.findMany({
+      where: { companyId },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
   const ruleByLocal = new Map<string, RatioRuleInput>(
     rules.map((r) => [
       r.unionLocalId,
@@ -446,4 +512,139 @@ export async function loadUnionSetup(companyId: string): Promise<SetupLocalRow[]
       })),
     };
   });
+}
+
+export type WorkerCraftPerson = {
+  /** "user:<id>" or "crew:<id>" — what setWorkerCraft takes. */
+  key: string;
+  label: string;
+  /** Crew members have no login; the page says so beside the name. */
+  kind: "user" | "crew";
+  /** Craft ids this person can be logged under. */
+  craftIds: string[];
+};
+
+/**
+ * Everyone who can have hours logged — team members and active crew — with
+ * the crafts each is set up under. Feeds the "Who works under each craft"
+ * section; the phone reads the same rows through /api/v1/crafts.
+ */
+export async function loadWorkerCrafts(companyId: string): Promise<WorkerCraftPerson[]> {
+  const [users, crew, rows] = await Promise.all([
+    prisma.user.findMany({
+      where: { companyId },
+      select: { id: true, name: true, email: true },
+      orderBy: [{ name: "asc" }, { email: "asc" }],
+    }),
+    prisma.crewMember.findMany({
+      where: { companyId, archivedAt: null },
+      select: { id: true, legalFirstName: true, legalMiddleName: true, legalLastName: true },
+      orderBy: [{ legalLastName: "asc" }, { legalFirstName: "asc" }],
+    }),
+    prisma.workerCraft.findMany({
+      where: { companyId },
+      select: { craftClassificationId: true, userId: true, crewMemberId: true },
+    }),
+  ]);
+
+  const craftsOf = (match: (row: (typeof rows)[number]) => boolean) =>
+    rows.filter(match).map((row) => row.craftClassificationId);
+
+  return [
+    ...users.map((u) => ({
+      key: `user:${u.id}`,
+      label: payrollWorkerName(u).label,
+      kind: "user" as const,
+      craftIds: craftsOf((row) => row.userId === u.id),
+    })),
+    ...crew.map((c) => ({
+      key: `crew:${c.id}`,
+      label: crewMemberName(c).label,
+      kind: "crew" as const,
+      craftIds: craftsOf((row) => row.crewMemberId === c.id),
+    })),
+  ];
+}
+
+export type JobDayRatio = {
+  /** From the hours already logged for the day. */
+  logged: LocalDayRatio[];
+  /** From the day's crew schedule, one per person — the only signal there
+   * is in the morning, before anyone has clocked out. Empty when nobody is
+   * scheduled. */
+  planned: LocalDayRatio[];
+};
+
+/**
+ * One job's apprentice ratio on one day — what the phone's time screen
+ * warns from. `date` is yyyy-mm-dd; both TimeEntry.date and
+ * CrewScheduleDay.workDate are stored at UTC midnight of the day they name.
+ */
+export async function loadJobDayRatio(companyId: string, jobId: string, date: string): Promise<JobDayRatio> {
+  const day = new Date(`${date}T00:00:00.000Z`);
+  const craftSelect = { select: { tier: true, unionLocalId: true, unionLocal: true } } as const;
+
+  const [entries, scheduled, rules] = await Promise.all([
+    prisma.timeEntry.findMany({
+      where: { jobId, job: { companyId }, date: day },
+      select: {
+        hours: true,
+        craftClassification: craftSelect,
+        employeeUser: { select: { name: true, email: true } },
+        crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
+      },
+    }),
+    prisma.crewScheduleDay.findMany({
+      where: { jobId, companyId, workDate: day },
+      select: {
+        craftClassification: craftSelect,
+        scheduledUser: { select: { name: true, email: true } },
+        crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
+      },
+    }),
+    // Oldest first, so the Map keeps the NEWEST rule per local — the same
+    // read loadRatioReviews makes, for the same reason.
+    prisma.apprenticeRatioRule.findMany({ where: { companyId }, orderBy: { createdAt: "asc" } }),
+  ]);
+
+  const ruleByLocal = new Map<string, RatioRuleInput>(
+    rules.map((r) => [
+      r.unionLocalId,
+      {
+        apprenticeCount: r.apprenticeCount,
+        journeymenCount: r.journeymenCount,
+        programStandardReference: r.programStandardReference,
+      },
+    ]),
+  );
+
+  const toInput = (
+    hours: number,
+    craft: { tier: string | null; unionLocalId: string; unionLocal: Parameters<typeof localLabel>[0] } | null,
+    name: string,
+  ) => ({
+    date,
+    hours,
+    tier: (craft?.tier as CraftTier | null) ?? null,
+    employeeName: name,
+    unionLocalId: craft?.unionLocalId ?? null,
+    unionLocalLabel: craft ? localLabel(craft.unionLocal) : null,
+  });
+
+  return {
+    logged: reviewDayByLocal(
+      entries.map((e) => toInput(Number(e.hours), e.craftClassification, timeEntryWorkerName(e).label)),
+      ruleByLocal,
+    ),
+    planned: reviewDayByLocal(
+      scheduled.map((s) =>
+        toInput(
+          1,
+          s.craftClassification,
+          timeEntryWorkerName({ employeeUser: s.scheduledUser, crewMember: s.crewMember }).label,
+        ),
+      ),
+      ruleByLocal,
+    ),
+  };
 }

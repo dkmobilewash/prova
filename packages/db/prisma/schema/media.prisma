@@ -15,13 +15,16 @@
 /// feature exists to answer ("show me everything from the west wall in
 /// August") is one indexed query, not a union across attachment types.
 ///
-/// DELIBERATELY NO ATTACHMENT COLUMNS YET. The obvious next move is a
-/// nullable `punchListItemId`, `safetyIncidentId`, `dailyFieldReportId`
-/// and so on. Each one arrives with the code that writes and reads it, not
-/// before: this repo has a standing scar from columns that were added,
-/// documented and never selected by anything (`acknowledgedSeverity`), and
-/// a nullable FK nothing populates looks identical to one whose feature is
-/// broken.
+/// TWO ATTACHMENT COLUMNS NOW, and the rule that held them back is the one
+/// that let them in: each arrives with the code that writes and reads it.
+/// `dailyFieldReportId` and `punchListItemId` are written at capture on the
+/// phone ("Attach to today's report" / a punch item) and read by the gallery
+/// and the report. `safetyIncidentId` and the rest are still absent, for the
+/// same reason as before — a nullable FK nothing populates looks identical
+/// to one whose feature is broken (`acknowledgedSeverity`).
+///
+/// Both are SET NULL: deleting a day's report, or a punch item, must not
+/// take the photograph with it. The photo belongs to the job.
 ///
 /// NOT AN EVIDENCE RECORD IN THE `Submittal`/`Rfi` SENSE — no counter, no
 /// sequence number, no send-then-lock lifecycle. A photo is not
@@ -171,6 +174,18 @@ model JobMedia {
   /// it forever (`JobMedia_captured_location_pairing`).
   capturedAccuracyMeters Float?
 
+  /// What this photo was taken FOR, when the person said so at the shutter.
+  /// Both optional, both SET NULL, and both checked against THIS job by the
+  /// API — a report or punch item from another job is refused.
+  dailyFieldReportId String?
+  dailyFieldReport   DailyFieldReport? @relation(fields: [dailyFieldReportId], references: [id], onDelete: SetNull)
+  punchListItemId    String?
+  punchListItem      PunchListItem?    @relation(fields: [punchListItemId], references: [id], onDelete: SetNull)
+
+  /// Idempotency key from the phone's upload queue, so a photo retried after
+  /// a lost signal replays instead of uploading twice. Null for web uploads.
+  clientOperationId String?
+
   /// WHAT IS DELIBERATELY NOT STORED, listed because each one is the
   /// obvious next commit and each one is derived state (CLAUDE.md):
   /// distance from the job's address, an on-site/off-site flag, a
@@ -215,6 +230,23 @@ model JobMedia {
   sharedWithClientByUserId String?
   sharedWithClientBy       User?   @relation("JobMediaSharedBy", fields: [sharedWithClientByUserId], references: [id])
 
+  /// WHERE THIS PHOTO CAME FROM, when it came from CompanyCam — that
+  /// service's own photo id, and null (the value on every row a crew
+  /// uploaded) otherwise. Two jobs in one column:
+  ///
+  ///   - PROVENANCE. The galleries derive a "CompanyCam" mark from this
+  ///     being non-null, stored nowhere else — a `source` enum beside it
+  ///     would be a second column able to disagree with this one.
+  ///   - THE DUPLICATE GUARD. Re-running an import must not import the
+  ///     same photo twice, and "have we seen this one?" is answered by
+  ///     the unique below rather than by comparing bytes or captions.
+  ///
+  /// Scoped per job, not global: the same CompanyCam photo legitimately
+  /// lands on two DIFFERENT jobs if two links ever point at overlapping
+  /// projects, and Postgres treats NULLs as distinct so ordinary uploads
+  /// are untouched by the constraint.
+  companycamPhotoId String?
+
   /// The labels somebody put on this photo. See media-tags.prisma for why
   /// a join to a vocabulary table rather than a string column here.
   tags JobMediaTagAssignment[]
@@ -233,7 +265,11 @@ model JobMedia {
   /// `[companyId, capturedAt]` answers that AND everything the bare
   /// `[companyId]` answered, being its leftmost prefix, so keeping both
   /// would only be a second index to write on every insert.
+  @@unique([jobId, companycamPhotoId])
+  @@unique([companyId, clientOperationId])
   @@index([companyId, capturedAt])
+  @@index([dailyFieldReportId])
+  @@index([punchListItemId])
   /// The job page's own query: one job, newest first.
   @@index([jobId, capturedAt])
 }

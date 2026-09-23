@@ -6,14 +6,14 @@ import { logTimeEntry } from "@/lib/actions";
 import {
   TimeEntryFields,
   type TimeEntryCraftOption,
-  type TimeEntryEmployeeOption,
   type TimeEntryLineItemOption,
+  type TimeEntryWorkerOption,
 } from "@/components/TimeEntryFields";
 
 export type {
   TimeEntryCraftOption,
-  TimeEntryEmployeeOption,
   TimeEntryLineItemOption,
+  TimeEntryWorkerOption,
 } from "@/components/TimeEntryFields";
 
 /**
@@ -32,15 +32,46 @@ export type {
  * number rather than throwing a message production would redact. A
  * `<form action={fn}>` has nowhere to show either. Same useTransition +
  * inline error shape as PayApplications.tsx.
+ *
+ * IT DOES NOT RESET THE WHOLE FORM ANY MORE. It called `form.reset()`, which
+ * put every field back to its server-rendered default — and the employee
+ * select has no default, so it snapped back to whoever happens to be first
+ * in the list, while the date went blank. Hours are entered one person at a
+ * time from one crew sheet: eight carpenters on Tuesday is eight submits,
+ * and the form asked which day it was eight times. The two fields that are
+ * the SAME across that run are the two it threw away.
  */
+
+/**
+ * The fields kept across a submit, and why each one.
+ *
+ * `date` — one crew sheet is one day. Retyping it per entry is the
+ * keystrokes, and a mistyped one is a WH-347 that does not foot.
+ *
+ * `worker` — kept not because the next entry is the same person (it
+ * usually is not) but because a reset put the select on the FIRST name in
+ * the company every time, which is a wrong answer wearing a confident face.
+ * What was last chosen is at least what is on screen. Neither behaviour
+ * guards against logging the same person twice; `logTimeEntry` is what does
+ * that, refusing an exact repeat within a few seconds.
+ *
+ * It was called `employeeUserId` until the dropdown learned to offer crew
+ * members, who are not users. The name of the sticky field has to match the
+ * name of the control, or the sticky restore silently finds nothing.
+ *
+ * Everything else — hours, pay type, cost code, craft, per diem, travel,
+ * note — clears, because carrying an unseen 8 or a stale per diem into the
+ * next person's entry is the error this cannot let happen quietly.
+ */
+const STICKY_FIELDS = ["worker", "date"] as const;
 export function LogTimeEntryForm({
   jobId,
-  employees,
+  workers,
   lineItems,
   craftOptions,
 }: {
   jobId: string;
-  employees: TimeEntryEmployeeOption[];
+  workers: TimeEntryWorkerOption[];
   lineItems: TimeEntryLineItemOption[];
   craftOptions: TimeEntryCraftOption[];
 }) {
@@ -62,7 +93,22 @@ export function LogTimeEntryForm({
               setError(result.error);
               return;
             }
-            formRef.current?.reset();
+            // Read off the submitted FormData, then written back after the
+            // reset. Restoring from the FormData rather than from the live
+            // DOM means what comes back is exactly what was FILED, never
+            // something the user started typing while the action was in
+            // flight.
+            const kept = STICKY_FIELDS.map(
+              (name) => [name, String(formData.get(name) ?? "")] as const,
+            );
+            const form = formRef.current;
+            form?.reset();
+            for (const [name, value] of kept) {
+              const field = form?.querySelector<HTMLInputElement | HTMLSelectElement>(
+                `[name="${name}"]`,
+              );
+              if (field) field.value = value;
+            }
           } catch (err) {
             setError(err instanceof Error ? err.message : "Could not log this time entry");
           }
@@ -71,7 +117,7 @@ export function LogTimeEntryForm({
       className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface p-3"
     >
       <div className="flex flex-wrap items-end gap-2">
-        <TimeEntryFields employees={employees} lineItems={lineItems} craftOptions={craftOptions} />
+        <TimeEntryFields workers={workers} lineItems={lineItems} craftOptions={craftOptions} />
         <button
           type="submit"
           disabled={isPending}

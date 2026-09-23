@@ -14,6 +14,7 @@ import {
   summarizeRoster,
   type CertificationKindValue,
 } from "@/lib/certifications";
+import { viewerToday } from "@/lib/viewerToday";
 
 /** Stored at UTC midnight, rendered in UTC — the same rule as every other
  * dated record in this app. Rendering local would show yesterday's date to
@@ -34,7 +35,7 @@ export default async function CertificationsPage({
   const { show } = await searchParams;
   const showEverything = show === "all";
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await viewerToday();
 
   const [workers, certifications, requirementRows, jobs] = await Promise.all([
     prisma.user.findMany({
@@ -97,6 +98,38 @@ export default async function CertificationsPage({
 
   const visible = showEverything ? roster : shortlist;
 
+  // NOTHING SET UP = no requirement and no card on file. Every tile below
+  // is then zero by construction (`missing` needs a requirement, the other
+  // three need a card), and the most useful first move on the page is
+  // saying what everyone must carry. So for that company, and only that
+  // company, the requirements come FIRST, marked "Start here", and the
+  // zero tiles wait until there is something to count. The copy under
+  // "people" used to send a new company to "Require OSHA 10 below", which
+  // was the last section on the page. A company with anything on file keeps
+  // the order and the tiles it had.
+  const nothingSetUp = requirements.length === 0 && records.length === 0;
+
+  const requirementsSection = (startHere: boolean) => (
+    <section
+      id="certifications-required"
+      className={startHere ? "mb-10 rounded-lg border border-brand bg-surface p-4" : undefined}
+      data-tour="certifications-required"
+      {...(startHere ? { "data-start-here": "" } : {})}
+    >
+      {startHere && (
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-link">Start here</p>
+      )}
+      <h2 className="mb-2 text-sm font-semibold text-ink-label">What everyone here needs</h2>
+      {startHere && (
+        <p className="mb-3 text-sm text-ink-body">
+          Everything else on this page is measured against this list. Add the first card everyone
+          has to carry, and anyone without it shows up by name below.
+        </p>
+      )}
+      <CertificationRequirements requirements={requirements} canRemove={currentUser.role === "OWNER"} />
+    </section>
+  );
+
   const tile = (value: number, caption: string, tone: string) => (
     <div className="rounded-lg border border-line-card bg-surface p-4">
       <p className={`text-2xl font-semibold ${value > 0 ? tone : "text-ink"}`}>{value}</p>
@@ -114,18 +147,22 @@ export default async function CertificationsPage({
         question before the gate does.
       </p>
 
-      <section className="mb-8">
+      {nothingSetUp && requirementsSection(true)}
+
+      <section className="mb-8" data-tour="certifications-record">
         <CertificationForm workers={workerOptions} />
       </section>
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-4">
-        {tile(summary.missing, "Required, nothing on file", "text-tag-rose-ink")}
-        {tile(summary.expired, "Expired", "text-tag-rose-ink")}
-        {tile(summary.expiring, "Expiring soon", "text-tag-amber-ink")}
-        {tile(summary.undated, "No expiry recorded", "text-tag-amber-ink")}
-      </div>
+      {!nothingSetUp && (
+        <div className="mb-6 grid gap-3 sm:grid-cols-4" data-tour="certifications-totals">
+          {tile(summary.missing, "Required, nothing on file", "text-tag-rose-ink")}
+          {tile(summary.expired, "Expired", "text-tag-rose-ink")}
+          {tile(summary.expiring, "Expiring soon", "text-tag-amber-ink")}
+          {tile(summary.undated, "No expiry recorded", "text-tag-amber-ink")}
+        </div>
+      )}
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="certifications-people">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink-label">
             {showEverything
@@ -155,8 +192,9 @@ export default async function CertificationsPage({
             {requirements.length === 0 ? (
               <>
                 Nothing to act on — but nothing is required of everyone yet either, so this page can
-                only see cards somebody already entered. Require OSHA 10 below and anyone with no
-                record of one will say so by name.
+                only see cards somebody already entered. Require OSHA 10{" "}
+                {nothingSetUp ? "at the top of the page" : "below"} and anyone with no record of one
+                will say so by name.
               </>
             ) : (
               <>
@@ -182,7 +220,7 @@ export default async function CertificationsPage({
         )}
       </section>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="certifications-by-job">
         <h2 className="mb-2 text-sm font-semibold text-ink-label">By job</h2>
         <p className="mb-3 text-sm text-ink-body">
           The same finding, cut the way it gets asked: is this job&apos;s crew clear on Monday. Jobs
@@ -231,13 +269,7 @@ export default async function CertificationsPage({
         )}
       </section>
 
-      <section>
-        <h2 className="mb-2 text-sm font-semibold text-ink-label">What everyone here needs</h2>
-        <CertificationRequirements
-          requirements={requirements}
-          canRemove={currentUser.role === "OWNER"}
-        />
-      </section>
+      {!nothingSetUp && requirementsSection(false)}
     </div>
   );
 }

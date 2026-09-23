@@ -520,6 +520,27 @@ describe("the destructive-form census", () => {
        `const deleteCostEntryWithId = (id) => deleteCostEntry.bind(null, job.id, id);` */
     const aliases = new Set<string>();
     for (const decl of code.matchAll(/\b(?:const|let)\s+(\w+)\s*=\s*([^;]*);/g)) {
+      // AN ALIAS IS A CALLABLE REFERENCE, NOT A RESULT — and this line used
+      // to conflate the two, which made the census cry wolf on correct code.
+      //
+      // `const deleteCostEntryWithId = (id) => deleteCostEntry.bind(...)` is
+      // an alias: hand it to an `action=` and a row dies. `const result =
+      // await deleteCostEntry(id)` is the VALUE that came back from having
+      // already called it, and it is not callable at all.
+      //
+      // The difference is not academic, because `result` is the most common
+      // local name in this codebase and CLAUDE.md's own error rule produces
+      // it: actions RETURN `ActionResult` and forms render it, so any client
+      // component that both creates and deletes writes `const result = await
+      // …` twice. The first one registered `result` as destructive for the
+      // whole FILE, and the second — a CREATE form — was then reported as a
+      // one-click delete. Found on the crew schedule's "put someone on"
+      // form, which deletes nothing.
+      //
+      // A census that fires on correct input is a census somebody switches
+      // off, which is how the eleven real one-click deletes this rule exists
+      // for would come back.
+      if (/^\s*await\b/.test(decl[2])) continue;
       const refs = identifiers(decl[2]);
       if (refs.some((ref) => destructiveActions.has(ref) || aliases.has(ref))) aliases.add(decl[1]);
     }

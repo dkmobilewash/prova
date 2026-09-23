@@ -1,0 +1,51 @@
+// CompanyCam: a one-way import of a CompanyCam project's photos into one
+// C Stream job's gallery.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// WHAT THIS IS NOT. It is not a cache like ProcoreItem — an imported photo
+// becomes an ordinary JobMedia row, stored in this app's own blob store,
+// captioned and tagged and shared like any photo a crew took. The only
+// CompanyCam-specific facts kept are this link (which project feeds which
+// job) and, on JobMedia itself, `companycamPhotoId` — the provenance mark
+// and the duplicate guard, see media.prisma.
+//
+// The connection (OAuth tokens) lives on IntegrationConnection with
+// provider COMPANYCAM, one per company, like every other provider.
+
+/// Which CompanyCam project imports into which C Stream job. One project
+/// per job and one job per project within a company, so "where did this
+/// photo come from" always has one answer.
+///
+/// ON DELETE CASCADE from Job, the ProcoreProjectLink call and for the
+/// same reason: the link is a pointer at somebody else's system, not
+/// evidence, and a scratch job being deleted should take its pointer with
+/// it rather than refuse. (The imported photos are JobMedia rows and are
+/// handled like every other photo.) Also listed in scratch-scope.mjs
+/// HANDLED_MODELS so the jobId census in clean-test-jobs.mjs recognises it.
+model CompanyCamProjectLink {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String  @unique
+  job       Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  /// CompanyCam's project id, as a string: it is an identifier, not a
+  /// quantity, and nothing here does arithmetic on it.
+  companycamProjectId   String
+  companycamProjectName String
+
+  linkedByUserId String?
+  linkedBy       User?    @relation("CompanyCamLinkedBy", fields: [linkedByUserId], references: [id], onDelete: SetNull)
+  linkedAt       DateTime @default(now())
+
+  /// The last import attempt: when, whether it worked, and a sentence. The
+  /// same trio ProcoreProjectLink keeps, for the same reason — an import
+  /// that fails silently is indistinguishable from one nobody ran.
+  lastImportedAt    DateTime?
+  lastImportStatus  IntegrationSyncStatus?
+  lastImportMessage String?
+
+  @@unique([companyId, companycamProjectId])
+  @@index([companyId])
+}

@@ -30,6 +30,9 @@ export default defineConfig({
     // racing on the same rows would produce failures that are about the
     // test runner rather than the code.
     fileParallelism: false,
+    // The scratch-only rule above, enforced instead of trusted: refuses a
+    // non-local DATABASE_URL/DIRECT_URL before any test file loads Prisma.
+    globalSetup: ["./vitest.db.setup.mts"],
   },
   resolve: {
     alias: {

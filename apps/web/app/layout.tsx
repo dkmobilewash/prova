@@ -5,8 +5,12 @@ import { RscFailureBanner } from "@/components/RscFailureBanner";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  // Absolute base for the link-preview image (app/opengraph-image.png) and
+  // the icons, which Next turns into full URLs. The live app's own address.
+  metadataBase: new URL("https://app.cstream.ai"),
   title: "C Stream",
   description: "Contractor operating system",
+  openGraph: { siteName: "C Stream", title: "C Stream", description: "Contractor operating system" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -27,6 +31,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       // instance.
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
+      // Where a finished sign-in or sign-up goes. Left unset, Clerk falls
+      // back to whatever the instance is configured with — and on production
+      // a brand-new account finished sign-up and stayed on /sign-up, signed
+      // in, looking at a blank page (the card renders nothing once there is
+      // a session). Found walking the contractor's first-day path, 2026-09-18.
+      signInFallbackRedirectUrl="/dashboard"
+      signUpFallbackRedirectUrl="/dashboard"
       appearance={{
         variables: {
           // The dark palette (2026-09-11, the approved dark mockups) —

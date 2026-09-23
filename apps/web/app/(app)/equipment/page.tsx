@@ -3,6 +3,7 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { EquipmentForm } from "@/components/EquipmentForm";
 import { EquipmentRow } from "@/components/EquipmentRow";
+import { EmptyState } from "@/components/EmptyState";
 import { EquipmentDeploymentControls } from "@/components/EquipmentDeploymentControls";
 import {
   type AssignmentData,
@@ -11,6 +12,7 @@ import {
   utilisation,
 } from "@/components/equipmentDeployment";
 import { toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
 
 export const dynamic = "force-dynamic";
 
@@ -46,9 +48,15 @@ export default async function EquipmentPage() {
   // placeholder name made every picker seven identical rows.
   const jobOptions = jobs.map(toJobOption);
 
-  // Dates are stored and rendered at UTC midnight, so "today" is the UTC
-  // date. The user's own calendar date is only ever a form default.
-  const today = new Date().toISOString().slice(0, 10);
+  // The VIEWER'S calendar day, never the server's UTC clock. The stored
+  // dates are plain calendar days ("went out on the 5th"), and the send-out
+  // form below defaults to localToday() — the viewer's own day. Judging
+  // those against the server's UTC day meant that for a few hours each
+  // evening (west of UTC) a machine dispatched minutes ago read "out 1 day",
+  // and east of UTC a machine already gone read "due out today". Issue #173,
+  // the same producer/consumer clock split as #155: the day the page judges
+  // against must be the day the form offered.
+  const today = await viewerToday();
   const windowStart = new Date(Date.parse(`${today}T00:00:00.000Z`) - WINDOW_DAYS * 86_400_000)
     .toISOString()
     .slice(0, 10);
@@ -97,7 +105,7 @@ export default async function EquipmentPage() {
         can never be recorded in two places at once.
       </p>
 
-      <div className="mb-8">
+      <div className="mb-8" data-tour="equipment-add">
         <EquipmentForm />
       </div>
 
@@ -113,12 +121,27 @@ export default async function EquipmentPage() {
           )}
         </h2>
         {items.length === 0 ? (
-          <p className="text-ink-body">
-            No equipment yet. Add the gear that moves between jobs — lifts, scaffolding, mixers —
-            so you can tell where something is without calling the foreman.
-          </p>
+          <EmptyState
+            data-tour="equipment-empty"
+            title="No equipment yet"
+            purpose={
+              <p>
+                The tools and gear that move between jobs — the trailer, the scaffolding, the tile
+                saw, the compressor. Send each one out to a job and bring it back, and this page
+                tells you where everything is without a phone call.
+              </p>
+            }
+            actions={[{ label: "Add equipment", opens: "equipment-add" }]}
+            example={{
+              rows: [
+                { title: "Enclosed trailer", tag: "Out", detail: "At Smith kitchen remodel since Sep 2", meta: "TR-1" },
+                { title: "Scaffolding, 3 sections", tag: "In the yard", detail: "Back from Oak Ave addition Aug 28", meta: "SC-2" },
+                { title: "Wet tile saw", tag: "Out", detail: "At Maple St. bathroom since Sep 9", meta: "TS-1" },
+              ],
+            }}
+          />
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="equipment-list">
             {items.map(({ item, history, where, use }) => (
               <li key={item.id} className="p-4">
                 <EquipmentRow
@@ -139,7 +162,7 @@ export default async function EquipmentPage() {
                     ink-body, not ink-muted: the muted level is under the 4.5
                      floor, and where a thing is is the
                     reason this page exists. */}
-                <p className="mt-1 text-xs text-ink-body">
+                <p className="mt-1 text-xs text-ink-body" data-tour="equipment-where">
                   {where.kind === "out"
                     ? `${stayLength(where.stay, today)} on ${where.stay.jobName}`
                     : where.kind === "planned"

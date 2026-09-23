@@ -18,12 +18,14 @@ const isProtectedRoute = createRouteMatcher([
   "/safety(.*)",
   "/rfis(.*)",
   "/cash-flow(.*)",
+  "/phase-codes(.*)",
   "/estimating(.*)",
   "/submittals(.*)",
   "/material-orders(.*)",
   "/drawings(.*)",
   "/closeout(.*)",
   "/backcharges(.*)",
+  "/lien-deadlines(.*)",
   "/alerts(.*)",
   "/prevailing-wage(.*)",
   "/union-compliance(.*)",
@@ -32,6 +34,12 @@ const isProtectedRoute = createRouteMatcher([
   "/intake(.*)",
   "/sales(.*)",
   "/certifications(.*)",
+  // The full-page onboarding gate. Authenticated like every other route in
+  // this list — a signed-out visitor is sent to /sign-in first, same as
+  // anywhere else — even though the only thing that ever LINKS here is a
+  // server-side redirect from /dashboard (lib/onboarding-gate.ts). Typing
+  // the URL directly while signed out must not skip sign-in.
+  "/welcome(.*)",
   // Ask streams over a route handler rather than a Server Action.
   // requireCompanyContext already redirects an anonymous caller, but this
   // list is the allowlist a reader checks, and a data route missing from
@@ -88,6 +96,11 @@ const isProtectedRoute = createRouteMatcher([
   "/internal(.*)",
 ]);
 
+// /pilot is deliberately NOT protected here, the same way /portal, /esign,
+// /privacy and /terms are not: it is the public early-tester page handed to
+// WWCCA members, and a sign-up page you must sign in to read recruits
+// nobody. It reads no database and renders the same for everyone.
+//
 // /api/integrations/webhooks/[provider] is deliberately NOT protected here.
 // A provider's servers have no Clerk session, so requiring one would reject
 // every real delivery. That route is written on the assumption that anyone
@@ -115,6 +128,13 @@ const isProtectedRoute = createRouteMatcher([
 // signature over the raw body, and fails closed when no secret is set — an
 // unverified "delivered" is worse than no event, because the whole value of
 // the log is that a delivered in it means something.
+// /api/intake/inbound/resend is deliberately NOT protected here either —
+// same reasoning as /api/messages/webhook, and the same provider: inbound
+// email events have no Clerk session. The route verifies the svix signature
+// over the raw body with its OWN secret (RESEND_INBOUND_WEBHOOK_SECRET, a
+// different webhook endpoint in Resend than the delivery one) and fails
+// closed with 503 when it is unset. /api/intake/upload above stays
+// protected: that is a person's browser, and it has a session.
 // /api/notifications/digest is deliberately NOT protected here either. It
 // is the nightly alert-digest run, and a scheduler has no Clerk session any
 // more than a webhook provider does. That route authenticates the request

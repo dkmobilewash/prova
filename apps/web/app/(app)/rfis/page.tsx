@@ -5,11 +5,15 @@ import { NoAccess } from "@/components/NoAccess";
 import { AskDraftNotice } from "@/components/AskDraftNotice";
 import { loadRfiDraft } from "@/lib/ask/drafts";
 import { RfiForm } from "@/components/RfiForm";
+import { EmptyState } from "@/components/EmptyState";
 import { RfiRow } from "@/components/RfiRow";
 import { daysBetween, isOpen, isOverdue } from "@/components/rfiLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { rfisStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
+import { ProcoreFeedSection, loadProcoreFeed } from "@/components/ProcoreFeedSection";
+import { ACCFeedSection, loadAccFeed } from "@/components/ACCFeedSection";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as the safety log
  * and daily field reports. Local rendering shows the previous day to
@@ -34,7 +38,16 @@ export default async function RfisPage({
   const askDraft = await loadRfiDraft(context, draft);
   const rfiDraft = askDraft.kind === "draft" ? askDraft.draft : undefined;
 
-  const today = new Date().toISOString().slice(0, 10);
+  // The READER'S calendar day, not the server's UTC one. `dueBy` is a plain
+  // calendar day — the UTC midnight is only how a date with no time reaches
+  // Postgres — so the day it is measured against is the day on the wall
+  // behind whoever is looking. Measured in UTC, an RFI due today flipped to
+  // OVERDUE at 5pm Pacific and the status line named it and counted the days
+  // it was late, on a page whose whole subject is dates being defensible.
+  // Resolved from the timezone cookie on the server (lib/viewerToday.ts), so
+  // this is request data and not a browser call during render — the
+  // hydration trap on components/localToday.ts does not apply here.
+  const today = await viewerToday();
 
   // status + contact, not just the name: issue #65 — fifteen jobs, seven of
   // them called "Smith kitchen remodel", and this picker showed seven
@@ -87,6 +100,11 @@ export default async function RfisPage({
   // set you pull when building a change order — a job-lifetime figure —
   // and closing an answered RFI is the normal end state, so counting the
   // visible rows made the tile fall to zero exactly as the work got done.
+  // Whether this company has EVER raised one, not whether the current
+  // filter shows any — the teaching empty state is for the first, and a
+  // filter that happens to match nothing gets the plain line.
+  const everRaised = await prisma.rfi.count({ where: { companyId: company.id } });
+
   const impactCount = await prisma.rfi.count({
     where: {
       companyId: company.id,
@@ -113,6 +131,12 @@ export default async function RfisPage({
       active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
     }`;
 
+  // The GC's records from Procore, if this company links any (see
+  // components/ProcoreFeedSection.tsx).
+  const procoreFeed = await loadProcoreFeed(company.id, "RFI", activeJob);
+  // Same, from Autodesk Construction Cloud (see components/ACCFeedSection.tsx).
+  const accFeed = await loadAccFeed(company.id, "RFI", activeJob);
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="mb-2 text-xl font-semibold text-ink">RFIs</h1>
@@ -123,20 +147,26 @@ export default async function RfisPage({
         dates.
       </p>
 
-      <section className="mb-8">
+      <section className="mb-8" data-tour="rfis-raise">
         {askDraft.kind === "gone" && <AskDraftNotice what="RFI" />}
+        {/* No `today` handed down, and the form no longer wants one: its
+            sent date opens BLANK, so a new RFI is a draft until somebody
+            says it left. The prop this page used to pass was never read. */}
         <RfiForm
           jobs={jobs}
           defaultJobId={rfiDraft?.jobId ?? activeJob ?? undefined}
-          today={today}
           draft={rfiDraft}
         />
       </section>
 
-      <StatusLine report={status} />
+      {/* At zero-ever the EmptyState below is the whole answer. The status
+          line and the "0 in play" count above it said "nothing" twice more
+          first — three empties stacked on a new account. /bids hides its
+          count the same way; both come back with the first record. */}
+      {(everRaised > 0 || rows.length > 0) && <StatusLine report={status} />}
 
       {jobs.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap gap-2" data-tour="rfis-job-filter">
           <Link href={filterHref({ job: null })} className={chip(!activeJob)}>
             All jobs
           </Link>
@@ -148,25 +178,55 @@ export default async function RfisPage({
         </div>
       )}
 
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink-label">
-          {rows.length} {showClosed ? "total" : "in play"}
-        </h2>
-        <Link
-          href={filterHref({ show: showClosed ? null : "all" })}
-          className="inline-flex min-h-11 items-center text-sm text-link"
-        >
-          {showClosed ? "Hide closed" : "Show closed"}
-        </Link>
-      </div>
+      {(everRaised > 0 || rows.length > 0) && (
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-ink-label">
+            {rows.length} {showClosed ? "total" : "in play"}
+          </h2>
+          <Link
+            href={filterHref({ show: showClosed ? null : "all" })}
+            data-tour="rfis-show-closed"
+            className="inline-flex min-h-11 items-center text-sm text-link"
+          >
+            {showClosed ? "Hide closed" : "Show closed"}
+          </Link>
+        </div>
+      )}
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && everRaised === 0 ? (
+        <EmptyState
+          data-tour="rfis-empty"
+          title="No RFIs yet"
+          purpose={
+            <p>
+              A written question to the GC or architect when the plans do not answer it —
+              &ldquo;which wall type at the corridor tie-in?&rdquo;, &ldquo;can we move this stud
+              line six inches?&rdquo; — with the date you asked and the date they answered. When a
+              late answer holds up the job, this is the proof.
+            </p>
+          }
+          actions={
+            jobs.length === 0
+              ? [{ label: "Create a job", href: "/jobs/new" }]
+              : [{ label: "Raise an RFI", opens: "rfis-raise" }]
+          }
+          ask={jobs.length === 0 ? undefined : `Raise an RFI on ${jobs[0].name}: which tile goes in the hall bath?`}
+          example={{
+            rows: [
+              { title: "RFI 3 — Hall bath tile selection", tag: "Waiting on answer", detail: "Smith kitchen remodel · asked Sep 4", meta: "due Sep 11" },
+              { title: "RFI 2 — Header size over new opening", tag: "Answered", detail: "Oak Ave addition · answered in 6 days", meta: "cost impact" },
+              { title: "RFI 1 — Outlet height at island", tag: "Closed", detail: "Smith kitchen remodel", meta: "Aug 29" },
+            ],
+          }}
+        />
+      ) : rows.length === 0 ? (
         <p className="text-ink-body">
-          Nothing here yet. Raise one the day the question comes up rather than the day it becomes a
-          problem — the gap between those two dates is the whole value of the log.
+          {showClosed
+            ? `No RFIs${activeJob ? " on this job" : ""}.`
+            : `Nothing open${activeJob ? " on this job" : ""}. Closed ones are under “Show closed”.`}
         </p>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="rfis-list">
           {rows.map((rfi) => (
             <RfiRow
               key={rfi.id}
@@ -178,6 +238,12 @@ export default async function RfisPage({
           ))}
         </ul>
       )}
+
+      {/* The GC's records from Procore: a separate section, never merged
+          into this company's own log above. */}
+      <ProcoreFeedSection feed={procoreFeed} />
+      {/* Same, from Autodesk Construction Cloud. */}
+      <ACCFeedSection feed={accFeed} />
     </div>
   );
 }

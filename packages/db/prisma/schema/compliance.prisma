@@ -66,6 +66,18 @@ model ComplianceDocument {
   /// elsewhere in this schema (it would just go stale otherwise).
   expiresAt DateTime?
 
+  /// Which line of cover a COI row is about — "General liability",
+  /// "Workers' compensation", or whatever the source wrote. Null for every
+  /// non-COI document and for a COI entered as one whole certificate.
+  ///
+  /// Why it is a column and not a sentence in `notes`: a vendor's GL and
+  /// auto lines expire on their own dates, so a renewal only replaces the
+  /// row for the SAME line. Which row governs is derived per read
+  /// (lib/coi-standing.ts), never stored, and that derivation needs the
+  /// line as data. Added for the myCOI export import; free text for the
+  /// same reason `partyName` is — the words vary by source.
+  coverageType String?
+
   notes String?
 
   /// The uploaded source file (Vercel Blob URL) and its original name.

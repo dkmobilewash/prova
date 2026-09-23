@@ -36,10 +36,12 @@
  * `contract-documents.dbtest.ts` prove it against a real database.
  */
 
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { NUMBERED_TABLES } from "../../../packages/db/scripts/numbered-tables.mjs";
 
 const libDir = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -162,26 +164,13 @@ describe("the sequence counter census", () => {
  * the first test pins its keys to the schema's own counter list, so a new
  * counter FAILS until somebody writes down what it numbers. That is the
  * point rather than a formality — the declaring is the review.
+ *
+ * IT MOVED to `packages/db/scripts/numbered-tables.mjs` and is imported at
+ * the top of this file. Not a tidy-up: the third census below scans plain
+ * `.mjs` scripts in `packages/db`, and the database test that exercises the
+ * demo seed needs the same map. Neither can import a file full of
+ * `describe()` without running this suite inside theirs.
  */
-const NUMBERED_TABLES: Record<string, { accessor: string; helper: string }> = {
-  BackchargeCounter: { accessor: "backcharge", helper: "issueBackchargeNumber" },
-  ChangeOrderCounter: { accessor: "changeOrder", helper: "issueChangeOrderNumber" },
-  CloseoutSubmissionCounter: { accessor: "closeoutSubmission", helper: "issueAttemptNumber" },
-  ContractDocumentVersionCounter: {
-    accessor: "contractDocument",
-    helper: "issueContractDocumentVersion",
-  },
-  // #289, added by #290 while this census was in review — the first counter
-  // this file has ever been asked to admit, and it worked as designed: the
-  // build went red on the merge naming exactly this model, rather than the
-  // counter quietly sitting outside every assertion below.
-  EstimateVersionCounter: { accessor: "estimateVersion", helper: "issueEstimateVersionNumber" },
-  InvoiceCounter: { accessor: "invoice", helper: "issueInvoiceNumber" },
-  MaterialOrderCounter: { accessor: "materialOrder", helper: "issueOrderNumber" },
-  RfiCounter: { accessor: "rfi", helper: "issueRfiNumber" },
-  SafetyCaseCounter: { accessor: "safetyIncident", helper: "issueCaseNumber" },
-  SubmittalCounter: { accessor: "submittal", helper: "issueSubmittalNumber" },
-};
 
 /** `tx.contractDocument.create(` but never
  * `tx.contractDocumentVersionCounter.upsert(` — the negative lookahead is
@@ -235,5 +224,223 @@ describe("the numbered-table census — every writer goes through the counter", 
       }
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * THE SAME QUESTION, ASKED WHERE THE ANSWER COULD ACTUALLY BE — every file
+ * in the repo that inserts a numbered row, not just the TypeScript under
+ * `apps/web/lib`.
+ *
+ * WHAT WENT WRONG, and it is CLAUDE.md's `theme-contrast` scar arriving
+ * again from the same side. `packages/db/scripts/seed-demo.mjs` wrote three
+ * `Invoice` rows (#1, #1, #2) and two `ChangeOrder` rows (#1, #2) and
+ * created NEITHER counter. So `issueInvoiceNumber` upserted `lastNumber: 1`,
+ * the insert collided with the seeded #1 on `@@unique([jobId, number])`, and
+ * because the bump and the insert share one `$transaction` the counter
+ * ROLLED BACK with it — every retry failed identically, forever. "Create
+ * invoice" was permanently dead on every demo-seeded job, which is to say on
+ * every Vercel preview and every demo a tester was shown.
+ *
+ * The two censuses above exist to stop exactly that and were GREEN the whole
+ * time. Their patterns were fine. `sourceFiles(libDir)` walks `apps/web/lib`
+ * and takes `.tsx?` only, so a `.mjs` script in `packages/db` was never a
+ * candidate — and **nothing is ever missing from a directory you do not
+ * walk.** A size assertion cannot help: it answers "did the pattern stop
+ * matching", and the pattern matched plenty.
+ *
+ * Two live files were outside that walk and happened to be CORRECT, which is
+ * the more unsettling half: the v1 API routes for material orders and
+ * incidents bump their counters inline, well outside `apps/web/lib`. A third
+ * route that forgot would have been just as invisible.
+ *
+ * WHAT IT REASONS ABOUT: every tracked source file that inserts a row into a
+ * counter-numbered table must, in that same file, make the counter agree —
+ * either by calling the issuing helper or by bumping the counter itself. The
+ * seed does the second; app actions do the first.
+ *
+ * SCOPE IS GIT'S, NOT A LIST WRITTEN HERE. `git ls-files` is the repo's own
+ * definition of what is in the repo, and it cannot drift with this file's
+ * patterns — which is the whole property the directory list lacked. It also
+ * excludes `node_modules`, `.next` and the agent worktrees under `.claude`
+ * for free, and it fails loudly rather than silently returning fewer files.
+ *
+ * WHAT IT THEREFORE CANNOT CATCH, said plainly so nobody trusts it further
+ * than it goes:
+ *
+ *   - TEST FIXTURES ARE EXCLUDED. A `.dbtest.ts` inserts numbered rows with
+ *     literal numbers on purpose, to build the state under test; requiring a
+ *     counter there would make the fixtures lie about what they are setting
+ *     up.
+ *   - It is file-level. A script that seeds a counter for job A and inserts
+ *     rows for job B passes this and is still broken. That claim is only
+ *     provable against a database, and `seed-demo-counters.dbtest.ts` runs
+ *     the real seed and proves it per job.
+ *   - Raw SQL, a nested write reaching a numbered table through a parent,
+ *     and anything run against Neon by hand. It is a source scan.
+ */
+
+const SOURCE_EXT = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
+/** Only the two suffixes that mean "fixture". `.eval.ts` is NOT one of them:
+ * the narrow census above scans those files, and a wider scan that quietly
+ * dropped them would be narrower in one direction while claiming to be
+ * wider — which the containment check below exists to refuse. */
+const FIXTURE = /\.(test|dbtest)\.(ts|tsx|mts)$/;
+
+/**
+ * Every source file the repo tracks. Shelling out to git is the point rather
+ * than a shortcut: the alternative is a directory list maintained by hand,
+ * and a directory list maintained by hand is the defect this section exists
+ * for. `-z` because a path may contain anything but NUL.
+ */
+function trackedSourcePaths(): string[] {
+  // `--cached --others --exclude-standard` — committed files AND the ones
+  // that are merely written but not staged yet, minus everything ignored.
+  // `--cached` alone was the first version and it was wrong in the direction
+  // that matters here: a brand new writer is untracked until somebody runs
+  // `git add`, so a bare `ls-files` would have let exactly the kind of file
+  // this census is for sit outside it until after the review. Found by
+  // another agent creating a file in this checkout mid-run.
+  const out = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return out
+    .split("\0")
+    .filter(Boolean)
+    .filter((p) => SOURCE_EXT.test(p) && !FIXTURE.test(p));
+}
+
+const tracked = trackedSourcePaths();
+const repoSources = tracked.map((path) => ({
+  path,
+  source: stripComments(readFileSync(join(repoRoot, path), "utf8")),
+}));
+
+/** The accessors, longest first, so `contractDocument` cannot be claimed by a
+ * shorter name that prefixes it before the lookahead gets a chance. */
+const ACCESSORS = Object.entries(NUMBERED_TABLES).sort(
+  (a, b) => b[1].accessor.length - a[1].accessor.length,
+);
+
+/** Which numbered tables a file inserts into, by accessor. */
+function insertedAccessors(source: string): string[] {
+  return ACCESSORS.filter(([, t]) => insertPattern(t.accessor).test(source)).map(
+    ([, t]) => t.accessor,
+  );
+}
+
+/**
+ * Files this census MUST be able to see, and what it must see in them.
+ *
+ * A PINNED MEMBER OF THE SET RATHER THAN A COUNT OF IT, deliberately. The
+ * failure being guarded against is a scanner that sees NOTHING in a whole
+ * directory, and a count of an empty set looks perfectly healthy — every
+ * size assertion in this file would have passed throughout the defect above.
+ * Naming a file the scan is known to contain is the one check that goes red
+ * when the walk narrows, the extension list drops `.mjs`, or the insert
+ * pattern stops matching.
+ *
+ * `seed-demo.mjs` is the pin because it is the file that was invisible. If
+ * you add a numbered family to the seed, this fails and the fix is to add
+ * the accessor here AND seed its counter — which is the review, not a chore.
+ */
+const MUST_SEE: Record<string, string[]> = {
+  "packages/db/scripts/seed-demo.mjs": [
+    "backcharge",
+    "changeOrder",
+    "closeoutSubmission",
+    "invoice",
+    "materialOrder",
+    "rfi",
+    "safetyIncident",
+    "submittal",
+  ],
+};
+
+describe("the numbered-table census, repo-wide — scope pinned to git", () => {
+  it("asks git what is in the repo, and git answers", () => {
+    // An empty or tiny answer means git failed, or this ran somewhere that
+    // is not a checkout. Either way the rest of this describe would pass
+    // vacuously, which is the one outcome worth failing loudly on.
+    expect(tracked.length).toBeGreaterThan(500);
+  });
+
+  it("walks every extension a database writer is written in here", () => {
+    // The defect was an extension filter, not a pattern. `.mjs` is the one
+    // that was missing; `.ts` and `.tsx` prove the filter has not inverted.
+    for (const ext of [".mjs", ".ts", ".tsx"]) {
+      expect(
+        tracked.some((p) => p.endsWith(ext)),
+        `no ${ext} file in scope — the walk has narrowed`,
+      ).toBe(true);
+    }
+  });
+
+  it("is strictly wider than the apps/web/lib census above", () => {
+    // Anti-narrowing, stated as containment rather than as two numbers: a
+    // widened scan that somehow drops a file the narrow one had is a
+    // regression no count would show.
+    const wide = new Set(tracked);
+    const missing = sources.map((f) => f.path).filter((p) => !wide.has(p));
+    expect(missing, `dropped by the wider walk: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("sees the numbered inserts in the file that was invisible", () => {
+    for (const [path, expected] of Object.entries(MUST_SEE)) {
+      const file = repoSources.find((f) => f.path === path);
+      expect(file, `${path} is not in scope at all`).toBeDefined();
+      expect(insertedAccessors(file!.source).sort()).toEqual([...expected].sort());
+    }
+  });
+
+  it("parses the same number of inserts as a deliberately dumber scanner", () => {
+    // The size check the entry above says cannot save you on its own — kept
+    // because it catches the OTHER failure, a pattern that silently stops
+    // matching a syntax somebody starts writing. The dumb scanner knows
+    // nothing about accessors: it finds every `.x.create(` and then filters.
+    const known = new Set(Object.values(NUMBERED_TABLES).map((t) => t.accessor));
+    let strict = 0;
+    let dumb = 0;
+    for (const file of repoSources) {
+      for (const [, t] of ACCESSORS) {
+        strict += (file.source.match(insertPattern(t.accessor)) ?? []).length;
+      }
+      for (const m of file.source.matchAll(
+        /\.\s*([A-Za-z][A-Za-z0-9_]*)\s*\.\s*(?:create|createMany)\s*\(/g,
+      )) {
+        if (known.has(m[1])) dumb += 1;
+      }
+    }
+    expect(strict).toBe(dumb);
+    expect(strict).toBeGreaterThanOrEqual(15);
+  });
+
+  it("makes the counter agree in every file that inserts a numbered row", () => {
+    const offenders: string[] = [];
+    for (const file of repoSources) {
+      for (const [counter, t] of ACCESSORS) {
+        if (!insertPattern(t.accessor).test(file.source)) continue;
+        // Either route is fine and both appear in this repo: app actions
+        // call the issuing helper, the v1 API routes and the demo seed bump
+        // the counter themselves. What is NOT fine is neither.
+        if (file.source.includes(t.helper)) continue;
+        if (new RegExp(`\\b${t.counterAccessor}\\s*\\.\\s*(upsert|update|create)\\s*\\(`).test(file.source)) {
+          continue;
+        }
+        offenders.push(
+          `${file.path} inserts ${t.accessor} rows but never calls ${t.helper} ` +
+            `or writes ${t.counterAccessor} (${counter})`,
+        );
+      }
+    }
+    expect(
+      offenders,
+      `A file that writes numbered rows and leaves the counter behind hands the next real ` +
+        `record a number that is already taken. In a seed that is permanent: the insert ` +
+        `collides on the unique index and the counter bump rolls back with it, so every ` +
+        `retry fails identically. ${offenders.join("; ")}`,
+    ).toEqual([]);
   });
 });

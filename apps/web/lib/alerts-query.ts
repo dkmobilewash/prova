@@ -5,8 +5,12 @@ import {
   certifiedPayrollAlerts,
   closeoutAlerts,
   contactFollowUpAlerts,
+  drawingRevisionAlerts,
+  lienDeadlineAlerts,
   partitionAlerts,
   renewalAlert,
+  rfiAlerts,
+  submittalAlerts,
   visibleToPrincipal,
   retainageAlerts,
   wipAlerts,
@@ -19,11 +23,15 @@ import { renewalSourcesForCompany } from "@/lib/renewals";
 import { renewalAlerts as rankRenewals } from "@/lib/compliance-expiry";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { calculateJobWip, calculateLineItemWip } from "@/lib/wip";
+import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
+import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
+import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import { jobIsOverBudget } from "@/lib/company-financials";
 import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
 import { can, type Principal } from "@/lib/permissions";
 import { loadRatioReviews } from "@/lib/union-compliance-query";
 import { intakeTraySummary } from "@/lib/intake/review";
+import { firstRowBy, groupRowsBy, rowsFor } from "@/lib/group-rows";
 
 /**
  * Every alert one company currently has, assembled from the rows that
@@ -47,6 +55,119 @@ function addDays(iso: string, days: number): string {
   return new Date(Date.parse(`${iso}T00:00:00.000Z`) + days * 86_400_000).toISOString().slice(0, 10);
 }
 
+/**
+ * Every job with the facts the per-job alerts read — retainage, closeout,
+ * certified payroll, WIP variance.
+ *
+ * This was ONE `job.findMany` with nine relations nested under it, which
+ * Prisma resolves as ten queries run one after another: about a second of
+ * every page render, since the bell count in the layout runs this, and the
+ * longest wait in the whole layout (measured 2026-09-18). It is now the
+ * job query and then every relation at once. Each child query is the SQL
+ * Prisma was already sending — `WHERE "jobId" IN (...)`, with the same
+ * ORDER BY on the two that take the newest row — so the rows, their order
+ * and therefore every alert are unchanged. The shape handed back is the
+ * shape the nested read returned, so nothing below this function changed.
+ */
+async function loadAlertJobs(companyId: string) {
+  const jobs = await prisma.job.findMany({
+    where: { companyId },
+    select: { id: true, name: true, substantialCompletionDate: true },
+  });
+  // A nested read with no parents sends no child queries; neither does this.
+  if (jobs.length === 0) return [];
+  const jobId = { in: jobs.map((job) => job.id) };
+
+  const [
+    invoices,
+    retainageReleases,
+    closeoutSubmissions,
+    prevailingWageDeterminations,
+    timeEntries,
+    complianceDocuments,
+    lineItems,
+  ] = await Promise.all([
+    prisma.invoice.findMany({
+      where: { jobId },
+      select: { jobId: true, amount: true, retainageWithheld: true },
+    }),
+    prisma.retainageRelease.findMany({ where: { jobId }, select: { jobId: true, amount: true } }),
+
+    // The newest attempt per job: every attempt newest-first, first one per
+    // job kept below — exactly how Prisma resolved the nested `take: 1`.
+    prisma.closeoutSubmission.findMany({
+      where: { jobId },
+      orderBy: { attempt: "desc" },
+      select: { jobId: true, status: true, submittedOn: true, respondedOn: true },
+    }),
+
+    // Only jobs carrying a wage determination can raise a certified
+    // payroll alert — see certifiedPayrollAlerts. One row per job is
+    // enough: this is a "does one exist" question.
+    prisma.prevailingWageDetermination.findMany({
+      where: { jobId },
+      orderBy: { createdAt: "desc" },
+      // The jurisdiction's own filing window and frequency, where they
+      // have been recorded. Without a window the alert falls back to
+      // its generic horizon and says so; without a frequency it
+      // assumes WEEKLY, both jobs certifiedPayrollAlerts already does.
+      select: {
+        jobId: true,
+        id: true,
+        ruleSet: { select: { filingDueDays: true, filingFrequency: true } },
+      },
+    }),
+    // TIME_ENTRY_COST_SELECT already carries `date`, which is the only
+    // column certifiedPayrollAlerts wanted; the rest is burdened job
+    // cost (issue #287), read through the same helper /jobs/[id] uses.
+    prisma.timeEntry.findMany({
+      where: { jobId },
+      select: { ...TIME_ENTRY_COST_SELECT, jobId: true },
+    }),
+    prisma.complianceDocument.findMany({
+      where: { jobId, type: "CERTIFIED_PAYROLL" },
+      select: { jobId: true, periodStart: true, periodEnd: true },
+    }),
+    prisma.jobLineItem.findMany({
+      where: { jobId, isDeleted: false },
+      select: {
+        jobId: true,
+        id: true,
+        quantity: true,
+        unitPrice: true,
+        budgetedUnitCost: true,
+        currentEstimatedUnitCost: true,
+        estimatedCostToComplete: true,
+        costEntries: { select: { amount: true } },
+      },
+    }),
+  ]);
+
+  const byJob = <T extends { jobId: string | null }>(rows: T[]) => groupRowsBy(rows, (row) => row.jobId);
+  const invoicesByJob = byJob(invoices);
+  const releasesByJob = byJob(retainageReleases);
+  const latestCloseout = firstRowBy(closeoutSubmissions, (row) => row.jobId);
+  const latestDetermination = firstRowBy(prevailingWageDeterminations, (row) => row.jobId);
+  const timeEntriesByJob = byJob(timeEntries);
+  const documentsByJob = byJob(complianceDocuments);
+  const lineItemsByJob = byJob(lineItems);
+
+  return jobs.map((job) => {
+    const closeout = latestCloseout.get(job.id);
+    const determination = latestDetermination.get(job.id);
+    return {
+      ...job,
+      invoices: rowsFor(invoicesByJob, job.id),
+      retainageReleases: rowsFor(releasesByJob, job.id),
+      closeoutSubmissions: closeout ? [closeout] : [],
+      prevailingWageDeterminations: determination ? [determination] : [],
+      timeEntries: rowsFor(timeEntriesByJob, job.id),
+      complianceDocuments: rowsFor(documentsByJob, job.id),
+      lineItems: rowsFor(lineItemsByJob, job.id),
+    };
+  });
+}
+
 export async function loadAlerts(
   companyId: string,
   userId: string,
@@ -62,8 +183,21 @@ export async function loadAlerts(
   // rather than a window of our own choosing.
   const currentMonth = todayIso.slice(0, 7);
 
-  const [renewalSources, backcharges, jobs, acknowledgements, ratioReviews, followUps, intakeTray] =
-    await Promise.all([
+  const [
+    renewalSources,
+    backcharges,
+    jobs,
+    acknowledgements,
+    ratioReviews,
+    followUps,
+    intakeTray,
+    rfis,
+    submittals,
+    drawingSets,
+    fringeSchedulesByCraft,
+    employerBurdenRates,
+    lienDeadlines,
+  ] = await Promise.all([
     renewalSourcesForCompany(companyId),
 
     prisma.backcharge.findMany({
@@ -78,53 +212,7 @@ export async function loadAlerts(
       },
     }),
 
-    prisma.job.findMany({
-      where: { companyId },
-      select: {
-        id: true,
-        name: true,
-        substantialCompletionDate: true,
-
-        invoices: { select: { amount: true, retainageWithheld: true } },
-        retainageReleases: { select: { amount: true } },
-
-        closeoutSubmissions: {
-          orderBy: { attempt: "desc" },
-          take: 1,
-          select: { status: true, submittedOn: true, respondedOn: true },
-        },
-
-        // Only jobs carrying a wage determination can raise a certified
-        // payroll alert — see certifiedPayrollAlerts. Taking one row is
-        // enough: this is a "does one exist" question.
-        prevailingWageDeterminations: {
-          take: 1,
-          orderBy: { createdAt: "desc" },
-          // The jurisdiction's own filing window and frequency, where they
-          // have been recorded. Without a window the alert falls back to
-          // its generic horizon and says so; without a frequency it
-          // assumes WEEKLY, both jobs certifiedPayrollAlerts already does.
-          select: { id: true, ruleSet: { select: { filingDueDays: true, filingFrequency: true } } },
-        },
-        timeEntries: { select: { date: true } },
-        complianceDocuments: {
-          where: { type: "CERTIFIED_PAYROLL" },
-          select: { periodStart: true, periodEnd: true },
-        },
-
-        lineItems: {
-          where: { isDeleted: false },
-          select: {
-            quantity: true,
-            unitPrice: true,
-            budgetedUnitCost: true,
-            currentEstimatedUnitCost: true,
-            estimatedCostToComplete: true,
-            costEntries: { select: { amount: true } },
-          },
-        },
-      },
-    }),
+    loadAlertJobs(companyId),
 
     prisma.alertAcknowledgement.findMany({
       where: { userId },
@@ -160,6 +248,86 @@ export async function loadAlerts(
         status: true,
         jobHint: true,
         jobId: true,
+      },
+    }),
+
+    // Correspondence, all three kinds. Each one is narrowed here only where
+    // the database can do it without deciding anything: `status: "SENT"` is
+    // rfiLabels.isOpen's population expressed as a where-clause, and
+    // rfiAlerts still applies `isOpen` itself so that definition stays in
+    // one place — the same belt-and-braces lib/moneyRail.ts uses for
+    // `isLive`. Submittals and drawing sets cannot be narrowed at all: what
+    // makes them worth chasing is a property of the LATEST revision, and
+    // submittalState / unreceivedRevisions are what decide it.
+    prisma.rfi.findMany({
+      where: { companyId, status: "SENT" },
+      select: {
+        id: true,
+        number: true,
+        subject: true,
+        status: true,
+        sentOn: true,
+        dueBy: true,
+        job: { select: { name: true } },
+      },
+    }),
+
+    prisma.submittal.findMany({
+      where: { companyId },
+      select: {
+        id: true,
+        number: true,
+        title: true,
+        job: { select: { name: true } },
+        revisions: {
+          select: {
+            revisionNumber: true,
+            sentOn: true,
+            dueBack: true,
+            returnedOn: true,
+            outcome: true,
+            responseNotes: true,
+          },
+        },
+      },
+    }),
+
+    prisma.drawingSet.findMany({
+      where: { companyId },
+      select: {
+        id: true,
+        name: true,
+        job: { select: { name: true } },
+        revisions: {
+          select: {
+            id: true,
+            label: true,
+            issuedOn: true,
+            receivedOn: true,
+            description: true,
+            fileUrl: true,
+            fileName: true,
+          },
+        },
+      },
+    }),
+    loadFringeSchedulesByCraft(companyId),
+    loadEmployerBurdenRates(companyId),
+
+    // Lien deadlines not yet served. Scoped by company in the WHERE like
+    // every read here; `servedOn: null` is only a narrowing —
+    // lienDeadlineAlerts applies lienDeadlineState itself, so what counts
+    // as served is still decided in one place.
+    prisma.lienDeadline.findMany({
+      where: { companyId, servedOn: null },
+      select: {
+        id: true,
+        kind: true,
+        otherLabel: true,
+        recipient: true,
+        dueOn: true,
+        servedOn: true,
+        job: { select: { name: true } },
       },
     }),
   ]);
@@ -288,11 +456,21 @@ export async function loadAlerts(
             item.currentEstimatedUnitCost != null ? Number(item.currentEstimatedUnitCost) : null,
           estimatedCostToComplete:
             item.estimatedCostToComplete != null ? Number(item.estimatedCostToComplete) : null,
-          actualCostToDate: item.costEntries.reduce((sum, e) => sum + Number(e.amount), 0),
+          ...lineItemCostToDate(
+            item.id,
+            item.costEntries,
+            job.timeEntries,
+            fringeSchedulesByCraft,
+            employerBurdenRates,
+          ),
         }),
       );
       const billedToDate = job.invoices.reduce((sum, i) => sum + Number(i.amount), 0);
-      const wip = calculateJobWip(lineItems, billedToDate);
+      const wip = calculateJobWip(
+        lineItems,
+        billedToDate,
+        unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft, employerBurdenRates),
+      );
 
       // jobIsOverBudget already encodes when this question has an answer
       // at all — it returns null for a job with no forecast and for one
@@ -334,6 +512,81 @@ export async function loadAlerts(
         contactName: f.contact.name,
         followUpOn: isoDate(f.followUpOn) as string,
         assignedToName: f.followUpAssignedToUser?.name ?? f.followUpAssignedToUser?.email ?? null,
+      })),
+      todayIso,
+    ),
+  );
+
+  alerts.push(
+    ...rfiAlerts(
+      rfis.map((rfi) => ({
+        id: rfi.id,
+        number: rfi.number,
+        subject: rfi.subject,
+        jobName: rfi.job.name,
+        status: rfi.status as string,
+        sentOn: isoDate(rfi.sentOn),
+        dueBy: isoDate(rfi.dueBy),
+      })),
+      todayIso,
+    ),
+  );
+
+  alerts.push(
+    ...submittalAlerts(
+      submittals.map((submittal) => ({
+        submittalId: submittal.id,
+        number: submittal.number,
+        title: submittal.title,
+        jobName: submittal.job.name,
+        revisions: submittal.revisions.map((rev) => ({
+          revisionNumber: rev.revisionNumber,
+          // sentOn is required on SubmittalRevision, so this cast is the
+          // shape of the column rather than an assumption about the data.
+          sentOn: isoDate(rev.sentOn) as string,
+          dueBack: isoDate(rev.dueBack),
+          returnedOn: isoDate(rev.returnedOn),
+          outcome: rev.outcome,
+          responseNotes: rev.responseNotes,
+        })),
+      })),
+      todayIso,
+    ),
+  );
+
+  alerts.push(
+    ...drawingRevisionAlerts(
+      drawingSets.map((set) => ({
+        setId: set.id,
+        setName: set.name,
+        jobName: set.job.name,
+        revisions: set.revisions.map((rev) => ({
+          id: rev.id,
+          label: rev.label,
+          // issuedOn is required on DrawingRevision; receivedOn is the
+          // nullable one, and its absence is the whole alert.
+          issuedOn: isoDate(rev.issuedOn) as string,
+          receivedOn: isoDate(rev.receivedOn),
+          description: rev.description,
+          fileUrl: rev.fileUrl,
+          fileName: rev.fileName,
+        })),
+      })),
+      todayIso,
+    ),
+  );
+
+  alerts.push(
+    ...lienDeadlineAlerts(
+      lienDeadlines.map((row) => ({
+        id: row.id,
+        kind: row.kind as string,
+        otherLabel: row.otherLabel,
+        jobName: row.job.name,
+        recipient: row.recipient,
+        // dueOn is required on LienDeadline; servedOn is the nullable one.
+        dueOn: isoDate(row.dueOn) as string,
+        servedOn: isoDate(row.servedOn),
       })),
       todayIso,
     ),

@@ -3,11 +3,13 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { MaterialOrderForm } from "@/components/MaterialOrderForm";
+import { EmptyState } from "@/components/EmptyState";
 import { MaterialOrderRow } from "@/components/MaterialOrderRow";
 import { daysLate, orderState } from "@/components/materialOrderLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { materialOrdersStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as RFIs,
  * submittals, the safety log and daily field reports. */
@@ -26,7 +28,7 @@ export default async function MaterialOrdersPage({
   const { job: jobFilter, show } = await searchParams;
   const showDelivered = show === "all";
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await viewerToday();
 
   const [jobRows, vendors, lineItems] = await Promise.all([
     prisma.job.findMany({
@@ -94,9 +96,15 @@ export default async function MaterialOrdersPage({
   // A delivered order is the normal end state, so it leaves the default
   // view — but stays one click away, because "when did that actually show
   // up" is exactly what someone checks when a schedule is questioned.
+  // Whether this company has EVER logged one, not whether the current
+  // filter shows any — the teaching empty state is for the first, and a
+  // filter that happens to match nothing keeps its plain line.
+  const everLogged = activeJob ? await prisma.materialOrder.count({ where: { companyId: company.id } }) : allRows.length;
+
   const rows = showDelivered
     ? allRows
     : allRows.filter((row) => orderState(row.deliveries) !== "COMPLETE");
+  const hasRecords = everLogged > 0 || rows.length > 0;
 
   // Counted from all rows for this filter, not the visible ones — the
   // default view hides exactly the delivered set, and a tile that falls to
@@ -135,7 +143,7 @@ export default async function MaterialOrdersPage({
         the date they promised.
       </p>
 
-      <section className="mb-8">
+      <section className="mb-8" data-tour="material-orders-log">
         <MaterialOrderForm
           jobs={jobs}
           vendors={vendors}
@@ -144,10 +152,17 @@ export default async function MaterialOrdersPage({
         />
       </section>
 
-      <StatusLine report={status} />
+      {/* At zero-ever the EmptyState below is the whole answer. The status
+          line and the "0 outstanding" count above it said "nothing" twice
+          more first, three empties stacked on a new account. /bids hides its
+          count the same way, as #451 did for /rfis, /submittals and
+          /drawings; both come back with the first order. `rows.length` is
+          in the gate as well as `everLogged` so a page that is SHOWING rows
+          can never lose its header, whatever the count query says. */}
+      {hasRecords && <StatusLine report={status} />}
 
       {jobs.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap gap-2" data-tour="material-orders-job-filter">
           <Link href={filterHref({ job: null })} className={chip(!activeJob)}>
             All jobs
           </Link>
@@ -159,23 +174,51 @@ export default async function MaterialOrdersPage({
         </div>
       )}
 
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink-label">
-          {rows.length} {showDelivered ? "total" : "outstanding"}
-        </h2>
-        <Link href={filterHref({ show: showDelivered ? null : "all" })} className="text-sm text-link">
-          {showDelivered ? "Hide delivered" : "Show delivered"}
-        </Link>
-      </div>
+      {hasRecords && (
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-ink-label">
+            {rows.length} {showDelivered ? "total" : "outstanding"}
+          </h2>
+          <Link href={filterHref({ show: showDelivered ? null : "all" })} className="text-sm text-link">
+            {showDelivered ? "Hide delivered" : "Show delivered"}
+          </Link>
+        </div>
+      )}
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && everLogged === 0 ? (
+        <EmptyState
+          data-tour="material-orders-empty"
+          title="Nothing on order yet"
+          purpose={
+            <p>
+              What you have ordered for each job, from whom, and whether it showed up — cabinets,
+              windows, lumber packages. Log it the day you order and mark it delivered when it
+              lands, and a late delivery is a date on paper instead of a crew standing around.
+            </p>
+          }
+          actions={
+            jobs.length === 0
+              ? [{ label: "Create a job", href: "/jobs/new" }]
+              : vendors.length === 0
+                ? [{ label: "Add a vendor first", href: "/vendors" }]
+                : [{ label: "Log an order", opens: "material-orders-log" }]
+          }
+          example={{
+            rows: [
+              { title: "#3 Kitchen cabinets", tag: "Late", detail: "Smith kitchen remodel · Valley Cabinet Co. · promised Sep 8", meta: "4 days late" },
+              { title: "#2 Framing lumber package", tag: "Delivered", detail: "Oak Ave addition · Valley Lumber Supply", meta: "on time" },
+              { title: "#1 Windows (6)", tag: "Part delivered", detail: "Oak Ave addition · 4 of 6 arrived Sep 3", meta: "2 to come" },
+            ],
+          }}
+        />
+      ) : rows.length === 0 ? (
         <p className="text-ink-body">
           {allRows.length === 0
             ? "Nothing on order. Log a package the day you place it — the gap between the date you ordered it and the date it turned up is the whole value of the record."
             : `Nothing outstanding — every order on this job has been delivered. ${deliveredCount} delivered order${deliveredCount === 1 ? "" : "s"} hidden.`}
         </p>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="material-orders-list">
           {rows.map((order) => (
             <MaterialOrderRow
               key={order.id}

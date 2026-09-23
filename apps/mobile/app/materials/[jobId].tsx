@@ -1,14 +1,26 @@
 import { useAuth } from "@clerk/expo";
 import { useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
+import { DateField } from "@/components/DateField";
 import { Field } from "@/components/Field";
+import { JobContextChip } from "@/components/JobContextChip";
 import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
-import { colors, typography } from "@/lib/theme";
+import { SyncStatus } from "@/components/SyncStatus";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
+import { emptyFor } from "@/lib/empty-state";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
+import { localToday } from "@/lib/local-today";
+import { type Palette, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
 import { enqueue } from "@/lib/sync-queue";
@@ -16,30 +28,42 @@ import { useSync } from "@/lib/use-sync";
 import type { MaterialOrder, Vendor } from "@/lib/types";
 
 export default function MaterialsScreen() {
+  const { me } = useMe();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [orders, setOrders] = useState<MaterialOrder[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [description, setDescription] = useState("");
-  const [orderedOn, setOrderedOn] = useState("");
+  const [orderedOn, setOrderedOn] = useState(localToday());
   const [promisedFor, setPromisedFor] = useState("");
   const [vendorId, setVendorId] = useState<string | null>(null);
 
   const load = async () => {
-    const token = await getToken();
-    if (!token || !jobId) return;
-    try {
-      const [os, vs] = await Promise.all([api.listMaterialOrders(jobId, token), api.listVendors(token)]);
-      setOrders(os);
-      setVendors(vs);
-      if (!vendorId && vs.length > 0) setVendorId(vs[0].id);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load orders");
+    if (!jobId) return;
+    // The vendor list is cached with the orders rather than separately:
+    // an order row is unreadable without the vendor names beside it.
+    const result = await cachedRead(
+      cacheKeys.materials(jobId),
+      withToken(getToken, async (token) => ({
+        orders: await api.listMaterialOrders(jobId, token),
+        vendors: await api.listVendors(token),
+      })),
+    );
+    setError(null);
+    if (result.from === "nothing") {
+      setOffline("nothing");
+      return;
     }
+    setOrders(result.value.orders);
+    setVendors(result.value.vendors);
+    if (!vendorId && result.value.vendors.length > 0) setVendorId(result.value.vendors[0].id);
+    setOffline(staleNote(result));
   };
 
   useEffect(() => {
@@ -49,12 +73,12 @@ export default function MaterialsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
-  const { pending, sync } = useSync(load);
+  const { pending, sync, refused, dismissRefused, retrySetAside } = useSync(load);
 
   const submit = async () => {
     if (!jobId || !description || !orderedOn || !vendorId) return;
     setDescription("");
-    setOrderedOn("");
+    setOrderedOn(localToday());
     setPromisedFor("");
     setShowForm(false);
     await enqueue({
@@ -69,9 +93,24 @@ export default function MaterialsScreen() {
     await sync();
   };
 
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["materials/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["materials/[jobId]"]} />;
+
   return (
     <View style={styles.screen}>
-      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      <View style={styles.chipWrap}>
+        <JobContextChip />
+      </View>
+      <SyncStatus
+        pending={pending}
+        state={offline}
+        refused={refused}
+        onDismiss={dismissRefused}
+        onRetry={retrySetAside}
+      />
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <List
         data={orders}
@@ -89,8 +128,10 @@ export default function MaterialsScreen() {
             </Text>
           </Card>
         )}
-        emptyTitle="Nothing on order"
-        emptyDescription="Tap “Add order” to log a material delivery."
+        {...emptyFor(offline, "the material orders", {
+          title: "Nothing on order",
+          description: "Tap “Add order” to log a material delivery.",
+        })}
       />
 
       <View style={styles.footer}>
@@ -107,8 +148,8 @@ export default function MaterialsScreen() {
         onPrimary={submit}
       >
         <Field label="What was ordered" placeholder="e.g. 2x4 lumber" value={description} onChangeText={setDescription} />
-        <Field label="Date ordered" placeholder="YYYY-MM-DD" value={orderedOn} onChangeText={setOrderedOn} />
-        <Field label="Promised for" placeholder="YYYY-MM-DD (optional)" value={promisedFor} onChangeText={setPromisedFor} />
+        <DateField label="Date ordered" value={orderedOn} onChange={setOrderedOn} max={localToday()} />
+        <DateField label="Promised for" value={promisedFor} onChange={setPromisedFor} max={localToday()} allowFuture />
         <Text style={styles.vendorLabel}>Vendor</Text>
         <View style={styles.chips}>
           {vendors.map((v) => (
@@ -120,16 +161,18 @@ export default function MaterialsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
-  orderHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  number: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.bold },
-  vendor: { color: colors.inkMuted, fontSize: typography.size.sm },
-  description: { color: colors.ink, fontSize: typography.size.md, marginTop: 4 },
-  meta: { color: colors.inkBody, fontSize: typography.size.sm, marginTop: 4 },
-  vendorLabel: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    chipWrap: { padding: space.md, paddingBottom: 0 },
+    error: { color: p.colors.tagRoseInk, padding: space.md, paddingBottom: 0, fontSize: typography.size.sm },
+    orderHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    number: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.bold },
+    vendor: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    description: { color: p.colors.ink, fontSize: typography.size.md, marginTop: 4 },
+    meta: { color: p.colors.inkBody, fontSize: typography.size.sm, marginTop: 4 },
+    vendorLabel: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
+  });
+}

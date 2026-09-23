@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
-import { EXPORT_DATASETS, datasetByKey, exportFilename, toCsv } from "@/lib/export";
+import {
+  EXPORT_DATASETS,
+  datasetByKey,
+  exportCoverageNote,
+  exportFilename,
+  exportNotIncludedLines,
+  toCsv,
+} from "@/lib/export";
 
 /**
  * "Give me everything." No ticket, no waiting, no sales call.
@@ -85,12 +92,13 @@ export async function GET(request: NextRequest) {
     exportedAt: today.toISOString(),
     company: { id: companyId, name: context.company.name },
     // Said in the file, not only in the UI, because the file is what
-    // outlives this account.
-    notIncluded: [
-      "Integration credentials (QuickBooks and other connection tokens).",
-      "Client portal links and contract signing links — live keys, not records.",
-      "Uploaded files themselves; documents appear as their metadata rows.",
-    ],
+    // outlives this account. Both lines come from lib/export.ts rather than
+    // being typed here: the three strings that used to sit in this literal
+    // named only keys and files, said nothing about the licences, bonds,
+    // retainage releases, wage tables or photos that are equally absent, and
+    // one of them ("documents appear as their metadata rows") was false.
+    coverage: exportCoverageNote(),
+    notIncluded: exportNotIncludedLines(),
     datasets: {},
   };
 
@@ -107,7 +115,10 @@ export async function GET(request: NextRequest) {
   return new NextResponse(JSON.stringify(bundle, null, 2), {
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "content-disposition": `attachment; filename="${exportFilename("everything", today, "json")}"`,
+      // "core-records", not "everything" — the filename is the last thing
+      // anybody reads about this file, often years later in a downloads
+      // folder, and it was making the same claim the page was.
+      "content-disposition": `attachment; filename="${exportFilename("core-records", today, "json")}"`,
     },
   });
 }

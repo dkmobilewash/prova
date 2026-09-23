@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { ROUTE_CAPABILITY } from "@/lib/permissions";
 import {
   KNOWN_GAPS,
   TOOLS,
@@ -212,5 +215,122 @@ describe("the actor boundary", () => {
         key,
       ).toBe(false);
     }
+  });
+});
+
+/**
+ * WHAT EACH TOOL CITES, AND WHETHER ITS ASKER COULD OPEN IT.
+ *
+ * THIS BLOCK EXISTS BECAUSE tools.ts SAID IT ALREADY DID. The doc comment
+ * on `ToolDefinition.capability` read "tools.test.ts pins each one against
+ * ROUTE_CAPABILITY"; this file had nineteen tests and mentioned neither
+ * `capability` nor `ROUTE_CAPABILITY`. `commands.test.ts` pins the sixteen
+ * COMMANDS that way, which is probably where the sentence came from — it
+ * was never true of the read tools. A documented guard that does not exist
+ * is worse than none: it is the reason nobody wrote one.
+ *
+ * WHAT IT CATCHES, and it is the defect the capability field was added for.
+ * Until 2026-09-08 the executor knew only the company, so a FIELD-function
+ * member the dashboard withholds margin from could ask the box beside those
+ * tiles and be answered. `capability` fixed that by filtering the offered
+ * list per person. But `capability` is ONE field and a handler cites
+ * SEVERAL pages, so the declared capability covers whichever page its
+ * author had in mind and nothing checks the others — a gap that grew with
+ * the tool list, which went from fifteen to thirty-nine in ten days.
+ *
+ * THE INVARIANT IS commands.test.ts's, borrowed deliberately: nobody
+ * offered a tool should be handed a citation they cannot open. A page with
+ * no ROUTE_CAPABILITY entry is open and satisfies that for everyone; a
+ * guarded page satisfies it only when its guard IS the tool's capability.
+ *
+ * The mapping is DERIVED from handlers.ts rather than hand-written, so it
+ * cannot drift from the citations actually emitted. Deriving has two
+ * failure modes, not one (CLAUDE.md), so the size checks below run first:
+ * a parse that silently matched nothing would otherwise pass every
+ * assertion after it.
+ */
+const handlersSource = readFileSync(
+  fileURLToPath(new URL("./handlers.ts", import.meta.url)),
+  "utf8",
+);
+
+/** tool name -> the pages its handler cites. */
+function citedPages(): Map<ToolName, string[]> {
+  const record = /export const HANDLERS[\s\S]*?\n\};/.exec(handlersSource);
+  if (!record) throw new Error("could not find the HANDLERS record in handlers.ts");
+  const out = new Map<ToolName, string[]>();
+  for (const [, tool, fn] of record[0].matchAll(
+    /^ {2}([a-z_]+):\s*(?:\([^)]*\)\s*=>\s*)?([A-Za-z_]+)/gm,
+  )) {
+    // The handler's own body, up to the next top-level declaration.
+    const body = new RegExp(
+      `(?:async function|const)\\s+${fn}\\b[\\s\\S]*?(?=\\n(?:async function|const|export)\\s|$)`,
+    ).exec(handlersSource);
+    const hrefs = body ? [...body[0].matchAll(/href:\s*"([^"]+)"/g)].map((m) => m[1]) : [];
+    // `/jobs/abc` and `/cash-flow?x=1` are both the route they start with.
+    const pages = [...new Set(hrefs.map((h) => `/${h.replace(/^\//, "").split(/[/?]/)[0]}`))];
+    out.set(tool as ToolName, pages);
+  }
+  return out;
+}
+
+/**
+ * Tool/page pairs where the two disagree TODAY, each with why it is here.
+ * Listed by hand so a disagreement is a decision somebody wrote down
+ * rather than something the guard quietly tolerates — the same shape as
+ * commands.test.ts's OPEN_HANDOFF_PAGES. The last test requires every
+ * entry to still BE a disagreement, so a fixed one must be deleted rather
+ * than left to rot.
+ */
+const CITATION_CAPABILITY_GAPS: Record<string, string> = {
+  "receivables /cash-flow":
+    "Declares MANAGE_BILLING; /cash-flow is VIEW_COMPANY_FINANCIALS. The DATA is gated by the declared capability, so this is a citation someone may not be able to open rather than a leak. Reported 2026-09-18.",
+  "retainage_held /cash-flow":
+    "As receivables above — same tool family, same secondary citation.",
+  "unbilled_change_orders /cash-flow":
+    "Declares VIEW_JOB_COSTS; /cash-flow is VIEW_COMPANY_FINANCIALS. Its primary citation /jobs is open.",
+};
+
+describe("what a tool cites, and whether its asker could open it", () => {
+  const cited = citedPages();
+
+  it("parses a handler for every tool, and a citation for every handler", () => {
+    // An empty question passes everything below it.
+    expect(cited.size).toBe(TOOLS.length);
+    const silent = [...cited].filter(([, pages]) => pages.length === 0).map(([tool]) => tool);
+    expect(silent, `these handlers yielded no citation, so nothing below checked them: ${silent.join(", ")}`).toEqual([]);
+  });
+
+  it("offers no tool whose citation its asker could not open", () => {
+    const offenders: string[] = [];
+    for (const tool of TOOLS) {
+      for (const page of cited.get(tool.name) ?? []) {
+        const guard = ROUTE_CAPABILITY[page as keyof typeof ROUTE_CAPABILITY];
+        if (guard === undefined || guard === tool.capability) continue;
+        if (`${tool.name} ${page}` in CITATION_CAPABILITY_GAPS) continue;
+        offenders.push(`${tool.name} declares ${tool.capability} but cites ${page}, guarded by ${guard}`);
+      }
+    }
+    expect(
+      offenders,
+      `A tool offered to somebody who cannot open the page it cites hands them a dead link — and, where the ` +
+        `capability is null, answers a question the page itself would refuse: ${offenders.join("; ")}`,
+    ).toEqual([]);
+  });
+
+  it("keeps no gap in the list after it has been fixed", () => {
+    const stale: string[] = [];
+    for (const key of Object.keys(CITATION_CAPABILITY_GAPS)) {
+      const [name, page] = key.split(" ");
+      const tool = TOOLS.find((t) => t.name === name);
+      if (!tool) { stale.push(`${key} — no such tool`); continue; }
+      if (!(cited.get(tool.name) ?? []).includes(page)) { stale.push(`${key} — no longer cited`); continue; }
+      const guard = ROUTE_CAPABILITY[page as keyof typeof ROUTE_CAPABILITY];
+      if (guard === undefined || guard === tool.capability) stale.push(`${key} — they agree now`);
+    }
+    expect(
+      stale,
+      `An exception list nobody prunes becomes permanent. Delete these: ${stale.join("; ")}`,
+    ).toEqual([]);
   });
 });

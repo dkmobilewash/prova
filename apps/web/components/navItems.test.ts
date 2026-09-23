@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { activeGroupHeading, NAV_GROUPS, NAV_ITEMS, navGroupsFor } from "./navItems";
+import { activeFooterHref, activeGroupHeading, NAV_FOOTER, NAV_GROUPS, NAV_ITEMS, navFooterFor, navGroupsFor } from "./navItems";
 import { JOB_FUNCTIONS } from "@/lib/permissions";
+import { UNANSWERED_SCOPE, type BusinessScopeAnswers } from "@/lib/businessScope";
 
 /**
  * NAV_ITEMS and NAV_GROUPS are two lists that have to agree, and only ONE
@@ -49,11 +50,46 @@ function groupedHrefs(groups: typeof NAV_GROUPS): Set<string> {
 const hrefsIn = (groups: typeof NAV_GROUPS) =>
   groups.flatMap((group) => group.items.map((item) => item.href));
 
+describe("the pinned footer", () => {
+  it("holds Settings, and Settings is in no group", () => {
+    // Cyrus could not find Settings while it sat last inside the collapsed
+    // Financials group. It is pinned to the bottom of the rail instead.
+    expect(NAV_FOOTER.map((i) => i.href)).toEqual(["/settings/integrations", "/settings"]);
+    expect(NAV_GROUPS.flatMap((g) => g.items.map((i) => i.href))).not.toContain("/settings");
+  });
+
+  it("shows Settings only to someone who can reach it", () => {
+    expect(navFooterFor({ role: "OWNER", jobFunction: null }).map((i) => i.href)).toEqual([
+      "/settings/integrations",
+      "/settings",
+    ]);
+    expect(navFooterFor({ role: "MEMBER", jobFunction: "FIELD" }).map((i) => i.href)).toEqual([]);
+  });
+});
+
+describe("the Integrations footer button", () => {
+  it("is shown only to the owner, since its page refuses everyone else", () => {
+    for (const jobFunction of ["OFFICE", "PM", "FIELD", "ESTIMATOR"] as const) {
+      const hrefs = navFooterFor({ role: "MEMBER", jobFunction } as never).map((i) => i.href);
+      expect(hrefs, jobFunction).not.toContain("/settings/integrations");
+    }
+  });
+
+  it("lights Integrations, not Settings too, on its own page", () => {
+    const footer = navFooterFor({ role: "OWNER", jobFunction: null });
+    expect(activeFooterHref(footer, "/settings/integrations")).toBe("/settings/integrations");
+    expect(activeFooterHref(footer, "/settings")).toBe("/settings");
+    expect(activeFooterHref(footer, "/settings/import")).toBe("/settings");
+    expect(activeFooterHref(footer, "/dashboard")).toBe(null);
+  });
+});
+
 describe("every nav item is reachable", () => {
   it("puts every NAV_ITEM in a group, or names it as a deliberate exception", () => {
     const grouped = groupedHrefs(NAV_GROUPS);
+    const footer = new Set(NAV_FOOTER.map((i) => i.href));
     const unreachable = NAV_ITEMS.map((i) => i.href).filter(
-      (href) => !grouped.has(href) && !APPENDED_SEPARATELY.has(href),
+      (href) => !grouped.has(href) && !footer.has(href) && !APPENDED_SEPARATELY.has(href),
     );
 
     expect(
@@ -167,7 +203,9 @@ describe("the collapsible rail (#240)", () => {
     // lands there; /settings/assistant hangs off /settings and must land in
     // the group that holds it, not on whichever prefix came first.
     expect(activeGroupHeading(NAV_GROUPS, "/vendors/pricing")).toBe("Logistics");
-    expect(activeGroupHeading(NAV_GROUPS, "/settings/assistant")).toBe("Financials");
+    // /settings is pinned in the footer, not in a group (NAV_FOOTER), so
+    // its pages open no group rather than the one it used to sit in.
+    expect(activeGroupHeading(NAV_GROUPS, "/settings/assistant")).toBe(null);
     // A prefix that is not a path segment is not a match: /teams would be
     // a different page from /team.
     expect(activeGroupHeading(NAV_GROUPS, "/teamwork")).toBe(null);
@@ -193,6 +231,91 @@ describe("the collapsible rail (#240)", () => {
  * OWNER) is the actual boundary and is recorded in
  * lib/permissions.test.ts's OPEN_ROUTES with its reason.
  */
+/**
+ * The three onboarding questions' effect on the rail — see
+ * lib/businessScope.ts. THE REGRESSION THAT MATTERS MOST is the first test:
+ * a company that has never answered (every pre-existing company, and any
+ * new one that skips the prompt) must see every group it would see with no
+ * `businessScope` argument at all — the absence of an answer is never a
+ * reason to hide anything.
+ */
+describe("the business-scope nav filter (onboarding questions)", () => {
+  const owner = { role: "OWNER" as const, jobFunction: null };
+
+  it("hides nothing for a company with no answers — omitting the option and passing all-null answers agree", () => {
+    const withoutOption = hrefsIn(navGroupsFor(owner));
+    const withNullScope = hrefsIn(navGroupsFor(owner, { businessScope: UNANSWERED_SCOPE }));
+    expect(withNullScope).toEqual(withoutOption);
+    // And by extension, every job function still sees everything it would
+    // without this feature existing at all.
+    for (const jobFunction of [null, ...JOB_FUNCTIONS]) {
+      const before = hrefsIn(navGroupsFor({ role: "MEMBER", jobFunction }));
+      const after = hrefsIn(navGroupsFor({ role: "MEMBER", jobFunction }, { businessScope: UNANSWERED_SCOPE }));
+      expect(after, `${jobFunction ?? "unset"} member`).toEqual(before);
+    }
+  });
+
+  it("hides Submittals only when the company works direct for owners and never under a GC", () => {
+    const directOnly: BusinessScopeAnswers = {
+      contractingRelationship: "DIRECT_FOR_OWNERS",
+      doesPublicWork: null,
+      filesMonthlyPayApps: null,
+    };
+    expect(hrefsIn(navGroupsFor(owner, { businessScope: directOnly }))).not.toContain("/submittals");
+
+    for (const relationship of ["UNDER_GENERAL_CONTRACTORS", "BOTH"] as const) {
+      const scope: BusinessScopeAnswers = { ...directOnly, contractingRelationship: relationship };
+      expect(hrefsIn(navGroupsFor(owner, { businessScope: scope })), relationship).toContain("/submittals");
+    }
+  });
+
+  it("hides Prevailing wage and Union & fringe only when the company said no public work", () => {
+    const noPublicWork: BusinessScopeAnswers = {
+      contractingRelationship: null,
+      doesPublicWork: false,
+      filesMonthlyPayApps: null,
+    };
+    const hidden = hrefsIn(navGroupsFor(owner, { businessScope: noPublicWork }));
+    expect(hidden).not.toContain("/prevailing-wage");
+    expect(hidden).not.toContain("/union-compliance");
+
+    const doesPublicWork: BusinessScopeAnswers = { ...noPublicWork, doesPublicWork: true };
+    const shown = hrefsIn(navGroupsFor(owner, { businessScope: doesPublicWork }));
+    expect(shown).toContain("/prevailing-wage");
+    expect(shown).toContain("/union-compliance");
+  });
+
+  it("removes the whole group when every item in it is hidden", () => {
+    // Paper trail holds five items; hiding only Submittals must not drop the
+    // group, and this pins that navGroupsFor's "drop an empty group" rule
+    // (used for showsInternal) applies here too rather than being special-
+    // cased to that one caller.
+    const directOnly: BusinessScopeAnswers = {
+      contractingRelationship: "DIRECT_FOR_OWNERS",
+      doesPublicWork: null,
+      filesMonthlyPayApps: null,
+    };
+    const groups = navGroupsFor(owner, { businessScope: directOnly });
+    const paperTrail = groups.find((g) => g.heading === "Paper trail");
+    expect(paperTrail).toBeDefined();
+    expect(paperTrail?.items.map((i) => i.href)).not.toContain("/submittals");
+  });
+
+  it("never hides anything the plain capability filter already removed, and vice versa — the two never fight", () => {
+    // An ACCOUNTING member cannot reach /submittals at all (MANAGE_JOBS is
+    // not in its list). Handing it a scope that WOULD show submittals for
+    // an owner must not grant it back — canReach and isHiddenByBusinessScope
+    // both have to agree "show it" for an item to appear.
+    const accounting = { role: "MEMBER" as const, jobFunction: "ACCOUNTING" as const };
+    const showsGcWork: BusinessScopeAnswers = {
+      contractingRelationship: "UNDER_GENERAL_CONTRACTORS",
+      doesPublicWork: true,
+      filesMonthlyPayApps: true,
+    };
+    expect(hrefsIn(navGroupsFor(accounting, { businessScope: showsGcWork }))).not.toContain("/submittals");
+  });
+});
+
 describe("the internal usage page", () => {
   const owner = { role: "OWNER" as const, jobFunction: null };
 

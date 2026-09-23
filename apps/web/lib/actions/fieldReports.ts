@@ -10,7 +10,9 @@ import {
   updateFieldReport,
   FieldReportInputError,
   FIELD_ONLY,
+  isReportDayLockError,
 } from "@/lib/field-reports-core";
+import { liveSignoff, lockedDayMessage } from "@/lib/timesheet-signoff";
 
 /**
  * The Server Action surface for daily field reports: parse FormData, call
@@ -64,7 +66,7 @@ export async function createDailyFieldReport(
     workPerformed: text(formData, "workPerformed"),
     crewPresent: text(formData, "crewPresent"),
     weather: text(formData, "weather"),
-    delays: text(formData, "delays"),
+    ...(formData.has("delays") ? { delays: text(formData, "delays") } : {}),
   });
   if (!result.ok) return result;
   revalidateBoth(jobId);
@@ -81,7 +83,7 @@ export async function updateDailyFieldReport(
       workPerformed: text(formData, "workPerformed"),
       crewPresent: text(formData, "crewPresent"),
       weather: text(formData, "weather"),
-      delays: text(formData, "delays"),
+      ...(formData.has("delays") ? { delays: text(formData, "delays") } : {}),
     });
     if (!result.ok) return result;
     revalidateBoth(result.value.report.jobId);
@@ -99,7 +101,14 @@ export async function deleteDailyFieldReport(reportId: string): Promise<ActionRe
     const report = await prisma.dailyFieldReport.findUnique({ where: { id: reportId } });
     if (!report || report.companyId !== company.id) return fail("Report not found");
 
-    await prisma.dailyFieldReport.delete({ where: { id: reportId } });
+    const live = await liveSignoff(report.jobId, report.reportDate);
+    if (live) return fail(lockedDayMessage(report.reportDate, live));
+    try {
+      await prisma.dailyFieldReport.delete({ where: { id: reportId } });
+    } catch (error) {
+      if (isReportDayLockError(error)) return fail("That day was just signed, so its report is locked.");
+      throw error;
+    }
 
     revalidateBoth(report.jobId);
     return ok;

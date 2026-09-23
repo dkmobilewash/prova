@@ -69,8 +69,44 @@ export const HANDLED_MODELS = [
   // Job — so it blocks the job delete however clean the invoices are.
   "InvoiceCounter",
   "RetainageRelease",
+  // Before TimeEntry, and not only for foreign-key reasons: while a live
+  // sign-off exists, the TimeEntry day-lock trigger refuses to delete that
+  // day's hours. Sign-offs go first so the time entries can follow.
+  "TimesheetSignoff",
+  // After TimesheetSignoff for the same reason as TimeEntry: a live sign-off
+  // makes the DelayEvent day-lock trigger refuse the delete.
+  "DelayEvent",
   "TimeEntry",
   "TmTicket",
+  // Planned days on the job. RESTRICT on Job, so a scratch job cannot be
+  // deleted while its schedule exists — the #227 shape, and the reason this
+  // name is here as well as in both scripts' del() order.
+  "CrewScheduleDay",
+  // Lien-rights deadlines. Required jobId, RESTRICT on Job — the #227 shape
+  // again, so it is here AND in both scripts' del() order.
+  "LienDeadline",
+  // A job's link to a GC's Procore project, and (by cascade) the cached GC
+  // records under it. CASCADE on Job, so it would not block the delete —
+  // it is here because it belongs to the job and carries a jobId, which is
+  // what clean-test-jobs.mjs counts. Deleting the link deletes nothing in
+  // Procore and none of the sub's own records.
+  "ProcoreProjectLink",
+  // A job's link to a GC's Autodesk Construction Cloud project, and (by
+  // cascade) the cached RFIs/submittals under it. Same shape as
+  // ProcoreProjectLink for the same reason.
+  "AccProjectLink",
+  // A job's link to a CompanyCam project. CASCADE on Job, same shape as
+  // ProcoreProjectLink — it would not block the delete, but it carries a
+  // jobId, which is what clean-test-jobs.mjs counts. Deleting the link
+  // deletes nothing in CompanyCam; the imported photos are ordinary
+  // JobMedia rows, handled like every other photo.
+  "CompanyCamProjectLink",
+  // A job's link to a Bluebeam Studio Session. CASCADE on Job, same shape
+  // as ProcoreProjectLink and CompanyCamProjectLink — it would not block
+  // the delete, but it carries a jobId, which is what clean-test-jobs.mjs
+  // counts. Deleting the link deletes nothing in Bluebeam; the Studio
+  // Session itself is left exactly as it was.
+  "BluebeamStudioSession",
   "JobAssignment",
   "EquipmentAssignment",
   "EstimateVersion",
@@ -92,6 +128,13 @@ export const HANDLED_MODELS = [
   // RESTRICT on Job, and deleting the job's estimate versions does not
   // reach it.
   "EstimateVersionCounter",
+  // WH-347 payroll numbers for a job's weeks, and the per-job counter that
+  // issues them (#227 shape: jobId-keyed RESTRICT children of Job that no
+  // other delete reaches). The numbers are a sequence record, not signed
+  // evidence -- the signed thing is the printed form -- so they go with
+  // their scratch job the way the other per-job counters do.
+  "Wh347PayrollNumber",
+  "Wh347PayrollCounter",
   // `DocumentIntake` does NOT block a Job delete: its `jobId` is optional,
   // so Postgres holds ON DELETE SET NULL and the delete would succeed
   // without this entry. It is in this list anyway, and the distinction is
@@ -134,6 +177,9 @@ export const NEVER_DELETE = [
   "SafetyIncident",
   "ContractDocument",
   "SignatureRequest",
+  // An envelope sent through DocuSign is correspondence that reached a GC's
+  // inbox. It is voided at DocuSign, never deleted here.
+  "DocuSignEnvelope",
   "ComplianceDocument",
   "OutboundMessage",
 ];

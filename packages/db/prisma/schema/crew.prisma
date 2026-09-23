@@ -2,14 +2,13 @@
 //
 // Part of the multi-file Prisma schema in this folder.
 //
-// SHIPS DELIBERATELY UNWIRED. Nothing in the application reads or writes
-// CrewMember yet, and TimeEntry.crewMemberId is NULL on every row. That is
-// the exception CLAUDE.md's "written, documented, and never called" rule
-// warns about, taken on purpose and stated here so the next reader does not
-// mistake it for the accident: the structure is the half that needs a
-// migration against real production data and a Slack announcement, and the
-// wiring is the half that can be reverted with a revert. They are separated
-// so the irreversible half lands alone and small.
+// WIRED since #292 (corrected 2026-09-18). This model shipped unwired on
+// purpose — the structure is the half that needs a migration against real
+// production data, the wiring the half a revert can undo, so the
+// irreversible half landed alone and small. It is read and written now: the
+// crew list feeds the phone's time screen, TimeEntry.crewMemberId is set by
+// POST /api/v1/jobs/[id]/time-entries, and CrewScheduleDay names crew
+// members too.
 //
 // WHY THIS EXISTS.
 //
@@ -101,7 +100,12 @@ model CrewMember {
   /// digit to this app at all.
   ///
   /// Nullable because a crew member is worth recording before payroll has
-  /// sent the number over. LOCKED after creation by trigger.
+  /// sent the number over. SET ONCE by trigger: NULL -> a value is allowed
+  /// (that is precisely "payroll sent the number over" — the payroll
+  /// register import is the caller), and any change AFTER that is refused,
+  /// the same one-way rule linkedUserId already follows. Changed by
+  /// 20260919200000_add_payroll_register from a full lock, which
+  /// contradicted this comment's own reason for the field being nullable.
   identifyingNumberLast4 String?
 
   /// Davis-Bacon's basic-records rule (29 CFR 5.5(a)(3)) requires the
@@ -153,14 +157,32 @@ model CrewMember {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  /// The hours attributed to this person. NOTHING in the database stops one
-  /// of these being repointed at a DIFFERENT CrewMember after the fact — the
-  /// trigger that would have is gone (labor.prisma, and the end of
-  /// 20260905183000_add_crew_members). What holds the line instead is that
-  /// no update path to TimeEntry exists in the source at all, which
-  /// apps/web/lib/timeEntryWriteCensus.test.ts fails over. Locking the name
-  /// above buys less than it looks like it buys without that.
+  /// The hours attributed to this person. Once set, TimeEntry.crewMemberId
+  /// cannot be repointed at a DIFFERENT CrewMember: prova_time_entry_identity_lock
+  /// (installed by 20260913120000_add_time_entry_correction, widened by
+  /// 20260918130000_add_time_entry_clock_capture) refuses it at the database.
+  /// This comment said the trigger was gone until 2026-09-18 — true when
+  /// written, stale since issue #63 put it back.
+  /// apps/web/lib/timeEntryWriteCensus.test.ts still refuses any update that
+  /// names the column in source.
   timeEntries TimeEntry[]
+
+  crewScheduleDays CrewScheduleDay[]
+  workerCrafts     WorkerCraft[]
+
+  /// Punch items this person is fixing. Nullable on the item and never
+  /// cascading: archiving a crew member must not delete what is still
+  /// outstanding on a job.
+  assignedPunchListItems PunchListItem[]
+
+  /// This person's lines on imported payroll registers. RESTRICT (Prisma's
+  /// default for a required relation), which is fine: crew members archive,
+  /// they never delete.
+  payrollRegisterEntries PayrollRegisterEntry[]
+
+  /// Hiring-hall referrals naming this person. RESTRICT, like timeEntries:
+  /// crew members archive, they never delete.
+  dispatchSlips DispatchSlip[]
 
   @@unique([companyId, employeeNumber])
   @@index([companyId])

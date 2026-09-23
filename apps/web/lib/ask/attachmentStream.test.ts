@@ -1,0 +1,141 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * The attachment and the research, through `streamAnswer` — the one place
+ * the pieces meet. The provider loop is replaced by a capture, so what is
+ * asserted is what `streamAnswer` would hand the model, and what it refuses
+ * to hand it.
+ */
+
+type Captured = { attachment?: unknown; context?: string; question: string; webSearch?: boolean };
+let captured: Captured | null = null;
+const research = vi.fn();
+const recordAskUsage = vi.fn(async () => {});
+
+vi.mock("@prova/integrations", () => ({
+  anthropicIsConfigured: () => true,
+  ASK_DEFAULT_MODEL: "test-model",
+  RESEARCH_MAX_SEARCHES: 3,
+  RESEARCH_FIELD_LABELS: { owner: "Owner" },
+  researchProject: (...args: unknown[]) => research(...args),
+  streamToolConversation: (options: Captured) => {
+    captured = options;
+    return (async function* () {
+      yield { type: "text", delta: "Oct 10." };
+      yield { type: "usage", usage: { passes: 1, inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 } };
+      yield { type: "done", toolsCalled: [] };
+    })();
+  },
+}));
+
+/* Partial, via importOriginal, rather than a two-key object: `streamAnswer`
+   also reads PROVENANCE_OUTCOME from here for the number-provenance guard,
+   and a mock that omits it throws at the moment the guard fires rather than
+   at import — so the failure lands on whichever test happens to trip it.
+   The two functions below are still replaced; nothing else is.
+
+   Worth knowing while reading this file: the scripted answer "Oct 10." has
+   a figure in it and no tool result behind it, so on the questions here
+   that carry no attachment the guard holds it back. That is correct and it
+   is not what these tests assert — they assert what `streamAnswer` HANDS
+   the model, which happens before any of it. */
+vi.mock("./usage", async (importOriginal) => ({
+  ...((await importOriginal()) as object),
+  askAllowance: async () => ({ ok: true }),
+  recordAskUsage: (...args: unknown[]) => recordAskUsage(...(args as [])),
+}));
+
+// The paid monthly cap (lib/ask/allowance.ts) claims a unit before the
+// model runs, and it fails CLOSED — so a test that leaves it real refuses
+// every question here rather than exercising what it came to exercise.
+// Stubbed open on purpose; `allowance.test.ts`, `allowanceStream.test.ts`
+// and `allowance.dbtest.ts` are where the cap itself is proved.
+vi.mock("./allowance", () => ({
+  claimAskAllowance: async () => ({
+    ok: true,
+    claim: { companyId: "co1", periodStart: new Date("2026-09-01T00:00:00.000Z"), questions: 1, pages: 0 },
+    left: { questions: 299, pages: 300 },
+  }),
+  markAskAllowanceFailure: async () => {},
+}));
+
+const ENV_TOKEN = "vercel_blob_rw_abc123_secret";
+const OURS = "https://abc123.public.blob.vercel-storage.com";
+
+import type { CommandContext } from "./commands";
+
+const owner: CommandContext = { companyId: "co1", userId: "u1", principal: { role: "OWNER", jobFunction: null }, today: "2026-09-18" };
+
+async function run(request: Parameters<typeof import("./answer").streamAnswer>[1], ctx = owner) {
+  const { streamAnswer } = await import("./answer");
+  const events: { type: string; error?: string }[] = [];
+  for await (const event of streamAnswer(ctx, request)) events.push(event as { type: string });
+  return events;
+}
+
+beforeEach(() => {
+  captured = null;
+  research.mockReset();
+  recordAskUsage.mockClear();
+  vi.stubEnv("BLOB_READ_WRITE_TOKEN", ENV_TOKEN);
+  vi.stubEnv("ANTHROPIC_API_KEY", "test");
+});
+
+describe("an attached file", () => {
+  it("from another company is refused before the model runs, and is never fetched", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const events = await run({
+      question: "what's the bid date on this?",
+      attachment: { url: `${OURS}/document-intake/co2/ask-bid.pdf`, name: "bid.pdf", contentType: "application/pdf", size: 100 },
+    });
+    expect(events).toEqual([{ type: "error", error: "That file isn't one of your company's. Attach it again." }]);
+    expect(captured).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it("is refused for someone whose job function has no document intake", async () => {
+    const events = await run(
+      {
+        question: "what's in this?",
+        attachment: { url: `${OURS}/document-intake/co1/ask-bid.pdf`, name: "bid.pdf", contentType: "application/pdf", size: 100 },
+      },
+      { ...owner, principal: { role: "MEMBER", jobFunction: "ACCOUNTING" } },
+    );
+    expect(events).toEqual([
+      { type: "error", error: "Attaching files uses document intake, which isn't part of your job function." },
+    ]);
+    expect(captured).toBeNull();
+  });
+
+  it("from this company reaches the model, with the rule about files", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("%PDF-1.4", { headers: { "content-type": "application/pdf" } }));
+    const events = await run({
+      question: "what's the bid date on this?",
+      attachment: { url: `${OURS}/document-intake/co1/ask-bid.pdf`, name: "bid.pdf", contentType: "application/pdf", size: 8 },
+    });
+    expect(events.map((event) => event.type)).toContain("done");
+    expect(captured?.attachment).toEqual({ kind: "pdf", fileName: "bid.pdf", base64: Buffer.from("%PDF-1.4").toString("base64") });
+    expect(captured?.context).toContain("THE ATTACHED FILE");
+    fetchSpy.mockRestore();
+  });
+
+  it("is absent from the request, and so is the rule, when nothing is attached", async () => {
+    await run({ question: "what's overdue?" });
+    expect(captured?.attachment).toBeUndefined();
+    expect(captured?.context ?? "").not.toContain("THE ATTACHED FILE");
+  });
+});
+
+describe("web search", () => {
+  it("is offered on every question — the flag streamAnswer hands the provider loop", async () => {
+    // askWebSearchTool's own max_uses clamp is packages/integrations'
+    // (webSearch.test.ts, imported directly since this file mocks the
+    // whole package); what belongs to answer.ts is that it turns the
+    // option ON at all, which is what this pins.
+    await run({ question: "what OSHA form do we file for a recordable injury?" });
+    expect(captured?.webSearch).toBe(true);
+  });
+});

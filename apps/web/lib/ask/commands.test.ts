@@ -140,6 +140,7 @@ describe("who is offered what", () => {
       "log_time_entry",
       "send_email",
       "reschedule_job",
+      "schedule_crew",
     ]);
     // FIELD holds MANAGE_FIELD and MANAGE_JOBS (lib/permissions.ts: "an
     // RFI when the drawings are wrong"), and nothing else — so no money.
@@ -157,8 +158,13 @@ describe("who is offered what", () => {
       "send_email",
       "reschedule_job",
       "log_bid_invitation",
+      "add_bid_pursuit",
+      "set_pursuit_stage",
+      "add_contact",
     ]);
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_items");
+    // Writing the crew schedule is MANAGE_FIELD, which an estimator lacks.
+    expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("schedule_crew");
   });
 
   it("registers the bid invitation as a T1 draft, DIRECT over its lifted core, on the capability that guards /bids — and withholds it from the field and from accounting", () => {
@@ -203,6 +209,31 @@ describe("who is offered what", () => {
     expect(EXCLUSIONS.map((e) => e.action)).not.toContain("createRetainageRelease");
   });
 
+  it("registers the pursuit, crew-schedule and contact writes DIRECT over the ActionResult actions their pages call, on the capability those actions check", () => {
+    const pinned: Record<string, { action: string; capability: string; tier: string }> = {
+      add_bid_pursuit: { action: "createBidPursuit", capability: ROUTE_CAPABILITY["/pipeline"]!, tier: "T1_DRAFT" },
+      set_pursuit_stage: { action: "setBidPursuitStage", capability: ROUTE_CAPABILITY["/pipeline"]!, tier: "T2_MODIFY" },
+      // lib/actions/crewSchedule.ts: "WRITING it is MANAGE_FIELD".
+      schedule_crew: { action: "scheduleCrewDay", capability: "MANAGE_FIELD", tier: "T1_DRAFT" },
+      // Stricter than the open /contacts page, deliberately — see
+      // commands/contacts.ts. The page itself is unchanged.
+      add_contact: { action: "createContact", capability: "MANAGE_ESTIMATING", tier: "T1_DRAFT" },
+    };
+    for (const [name, want] of Object.entries(pinned)) {
+      const command = COMMANDS.find((c) => c.name === name)!;
+      expect(command.mode, name).toBe("DIRECT");
+      expect(command.action, name).toBe(want.action);
+      expect(command.core, name).toBe(want.action);
+      expect(command.capability, name).toBe(want.capability);
+      expect(command.tier, name).toBe(want.tier);
+      expect(EXCLUSIONS.map((e) => e.action), name).not.toContain(want.action);
+    }
+    // The ones beside them that stay on their pages.
+    for (const action of ["unscheduleCrewDay", "deleteBidPursuit", "linkBidPursuitToInvitation", "deleteContact", "createLienDeadline"]) {
+      expect(EXCLUSIONS.map((e) => e.action), action).toContain(action);
+    }
+  });
+
   it("registers the outward send as T4 and HANDOFF only — a tap never sends", () => {
     const outward = COMMANDS.filter((c) => c.tier === "T4_OUTWARD");
     expect(outward.map((c) => c.name)).toEqual(["send_email"]);
@@ -223,6 +254,7 @@ describe("who is offered what", () => {
       "send_equipment_to_job",
       "bring_equipment_back",
       "reschedule_job",
+      "set_pursuit_stage",
     ]);
     const reschedule = COMMANDS.find((c) => c.name === "reschedule_job")!;
     expect(reschedule.mode).toBe("DIRECT");
@@ -247,17 +279,46 @@ describe("who is offered what", () => {
     expect(field).toContain("crew_assignments");
     expect(toolsFor(OWNER).length).toBe(TOOLS.length);
   });
+
+  // The behaviour half of team_roster's gate, 2026-09-19. The census below
+  // says what it DECLARES; this says who actually stops being offered it,
+  // which is the part that was traded away and the part worth a test.
+  //
+  // It answered for everyone until #310's citation guard showed it
+  // summarising /certifications, a MANAGE_FIELD page. Gating it costs the
+  // two functions that hold no MANAGE_FIELD.
+  it("offers team_roster to the field, and no longer to estimating or accounting", () => {
+    expect(toolsFor(FIELD).map((t) => t.name)).toContain("team_roster");
+    expect(toolsFor(OWNER).map((t) => t.name)).toContain("team_roster");
+    expect(toolsFor(ESTIMATOR).map((t) => t.name)).not.toContain("team_roster");
+    expect(toolsFor(ACCOUNTING).map((t) => t.name)).not.toContain("team_roster");
+
+    // A member with no job function set keeps everything — rule 2 in
+    // lib/permissions.ts, "nobody loses anything by this feature shipping".
+    // Gating a tool must not quietly become the exception to that.
+    expect(toolsFor({ role: "MEMBER", jobFunction: null }).map((t) => t.name)).toContain(
+      "team_roster",
+    );
+  });
 });
 
 describe("read-tool capabilities match the pages they cite", () => {
   // The rule tools.ts states: a tool answers what its citation page shows.
   const expected: Record<string, string | null> = {
     crew_assignments: null, // /schedule is open
+    // Same page, same gate. Reading who is planned where is open; WRITING the
+    // schedule is MANAGE_FIELD in lib/actions/crewSchedule.ts, which is the
+    // right way round — a tool stricter than the screen beside it refuses
+    // what the person can already read.
+    crew_schedule: null,
     open_punch_list: ROUTE_CAPABILITY["/punch-lists"],
     compliance_status: ROUTE_CAPABILITY["/compliance"],
     drawing_currency: ROUTE_CAPABILITY["/drawings"],
     job_margin: "VIEW_JOB_COSTS",
     bid_status: ROUTE_CAPABILITY["/bids"],
+    // The chase list is shown and edited on /pipeline, so it takes that
+    // page's gate — which is MANAGE_ESTIMATING, the same as /bids.
+    bid_pursuits: ROUTE_CAPABILITY["/pipeline"],
     open_rfis: ROUTE_CAPABILITY["/rfis"],
     material_deliveries: ROUTE_CAPABILITY["/material-orders"],
     equipment_location: ROUTE_CAPABILITY["/equipment"],
@@ -278,6 +339,101 @@ describe("read-tool capabilities match the pages they cite", () => {
     change_order_status: "VIEW_JOB_COSTS",
     job_labor_cost: "VIEW_JOB_COSTS",
     safety_record: ROUTE_CAPABILITY["/safety"],
+    open_submittals: ROUTE_CAPABILITY["/submittals"],
+    // /certifications is MANAGE_FIELD, and that is the right gate rather
+    // than a compliance one: the question this answers is "who can start on
+    // Monday", which a foreman asks and a compliance manager does not.
+    certification_expiry: ROUTE_CAPABILITY["/certifications"],
+    apprentice_ratio: ROUTE_CAPABILITY["/union-compliance"],
+    closeout_status: ROUTE_CAPABILITY["/closeout"],
+    fringe_remittance: ROUTE_CAPABILITY["/union-compliance"],
+    // /backcharges is MANAGE_BILLING. A backcharge is money the GC is
+    // taking off the next cheque, so it sits with whoever chases the
+    // cheque rather than with compliance.
+    backcharge_exposure: ROUTE_CAPABILITY["/backcharges"],
+    // /lien-deadlines is MANAGE_BILLING for the same reason: a lien is how
+    // the cheque gets collected when the GC stops sending it.
+    lien_deadlines: ROUTE_CAPABILITY["/lien-deadlines"],
+    // Apprenticeship standing renders on /union-compliance, which is where
+    // its loader is called from — not /certifications, which is cards.
+    apprenticeship_standing: ROUTE_CAPABILITY["/union-compliance"],
+    daily_field_reports: ROUTE_CAPABILITY["/field-reports"],
+    wage_determinations: ROUTE_CAPABILITY["/prevailing-wage"],
+    job_photos: ROUTE_CAPABILITY["/photos"],
+    vendor_pricing: ROUTE_CAPABILITY["/vendors/pricing"],
+    // /contacts is on lib/permissions.test.ts's open list, so this is null
+    // by the same rule every other row here follows: a tool takes the gate
+    // of the page it cites. A tool stricter than its own screen refuses
+    // what the person can already read.
+    gc_relationship: null,
+    // Same literal as `receivables`: the pay applications section renders
+    // inside the job page's money branch, which is not its own route.
+    pay_application_status: "MANAGE_BILLING",
+    warranty_obligations: ROUTE_CAPABILITY["/closeout"],
+    // /messages is on the open list too — the delivery log is open and
+    // sending is the action's problem, not the page's.
+    outbound_messages: null,
+
+    /* ───────── the eight the assistant could not see ───────── */
+
+    // The certified-payroll page calls requireCapability("MANAGE_COMPLIANCE")
+    // directly — it is a dynamic route under /jobs/[id], so it is guarded at
+    // the page rather than in ROUTE_CAPABILITY, and that literal is read off
+    // the page itself rather than guessed from the subject.
+    certified_payroll: "MANAGE_COMPLIANCE",
+    // NO PAGE EXISTS FOR T&M TICKETS AT ALL, so this row cannot take a gate
+    // from the page it cites and is the one place the rule above has nothing
+    // to read. MANAGE_FIELD is the argued answer: a T&M ticket is field
+    // paperwork — the foreman describes the extra work and gets it signed on
+    // site, and the phone app that writes them is the field app. When the
+    // page is built it must be guarded to match, and this line is the thing
+    // that will disagree loudly if it is not.
+    tm_tickets: "MANAGE_FIELD",
+    // Same literal as change_order_status, for the same reason: change
+    // orders render inside the job page's `showsJobMoney` branch.
+    unbilled_change_orders: "VIEW_JOB_COSTS",
+    // /schedule is open, and lib/permissions.test.ts gives the reason this
+    // tool is shaped by — "No money on it". The first draft of this tool
+    // carried cost percent complete and would have put money on an open
+    // surface; the figure was removed rather than the gate tightened,
+    // because tightening it locks a foreman out of a question about his own
+    // dates.
+    schedule_status: null,
+    // Line items with prices on them. The job page renders them inside the
+    // money branch, same as change orders.
+    estimate_detail: "VIEW_JOB_COSTS",
+    document_intake: ROUTE_CAPABILITY["/intake"],
+    // MANAGE_FIELD, matching /certifications — the tool's answer is mostly
+    // that page (certifications on file and what is missing on them), not
+    // the open /team roster it was first reasoned from. tools.test.ts
+    // carried this as "the one worth fixing" while it was null; fixed
+    // 2026-09-19, and ESTIMATOR/ACCOUNTING no longer get a certification
+    // summary their own page would refuse.
+    team_roster: "MANAGE_FIELD",
+    // Dispatch slips are union paperwork and render on /union-compliance.
+    dispatch_slips: ROUTE_CAPABILITY["/union-compliance"],
+    // The EMR is recorded and shown on /compliance, beside the certificates
+    // it is asked for alongside. NOT /safety's MANAGE_FIELD: the OSHA log is
+    // what a bureau calculates an EMR from, and the rate is not on that page.
+    experience_mod_rate: ROUTE_CAPABILITY["/compliance"],
+    // /alerts is open and its CONTENT is filtered per person in
+    // lib/alerts-query.ts; the tool calls that loader with the asker's
+    // principal, so it is open for the same reason.
+    needs_attention: null,
+    // /contacts is open; the People section of /contacts/[id] is
+    // MANAGE_ESTIMATING and the handler withholds it on that check.
+    contact_lookup: null,
+    // /jobs/[id] is open with its sections withheld in-page; the handler
+    // gates each section on the capability of its own tool.
+    job_overview: null,
+    // /dashboard is open; the checklist's steps are filtered per person by
+    // lib/getting-started.ts, the card's own function.
+    getting_started: null,
+    // No one page: WHICH walkthroughs this tool may name is filtered per
+    // person inside the handler (reachableWalkthroughs), against each
+    // matched page's own ROUTE_CAPABILITY — the same rule this file states
+    // for every other row, applied per result instead of once for the tool.
+    app_help: null,
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {

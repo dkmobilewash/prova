@@ -32,6 +32,28 @@ import {
 
 import type { Capability } from "@/lib/permissions";
 
+// The three correspondence kinds decide NOTHING about state here. "Open",
+// "with the GC" and "never reached us" already have exactly one definition
+// each, in the label modules the pages and the money rail read, and a
+// second copy in this file is the two-computations-disagreeing shape the
+// rest of this module keeps paying for. Pure functions over plain data, no
+// React and no database — the same reason lib/moneyRail.ts imports
+// submittalState rather than re-deriving it.
+import { isOpen as rfiIsOpen } from "@/components/rfiLabels";
+import {
+  latestRevision,
+  submittalState,
+  type RevisionData as SubmittalRevisionData,
+} from "@/components/submittalLabels";
+import {
+  unreceivedRevisions,
+  type RevisionData as DrawingRevisionData,
+} from "@/components/drawingLabels";
+// Lien state has one definition too — the page, the Ask tool and this
+// alert all read lienDeadlineState, so "overdue" and "due soon" cannot mean
+// one thing on /lien-deadlines and another in the bell.
+import { DUE_SOON_DAYS as LIEN_DUE_SOON_DAYS, lienDeadlineState, lienKindLabel } from "@/lib/lien-deadlines";
+
 export type AlertKind =
   | "RENEWAL"
   | "BACKCHARGE_RESPONSE"
@@ -42,7 +64,11 @@ export type AlertKind =
   | "APPRENTICE_RATIO"
   | "WIP_VARIANCE"
   | "CONTACT_FOLLOW_UP"
-  | "DOCUMENT_INTAKE";
+  | "DOCUMENT_INTAKE"
+  | "RFI_UNANSWERED"
+  | "SUBMITTAL_OVERDUE"
+  | "DRAWING_REVISION_UNRECEIVED"
+  | "LIEN_DEADLINE";
 
 /** Three levels, not five. OVERDUE is "a date has passed"; DUE_SOON is "a
  * date is coming"; STANDING is a condition with no deadline attached to
@@ -105,6 +131,29 @@ export const ALERT_CAPABILITY: Record<AlertKind, Capability> = {
   // alert is a summary of the thing it points at, so a person who cannot
   // open the tray is not told what is in it.
   DOCUMENT_INTAKE: "MANAGE_JOBS",
+  // The three correspondence chases take the capability their own routes
+  // take -- ROUTE_CAPABILITY gives "/rfis", "/submittals" and "/drawings"
+  // MANAGE_JOBS, and CAPABILITIES describes that capability in as many
+  // words as "Jobs themselves and the correspondence around them: RFIs,
+  // submittals, drawings, closeout". Anything else here would be a second
+  // opinion about the same screen.
+  //
+  // THIS DELIBERATELY REACHES A FOREMAN, and that is the answer rather
+  // than an oversight: FIELD holds MANAGE_JOBS precisely so that a foreman
+  // gets "an RFI when the drawings are wrong" (lib/permissions.ts), and a
+  // superseded sheet in the trailer is the person on site's problem before
+  // it is anyone else's. What a foreman must not be handed is money, and
+  // none of these three carries an `amount` at all -- correspondence in
+  // this schema has no dollar figure on it, so there is nothing for
+  // visibleToPrincipal to strip. PAYROLL_COMPLIANCE and ACCOUNTING hold no
+  // MANAGE_JOBS and receive none of them.
+  RFI_UNANSWERED: "MANAGE_JOBS",
+  SUBMITTAL_OVERDUE: "MANAGE_JOBS",
+  DRAWING_REVISION_UNRECEIVED: "MANAGE_JOBS",
+  // The capability /lien-deadlines and every lien action take. A lien is
+  // about getting paid, so it goes to the people who chase money — and not
+  // to a foreman, who could not open the page the alert points at.
+  LIEN_DEADLINE: "MANAGE_BILLING",
 };
 
 /**
@@ -150,11 +199,33 @@ export function visibleToPrincipal(
  * before this shipped; keep at 7 or above, or raise it with whoever owns
  * notification-milestones.ts first.
  */
+/**
+ * RFI_UNANSWERED and SUBMITTAL_OVERDUE sit at 7 for the reason above, and
+ * at the SAME 7 as each other on purpose. The obvious move is to give a
+ * submittal the longer runway because an architect's review takes longer
+ * than an answer to a question — but nothing in this app records either
+ * period, so that number would be picked for feel and then read as
+ * derived, which is how ALERT_AMOUNT_BUCKET's note says a judgment call
+ * goes bad. Both are "a working week to chase somebody before the date
+ * they owe you passes", which is a claim the floor already makes.
+ *
+ * DRAWING_REVISION_UNRECEIVED is absent, and absence here is a decision:
+ * it is STANDING and has no deadline to run a horizon in front of. Its
+ * threshold is DRAWING_RECEIPT_CHASE_DAYS, which is a different thing and
+ * is named as one.
+ */
 export const ALERT_HORIZON_DAYS: Partial<Record<AlertKind, number>> = {
   BACKCHARGE_RESPONSE: 10,
   RETAINAGE_RELEASE: 14,
   CERTIFIED_PAYROLL: 7,
   CONTACT_FOLLOW_UP: 7,
+  RFI_UNANSWERED: 7,
+  SUBMITTAL_OVERDUE: 7,
+  // The same fourteen days the page highlights as "due soon" and the Ask
+  // tool reports, read from the one constant rather than restated, so the
+  // bell and the page cannot disagree about which deadlines are close. A
+  // REMINDER horizon — it says nothing about how long any statute allows.
+  LIEN_DEADLINE: LIEN_DUE_SOON_DAYS,
 };
 
 /**
@@ -1295,6 +1366,391 @@ export function intakeAlerts(source: IntakeAlertSource): Alert[] {
       href: "/intake",
       dueOn: null,
       daysUntil: null,
+      amount: null,
+    });
+  }
+
+  return alerts;
+}
+
+/* ------------------------------------------------ correspondence chases */
+
+/**
+ * How long a piece of correspondence sits before it is worth chasing, WHEN
+ * NOBODY RECORDED A DATE IT WAS DUE BACK.
+ *
+ * NOT a horizon, and deliberately not in ALERT_HORIZON_DAYS. A horizon is
+ * runway in FRONT of a deadline; these are thresholds BEHIND a send date,
+ * for the case where the record carries no deadline at all. That is the
+ * same distinction CLOSEOUT_CHASE_DAYS already draws, and it is why the
+ * branches these govern are STANDING rather than dated — see rfiAlerts.
+ *
+ * JUDGMENT CALLS, flagged as such the way ALERT_AMOUNT_BUCKET is, because
+ * nothing in this app records a contract's response period — which is
+ * exactly why the dated branch is preferred whenever a date exists. A
+ * fortnight for an RFI and a submittal is the response period most
+ * subcontracts allow. A week for a drawing revision, because that gap is
+ * not somebody thinking about an answer: it is a sheet that was issued and
+ * never arrived, and a week is already long enough for a transmittal to
+ * have gone astray.
+ */
+export const RFI_CHASE_DAYS = 14;
+export const SUBMITTAL_CHASE_DAYS = 14;
+export const DRAWING_RECEIPT_CHASE_DAYS = 7;
+
+/** Days as a person would say them, for a date already behind us. */
+function agoPhrase(days: number): string {
+  const ago = Math.abs(days);
+  return ago === 0 ? "today" : `${ago} ${ago === 1 ? "day" : "days"} ago`;
+}
+
+/** Days as a person would say them, for a date still ahead. */
+function aheadPhrase(days: number): string {
+  if (days === 0) return "today";
+  return `in ${days} ${days === 1 ? "day" : "days"}`;
+}
+
+/* ----------------------------------------------------------------- RFIs */
+
+export type RfiAlertSource = {
+  id: string;
+  number: number;
+  subject: string;
+  jobName: string;
+  /** RfiStatus. Only SENT is a chase, and rfiLabels.isOpen is what decides
+   * that — a DRAFT has not left our hands, ANSWERED has come back, and
+   * CLOSED covers a withdrawn RFI that was never answered and never will
+   * be. Chasing any of the three is chasing nobody. */
+  status: string;
+  /** When it left our hands. Null only on data that predates or sidesteps
+   * markRfiSent, which stamps this alongside the status. */
+  sentOn: string | null;
+  /** The response date the contract calls for, where somebody recorded
+   * one. Optional on Rfi, which is the whole reason this has two branches. */
+  dueBy: string | null;
+};
+
+/**
+ * An RFI we have sent and nobody has answered.
+ *
+ * TWO GROUNDS, and which one fires is decided by the record rather than by
+ * preference — the same shape retainageAlerts already uses, which is why
+ * this file did not need a third convention inventing for it.
+ *
+ * DATED, when `dueBy` is recorded. That is a contractual response date: it
+ * can be met by somebody acting sooner, so it climbs from DUE_SOON to
+ * OVERDUE and the digest's rungs walk it up. This is backchargeAlerts'
+ * argument applied to correspondence.
+ *
+ * STANDING, when it is not. An RFI with no response date has no deadline
+ * to be past, and asserting one would be this app inventing a contractual
+ * date — the one thing backchargeAlerts says must never happen. So it
+ * waits out RFI_CHASE_DAYS and then says, as a chase and not as a
+ * deadline, that it has been out this long with nothing back. Without this
+ * branch the finding that produced this kind — a nine-day-old RFI nothing
+ * chases — would still be true for every RFI sent without a date on it,
+ * and `dueBy` is optional on the model.
+ *
+ * THE KEY. Dated on `dueBy`, standing on `sentOn`: correct either date and
+ * an old dismissal lapses. Neither key survives the answer arriving,
+ * because an ANSWERED RFI is not open and raises nothing at all — so
+ * "answered" needs no expiry logic here either. What a key deliberately
+ * cannot carry is an unchanged fact getting worse, and it does not have
+ * to: partitionAlerts resurfaces a dismissal the moment the severity
+ * escalates past what was acknowledged.
+ *
+ * No `amount`, ever. An RFI has no dollar figure in this schema —
+ * `costImpact` is a boolean flag for the claim somebody builds later, not
+ * a number — and a figure invented here would be the money leak
+ * ALERT_CAPABILITY's note is about.
+ */
+export function rfiAlerts(sources: RfiAlertSource[], todayIso: string): Alert[] {
+  const horizon = ALERT_HORIZON_DAYS.RFI_UNANSWERED ?? 7;
+  const alerts: Alert[] = [];
+
+  for (const rfi of sources) {
+    if (!rfiIsOpen(rfi.status)) continue;
+
+    const where = `RFI ${rfi.number} on ${rfi.jobName}`;
+
+    if (rfi.dueBy) {
+      const severity = severityForDate(rfi.dueBy, todayIso, horizon);
+      if (!severity) continue;
+
+      const days = daysUntilIso(rfi.dueBy, todayIso);
+      alerts.push({
+        key: alertKey("RFI_UNANSWERED", rfi.id, rfi.dueBy),
+        kind: "RFI_UNANSWERED",
+        severity,
+        title: `${where} is unanswered`,
+        detail:
+          days < 0
+            ? `"${rfi.subject}" — the answer was due ${agoPhrase(days)} and nothing has come back.`
+            : `"${rfi.subject}" — the answer is due ${aheadPhrase(days)}.`,
+        href: "/rfis",
+        dueOn: rfi.dueBy,
+        daysUntil: days,
+        amount: null,
+      });
+      continue;
+    }
+
+    // No recorded deadline. The sent date is the only thing left to measure
+    // from, and an RFI with neither is a row this alert cannot describe
+    // honestly — so it says nothing rather than guessing.
+    if (!rfi.sentOn) continue;
+    const out = -daysUntilIso(rfi.sentOn, todayIso);
+    if (out < RFI_CHASE_DAYS) continue;
+
+    alerts.push({
+      key: alertKey("RFI_UNANSWERED", rfi.id, rfi.sentOn),
+      kind: "RFI_UNANSWERED",
+      severity: "STANDING",
+      title: `${where} has had no answer`,
+      // Says what it does NOT know. "Overdue" here would be a claim about a
+      // contract nobody recorded.
+      detail: `"${rfi.subject}" — sent ${agoPhrase(-out)} with no response date recorded, and nothing has come back.`,
+      href: "/rfis",
+      dueOn: rfi.sentOn,
+      daysUntil: -out,
+      amount: null,
+    });
+  }
+
+  return alerts;
+}
+
+/* ----------------------------------------------------------- submittals */
+
+export type SubmittalAlertSource = {
+  submittalId: string;
+  number: number;
+  title: string;
+  jobName: string;
+  /** EVERY revision, not the latest one already picked out. Whose court a
+   * submittal is in is `submittalState`'s answer and only its answer — the
+   * page, the money rail and this alert all ask the same function, so they
+   * cannot end up describing one package differently. */
+  revisions: SubmittalRevisionData[];
+};
+
+/**
+ * A submittal sitting with the GC, unreturned.
+ *
+ * Only WITH_GC. REVISE is our court and /submittals already says so;
+ * APPROVED is finished; NOT_SENT has not been sent. Chasing any of those
+ * is chasing ourselves, and it would bury the packages nobody has touched.
+ *
+ * Same two grounds and the same reasoning as rfiAlerts: DATED off the
+ * revision's `dueBack` where the reviewer was given one, STANDING after
+ * SUBMITTAL_CHASE_DAYS where they were not.
+ *
+ * THE KEY CARRIES THE REVISION NUMBER as well as the date, and that is the
+ * fact that would otherwise be missed. Resubmitting is a new round trip
+ * with its own dates, and a resubmission that happened to reuse the old
+ * `dueBack` — which is what a reviewer's standing fortnight produces —
+ * would land on a key somebody had already dismissed, silencing the new
+ * round on the strength of them having seen the old one.
+ */
+export function submittalAlerts(
+  sources: SubmittalAlertSource[],
+  todayIso: string,
+): Alert[] {
+  const horizon = ALERT_HORIZON_DAYS.SUBMITTAL_OVERDUE ?? 7;
+  const alerts: Alert[] = [];
+
+  for (const submittal of sources) {
+    if (submittalState(submittal.revisions) !== "WITH_GC") continue;
+    const latest = latestRevision(submittal.revisions);
+    // Unreachable — WITH_GC means there is a latest revision — and cheap.
+    if (!latest) continue;
+
+    const where = `Submittal ${submittal.number} on ${submittal.jobName}`;
+    const which = `"${submittal.title}", Rev ${latest.revisionNumber}`;
+
+    if (latest.dueBack) {
+      const severity = severityForDate(latest.dueBack, todayIso, horizon);
+      if (!severity) continue;
+
+      const days = daysUntilIso(latest.dueBack, todayIso);
+      alerts.push({
+        key: alertKey(
+          "SUBMITTAL_OVERDUE",
+          submittal.submittalId,
+          `r${latest.revisionNumber}:${latest.dueBack}`,
+        ),
+        kind: "SUBMITTAL_OVERDUE",
+        severity,
+        title: `${where} has not come back`,
+        detail:
+          days < 0
+            ? `${which} was due back ${agoPhrase(days)} and the GC still has it.`
+            : `${which} is due back ${aheadPhrase(days)}.`,
+        href: "/submittals",
+        dueOn: latest.dueBack,
+        daysUntil: days,
+        amount: null,
+      });
+      continue;
+    }
+
+    const withGc = -daysUntilIso(latest.sentOn, todayIso);
+    if (withGc < SUBMITTAL_CHASE_DAYS) continue;
+
+    alerts.push({
+      key: alertKey(
+        "SUBMITTAL_OVERDUE",
+        submittal.submittalId,
+        `r${latest.revisionNumber}:${latest.sentOn}`,
+      ),
+      kind: "SUBMITTAL_OVERDUE",
+      severity: "STANDING",
+      title: `${where} is still with the GC`,
+      detail: `${which} was sent ${agoPhrase(-withGc)} with no return date asked for, and nothing has come back.`,
+      href: "/submittals",
+      dueOn: latest.sentOn,
+      daysUntil: -withGc,
+      amount: null,
+    });
+  }
+
+  return alerts;
+}
+
+/* --------------------------------------------------------- drawing sets */
+
+export type DrawingSetAlertSource = {
+  setId: string;
+  setName: string;
+  jobName: string;
+  /** Every revision on the set. Which of them never reached us is
+   * `unreceivedRevisions`' answer, the same one /drawings renders. */
+  revisions: DrawingRevisionData[];
+};
+
+/**
+ * A drawing set carrying revisions that were issued and never reached us.
+ *
+ * STANDING, and this is the kind where that is least obvious, so: the date
+ * on a drawing revision is `issuedOn`, the architect's own title-block
+ * date. It is not a deadline. Nobody can meet it by acting sooner, it has
+ * already passed by the time the gap is visible, and a severity that
+ * climbed with the calendar would be manufacturing urgency out of how long
+ * ago somebody else printed a sheet. What IS true is a condition: paper
+ * governs this job that we do not hold. That is true today and will be
+ * true tomorrow, which is AlertSeverity's own definition of STANDING — the
+ * same argument wipAlerts and apprenticeRatioAlerts make.
+ *
+ * ONE ALERT PER SET, not per sheet. A set behind by three bulletins is one
+ * problem for the person holding the drawings; three alerts about it is
+ * the furniture this file's header warns about.
+ *
+ * A revision dated in the FUTURE is not a gap yet and is dropped — the
+ * same test retainageAlerts applies to a forecast completion date. It also
+ * keeps the standing rung reachable: notification-milestones fires a dated
+ * STANDING alert's one notice only once its date is behind it, so an alert
+ * anchored on a future date would sit in the list and never send.
+ *
+ * DRAWING_RECEIPT_CHASE_DAYS is measured from the OLDEST gap, not the
+ * newest, so a set that has been missing Rev 2 for a month does not
+ * restart its wait the day Rev 3 is issued.
+ *
+ * Keyed on the whole set of gaps through factDigest, the mechanism
+ * apprenticeRatioAlerts uses for the same reason: receive one sheet, or
+ * have another issued, and the dismissal lapses by itself. Listing the
+ * labels in the clear would not survive assertKeyShape's 200-character cap
+ * on a set with a real revision history — issue #111.
+ */
+export function drawingRevisionAlerts(
+  sources: DrawingSetAlertSource[],
+  todayIso: string,
+): Alert[] {
+  const alerts: Alert[] = [];
+
+  for (const set of sources) {
+    // Newest issue first, per byNewestFirst.
+    const missing = unreceivedRevisions(set.revisions).filter((r) => r.issuedOn <= todayIso);
+    if (missing.length === 0) continue;
+
+    const oldest = missing[missing.length - 1];
+    const waiting = -daysUntilIso(oldest.issuedOn, todayIso);
+    if (waiting < DRAWING_RECEIPT_CHASE_DAYS) continue;
+
+    const newest = missing[0];
+    const count = missing.length;
+
+    alerts.push({
+      key: alertKey(
+        "DRAWING_REVISION_UNRECEIVED",
+        set.setId,
+        factDigest(missing.map((r) => `${r.label}@${r.issuedOn}`)),
+      ),
+      kind: "DRAWING_REVISION_UNRECEIVED",
+      severity: "STANDING",
+      title: `${set.setName} on ${set.jobName} is missing ${count === 1 ? "an issued revision" : `${count} issued revisions`}`,
+      detail:
+        count === 1
+          ? `${newest.label} was issued ${agoPhrase(-waiting)} and has not reached us. The crew may be building from paper it supersedes.`
+          : `The oldest, ${oldest.label}, was issued ${agoPhrase(-waiting)}. ${newest.label} is the one that governs and it has not reached us either.`,
+      href: "/drawings",
+      dueOn: oldest.issuedOn,
+      daysUntil: -waiting,
+      amount: null,
+    });
+  }
+
+  return alerts;
+}
+
+/* -------------------------------------------------------- lien deadlines */
+
+export type LienDeadlineAlertSource = {
+  id: string;
+  kind: string;
+  otherLabel: string | null;
+  jobName: string;
+  recipient: string | null;
+  /** ENTERED by a person, from counsel or the statute. Never computed. */
+  dueOn: string;
+  servedOn: string | null;
+};
+
+/**
+ * An UNSERVED lien deadline that has passed or falls within the "due soon"
+ * window.
+ *
+ * Every date here is one a person typed in — this app never computes a
+ * legal deadline, and this function does no date arithmetic beyond the
+ * count of days to a date somebody else decided. A SERVED deadline raises
+ * nothing, even one served after its entered date: it went out, and
+ * whether late service still counts is for counsel, not for a red badge
+ * telling somebody to serve it again (lienDeadlineState's rule).
+ *
+ * Keyed on the entered due date, so a date counsel revises is a new alert
+ * rather than one already dismissed.
+ */
+export function lienDeadlineAlerts(sources: LienDeadlineAlertSource[], todayIso: string): Alert[] {
+  const alerts: Alert[] = [];
+
+  for (const row of sources) {
+    const state = lienDeadlineState(row, todayIso);
+    if (state !== "overdue" && state !== "due_soon") continue;
+
+    const days = daysUntilIso(row.dueOn, todayIso);
+    const what = lienKindLabel(row.kind, row.otherLabel);
+    const to = row.recipient ? ` to ${row.recipient}` : "";
+    alerts.push({
+      key: alertKey("LIEN_DEADLINE", row.id, row.dueOn),
+      kind: "LIEN_DEADLINE",
+      severity: state === "overdue" ? "OVERDUE" : "DUE_SOON",
+      title: `${what} on ${row.jobName} is not marked served`,
+      detail:
+        state === "overdue"
+          ? `The deadline you entered was ${row.dueOn}, ${agoPhrase(days)}, and nothing records it going out${to}. If it was served, mark it served with the date on the proof; if not, what can still be done is a question for your attorney.`
+          : `Due${to} ${aheadPhrase(days)} (${row.dueOn}), from the date you entered.`,
+      href: "/lien-deadlines",
+      dueOn: row.dueOn,
+      daysUntil: days,
       amount: null,
     });
   }

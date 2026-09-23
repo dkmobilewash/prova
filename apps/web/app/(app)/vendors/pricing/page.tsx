@@ -13,6 +13,7 @@ import {
   priceMovement,
   unitLabel,
 } from "@/components/vendorPricing";
+import { viewerToday } from "@/lib/viewerToday";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ export default async function VendorPricingPage() {
   // what has expired is the UTC date. (The user's own calendar date is only
   // used for FORM DEFAULTS, in components mounted by a click — see
   // components/localToday.ts.)
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await viewerToday();
 
   const quotes: QuoteData[] = rows.map((row) => ({
     id: row.id,
@@ -116,12 +117,12 @@ export default async function VendorPricingPage() {
         is where the suppliers themselves live.
       </p>
 
-      <div className="mb-8">
+      <div className="mb-8" data-tour="vp-record">
         <VendorPriceQuoteForm vendors={vendors} catalogEntries={catalogEntries} />
       </div>
 
       {items.length === 0 ? (
-        <div className="rounded-lg border border-line-card bg-surface p-6">
+        <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="vp-empty">
           <p className="text-ink-label">No prices recorded yet.</p>
           <p className="mt-2 text-sm text-ink-body">
             Record what a supplier last quoted you for the things you buy most — board, studs,
@@ -131,7 +132,7 @@ export default async function VendorPricingPage() {
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-6" data-tour="vp-items">
           {items.map((item) => {
             const comparisons = currentByUnit(item.quotes, today);
             const gap = catalogGap(item.catalogCost, item.catalogUnit, comparisons);
@@ -169,7 +170,7 @@ export default async function VendorPricingPage() {
                 </header>
 
                 {gap && (
-                  <div className="border-b border-line-row bg-amber-500/5 p-4">
+                  <div className="border-b border-line-row bg-amber-500/5 p-4" data-tour="vp-catalog-gap">
                     <p className="text-sm text-tag-amber-ink">
                       Your catalog default is {gap.shortfallPercent}% under what anyone will
                       actually sell this at.
@@ -188,7 +189,7 @@ export default async function VendorPricingPage() {
                 )}
 
                 {comparisons.length > 0 && (
-                  <div className="border-b border-line-row p-4">
+                  <div className="border-b border-line-row p-4" data-tour="vp-live-prices">
                     <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Live prices
                     </h3>
@@ -224,7 +225,7 @@ export default async function VendorPricingPage() {
                 )}
 
                 {movements.length > 0 && (
-                  <div className="border-b border-line-row p-4">
+                  <div className="border-b border-line-row p-4" data-tour="vp-movement">
                     <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Movement
                     </h3>

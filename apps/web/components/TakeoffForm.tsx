@@ -1,21 +1,16 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition } from "react";
-import { addTakeoffLineItems } from "@/lib/actions";
-import {
-  DEFAULT_STUD_SPACING_FT,
-  takeoffCeiling,
-  takeoffWall,
-  type Opening,
-} from "@/lib/takeoff";
+import { addTakeoffLines } from "@/lib/actions";
+import { recipeLines, RECIPES, type RecipeInput, type RecipeArgs } from "@/lib/takeoff-recipes";
 
 /**
- * Measured dimensions in, priced-later line items out.
+ * Measured dimensions in, priced-later line items out — for every recipe.
  *
  * THE PREVIEW IS THE POINT. An estimator will not trust quantities that
  * appear in a bid without having seen them first, and they are right not to
  * — a takeoff tool that computes silently is one whose arithmetic nobody
- * ever checks. So the same pure functions run here as you type, and the
+ * ever checks. So the same pure `recipeLines` runs here as you type, and the
  * numbers are on screen before anything is saved.
  *
  * The server recomputes them from the dimensions and ignores whatever this
@@ -34,41 +29,96 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
-  const [surface, setSurface] = useState<"wall" | "ceiling">("wall");
+  const [recipe, setRecipe] = useState("wall");
   const [label, setLabel] = useState("");
   const [lengthFt, setLengthFt] = useState("");
   const [heightFt, setHeightFt] = useState("");
   const [widthFt, setWidthFt] = useState("");
   const [sides, setSides] = useState<"1" | "2">("2");
-  const [wastePercent, setWastePercent] = useState("10");
   const [spacingIn, setSpacingIn] = useState("16");
+  const [wastePercent, setWastePercent] = useState("10");
   const [openings, setOpenings] = useState<{ w: string; h: string }[]>([]);
+  const [areaSqFt, setAreaSqFt] = useState("");
+  const [coats, setCoats] = useState("2");
+  const [coverageSqFtPerGal, setCoverageSqFtPerGal] = useState("350");
+  const [perimeterFt, setPerimeterFt] = useState("");
+  const [fixtures, setFixtures] = useState<{ name: string; count: string }[]>([]);
 
   const preview = useMemo(() => {
     const n = (value: string) => {
       const parsed = Number(value);
       return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
     };
-    const options = {
-      wastePercent: Number.isFinite(Number(wastePercent)) ? Number(wastePercent) : undefined,
-      spacingFt: n(spacingIn) > 0 ? n(spacingIn) / 12 : DEFAULT_STUD_SPACING_FT,
+    const opt = (value: string): number | undefined => {
+      if (value.trim() === "") return undefined;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
     };
-    if (surface === "ceiling") {
-      return takeoffCeiling({ lengthFt: n(lengthFt), widthFt: n(widthFt) }, options);
+
+    if (recipe === "wall") {
+      const parsedOpenings = openings
+        .map((o) => ({ widthFt: n(o.w), heightFt: n(o.h) }))
+        .filter((o) => o.widthFt > 0 && o.heightFt > 0);
+      const spacing = opt(spacingIn);
+      const args: RecipeArgs = {
+        wastePercent: opt(wastePercent),
+        spacingFt: spacing !== undefined ? spacing / 12 : undefined,
+      };
+      return recipeLines(
+        "wall",
+        [
+          {
+            kind: "wall",
+            wall: {
+              lengthFt: n(lengthFt),
+              heightFt: n(heightFt),
+              sides: sides === "1" ? 1 : 2,
+              openings: parsedOpenings,
+            },
+          },
+        ],
+        args,
+      );
     }
-    const parsedOpenings: Opening[] = openings
-      .map((o) => ({ widthFt: n(o.w), heightFt: n(o.h) }))
-      .filter((o) => o.widthFt > 0 && o.heightFt > 0);
-    return takeoffWall(
-      {
-        lengthFt: n(lengthFt),
-        heightFt: n(heightFt),
-        sides: sides === "1" ? 1 : 2,
-        openings: parsedOpenings,
-      },
-      options,
-    );
-  }, [surface, lengthFt, heightFt, widthFt, sides, wastePercent, spacingIn, openings]);
+    if (recipe === "ceiling") {
+      return recipeLines(
+        "ceiling",
+        [{ kind: "ceiling", ceiling: { lengthFt: n(lengthFt), widthFt: n(widthFt) } }],
+        { wastePercent: opt(wastePercent) },
+      );
+    }
+    if (recipe === "paint") {
+      return recipeLines("paint", [{ kind: "area", squareFeet: n(areaSqFt) }], {
+        coats: opt(coats),
+        coverageSqFtPerGal: opt(coverageSqFtPerGal),
+      });
+    }
+    if (recipe === "flooring") {
+      const inputs: RecipeInput[] = [{ kind: "area", squareFeet: n(areaSqFt) }];
+      const perimeter = n(perimeterFt);
+      if (perimeter > 0) inputs.push({ kind: "linear", feet: perimeter });
+      return recipeLines("flooring", inputs, { wastePercent: opt(wastePercent) });
+    }
+    const inputs: RecipeInput[] = fixtures
+      .map((f) => ({ kind: "count" as const, item: f.name.trim(), count: Number(f.count) }))
+      .filter((f) => f.item !== "" && Number.isFinite(f.count) && f.count > 0);
+    return recipeLines("fixture-count", inputs, {});
+  }, [
+    recipe,
+    label,
+    lengthFt,
+    heightFt,
+    widthFt,
+    sides,
+    spacingIn,
+    wastePercent,
+    openings,
+    areaSqFt,
+    coats,
+    coverageSqFtPerGal,
+    perimeterFt,
+    fixtures,
+  ]);
 
   const hasQuantities = preview.some((line) => line.quantity > 0);
 
@@ -97,7 +147,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
         const formData = new FormData(event.currentTarget);
         startTransition(async () => {
           try {
-            const result = await addTakeoffLineItems(jobId, formData);
+            const result = await addTakeoffLines(jobId, formData);
             // The action RETURNS a refusal rather than throwing one, because
             // production redacts a thrown message to a digest. Rendering the
             // returned reason is the other half of that; ignoring it would
@@ -111,7 +161,10 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             setLengthFt("");
             setHeightFt("");
             setWidthFt("");
+            setAreaSqFt("");
+            setPerimeterFt("");
             setOpenings([]);
+            setFixtures([]);
           } catch (err) {
             // Still caught: the auth and stage guards above it throw, and
             // those are genuine bugs rather than anything a person typed.
@@ -131,15 +184,18 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className={labelClass}>
-          Surface
+          What are you pricing
           <select
-            name="surface"
-            value={surface}
-            onChange={(e) => setSurface(e.target.value as "wall" | "ceiling")}
+            name="recipe"
+            value={recipe}
+            onChange={(e) => setRecipe(e.target.value)}
             className={field}
           >
-            <option value="wall">Wall</option>
-            <option value="ceiling">Ceiling</option>
+            {RECIPES.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.label}
+              </option>
+            ))}
           </select>
         </label>
 
@@ -154,33 +210,40 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
           />
         </label>
 
-        <label className={labelClass}>
-          Length (ft)
-          <input
-            name="lengthFt"
-            value={lengthFt}
-            onChange={(e) => setLengthFt(e.target.value)}
-            inputMode="decimal"
-            className={field}
-          />
-        </label>
+        {(recipe === "wall" || recipe === "ceiling") && (
+          <label className={labelClass}>
+            Length (ft)
+            <input
+              name="lengthFt"
+              type="text"
+              value={lengthFt}
+              onChange={(e) => setLengthFt(e.target.value)}
+              inputMode="decimal"
+              className={field}
+            />
+          </label>
+        )}
 
-        {surface === "wall" ? (
+        {recipe === "wall" && (
           <label className={labelClass}>
             Height (ft)
             <input
               name="heightFt"
+              type="text"
               value={heightFt}
               onChange={(e) => setHeightFt(e.target.value)}
               inputMode="decimal"
               className={field}
             />
           </label>
-        ) : (
+        )}
+
+        {recipe === "ceiling" && (
           <label className={labelClass}>
             Width (ft)
             <input
               name="widthFt"
+              type="text"
               value={widthFt}
               onChange={(e) => setWidthFt(e.target.value)}
               inputMode="decimal"
@@ -189,49 +252,111 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
           </label>
         )}
 
-        {surface === "wall" && (
-          <>
-            <label className={labelClass}>
-              Boarded sides
-              <select
-                name="sides"
-                value={sides}
-                onChange={(e) => setSides(e.target.value as "1" | "2")}
-                className={field}
-              >
-                <option value="2">Both sides</option>
-                <option value="1">One side</option>
-              </select>
-            </label>
-            <label className={labelClass}>
-              Stud spacing (in o.c.)
-              <input
-                name="spacingIn"
-                value={spacingIn}
-                onChange={(e) => setSpacingIn(e.target.value)}
-                inputMode="decimal"
-                className={field}
-              />
-            </label>
-          </>
+        {recipe === "wall" && (
+          <label className={labelClass}>
+            Boarded sides
+            <select
+              name="sides"
+              value={sides}
+              onChange={(e) => setSides(e.target.value as "1" | "2")}
+              className={field}
+            >
+              <option value="2">Both sides</option>
+              <option value="1">One side</option>
+            </select>
+          </label>
         )}
 
-        <label className={labelClass}>
-          Waste (%)
-          <input
-            name="wastePercent"
-            value={wastePercent}
-            onChange={(e) => setWastePercent(e.target.value)}
-            inputMode="decimal"
-            className={field}
-          />
-          <span className="text-xs text-ink-muted">
-            Applies to board only. Track carries none — the offcut is usable.
-          </span>
-        </label>
+        {recipe === "wall" && (
+          <label className={labelClass}>
+            Stud spacing (in o.c.)
+            <input
+              name="spacingIn"
+              type="text"
+              value={spacingIn}
+              onChange={(e) => setSpacingIn(e.target.value)}
+              inputMode="decimal"
+              className={field}
+            />
+          </label>
+        )}
+
+        {(recipe === "wall" || recipe === "ceiling" || recipe === "flooring") && (
+          <label className={labelClass}>
+            Waste (%)
+            <input
+              name="wastePercent"
+              type="text"
+              value={wastePercent}
+              onChange={(e) => setWastePercent(e.target.value)}
+              inputMode="decimal"
+              className={field}
+            />
+            <span className="text-xs text-ink-muted">
+              {recipe === "wall" ? "Applies to board only. Track carries none — the offcut is usable." : "Added to the order quantity."}
+            </span>
+          </label>
+        )}
+
+        {(recipe === "paint" || recipe === "flooring") && (
+          <label className={labelClass}>
+            Area (sq ft)
+            <input
+              name="areaSqFt"
+              type="text"
+              value={areaSqFt}
+              onChange={(e) => setAreaSqFt(e.target.value)}
+              inputMode="decimal"
+              className={field}
+            />
+          </label>
+        )}
+
+        {recipe === "paint" && (
+          <label className={labelClass}>
+            Coats
+            <input
+              name="coats"
+              type="text"
+              value={coats}
+              onChange={(e) => setCoats(e.target.value)}
+              inputMode="decimal"
+              className={field}
+            />
+          </label>
+        )}
+
+        {recipe === "paint" && (
+          <label className={labelClass}>
+            Coverage (sq ft/gal)
+            <input
+              name="coverageSqFtPerGal"
+              type="text"
+              value={coverageSqFtPerGal}
+              onChange={(e) => setCoverageSqFtPerGal(e.target.value)}
+              inputMode="decimal"
+              className={field}
+            />
+          </label>
+        )}
+
+        {recipe === "flooring" && (
+          <label className={labelClass}>
+            Trim / base perimeter (ft, optional)
+            <input
+              name="perimeterFt"
+              type="text"
+              value={perimeterFt}
+              onChange={(e) => setPerimeterFt(e.target.value)}
+              placeholder="leave blank if not trimming"
+              inputMode="decimal"
+              className={field}
+            />
+          </label>
+        )}
       </div>
 
-      {surface === "wall" && (
+      {recipe === "wall" && (
         <div className="flex flex-col gap-2">
           <p className="text-sm text-ink-label">
             Openings{" "}
@@ -244,6 +369,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             <div key={index} className="flex items-center gap-2">
               <input
                 name="openingWidth"
+                type="text"
                 value={opening.w}
                 onChange={(e) =>
                   setOpenings((prev) =>
@@ -257,6 +383,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
               <span className="text-ink-muted">×</span>
               <input
                 name="openingHeight"
+                type="text"
                 value={opening.h}
                 onChange={(e) =>
                   setOpenings((prev) =>
@@ -282,6 +409,59 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
             className="self-start text-xs text-link hover:underline"
           >
             + Add an opening
+          </button>
+        </div>
+      )}
+
+      {recipe === "fixture-count" && (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-ink-label">
+            Fixtures{" "}
+            <span className="text-xs text-ink-muted">
+              — count each type; one line is added per type.
+            </span>
+          </p>
+          {fixtures.map((fixture, index) => (
+            <div key={index} className="flex items-center gap-2">
+              <input
+                name="fixtureName"
+                value={fixture.name}
+                onChange={(e) =>
+                  setFixtures((prev) =>
+                    prev.map((f, i) => (i === index ? { ...f, name: e.target.value } : f)),
+                  )
+                }
+                placeholder="e.g. Outlets"
+                className={`${field} flex-1`}
+              />
+              <input
+                name="fixtureCount"
+                type="text"
+                value={fixture.count}
+                onChange={(e) =>
+                  setFixtures((prev) =>
+                    prev.map((f, i) => (i === index ? { ...f, count: e.target.value } : f)),
+                  )
+                }
+                placeholder="count"
+                inputMode="numeric"
+                className={`${field} w-24`}
+              />
+              <button
+                type="button"
+                onClick={() => setFixtures((prev) => prev.filter((_, i) => i !== index))}
+                className="text-xs text-red-400 hover:underline"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => setFixtures((prev) => [...prev, { name: "", count: "" }])}
+            className="self-start text-xs text-link hover:underline"
+          >
+            + Add a fixture type
           </button>
         </div>
       )}

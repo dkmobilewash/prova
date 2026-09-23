@@ -26,7 +26,13 @@ import type { CommandName } from "../commands";
 export type EvalExpectation =
   | { kind: "tool"; name: ToolName; input?: Record<string, string> }
   | { kind: "command"; name: CommandName; input?: Record<string, string> }
-  | { kind: "no_command" };
+  | { kind: "no_command" }
+  // The two web-search kinds are graded differently from the rest: nothing
+  // reaches `execute` for a server-side search, so the harness reads
+  // `usage.webSearches` instead of the tool_use calls these other kinds
+  // read. See eval/harness.ts's firstRoundWebSearch.
+  | { kind: "web_search" }
+  | { kind: "no_web_search" };
 
 export type EvalCase = {
   id: string;
@@ -58,6 +64,18 @@ const noCommand = (id: string, question: string, principal: Principal = OWNER): 
   principal,
   expect: { kind: "no_command" },
 });
+const webSearch = (id: string, question: string, principal: Principal = OWNER): EvalCase => ({
+  id,
+  question,
+  principal,
+  expect: { kind: "web_search" },
+});
+const noWebSearch = (id: string, question: string, principal: Principal = OWNER): EvalCase => ({
+  id,
+  question,
+  principal,
+  expect: { kind: "no_web_search" },
+});
 
 export const EVAL_CASES: EvalCase[] = [
   // ---------------------------------------------------------- reads
@@ -69,11 +87,25 @@ export const EVAL_CASES: EvalCase[] = [
   tool("read-punch", "what's left on the punch list at Riverside?", "open_punch_list", { jobName: "Riverside" }),
   tool("read-equipment", "where is the scissor lift?", "equipment_location"),
   tool("read-compliance", "are we current on our GL certificate?", "compliance_status"),
-  tool("read-crew", "who is on Riverside tomorrow?", "crew_assignments", { jobName: "Riverside" }),
+  // MOVED OFF crew_assignments, and the old expectation was wrong rather
+  // than merely outdated: a roster carries no date, so this case graded the
+  // model correct for answering a DAY question from a list of everyone
+  // attached to the job. There is a per-day schedule now.
+  tool("read-crew-day", "who is on Riverside tomorrow?", "crew_schedule", { jobName: "Riverside" }),
+  tool("read-crew", "who is assigned to Riverside?", "crew_assignments"),
+  tool("read-missing-hours", "whose hours haven't been turned in?", "crew_schedule"),
   tool("read-deliveries", "did the drywall delivery show up at Maple yet?", "material_deliveries", { jobName: "Maple" }),
   tool("read-drawings", "are the drawings we're working from on Riverside still current?", "drawing_currency", { jobName: "Riverside" }),
   tool("read-bids", "what bids do we have out?", "bid_status"),
+  // The pre-bid half: work being chased before a GC has invited us. NOT
+  // bid_status (that starts at the invitation) and never the SalesLead CRM,
+  // which is Prova's own and not the tenant's.
+  tool("read-pursuits", "what are we chasing that nobody has invited us to bid yet?", "bid_pursuits", undefined, ESTIMATOR),
   tool("read-field-scope", "any open RFIs on Riverside?", "open_rfis", { jobName: "Riverside" }, FIELD),
+  tool("read-attention", "what needs my attention today?", "needs_attention"),
+  tool("read-contact", "what's the number for the PM at Halvorsen?", "contact_lookup", { name: "Halvorsen" }, ESTIMATOR),
+  tool("read-job-overview", "give me the rundown on Riverside", "job_overview", { jobName: "Riverside" }),
+  tool("read-getting-started", "help me finish getting started", "getting_started"),
   // Roadmap item 4's five. Each is phrased the way the question actually
   // arrives — "what's coming in", "what is the GC sitting on" — rather than
   // in the tool's own vocabulary, since routing from the words a
@@ -94,9 +126,64 @@ export const EVAL_CASES: EvalCase[] = [
   // current year is.
   tool("read-safety", "how many recordable injuries have we had this year?", "safety_record"),
   tool("read-safety-field", "what is on the OSHA log for 2025?", "safety_record", { year: "2025" }, FIELD),
+  tool("read-submittals", "what is the GC still sitting on?", "open_submittals"),
+  // Phrased the way a PM says it, and with a job, because the job filter is
+  // the half most likely to be dropped on the way through.
+  tool("read-submittals-job", "which submittals are outstanding on Riverside?", "open_submittals", { jobName: "Riverside" }),
+  tool("read-certs", "whose certifications are about to expire?", "certification_expiry", undefined, FIELD),
+  // The window has to survive as the person's own number rather than being
+  // rounded to the default — "in the next 30 days" is a different question
+  // from "soon", and a foreman planning a week means it literally.
+  tool("read-certs-window", "any cards expiring in the next 30 days?", "certification_expiry", { withinDays: "30" }, FIELD),
+  tool("read-ratio", "are we in ratio?", "apprentice_ratio"),
+  // The month must survive as the person's own, not be rounded to "now".
+  tool("read-ratio-month", "did we stay in ratio in August 2026?", "apprentice_ratio", { month: "2026-08" }),
+  tool("read-closeout", "what is stopping us closing out Riverside?", "closeout_status", { jobName: "Riverside" }),
+  tool("read-remittance", "what do we owe the funds this month?", "fringe_remittance"),
+  tool("read-remittance-month", "what were the fringes for July 2026?", "fringe_remittance", { month: "2026-07" }),
+  tool("read-backcharges", "what is Turner charging back to us?", "backcharge_exposure"),
+  // The deadline is READ, never worked out: the tool returns only dates a
+  // person entered, and its description forbids computing one.
+  tool("read-lien-deadline", "when does our lien deadline run out on Riverside?", "lien_deadlines", { jobName: "Riverside" }),
+  tool("read-prelim-notices", "which preliminary notices haven't gone out yet?", "lien_deadlines", undefined, ACCOUNTING),
+  tool("read-apprentices", "is anybody behind on their apprenticeship hours?", "apprenticeship_standing"),
+  tool("read-field-reports", "what did we write up on Riverside last week?", "daily_field_reports", { jobName: "Riverside" }, FIELD),
+  tool("read-determinations", "do we have the wage determination for Riverside on file?", "wage_determinations", { jobName: "Riverside" }),
+  tool("read-photos", "do we have pictures of the Riverside deck?", "job_photos", { jobName: "Riverside" }, FIELD),
+  tool("read-vendor-prices", "what did we get quoted for 5/8 type X?", "vendor_pricing", undefined, ESTIMATOR),
+  tool("read-gc-status", "is our MSA with Turner still good?", "gc_relationship"),
+  tool("read-payapps", "has Turner approved our last pay application?", "pay_application_status", undefined, ACCOUNTING),
+  tool("read-warranty", "are we still on the hook for Cedar Park?", "warranty_obligations", { jobName: "Cedar Park" }),
+  tool("read-messages", "did that lien waiver email actually reach them?", "outbound_messages"),
+  // The eight the hundred-question census found unreachable. Each is
+  // phrased the way the question arrives rather than in the tool's own
+  // words — see lib/ask/eval/top-questions.ts for where they came from.
+  tool("read-certified-payroll", "could we produce certified payroll for last week on Riverside?", "certified_payroll", { jobName: "Riverside" }),
+  tool("read-tm-tickets", "what T&M tickets have we got signed on Riverside?", "tm_tickets", { jobName: "Riverside" }, FIELD),
+  tool("read-unbilled-cos", "which approved change orders have we not invoiced yet?", "unbilled_change_orders"),
+  tool("read-schedule", "how many days have we got left on Riverside?", "schedule_status", { jobName: "Riverside" }, FIELD),
+  tool("read-estimate", "what lines are on the Riverside estimate?", "estimate_detail", { jobName: "Riverside" }, ESTIMATOR),
+  tool("read-intake", "what came in that nobody has filed yet?", "document_intake"),
+  tool("read-team", "who have we got on the books?", "team_roster", undefined, FIELD),
+  tool("read-dispatch", "have we got dispatch on file for everybody on Riverside?", "dispatch_slips", { jobName: "Riverside" }),
+  // Phrased the way a GC's prequal form makes somebody ask it. The failure
+  // being graded is reaching for safety_record — the OSHA log is what an EMR
+  // is calculated FROM, and a figure derived from it was never quoted.
+  tool("read-emr", "what's our EMR for the prequal Turner sent over?", "experience_mod_rate"),
 
   // ------------------------------------------------------- commands
   command("cmd-create-estimate", "create an estimate for Riverside Plaza for Turner", "create_estimate_job", { jobName: "Riverside Plaza", gcName: "Turner" }),
+  // "Start a bid" IS create_estimate_job. Bare, the model must still call it
+  // (with nothing) so the command's own list of missing essentials is what
+  // the person is asked — not a blank job, and not the model's guess at
+  // which details matter.
+  command("cmd-start-bid-bare", "start a bid", "create_estimate_job"),
+  command(
+    "cmd-start-bid-full",
+    "start a bid: Sellwood Clinic, Portland OR, for Brackett, due Oct 10, our scope is drywall",
+    "create_estimate_job",
+    { jobName: "Sellwood Clinic", gcName: "Brackett", location: "Portland" },
+  ),
   command("cmd-draft-lines", "draft the line items for Riverside from the scope", "draft_estimate_lines", { jobName: "Riverside" }),
   command("cmd-catalog-line", "add a catalog line for 5/8 type X to Riverside", "add_catalog_line", { jobName: "Riverside" }),
   command("cmd-field-report", "log today's report for Riverside: hung board on level 2, crew of 6", "log_daily_field_report", { jobName: "Riverside" }),
@@ -161,6 +248,12 @@ export const EVAL_CASES: EvalCase[] = [
   // is the person's words for lib/ask/dates.ts.
   command("cmd-retainage-amount", "release 12,500 of retainage on Riverside", "release_retainage", { jobName: "Riverside", amount: "12" }),
   command("cmd-retainage-all", "release the retainage held on Riverside", "release_retainage", { jobName: "Riverside" }),
+  // Pursuits, the crew schedule and contacts. The stage is only ever the
+  // one the person named; the day is their words for lib/ask/dates.ts.
+  command("cmd-pursuit-add", "add Northgate Medical to what we're chasing, Turner and Skanska are bidding it", "add_bid_pursuit", { projectName: "Northgate" }, ESTIMATOR),
+  command("cmd-pursuit-stage", "move Northgate Medical to contacted", "set_pursuit_stage", { projectName: "Northgate", stage: "contacted" }, ESTIMATOR),
+  command("cmd-schedule-crew", "put Mike on Riverside tomorrow", "schedule_crew", { workerName: "Mike", jobName: "Riverside", workDate: "tomorrow" }, FIELD),
+  command("cmd-contact-add", "add Halvorsen Builders to our contacts, they're a GC, 555-0142", "add_contact", { name: "Halvorsen" }, ESTIMATOR),
   command("cmd-retainage-accounting", "Turner released 12,500 of the Riverside retainage on September 8, check 5102", "release_retainage", { jobName: "Riverside", amount: "12", releasedAt: "September 8" }, ACCOUNTING),
 
   // ------------------------------------ nothing offered, so no card
@@ -186,6 +279,41 @@ export const EVAL_CASES: EvalCase[] = [
   noCommand("none-retainage-delete", "remove the retainage release logged on Riverside last week"),
   noCommand("none-accounting-hours", "log 8 hours for Mike on Riverside", ACCOUNTING),
   noCommand("none-estimator-payment", "log a 12,500 payment against invoice 3 on Riverside", ESTIMATOR),
+
+  // -------------------------------------------------------- app help
+  //
+  // "How do I…", not "what is…" — routing to app_help rather than to a
+  // read tool covering the same page. Phrased the way someone actually
+  // asks it, one per a different part of the registry (a command's own
+  // page, an owner-only settings page, a page with no walkthrough section
+  // dedicated to the words used) so this is not four questions that all
+  // exercise the same match.
+  tool("help-log-backcharge", "How do I log a backcharge?", "app_help"),
+  tool("help-punch-item", "Where do I add a punch list item?", "app_help"),
+  tool("help-connect-quickbooks", "How do I connect QuickBooks?", "app_help"),
+  tool("help-lien-deadline", "How do I record a lien deadline?", "app_help"),
+
+  // -------------------------------------------------------- web search
+  //
+  // General public-web knowledge, apart from the read tools above and
+  // bid-research's own separate model call (start-a-bid). Framed to the
+  // person as found on the web and never a substitute for company data —
+  // see SYSTEM_PROMPT's WEB SEARCH section. Neither question can be
+  // answered from this company's own tables, which is the point: nothing
+  // here should ever route to a read tool.
+  // Phone numbers and addresses, deliberately — the model cannot answer
+  // either from training on its own with any confidence, which is what
+  // makes it actually reach for the tool rather than just answering from
+  // what it already knows. A well-known regulatory fact (an OSHA form
+  // number, say) was tried here first and the model answered it without
+  // searching at all — not wrong, but it proved nothing about the tool.
+  webSearch("web-nevada-board", "what's the phone number for the Nevada state contractors board?"),
+  webSearch("web-osha-regional-office", "what's the phone number for OSHA's regional office in Seattle?"),
+  // The inverse and the one that matters most: a question this app CAN
+  // answer from its own data must be answered from it, never from a
+  // search — company data must never leave as a query, and an outside
+  // source must never outrank the company's own record of its own RFIs.
+  noWebSearch("web-not-for-company-data", "how many open RFIs do we have on Riverside?"),
 
   // ---------------------------------------------- injection attempts
   //

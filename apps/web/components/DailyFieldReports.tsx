@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import {
   createDailyFieldReport,
   deleteDailyFieldReport,
@@ -38,6 +38,16 @@ export type FieldReport = {
   weather: string | null;
   delays: string | null;
   filedByName: string | null;
+  /** The automatic site weather as one line, and whether it is still a
+   *  forecast. Null when the job has no site address found on a map. */
+  weatherAutoLine?: string | null;
+  weatherAutoKind?: "forecast" | "observed" | null;
+  /** The day's crew from its time entries ("3 people · 24h — …"). */
+  manpowerLine?: string | null;
+  /** "Signed" / "Approved" when the day is signed and so locked. */
+  lockedLabel?: string | null;
+  /** Photos taken on the phone with "Attach to today's report" on. */
+  photoCount?: number;
 };
 
 /** Date only, formatted from the stored UTC-midnight value. Using UTC here
@@ -58,13 +68,15 @@ function formatDate(iso: string) {
 export function FieldReportFields({ report }: { report?: FieldReport }) {
   return (
     <>
+      {/* The crew itself comes from the day's time entries — nobody retypes
+          who worked. This box is for everyone else on site. */}
       <label className={labelClass}>
-        Crew on site
+        Other trades / visitors on site
         <input
           type="text"
           name="crewPresent"
           defaultValue={report?.crewPresent ?? ""}
-          placeholder="e.g. 4 framers, 2 apprentices"
+          placeholder="e.g. Electricians on L3, inspector at 10"
           className={inputClass}
         />
       </label>
@@ -79,28 +91,19 @@ export function FieldReportFields({ report }: { report?: FieldReport }) {
           className={inputClass}
         />
       </label>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className={labelClass}>
-          Weather
-          <input
-            type="text"
-            name="weather"
-            defaultValue={report?.weather ?? ""}
-            placeholder="e.g. Rain until noon"
-            className={inputClass}
-          />
-        </label>
-        <label className={labelClass}>
-          Delays
-          <input
-            type="text"
-            name="delays"
-            defaultValue={report?.delays ?? ""}
-            placeholder="Late delivery, trade in the way, inspection no-show"
-            className={inputClass}
-          />
-        </label>
-      </div>
+      {/* Weather is filled in automatically from the job's site address;
+          this is only for what the numbers don't say. Delays are logged
+          one by one under "Delays" below, with cause and crew-hours. */}
+      <label className={labelClass}>
+        Site conditions (optional)
+        <input
+          type="text"
+          name="weather"
+          defaultValue={report?.weather ?? ""}
+          placeholder="e.g. Mud at the east gate, deck still wet at 7"
+          className={inputClass}
+        />
+      </label>
     </>
   );
 }
@@ -165,10 +168,17 @@ export function DailyFieldReports({
   jobId,
   reports,
   canDelete,
+  siteNote,
+  children,
 }: {
   jobId: string;
   reports: FieldReport[];
   canDelete: boolean;
+  /** Shown when the job has no site address found on a map, so reports
+   *  can't fill in the weather — says where to fix it. */
+  siteNote?: string | null;
+  /** The delay log, rendered inside this section. */
+  children?: ReactNode;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -197,7 +207,7 @@ export function DailyFieldReports({
   }
 
   return (
-    <section>
+    <section data-tour="job-field-reports">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-ink">Daily field reports</h2>
         {!isOpen && (
@@ -256,10 +266,12 @@ export function DailyFieldReports({
         </form>
       )}
 
+      {siteNote && <p className="mb-3 text-sm text-amber-400">{siteNote}</p>}
+
       {reports.length === 0 ? (
         <p className="text-sm text-ink-body">
-          No reports yet. One entry a day — crew, what got done, weather, delays. The weather and delay
-          fields are what a schedule dispute gets argued from later.
+          No reports yet. One entry a day — what got done and who else was on site. The crew comes from the
+          day&rsquo;s time entries and the weather from the site address, so neither is typed.
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
@@ -287,14 +299,30 @@ export function DailyFieldReports({
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <p className="font-medium text-ink">{formatDate(report.reportDate)}</p>
-                    {report.crewPresent && <p className="text-ink-body">{report.crewPresent}</p>}
+                    {report.manpowerLine && <p className="text-ink-body">Crew: {report.manpowerLine}</p>}
+                    {report.crewPresent && <p className="text-ink-body">Also on site: {report.crewPresent}</p>}
                     <p className="mt-1 text-ink-label">{report.workPerformed}</p>
+                    {report.weatherAutoLine && (
+                      <p className="mt-1 text-ink-body">
+                        Weather{report.weatherAutoKind === "forecast" ? " (forecast — replaced by the actual day once it's over)" : ""}:{" "}
+                        {report.weatherAutoLine}
+                      </p>
+                    )}
                     {/* ink-body, not ink-muted — the muted level is under the
                         4.5 floor for text. Weather is the field a delay claim
                         is argued from months later; it does not get to be the
                         faintest thing on the row. */}
-                    {report.weather && <p className="mt-1 text-ink-body">Weather: {report.weather}</p>}
+                    {report.weather && (
+                      <p className="mt-1 text-ink-body">
+                        {report.weatherAutoLine ? "Site conditions" : "Weather"}: {report.weather}
+                      </p>
+                    )}
                     {report.delays && <p className="text-amber-400">Delays: {report.delays}</p>}
+                    {report.photoCount ? (
+                      <p className="mt-1 text-ink-body">
+                        {report.photoCount} {report.photoCount === 1 ? "photo" : "photos"} attached — see Site photos below
+                      </p>
+                    ) : null}
                     {report.filedByName && (
                       <p className="mt-1 text-xs text-ink-body">filed by {report.filedByName}</p>
                     )}
@@ -310,6 +338,14 @@ export function DailyFieldReports({
                       100% -> 0%. The phone was 79% either way until #184's
                       armed column, which is 0% at 639 and 375. Numbers in
                       `rowActionsCensus.test.ts`. */}
+                  {report.lockedLabel ? (
+                    <span
+                      className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs text-emerald-300"
+                      title="This day is signed, so its report is locked. Reopen the day under Timesheet sign-off to change it."
+                    >
+                      {report.lockedLabel} · locked
+                    </span>
+                  ) : (
                   <RowActions
                     className="flex shrink-0 flex-wrap items-center gap-3"
                     destructive={
@@ -343,6 +379,7 @@ export function DailyFieldReports({
                       Edit
                     </button>
                   </RowActions>
+                  )}
                 </div>
                 {error && deleteErrorId === report.id && (
                   <p className="mt-1 text-sm text-red-400">{error}</p>
@@ -352,6 +389,7 @@ export function DailyFieldReports({
           )}
         </ul>
       )}
+      {children}
     </section>
   );
 }

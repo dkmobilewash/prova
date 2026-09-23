@@ -3,11 +3,15 @@ import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { SubmittalForm } from "@/components/SubmittalForm";
+import { EmptyState } from "@/components/EmptyState";
 import { SubmittalRow } from "@/components/SubmittalRow";
 import { daysBetween, isOverdue, latestRevision, submittalState } from "@/components/submittalLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { submittalsStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+import { viewerToday } from "@/lib/viewerToday";
+import { ProcoreFeedSection, loadProcoreFeed } from "@/components/ProcoreFeedSection";
+import { ACCFeedSection, loadAccFeed } from "@/components/ACCFeedSection";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as RFIs, the
  * safety log and daily field reports. */
@@ -26,7 +30,13 @@ export default async function SubmittalsPage({
   const { job: jobFilter, show } = await searchParams;
   const showApproved = show === "all";
 
-  const today = new Date().toISOString().slice(0, 10);
+  // The READER'S calendar day, not the server's UTC one — see /rfis for the
+  // full argument. `dueBack` is the date we asked the GC for, and measuring
+  // it against UTC told a Pacific viewer after 5pm that the GC had blown a
+  // deadline that had not passed yet. The zone arrives as request data from
+  // the timezone cookie (lib/viewerToday.ts), so nothing is computed in the
+  // browser during render and hydration is untouched.
+  const today = await viewerToday();
 
   // status + contact, not just the name: issue #65 — fifteen jobs, seven of
   // them called "Smith kitchen remodel", and this picker showed seven
@@ -75,6 +85,11 @@ export default async function SubmittalsPage({
   // Approval is the normal end state, so approved packages leave the
   // default view — but they stay one click away, because "which revision
   // was approved" is exactly what someone checks before building.
+  // Whether this company has EVER logged one, not whether the current
+  // filter shows any — the teaching empty state is for the first, and a
+  // filter that happens to match nothing keeps its plain line.
+  const everLogged = activeJob ? await prisma.submittal.count({ where: { companyId: company.id } }) : allRows.length;
+
   const rows = showApproved
     ? allRows
     : allRows.filter((row) => submittalState(row.revisions) !== "APPROVED");
@@ -110,6 +125,12 @@ export default async function SubmittalsPage({
       active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
     }`;
 
+  // The GC's records from Procore, if this company links any (see
+  // components/ProcoreFeedSection.tsx).
+  const procoreFeed = await loadProcoreFeed(company.id, "SUBMITTAL", activeJob);
+  // Same, from Autodesk Construction Cloud (see components/ACCFeedSection.tsx).
+  const accFeed = await loadAccFeed(company.id, "SUBMITTAL", activeJob);
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="mb-2 text-xl font-semibold text-ink">Submittals</h1>
@@ -120,14 +141,18 @@ export default async function SubmittalsPage({
         is worth nothing in a delay claim without the dates.
       </p>
 
-      <section className="mb-8">
+      <section className="mb-8" data-tour="submittals-log">
         <SubmittalForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
       </section>
 
-      <StatusLine report={status} />
+      {/* At zero-ever the EmptyState below is the whole answer. The status
+          line and the "0 in play" count above it said "nothing" twice more
+          first — three empties stacked on a new account. /bids hides its
+          count the same way; both come back with the first record. */}
+      {(everLogged > 0 || rows.length > 0) && <StatusLine report={status} />}
 
       {jobs.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap gap-2" data-tour="submittals-job-filter">
           <Link href={filterHref({ job: null })} className={chip(!activeJob)}>
             All jobs
           </Link>
@@ -139,22 +164,54 @@ export default async function SubmittalsPage({
         </div>
       )}
 
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink-label">
-          {rows.length} {showApproved ? "total" : "in play"}
-        </h2>
-        <Link href={filterHref({ show: showApproved ? null : "all" })} className="text-sm text-link">
-          {showApproved ? "Hide approved" : "Show approved"}
-        </Link>
-      </div>
+      {(everLogged > 0 || rows.length > 0) && (
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-ink-label">
+            {rows.length} {showApproved ? "total" : "in play"}
+          </h2>
+          <Link
+            href={filterHref({ show: showApproved ? null : "all" })}
+            data-tour="submittals-show-approved"
+            className="text-sm text-link"
+          >
+            {showApproved ? "Hide approved" : "Show approved"}
+          </Link>
+        </div>
+      )}
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && everLogged === 0 ? (
+        <EmptyState
+          data-tour="submittals-empty"
+          title="No submittals yet"
+          purpose={
+            <p>
+              What you sent for sign-off before you build — cabinet shop drawings, window and
+              fixture spec sheets, finish samples — and what came back: approved, or revise and
+              resend. It answers &ldquo;did they approve this one, and when?&rdquo; before the crew
+              installs it.
+            </p>
+          }
+          actions={
+            jobs.length === 0
+              ? [{ label: "Create a job", href: "/jobs/new" }]
+              : [{ label: "Log a submittal", opens: "submittals-log" }]
+          }
+          example={{
+            rows: [
+              { title: "#4 Kitchen cabinets — shop drawings", tag: "With client", detail: "Smith kitchen remodel · sent Sep 6", meta: "due back Sep 13" },
+              { title: "#3 Windows — product data", tag: "Revise and resend", detail: "Oak Ave addition · rev 1 returned Sep 2", meta: "rev 2 next" },
+              { title: "#2 Tile and grout samples", tag: "Approved", detail: "Smith kitchen remodel · 5 days to approve", meta: "Aug 30" },
+            ],
+          }}
+        />
+      ) : rows.length === 0 ? (
         <p className="text-ink-body">
-          Nothing here yet. Log a package the day it goes out — the gap between the date you sent it
-          and the date it came back is the whole value of the record.
+          {showApproved
+            ? `No submittals${activeJob ? " on this job" : ""}.`
+            : `Nothing in play${activeJob ? " on this job" : ""}. Approved ones are under “Show approved”.`}
         </p>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="submittals-list">
           {rows.map((submittal) => (
             <SubmittalRow
               key={submittal.id}
@@ -166,6 +223,12 @@ export default async function SubmittalsPage({
           ))}
         </ul>
       )}
+
+      {/* The GC's records from Procore: a separate section, never merged
+          into this company's own log above. */}
+      <ProcoreFeedSection feed={procoreFeed} />
+      {/* Same, from Autodesk Construction Cloud. */}
+      <ACCFeedSection feed={accFeed} />
     </div>
   );
 }

@@ -11,6 +11,11 @@ import { RuleSetForm } from "@/components/RuleSetForm";
 import { RuleSetRow } from "@/components/RuleSetRow";
 import { DeterminationRuleSetPicker } from "@/components/DeterminationRuleSetPicker";
 import { splitLabel } from "@/components/prevailingWageLabels";
+import { formatHours } from "@/lib/render-hours";
+import { reviewIsClean, weeklyUnresolvedSentence } from "@/lib/prevailing-wage";
+import { viewerToday } from "@/lib/viewerToday";
+import { determinationStanding, determinationStandingLine } from "@/lib/determination-standing";
+import { DeterminationStandingLine } from "@/components/DeterminationStandingLine";
 
 export default async function PrevailingWagePage({
   searchParams,
@@ -22,7 +27,7 @@ export default async function PrevailingWagePage({
   const { company, ...currentUser } = context;
 
   const { job: jobParam, week: weekParam } = await searchParams;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await viewerToday();
 
   const [ruleSets, determinations, weeks] = await Promise.all([
     loadRuleSets(company.id),
@@ -57,15 +62,29 @@ export default async function PrevailingWagePage({
       </p>
 
       {/* --------------------------------------------------- review --- */}
-      <section className="mb-10">
+      <section className="mb-10" data-tour="pw-check-week">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Check a week against the rules</h2>
 
         {weeks.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-line-card bg-surface/50 p-5 text-sm text-ink-body">
-            No hours logged on a job that carries a wage determination. Only those jobs are checked —
-            certified payroll isn&apos;t required on private work, and offering to review every week
-            would bury the ones that matter.
-          </p>
+          <div className="rounded-lg border border-dashed border-line-card bg-surface/50 p-5 text-sm text-ink-body">
+            <p>
+              No hours logged on a job that carries a wage determination. Only those jobs are
+              checked — certified payroll isn&apos;t required on private work, and offering to
+              review every week would bury the ones that matter.
+            </p>
+            {/* Two things have to be true before a week can appear here, so
+                the way out is two links rather than one: the job needs a
+                determination on it, and somebody needs to have logged hours.
+                Naming only the first would send a reader who has already
+                done it round in a circle. */}
+            <p className="mt-3">
+              <Link href="/jobs" className="text-link hover:underline">
+                Open the job
+              </Link>{" "}
+              and add its determination under Compliance, then log the crew&apos;s hours under
+              Crew &amp; time.
+            </p>
+          </div>
         ) : (
           <>
             <div className="mb-4 flex flex-wrap gap-2">
@@ -107,34 +126,50 @@ export default async function PrevailingWagePage({
                         <p className="text-sm font-medium text-ink-label">
                           {employee.employeeName}
                           <span className="ml-2 font-normal text-ink-muted">
-                            {employee.review.totalHours} hrs
+                            {formatHours(employee.review.totalHours)} hrs
                           </span>
                         </p>
 
+                        {/* The green sentence is gated on `reviewIsClean`,
+                            NOT on `disagreements.length === 0`. A week whose
+                            overtime lands on shift-differential hours has no
+                            disagreements to list and is not clean — it used
+                            to print "Every day matches" over a DOL
+                            back-wage finding. See WeekReview.weeklyUnresolved. */}
                         {!employee.review.checked ? (
                           <p className="mt-1 text-sm text-tag-amber-ink">{employee.review.reason}</p>
-                        ) : employee.review.disagreements.length === 0 ? (
-                          <p className="mt-1 text-sm text-tag-green-ink">
-                            Every day matches what the rules imply.
-                            {employee.review.weeklyThresholdApplied &&
-                              " The weekly threshold was reached and the entered hours already reflect it."}
-                          </p>
                         ) : (
-                          <ul className="mt-1 flex flex-col gap-1">
-                            {employee.review.disagreements.map((day) => (
-                              <li key={day.date} className="text-sm text-ink-label">
-                                <span className="font-mono text-xs text-ink-muted">{day.date}</span>{" "}
-                                entered <span className="text-tag-amber-ink">{splitLabel(day.entered)}</span>,
-                                rules imply{" "}
-                                <span className="text-tag-blue-ink">
-                                  {splitLabel(day.expected as Record<string, number>)}
-                                </span>
-                                {day.consecutiveDay === 7 && (
-                                  <span className="text-ink-muted"> · seventh straight day</span>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
+                          <>
+                            {employee.review.weeklyUnresolved.length > 0 && (
+                              <p className="mt-1 text-sm text-tag-amber-ink">
+                                {weeklyUnresolvedSentence(employee.review)}
+                              </p>
+                            )}
+                            {reviewIsClean(employee.review) && (
+                              <p className="mt-1 text-sm text-tag-green-ink">
+                                Every day matches what the rules imply.
+                                {employee.review.weeklyThresholdApplied &&
+                                  " The weekly threshold was reached and the entered hours already reflect it."}
+                              </p>
+                            )}
+                            {employee.review.disagreements.length > 0 && (
+                              <ul className="mt-1 flex flex-col gap-1">
+                                {employee.review.disagreements.map((day) => (
+                                  <li key={day.date} className="text-sm text-ink-label">
+                                    <span className="font-mono text-xs text-ink-muted">{day.date}</span>{" "}
+                                    entered <span className="text-tag-amber-ink">{splitLabel(day.entered)}</span>,
+                                    rules imply{" "}
+                                    <span className="text-tag-blue-ink">
+                                      {splitLabel(day.expected as Record<string, number>)}
+                                    </span>
+                                    {day.consecutiveDay === 7 && (
+                                      <span className="text-ink-muted"> · seventh straight day</span>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </>
                         )}
 
                         {employee.review.days.some((d) => d.skipped === "SHIFT_DIFFERENTIAL") && (
@@ -159,12 +194,20 @@ export default async function PrevailingWagePage({
       </section>
 
       {/* ---------------------------------------------- attachments --- */}
-      <section className="mb-10">
+      <section className="mb-10" data-tour="pw-which-job">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Which rules apply to which job</h2>
         {determinations.length === 0 ? (
+          // This sentence NAMED the way out and then did not give it —
+          // "Upload one on a job first" with nothing to press. A reader who
+          // does not already know that a determination is attached from the
+          // job's Compliance tab has been told what to do and not where.
           <p className="text-sm text-ink-body">
-            No wage determinations recorded yet. Upload one on a job first — the determination is what
-            says the job is prevailing wage at all.
+            No wage determinations recorded yet — the determination is what says the job is
+            prevailing wage at all.{" "}
+            <Link href="/jobs" className="text-link hover:underline">
+              Open the job
+            </Link>{" "}
+            and add it under Compliance.
           </p>
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
@@ -178,6 +221,17 @@ export default async function PrevailingWagePage({
                     {determination.jobName}
                   </Link>
                   <p className="text-sm text-ink-muted">{determination.jurisdiction}</p>
+                  {/* The same sentence the job's Compliance tab shows, so a
+                      stale determination is visible from the compliance side
+                      too. Derived here from the entered dates against the
+                      viewer's day; the dates themselves are entered on the
+                      job's Compliance tab. */}
+                  <DeterminationStandingLine
+                    className="mt-1"
+                    line={determinationStandingLine(
+                      determinationStanding(determination.facts, determination.job, today),
+                    )}
+                  />
                 </div>
                 <DeterminationRuleSetPicker
                   determinationId={determination.id}
@@ -197,7 +251,7 @@ export default async function PrevailingWagePage({
             {ruleSets.length} rule {ruleSets.length === 1 ? "set" : "sets"}
           </h2>
         </div>
-        <div className="mb-4">
+        <div className="mb-4" data-tour="pw-record-rules">
           <RuleSetForm />
         </div>
 
@@ -207,7 +261,7 @@ export default async function PrevailingWagePage({
             thresholds you can cite, and leave the rest blank.
           </p>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="pw-rule-sets">
             {ruleSets.map((ruleSet) => (
               <RuleSetRow
                 key={ruleSet.id}

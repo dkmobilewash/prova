@@ -15,7 +15,32 @@ import {
   submitChangeOrder,
   voidChangeOrder,
 } from "@/lib/actions";
-import { TRADE_SCOPES, type ActionResult } from "@/lib/actions/shared";
+import { TRADE_SCOPE_OPTIONS } from "@/lib/trade-scopes";
+// `import type` on its own line, not `{ TRADE_SCOPE_OPTIONS, type ActionResult }`:
+// an inline `type` specifier still loads the module at runtime, and
+// actions/shared.ts imports prisma. A type-only IMPORT is erased.
+import type { ActionResult } from "@/lib/actions/shared";
+import {
+  CONTRACT_EFFECT,
+  type ChangeOrderStatus,
+  STATUS_LABEL,
+  STATUS_STYLE,
+  VALUE_QUALIFIER,
+  groupIntoBands,
+} from "@/components/changeOrderStates";
+import { DocuSignPanel, type DocuSignEnvelopeView } from "@/components/DocuSignPanel";
+import type { DocuSignCardState } from "@/lib/docusign/setup";
+
+/** "Send with DocuSign" on a submitted change order — optional, and absent
+ * when the page has nothing to say about DocuSign. See DocuSignPanel. */
+export type ChangeOrderDocuSign = {
+  jobId: string;
+  state: DocuSignCardState;
+  autoUpdates: boolean;
+  canVoid: boolean;
+  defaultSigner: { name: string; email: string };
+  byChangeOrder: Record<string, DocuSignEnvelopeView[]>;
+};
 
 const inputClass =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -64,7 +89,7 @@ export type ChangeOrderView = {
   number: number;
   title: string;
   description: string | null;
-  status: "DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED" | "VOID";
+  status: ChangeOrderStatus;
   submittedOn: string | null;
   decidedOn: string | null;
   decisionNotes: string | null;
@@ -117,25 +142,31 @@ function formatEditValue(field: string, value: string) {
   return value;
 }
 
-const STATUS_STYLE: Record<ChangeOrderView["status"], string> = {
-  DRAFT: "border-neutral-400 bg-neutral-800 text-ink-label",
-  SUBMITTED: "border-amber-600 bg-tag-amber text-tag-amber-ink",
-  APPROVED: "border-emerald-700 bg-tag-green text-tag-green-ink",
-  REJECTED: "border-rose-700 bg-tag-rose text-tag-rose-ink",
-  VOID: "border-line-card bg-surface text-ink-muted",
-};
-
-const STATUS_LABEL: Record<ChangeOrderView["status"], string> = {
-  DRAFT: "Draft",
-  SUBMITTED: "Pending GC",
-  APPROVED: "Approved",
-  REJECTED: "Rejected",
-  VOID: "Withdrawn",
-};
-
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
+/** Today, on the calendar of the person looking at the screen — handed
+ * down from the page rather than worked out here.
+ *
+ * This file had its own `today()`: `new Date().toISOString().slice(0, 10)`,
+ * the UTC day. From 17:00 Mountain that is TOMORROW, so a change order
+ * approved at 6pm recorded "answered Sep 23" on a document the GC quotes
+ * back — and correcting it the next morning hit
+ * `lib/actions/changeOrders.ts`'s "A change order can't be answered before
+ * it was sent", blaming the contractor for typing the right date.
+ *
+ * NOT components/localToday.ts, which is what ~30 other forms use and is
+ * the obvious reach. Its own comment says it may only be called from a
+ * component mounted by a user ACTION: `<Decision>` renders for every
+ * SUBMITTED change order and `<DraftActions>` for every DRAFT, out of the
+ * server render, so a browser-derived day here is a hydration mismatch —
+ * and the hidden `decidedOn` inputs below are CONTROLLED, which is the
+ * loud kind. The page resolves the zone from the request instead
+ * (lib/viewerToday.ts) and the markup is identical on both sides.
+ *
+ * WHY NOTHING CAUGHT THE OLD ONE, which is worth a sentence because the
+ * obvious guess is wrong: it did NOT mismatch. `toISOString()` is UTC in
+ * every process, so the server and the browser rendered the same string —
+ * the same wrong string. A bug that is consistently wrong on both sides of
+ * hydration raises no warning anywhere. */
+type TodayProp = { today: string };
 
 function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderView; lineItems: LineItemChoice[] }) {
   const [kind, setKind] = useState<"ADD" | "EDIT" | "REMOVE">("ADD");
@@ -177,7 +208,7 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
         >
           <label className={labelClass}>
             Description
-            <input name="itemDescription" required className={`${inputClass} w-56`} placeholder="Tile backsplash" />
+            <input name="itemDescription" required className={`${inputClass} w-56`} placeholder="2-hr rated deflection track" />
           </label>
           <label className={labelClass}>
             Unit
@@ -185,23 +216,32 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
           </label>
           <label className={labelClass}>
             Qty
-            <input name="quantity" type="number" step="0.01" defaultValue="1" required className={`${inputClass} w-24`} />
+            <input
+              name="quantity"
+              type="text"
+              inputMode="decimal"
+              defaultValue="1"
+              required
+              className={`${inputClass} w-24`}
+            />
           </label>
           <label className={labelClass}>
             Unit price
-            <input name="unitPrice" type="number" step="0.01" className={`${inputClass} w-28`} />
+            <input name="unitPrice" type="text" inputMode="decimal" className={`${inputClass} w-28`} />
           </label>
           <label className={labelClass}>
             Budgeted unit cost
-            <input name="budgetedUnitCost" type="number" step="0.01" className={`${inputClass} w-32`} />
+            <input name="budgetedUnitCost" type="text" inputMode="decimal" className={`${inputClass} w-32`} />
           </label>
           <label className={labelClass}>
             Trade scope
             <select name="tradeScope" className={`${inputClass} w-48`} defaultValue="">
               <option value="">—</option>
-              {TRADE_SCOPES.map((scope) => (
-                <option key={scope} value={scope}>
-                  {scope.replaceAll("_", " ").toLowerCase()}
+              {/* The shared labels, not the enum lowercased — that printed
+                  "eifs" and "lath plaster". The stored value is unchanged. */}
+              {TRADE_SCOPE_OPTIONS.map((scope) => (
+                <option key={scope.value} value={scope.value}>
+                  {scope.label}
                 </option>
               ))}
             </select>
@@ -230,11 +270,11 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
           </label>
           <label className={labelClass}>
             New qty
-            <input name="quantity" type="number" step="0.01" className={`${inputClass} w-24`} />
+            <input name="quantity" type="text" inputMode="decimal" className={`${inputClass} w-24`} />
           </label>
           <label className={labelClass}>
             New unit price
-            <input name="unitPrice" type="number" step="0.01" className={`${inputClass} w-28`} />
+            <input name="unitPrice" type="text" inputMode="decimal" className={`${inputClass} w-28`} />
           </label>
           <button type="submit" disabled={isPending} className={primaryBtn}>
             {isPending ? "Adding…" : "Add to CO"}
@@ -269,7 +309,7 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
   );
 }
 
-function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
+function Decision({ changeOrder, today }: { changeOrder: ChangeOrderView } & TodayProp) {
   const approve = useActionRunner();
   const reject = useActionRunner();
   const void_ = useActionRunner();
@@ -291,7 +331,7 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
         >
           <label className={labelClass}>
             Decision date
-            <input name="decidedOn" type="date" defaultValue={today()} className={`${inputClass} w-40`} />
+            <input name="decidedOn" type="date" defaultValue={today} className={`${inputClass} w-40`} />
           </label>
           <label className={labelClass}>
             GC notes
@@ -313,7 +353,7 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
           }}
           className="flex items-end gap-2"
         >
-          <input type="hidden" name="decidedOn" value={today()} />
+          <input type="hidden" name="decidedOn" value={today} />
           <button
             type="submit"
             disabled={reject.isPending}
@@ -330,7 +370,7 @@ function Decision({ changeOrder }: { changeOrder: ChangeOrderView }) {
           }}
           className="flex items-end gap-2"
         >
-          <input type="hidden" name="decidedOn" value={today()} />
+          <input type="hidden" name="decidedOn" value={today} />
           <button
             type="submit"
             disabled={void_.isPending}
@@ -449,7 +489,7 @@ function ProposalRow({ proposal, canRemove }: { proposal: ProposalView; canRemov
   );
 }
 
-function DraftActions({ changeOrder }: { changeOrder: ChangeOrderView }) {
+function DraftActions({ changeOrder, today }: { changeOrder: ChangeOrderView } & TodayProp) {
   const submit = useActionRunner();
   const discard = useActionRunner();
 
@@ -465,7 +505,7 @@ function DraftActions({ changeOrder }: { changeOrder: ChangeOrderView }) {
       >
         <label className={labelClass}>
           Date sent to GC
-          <input name="submittedOn" type="date" defaultValue={today()} className={`${inputClass} w-40`} />
+          <input name="submittedOn" type="date" defaultValue={today} className={`${inputClass} w-40`} />
         </label>
         <button
           type="submit"
@@ -495,12 +535,124 @@ function DraftActions({ changeOrder }: { changeOrder: ChangeOrderView }) {
   );
 }
 
+function ChangeOrderCard({
+  co,
+  lineItems,
+  docuSign,
+  today,
+}: {
+  co: ChangeOrderView;
+  lineItems: LineItemChoice[];
+  docuSign?: ChangeOrderDocuSign;
+} & TodayProp) {
+  const envelopes = docuSign?.byChangeOrder[co.id] ?? [];
+  return (
+    <li className="rounded-md border border-line-card bg-surface p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="font-medium text-ink">
+          CO #{co.number}: {co.title}
+        </p>
+        <div className="flex items-center gap-2">
+          {/* The figure never appears without saying what it is. A bare
+              "+$18,400" on a PCO reads as money the job has; it is money the
+              job has asked for. */}
+          <span className="text-sm tabular-nums text-ink-label">{co.valueDelta}</span>
+          <span className="text-xs text-ink-body">{VALUE_QUALIFIER[co.status]}</span>
+          <span className={`rounded-full border px-2 py-0.5 text-xs ${STATUS_STYLE[co.status]}`}>
+            {STATUS_LABEL[co.status]}
+          </span>
+        </div>
+      </div>
+      {co.description && <p className="mt-1 text-sm text-ink-body">{co.description}</p>}
+
+      {co.supersedesLabel && (
+        <p className="mt-1 text-xs text-tag-blue-ink">Raised to correct {co.supersedesLabel}.</p>
+      )}
+      {co.revisedByLabels.length > 0 && (
+        <p className="mt-1 text-xs text-tag-blue-ink">
+          Corrected by {co.revisedByLabels.join(", ")}. This one stayed approved — it did move the
+          contract value at the time.
+        </p>
+      )}
+      {co.reopenedAt && (
+        <p className="mt-1 text-xs text-tag-amber-ink">
+          Approved, then reopened on {formatDate(co.reopenedAt)}
+          {co.reopenNote ? `: "${co.reopenNote}"` : ""}.
+        </p>
+      )}
+
+      <p className="mt-1 text-xs text-ink-muted">
+        {co.status === "DRAFT"
+          ? "Not sent yet."
+          : `Sent ${formatDate(co.submittedOn)}${
+              co.decidedOn ? ` · answered ${formatDate(co.decidedOn)}` : " · awaiting a decision"
+            }`}
+        {co.decisionNotes ? ` · "${co.decisionNotes}"` : ""}
+      </p>
+
+      {/* Where this one stands against the contract sum, said on the row
+          rather than only in the band heading — the row is what gets
+          screenshotted into an email. */}
+      <p className="mt-1 text-xs text-ink-body">{CONTRACT_EFFECT[co.status]}</p>
+
+      {co.proposals.length > 0 && (
+        <ul className="mt-2 flex flex-col gap-1">
+          {co.proposals.map((proposal) => (
+            <ProposalRow key={proposal.id} proposal={proposal} canRemove={co.status === "DRAFT"} />
+          ))}
+        </ul>
+      )}
+
+      {/* Audit trail of what actually landed, written on approval. */}
+      {co.edits.length > 0 && (
+        <ul className="mt-2 flex flex-col gap-0.5">
+          {co.edits.map((edit) => (
+            <li key={edit.id} className="text-xs text-ink-muted">
+              {EDIT_FIELD_LABEL[edit.field] ?? edit.field}:{" "}
+              {formatEditValue(edit.field, edit.oldValue)} →{" "}
+              {formatEditValue(edit.field, edit.newValue)}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {co.status === "DRAFT" && (
+        <>
+          <ProposalForms changeOrder={co} lineItems={lineItems} />
+          <DraftActions changeOrder={co} today={today} />
+        </>
+      )}
+
+      {co.status === "SUBMITTED" && <Decision changeOrder={co} today={today} />}
+
+      {docuSign && (co.status === "SUBMITTED" || envelopes.length > 0) && (
+        <DocuSignPanel
+          state={docuSign.state}
+          jobId={docuSign.jobId}
+          subject="CHANGE_ORDER"
+          subjectId={co.id}
+          defaultSigner={docuSign.defaultSigner}
+          envelopes={envelopes}
+          canSend={co.status === "SUBMITTED"}
+          canVoid={docuSign.canVoid}
+          autoUpdates={docuSign.autoUpdates}
+          sendLabel="Get the GC's signature with DocuSign"
+        />
+      )}
+
+      {co.status === "APPROVED" && <Correction changeOrder={co} />}
+    </li>
+  );
+}
+
 export function ChangeOrders({
   jobId,
   changeOrders,
   lineItems,
   pendingExposure,
   pendingUnbookable,
+  docuSign,
+  today,
 }: {
   jobId: string;
   changeOrders: ChangeOrderView[];
@@ -511,12 +663,15 @@ export function ChangeOrders({
    * (#105 finding 5) — reported so the exposure figure reads as a floor
    * rather than a silently-shrunk total. */
   pendingUnbookable?: number;
-}) {
+  /** Send-with-DocuSign on submitted change orders. Omitted, nothing renders. */
+  docuSign?: ChangeOrderDocuSign;
+} & TodayProp) {
   const pendingCount = changeOrders.filter((co) => co.status === "SUBMITTED").length;
+  const { groups, unbanded } = groupIntoBands(changeOrders);
   const create = useActionRunner();
 
   return (
-    <section className="mb-10">
+    <section className="mb-10" data-tour="job-change-orders">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold text-ink">Change orders</h2>
         {pendingCount > 0 && (
@@ -533,6 +688,17 @@ export function ChangeOrders({
         )}
       </div>
 
+      {/* The one sentence the reviewer's question was asking for. The bands
+          below carry it too, but a reader who only reads the heading should
+          not have to guess which kind of change order this section holds:
+          it holds both, apart. */}
+      <p className="mb-4 text-sm text-ink-body">
+        Pending and executed are kept apart below. A <strong className="text-ink-label">PCO</strong>{" "}
+        is what we have asked the GC for and is not in the contract sum; an{" "}
+        <strong className="text-ink-label">executed</strong> change order is one they agreed to, and
+        it has already moved it.
+      </p>
+
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -544,7 +710,7 @@ export function ChangeOrders({
       >
         <label className={labelClass}>
           New change order
-          <input name="title" required className={`${inputClass} w-64`} placeholder="Add tile backsplash" />
+          <input name="title" required className={`${inputClass} w-64`} placeholder="Add rated head-of-wall at corridor" />
         </label>
         <label className={labelClass}>
           Notes
@@ -564,81 +730,53 @@ export function ChangeOrders({
           No change orders on this job yet.
         </div>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {changeOrders.map((co) => (
-            <li key={co.id} className="rounded-md border border-line-card bg-surface p-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="font-medium text-ink">
-                  CO #{co.number}: {co.title}
-                </p>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm tabular-nums text-ink-label">{co.valueDelta}</span>
-                  <span className={`rounded-full border px-2 py-0.5 text-xs ${STATUS_STYLE[co.status]}`}>
-                    {STATUS_LABEL[co.status]}
+        <div className="flex flex-col gap-8">
+          {groups.map(({ band, items }) => (
+            <section key={band.key}>
+              <header className="mb-3 border-b border-line-row pb-2">
+                <h3 className="font-semibold text-ink">
+                  {band.heading}
+                  <span className="ml-2 text-xs font-normal tabular-nums text-ink-body">
+                    {items.length}
                   </span>
-                </div>
-              </div>
-              {co.description && <p className="mt-1 text-sm text-ink-body">{co.description}</p>}
-
-              {co.supersedesLabel && (
-                <p className="mt-1 text-xs text-tag-blue-ink">Raised to correct {co.supersedesLabel}.</p>
-              )}
-              {co.revisedByLabels.length > 0 && (
-                <p className="mt-1 text-xs text-tag-blue-ink">
-                  Corrected by {co.revisedByLabels.join(", ")}. This one stayed approved — it did move the
-                  contract value at the time.
+                </h3>
+                <p className="mt-1 text-xs text-ink-body">
+                  {band.blurb}
+                  {band.alsoCalled && (
+                    <span className="text-ink-muted"> Also called {band.alsoCalled}.</span>
+                  )}
                 </p>
-              )}
-              {co.reopenedAt && (
-                <p className="mt-1 text-xs text-tag-amber-ink">
-                  Approved, then reopened on {formatDate(co.reopenedAt)}
-                  {co.reopenNote ? `: "${co.reopenNote}"` : ""}.
-                </p>
-              )}
-
-              <p className="mt-1 text-xs text-ink-muted">
-                {co.status === "DRAFT"
-                  ? "Not sent yet."
-                  : `Sent ${formatDate(co.submittedOn)}${
-                      co.decidedOn ? ` · answered ${formatDate(co.decidedOn)}` : " · awaiting a decision"
-                    }`}
-                {co.decisionNotes ? ` · "${co.decisionNotes}"` : ""}
-              </p>
-
-              {co.proposals.length > 0 && (
-                <ul className="mt-2 flex flex-col gap-1">
-                  {co.proposals.map((proposal) => (
-                    <ProposalRow key={proposal.id} proposal={proposal} canRemove={co.status === "DRAFT"} />
-                  ))}
-                </ul>
-              )}
-
-              {/* Audit trail of what actually landed, written on approval. */}
-              {co.edits.length > 0 && (
-                <ul className="mt-2 flex flex-col gap-0.5">
-                  {co.edits.map((edit) => (
-                    <li key={edit.id} className="text-xs text-ink-muted">
-                      {EDIT_FIELD_LABEL[edit.field] ?? edit.field}:{" "}
-                      {formatEditValue(edit.field, edit.oldValue)} →{" "}
-                      {formatEditValue(edit.field, edit.newValue)}
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {co.status === "DRAFT" && (
-                <>
-                  <ProposalForms changeOrder={co} lineItems={lineItems} />
-                  <DraftActions changeOrder={co} />
-                </>
-              )}
-
-              {co.status === "SUBMITTED" && <Decision changeOrder={co} />}
-
-              {co.status === "APPROVED" && <Correction changeOrder={co} />}
-            </li>
+              </header>
+              <ul className="flex flex-col gap-3">
+                {items.map((co) => (
+                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} docuSign={docuSign} today={today} />
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+
+          {/* A change order in a state no band claims still renders. The whole
+              complaint behind this section was that a record can be on screen
+              without saying what it is; a record that is NOT on screen is the
+              worse version of that, and a band list is exactly the kind of
+              thing a new enum member quietly falls out of. */}
+          {unbanded.length > 0 && (
+            <section>
+              <header className="mb-3 border-b border-line-row pb-2">
+                <h3 className="font-semibold text-ink">Not classified</h3>
+                <p className="mt-1 text-xs text-tag-amber-ink">
+                  These are in a state this screen has no heading for. They are shown here rather
+                  than hidden — treat their effect on the contract as unknown.
+                </p>
+              </header>
+              <ul className="flex flex-col gap-3">
+                {unbanded.map((co) => (
+                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} docuSign={docuSign} today={today} />
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
       )}
     </section>
   );

@@ -1,0 +1,104 @@
+// Procore: a READ-ONLY feed of a GC's project into one C Stream job.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// WHAT THESE ROWS ARE. A cache of the GC's own records — their drawings,
+// their RFIs, their submittals — as Procore last showed them to the
+// subcontractor's login. They are NOT this company's evidence records and
+// are deliberately kept out of Rfi, Submittal and DrawingSet: those are the
+// sub's own, identity-locked and counter-numbered (CLAUDE.md "Evidence
+// records" and "Sequence numbers"). A Procore RFI numbered 14 is the GC's
+// number 14; mixing it into the sub's log would let the GC's numbering and
+// the sub's counter disagree about what "RFI 14" means on this job.
+//
+// So a ProcoreItem is replaced wholesale on every refresh, may be deleted
+// freely, and never gains a field a person types into. The only thing C
+// Stream decides here is WHICH job a Procore project feeds — the link.
+//
+// The connection itself (the OAuth tokens) lives on IntegrationConnection
+// with provider PROCORE, one per company, like every other provider.
+
+/// Which Procore project feeds which C Stream job. One project per job and
+/// one job per project within a company, so "where did this RFI come from"
+/// always has one answer.
+///
+/// ON DELETE CASCADE from Job, on purpose: this is not evidence, it is a
+/// pointer at somebody else's system, and a scratch job being deleted
+/// should take its pointer (and the cache under it) with it rather than
+/// refuse. Also listed in scratch-scope.mjs HANDLED_MODELS so the
+/// jobId census in clean-test-jobs.mjs recognises it.
+model ProcoreProjectLink {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String  @unique
+  job       Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  /// Procore's ids, as strings: Procore sends integers, but they are
+  /// identifiers, not quantities, and nothing here does arithmetic on them.
+  procoreCompanyId   String
+  procoreCompanyName String
+  procoreProjectId   String
+  procoreProjectName String
+
+  /// Who linked it. A plain id rather than a relation: a pointer for the
+  /// audit line, not something anything joins through.
+  linkedByUserId String?
+  linkedAt       DateTime @default(now())
+
+  /// The last refresh's time and outcome, written in the same transaction
+  /// as the items it describes (the IntegrationConnection.lastSyncedAt
+  /// argument): "is this stale?" must not need a scan of the items.
+  lastRefreshedAt    DateTime?
+  lastRefreshStatus  IntegrationSyncStatus?
+  /// A sentence for the page — never a payload and never a token.
+  lastRefreshMessage String?
+
+  items ProcoreItem[]
+
+  @@unique([companyId, procoreProjectId])
+  @@index([companyId])
+}
+
+enum ProcoreItemKind {
+  DRAWING
+  RFI
+  SUBMITTAL
+}
+
+/// One GC record, as Procore last showed it. Replaced on each refresh.
+model ProcoreItem {
+  id        String             @id @default(cuid())
+  /// Denormalised from the link so every read can be scoped by company in
+  /// the same WHERE, without trusting a join to do the tenant check.
+  companyId String
+  linkId    String
+  link      ProcoreProjectLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  kind      ProcoreItemKind
+  procoreId String
+
+  /// As Procore shows it: "A-101", "14", "09 21 16-3". Text, never parsed.
+  number           String?
+  title            String
+  /// Procore's own status word ("open", "Approved as Noted"). Shown as
+  /// given; nothing in C Stream branches on it.
+  status           String?
+  /// Drawings: the revision label. Submittals: the revision number.
+  revision         String?
+  discipline       String?
+  /// Who Procore says holds the ball, as a display name.
+  ballInCourt      String?
+  /// Stored at UTC midnight, like every calendar day in this app.
+  dueDate          DateTime?
+  /// When Procore says the record last changed.
+  procoreUpdatedAt DateTime?
+  /// Where to open it in Procore. Built from ids, not taken from a payload
+  /// URL, so a link on this page always points at app.procore.com.
+  webUrl           String
+
+  fetchedAt DateTime
+
+  @@unique([linkId, kind, procoreId])
+  @@index([companyId, kind])
+}

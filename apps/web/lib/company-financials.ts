@@ -221,6 +221,37 @@ export function marginIsHealthy(rate: number | null): boolean {
 }
 
 /**
+ * Is there a single figure here worth putting on a screen?
+ *
+ * `components/MetricBar.tsx` renders nothing when this is true — see its
+ * comment for why 52px of "$0.00 · — · $0.00 · $0.00" is worse than no bar
+ * at all on a brand-new account.
+ *
+ * False the moment ANY of them is a number, including a NEGATIVE gross
+ * profit: "nothing sold yet" and "this is going badly" would otherwise
+ * look alike, and the second is exactly what the bar exists for.
+ *
+ * Every field of `CompanyFinancials` is tested rather than the four the bar
+ * happens to render today, and that is deliberate. A fifth figure added to
+ * the bar without a line added here would be silently suppressed on exactly
+ * the accounts that have only that one — the "written, documented, and
+ * never called" shape, wearing a hidden bar. `earnedCoverage` is the one
+ * exclusion, and it is not a figure: it is the SHARE the margin is blended
+ * over, meaningless on its own, and only ever shown as a hint beside a
+ * margin this function has already required to be null.
+ */
+export function hasNothingToSay(financials: CompanyFinancials): boolean {
+  return (
+    financials.estimatedRevenue === 0 &&
+    financials.grossProfit === 0 &&
+    financials.grossMarginRate === null &&
+    financials.cashPosition === 0 &&
+    financials.outstandingReceivable === 0 &&
+    financials.retainageHeld === 0
+  );
+}
+
+/**
  * One job's health as a sentence, because a bare variance percentage on a
  * dashboard row is a number nobody acts on.
  */

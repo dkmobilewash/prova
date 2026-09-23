@@ -24,8 +24,10 @@ import type {
  * `BidInvitation`, logged from the form at the foot of a contact's page
  * ("Log invitation") and listed on /bids — the GC, a project name, an
  * optional trade tag, an optional due date, optional notes, status
- * INVITED, and no bid amount until the bid is marked submitted. A T1 log
- * entry like the estimate job: nothing is sent, nothing is priced.
+ * INVITED, and (#133) an optional bid amount for the rare case it is
+ * already known -- left blank, as it almost always is, it is entered later
+ * when the bid is marked submitted or won. A T1 log entry like the
+ * estimate job: nothing is sent, nothing is priced by this command itself.
  *
  * Every line on the card is either read off a row or the person's own
  * words, decided by code:
@@ -47,9 +49,14 @@ import type {
  *     a question back; anything unreadable is a question quoting the
  *     words. No due date is allowed, as on the form, and warned for the
  *     same reason as the trade.
- *   - THE FIGURE the record could carry, a bid amount, is not on the form
- *     and not on the card. The card says so in its own line, so every
- *     field the row will hold is visible before the tap.
+ *   - THE FIGURE the record could carry, a bid amount, is on the form
+ *     (#133, optional) but deliberately NOT on this card. #133 scoped that
+ *     part out on purpose: reading a number back out of the person's own
+ *     words needs the same chip/clarify machinery as trade and due date
+ *     above, for a field almost never filled in at invitation time -- not
+ *     a small addition the way the bare form input was. The card says so
+ *     in its own line, so every field the row will hold is visible before
+ *     the tap.
  *
  * DIRECT over the lifted core in lib/estimating/bid-invitation.ts rather
  * than over `createBidInvitation` itself, because the action throws its
@@ -114,7 +121,7 @@ const tradeOptions = (scopes: readonly TradeScope[]): Option[] =>
 /** The due date the person gave, as a day, or the Resolution that stops
  * here. There is no stored date on a record that does not exist yet, so a
  * relative phrase is a question rather than a count from today. */
-function dueDayFor(text: string, today: string): { day: string } | Resolution {
+export function dueDayFor(text: string, today: string, field = "dueDate"): { day: string } | Resolution {
   const parsed = parseDateWords(text, today);
   if (!parsed) {
     return {
@@ -128,7 +135,7 @@ function dueDayFor(text: string, today: string): { day: string } | Resolution {
     case "which-year":
       return {
         kind: "clarify",
-        field: "dueDate",
+        field,
         question: `"${text}" has already passed this year — which due date?`,
         options: [
           { value: parsed.thisYear, label: dayLabel(parsed.thisYear), detail: relativeToToday(parsed.thisYear, today) },

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Prova",
+    "name": "C Stream",
     "slug": "prova",
     "scheme": "prova",
     "version": "0.0.1",
@@ -10,7 +10,21 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "C Stream records where a site photo was taken, so a photo is evidence of where the work was."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "C Stream uses the camera to take site photos, stamped with the time and place they were taken.",
+          "photosPermission": "C Stream adds photos from your library to a job."
+        }
+      ],
+      "expo-sharing"
     ],
     "ios": {
       "supportsTablet": true,
@@ -21,7 +35,11 @@
       }
     },
     "android": {
-      "package": "com.cstream.prova"
+      "package": "com.cstream.prova",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f0f0f"
+      }
     },
     "web": {
       "bundler": "metro",
@@ -33,6 +51,13 @@
         "projectId": "2f42926a-3311-4a3a-a351-1b57abdb4f5e"
       }
     },
-    "owner": "diegocstream"
+    "owner": "diegocstream",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f2f2f7"
+    },
+    "backgroundColor": "#f2f2f7"
   }
 }

@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@clerk/expo";
 import * as api from "./api";
+import { cacheKeys } from "./cache-keys";
+import { cachedRead, staleNote, withToken } from "./cached-read";
+import { tokenOrNull } from "./clerk-token";
+import { syncOnce } from "./sync-order";
 import { getClientId } from "./client-id";
 import { uuid } from "./id";
 import { enqueue, flushQueue, pendingCount } from "./sync-queue";
+import { useStableGetToken } from "./use-stable-get-token";
 import type { FieldReportFields, FieldReportRow } from "./types";
 
 /** A job's field reports with offline writes: an optimistic local row is
@@ -11,37 +16,61 @@ import type { FieldReportFields, FieldReportRow } from "./types";
  * the queue against the API. Re-fetching the list after a flush replaces
  * optimistic rows with the server's. */
 export function useFieldReports(jobId: string) {
-  const { getToken, isSignedIn } = useAuth();
+  const { isSignedIn } = useAuth();
+  const getToken = useStableGetToken();
   const [reports, setReports] = useState<FieldReportRow[]>([]);
   const [pending, setPending] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The line saying these came off the phone, or null when fresh;
+   * "nothing" when there was no signal and nothing cached. */
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
 
   const refresh = useCallback(async () => {
-    const token = await getToken();
-    if (!token) return;
     setLoading(true);
     try {
-      setReports(await api.listFieldReports(jobId, token));
+      // Yesterday's report is what somebody checks before writing today's,
+      // and with no signal this list was empty with an error over it.
+      const result = await cachedRead(
+        cacheKeys.reports(jobId),
+        withToken(getToken, (token) => api.listFieldReports(jobId, token)),
+      );
       setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load reports");
+      if (result.from === "nothing") {
+        setOffline("nothing");
+        return;
+      }
+      setReports(result.value);
+      setOffline(staleNote(result));
     } finally {
       setLoading(false);
     }
   }, [getToken, jobId]);
 
-  const sync = useCallback(async () => {
-    const token = await getToken();
-    if (!token) return;
-    try {
-      await flushQueue(token);
-    } catch {
-      // 401 or offline — leave queued, retry later.
-    }
-    setPending(await pendingCount());
-    await refresh();
-  }, [getToken, refresh]);
+  const sync = useCallback(
+    () =>
+      // Same rule as useSync, same scar: the read never waits on the
+      // write (lib/sync-order.ts). Offline this screen showed neither the
+      // reports it had cached nor the note saying they were cached,
+      // because both were behind a queue flush.
+      syncOnce({
+        refresh,
+        counters: async () => setPending(await pendingCount()),
+        flush: async () => {
+          const before = await pendingCount();
+          if (before === 0) return false;
+          const token = await tokenOrNull(getToken);
+          if (!token) return false;
+          try {
+            await flushQueue(token);
+          } catch {
+            // 401 or offline — leave queued, retry later.
+          }
+          return (await pendingCount()) !== before;
+        },
+      }),
+    [getToken, refresh],
+  );
 
   useEffect(() => {
     if (isSignedIn) {
@@ -102,5 +131,5 @@ export function useFieldReports(jobId: string) {
     [sync],
   );
 
-  return { reports, pending, loading, error, refresh, create, update, sync };
+  return { reports, pending, loading, error, offline, refresh, create, update, sync };
 }

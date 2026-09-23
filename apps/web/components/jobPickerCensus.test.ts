@@ -52,6 +52,9 @@ const LABELLED_PICKERS: Record<string, number> = {
   "components/BackchargeFields.tsx": 1,
   "components/CloseoutJobCard.tsx": 1,
   "components/ComplianceUploadForm.tsx": 1,
+  // Which job somebody is being put ON for a day. Added with the per-day
+  // crew schedule.
+  "components/CrewScheduleBoard.tsx": 1,
   "components/DrawingSetFields.tsx": 1,
   // Two: deploy a piece of equipment, and move an existing stay to another job.
   "components/EquipmentDeploymentControls.tsx": 2,
@@ -59,6 +62,8 @@ const LABELLED_PICKERS: Record<string, number> = {
   // Where a DROPPED document gets filed. Added with /intake; it shipped
   // rendering `job.name` and this census is what caught it.
   "components/IntakeTable.tsx": 1,
+  // Which job a lien deadline belongs to. Added with /lien-deadlines.
+  "components/LienDeadlinesBoard.tsx": 1,
   "components/MaterialOrderFields.tsx": 1,
   "components/MessageComposer.tsx": 1,
   "components/PunchListForm.tsx": 1,
@@ -70,11 +75,13 @@ const LABELLED_PICKERS: Record<string, number> = {
   // ---- filter chip rows: which job a log is narrowed to
   "app/(app)/backcharges/page.tsx": 1,
   "app/(app)/drawings/page.tsx": 1,
+  "app/(app)/field-reports/page.tsx": 1,
   "app/(app)/material-orders/page.tsx": 1,
   "app/(app)/photos/page.tsx": 1,
   "app/(app)/punch-lists/page.tsx": 1,
   "app/(app)/rfis/page.tsx": 1,
   "app/(app)/submittals/page.tsx": 1,
+  "app/(app)/settings/integrations/page.tsx": 4,
 };
 
 /**
@@ -169,7 +176,41 @@ describe("the job-picker census", () => {
     // bare `job.name` and was caught by the rule below rather than by a
     // reviewer. Moving this number is meant to be a decision, which is why
     // it is a literal and not derived.
-    expect(expected).toEqual(23);
+    //
+    // 23 -> 24 on 2026-09-16: /field-reports gained the job filter chips
+    // that /punch-lists and /photos already had. It is the log a GC asks
+    // for by job, and reading it meant picking rows out of a company-wide
+    // week by eye.
+    //
+    // 24 -> 25 on 2026-09-17: the crew schedule's "which job is he on"
+    // picker. BOTH sides of the merge that brought this in had moved the
+    // number 23 -> 24 independently — /field-reports above, /schedule here
+    // — so a mechanical merge kept "24" and would have failed on a count
+    // that was right on each branch alone. Two pickers, one literal, which
+    // is the reason it is a literal: it made a person add them up.
+    //
+    // 25 -> 26 on 2026-09-18: /lien-deadlines' "which job is this deadline
+    // on" picker, in LienDeadlinesBoard's shared create/edit fields (the
+    // edit form does not render it — job is what the row IS — so the call
+    // appears once in source).
+    //
+    // 26 -> 27 on 2026-09-18: the Procore card's "which of your jobs does
+    // this GC project feed" picker on /settings/integrations.
+    //
+    // 27 -> 28 on 2026-09-19: the CompanyCam card's own "which of your jobs
+    // does this project import into" picker, the same shape as Procore's
+    // and on the same page — /settings/integrations now calls the helper
+    // twice, once per card.
+    //
+    // 28 -> 30 on 2026-09-19/20: the ACC (Autodesk Construction Cloud) and
+    // Bluebeam cards' own "which of your jobs does this GC project/session
+    // feed" pickers — same shape as Procore's and CompanyCam's, both on
+    // the same page, both built in parallel from the same base. Same shape
+    // as the 23 -> 24 entry above: BOTH sides of this merge moved 28 -> 29
+    // independently (a mechanical merge would have kept "29" and been
+    // wrong), so /settings/integrations now calls the helper FOUR times,
+    // one per card, and the number here is the sum of both additions.
+    expect(expected).toEqual(30);
     expect(actual).toEqual(expected);
   });
 

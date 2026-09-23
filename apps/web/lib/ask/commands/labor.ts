@@ -160,7 +160,7 @@ async function resolveLogTimeEntry(ctx: CommandContext, input: CommandInput): Pr
   };
 }
 
-async function executeLogTimeEntry(_ctx: CommandContext, payload: ResolvedPayload) {
+async function executeLogTimeEntry(ctx: CommandContext, payload: ResolvedPayload) {
   const jobId = str(payload, "jobId");
   const jobName = str(payload, "jobName");
   const employeeUserId = str(payload, "employeeUserId");
@@ -176,7 +176,8 @@ async function executeLogTimeEntry(_ctx: CommandContext, payload: ResolvedPayloa
   );
   if (!result.ok) return { ok: false as const, error: result.error };
   const row = await prisma.timeEntry.findFirst({
-    where: { jobId, employeeUserId, date: utcMidnight(date) },
+    // Belt-and-braces: logTimeEntry already asserted the job in-company.
+    where: { jobId, employeeUserId, date: utcMidnight(date), job: { companyId: ctx.companyId } },
     orderBy: { createdAt: "desc" },
     select: { id: true },
   });
@@ -246,4 +247,41 @@ export const laborExclusions: Exclusion[] = [
   },
   { action: "uploadPrevailingWageDetermination", reason: "Needs a determination document the browser has already uploaded to storage (#27), and is compliance configuration for a job; page only." },
   { action: "deletePrevailingWageDetermination", reason: "T5: deletes are never commands." },
+  {
+    action: "logDelay",
+    reason: "A delay is a structured record (cause, who, times, crew-hours, who at the GC was told) entered on the job page or the phone; not yet an Ask command.",
+  },
+  { action: "removeDelay", reason: "T5: deletes are never commands." },
+  {
+    action: "draftChangeOrderFromDelay",
+    reason: "Starts a change order from a delay's record; done on the job page in front of that delay, page only.",
+  },
+  {
+    action: "archiveCrewMember",
+    reason: "Taking a person off the crew is an owner's roster decision, made on the Team page in front of the name; page only.",
+  },
+  {
+    action: "createCrewMember",
+    // Genuinely tempting — "add Luis Ortega to the crew" is one sentence,
+    // and this is a name with no other consequence. It is page-only anyway
+    // because of what the name IS: a locked identity field. A WH-347 names
+    // this person, the legal name cannot be edited afterwards (a database
+    // trigger refuses it), and the correction path is archive-and-re-add,
+    // which only an owner can do. A transcribed or autocorrected surname
+    // is therefore not a typo, it is a filing somebody has to retire. The
+    // form puts the spelling in front of the person before it is saved.
+    reason: "The legal name is locked once saved and prints on a filed payroll; it is typed and read back on the Team page, never transcribed.",
+  },
+  {
+    action: "updateCrewMember",
+    reason: "Edits a crew record in front of the row it belongs to — and what it may change (the employee number, the craft) is exactly what the screen shows; page only.",
+  },
+  {
+    action: "approveTimesheetDay",
+    reason: "Approving a signed day makes it payroll; it is done in front of the signature and the hours it covers, on the job page only.",
+  },
+  {
+    action: "reopenTimesheetDay",
+    reason: "Reopening a signed day unlocks payroll evidence and records why; done on the row it reopens, page only.",
+  },
 ];

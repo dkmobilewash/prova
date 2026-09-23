@@ -1,5 +1,7 @@
 import type { AskToolDefinition } from "@prova/integrations";
+import type { WebSuggestion } from "./webSuggestions";
 import { can, type Capability, type Principal } from "@/lib/permissions";
+import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import { equipmentCommands, equipmentExclusions } from "./commands/equipment";
 import { estimatingCommands, estimatingExclusions } from "./commands/estimating";
 import { notYetRegistered } from "./commands/exclusions";
@@ -12,6 +14,9 @@ import { punchListCommands, punchListExclusions } from "./commands/punchLists";
 import { retainageCommands } from "./commands/retainage";
 import { rfiCommands, rfiExclusions } from "./commands/rfis";
 import { scheduleCommands } from "./commands/schedule";
+import { pursuitCommands } from "./commands/pursuits";
+import { crewScheduleCommands } from "./commands/crewSchedule";
+import { contactCommands, contactExclusions } from "./commands/contacts";
 
 /**
  * The commands: what Ask can DO, as distinct from what it can answer.
@@ -60,7 +65,11 @@ export type CommandName =
   | "log_time_entry"
   | "send_email"
   | "reschedule_job"
-  | "log_bid_invitation";
+  | "log_bid_invitation"
+  | "add_bid_pursuit"
+  | "set_pursuit_stage"
+  | "schedule_crew"
+  | "add_contact";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
  * composer) has no member on purpose: it cannot be registered. T4 is an
@@ -81,10 +90,34 @@ export type CommandMode = "DIRECT" | "HANDOFF";
 
 export type Actor = { companyId: string; userId: string; principal: Principal };
 
+/** Public-web research for a new bid. Takes ONLY the project name and the
+ * location the person typed — the type is the boundary on what may be
+ * searched for. Supplied by the Ask loop, bound to the company for usage
+ * accounting; absent everywhere else, which is how the confirm tap and every
+ * test that does not pass one run with no web access at all. */
+export type BidResearcher = (input: {
+  projectName: string;
+  location: string;
+}) => Promise<{ ok: true; suggestions: WebSuggestion[] } | { ok: false }>;
+
 export type CommandContext = Actor & {
   /** The person's calendar date, resolved on the server by viewerToday().
    * The only "today" a command may use. */
   today: string;
+  research?: BidResearcher;
+  /** The three onboarding answers off the Company row — how this business
+   * works, so the model's wording fits the contractor in front of it
+   * (lib/ask/business-scope-context.ts). Comes from the SESSION's company,
+   * never from the request body, for the same reason `companyId` does.
+   *
+   * Optional, and absent means what all-null means: say nothing about
+   * scope, behave as the box did before. Every caller but `/api/ask` omits
+   * it — the confirm tap has no model to tell.
+   *
+   * It reaches the model as one paragraph of context and nothing else. No
+   * command reads it, none may be gated on it, and the offered tool list is
+   * identical whatever it says: this is phrasing, never permission. */
+  businessScope?: BusinessScopeAnswers;
 };
 
 export type PreviewLine = { label: string; value: string };
@@ -102,7 +135,17 @@ export type Resolution =
   /** Everything needed is known; show the card. `existing` means the
    * natural key already matches a row: the card links to it and offers no
    * button, and the proposal is recorded as refused. */
-  | { kind: "ready"; resolved: ResolvedPayload; preview: PreviewLine[]; warnings: string[]; existing?: Link }
+  | {
+      kind: "ready";
+      resolved: ResolvedPayload;
+      preview: PreviewLine[];
+      warnings: string[];
+      existing?: Link;
+      /** Found on the public web, shown apart from the preview and marked
+       * as such, each with its sources. The same list sits in `resolved`
+       * as `webSuggestions`; the person can drop any before confirming. */
+      suggestions?: WebSuggestion[];
+    }
   /** A name matched several rows. The person picks from chips; the answer
    * comes back as `field: option.value` and `resolve` runs again with no
    * model pass. At least two options, always. */
@@ -202,6 +245,9 @@ export const COMMANDS: CommandDefinition[] = [
   ...messageCommands,
   ...scheduleCommands,
   ...bidCommands,
+  ...pursuitCommands,
+  ...crewScheduleCommands,
+  ...contactCommands,
 ];
 
 export const EXCLUSIONS: Exclusion[] = [
@@ -213,6 +259,7 @@ export const EXCLUSIONS: Exclusion[] = [
   ...billingExclusions,
   ...laborExclusions,
   ...messageExclusions,
+  ...contactExclusions,
   ...notYetRegistered,
 ];
 

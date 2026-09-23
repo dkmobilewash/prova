@@ -99,9 +99,25 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/lib/viewerToday", () => ({
   viewerToday: vi.fn(async () => "2026-09-12"),
   viewerTimeZone: vi.fn(async () => "UTC"),
+  // The same day as a Date, which is what /cash-flow and /dashboard age
+  // invoices against. Nothing here has an invoice, so the value only has
+  // to be the day above.
+  viewerAsOf: vi.fn(async () => new Date("2026-09-12T00:00:00.000Z")),
+}));
+// The empty state's "Walk me through this page" button asks which page it is
+// on, and its Ask button holds a router; neither exists in a bare render.
+// "/contacts" has a walkthrough, so the button renders and is exercised.
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/contacts",
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 // Server actions, imported by these pages only to hand to a form.
 vi.mock("@/lib/actions/notifications", () => ({ sendMyAlertDigest: vi.fn() }));
+// `/team` builds the sign-up link to share from the request's own headers,
+// and there is no request here.
+vi.mock("next/headers", () => ({
+  headers: async () => new Map([["host", "app.example.com"], ["x-forwarded-proto", "https"]]),
+}));
 
 /** Each page is imported and called at its own call site below, so its real
  * props are typechecked rather than widened away by a shared helper. */
@@ -173,6 +189,32 @@ describe("/bids with no bids and no filter applied", () => {
     expect(html).toContain("No bids match this filter");
     // And a way back out of it.
     expect(html).toContain('href="/bids"');
+  });
+});
+
+describe("/pipeline with no pursuits and no invitations", () => {
+  const load = async () => {
+    const { default: Page } = await import("@/app/(app)/pipeline/page");
+    return renderToStaticMarkup(await Page());
+  };
+
+  it("renders the chase list's own empty state, with a way to add the first one", async () => {
+    const html = await load();
+    // Anti-vacuity: the real page rendered.
+    expect(html).toContain("Bid pipeline");
+    expect(html).toContain("Nothing on the chase list yet.");
+    expect(html).toContain("it only knows what somebody here types");
+    expect(html).toContain("Add a pursuit");
+  });
+
+  it("still says the invitation half is empty, separately — one does not hide the other", async () => {
+    const html = await load();
+    expect(html).toContain("No bid invitations recorded yet");
+  });
+
+  it("does not render the add form until somebody clicks — it is collapsed", async () => {
+    const html = await load();
+    expect(html).not.toContain('data-testid="bid-pursuit-form"');
   });
 });
 
@@ -274,6 +316,52 @@ describe("/settings with nothing filled in", () => {
   });
 });
 
+/**
+ * THE PAGE A UNION SUB LANDS ON WHEN THE DASHBOARD SAYS "ADD YOUR CREW".
+ *
+ * Rendered against an EMPTY database, which is the only state that matters
+ * here: the crew section was wrapped in `crew.length > 0 ||
+ * archivedCrewCount > 0`, so on a brand-new account — every account today —
+ * the page offered an email invite, a sign-up link, and nothing at all for
+ * the fifteen to forty people who do the work and will never have a login.
+ *
+ * A component test cannot see this and a source scan can be satisfied
+ * without it. This calls the real page with nothing in the database and
+ * reads what comes out.
+ */
+describe("/team on a brand-new account with nobody on the crew", () => {
+  const load = async () => {
+    const { default: Page } = await import("@/app/(app)/team/page");
+    return renderToStaticMarkup(await Page());
+  };
+
+  it("renders, and the crew section is on it", async () => {
+    const html = await load();
+    // Anti-vacuity: a real render of the real page.
+    expect(html).toContain("Team members");
+    expect(html).toContain("Nobody on the crew yet");
+  });
+
+  it("puts the add form on the screen, not behind anything", async () => {
+    const html = await load();
+    expect(html).toContain('name="legalFirstName"');
+    expect(html).toContain('name="legalLastName"');
+    expect(html).toContain("Add to crew");
+  });
+
+  it("names the spreadsheet import here, where the crew is", async () => {
+    expect(await load()).toContain("Import crew");
+  });
+
+  it("says at the top that this page holds two kinds of people", async () => {
+    const html = await load();
+    expect(html).toContain("Two kinds of people");
+    // The paragraph that was there instead: true, and written for somebody
+    // who reads permission models for a living.
+    expect(html).not.toContain("leaving it unset gives the full office access");
+  });
+});
+
 describe("/deployment with no jobs", () => {
   const load = async () => {
     const { default: Page } = await import("@/app/(app)/deployment/page");
@@ -292,5 +380,284 @@ describe("/deployment with no jobs", () => {
     const html = await load();
     expect(html).toContain('href="/jobs/new"');
     expect(html).toContain('href="/equipment"');
+  });
+});
+
+describe("/compliance with no mod rate recorded", () => {
+  const load = async () => {
+    const { default: Page } = await import("@/app/(app)/compliance/page");
+    return renderToStaticMarkup(await Page());
+  };
+
+  it("says the EMR is not on file and that the app never computes one, with the way to record it", async () => {
+    const html = await load();
+    // Anti-vacuity: the real page rendered, section heading and all.
+    expect(html).toContain("Experience modification rate");
+    expect(html).toContain("No mod rate on file");
+    // The sentence the whole feature turns on. An empty state that invited
+    // a guess — or showed a number — would undo the reason it is recorded.
+    expect(html).toContain("This app never computes or estimates an EMR");
+    // The way out: the collapsed add form's button.
+    expect(html).toContain("Record a mod rate");
+    // No rate means no "current" claim anywhere on the page.
+    expect(html).not.toContain("Current rate");
+  });
+});
+
+/**
+ * The pages that adopted the shared EmptyState (components/EmptyState.tsx),
+ * each rendered against the empty database above. What a brand-new company
+ * sees: the page's own title for what is missing, a primary way forward, and
+ * an example that says it is one.
+ *
+ * `primary` is the first action's markup — a link to where the missing thing
+ * comes from when the page cannot be used yet (no jobs), or the page's own add
+ * button, pressed through its anchor, when it can.
+ */
+describe("pages that use the shared empty state, on an empty account", () => {
+  const cases: {
+    route: string;
+    load: () => Promise<string>;
+    title: string;
+    primary: RegExp;
+    example: boolean;
+  }[] = [
+    {
+      route: "/contacts",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/contacts/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No contacts yet",
+      primary: /<button(?=[^>]*bg-brand)[^>]*data-opens="contacts-add"/,
+      example: true,
+    },
+    {
+      route: "/messages",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/messages/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "Nothing sent yet",
+      // No email provider in a test, so there is nothing to press: the page
+      // must not offer a Send button it would then refuse.
+      primary: /^(?![\s\S]*data-opens="messages-compose")/,
+      example: true,
+    },
+    {
+      route: "/catalog",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/catalog/page");
+        return renderToStaticMarkup(await Page());
+      },
+      title: "No catalog entries yet",
+      primary: /<button(?=[^>]*bg-brand)[^>]*data-opens="catalog-add"/,
+      example: true,
+    },
+    {
+      route: "/vendors",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/vendors/page");
+        return renderToStaticMarkup(await Page());
+      },
+      title: "No vendors yet",
+      primary: /<button(?=[^>]*bg-brand)[^>]*data-opens="vendors-add"/,
+      example: true,
+    },
+    {
+      route: "/equipment",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/equipment/page");
+        return renderToStaticMarkup(await Page());
+      },
+      title: "No equipment yet",
+      primary: /<button(?=[^>]*bg-brand)[^>]*data-opens="equipment-add"/,
+      example: true,
+    },
+    {
+      route: "/rfis",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/rfis/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No RFIs yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/submittals",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/submittals/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No submittals yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/drawings",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/drawings/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No drawings yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/backcharges",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/backcharges/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No backcharges yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/material-orders",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/material-orders/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "Nothing on order yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/punch-lists",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/punch-lists/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No punch items yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/field-reports",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/field-reports/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No field reports yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/photos",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/photos/page");
+        return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      },
+      title: "No photos yet",
+      primary: /<a(?=[^>]*href="\/jobs\/new")(?=[^>]*bg-brand)[^>]*>Create a job</,
+      example: true,
+    },
+    {
+      route: "/compliance",
+      load: async () => {
+        const { default: Page } = await import("@/app/(app)/compliance/page");
+        return renderToStaticMarkup(await Page());
+      },
+      title: "No documents yet",
+      primary: /<button(?=[^>]*bg-brand)[^>]*data-opens="compliance-upload"/,
+      example: true,
+    },
+  ];
+
+  for (const c of cases) {
+    describe(c.route, () => {
+      it("renders the shared empty state with its own title", async () => {
+        const html = await c.load();
+        // Anti-vacuity: the component itself rendered, not just the page.
+        expect(html).toContain("data-empty-state");
+        expect(html).toContain(c.title);
+      });
+
+      it("offers its first way forward", async () => {
+        expect(await c.load()).toMatch(c.primary);
+      });
+
+      it("labels its example as an example, never as data", async () => {
+        const html = await c.load();
+        const figure = html.match(/<figure[\s\S]*?<\/figure>/)?.[0] ?? "";
+        expect(figure !== "", `${c.route} has no example`).toBe(c.example);
+        if (c.example) {
+          expect(figure).toMatch(/>Example</);
+          expect(figure).toContain("Not your data");
+          expect(figure).toMatch(/<ul[^>]*aria-hidden="true"[^>]*inert=""/);
+        }
+      });
+
+      it("offers the walkthrough", async () => {
+        expect(await c.load()).toContain("Walk me through this page");
+      });
+    });
+  }
+});
+
+/**
+ * THE PAGES THAT DESCRIBED A CONDITION AND GAVE NO WAY OUT OF IT.
+ *
+ * The cases above are the top-level list pages, all of which route through
+ * the shared `EmptyState`. These two do not, which is exactly why they
+ * drifted: nothing shared was there to carry the promise for them.
+ *
+ * `/prevailing-wage` was the worst of the set, and it is worth naming the
+ * shape rather than the page. It NAMED the way out and then did not give
+ * it — "Upload one on a job first" with nothing to press, on a screen a
+ * compliance clerk reaches with a filing deadline in front of her. A
+ * sentence that tells somebody what to do and not where is worse than one
+ * that says nothing, because it proves the product knows the answer.
+ *
+ * Both are rendered, not grepped, for the reason the header of this file
+ * gives: a link inside a branch that never runs greps identically to one
+ * that renders. Each case asserts the page rendered at all before it
+ * asserts anything about what is missing from it.
+ */
+describe("an empty state has to offer a way out of being empty", () => {
+  const wayOut = (html: string): string[] =>
+    [...html.matchAll(/<a[^>]*href="([^"]*)"/g)].map((m) => m[1]);
+
+  describe("/prevailing-wage with nothing filed", () => {
+    const load = async () => {
+      const { default: Page } = await import("@/app/(app)/prevailing-wage/page");
+      return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+    };
+
+    it("renders both of its empty sections", async () => {
+      const html = await load();
+      // Anti-vacuity, twice: these are the two headings the sections below
+      // belong to, so a page that failed to render fails here rather than
+      // passing the link assertions on an empty string.
+      expect(html).toContain("Check a week against the rules");
+      expect(html).toContain("Which rules apply to which job");
+      expect(html).toContain("No wage determinations recorded yet");
+    });
+
+    it("gives the reader somewhere to press, not just something to read", async () => {
+      expect(wayOut(await load())).toContain("/jobs");
+    });
+  });
+
+  describe("/union-compliance with no hours logged", () => {
+    const load = async () => {
+      const { default: Page } = await import("@/app/(app)/union-compliance/page");
+      return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+    };
+
+    it("renders its two empty sections", async () => {
+      const html = await load();
+      expect(html).toContain("Apprentice ratio");
+      expect(html).toContain("No hours logged this month");
+    });
+
+    it("says where hours are logged, as a link", async () => {
+      const html = await load();
+      expect(wayOut(html)).toContain("/jobs");
+      // Named, so the reader knows which tab when he gets there.
+      expect(html).toContain("Crew &amp; time");
+    });
   });
 });

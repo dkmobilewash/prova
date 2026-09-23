@@ -1,11 +1,28 @@
 "use client";
 
+import { NoCraftsHint } from "@/components/NoCraftsHint";
 import {
   TIME_ENTRY_PAY_TYPE_OPTIONS,
   type TimeEntryPayType,
 } from "@/lib/time-entry-correction";
 
-export type TimeEntryEmployeeOption = { id: string; name: string | null; email: string };
+/**
+ * One person hours can be logged for — a teammate with a login OR a crew
+ * member without one.
+ *
+ * `value` is `user:<id>` / `crew:<id>` (lib/worker-select.ts), never a bare
+ * id, because `user_abc` and `crew_abc` are different people in different
+ * tables and `TimeEntry` names exactly one of them (a database XOR check
+ * enforces it). The same prefix convention is already what the crew
+ * schedule and `setWorkerCraft` post.
+ *
+ * THIS TYPE REPLACED `TimeEntryEmployeeOption`, which was
+ * `{ id, name, email }` — a shape only a `User` can have. That shape was the
+ * bug: the web dropdown listed logins and nothing else, so a crew member
+ * imported from a spreadsheet could have hours logged for them from the
+ * phone and NOT from the office, on the one screen the office uses.
+ */
+export type TimeEntryWorkerOption = { value: string; label: string };
 export type TimeEntryLineItemOption = { id: string; description: string };
 export type TimeEntryCraftOption = { id: string; label: string };
 
@@ -54,15 +71,15 @@ const lockedClass =
  * has finished, not for today.
  */
 export function TimeEntryFields({
-  employees,
+  workers,
   lineItems,
   craftOptions,
   defaults,
   locked,
 }: {
-  /** The people hours can be logged for. Omitted when correcting: the person
-   *  is locked, so there is nothing to choose from. */
-  employees?: TimeEntryEmployeeOption[];
+  /** The people hours can be logged for — teammates AND crew. Omitted when
+   *  correcting: the person is locked, so there is nothing to choose from. */
+  workers?: TimeEntryWorkerOption[];
   lineItems: TimeEntryLineItemOption[];
   craftOptions: TimeEntryCraftOption[];
   defaults?: TimeEntryFieldDefaults;
@@ -73,7 +90,7 @@ export function TimeEntryFields({
       {locked ? (
         <>
           <div className={labelClass}>
-            Employee
+            Worker
             <p className={lockedClass}>{locked.employeeLabel}</p>
           </div>
           <div className={labelClass}>
@@ -84,11 +101,14 @@ export function TimeEntryFields({
       ) : (
         <>
           <label className={labelClass}>
-            Employee
-            <select name="employeeUserId" required className={fieldClass}>
-              {(employees ?? []).map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name ?? member.email}
+            Worker
+            {/* `worker`, not `employeeUserId`: the value carries which TABLE
+                the id belongs to. `logTimeEntry` still accepts the old field
+                name, because the Ask assistant's direct command posts it. */}
+            <select name="worker" required className={fieldClass}>
+              {(workers ?? []).map((worker) => (
+                <option key={worker.value} value={worker.value}>
+                  {worker.label}
                 </option>
               ))}
             </select>
@@ -124,12 +144,23 @@ export function TimeEntryFields({
 
       <label className={labelClass}>
         Cost code / SOV line
+        {/* Required on a NEW entry whenever the job has lines: job costing
+            and WIP can't place hours on "no line". A correction keeps the
+            empty option, so an older entry logged before this rule can still
+            have its hours fixed without being forced onto a line. */}
         <select
           name="lineItemId"
           defaultValue={defaults?.lineItemId ?? ""}
+          required={!locked && lineItems.length > 0}
           className={fieldClass}
         >
-          <option value="">No specific line</option>
+          {!locked && lineItems.length > 0 ? (
+            <option value="" disabled>
+              Pick a cost code
+            </option>
+          ) : (
+            <option value="">No specific line</option>
+          )}
           {lineItems.map((item) => (
             <option key={item.id} value={item.id}>
               {item.description}
@@ -152,6 +183,7 @@ export function TimeEntryFields({
             </option>
           ))}
         </select>
+        <NoCraftsHint craftCount={craftOptions.length} />
       </label>
 
       <label className={labelClass}>

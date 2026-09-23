@@ -1,13 +1,15 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Hint } from "@/components/Hint";
-import { activeGroupHeading, navGroupsFor } from "@/components/navItems";
+import { activeGroupHeading, activeFooterHref, navFooterFor, navGroupsFor } from "@/components/navItems";
 import { money } from "@/lib/money";
 import type { Principal } from "@/lib/permissions";
 import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
+import type { BusinessScopeAnswers } from "@/lib/businessScope";
 
 /**
  * The Money Rail: a 240px nav column whose group headings carry the five
@@ -198,20 +200,26 @@ export function Sidebar({
   companyName,
   principal,
   showsInternal = false,
+  businessScope,
   stages,
 }: {
   companyName: string;
   principal: Principal;
   /** Prova's own operating company only -- see Company.isProvaOperator. */
   showsInternal?: boolean;
+  /** The three onboarding questions' answers, or undefined for "hide
+   * nothing" — see navGroupsFor in navItems.tsx. */
+  businessScope?: BusinessScopeAnswers;
   /** The five money-pipeline figures, loaded server-side by the layout
    * with getMoneyRailStages. Never computed here. */
   stages: MoneyRailStage[];
 }) {
   // Filtered here rather than in the layout so the desktop rail and
   // the mobile drawer run the same function on the same input.
-  const groups = navGroupsFor(principal, { showsInternal });
+  const groups = navGroupsFor(principal, { showsInternal, businessScope });
+  const footer = navFooterFor(principal);
   const pathname = usePathname();
+  const activeFooter = activeFooterHref(footer, pathname);
   const activeHeading = activeGroupHeading(groups, pathname);
 
   // One boolean per heading, and the only writer flips exactly one key.
@@ -265,8 +273,10 @@ export function Sidebar({
   // deliberate: the headings are Cyrus's to rename and the anchor should
   // not quietly break when he does.
   const provingStage = stageByKey.get("proving");
+  // MOVED AGAIN 2026-09-18, Cyrus's call: below Compliance & safety
+  // (the "staying-legal" heading) rather than below Financials.
   const provingAfterHeading = Object.entries(STAGE_KEY_FOR_HEADING).find(
-    ([, key]) => key === "getting-paid",
+    ([, key]) => key === "staying-legal",
   )?.[0];
 
   return (
@@ -278,14 +288,19 @@ export function Sidebar({
         aria-label="Main"
         className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-rail"
       >
-        <div className="flex h-14 shrink-0 items-center gap-3 px-4">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand text-sm font-semibold text-neutral-900">
-            P
-          </span>
+        {/* The C Stream mark (2026-09-18), replacing the yellow "C" tile.
+            The whole row is the way home, as a logo is in nearly every app —
+            Cyrus's call, 2026-09-18. */}
+        <Link
+          href="/dashboard"
+          aria-label={`${companyName} — go to the dashboard`}
+          className="flex h-14 shrink-0 items-center gap-3 px-4 hover:bg-rail-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
+        >
+          <Image src="/brand/cstream-mark.png" alt="" width={32} height={32} className="h-8 w-8 shrink-0 object-contain" priority />
           <span className="truncate whitespace-nowrap text-[15px] font-semibold text-white">
             {companyName}
           </span>
-        </div>
+        </Link>
 
         {/* Ask is a LINK, not a collapsible group. It was briefly a group of
             its own and Cyrus killed it on sight, correctly: a disclosure
@@ -435,12 +450,21 @@ export function Sidebar({
                           // exactly that case too, not only for a genuinely
                           // unbuilt feature.
                           if (item.disabled) {
+                            // `text-neutral-600` was 2.29:1 on the rail —
+                            // not dim, unreadable, on the label that is the
+                            // only thing saying which feature is coming.
+                            // `ink-muted` is 7.11:1 and still plainly
+                            // quieter than the 12.09:1 a live item carries,
+                            // so "disabled" still reads as disabled.
+                            // MobileNav.tsx carries the same fix; the two
+                            // nav surfaces render the same list and must not
+                            // disagree about what a disabled row looks like.
                             return (
                               <span
                                 key={item.href}
                                 title={`${item.label} — coming soon`}
                                 aria-disabled="true"
-                                className="flex h-11 shrink-0 cursor-not-allowed items-center gap-3 px-4 text-[15px] font-semibold text-neutral-600"
+                                className="flex h-11 shrink-0 cursor-not-allowed items-center gap-3 px-4 text-[15px] font-semibold text-ink-muted"
                               >
                                 <span className="shrink-0 opacity-50">{item.icon}</span>
                                 <span className="truncate whitespace-nowrap">{item.label}</span>
@@ -481,6 +505,32 @@ export function Sidebar({
             );
           })}
         </div>
+
+        {/* Pinned to the bottom-left, OUTSIDE the scrolling column, so it
+            never scrolls away or hides in a collapsed group — see NAV_FOOTER
+            in navItems.tsx for why Settings left Financials. */}
+        {footer.length > 0 ? (
+          <div className="shrink-0 border-t border-line-row px-2 py-2" data-nav-footer="">
+            {footer.map((entry) => {
+              const isActive = activeFooter === entry.href;
+              return (
+                <Link
+                  key={entry.href}
+                  href={entry.href}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`flex h-11 items-center gap-3 rounded-md px-2 text-[15px] font-semibold transition-colors ${
+                    isActive
+                      ? "bg-rail-hover text-brand shadow-[inset_3px_0_0_#facc15]"
+                      : "text-neutral-300 hover:bg-rail-hover hover:text-white"
+                  }`}
+                >
+                  <span className="shrink-0">{entry.icon}</span>
+                  <span className="truncate whitespace-nowrap">{entry.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        ) : null}
       </nav>
     </div>
   );

@@ -23,6 +23,7 @@ const JOB = {
   contact: { name: "Acme GC" },
   lineItems: [
     {
+      id: "line-1",
       description: "Framing",
       quantity: 100,
       unitPrice: 10,
@@ -37,6 +38,11 @@ const JOB = {
     },
   ],
   invoices: [],
+  // No hours logged, so the burdened-labor half of cost to date (issue
+  // #287) contributes nothing and the percentages below are unchanged by
+  // it. That is the point: this fixture pins the FORMAT, and it would be a
+  // worse test if the number it pins moved for an unrelated reason.
+  timeEntries: [],
 };
 
 // `Prisma` (the namespace, for Decimal) is taken from the REAL module while
@@ -54,6 +60,12 @@ vi.mock("@prova/db", async (importOriginal) => ({
     job: {
       findMany: async () => [JOB],
     },
+    // job_margin reads burdened labor into cost to date since #287, which
+    // needs the company's fringe schedules. None here — see JOB.timeEntries.
+    fringeRateSchedule: {
+      findMany: async () => [],
+    },
+    employerBurdenRate: { findMany: async () => [] },
   },
 }));
 

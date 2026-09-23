@@ -25,6 +25,7 @@ import { ContactPersonForm } from "@/components/ContactPersonForm";
 import { ContactPersonRow } from "@/components/ContactPersonRow";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
+import { ActionForm } from "@/components/ActionForm";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -121,6 +122,11 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
         );
         return {
           amount: Number(invoice.amount),
+          // Retainage is held back by contract, not paid late. Without
+          // this, no invoice with retainage on it could ever settle and
+          // both timing figures below came back "—" for every GC who holds
+          // any — issue #288, and lib/gc-reliability.ts has the shape of it.
+          retainageWithheld: invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
           issuedAt: invoice.issuedAt,
           dueAt: invoice.dueAt,
           paidAmount,
@@ -188,7 +194,13 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           score, just today&apos;s numbers.
         </p>
         {reliability.invoiceCount === 0 ? (
-          <p className="text-sm text-ink-body">No invoices yet.</p>
+          <p className="text-sm text-ink-body">
+            No invoices yet, so there is nothing to judge {contact.name} on.{" "}
+            <Link href="/jobs" className="text-link hover:underline">
+              Open one of their jobs
+            </Link>{" "}
+            and bill it under Billing.
+          </p>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div>
@@ -212,6 +224,19 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
               </p>
             </div>
           </div>
+        )}
+        {/* What these timings do and do not cover. "Outstanding" above is
+            gross and includes retainage; the two timing figures are about
+            what was CERTIFIED DUE, which is gross less retainage, because
+            money held back by contract is not money paid late. Saying so
+            is cheaper than letting a reader assume an on-time rate covers
+            every dollar billed. */}
+        {reliability.invoiceCount > 0 && reliability.retainageExcluded > 0 && (
+          <p className="mt-4 text-sm text-ink-muted">
+            Timing figures cover what was due after {money(reliability.retainageExcluded)} of
+            retainage withheld. Retainage is released at closeout, so holding it is not a late
+            payment — it is still counted in Outstanding.
+          </p>
         )}
       </section>
       )}
@@ -282,7 +307,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                     />
                   }
                 >
-                  <form action={updateBidInvitationStatus.bind(null, bid.id)} className="flex items-center gap-2">
+                  <ActionForm action={updateBidInvitationStatus.bind(null, bid.id)} resetOnSuccess={false} className="flex items-center gap-2">
                     <select
                       key={bid.status}
                       name="status"
@@ -297,6 +322,8 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                     </select>
                     <input
                       name="bidAmount"
+                      type="text"
+                      inputMode="decimal"
                       defaultValue={bid.bidAmount?.toString() ?? ""}
                       placeholder="Bid $"
                       title="Amount bid, once known"
@@ -308,13 +335,13 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                     >
                       Update
                     </SubmitButton>
-                  </form>
+                  </ActionForm>
                 </RowActions>
               </li>
             ))}
           </ul>
         )}
-        <form action={createBidInvitationWithId} className="flex flex-wrap items-end gap-3">
+        <ActionForm action={createBidInvitationWithId} className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-sm text-ink-label">
             Project name
             <input
@@ -347,6 +374,22 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
               className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
             />
           </label>
+          <label className="flex flex-col gap-1 text-sm text-ink-label">
+            Bid $ (if known)
+            {/* #133: optional, blank by default. A bid known and priced
+                at invitation time (a rebid, a negotiated price) no longer
+                has to be logged blank and then found again to price --
+                but leaving this blank is still the normal path, since
+                most invitations arrive with nothing bid yet. */}
+            <input
+              name="bidAmount"
+              type="text"
+              inputMode="decimal"
+              placeholder="Optional"
+              title="Amount bid, if already known"
+              className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+            />
+          </label>
           <label className="flex flex-1 min-w-[180px] flex-col gap-1 text-sm text-ink-label">
             Notes
             <input
@@ -361,7 +404,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           >
             Log invitation
           </SubmitButton>
-        </form>
+        </ActionForm>
       </section>
       )}
 
@@ -511,7 +554,15 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
       <section>
         <h2 className="mb-3 text-lg font-semibold text-ink">Jobs</h2>
         {contact.jobs.length === 0 ? (
-          <p className="text-ink-body">No jobs for this contact yet.</p>
+          // The one page in the app about a single GC, with no way to start
+          // a job for them on it. `/jobs/new` is where every other empty
+          // state in the app sends a reader who has none.
+          <p className="text-ink-body">
+            No jobs for {contact.name} yet.{" "}
+            <Link href="/jobs/new" className="text-link hover:underline">
+              Start a bid for them →
+            </Link>
+          </p>
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {contact.jobs.map((job) => {

@@ -62,8 +62,14 @@ export const OUTCOME_LABEL: Record<AuditOutcome, string> = {
 };
 
 /** Where a created record can be read. Targets that live on a job need
- * the job looked up; the lookups are batched, one query per kind. */
+ * the job looked up; the lookups are batched, one query per kind.
+ *
+ * Every id here comes off an AskProposal row already scoped to this
+ * company, so the `companyId` in each WHERE is belt-and-braces rather
+ * than the tenancy boundary — it makes the function safe under refactor
+ * for a caller that did not scope its rows first. */
 async function targetLinks(
+  companyId: string,
   rows: { targetType: string | null; targetId: string | null }[],
 ): Promise<Map<string, { label: string; href: string }>> {
   const links = new Map<string, { label: string; href: string }>();
@@ -72,14 +78,14 @@ async function targetLinks(
 
   const invoices = ids("Invoice");
   if (invoices.length) {
-    for (const inv of await prisma.invoice.findMany({ where: { id: { in: invoices } }, select: { id: true, number: true, jobId: true } })) {
+    for (const inv of await prisma.invoice.findMany({ where: { id: { in: invoices }, job: { companyId } }, select: { id: true, number: true, jobId: true } })) {
       links.set(`Invoice:${inv.id}`, { label: `Invoice #${inv.number}`, href: `/jobs/${inv.jobId}` });
     }
   }
   const payments = ids("Payment");
   if (payments.length) {
     for (const p of await prisma.payment.findMany({
-      where: { id: { in: payments } },
+      where: { id: { in: payments }, invoice: { job: { companyId } } },
       select: { id: true, invoice: { select: { number: true, jobId: true } } },
     })) {
       links.set(`Payment:${p.id}`, { label: `Payment on invoice #${p.invoice.number}`, href: `/jobs/${p.invoice.jobId}` });
@@ -87,13 +93,13 @@ async function targetLinks(
   }
   const entries = ids("TimeEntry");
   if (entries.length) {
-    for (const t of await prisma.timeEntry.findMany({ where: { id: { in: entries } }, select: { id: true, jobId: true } })) {
+    for (const t of await prisma.timeEntry.findMany({ where: { id: { in: entries }, job: { companyId } }, select: { id: true, jobId: true } })) {
       links.set(`TimeEntry:${t.id}`, { label: "Time entry", href: `/jobs/${t.jobId}` });
     }
   }
   const releases = ids("RetainageRelease");
   if (releases.length) {
-    for (const r of await prisma.retainageRelease.findMany({ where: { id: { in: releases } }, select: { id: true, jobId: true } })) {
+    for (const r of await prisma.retainageRelease.findMany({ where: { id: { in: releases }, job: { companyId } }, select: { id: true, jobId: true } })) {
       links.set(`RetainageRelease:${r.id}`, { label: "Retainage release", href: `/jobs/${r.jobId}` });
     }
   }
@@ -142,7 +148,7 @@ export async function listAskProposals(companyId: string, now: Date = new Date()
       createdByUser: { select: { name: true, email: true } },
     },
   });
-  const links = await targetLinks(rows);
+  const links = await targetLinks(companyId, rows);
   return rows.map((row) => ({
     id: row.id,
     when: row.createdAt,

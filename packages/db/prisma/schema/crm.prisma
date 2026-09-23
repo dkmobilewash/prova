@@ -16,13 +16,13 @@ enum InteractionType {
 /// counter, no locked identity fields, no GC-facing correspondence copy):
 /// this is an internal log a PM or estimator keeps on a relationship.
 model ContactInteraction {
-  id        String   @id @default(cuid())
+  id        String  @id @default(cuid())
   companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
+  company   Company @relation(fields: [companyId], references: [id])
   contactId String
-  contact   Contact  @relation(fields: [contactId], references: [id])
+  contact   Contact @relation(fields: [contactId], references: [id])
 
-  type InteractionType
+  type       InteractionType
   /// Entered, not stamped -- logging a call from yesterday must record
   /// yesterday, same rule as every other date in this schema.
   occurredOn DateTime
@@ -67,11 +67,11 @@ model ContactInteraction {
 /// Not a separate Contact of their own: no jobs, no bid invitations, no
 /// portal access of their own, since none of that is per-person.
 model ContactPerson {
-  id        String   @id @default(cuid())
+  id        String  @id @default(cuid())
   companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
+  company   Company @relation(fields: [companyId], references: [id])
   contactId String
-  contact   Contact  @relation(fields: [contactId], references: [id])
+  contact   Contact @relation(fields: [contactId], references: [id])
 
   name  String
   title String?

@@ -133,6 +133,18 @@ export class FakeDb {
           return row;
         }),
 
+      /** For the bulk imports (the myCOI one first). Returns the count, as
+       * Prisma does, and inserts nothing on an empty list. */
+      createMany: ({ data }: { data: Record<string, unknown>[] }) =>
+        op(() => {
+          this.note(`${name}.createMany`);
+          for (const values of data) {
+            const row = { id: `${name}_${++this.seq}`, ...(this.columnDefaults.get(name) ?? {}), ...values } as Row;
+            this.table(name).set(row.id, row);
+          }
+          return { count: data.length };
+        }),
+
       /**
        * `where` may name a COMPOSITE unique key, not only `id`.
        *

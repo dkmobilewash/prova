@@ -28,6 +28,18 @@ export async function findJob(ctx: CommandContext, input: CommandInput): Promise
   if (!jobName) return { kind: "need", missing: "which job" };
   const found = await resolveJob(ctx.companyId, jobName);
   if (found.kind === "none") {
+    // `No job matches "…"` to a company with no jobs at all is a dead end
+    // wearing a search result — the person's real next step is creating
+    // one, not retyping the name. Counted only on the miss path, so the
+    // happy path pays nothing for it.
+    const jobsOnAccount = await prisma.job.count({ where: { companyId: ctx.companyId } });
+    if (jobsOnAccount === 0) {
+      return {
+        kind: "refuse",
+        reason: "You don't have any jobs yet — create your first one and this will have somewhere to go.",
+        href: "/jobs/new",
+      };
+    }
     return { kind: "refuse", reason: `No job matches "${jobName}".`, href: "/dashboard" };
   }
   if (found.kind === "many") {

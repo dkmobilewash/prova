@@ -50,7 +50,8 @@ async function resolveDailyReport(ctx: CommandContext, input: CommandInput): Pro
   // checking first means the person gets that sentence instead of a card
   // whose button can only fail.
   const existing = await prisma.dailyFieldReport.findFirst({
-    where: { jobId: job.id, reportDate: utcMidnight(ctx.today) },
+    // findJob proved the job in-company; the clause is belt-and-braces.
+    where: { jobId: job.id, reportDate: utcMidnight(ctx.today), job: { companyId: ctx.companyId } },
     select: { id: true },
   });
   if (existing) {
@@ -108,7 +109,7 @@ async function executeDailyReport(ctx: CommandContext, payload: ResolvedPayload)
   );
   if (!result.ok) return { ok: false as const, error: result.error };
   const row = await prisma.dailyFieldReport.findFirst({
-    where: { jobId, reportDate: utcMidnight(reportDate) },
+    where: { jobId, reportDate: utcMidnight(reportDate), job: { companyId: ctx.companyId } },
     select: { id: true },
   });
   return {
@@ -235,7 +236,7 @@ async function executeDelivery(ctx: CommandContext, payload: ResolvedPayload) {
   );
   if (!result.ok) return { ok: false as const, error: result.error };
   const delivery = await prisma.materialOrderDelivery.findFirst({
-    where: { orderId, deliveredOn: utcMidnight(deliveredOn) },
+    where: { orderId, deliveredOn: utcMidnight(deliveredOn), order: { job: { companyId: ctx.companyId } } },
     orderBy: { createdAt: "desc" },
     select: { id: true },
   });
@@ -289,6 +290,14 @@ export const fieldCommands: CommandDefinition[] = [logDailyFieldReportCommand, r
 /** The rest of fieldReports.ts and materialOrders.ts, per action, replacing
  * the phase-1 module wildcards. */
 export const fieldExclusions: Exclusion[] = [
+  // The crew schedule. scheduleCrewDay is the `schedule_crew` command now
+  // (commands/crewSchedule.ts), the card this line used to say was worth
+  // designing. Taking somebody OFF a day stays on the page.
+  {
+    action: "unscheduleCrewDay",
+    reason:
+      "Taking somebody off a day is done on /schedule, where the day being removed is visible. Same rule every other removal in this registry follows.",
+  },
   { action: "updateDailyFieldReport", reason: "Editing a filed report is done on the field reports page, where the report being changed is visible." },
   { action: "deleteDailyFieldReport", reason: "Deletes are never commands (T5); a daily report is what a delay claim is argued from." },
   { action: "createMaterialOrder", reason: "A counter-numbered order with a vendor, a promised date and a reference the person types; a later phase once the vendor resolver exists." },

@@ -1,7 +1,81 @@
+import { cache } from "react";
 import { prisma } from "@prova/db";
 import { calculateJobWip, calculateLineItemWip } from "./wip";
 import { loadRetainageHeld } from "./retainage-query";
 import { calculateCompanyFinancials, type CompanyFinancials } from "./company-financials";
+import { lineItemCostToDate, unassignedLaborCost } from "./labor-job-cost";
+import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "./fringe-schedules-query";
+import { loadEmployerBurdenRates } from "./employer-burden-query";
+import { groupRowsBy, rowsFor } from "./group-rows";
+
+/**
+ * The active jobs with what their WIP needs: lines and their cost entries,
+ * hours, and billed amounts.
+ *
+ * This was one `job.findMany` with the lines, cost entries, hours and
+ * invoices nested under it, which Prisma resolves as five queries run one
+ * after another -- and this runs in the (app) layout, so on every page and
+ * after every Server Action (measured 2026-09-18). It is now the job query
+ * and then every relation at once. Each child query is the SQL Prisma was
+ * already sending (`WHERE "jobId" IN (...)`, same filters), so the rows,
+ * their order and every figure computed from them are unchanged; the shape
+ * handed back is the nested read's, so the arithmetic below did not move.
+ */
+async function readActiveJobCostRows(companyId: string) {
+  const jobs = await prisma.job.findMany({
+    where: { companyId, status: { in: ["CONTRACTED", "IN_PROGRESS"] } },
+    select: { id: true },
+  });
+  // A nested read with no parents sends no child queries; neither does this.
+  if (jobs.length === 0) return [];
+  const jobId = { in: jobs.map((job) => job.id) };
+
+  const [lineItems, timeEntries, invoices] = await Promise.all([
+    prisma.jobLineItem.findMany({
+      where: { jobId, isDeleted: false },
+      select: {
+        jobId: true,
+        id: true,
+        quantity: true,
+        unitPrice: true,
+        budgetedUnitCost: true,
+        currentEstimatedUnitCost: true,
+        estimatedCostToComplete: true,
+        costEntries: { select: { amount: true } },
+      },
+    }),
+    // Hours are job cost (issue #287). Fetched per job rather than per
+    // line because TimeEntry.lineItemId is nullable and the log form's
+    // default is "No specific line" -- the unattached ones are real
+    // spend and a line-scoped fetch would never see them.
+    prisma.timeEntry.findMany({
+      where: { jobId },
+      select: { ...TIME_ENTRY_COST_SELECT, jobId: true },
+    }),
+    // amount only, for billedToDate. This file no longer names the
+    // retainage column at all, and lib/retainage-single-source.test.ts
+    // enforces that it stays that way.
+    prisma.invoice.findMany({ where: { jobId }, select: { jobId: true, amount: true } }),
+  ]);
+
+  const lineItemsByJob = groupRowsBy(lineItems, (row) => row.jobId);
+  const timeEntriesByJob = groupRowsBy(timeEntries, (row) => row.jobId);
+  const invoicesByJob = groupRowsBy(invoices, (row) => row.jobId);
+  return jobs.map((job) => ({
+    lineItems: rowsFor(lineItemsByJob, job.id),
+    timeEntries: rowsFor(timeEntriesByJob, job.id),
+    invoices: rowsFor(invoicesByJob, job.id),
+  }));
+}
+
+/**
+ * Cached per server request, because the Money Rail reads the very same
+ * active-job population (lib/moneyRail.ts says so: "the same population
+ * lib/company-financials-query.ts calls active") and the (app) layout runs
+ * both on every page. Once per render instead of twice. Outside a React
+ * server render (tests, scripts) `cache()` calls straight through.
+ */
+export const loadActiveJobCostRows = cache(readActiveJobCostRows);
 
 /**
  * Loads what the company-wide figures need, and computes them.
@@ -21,27 +95,9 @@ import { calculateCompanyFinancials, type CompanyFinancials } from "./company-fi
  * already dropped it.
  */
 export async function loadCompanyFinancials(companyId: string): Promise<CompanyFinancials> {
-  const [jobs, paymentTotal, invoiceTotal, retainageHeld] = await Promise.all([
-    prisma.job.findMany({
-      where: { companyId, status: { in: ["CONTRACTED", "IN_PROGRESS"] } },
-      select: {
-        lineItems: {
-          where: { isDeleted: false },
-          select: {
-            quantity: true,
-            unitPrice: true,
-            budgetedUnitCost: true,
-            currentEstimatedUnitCost: true,
-            estimatedCostToComplete: true,
-            costEntries: { select: { amount: true } },
-          },
-        },
-        // amount only, for billedToDate. This file no longer names the
-        // retainage column at all, and lib/retainage-single-source.test.ts
-        // enforces that it stays that way.
-        invoices: { select: { amount: true } },
-      },
-    }),
+  const [jobs, paymentTotal, invoiceTotal, retainageHeld, fringeSchedulesByCraft, employerBurdenRates] =
+    await Promise.all([
+    loadActiveJobCostRows(companyId),
     prisma.payment.aggregate({
       where: { invoice: { job: { companyId } } },
       _sum: { amount: true },
@@ -51,6 +107,8 @@ export async function loadCompanyFinancials(companyId: string): Promise<CompanyF
       _sum: { amount: true },
     }),
     loadRetainageHeld(companyId),
+    loadFringeSchedulesByCraft(companyId),
+    loadEmployerBurdenRates(companyId),
   ]);
 
   const wipByJob = jobs.map((job) => {
@@ -63,11 +121,21 @@ export async function loadCompanyFinancials(companyId: string): Promise<CompanyF
           line.currentEstimatedUnitCost === null ? null : Number(line.currentEstimatedUnitCost),
         estimatedCostToComplete:
           line.estimatedCostToComplete === null ? null : Number(line.estimatedCostToComplete),
-        actualCostToDate: line.costEntries.reduce((sum, cost) => sum + Number(cost.amount), 0),
+        ...lineItemCostToDate(
+          line.id,
+          line.costEntries,
+          job.timeEntries,
+          fringeSchedulesByCraft,
+          employerBurdenRates,
+        ),
       }),
     );
     const billedToDate = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
-    return calculateJobWip(lineItems, billedToDate);
+    return calculateJobWip(
+      lineItems,
+      billedToDate,
+      unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft, employerBurdenRates),
+    );
   });
 
   return calculateCompanyFinancials({

@@ -49,7 +49,9 @@ vi.mock("@prova/db", () => ({
 const {
   createPunchListItem,
   updatePunchListItem,
-  setPunchListItemDone,
+  markPunchListItemReady,
+  verifyPunchListItem,
+  reopenPunchListItem,
   deletePunchListItem,
 } = await import("./punchLists");
 
@@ -180,15 +182,69 @@ describe("updatePunchListItem returns its refusals", () => {
   });
 });
 
-describe("setPunchListItemDone returns its refusal", () => {
-  it("says the item was not found", async () => {
-    expect(await refusal(setPunchListItemDone("nope", true))).toBe("Punch list item not found");
+describe("the three states, and who may move an item between them", () => {
+  beforeEach(() => {
+    db.seed("punchListItem", { id: "item_1", companyId: "co_1", jobId: "job_1", status: "OPEN" });
   });
 
-  it("still ticks a real item off", async () => {
-    db.seed("punchListItem", { id: "item_1", companyId: "co_1", jobId: "job_1", isDone: false });
-    expect(await setPunchListItemDone("item_1", true)).toEqual({ ok: true });
-    expect(items()[0].isDone).toBe(true);
+  it("says the item was not found", async () => {
+    expect(await refusal(markPunchListItemReady("nope"))).toBe("Punch list item not found");
+  });
+
+  it("lets the crew say it is fixed, and stamps who said so", async () => {
+    expect(await markPunchListItemReady("item_1")).toEqual({ ok: true });
+    expect(items()[0].status).toBe("READY_FOR_REVIEW");
+    expect(items()[0].readyByUserId).toBe("user_1");
+    expect(items()[0].readyAt).toBeInstanceOf(Date);
+  });
+
+  it("does NOT let a field user verify their own work — the whole point of the split", async () => {
+    context.role = "MEMBER";
+    context.jobFunction = "FIELD";
+    // The same person may still mark it ready: that is a claim, not a sign-off.
+    expect(await markPunchListItemReady("item_1")).toEqual({ ok: true });
+    const sentence = await refusal(verifyPunchListItem("item_1"));
+    expect(sentence).toContain("somebody else's sign-off");
+    expect(items()[0].status).toBe("READY_FOR_REVIEW");
+  });
+
+  it("lets a project manager verify it", async () => {
+    context.role = "MEMBER";
+    context.jobFunction = "PROJECT_MANAGER";
+    expect(await verifyPunchListItem("item_1")).toEqual({ ok: true });
+    expect(items()[0].status).toBe("VERIFIED");
+    expect(items()[0].verifiedByUserId).toBe("user_1");
+  });
+
+  it("requires a reason to send one back, and will not take a blank one", async () => {
+    expect(await refusal(reopenPunchListItem("item_1", form({ reopenReason: "   " })))).toBe(
+      "Say why it is going back",
+    );
+    expect(items()[0].status).toBe("OPEN");
+  });
+
+  it("records the reason and withdraws the claim when one goes back", async () => {
+    await markPunchListItemReady("item_1");
+    expect(
+      await reopenPunchListItem("item_1", form({ reopenReason: "grid still out at the north end" })),
+    ).toEqual({ ok: true });
+    const item = items()[0];
+    expect(item.status).toBe("OPEN");
+    expect(item.reopenReason).toBe("grid still out at the north end");
+    // An OPEN row still carrying "ready per Mike" reads as ready to
+    // everything that looks at it.
+    expect(item.readyAt).toBeNull();
+    expect(item.readyByUserId).toBeNull();
+  });
+
+  it("refuses to let the field undo somebody else's verification", async () => {
+    context.role = "MEMBER";
+    context.jobFunction = "PROJECT_MANAGER";
+    await verifyPunchListItem("item_1");
+    context.jobFunction = "FIELD";
+    const sentence = await refusal(reopenPunchListItem("item_1", form({ reopenReason: "not actually fixed" })));
+    expect(sentence).toContain("somebody else's sign-off");
+    expect(items()[0].status).toBe("VERIFIED");
   });
 });
 

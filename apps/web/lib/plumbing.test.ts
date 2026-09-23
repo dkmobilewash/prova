@@ -17,8 +17,8 @@ import { describe, expect, it } from "vitest";
  * no signal when it drifts.** The mistake is never the interesting part.
  * The silence around it is.
  *
- * These two assertions are the cheapest possible version of that signal.
- * Neither can tell you a thing is RIGHT — only that two places which must
+ * These assertions are the cheapest possible version of that signal. None
+ * of them can tell you a thing is RIGHT — only that two places which must
  * agree still do.
  */
 
@@ -239,5 +239,72 @@ describe("FEATURE-AUDIT counts agree with its own rows", () => {
         `the other landed. Do not recount by grepping "^| Built |" — that also ` +
         `matches the summary table's own rows and overcounts by exactly four.`,
     ).toEqual({ items: items(total), ...total });
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 3. Sheet 23 must not carry a count of the read tools.
+ * ------------------------------------------------------------------ */
+
+/*
+ * This row stated a number of read tools and was wrong FOUR times in seven
+ * days: fifteen until 12 Sep, then stale through #297, #303 and #304, then
+ * corrected to thirty-nine by an audit that wrote "do not re-add a number
+ * here without that derivation" beside it — and #306, #307 and #308 each
+ * landed another tool within hours, so the correction was false on its own
+ * branch before it merged.
+ *
+ * THE FIX THAT LOOKED OBVIOUS WAS WRONG, and it is recorded because it was
+ * committed first. Pinning the stated figure to `TOOLS.length` does stop
+ * the rot, and it buys a worse problem: a digit in this row makes every
+ * tool-adding PR edit the SAME LINE, so two open PRs that each add a tool
+ * conflict here and the second re-resolves. That is the `CHANGELOG.md`
+ * scar in CLAUDE.md — one conflict resolved four times in a day across
+ * three PRs, with the expensive part not the conflict but the CI that
+ * never queued behind it. Trading a stale number for a serialised edit is
+ * not a trade worth making.
+ *
+ * So the count goes where CLAUDE.md put the counter roll-call after the
+ * same lesson: into the code, with nothing in the prose to maintain.
+ * `TOOLS` is the count. This test only stops one from being written back —
+ * a tool-adding PR then touches this row not at all, and no two PRs
+ * collide on it.
+ *
+ * Asserting an ABSENCE is the vacuous-test shape this repo keeps getting
+ * caught by, so the row is located first and that lookup is its own
+ * assertion: a rename that moves the row fails here loudly rather than
+ * passing because it found nothing to object to.
+ */
+
+describe("FEATURE-AUDIT does not restate the read-tool count", () => {
+  const row = /^\| Built \| Ask: answers about the company's own data.*$/m.exec(
+    readFileSync(join(REPO, "FEATURE-AUDIT.md"), "utf8"),
+  );
+
+  it("finds the Ask row it is checking", () => {
+    expect(
+      row,
+      "Could not find the `| Built | Ask: answers about the company's own data` " +
+        "row in FEATURE-AUDIT.md. If it was renamed, update this pattern — an " +
+        "absence test that cannot find its subject passes forever and guards " +
+        "nothing.",
+    ).not.toBeNull();
+  });
+
+  it("states no number of read tools", () => {
+    // Digits and the written-out forms, since every stale version of this
+    // row used a word ("fifteen", "thirty-nine") rather than a numeral.
+    const counted =
+      /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)[\s*-]*(read )?tools\b/i.exec(
+        row![0],
+      );
+    expect(
+      counted,
+      `Sheet 23 states a read-tool count again ("${counted?.[0]}"). Take it out.\n\n` +
+        `The count is TOOLS in lib/ask/tools.ts. A number here was wrong four ` +
+        `times in seven days, and pinning it to the code with a test was worse: ` +
+        `it makes every tool-adding PR edit this one line, so concurrent PRs ` +
+        `conflict on it (the CHANGELOG.md scar in CLAUDE.md).`,
+    ).toBeNull();
   });
 });

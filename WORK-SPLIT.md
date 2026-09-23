@@ -5,13 +5,26 @@ lines every day.
 
 ## The two lanes
 
-**Diego's lane — the core estimating/costing/AI engine.** This is the
+**Diego's lane — the core estimating/costing engine.** This is the
 stuff that's already deep and interconnected: `lib/actions.ts`'s
 estimating and job-costing functions, `lib/wip.ts`, `lib/
-gc-reliability.ts`, `packages/integrations/src/anthropic.ts`, and the
-`apps/web/app/(app)/jobs/[id]/page.tsx` page. Also anything touching
-billing/AIA pay applications and retainage next, since those extend the
-existing `Invoice`/`Payment` models Diego's been building on.
+gc-reliability.ts`, and the `apps/web/app/(app)/jobs/[id]/page.tsx`
+page. Also anything touching billing/AIA pay applications and retainage
+next, since those extend the existing `Invoice`/`Payment` models Diego's
+been building on.
+
+**AI is Cyrus's lane, as of 2026-09-21.** This heading used to read
+"estimating/costing/AI engine" and listed
+`packages/integrations/src/anthropic.ts` under Diego. That's no longer
+true. The move was announced in `#prova-build` the same night. Cyrus
+owns the Ask assistant (`apps/web/lib/ask/**`, the `Ask*` components,
+its tools and write commands, research and web search), the model
+integration (`packages/integrations/src/anthropic.ts`, `ask.ts`), AI
+document extraction, and AI usage metering and billing (`AskUsage`).
+Where an AI feature reads Diego's numbers — Ask's `draft_invoice`, the
+WIP narrative — the logic underneath stays Diego's and the AI layer on
+top is Cyrus's, so a change that reaches into both still gets a Slack
+heads-up first.
 
 **Cyrus's lane — new, self-contained feature verticals.** Greenfield
 areas: nothing existing depends on them, so there's very little to
@@ -345,9 +358,22 @@ access" and the click-list passes while proving nothing.
 The third lane also built `/pipeline` — a per-GC read of `BidInvitation`
 (`lib/bid-pipeline.ts`, `lib/bid-pipeline-query.ts`). It is deliberately
 READ-ONLY: `BidInvitation`, its actions in `lib/actions/estimating.ts` and
-the `/bids` page all stay with estimating, and a status is changed there.
+the `/bids` page all stay with estimating. An invitation's status is changed
+on the GC's contact page, `app/(app)/contacts/[id]/page.tsx`
+(`updateBidInvitationStatus`, under "Bid invitations") — NOT on `/bids`,
+which only filters and reads. (Corrected 2026-09-17: this said "a status is
+changed there" after naming `/bids`, which has no write on it.)
 Shared files touched, one line each: `navItems.tsx`, `middleware.ts`, and
 the `ROUTE_CAPABILITY` map in `lib/permissions.ts`.
+
+**Updated 2026-09-18: `/pipeline` now has ONE write surface, and it is not
+`BidInvitation`.** The pre-bid chase list (`BidPursuit`, `pursuits.prisma`,
+`lib/actions/bidPursuits.ts`) sits at the top of the page — projects being
+chased before any GC has invited us. The invitation half below it is still
+read-only ON `/pipeline` — an invitation is created, re-statused and
+deleted on the GC's contact page, as above; a pursuit only LINKS to the
+invitation it became (nullable FK, SET NULL) and never edits it. Not `SalesLead`, which
+is Prova's own CRM — see `sales.prisma`'s first line.
 
 The CRM lane (`claude/prova-crm-contact-lifecycle`, #72) owns contacts
 themselves — creation, status, MSA/prequal, and whatever comes next on

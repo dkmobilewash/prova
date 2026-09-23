@@ -162,12 +162,12 @@ export default async function InternalUsagePage() {
     <div className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="mb-2 text-xl font-semibold text-slate-100">Usage — who is still logging in</h1>
       <p className="mb-4 text-sm text-slate-400">
-        Prova&apos;s own instrument, across every company on this database. One recorded fact per
+        C Stream&apos;s own instrument, across every company on this database. One recorded fact per
         person — the last time their browser made a signed-in request, written at most once every 15
         minutes. Everything else on this page is worked out from that timestamp and the clock when
         the page loads.
       </p>
-      <p className="mb-6 text-xs text-slate-500">
+      <p className="mb-6 text-xs text-ink-muted">
         <span className="text-slate-400">Active</span> = seen in the last {ACTIVE_WITHIN_DAYS} days.{" "}
         <span className="text-slate-400">Going quiet</span> = {ACTIVE_WITHIN_DAYS}–
         {QUIET_AFTER_DAYS - 1} days. <span className="text-slate-400">Quiet</span> ={" "}
@@ -203,10 +203,10 @@ export default async function InternalUsagePage() {
                   <p className="font-medium text-slate-100">
                     {row.name}
                     {row.isProvaOperator && (
-                      <span className="ml-2 text-xs font-normal text-slate-500">(us)</span>
+                      <span className="ml-2 text-xs font-normal text-ink-muted">(us)</span>
                     )}
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-ink-muted">
                     {row.people.length} {row.people.length === 1 ? "person" : "people"} · signed up{" "}
                     {formatInstant(row.createdAt, timeZone)}
                   </p>
@@ -222,7 +222,7 @@ export default async function InternalUsagePage() {
               </div>
 
               {row.people.length === 0 ? (
-                <p className="px-4 py-3 text-sm text-slate-500">
+                <p className="px-4 py-3 text-sm text-ink-muted">
                   No logins on this company at all — nobody has ever signed in to create one.
                 </p>
               ) : (
@@ -236,7 +236,7 @@ export default async function InternalUsagePage() {
                         <p className="truncate text-sm text-slate-100">
                           {person.name ?? person.email}
                         </p>
-                        <p className="truncate text-xs text-slate-500">
+                        <p className="truncate text-xs text-ink-muted">
                           {person.email} · {person.role}
                         </p>
                       </div>
@@ -267,7 +267,7 @@ export default async function InternalUsagePage() {
         </ul>
       )}
 
-      <p className="mt-6 text-xs text-slate-500">
+      <p className="mt-6 text-xs text-ink-muted">
         Dates are on your own calendar ({timeZone}), not the server&apos;s.
       </p>
     </div>

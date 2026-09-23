@@ -1,15 +1,24 @@
 import Link from "next/link";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
-import { loadRatioReviews, loadRemittance, loadUnionSetup, monthBounds } from "@/lib/union-compliance-query";
+import {
+  loadRatioReviews,
+  loadRemittance,
+  loadUnionSetup,
+  loadWorkerCrafts,
+  monthBounds,
+} from "@/lib/union-compliance-query";
 import { UnionLocalForm } from "@/components/UnionLocalForm";
 import { UnionLocalCard } from "@/components/UnionLocalCard";
 import { ratioLabel } from "@/lib/apprentice-ratio";
 import { money } from "@/lib/money";
+import { formatHours } from "@/lib/render-hours";
 import { isWhollyUnpriced } from "@/lib/fringe-remittance";
 import { loadApprenticeships, loadTeamForApprenticeship } from "@/lib/apprenticeship-query";
 import { ApprenticeshipForm } from "@/components/ApprenticeshipForm";
 import { ApprenticeshipPanel } from "@/components/ApprenticeshipPanel";
+import { WorkerCraftsPanel } from "@/components/WorkerCraftsPanel";
+import { viewerToday } from "@/lib/viewerToday";
 
 const STATUS_TONE: Record<string, string> = {
   WITHIN: "text-tag-green-ink",
@@ -37,26 +46,32 @@ export default async function UnionCompliancePage({
   const { company, ...currentUser } = context;
 
   const { month: monthParam } = await searchParams;
+  // One day, read once, used for the default month, the apprenticeship
+  // period and the rate-schedule cut below. On the server's UTC day all
+  // three were a day ahead of the reader every evening — and on the last
+  // evening of a month the default month was the NEXT one, so this page
+  // opened on an empty remittance sheet.
+  const today = await viewerToday();
   const month = /^\d{4}-\d{2}$/.test(monthParam ?? "")
     ? (monthParam as string)
-    : new Date().toISOString().slice(0, 7);
+    : today.slice(0, 7);
   const { start, end } = monthBounds(month);
 
-  const [setup, remittance, ratioReviews, apprenticeships, team] = await Promise.all([
+  const [setup, remittance, ratioReviews, apprenticeships, team, workerCrafts] = await Promise.all([
     loadUnionSetup(company.id),
     loadRemittance(company.id, month),
     loadRatioReviews(company.id, month),
     // Not scoped to the selected month: an indenture runs for years, and
     // the current period's hours are counted from the last sign-off, not
     // from whichever month this page happens to be showing.
-    loadApprenticeships(company.id, new Date().toISOString().slice(0, 10)),
+    loadApprenticeships(company.id, today),
     loadTeamForApprenticeship(company.id),
+    loadWorkerCrafts(company.id),
   ]);
 
   const crafts = setup.flatMap((local) => local.crafts);
   const untiered = crafts.filter((craft) => craft.tier === null);
   const unpriced = crafts.filter((craft) => craft.schedules.length === 0);
-  const today = new Date().toISOString().slice(0, 10);
   const flagged = ratioReviews.filter((r) => r.summary.daysOver > 0);
   const incomplete = ratioReviews.filter((r) => r.summary.daysIncomplete > 0);
 
@@ -88,7 +103,7 @@ export default async function UnionCompliancePage({
         company never gets a clean bill of health.
       </p>
 
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-6 flex items-center gap-3" data-tour="uc-month">
         <Link href={`/union-compliance?month=${previousMonth}`} className="text-sm text-link">
           ← {previousMonth}
         </Link>
@@ -100,8 +115,29 @@ export default async function UnionCompliancePage({
         </Link>
       </div>
 
+      {/* Setup is the LAST section and everything above reads from it, so a
+          new company scrolled past four sections all saying "nothing" before
+          reaching the one thing it could do. A pointer rather than a move:
+          once a local exists, the order below is the right one for a month
+          being reviewed. */}
+      {crafts.length === 0 && (
+        <div className="mb-8 rounded-lg border border-brand bg-surface p-4" data-testid="uc-start-here">
+          <p className="text-sm font-semibold text-ink">
+            {setup.length === 0 ? "Start here: add your local" : "Start here: add your craft classifications"}
+          </p>
+          <p className="mt-1 text-sm text-ink-body">
+            {setup.length === 0
+              ? "Nothing on this page can be worked out until the union local you work under is recorded, with its craft classifications and rates. Every section below reads from it."
+              : "Your local has no craft classifications yet. Hours need a classification before they can be priced for fringe or counted toward a ratio."}
+          </p>
+          <a href="#setup" className="mt-2 inline-block text-sm font-medium text-link hover:underline">
+            Go to locals, classifications and rates ↓
+          </a>
+        </div>
+      )}
+
       {/* ------------------------------------------------ remittance --- */}
-      <section className="mb-10">
+      <section className="mb-10" data-tour="uc-remittance">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink-label">Fringe remittance</h2>
           <span className={`text-xs ${remittance.filed ? "text-tag-green-ink" : "text-tag-amber-ink"}`}>
@@ -110,6 +146,14 @@ export default async function UnionCompliancePage({
               : "No filing covering this whole month on record"}
           </span>
         </div>
+        {/* The only way in to the printable remittance sheet. Like the
+            WH-347 it was built and linked from nowhere but an Ask citation;
+            routeInboundLinks.test.ts now fails the build for that. */}
+        <p className="mb-3 text-sm">
+          <Link href={`/union-compliance/remittance?month=${month}`} className="font-medium text-link hover:underline">
+            Fringe remittance sheet for this month →
+          </Link>
+        </p>
 
         <p className="mb-3 text-xs text-ink-muted">
           A rate hangs off the <span className="text-ink-body">classification</span>, not its tier,
@@ -121,6 +165,11 @@ export default async function UnionCompliancePage({
         {remittance.locals.length === 0 ? (
           <p className="text-sm text-ink-body">
             No hours logged this month against a craft classification, so there is nothing to remit.
+            Hours go on the job, under{" "}
+            <Link href="/jobs" className="text-link hover:underline">
+              Crew &amp; time
+            </Link>
+            , and each one has to name a craft before it can be priced here.
           </p>
         ) : (
           <div className="space-y-4">
@@ -169,11 +218,11 @@ export default async function UnionCompliancePage({
                             {craft.craftLabel}
                             {craft.uncomputedHours > 0 && (
                               <span className="ml-2 text-xs text-tag-amber-ink">
-                                {craft.uncomputedHours} hrs unpriced
+                                {formatHours(craft.uncomputedHours)} hrs unpriced
                               </span>
                             )}
                           </td>
-                          <td className="py-1.5 text-right tabular-nums">{craft.hours}</td>
+                          <td className="py-1.5 text-right tabular-nums">{formatHours(craft.hours)}</td>
                           <td className="py-1.5 text-right tabular-nums">{cell(craft.components.pension)}</td>
                           <td className="py-1.5 text-right tabular-nums">{cell(craft.components.vacation)}</td>
                           <td className="py-1.5 text-right tabular-nums">
@@ -193,11 +242,11 @@ export default async function UnionCompliancePage({
 
             <p className="text-sm text-ink-body">
               <span className="font-mono text-ink-label">{money(remittance.total)}</span> across{" "}
-              {remittance.totalHours} hours.
+              {formatHours(remittance.totalHours)} hours.
               {remittance.uncomputedHours > 0 && (
                 <span className="text-tag-amber-ink">
                   {" "}
-                  {remittance.uncomputedHours} of those hours could not be priced — no craft tag, or no
+                  {formatHours(remittance.uncomputedHours)} of those hours could not be priced — no craft tag, or no
                   rate schedule in force on the day — so this total is short by whatever they are
                   worth. {remittance.uncomputedNames.join(", ")}.
                 </span>
@@ -208,11 +257,17 @@ export default async function UnionCompliancePage({
       </section>
 
       {/* ----------------------------------------------------- ratio --- */}
-      <section className="mb-10">
+      <section className="mb-10" data-tour="uc-ratio">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Apprentice ratio</h2>
 
         {ratioReviews.length === 0 ? (
-          <p className="text-sm text-ink-body">No hours logged this month.</p>
+          <p className="text-sm text-ink-body">
+            No hours logged this month, so there is no ratio to judge. Log them on the job, under{" "}
+            <Link href="/jobs" className="text-link hover:underline">
+              Crew &amp; time
+            </Link>
+            .
+          </p>
         ) : (
           <div className="space-y-4">
             {(flagged.length > 0 || incomplete.length > 0) && (
@@ -264,10 +319,10 @@ export default async function UnionCompliancePage({
                         <span className={STATUS_TONE[day.status]}>{STATUS_LABEL[day.status]}</span>
                         <span className="text-ink-muted">
                           {" "}
-                          · {day.journeymanHours} jrny / {day.apprenticeHours} appr
-                          {day.allowedApprenticeHours !== null && ` (allows ${day.allowedApprenticeHours})`}
+                          · {formatHours(day.journeymanHours)} jrny / {formatHours(day.apprenticeHours)} appr
+                          {day.allowedApprenticeHours !== null && ` (allows ${formatHours(day.allowedApprenticeHours)})`}
                           {day.unclassifiedHours > 0 &&
-                            ` · ${day.unclassifiedHours} hrs unclassified: ${day.unclassifiedNames.join(", ")}`}
+                            ` · ${formatHours(day.unclassifiedHours)} hrs unclassified: ${day.unclassifiedNames.join(", ")}`}
                         </span>
                       </li>
                     ))}
@@ -282,10 +337,10 @@ export default async function UnionCompliancePage({
       </section>
 
       {/* --------------------------------------- apprenticeship --- */}
-      <section className="mb-10">
-        <h2 className="mb-1 text-sm font-semibold text-ink-label">Apprenticeship programmes</h2>
+      <section className="mb-10" data-tour="uc-apprenticeships">
+        <h2 className="mb-1 text-sm font-semibold text-ink-label">Apprenticeship programs</h2>
         <p className="mb-3 text-xs text-ink-muted">
-          The registration itself — sponsor, programme number, classroom hours and the sign-offs
+          The registration itself — sponsor, program number, classroom hours and the sign-offs
           that close a period. On-the-job hours are read from the timesheets and stored nowhere
           here; a period is closed by a signature, never by an hour count reaching a line.
         </p>
@@ -306,8 +361,22 @@ export default async function UnionCompliancePage({
         <ApprenticeshipPanel rows={apprenticeships} canDelete={currentUser.role === "OWNER"} />
       </section>
 
+      {/* ------------------------------------------ who works as what --- */}
+      <section className="mb-8" data-tour="uc-worker-crafts">
+        <h2 className="mb-1 text-sm font-semibold text-ink-label">Who works under each craft</h2>
+        <p className="mb-3 text-xs text-ink-muted">
+          The phone&apos;s craft picker shows each person only the crafts ticked for them — one
+          ticked craft is picked for them automatically. Nobody ticked for a person means they are
+          shown every craft, so this never stops anyone logging hours.
+        </p>
+        <WorkerCraftsPanel
+          people={workerCrafts}
+          crafts={crafts.map((c) => ({ id: c.id, label: c.name }))}
+        />
+      </section>
+
       {/* ----------------------------------------------------- setup --- */}
-      <section>
+      <section id="setup" className="scroll-mt-6" data-tour="uc-setup">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink-label">Locals, classifications and rates</h2>
           <span className="text-xs text-ink-muted">

@@ -3,6 +3,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { loadAlerts } from "@/lib/alerts-query";
 import { summarizeAlerts } from "@/lib/alerts";
 import { AlertRow } from "@/components/AlertRow";
+import { EmptyState } from "@/components/EmptyState";
 import { money } from "@/lib/money";
 import { SendDigestButton } from "@/components/SendDigestButton";
 import { sendMyAlertDigest } from "@/lib/actions/notifications";
@@ -77,7 +78,7 @@ export default async function AlertsPage({
       <StatusLine report={status} />
 
       {currentUser.email && (
-        <div className="mb-6">
+        <div className="mb-6" data-tour="alerts-email">
           <SendDigestButton
             sendMyAlertDigest={sendMyAlertDigest}
             recipientEmail={currentUser.email}
@@ -85,7 +86,7 @@ export default async function AlertsPage({
         </div>
       )}
 
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between" data-tour="alerts-silenced">
         <h2 className="text-sm font-semibold text-ink-label">
           {rows.length} {showSilenced ? "silenced" : "needing attention"}
         </h2>
@@ -105,30 +106,48 @@ export default async function AlertsPage({
             Nothing silenced. Anything you mark as seen shows up here so you can put it back.
           </p>
         ) : (
-          <div className="rounded-lg border border-line-card bg-surface p-6">
-            <p className="text-ink-label">Nothing needs attention.</p>
-            <p className="mt-2 max-w-2xl text-sm text-ink-body">
-              This list only sees what has been recorded — a licence with no expiry date entered, or a
-              backcharge with no deadline looked up, raises nothing rather than raising a guess. So on a
-              quiet day this page is right, and on day one it is empty because there are no dates in yet.
-            </p>
-            {/* A way out, which this branch never had. These are the two
-                places a brand-new account can put a date that this page will
-                watch: cover and licences need no job, and everything else —
-                retainage, closeout, backcharges, certified payroll — hangs
-                off one. */}
-            <p className="mt-3 flex flex-wrap gap-x-4 text-sm">
-              <Link href="/settings" className="text-link hover:text-brand">
-                Record your cover and licence dates
-              </Link>
-              <Link href="/jobs" className="text-link hover:text-brand">
-                Go to your jobs
-              </Link>
-            </p>
-          </div>
+          // The two places a brand-new account can put a date that this page
+          // will watch: cover and licences need no job, and everything else —
+          // retainage, closeout, backcharges, certified payroll — hangs off one.
+          <EmptyState
+            data-tour="alerts-empty"
+            title={nothingDerived ? "Nothing to watch yet" : "Nothing needs attention"}
+            purpose={
+              <p>
+                {nothingDerived
+                  ? "Your early warning list: insurance or a licence about to lapse, a backcharge you have not answered, retainage you can now bill, a job running over its contract. It fills itself from dates you have already entered elsewhere — on day one it is empty because there are no dates in yet."
+                  : "Everything with a date on it has either been dealt with or is not due yet. On a quiet day this page is right to be empty."}
+              </p>
+            }
+            actions={[
+              { label: "Record your cover and licence dates", href: "/settings" },
+              { label: "Go to your jobs", href: "/jobs" },
+            ]}
+            sources={
+              nothingDerived ? (
+                <p>
+                  Nothing is typed here. Each alert is worked out from a date on the record it is
+                  about — an expiry date in Settings, a completion date on a job, a deadline on a
+                  backcharge — and fixing that record is what clears it. A record with no date
+                  raises nothing rather than a guess.
+                </p>
+              ) : undefined
+            }
+            example={
+              nothingDerived
+                ? {
+                    rows: [
+                      { title: "General liability insurance expires in 12 days", tag: "Due soon", detail: "Settings · renew before Sep 30" },
+                      { title: "Retainage on the Oak Ave addition can be billed", tag: "Standing", detail: "Job complete Aug 29", meta: "$4,850.00" },
+                      { title: "Backcharge #2 has no reply", tag: "Overdue", detail: "Oak Ave addition · objection window closes Sep 20", meta: "$450.00" },
+                    ],
+                  }
+                : undefined
+            }
+          />
         )
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="alerts-list">
           {rows.map((alert) => (
             <AlertRow key={alert.key} alert={alert} silenced={showSilenced} />
           ))}

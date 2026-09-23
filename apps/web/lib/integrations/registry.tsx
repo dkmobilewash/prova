@@ -1,5 +1,12 @@
 import type { ReactNode } from "react";
 import type { IntegrationProvider } from "@prova/db";
+import { JOBBER_REQUIRED_ENV } from "@/lib/jobber/setup";
+import { DOCUSIGN_REQUIRED_ENV } from "@/lib/docusign/setup";
+import { MYCOI_API_UNAVAILABLE } from "@/lib/mycoi/api";
+import { PROCORE_REQUIRED_ENV } from "@/lib/procore/setup";
+import { ACC_REQUIRED_ENV } from "@/lib/acc/setup";
+import { COMPANYCAM_REQUIRED_ENV } from "@/lib/companycam/setup";
+import { BLUEBEAM_REQUIRED_ENV } from "@/lib/bluebeam/setup";
 
 /**
  * The one list of providers, and the seam the next phase hooks into.
@@ -33,6 +40,56 @@ export type ProviderImplementation =
    * managed, so there is exactly one answer to "is it connected?".
    */
   | { kind: "external"; href: string; managedAt: string }
+  /**
+   * A one-way import during onboarding: OAuth connect, then a preview of
+   * what would come across and a Confirm. Status lives on this framework's
+   * own connection row. `requiredEnv` names what this install needs before
+   * the card offers a Connect button at all — without it the card says the
+   * service is not set up here yet, rather than showing a broken button.
+   */
+  | { kind: "import"; startHref: string; requiredEnv: readonly string[] }
+  /**
+   * An e-signature service connected per company with OAuth, used from the
+   * documents themselves (the job page's contract and change orders) rather
+   * than from this page. Same `requiredEnv` rule as `import`: without the
+   * keys the card says the service is not set up here.
+   */
+  | { kind: "esign"; startHref: string; requiredEnv: readonly string[] }
+  /**
+   * A provider whose live API is not available to us, but whose customers
+   * can EXPORT a file that C Stream imports — the path that works today.
+   * The card links to that import and says, in `liveApi`, why there is no
+   * Connect button. Never rendered as "Connected": there is no connection,
+   * and pretending the file import is one would be the untrue card this
+   * union exists to prevent.
+   */
+  | { kind: "file-import"; importHref: string; importLabel: string; liveApi: string }
+  /**
+   * A standing READ-ONLY feed from someone else's system into this
+   * company's jobs: OAuth connect, then the owner links an outside project
+   * to a job and its records show on that job's pages. Same `requiredEnv`
+   * rule as `import` — missing keys mean "not set up here", never a dead
+   * button.
+   */
+  | { kind: "feed"; startHref: string; requiredEnv: readonly string[] }
+  /**
+   * The same OAuth-connect shape as `feed` — a per-company connection, then
+   * the owner links an outside project to a job — but the records are
+   * PHOTOS pulled into this app's own gallery on an explicit press rather
+   * than a standing read shown live from the other system. Its own kind
+   * because the card underneath it is an Import button, not a refresh.
+   */
+  | { kind: "photo-import"; startHref: string; requiredEnv: readonly string[] }
+  /**
+   * A per-job OAuth-connected exchange, PUSH and a limited PULL: the owner
+   * links a job to a freshly-created Studio Session at the provider, an
+   * arbitrary file can be pushed into it, and a press reads back a status
+   * summary (never the file's content or any quantity). Its own kind
+   * because unlike `feed`/`photo-import` there is nothing to "pick" — the
+   * provider does not list existing resources to link, it creates one —
+   * and unlike `esign` there is no single document lifecycle to track.
+   */
+  | { kind: "studio"; startHref: string; requiredEnv: readonly string[] }
   /** Not built. Renders disabled, with no control that implies otherwise. */
   | { kind: "planned" };
 
@@ -98,7 +155,7 @@ export const PROVIDERS: ProviderEntry[] = [
     provider: "QUICKBOOKS",
     name: "QuickBooks Online",
     description:
-      "Invoices push to QuickBooks, the record is read back to confirm what landed, and reconciliation reports where the two disagree. One direction only — C Stream does not pull QuickBooks edits back.",
+      "Invoices push to QuickBooks, the record is read back to confirm what landed, and reconciliation reports where the two disagree. One direction only — C Stream does not pull QuickBooks edits back. Starting out, you can also import your customers, vendors and products once, with a preview first.",
     implementation: { kind: "external", href: "/settings", managedAt: "Settings" },
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
@@ -113,11 +170,24 @@ export const PROVIDERS: ProviderEntry[] = [
     ),
   },
   {
+    provider: "JOBBER",
+    name: "Jobber",
+    description:
+      "Run your business on Jobber? Bring your clients, their addresses, your jobs and your open quotes across in one go. You see everything first, and nothing is saved until you press Confirm. One direction only: C Stream reads Jobber and never changes anything there.",
+    implementation: { kind: "import", startHref: "/api/jobber/start", requiredEnv: JOBBER_REQUIRED_ENV },
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
+        <path d="M10 3v9.5a3 3 0 0 1-5.6 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        <path d="M13 8.5 16 11.5 13 14.5M16 11.5h-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     provider: "DOCUSIGN",
     name: "DocuSign",
     description:
-      "Send subcontracts and change orders for signature through DocuSign. C Stream signs contracts with its own e-sign links today; this would cover every document type.",
-    implementation: { kind: "planned" },
+      "Send contracts, uploaded subcontracts and change orders for signature through your own DocuSign account, from the job page. C Stream's own signing link stays the default; DocuSign is an option beside it. When everyone has signed, the signed copy and DocuSign's certificate are saved on the job.",
+    implementation: { kind: "esign", startHref: "/api/docusign/start", requiredEnv: DOCUSIGN_REQUIRED_ENV },
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
         <path
@@ -135,8 +205,8 @@ export const PROVIDERS: ProviderEntry[] = [
     provider: "PROCORE",
     name: "Procore",
     description:
-      "A read-only feed from a GC's Procore project, so drawings, RFIs and submittals arrive without being re-keyed. Read-only by intent: the GC's project is theirs, not ours to write to.",
-    implementation: { kind: "planned" },
+      "Sign in with your own Procore login and link a GC's Procore project to your job. The GC's current drawings, RFIs and submittals then show on your Drawings, RFIs and Submittals pages, marked as theirs, with a link back to Procore. Read-only: C Stream never changes anything in the GC's project.",
+    implementation: { kind: "feed", startHref: "/api/procore/start", requiredEnv: PROCORE_REQUIRED_ENV },
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
         <path d="M10 3.2 16.5 7v6L10 16.8 3.5 13V7L10 3.2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
@@ -145,15 +215,68 @@ export const PROVIDERS: ProviderEntry[] = [
     ),
   },
   {
+    provider: "ACC",
+    name: "Autodesk Construction Cloud",
+    description:
+      "Sign in with your own Autodesk Construction Cloud login and link a GC's ACC project to your job. The GC's RFIs and submittals then show on your RFIs and Submittals pages, marked as theirs, with a link back to ACC. Read-only: C Stream never changes anything in the GC's project.",
+    implementation: { kind: "feed", startHref: "/api/acc/start", requiredEnv: ACC_REQUIRED_ENV },
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
+        <rect x="3.5" y="3.5" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M6.5 13V7.5L10 13V7.5M13.5 7.5v5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    provider: "COMPANYCAM",
+    name: "CompanyCam",
+    description:
+      "Sign in with your own CompanyCam account and link a CompanyCam project to your job. Press Import photos to pull them into that job's gallery — captioned, dated by when they were taken, and marked as imported. Read-only: C Stream never changes anything in CompanyCam, and importing again only brings photos that aren't here yet.",
+    implementation: {
+      kind: "photo-import",
+      startHref: "/api/companycam/start",
+      requiredEnv: COMPANYCAM_REQUIRED_ENV,
+    },
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
+        <path
+          d="M4 7.5a1.5 1.5 0 0 1 1.5-1.5h1.1l.7-1.2A1 1 0 0 1 8.2 4.3h3.6a1 1 0 0 1 .9.5l.7 1.2h1.1A1.5 1.5 0 0 1 16 7.5v6A1.5 1.5 0 0 1 14.5 15h-9A1.5 1.5 0 0 1 4 13.5v-6Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <circle cx="10" cy="10" r="2.3" stroke="currentColor" strokeWidth="1.4" />
+      </svg>
+    ),
+  },
+  {
     provider: "MYCOI",
     name: "myCOI",
     description:
-      "Certificate-of-insurance verification for vendors and subs, so an expired COI is caught before somebody is on site under it rather than after.",
-    implementation: { kind: "planned" },
+      "Your vendors' and subs' certificates of insurance, from a myCOI export. Each line of cover lands on Compliance with its expiry date, shows beside the vendor, and warns you before it runs out — so an expired COI is caught before somebody is on site under it rather than after.",
+    implementation: {
+      kind: "file-import",
+      importHref: "/settings/import#mycoi",
+      importLabel: "Import a myCOI export",
+      liveApi: MYCOI_API_UNAVAILABLE,
+    },
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
         <path d="M10 3.2 15.5 5.4v4.3c0 3-2.2 5.6-5.5 7-3.3-1.4-5.5-4-5.5-7V5.4L10 3.2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
         <path d="m7.5 10 1.8 1.8 3.4-3.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    provider: "BLUEBEAM",
+    name: "Bluebeam",
+    description:
+      "Link a job to a fresh Bluebeam Studio Session under your own account, push a PDF drawing set or spec section into it, and read back how many markups have come in and their status. Bluebeam's public API does not expose markup geometry or takeoff quantities — those stay in Revu — so this is document exchange and status, not automatic estimating.",
+    implementation: { kind: "studio", startHref: "/api/bluebeam/start", requiredEnv: BLUEBEAM_REQUIRED_ENV },
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
+        <rect x="3.5" y="3.5" width="13" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M6.5 13 9 8.5l2 3 1-1.5 1.5 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   },

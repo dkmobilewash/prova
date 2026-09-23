@@ -10,6 +10,8 @@ import { deliveryRate, needsAttention, stale } from "@/components/messageLabels"
 import { StatusLine } from "@/components/StatusLine";
 import { messagesStatus } from "@/lib/status-sentences";
 import { toJobOption } from "@/components/jobLabels";
+import { EmptyState } from "@/components/EmptyState";
+import { viewerToday } from "@/lib/viewerToday";
 
 /** Stored at UTC midnight, rendered in UTC — same rule as every other date
  * in this app. */
@@ -30,7 +32,7 @@ export default async function MessagesPage({
   const { show, draft } = await searchParams;
   const onlyProblems = show === "problems";
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await viewerToday();
   const setupProblem = emailSetupProblem();
 
   // A card from the Ask box (lib/ask/drafts.ts): the composer opens
@@ -99,9 +101,9 @@ export default async function MessagesPage({
   const rate = deliveryRate(rows);
   const status = messagesStatus({ failed, unconfirmed, sent: rows.length, rate });
 
-  const visible = onlyProblems
-    ? rows.filter((r) => needsAttention(r.events) || stale(r, today))
-    : rows;
+  const problems = rows.filter((r) => needsAttention(r.events) || stale(r, today));
+  const problemCount = problems.length;
+  const visible = onlyProblems ? problems : rows;
 
   const chip = (active: boolean) =>
     `rounded-md border px-3 py-1.5 text-sm ${
@@ -118,17 +120,28 @@ export default async function MessagesPage({
       </p>
 
       {setupProblem && (
-        <div className="mb-6 rounded-lg border border-amber-700 bg-tag-amber p-4">
+        <div className="mb-6 rounded-lg border border-amber-700 bg-tag-amber p-4" data-tour="messages-setup">
           <p className="text-sm font-medium text-tag-amber-ink">Sending isn&apos;t set up yet</p>
           <p className="mt-1 text-sm text-tag-amber-ink/80">{setupProblem}</p>
-          <p className="mt-2 text-xs text-tag-amber-ink/60">
-            It needs <span className="font-mono">RESEND_API_KEY</span> and{" "}
-            <span className="font-mono">OUTBOUND_EMAIL_FROM</span> set to an address on your own
-            domain, verified with the provider — plus{" "}
-            <span className="font-mono">RESEND_WEBHOOK_SECRET</span>, without which no delivery
-            events are accepted at all. Sending from your own domain rather than ours is the point:
-            it&apos;s what keeps quotes out of spam.
-          </p>
+          {company.isProvaOperator ? (
+            // Deployment plumbing, for the people who run the deployment.
+            // A drywall contractor was reading these env-var names in
+            // monospace on their first visit; the fix is who sees them,
+            // not the sentence — an operator still needs the exact names.
+            <p className="mt-2 text-xs text-tag-amber-ink/60">
+              It needs <span className="font-mono">RESEND_API_KEY</span> and{" "}
+              <span className="font-mono">OUTBOUND_EMAIL_FROM</span> set to an address on your own
+              domain, verified with the provider — plus{" "}
+              <span className="font-mono">RESEND_WEBHOOK_SECRET</span>, without which no delivery
+              events are accepted at all. Sending from your own domain rather than ours is the point:
+              it&apos;s what keeps quotes out of spam.
+            </p>
+          ) : (
+            <p className="mt-2 text-xs text-tag-amber-ink/60">
+              Whoever runs C Stream for you has to configure the email provider on this deployment.
+              Everything else on this page works without it.
+            </p>
+          )}
         </div>
       )}
 
@@ -137,45 +150,75 @@ export default async function MessagesPage({
         <MessageComposer jobs={jobs} canSend={setupProblem === null} draft={messageDraft} />
       </div>
 
-      {truncated && (
-        <p className="mb-2 text-xs text-ink-muted">
-          Showing the most recent {MESSAGE_LIMIT} messages. The line below is counted over those{" "}
-          {MESSAGE_LIMIT}, not over everything ever sent.
-        </p>
-      )}
-
-      <StatusLine report={status} />
-
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Link href="/messages" className={chip(!onlyProblems)}>
-          Everything
-        </Link>
-        <Link href="/messages?show=problems" className={chip(onlyProblems)}>
-          Needs attention
-        </Link>
-      </div>
-
-      <h2 className="mb-3 text-sm font-semibold text-ink-label">
-        {visible.length} {visible.length === 1 ? "message" : "messages"}
-      </h2>
-
-      {visible.length === 0 ? (
-        <p className="text-ink-body">
-          {rows.length === 0
-            ? "Nothing sent yet. Once sending is set up, anything the app sends on your behalf is recorded here with what the provider said happened to it."
-            : "Nothing needs attention — everything sent has either been delivered or is still in flight."}
-        </p>
+      {rows.length === 0 ? (
+        <EmptyState
+          data-tour="messages-empty"
+          title="Nothing sent yet"
+          purpose={
+            <p>
+              Your sent mail, with proof it arrived. Every email C Stream sends for you — a note to
+              the GC&apos;s super, a question to the architect, a change of start date — is kept
+              here with what happened to it: delivered, bounced, or no word back yet.
+            </p>
+          }
+          actions={setupProblem === null ? [{ label: "Send an email", opens: "messages-compose" }] : []}
+          ask={setupProblem === null ? "Email Jane Smith that we start on her kitchen Monday" : undefined}
+          sources={
+            <ul className="list-disc space-y-1 pl-5">
+              <li>emails you write here, or ask the assistant to write for you;</li>
+              <li>the alert digest, when you send it from Alerts;</li>
+              <li>questions you send us from Help.</li>
+            </ul>
+          }
+          example={{
+            rows: [
+              { title: "Jane Smith — Kitchen start date", tag: "Delivered", detail: "About Smith kitchen remodel", meta: "Sep 12" },
+              { title: "Northside Builders — Header height on the back wall", tag: "No word back yet", detail: "About Oak Ave addition", meta: "Sep 10" },
+              { title: "orders@example.com — Window order change", tag: "Bounced", detail: "Check the address and send it again", meta: "Sep 8" },
+            ],
+          }}
+        />
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
-          {visible.map((message) => (
-            <MessageRow
-              key={message.id}
-              message={message}
-              today={today}
-              canDelete={currentUser.role === "OWNER"}
-            />
-          ))}
-        </ul>
+        <>
+          {truncated && (
+            <p className="mb-2 text-xs text-ink-muted">
+              Showing the most recent {MESSAGE_LIMIT} messages. The line below is counted over those{" "}
+              {MESSAGE_LIMIT}, not over everything ever sent.
+            </p>
+          )}
+
+          <StatusLine report={status} />
+
+          <div className="mb-4 flex flex-wrap gap-2" data-tour="messages-filter">
+            <Link href="/messages" className={chip(!onlyProblems)}>
+              Everything ({rows.length})
+            </Link>
+            <Link href="/messages?show=problems" className={chip(onlyProblems)}>
+              Needs attention ({problemCount})
+            </Link>
+          </div>
+
+          <h2 className="mb-3 text-sm font-semibold text-ink-label">
+            {visible.length} {visible.length === 1 ? "message" : "messages"}
+          </h2>
+
+          {visible.length === 0 ? (
+            <p className="text-ink-body">
+              Nothing needs attention — everything sent has either been delivered or is still in flight.
+            </p>
+          ) : (
+            <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="messages-list">
+              {visible.map((message) => (
+                <MessageRow
+                  key={message.id}
+                  message={message}
+                  today={today}
+                  canDelete={currentUser.role === "OWNER"}
+                />
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </div>
   );

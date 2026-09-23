@@ -159,6 +159,13 @@ afterAll(async () => {
     await prisma.contractDocument.deleteMany({ where: { job: { companyId } } });
     await prisma.contractDocumentVersionCounter.deleteMany({ where: { job: { companyId } } });
     await prisma.complianceDocument.deleteMany({ where: { companyId } });
+    // `uploadComplianceDocument` claims against the monthly AI allowance
+    // now, so this suite creates an `AskAllowancePeriod` row — a RESTRICT
+    // child of Company that the company delete below cannot reach. Same
+    // shape as #227's InvoiceCounter: a new child breaks a cleanup that
+    // never mentioned it, and the failure lands in teardown rather than in
+    // the test that caused it.
+    await prisma.askAllowancePeriod.deleteMany({ where: { companyId } });
     await prisma.job.deleteMany({ where: { companyId } });
     await prisma.contact.deleteMany({ where: { companyId } });
     await prisma.user.deleteMany({ where: { companyId } });
@@ -436,7 +443,17 @@ describe("uploadComplianceDocument reads the file back out of the store", () => 
   it("records the URL and hands the bytes to the extractor", async () => {
     const url = storedUrl(OUR_STORE, "compliance", ours.companyId, "COI.pdf");
     try {
-      expect(await uploadComplianceDocument(form(url))).toEqual({ ok: true });
+      // The success shape carries what the document cost now. Four bytes of
+      // "%PDF" have no readable page tree, so it is charged the flat rate
+      // pageCount.ts documents — and says so, which is the promise that
+      // file makes and nothing kept until this path rendered it.
+      expect(await uploadComplianceDocument(form(url))).toEqual({
+        ok: true,
+        value: {
+          note: "10 pages (this PDF's page count couldn't be read, so it is charged as 10)",
+          pagesLeft: 290,
+        },
+      });
 
       const row = await prisma.complianceDocument.findFirstOrThrow({
         where: { companyId: ours.companyId },
@@ -520,7 +537,7 @@ describe("uploadComplianceDocument reads the file back out of the store", () => 
     try {
       const withJob = form(url);
       withJob.set("jobId", ours.jobId);
-      expect(await uploadComplianceDocument(withJob)).toEqual({ ok: true });
+      expect((await uploadComplianceDocument(withJob)).ok).toBe(true);
       const row = await prisma.complianceDocument.findFirstOrThrow({
         where: { companyId: ours.companyId },
       });

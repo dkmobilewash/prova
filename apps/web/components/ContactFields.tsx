@@ -1,6 +1,7 @@
 "use client";
 
 import { inputClass, labelClass } from "@/components/RfiFields";
+import { PercentField } from "@/components/PercentField";
 
 export const CONTACT_STATUS_OPTIONS = [
   { value: "PROSPECT", label: "Prospect" },
@@ -106,19 +107,22 @@ export type ContactStandingTermsDefaults = {
 export function ContactStandingTermsFields({ defaults }: { defaults: ContactStandingTermsDefaults }) {
   return (
     <div className="flex flex-wrap gap-3">
-      <label className={labelClass}>
-        Default retainage %
-        <input
-          name="defaultRetainagePercent"
-          defaultValue={defaults.defaultRetainagePercent ?? ""}
-          placeholder="e.g. 10"
-          className={`w-32 ${inputClass}`}
-        />
-      </label>
+      {/* Pre-fills Job.retainagePercent, so it carries the same units
+          trap: a `%` that stays put rather than a placeholder that
+          vanishes. No money preview — there is no contract to apply it to
+          on a contact. */}
+      <PercentField
+        name="defaultRetainagePercent"
+        label="Default retainage"
+        defaultValue={defaults.defaultRetainagePercent ?? ""}
+        className={`w-32 pr-7 ${inputClass}`}
+      />
       <label className={labelClass}>
         Payment terms (days)
         <input
           name="paymentTermsDays"
+          type="text"
+          inputMode="numeric"
           defaultValue={defaults.paymentTermsDays ?? ""}
           placeholder="e.g. 30"
           className={`w-32 ${inputClass}`}

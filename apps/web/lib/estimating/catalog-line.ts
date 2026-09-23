@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import { parseNumericInput } from "@/lib/numeric-input";
 import type { ActionResultWith } from "@/lib/actions/shared";
 import { NOT_ESTIMATE_STAGE } from "./draft-lines";
 
@@ -35,12 +36,21 @@ export async function addCatalogLine(
     return { ok: false, error: "Catalog entry not found" };
   }
 
-  const quantity = input.quantity.trim();
-  // The same test decimalFromForm applies, so the form's behaviour is
-  // unchanged; the Ask command is stricter before it gets here.
-  if (!quantity || Number.isNaN(Number(quantity))) {
-    return { ok: false, error: '"quantity" must be a number' };
+  // THIS COMMENT USED TO SAY "the same test decimalFromForm applies", and
+  // it was true when written. `decimalFromForm` moved to
+  // `lib/numeric-input.ts` on 2026-09-21 and this did not, which left the
+  // wizard's "Add from catalog" box refusing `2,800` on the SAME SCREEN
+  // where the hand-typed Qty next to it had just started accepting it —
+  // the original bug, surviving inside the fix for it because a sentence
+  // claiming agreement went stale instead of failing.
+  //
+  // It also returned the RAW string for a Decimal column, so `0x10` and
+  // `Infinity` got through here exactly as they did there.
+  const parsed = parseNumericInput(input.quantity, { label: "Quantity", min: 0 });
+  if (!parsed.ok) {
+    return { ok: false, error: parsed.error };
   }
+  const quantity = parsed.value;
 
   const line = await prisma.jobLineItem.create({
     data: {
@@ -52,6 +62,22 @@ export async function addCatalogLine(
       budgetedUnitCost: entry.defaultBudgetedUnitCost,
       currentEstimatedUnitCost: entry.defaultBudgetedUnitCost,
       tradeScope: entry.tradeScope,
+      // FLAT, on purpose as of now and pinned by catalog-line.test.ts: the
+      // entry's hours land on the line unchanged at every quantity, while
+      // unitPrice and budgetedUnitCost above are per-unit figures the job page
+      // multiplies out. That asymmetry is real and was undocumented, and an
+      // estimator could not tell which was meant.
+      //
+      // It is NOT settled which it should be — the two writers of
+      // `defaultLaborHours` disagree with each other. `saveLineItemAsCatalogEntry`
+      // copies a line's total hours in without dividing by quantity (flat);
+      // `importCatalogEntries` maps a price list's hours column straight in, and
+      // a price list's hours column is a per-unit productivity factor (the
+      // import sample's own 0.012 for a SF of board). Changing this line to
+      // multiply would re-scale the labor burden on every catalog-sourced line
+      // already estimated, and `Decimal(8, 2)` cannot hold a per-unit rate
+      // anyway — 0.012 stores as 0.01. So the behaviour stays put, the labels
+      // now say what it is, and the decision is written up for a person.
       laborHours: entry.defaultLaborHours,
       craftClassificationId: entry.craftClassificationId,
       // Records which template this came from, so /catalog can later report

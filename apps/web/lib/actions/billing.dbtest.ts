@@ -117,6 +117,11 @@ describe("logPayment against a real database", () => {
         contactName: "Test GC",
         amount: Number(invoice.amount),
         paidAmount: 20000,
+        // This job has no retainage rate, so the invoice carries no
+        // snapshot — the column is genuinely null here, not zeroed for
+        // convenience. Read off the row rather than hardcoded so the
+        // assertion still means something if the fixture gains a rate.
+        retainageWithheld: invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
         issuedAt: invoice.issuedAt,
         dueAt: invoice.dueAt,
         paymentTermsDays: null,

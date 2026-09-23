@@ -1,0 +1,53 @@
+// Bluebeam: one Studio Session per C Stream job, for pushing a PDF into
+// Bluebeam Studio and reading markup status back.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// The connection (OAuth tokens) lives on IntegrationConnection with
+// provider BLUEBEAM, one per company, like every other provider.
+//
+// WHAT THIS IS NOT. It is not a cache of a Bluebeam document, and it is
+// not a place a markup's geometry or a takeoff quantity could live —
+// Bluebeam's public Studio API does not expose either (see
+// packages/integrations/src/bluebeam.ts). This row only remembers WHICH
+// Studio Session a job is talking to and the last thing this app learned
+// about it.
+
+/// Which job talks to which Bluebeam Studio Session. One session per job
+/// and one job per session within a company, so "where does this job's
+/// Bluebeam traffic go" always has one answer.
+///
+/// ON DELETE CASCADE from Job, the same call as ProcoreProjectLink and
+/// CompanyCamProjectLink and for the same reason: the link is a pointer
+/// at somebody else's system, not evidence, and a scratch job being
+/// deleted should take its pointer with it rather than refuse. Nothing in
+/// Bluebeam changes when this row is deleted — the Studio Session itself
+/// is left exactly as it was, the same "we only forget, we don't undo"
+/// rule CompanyCam's unlink follows.
+model BluebeamStudioSession {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String  @unique
+  job       Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  /// Bluebeam's own session id and the name it was created with — an
+  /// identifier and a label, not quantities, so neither is anything this
+  /// schema does arithmetic on.
+  bluebeamSessionId   String
+  bluebeamSessionName String
+
+  linkedByUserId String?
+  linkedBy       User?    @relation("BluebeamLinkedBy", fields: [linkedByUserId], references: [id], onDelete: SetNull)
+  linkedAt       DateTime @default(now())
+
+  /// The last push or refresh: when, whether it worked, and a sentence.
+  /// The same trio ProcoreProjectLink and CompanyCamProjectLink keep, for
+  /// the same reason — an integration that fails silently is
+  /// indistinguishable from one nobody used.
+  lastSyncedAt   DateTime?
+  lastSyncStatus IntegrationSyncStatus?
+  lastSyncMessage String?
+
+  @@index([companyId])
+}

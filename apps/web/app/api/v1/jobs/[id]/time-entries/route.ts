@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { prisma, TimeEntryPayType } from "@prova/db";
 import { crewMemberName } from "@/lib/worker-name";
+import { isDayLockError, liveSignoff, lockedDayMessage } from "@/lib/timesheet-signoff";
 
 export const dynamic = "force-dynamic";
 
 const PAY_TYPES = ["STRAIGHT", "OVERTIME", "DOUBLE_TIME", "SHIFT_DIFFERENTIAL"];
+
+const FIELD_ONLY =
+  "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
@@ -17,6 +22,13 @@ const entrySelect = {
   hours: true,
   payType: true,
   note: true,
+  clockStartedAt: true,
+  clockEndedAt: true,
+  clockBreakMinutes: true,
+  employeeUserId: true,
+  crewMemberId: true,
+  lineItemId: true,
+  craftClassificationId: true,
   employeeUser: { select: { name: true, email: true } },
   crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
   lineItem: { select: { description: true } },
@@ -29,6 +41,13 @@ function toJson(e: {
   hours: unknown;
   payType: string;
   note: string | null;
+  clockStartedAt: Date | null;
+  clockEndedAt: Date | null;
+  clockBreakMinutes: number | null;
+  employeeUserId: string | null;
+  crewMemberId: string | null;
+  lineItemId: string | null;
+  craftClassificationId: string | null;
   employeeUser: { name: string | null; email: string } | null;
   crewMember: { legalFirstName: string; legalMiddleName: string | null; legalLastName: string } | null;
   lineItem: { description: string } | null;
@@ -40,6 +59,11 @@ function toJson(e: {
     hours: String(e.hours),
     payType: e.payType,
     note: e.note,
+    // Clock capture, when the entry was clocked rather than typed. ISO
+    // timestamps so the phone renders them in the worker's own time zone.
+    clockStartedAt: e.clockStartedAt?.toISOString() ?? null,
+    clockEndedAt: e.clockEndedAt?.toISOString() ?? null,
+    clockBreakMinutes: e.clockBreakMinutes,
     // The worker the hours are for: an employee (User) or a crew member.
     employeeName: e.employeeUser
       ? e.employeeUser.name ?? e.employeeUser.email
@@ -48,6 +72,11 @@ function toJson(e: {
         : "Name not recorded",
     lineItemDescription: e.lineItem?.description ?? null,
     craftLabel: e.craftClassification?.name ?? null,
+    // The ids behind the labels, so the phone's "Copy from yesterday" can
+    // put the same people, cost code and crafts back on a new day.
+    crewMemberId: e.crewMemberId,
+    lineItemId: e.lineItemId,
+    craftClassificationId: e.craftClassificationId,
   };
 }
 
@@ -62,12 +91,43 @@ function parseHours(raw: unknown): string | null {
   return text;
 }
 
+/** An ISO timestamp, or null when absent — clock capture evidence, present
+ * only on entries that were clocked. The server stores it but never
+ * recomputes `hours` from it: hours is authoritative and correctable. */
+function parseOptionalTimestamp(
+  raw: unknown,
+  label: string,
+): { ok: true; value: Date | null } | { ok: false; error: string } {
+  const text = String(raw ?? "").trim();
+  if (!text) return { ok: true, value: null };
+  const d = new Date(text);
+  if (Number.isNaN(d.getTime())) return { ok: false, error: `${label} must be a valid timestamp` };
+  return { ok: true, value: d };
+}
+
+/** Whole, non-negative break minutes, or null when absent. */
+function parseOptionalBreakMinutes(
+  raw: unknown,
+): { ok: true; value: number | null } | { ok: false; error: string } {
+  const text = String(raw ?? "").trim();
+  if (!text) return { ok: true, value: null };
+  if (!/^\d+$/.test(text)) {
+    return { ok: false, error: "clockBreakMinutes must be a whole number of minutes, or omitted" };
+  }
+  return { ok: true, value: Number(text) };
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const context = await requireApiContext();
   if (!context) return jsonError("Not authenticated", 401);
+  // Hours and T&M are field records, and the equivalent web surface has
+  // withheld on MANAGE_FIELD since #396. These two routes asserted
+  // nothing at all: the phone's role shell would have been decoration
+  // without them, because a hidden tab is not a guard.
+  if (!can(context, "MANAGE_FIELD")) return jsonError(FIELD_ONLY, 403);
 
   const { id } = await params;
   const job = await prisma.job.findUnique({ where: { id }, select: { id: true, companyId: true } });
@@ -79,7 +139,9 @@ export async function GET(
     select: entrySelect,
   });
 
-  return NextResponse.json(entries.map(toJson));
+  // `mine` rather than the user id: the phone knows the caller as "Me", not
+  // by database id.
+  return NextResponse.json(entries.map((e) => ({ ...toJson(e), mine: e.employeeUserId === context.id })));
 }
 
 export async function POST(
@@ -88,6 +150,11 @@ export async function POST(
 ) {
   const context = await requireApiContext();
   if (!context) return jsonError("Not authenticated", 401);
+  // Hours and T&M are field records, and the equivalent web surface has
+  // withheld on MANAGE_FIELD since #396. These two routes asserted
+  // nothing at all: the phone's role shell would have been decoration
+  // without them, because a hidden tab is not a guard.
+  if (!can(context, "MANAGE_FIELD")) return jsonError(FIELD_ONLY, 403);
 
   const { id } = await params;
   const job = await prisma.job.findUnique({ where: { id }, select: { id: true, companyId: true } });
@@ -144,6 +211,15 @@ export async function POST(
     craftClassificationId = craft.id;
   }
 
+  // Clock capture evidence — optional, and only ever from the phone's clock
+  // flow. Stored as-is; never used to recompute `hours`.
+  const clockStartedAt = parseOptionalTimestamp(input.clockStartedAt, "clockStartedAt");
+  if (!clockStartedAt.ok) return jsonError(clockStartedAt.error, 400);
+  const clockEndedAt = parseOptionalTimestamp(input.clockEndedAt, "clockEndedAt");
+  if (!clockEndedAt.ok) return jsonError(clockEndedAt.error, 400);
+  const clockBreakMinutes = parseOptionalBreakMinutes(input.clockBreakMinutes);
+  if (!clockBreakMinutes.ok) return jsonError(clockBreakMinutes.error, 400);
+
   // Idempotent create: a retried offline POST replays instead of duplicating.
   const clientOperationId = String(input.clientOperationId ?? "").trim() || undefined;
   if (clientOperationId) {
@@ -154,21 +230,38 @@ export async function POST(
     if (existing) return NextResponse.json(toJson(existing), { status: 200 });
   }
 
-  const entry = await prisma.timeEntry.create({
-    data: {
-      jobId: job.id,
-      employeeUserId,
-      crewMemberId,
-      lineItemId,
-      craftClassificationId,
-      date,
-      hours,
-      payType,
-      note: String(input.note ?? "").trim() || null,
-      clientOperationId,
-    },
-    select: entrySelect,
-  });
+  // A signed day is locked. 409, not 400: the phone's queue treats it as
+  // final and sets the entry aside with a note, rather than retrying it
+  // forever and holding every later write behind it.
+  const live = await liveSignoff(job.id, date);
+  if (live) return jsonError(lockedDayMessage(date, live), 409);
+
+  let entry;
+  try {
+    entry = await prisma.timeEntry.create({
+      data: {
+        jobId: job.id,
+        employeeUserId,
+        crewMemberId,
+        lineItemId,
+        craftClassificationId,
+        date,
+        hours,
+        payType,
+        clockStartedAt: clockStartedAt.value,
+        clockEndedAt: clockEndedAt.value,
+        clockBreakMinutes: clockBreakMinutes.value,
+        note: String(input.note ?? "").trim() || null,
+        clientOperationId,
+      },
+      select: entrySelect,
+    });
+  } catch (error) {
+    // The day was signed between the check above and this write, and the
+    // database's day lock refused it.
+    if (isDayLockError(error)) return jsonError(`${dateRaw} was just signed, so its hours are locked.`, 409);
+    throw error;
+  }
 
   return NextResponse.json(toJson(entry), { status: 201 });
 }

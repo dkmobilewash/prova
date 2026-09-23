@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { JobMediaCapture } from "@/components/JobMediaCapture";
-import { JobMediaCard, type JobMediaCardData } from "@/components/JobMediaCard";
+import type { JobMediaCardData } from "@/components/JobMediaCard";
+import { JobMediaGallery } from "@/components/JobMediaGallery";
 import { JobMediaTagDatalist } from "@/components/JobMediaTagDatalist";
 import { photoReportHref } from "@/lib/photo-report";
 
@@ -35,7 +36,7 @@ export function JobMediaSection({
   limit?: number;
 }) {
   return (
-    <section className="mb-10">
+    <section className="mb-10" data-tour="job-photos">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-3">
         <h2 className="text-lg font-semibold text-ink">Site photos</h2>
         {/* THE ONLY ENTRY POINT TO THE REPORT FROM A JOB, and it is here
@@ -70,11 +71,7 @@ export function JobMediaSection({
         </div>
       ) : (
         <>
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {media.map((item) => (
-              <JobMediaCard key={item.id} media={item} />
-            ))}
-          </ul>
+          <JobMediaGallery media={media} />
           {total > limit && (
             <p className="mt-3 text-sm text-ink-body">
               Showing the {limit} most recent of {total}.{" "}

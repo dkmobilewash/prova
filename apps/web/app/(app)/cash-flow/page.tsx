@@ -4,6 +4,7 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
 import { calculateRetainageSummary } from "@/lib/retainage";
+import { viewerAsOf } from "@/lib/viewerToday";
 import {
   calculateArAgingInvoice,
   calculateCashFlowForecast,
@@ -36,7 +37,12 @@ export default async function CashFlowPage() {
     },
   });
 
-  const asOf = new Date();
+  // The READER'S calendar day, at the UTC midnight every stored date sits
+  // on — not the current instant. See lib/viewerToday.ts and the note on
+  // `daysPastDueFor`: a raw `new Date()` here called an invoice due today
+  // "1d overdue" from 17:00 Pacific, aged it 1-30, and moved its whole
+  // balance into the forecast's Overdue row.
+  const asOf = await viewerAsOf();
 
   const arInvoices = jobs
     .flatMap((job) =>
@@ -50,6 +56,11 @@ export default async function CashFlowPage() {
             contactName: job.contact.name,
             amount: Number(invoice.amount),
             paidAmount,
+            // Netted out of the aged balance: it is not due until
+            // substantial completion, and it is already counted once in
+            // the retainage receivable section below. See issue #288 and
+            // the header of lib/cash-flow.ts.
+            retainageWithheld: invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
             issuedAt: invoice.issuedAt,
             dueAt: invoice.dueAt,
             paymentTermsDays: job.contact.paymentTermsDays,
@@ -105,7 +116,7 @@ export default async function CashFlowPage() {
     return (
       <div className="mx-auto max-w-4xl px-6 py-8">
         <h1 className="mb-1 text-xl font-semibold text-ink">Cash flow forecast</h1>
-        <div className="mt-6 rounded-lg border border-line-card bg-surface p-6">
+        <div className="mt-6 rounded-lg border border-line-card bg-surface p-6" data-tour="cash-flow-empty">
           <p className="text-ink-label">
             {jobs.length === 0
               ? "No jobs yet, and every figure on this page is worked out from an invoice against one."
@@ -128,7 +139,7 @@ export default async function CashFlowPage() {
             </Link>
           ) : (
             <p className="mt-4 text-sm text-ink-body">
-              Invoices are raised on the job they bill, in its Billing section.{" "}
+              Invoices are raised on the job they bill, in its Invoices section.{" "}
               <Link href="/jobs" className="text-link hover:text-brand">
                 Open a job
               </Link>
@@ -150,7 +161,7 @@ export default async function CashFlowPage() {
         one.
       </p>
 
-      <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4" data-tour="cash-flow-wip">
         <h2 className="mb-1 text-sm font-semibold text-slate-100">WIP schedule</h2>
         <p className="mb-3 max-w-2xl text-sm text-slate-400">
           Percentage of completion by the cost-to-cost method, one row per contracted or in-progress job, with
@@ -171,7 +182,7 @@ export default async function CashFlowPage() {
         </a>
       </section>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="cash-flow-aging">
         <h2 className="mb-3 text-lg font-semibold text-ink">Accounts receivable aging</h2>
         {/* The grid and the total only appear when something is outstanding.
             An account that has been paid in full does not need five zeros
@@ -201,6 +212,19 @@ export default async function CashFlowPage() {
             <p className="mb-3 text-sm text-ink-body">
               Total outstanding: {money(agingSummary.totalOutstanding)}
             </p>
+            {/* The coverage caveat this table owes its reader. Balances
+                here are net of retainage — a figure 10% lighter than the
+                invoices it came from, with nothing on screen to say why,
+                is the shape of number this product refuses to show. The
+                money is not missing; it is in the next section, dated by
+                substantial completion instead of by a due date. */}
+            {agingSummary.retainageExcluded > 0 && (
+              <p className="mb-3 text-sm text-ink-muted">
+                Balances are net of {money(agingSummary.retainageExcluded)} of retainage withheld on
+                these invoices. Retainage is not due until substantial completion, so it is never
+                counted as overdue here — it is in Retainage receivable below.
+              </p>
+            )}
           </>
         )}
 
@@ -242,7 +266,7 @@ export default async function CashFlowPage() {
         )}
       </section>
 
-      <section className="mb-10">
+      <section className="mb-10" data-tour="cash-flow-retainage">
         <h2 className="mb-3 text-lg font-semibold text-ink">Retainage receivable</h2>
         {/* Same rule as the aging total above: a zero total is stated once,
             by the sentence, instead of twice. */}
@@ -283,7 +307,7 @@ export default async function CashFlowPage() {
         )}
       </section>
 
-      <section>
+      <section data-tour="cash-flow-forecast">
         <h2 className="mb-3 text-lg font-semibold text-ink">Forecast, next {FORECAST_MONTHS_AHEAD} months</h2>
         {/* `calculateCashFlowForecast` seeds Overdue plus every month in the
             window whether or not anything lands in them — deliberately, so

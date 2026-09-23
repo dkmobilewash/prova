@@ -7,10 +7,22 @@ import { tradeScopeLabel } from "@/components/tradeScopeLabels";
 import { VendorFields, type VendorFieldValues } from "@/components/VendorFields";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import type { CoiStandingLine } from "@/lib/coi-standing";
 
 type VendorRowProps = {
   canDelete: boolean;
   vendor: VendorFieldValues & { id: string };
+  /** Insurance standing, derived on the page from the governing COIs
+   * (lib/coi-standing.ts). Absent for anyone without MANAGE_COMPLIANCE —
+   * it is a summary of compliance records, so it needs their permission. */
+  coi?: CoiStandingLine;
+};
+
+const COI_TONE: Record<CoiStandingLine["tone"], string> = {
+  bad: "text-tag-rose-ink",
+  warn: "text-tag-amber-ink",
+  ok: "text-tag-green-ink",
+  none: "text-ink-muted",
 };
 
 /** Three states: reading, editing, and confirming a delete. Delete asks
@@ -22,7 +34,7 @@ type VendorRowProps = {
  * <RowActions>, which renders none of its ordinary actions while a delete is
  * armed, so the click after the one you meant to stop at cannot open the
  * edit form. Issue #152. */
-export function VendorRow({ canDelete, vendor }: VendorRowProps) {
+export function VendorRow({ canDelete, vendor, coi }: VendorRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +125,7 @@ export function VendorRow({ canDelete, vendor }: VendorRowProps) {
         {trade && <p className="text-xs text-link">{trade}</p>}
         <p className="text-sm text-ink-body">{contactLine || "No contact info"}</p>
         {vendor.notes && <p className="mt-1 text-sm text-ink-muted">{vendor.notes}</p>}
+        {coi && <p className={`mt-1 text-xs font-medium ${COI_TONE[coi.tone]}`}>{coi.text}</p>}
         {error && (
           <p role="alert" className="mt-1 text-sm text-red-400">
             {error}

@@ -2,12 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
+import { numericReaders, parseNumericInput } from "@/lib/numeric-input";
 import { prisma } from "@prova/db";
 import {
+  InputError,
   actionFail as fail,
   actionOk as ok,
   isUniqueConstraintError,
   plural,
+  runAction as sharedRunAction,
   type ActionResult,
 } from "./shared";
 
@@ -57,10 +61,14 @@ export async function setCraftTier(craftId: string, formData: FormData): Promise
 
   let apprenticePeriod: number | null = null;
   if (raw === "APPRENTICE" && periodRaw) {
-    const value = Number(periodRaw);
-    if (!Number.isInteger(value) || value < 1 || value > 10) {
-      return fail("An apprentice period is a whole number between 1 and 10");
-    }
+    const parsed = parseNumericInput(periodRaw, {
+      label: "An apprentice period",
+      integer: true,
+      min: 1,
+      max: 10,
+    });
+    if (!parsed.ok) return fail("An apprentice period is a whole number between 1 and 10");
+    const value = parsed.n;
     apprenticePeriod = value;
   }
 
@@ -100,7 +108,30 @@ export async function setCraftTier(craftId: string, formData: FormData): Promise
  * under, exactly like it records its own copy of a GC as a Contact.
  */
 
-class SetupError extends Error {}
+// The setup parsers below raise the SHARED `InputError` (./shared). This
+// module used to declare its own `SetupError` and catch only that — the
+// same arrangement as the fifteen local `InputError` copies converged
+// alongside it, wearing a different name, which is why a grep for the name
+// never found it. The messages are unchanged; only the class is.
+//
+// THE COST OF THE PRIVATE CLASS ARRIVED WHILE THIS BRANCH WAS OPEN, which
+// is a better argument than the hypothetical this comment first carried.
+// It used to say "nothing here calls a shared parser TODAY, so nothing was
+// leaking" — the change worth making before somebody reached for
+// `enumFromForm`. #414 then landed and did exactly that: it wired these
+// parsers to the shared `numericReaders`, and had to hand it a callback
+// throwing the PRIVATE class to keep the private catch working. That is
+// the second convention growing a second branch rather than the first one
+// being removed. One class means the callback needs no such thought.
+//
+// `actionErrorBoundaryCensus.test.ts` refuses the arrangement outright now.
+
+/** One parser for every typed figure — see `lib/numeric-input.ts`. Raises
+ * the shared `InputError`, which the shared `runAction` inside `runSetup`
+ * converts — so a badly typed rate reaches the person as a sentence. */
+const { number: setupNumber, optionalNumber: setupOptionalNumber } = numericReaders((message) => {
+  throw new InputError(message);
+});
 
 function setupText(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -108,7 +139,7 @@ function setupText(formData: FormData, key: string) {
 
 function setupRequired(formData: FormData, key: string, label: string) {
   const value = setupText(formData, key);
-  if (!value) throw new SetupError(`${label} is required`);
+  if (!value) throw new InputError(`${label} is required`);
   return value;
 }
 
@@ -117,13 +148,13 @@ function setupDate(formData: FormData, key: string, label: string): Date | null 
   const raw = setupText(formData, key);
   if (!raw) return null;
   const date = new Date(`${raw}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) throw new SetupError(`${label} is not a valid date`);
+  if (Number.isNaN(date.getTime())) throw new InputError(`${label} is not a valid date`);
   return date;
 }
 
 function setupRequiredDate(formData: FormData, key: string, label: string): Date {
   const date = setupDate(formData, key, label);
-  if (!date) throw new SetupError(`${label} is required`);
+  if (!date) throw new InputError(`${label} is required`);
   return date;
 }
 
@@ -131,21 +162,12 @@ function setupRequiredDate(formData: FormData, key: string, label: string): Date
  * real state and different from zero being unknown — buildRemittanceReport
  * treats a missing rate as nothing owed to that fund. */
 function setupRate(formData: FormData, key: string, label: string): string | null {
-  const raw = setupText(formData, key);
-  if (!raw) return null;
-  const value = Number(raw);
-  if (Number.isNaN(value)) throw new SetupError(`${label} must be a number`);
-  if (value < 0) throw new SetupError(`${label} can't be negative`);
-  return value.toFixed(2);
+  return setupOptionalNumber(formData, key, { label, min: 0 })?.n.toFixed(2) ?? null;
 }
 
 function setupCount(formData: FormData, key: string, label: string): number {
-  const raw = setupRequired(formData, key, label);
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < 1 || value > 99) {
-    throw new SetupError(`${label} has to be a whole number between 1 and 99`);
-  }
-  return value;
+  setupRequired(formData, key, label);
+  return setupNumber(formData, key, { label, integer: true, min: 1, max: 99 }).n;
 }
 
 /**
@@ -165,11 +187,16 @@ function isFringeOverlapError(err: unknown): boolean {
   return message.includes("FringeRateSchedule_no_overlapping_rates");
 }
 
+/** The shared boundary plus this module's one extra case — the same
+ * arrangement, and for the same reason, as `prevailingWage.ts`'s. The
+ * fringe overlap is a Postgres exclusion constraint that arrives as a raw
+ * P2010, so it is not an `InputError` and cannot be thrown as one. The
+ * shared `runAction` converts `InputError` first and rethrows the rest,
+ * which keeps the original order of these two branches. */
 async function runSetup(fn: () => Promise<ActionResult>): Promise<ActionResult> {
   try {
-    return await fn();
+    return await sharedRunAction(fn);
   } catch (err) {
-    if (err instanceof SetupError) return fail(err.message);
     if (isFringeOverlapError(err)) {
       return fail(
         "A rate schedule for this classification already covers part of those dates. End that one first — two rates in force at once would make a historical payroll depend on which row was read.",
@@ -186,7 +213,7 @@ async function assertLocalUnderAgreement(unionLocalId: string, companyId: string
   const local = await prisma.unionLocal.findFirst({
     where: { id: unionLocalId, companyId },
   });
-  if (!local) throw new SetupError("That local isn't one you hold an agreement with");
+  if (!local) throw new InputError("That local isn't one you hold an agreement with");
   return local;
 }
 
@@ -218,7 +245,7 @@ export async function createUnionLocalAndAgreement(formData: FormData): Promise<
     const effectiveFrom = setupRequiredDate(formData, "effectiveFrom", "Agreement in force from");
     const effectiveTo = setupDate(formData, "effectiveTo", "Agreement in force until");
     if (effectiveTo && effectiveTo < effectiveFrom) {
-      throw new SetupError("The agreement's end date can't be before its start date");
+      throw new InputError("The agreement's end date can't be before its start date");
     }
 
     await prisma.$transaction(async (tx) => {
@@ -239,7 +266,7 @@ export async function createUnionLocalAndAgreement(formData: FormData): Promise<
         where: { companyId: company.id, unionLocalId: local.id, effectiveTo: null },
       });
       if (alreadyAgreed) {
-        throw new SetupError("You already hold a current agreement with that local");
+        throw new InputError("You already hold a current agreement with that local");
       }
 
       await tx.companyUnionAgreement.create({
@@ -289,11 +316,14 @@ export async function createCraftClassification(formData: FormData): Promise<Act
     let apprenticePeriod: number | null = null;
     const periodRaw = setupText(formData, "apprenticePeriod");
     if (tierRaw === "APPRENTICE" && periodRaw) {
-      const value = Number(periodRaw);
-      if (!Number.isInteger(value) || value < 1 || value > 10) {
-        return fail("An apprentice period is a whole number between 1 and 10");
-      }
-      apprenticePeriod = value;
+      const parsed = parseNumericInput(periodRaw, {
+        label: "An apprentice period",
+        integer: true,
+        min: 1,
+        max: 10,
+      });
+      if (!parsed.ok) return fail("An apprentice period is a whole number between 1 and 10");
+      apprenticePeriod = parsed.n;
     }
 
     try {
@@ -431,7 +461,7 @@ export async function createFringeRateSchedule(formData: FormData): Promise<Acti
     if (!craft) return fail("That classification isn't under a local you hold an agreement with");
 
     const baseWage = setupRate(formData, "baseWage", "Base wage");
-    if (baseWage === null) throw new SetupError("Base wage is required");
+    if (baseWage === null) throw new InputError("Base wage is required");
 
     const effectiveFrom = setupRequiredDate(formData, "effectiveFrom", "In force from");
     const effectiveTo = setupDate(formData, "effectiveTo", "In force until");
@@ -537,4 +567,75 @@ export async function deleteFringeRateSchedule(scheduleId: string): Promise<Acti
     revalidatePath("/union-compliance");
     return ok;
   });
+}
+
+/**
+ * Turns one "this person works under this craft" on or off — a checkbox on
+ * /union-compliance. It feeds the phone's craft picker (see WorkerCraft in
+ * labor.prisma) and nothing else: no time entry reads it, so turning one off
+ * changes no hour already logged.
+ *
+ * `worker` is "user:<id>" or "crew:<id>", the same shape the crew schedule
+ * uses. The craft, the user and the crew member are each checked against
+ * this company, because a form value is not a permission.
+ */
+export async function setWorkerCraft(
+  craftId: string,
+  worker: string,
+  enabled: boolean,
+): Promise<ActionResult> {
+  // Asserted here, not only on the page: a Server Action is its own endpoint
+  // and answers whoever posts to it. Returned rather than thrown, since
+  // production redacts a thrown message. (The older actions in this file are
+  // still on the known-open list in action-capability-guards.test.ts; this
+  // one is not added to it.)
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_COMPLIANCE")) {
+    return fail("Setting who works under each craft isn't part of your job function.");
+  }
+  const { company } = context;
+
+  const craft = await prisma.craftClassification.findFirst({
+    where: { id: craftId, companyId: company.id },
+    select: { id: true },
+  });
+  if (!craft) return fail("That classification no longer exists");
+
+  let person: { userId: string } | { crewMemberId: string };
+  if (worker.startsWith("user:") && worker.length > 5) {
+    const user = await prisma.user.findFirst({
+      where: { id: worker.slice(5), companyId: company.id },
+      select: { id: true },
+    });
+    if (!user) return fail("That team member isn't in this company");
+    person = { userId: user.id };
+  } else if (worker.startsWith("crew:") && worker.length > 5) {
+    const member = await prisma.crewMember.findFirst({
+      where: { id: worker.slice(5), companyId: company.id },
+      select: { id: true, archivedAt: true },
+    });
+    if (!member) return fail("That crew member isn't in this company");
+    if (enabled && member.archivedAt) return fail("That crew member is archived");
+    person = { crewMemberId: member.id };
+  } else {
+    return fail("Pick a person");
+  }
+
+  if (enabled) {
+    try {
+      await prisma.workerCraft.create({
+        data: { companyId: company.id, craftClassificationId: craft.id, ...person },
+      });
+    } catch (err) {
+      // Already on — a double click, or two tabs. The state asked for holds.
+      if (!isUniqueConstraintError(err)) throw err;
+    }
+  } else {
+    await prisma.workerCraft.deleteMany({
+      where: { companyId: company.id, craftClassificationId: craft.id, ...person },
+    });
+  }
+
+  revalidatePath("/union-compliance");
+  return ok;
 }

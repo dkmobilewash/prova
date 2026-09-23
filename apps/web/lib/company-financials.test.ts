@@ -4,12 +4,14 @@ import {
   MIN_EARNED_COVERAGE,
   MIN_ESTIMATE_COVERAGE,
   calculateCompanyFinancials,
+  hasNothingToSay,
   jobCostVariance,
   jobEarnedRevenue,
   jobHealthSentence,
   jobIsOverBudget,
   jobOverUnderBilling,
   marginIsHealthy,
+  type CompanyFinancials,
 } from "./company-financials";
 import type { WipJobResult } from "./wip";
 import { daysPastDueFor, effectiveDueDateFor, isOverdue } from "./cash-flow";
@@ -17,6 +19,14 @@ import { daysPastDueFor, effectiveDueDateFor, isOverdue } from "./cash-flow";
 const job = (over: Partial<WipJobResult> = {}): WipJobResult => ({
   contractValue: 100_000,
   actualCostToDate: 30_000,
+  laborCostToDate: 0,
+  laborWageCost: 0,
+  laborBurdenCost: 0,
+  laborAllowanceCost: 0,
+  unassignedLaborCost: 0,
+  pricedLaborHours: 0,
+  unpricedLaborHours: 0,
+  laborHourCoverage: 1,
   estimatedCostAtCompletion: 60_000,
   percentComplete: 0.5,
   costCoverage: 1,
@@ -311,5 +321,81 @@ describe("one overdue rule, shared", () => {
     const due = new Date("2026-08-30T00:00:00.000Z");
     expect(isOverdue(due, new Date("2026-08-31T00:00:00.000Z"))).toBe(true);
     expect(daysPastDueFor(due, new Date("2026-09-01T00:00:00.000Z"))).toBe(2);
+  });
+});
+
+/**
+ * The bar at the bottom of every screen renders nothing while every figure
+ * is zero — see `hasNothingToSay`'s own comment and
+ * `components/MetricBar.tsx` for why 52px of "$0.00 · — · $0.00 · $0.00"
+ * was worse than no bar on a brand-new account.
+ */
+describe("hasNothingToSay — the bar with no figures", () => {
+  const nothing: CompanyFinancials = {
+    estimatedRevenue: 0,
+    grossProfit: 0,
+    earnedCoverage: 0,
+    grossMarginRate: null,
+    cashPosition: 0,
+    outstandingReceivable: 0,
+    retainageHeld: 0,
+  };
+
+  it("is true for the account that signed up this morning", () => {
+    // The real one, not a hand-written literal: an empty book through the
+    // function that produces what the bar is handed.
+    const fresh = calculateCompanyFinancials({
+      jobs: [],
+      cashCollected: 0,
+      totalBilled: 0,
+      retainageHeld: 0,
+    });
+    expect(hasNothingToSay(fresh)).toBe(true);
+    expect(fresh).toEqual(nothing);
+  });
+
+  /**
+   * ONE CASE PER FIELD, DERIVED FROM THE TYPE RATHER THAN LISTED.
+   *
+   * `Object.keys` of a fully-populated `CompanyFinancials` is checked
+   * against a literal set first, so a seventh field added to the interface
+   * fails HERE — naming itself — rather than being silently suppressed on
+   * exactly the accounts that have only that one figure. This is the size
+   * assertion CLAUDE.md's SQL-parsing scar asks for: nothing is ever
+   * missing from a set you never enumerated.
+   */
+  it("checks every field the type has, and knows how many that is", () => {
+    expect(Object.keys(nothing).sort()).toEqual(
+      [
+        "cashPosition",
+        "earnedCoverage",
+        "estimatedRevenue",
+        "grossMarginRate",
+        "grossProfit",
+        "outstandingReceivable",
+        "retainageHeld",
+      ].sort(),
+    );
+  });
+
+  it.each([
+    ["estimatedRevenue", { estimatedRevenue: 250_000 }],
+    ["grossProfit, positive", { grossProfit: 40_000 }],
+    // The case the whole predicate turns on. "Nothing sold yet" and "this
+    // is going badly" must not look alike, and the second is what the bar
+    // exists for.
+    ["grossProfit, NEGATIVE", { grossProfit: -12_000 }],
+    ["grossMarginRate", { grossMarginRate: 0.2 }],
+    ["cashPosition", { cashPosition: 9_000 }],
+    ["outstandingReceivable", { outstandingReceivable: 9_000 }],
+    ["retainageHeld", { retainageHeld: 3_400 }],
+  ])("shows the bar as soon as %s is a figure", (_name, patch) => {
+    expect(hasNothingToSay({ ...nothing, ...patch })).toBe(false);
+  });
+
+  it("is NOT woken by earnedCoverage alone, which is not a figure", () => {
+    // It is the share the margin is blended over — meaningless on its own,
+    // and only ever rendered as a hint beside a margin that is null.
+    expect(hasNothingToSay({ ...nothing, earnedCoverage: 0.4 })).toBe(true);
   });
 });

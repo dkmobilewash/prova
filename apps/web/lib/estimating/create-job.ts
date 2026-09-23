@@ -1,4 +1,4 @@
-import { prisma } from "@prova/db";
+import { prisma, type Prisma } from "@prova/db";
 import type { ActionResultWith } from "@/lib/actions/shared";
 
 /**
@@ -24,6 +24,13 @@ export type CreateEstimateJobInput = {
   scope?: string | null;
   /** An existing GC by id (asserted to be this company's), or a new one. */
   contact: { id: string } | { name: string; email?: string | null };
+  /** Where the project is, in the person's words. The Ask box's "start a
+   * bid" is the only caller that sets these three; the form leaves them. */
+  projectLocation?: string | null;
+  /** The bid due date the person gave, at UTC midnight. */
+  bidDueDate?: Date | null;
+  /** Web facts a person kept on the confirm card — see Job.bidResearch. */
+  bidResearch?: Prisma.InputJsonValue | null;
 };
 
 export type CreateEstimateJobResult = {
@@ -110,7 +117,17 @@ export async function createEstimateJob(
     }
 
     const job = await tx.job.create({
-      data: { companyId, contactId, name: jobName, scope },
+      data: {
+        companyId,
+        contactId,
+        name: jobName,
+        scope,
+        // Only when given, so the /jobs/new form's insert is byte-for-byte
+        // what it was before these columns existed.
+        ...(input.projectLocation?.trim() ? { projectLocation: input.projectLocation.trim() } : {}),
+        ...(input.bidDueDate ? { bidDueDate: input.bidDueDate } : {}),
+        ...(input.bidResearch ? { bidResearch: input.bidResearch } : {}),
+      },
       select: { id: true },
     });
     return {

@@ -20,6 +20,34 @@ model Company {
   phone          String?
   website        String?
 
+  /// The three onboarding questions (issue: "onboarding questions") and the
+  /// nav-display profile they set — see apps/web/lib/businessScope.ts,
+  /// which owns every rule about what these mean and derives the readable
+  /// line settings shows. A SEPARATE thing from the `dbaName`/`ein`/`hq*`
+  /// block above: that is the company's own legal record, printed on
+  /// documents; this is a display preference about which nav groups paint,
+  /// never a security boundary and never touched by lib/permissions.ts.
+  ///
+  /// ALL THREE NULLABLE, and null is not "unset waiting to be filled" — it
+  /// is a first-class answer meaning "show everything," and it is what
+  /// EVERY company that predates this feature has and will keep having. A
+  /// company that answered once and later wants full nav back again clears
+  /// these from Settings; `businessScopeAskedAt` stays set so the onboarding
+  /// prompt does not resurface, only the display these three used to narrow.
+  contractingRelationship ContractingRelationship?
+  doesPublicWork          Boolean?
+  filesMonthlyPayApps     Boolean?
+
+  /// When the onboarding prompt was last answered OR explicitly skipped —
+  /// either way, the prompt does not ask again. Null means "never shown,"
+  /// which is also true of every company that existed before this column,
+  /// so a pre-existing company sees the prompt once rather than never
+  /// again by accident. Set by both saveBusinessScope and
+  /// skipBusinessScopeQuestions (lib/actions/company.ts) — never by the
+  /// three answer fields changing on their own, so clearing them from
+  /// Settings does not make the prompt come back.
+  businessScopeAskedAt DateTime?
+
   /// Which Company is PROVA'S OWN operating company -- the only tenant that
   /// should ever see the internal sales CRM (SalesLead/SalesOpportunity,
   /// sales.prisma). Exactly one row in production should ever be true, set
@@ -28,70 +56,98 @@ model Company {
   /// in this schema with no source to derive it from.
   isProvaOperator Boolean @default(false)
 
+  /// The unguessable half of this company's inbound intake address:
+  /// `docs-<token>@<INTAKE_INBOUND_DOMAIN>`. The token IS the routing — an
+  /// email to an address whose token matches no row is dropped — so it is
+  /// random (32 hex chars, 128 bits), unique, and regenerable by the owner
+  /// if it leaks. Nullable because companies predate it; the migration
+  /// backfills existing rows and `/intake` fills a null lazily, so a company
+  /// created after the migration gets one the first time the tray is opened.
+  intakeEmailToken String? @unique
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users                   User[]
-  contacts                Contact[]
-  jobs                    Job[]
-  invites                 Invite[]
-  quickBooksConnection    QuickBooksConnection?
-  quickBooksEntityLinks   QuickBooksEntityLink[]
-  quickBooksAccountMaps   QuickBooksAccountMapping[]
-  quickBooksSyncAttempts  QuickBooksSyncAttempt[]
-  integrationConnections  IntegrationConnection[]
-  complianceDocuments     ComplianceDocument[]
-  licenses                CompanyLicense[]
-  tradeScopes             CompanyTradeScope[]
-  unionAgreements         CompanyUnionAgreement[]
-  unionLocals             UnionLocal[]
-  craftClassifications    CraftClassification[]
-  fringeRateSchedules     FringeRateSchedule[]
-  apprenticeRatioRules    ApprenticeRatioRule[]
-  insurancePolicies       CompanyInsurancePolicy[]
-  bonds                   CompanyBond[]
-  locations               CompanyLocation[]
-  bidInvitations          BidInvitation[]
-  vendors                 Vendor[]
-  equipment               Equipment[]
-  lineItemCatalogEntries  LineItemCatalogEntry[]
-  punchListItems          PunchListItem[]
-  tmTickets               TmTicket[]
-  deviceTokens            DeviceToken[]
-  dailyFieldReports       DailyFieldReport[]
-  jobMedia                JobMedia[]
-  jobMediaTags            JobMediaTag[]
-  documentIntakes         DocumentIntake[]
-  rfis                    Rfi[]
-  backcharges             Backcharge[]
-  closeoutSubmissions     CloseoutSubmission[]
-  alertAcknowledgements   AlertAcknowledgement[]
-  notificationDispatches  NotificationDispatch[]
-  prevailingWageRuleSets  PrevailingWageRuleSet[]
-  submittals              Submittal[]
-  safetyCaseCounters      SafetyCaseCounter[]
-  safetyIncidents         SafetyIncident[]
-  toolboxTalks            ToolboxTalk[]
-  materialOrders          MaterialOrder[]
-  drawingSets             DrawingSet[]
-  closeoutItems           CloseoutItem[]
-  warrantyPeriods         WarrantyPeriod[]
-  warrantyServiceRequests WarrantyServiceRequest[]
-  askProposals            AskProposal[]
-  askUsage                AskUsage[]
-  vendorPriceQuotes       VendorPriceQuote[]
-  outboundMessages        OutboundMessage[]
-  contactInteractions     ContactInteraction[]
+  users                     User[]
+  contacts                  Contact[]
+  jobs                      Job[]
+  invites                   Invite[]
+  quickBooksConnection      QuickBooksConnection?
+  quickBooksEntityLinks     QuickBooksEntityLink[]
+  quickBooksAccountMaps     QuickBooksAccountMapping[]
+  quickBooksSyncAttempts    QuickBooksSyncAttempt[]
+  integrationConnections    IntegrationConnection[]
+  docuSignEnvelopes         DocuSignEnvelope[]
+  procoreProjectLinks       ProcoreProjectLink[]
+  accProjectLinks           AccProjectLink[]
+  companycamProjectLinks    CompanyCamProjectLink[]
+  bluebeamStudioSessions    BluebeamStudioSession[]
+  calendarFeedTokens        CalendarFeedToken[]
+  complianceDocuments       ComplianceDocument[]
+  licenses                  CompanyLicense[]
+  tradeScopes               CompanyTradeScope[]
+  unionAgreements           CompanyUnionAgreement[]
+  unionLocals               UnionLocal[]
+  craftClassifications      CraftClassification[]
+  phaseCodes                PhaseCode[]
+  fringeRateSchedules       FringeRateSchedule[]
+  apprenticeRatioRules      ApprenticeRatioRule[]
+  insurancePolicies         CompanyInsurancePolicy[]
+  bonds                     CompanyBond[]
+  locations                 CompanyLocation[]
+  bidInvitations            BidInvitation[]
+  vendors                   Vendor[]
+  equipment                 Equipment[]
+  lineItemCatalogEntries    LineItemCatalogEntry[]
+  punchListItems            PunchListItem[]
+  tmTickets                 TmTicket[]
+  timesheetSignoffs         TimesheetSignoff[]
+  delayEvents               DelayEvent[]
+  deviceTokens              DeviceToken[]
+  dailyFieldReports         DailyFieldReport[]
+  jobMedia                  JobMedia[]
+  jobMediaTags              JobMediaTag[]
+  documentIntakes           DocumentIntake[]
+  rfis                      Rfi[]
+  backcharges               Backcharge[]
+  closeoutSubmissions       CloseoutSubmission[]
+  alertAcknowledgements     AlertAcknowledgement[]
+  notificationDispatches    NotificationDispatch[]
+  prevailingWageRuleSets    PrevailingWageRuleSet[]
+  submittals                Submittal[]
+  safetyCaseCounters        SafetyCaseCounter[]
+  safetyIncidents           SafetyIncident[]
+  toolboxTalks              ToolboxTalk[]
+  materialOrders            MaterialOrder[]
+  drawingSets               DrawingSet[]
+  closeoutItems             CloseoutItem[]
+  warrantyPeriods           WarrantyPeriod[]
+  warrantyServiceRequests   WarrantyServiceRequest[]
+  askProposals              AskProposal[]
+  askUsage                  AskUsage[]
+  /// The paid AI allowance this company has claimed, one row per calendar
+  /// month — see ask-allowance.prisma.
+  askAllowancePeriods       AskAllowancePeriod[]
+  vendorPriceQuotes         VendorPriceQuote[]
+  outboundMessages          OutboundMessage[]
+  contactInteractions       ContactInteraction[]
   apprenticeshipEnrollments ApprenticeshipEnrollment[]
-  contactPeople           ContactPerson[]
-  salesLeads              SalesLead[]
-  salesOpportunities      SalesOpportunity[]
-  salesActivities         SalesActivity[]
-  salesStageChanges       SalesStageChange[]
-  equipmentAssignments    EquipmentAssignment[]
-  crewMembers             CrewMember[]
-  workerCertifications    WorkerCertification[]
-  requiredCertifications  CertificationRequirement[]
+  contactPeople             ContactPerson[]
+  salesLeads                SalesLead[]
+  salesOpportunities        SalesOpportunity[]
+  salesActivities           SalesActivity[]
+  salesStageChanges         SalesStageChange[]
+  equipmentAssignments      EquipmentAssignment[]
+  crewMembers               CrewMember[]
+  payrollRegisterEntries    PayrollRegisterEntry[]
+  crewScheduleDays          CrewScheduleDay[]
+  workerCrafts              WorkerCraft[]
+  experienceModRates        ExperienceModRate[]
+  employerBurdenRates       EmployerBurdenRate[]
+  lienDeadlines             LienDeadline[]
+  workerCertifications      WorkerCertification[]
+  requiredCertifications    CertificationRequirement[]
+  bidPursuits               BidPursuit[]
 }
 
 enum UserRole {
@@ -99,17 +155,25 @@ enum UserRole {
   MEMBER
 }
 
+/// Onboarding question 1 — see Company.contractingRelationship above and
+/// apps/web/lib/businessScope.ts for what each value hides from the nav.
+enum ContractingRelationship {
+  UNDER_GENERAL_CONTRACTORS
+  DIRECT_FOR_OWNERS
+  BOTH
+}
+
 model User {
-  id        String   @id @default(cuid())
-  clerkId   String   @unique
-  email     String   @unique
-  name      String?
+  id      String   @id @default(cuid())
+  clerkId String   @unique
+  email   String   @unique
+  name    String?
   // Defaults to OWNER (not MEMBER) so the migration backfill is correct for
   // every User row that already exists in production today: pre-this-phase,
   // every user was the sole/first user of their Company, i.e. its owner.
   // New rows always set this explicitly in code (OWNER on first sign-in,
   // MEMBER on invite acceptance) — this default only matters for backfill.
-  role      UserRole @default(OWNER)
+  role    UserRole @default(OWNER)
 
   /// What this person does, as distinct from `role` above — see
   /// permissions.prisma. Nullable, with no backfill: null means nobody
@@ -148,29 +212,48 @@ model User {
   updatedAt DateTime @updatedAt
 
   assignments                          JobAssignment[]
+  crewScheduleDays                     CrewScheduleDay[]      @relation("CrewScheduleDayUser")
+  crewScheduleDaysCreated              CrewScheduleDay[]      @relation("CrewScheduleDayCreatedBy")
+  companycamLinksCreated               CompanyCamProjectLink[] @relation("CompanyCamLinkedBy")
+  bluebeamSessionsLinked                BluebeamStudioSession[] @relation("BluebeamLinkedBy")
+  calendarFeedTokens                   CalendarFeedToken[]
+  workerCrafts                         WorkerCraft[]
+  experienceModRatesCreated            ExperienceModRate[]    @relation("ExperienceModRateCreatedBy")
+  employerBurdenRatesCreated           EmployerBurdenRate[]   @relation("EmployerBurdenRateCreatedBy")
+  lienDeadlinesCreated                 LienDeadline[]         @relation("LienDeadlineCreatedBy")
+  bidPursuitsCreated                   BidPursuit[]           @relation("BidPursuitCreatedBy")
   connectedQuickBooks                  QuickBooksConnection[]
   quickBooksSyncAttempts               QuickBooksSyncAttempt[]
   connectedIntegrations                IntegrationConnection[]
   uploadedComplianceDocuments          ComplianceDocument[]
   savedEstimateVersions                EstimateVersion[]
   uploadedContractDocuments            ContractDocument[]
-  timeEntries                          TimeEntry[]             @relation("TimeEntryEmployee")
+  sentDocuSignEnvelopes                DocuSignEnvelope[]
+  timeEntries                          TimeEntry[]                   @relation("TimeEntryEmployee")
   /// Back-relation only: who corrected a logged hour (issue #63). Named
   /// because TimeEntry now has two relations to User and Prisma cannot
   /// disambiguate two unnamed ones. Nothing reads a worker's hours through
   /// this — `timeEntries` above is still the person who WORKED them.
-  correctedTimeEntries                 TimeEntry[]             @relation("TimeEntryCorrectedBy")
+  correctedTimeEntries                 TimeEntry[]                   @relation("TimeEntryCorrectedBy")
   dispatchSlips                        DispatchSlip[]
   uploadedPrevailingWageDeterminations PrevailingWageDetermination[]
   createdRetainageReleases             RetainageRelease[]
   raisedPunchListItems                 PunchListItem[]
+  assignedPunchListItems               PunchListItem[]               @relation("PunchItemAssignedUser")
+  readiedPunchListItems                PunchListItem[]               @relation("PunchItemReadyBy")
+  verifiedPunchListItems               PunchListItem[]               @relation("PunchItemVerifiedBy")
+  reopenedPunchListItems               PunchListItem[]               @relation("PunchItemReopenedBy")
   createdTmTickets                     TmTicket[]
+  signedTimesheets                     TimesheetSignoff[]            @relation("TimesheetSignoffSignedBy")
+  approvedTimesheets                   TimesheetSignoff[]            @relation("TimesheetSignoffApprovedBy")
+  reopenedTimesheets                   TimesheetSignoff[]            @relation("TimesheetSignoffReopenedBy")
+  loggedDelays                         DelayEvent[]                  @relation("DelayEventLoggedBy")
   deviceTokens                         DeviceToken[]
   filedDailyFieldReports               DailyFieldReport[]
-  capturedJobMedia                     JobMedia[]              @relation("JobMediaCapturedBy")
-  uploadedDocumentIntakes              DocumentIntake[]        @relation("DocumentIntakeUploadedBy")
-  sharedJobMedia                       JobMedia[]              @relation("JobMediaSharedBy")
-  jobMediaAnnotations                  JobMediaAnnotation[]    @relation("JobMediaAnnotationBy")
+  capturedJobMedia                     JobMedia[]                    @relation("JobMediaCapturedBy")
+  uploadedDocumentIntakes              DocumentIntake[]              @relation("DocumentIntakeUploadedBy")
+  sharedJobMedia                       JobMedia[]                    @relation("JobMediaSharedBy")
+  jobMediaAnnotations                  JobMediaAnnotation[]          @relation("JobMediaAnnotationBy")
   jobMediaTagAssignments               JobMediaTagAssignment[]
   askedRfis                            Rfi[]
   loggedBackcharges                    Backcharge[]
@@ -185,24 +268,24 @@ model User {
   recordedWarrantyServiceRequests      WarrantyServiceRequest[]
   recordedVendorPriceQuotes            VendorPriceQuote[]
   sentOutboundMessages                 OutboundMessage[]
-  loggedContactInteractions            ContactInteraction[] @relation("ContactInteractionLogger")
-  assignedContactFollowUps             ContactInteraction[] @relation("ContactInteractionFollowUp")
-  loggedSalesActivities                SalesActivity[]      @relation("SalesActivityLogger")
-  recordedSalesStageChanges            SalesStageChange[]   @relation("SalesStageChangeRecorder")
+  loggedContactInteractions            ContactInteraction[]          @relation("ContactInteractionLogger")
+  assignedContactFollowUps             ContactInteraction[]          @relation("ContactInteractionFollowUp")
+  loggedSalesActivities                SalesActivity[]               @relation("SalesActivityLogger")
+  recordedSalesStageChanges            SalesStageChange[]            @relation("SalesStageChangeRecorder")
   recordedEquipmentAssignments         EquipmentAssignment[]
-  certifications                       WorkerCertification[] @relation("WorkerCertificationHolder")
-  recordedCertifications               WorkerCertification[] @relation("WorkerCertificationRecorder")
+  certifications                       WorkerCertification[]         @relation("WorkerCertificationHolder")
+  recordedCertifications               WorkerCertification[]         @relation("WorkerCertificationRecorder")
 
   /// The crew record for this same human, if they worked on the crew
   /// BEFORE they had a login. Back-relation only — see crew.prisma. It
   /// does not make this User's historical time entries change hands, and
   /// it is not how anything reads a worker's name.
-  crewMemberRecord CrewMember?
-
-  @@index([companyId])
+  crewMemberRecord          CrewMember?
   apprenticeshipEnrollments ApprenticeshipEnrollment[] @relation("ApprenticeEnrollments")
   askProposals              AskProposal[]
   askUsage                  AskUsage[]
+
+  @@index([companyId])
 }
 
 /// A pending invitation for someone to join a Company. Deleted once
@@ -304,16 +387,22 @@ model Contact {
   /// whether it's active or lapsed is computed at read time from that date,
   /// never stored as a separate status — same rule as every other
   /// expiration in this schema (licenses, insurance, bonds).
-  msaExpirationDate DateTime?
+  msaExpirationDate         DateTime?
   /// Null = never prequalified with this GC. Set = the date the
   /// prequalification expires; current/expiring/expired is derived the
   /// same way as msaExpirationDate, not stored twice.
   prequalificationExpiresAt DateTime?
+
+  /// The Jobber client this contact was imported from, so a second import
+  /// recognises its own rows even after a rename on either side. Null for
+  /// every contact that did not come from Jobber. Set once, at import.
+  jobberId String?
 
   jobs           Job[]
   bidInvitations BidInvitation[]
   interactions   ContactInteraction[]
   people         ContactPerson[]
 
+  @@unique([companyId, jobberId])
   @@index([companyId])
 }

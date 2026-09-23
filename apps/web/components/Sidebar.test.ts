@@ -123,10 +123,10 @@ afterEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = false;
 });
 
-function renderRail() {
+function renderRail(overrides: Partial<Parameters<typeof Sidebar>[0]> = {}) {
   act(() => {
     root.render(
-      createElement(Sidebar, { companyName: "Acme Drywall", principal, stages }),
+      createElement(Sidebar, { companyName: "Acme Drywall", principal, stages, ...overrides }),
     );
   });
 }
@@ -203,9 +203,10 @@ describe("the Money Rail's groups collapse", () => {
     renderRail();
 
     for (const heading of HEADINGS) expect(isExpanded(heading)).toBe(false);
-    // "/ask" is the one link outside the groups: a standalone row pinned
-    // above them, so it is present whether anything is expanded or not.
-    expect(linkHrefs()).toEqual(["/ask"]);
+    // The logo row links home (/dashboard, 2026-09-18). Besides it, links live outside the groups, present whether anything is
+    // expanded or not: "/ask" pinned above them, and "/settings" pinned at
+    // the bottom (NAV_FOOTER) — Cyrus could not find it inside Financials.
+    expect(linkHrefs()).toEqual(["/dashboard", "/ask", "/settings/integrations", "/settings"]);
   });
 
   it("keeps a closed group's links OUT of the document, not merely invisible", () => {
@@ -272,6 +273,31 @@ describe("the five figures are never what collapses", () => {
     // only one available — see the note in Sidebar.tsx.
     expect(text).toContain("Proving");
     for (const figure of FIGURE_TEXTS) expect(text).toContain(figure);
+  });
+
+  it("draws every heading and no figure for a principal handed none", () => {
+    // A FIELD user's rail: the layout passes stages=[] (no
+    // VIEW_COMPANY_FINANCIALS), and the rail must stay a working nav —
+    // headings, groups, items — with no dollar figure and no Proving row.
+    nav.pathname = "/schedule";
+    renderRail({ stages: [] });
+    const text = container.textContent ?? "";
+    for (const heading of HEADINGS) expect(text).toContain(heading);
+    for (const figure of FIGURE_TEXTS) expect(text).not.toContain(figure);
+    expect(text).not.toContain("Proving");
+  });
+
+  it("draws Proving right after Compliance & safety, before Paper trail", () => {
+    // Cyrus's call, 2026-09-18: Proving sits below Compliance & safety.
+    nav.pathname = "/jobs/abc123";
+    renderRail();
+    const text = container.textContent ?? "";
+    const compliance = text.indexOf("Compliance & safety");
+    const proving = text.indexOf("Proving");
+    const paperTrail = text.indexOf("Paper trail");
+    expect(compliance).toBeGreaterThan(-1);
+    expect(proving).toBeGreaterThan(compliance);
+    expect(proving).toBeLessThan(paperTrail);
   });
 
   it("still draws all five after every group has been opened and closed again", () => {

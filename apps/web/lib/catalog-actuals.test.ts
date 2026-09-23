@@ -1,28 +1,63 @@
 import { describe, expect, it } from "vitest";
 import {
   catalogActuals,
+  catalogSourcedLine,
   CATALOG_MIN_SAMPLE,
   CATALOG_VARIANCE_THRESHOLD,
   repriceDecision,
+  type CatalogSourcedLine,
   type JobStatusForActuals,
 } from "./catalog-actuals";
 
 /** A costed line on a FINISHED job — the only kind that counts toward an
  * actual unit cost. See the "jobs that are still running" suite below for
- * why a running job's cost does not belong in this arithmetic at all. */
+ * why a running job's cost does not belong in this arithmetic at all.
+ *
+ * Carries NO labor, which is what every case written before #287's fix
+ * reached this file assumed a line was. The labor suite below builds its own. */
 const line = (
   quantity: number,
-  actualCost: number,
+  costEntryTotal: number,
   hasCosts = true,
   jobStatus: JobStatusForActuals = "COMPLETE",
-) => ({
+): CatalogSourcedLine => ({
   quantity,
-  actualCost,
-  hasCosts,
+  costEntryTotal,
+  costEntryCount: hasCosts ? 1 : 0,
+  laborCostEntryTotal: 0,
+  laborCost: 0,
+  laborHours: 0,
+  unpricedLaborHours: 0,
   jobStatus,
 });
 
-const runningLine = (quantity: number, actualCost: number) => line(quantity, actualCost, true, "IN_PROGRESS");
+const runningLine = (quantity: number, costEntryTotal: number) =>
+  line(quantity, costEntryTotal, true, "IN_PROGRESS");
+
+/** A line with hours booked against it — the ordinary shape of a
+ * self-performed framing/drywall line, and the shape this file could not
+ * see at all until #287's fix was extended to the catalog. */
+const selfPerformedLine = (input: {
+  quantity: number;
+  costEntryTotal?: number;
+  costEntryCount?: number;
+  /** The LABOR-category slice of costEntryTotal — the overlap that makes a
+   * line ambiguous evidence once hours are logged against it too. */
+  laborCostEntryTotal?: number;
+  laborCost: number;
+  laborHours: number;
+  unpricedLaborHours?: number;
+  jobStatus?: JobStatusForActuals;
+}): CatalogSourcedLine => ({
+  quantity: input.quantity,
+  costEntryTotal: input.costEntryTotal ?? 0,
+  costEntryCount: input.costEntryCount ?? (input.costEntryTotal ? 1 : 0),
+  laborCostEntryTotal: input.laborCostEntryTotal ?? 0,
+  laborCost: input.laborCost,
+  laborHours: input.laborHours,
+  unpricedLaborHours: input.unpricedLaborHours ?? 0,
+  jobStatus: input.jobStatus ?? "COMPLETE",
+});
 
 describe("catalogActuals", () => {
   it("reports nothing when no line has been costed", () => {
@@ -147,6 +182,175 @@ describe("jobs that are still running (#105 finding 2)", () => {
   });
 });
 
+describe("logged hours are part of what the work cost (#287, catalog half)", () => {
+  // #287 put burdened labor into job cost, WIP and percent complete. It did
+  // not reach this file, and this file is the one that WRITES a number back:
+  // "Update default from actuals" sets defaultBudgetedUnitCost, which prices
+  // every future bid and grounds every AI draft.
+  //
+  // The bias is the same one #105 finding 2 documents above, and for the same
+  // structural reason: labor is most of a self-performed line's cost, so
+  // leaving it out can only push the derived unit cost DOWN. Errors reinforce
+  // instead of cancelling, and each click walks the catalog nearer to
+  // materials-only.
+
+  it("counts burdened labor against the line, not only its cost entries", () => {
+    // Hand-worked: two finished 1,000 SF lines. $500 of board and screws
+    // booked as cost entries, $1,500 of burdened crew time logged as hours.
+    // True cost is $2,000 a line, so $2.00/SF.
+    const lines = [
+      selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 1500, laborHours: 40 }),
+      selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 1500, laborHours: 40 }),
+    ];
+    const result = catalogActuals(lines, 2);
+
+    expect(result.actualUnitCost).toBe(2);
+    expect(result.variance).toBe(0);
+    expect(result.isFlagged).toBe(false);
+
+    // What the pre-fix arithmetic said, spelled out so it cannot come back:
+    // $1,000 / 2,000 SF = $0.50/SF — 75% under, amber, and one click from
+    // becoming the default that prices the next bid.
+    expect(result.actualUnitCost).not.toBeCloseTo(0.5, 6);
+  });
+
+  it("treats a line with only logged hours as costed at all", () => {
+    // A self-performed line often has NO CostEntry rows whatsoever — the
+    // crew's time is the cost. Sampling on cost entries alone did not merely
+    // understate this line, it dropped it out of the sample entirely, so the
+    // catalog learned nothing from the jobs it most needed to learn from.
+    const result = catalogActuals(
+      [
+        selfPerformedLine({ quantity: 1000, laborCost: 2000, laborHours: 50 }),
+        selfPerformedLine({ quantity: 1000, laborCost: 2000, laborHours: 50 }),
+      ],
+      5,
+    );
+
+    expect(result.linesWithCosts).toBe(2);
+    expect(result.actualUnitCost).toBe(2);
+    expect(result.isFlagged).toBe(true);
+  });
+
+  it("reports the labor inside the figure rather than burying it", () => {
+    const result = catalogActuals(
+      [
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 1500, laborHours: 40 }),
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 1500, laborHours: 40 }),
+      ],
+      2,
+    );
+    expect(result.laborCost).toBe(3000);
+    expect(result.costEntryTotal).toBe(1000);
+  });
+
+  it("excludes a line whose hours no wage schedule could price, and says how many", () => {
+    // labor-cost.ts refuses to guess a rate when no FringeRateSchedule covers
+    // an entry's craft and date. "Refused to guess" and "cost nothing" read
+    // identically in a total, so those hours must not be averaged in at $0 —
+    // that is precisely the understatement this suite exists to stop.
+    const result = catalogActuals(
+      [
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 1500, laborHours: 40 }),
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 1500, laborHours: 40 }),
+        selfPerformedLine({
+          quantity: 1000,
+          costEntryTotal: 500,
+          laborCost: 0,
+          laborHours: 40,
+          unpricedLaborHours: 40,
+        }),
+      ],
+      2,
+    );
+
+    expect(result.linesWithCosts).toBe(2);
+    expect(result.linesExcludedUnpricedHours).toBe(1);
+    expect(result.actualUnitCost).toBe(2);
+    // Counting the third line would give $4,000 / 3,000 SF = $1.33/SF.
+    expect(result.actualUnitCost).not.toBeCloseTo(4000 / 3000, 6);
+  });
+
+  it("reports nothing when every costed line has hours nobody can price", () => {
+    const result = catalogActuals(
+      [
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 0, laborHours: 40, unpricedLaborHours: 40 }),
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 0, laborHours: 40, unpricedLaborHours: 40 }),
+      ],
+      2,
+    );
+    expect(result.actualUnitCost).toBeNull();
+    expect(result.linesWithCosts).toBe(0);
+    expect(result.linesExcludedUnpricedHours).toBe(2);
+    expect(result.isFlagged).toBe(false);
+  });
+
+  it("counts an unfinished job as unfinished, not as unpriced, when it is both", () => {
+    // The two exclusions must not double-count the same line, or the caveat
+    // on screen claims more evidence was set aside than exists.
+    const result = catalogActuals(
+      [
+        selfPerformedLine({
+          quantity: 1000,
+          costEntryTotal: 500,
+          laborCost: 0,
+          laborHours: 40,
+          unpricedLaborHours: 40,
+          jobStatus: "IN_PROGRESS",
+        }),
+      ],
+      2,
+    );
+    expect(result.linesExcludedUnfinished).toBe(1);
+    expect(result.linesExcludedUnpricedHours).toBe(0);
+  });
+
+  it("counts the two exclusions separately when both kinds are present", () => {
+    // The case that distinguishes the two subtractions. With only ONE line
+    // that is both unfinished AND unpriced, "costedAnywhere - costed" and
+    // "costedAnywhere - finished" give the same answer, so a test built from
+    // that case cannot tell a correct split from one that double-counts the
+    // same line into both figures. Two lines, one of each kind, can.
+    const result = catalogActuals(
+      [
+        // finished, but its hours have no rate
+        selfPerformedLine({
+          quantity: 1000,
+          costEntryTotal: 500,
+          laborCost: 0,
+          laborHours: 40,
+          unpricedLaborHours: 40,
+        }),
+        // still running, every hour priced
+        selfPerformedLine({
+          quantity: 1000,
+          costEntryTotal: 500,
+          laborCost: 1500,
+          laborHours: 40,
+          jobStatus: "IN_PROGRESS",
+        }),
+      ],
+      2,
+    );
+
+    expect(result.linesWithCosts).toBe(0);
+    expect(result.linesExcludedUnfinished).toBe(1);
+    expect(result.linesExcludedUnpricedHours).toBe(1);
+    // Two costed lines in, two accounted for — no line counted twice and
+    // none lost.
+    expect(result.linesWithCosts + result.linesExcludedUnfinished + result.linesExcludedUnpricedHours).toBe(2);
+  });
+
+  it("leaves a line with no hours at all completely unaffected", () => {
+    // A subcontracted or material-only line has zero hours and zero unpriced
+    // hours; nothing above may change what it reports.
+    const result = catalogActuals([line(100, 600), line(100, 600)], 5);
+    expect(result.actualUnitCost).toBe(6);
+    expect(result.linesExcludedUnpricedHours).toBe(0);
+    expect(result.laborCost).toBe(0);
+  });
+});
+
 describe("repriceDecision (#105 finding 3)", () => {
   /**
    * The write side: what "update default from actuals" actually sets.
@@ -219,6 +423,42 @@ describe("repriceDecision (#105 finding 3)", () => {
     expect(none.error).toContain("no finished job has used this entry");
   });
 
+  it("refuses to write a default off hours nobody could price, and names that reason", () => {
+    // The worst possible moment to be vague: this is the write that prices
+    // the next bid. "No finished job has used this entry" would send the
+    // estimator looking for jobs; the real fix is a wage schedule.
+    const allUnpriced = catalogActuals(
+      [
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 0, laborHours: 40, unpricedLaborHours: 40 }),
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 0, laborHours: 40, unpricedLaborHours: 40 }),
+      ],
+      2,
+    );
+    const result = repriceDecision(allUnpriced, null, false);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.error).toContain("wage rate");
+    expect(result.error).not.toContain("no finished job has used this entry");
+  });
+
+  it("writes a cost that includes the crew's time", () => {
+    // The end-to-end of this fix, on the one control that writes: two
+    // finished 1,000 SF lines at $500 material + $1,500 labor against a $5.00
+    // default. The written figure must be 2.00, not the 0.50 a
+    // cost-entries-only sample would have produced.
+    const selfPerformed = catalogActuals(
+      [
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 1500, laborHours: 40 }),
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 1500, laborHours: 40 }),
+      ],
+      5,
+    );
+    expect(repriceDecision(selfPerformed, null, false)).toEqual({
+      ok: true,
+      defaultBudgetedUnitCost: "2.00",
+    });
+  });
+
   it("refuses when the entry is no longer far enough off to be worth changing", () => {
     // The re-check that makes the hidden input unnecessary in the first
     // place: the page that rendered the button may be minutes old, and a
@@ -249,5 +489,337 @@ describe("repriceDecision (#105 finding 3)", () => {
     expect(decision.ok).toBe(true);
     if (!decision.ok) throw new Error("unreachable");
     expect(decision.defaultBudgetedUnitCost).toBe("0.90");
+  });
+});
+
+describe("catalogSourcedLine: turning a row into a costed line (#287)", () => {
+  // The page RENDERS this and the re-price action WRITES from it. One
+  // function, so a badge and the button under it cannot disagree — and these
+  // are the tests that say the function actually reads the hours rather than
+  // merely being named as though it does.
+  const CARPENTER = "craft_carpenter";
+  const schedules = new Map([
+    [
+      CARPENTER,
+      [
+        {
+          baseWage: 40,
+          pensionRate: 5,
+          vacationRate: 3,
+          healthWelfareRate: 2,
+          trainingRate: 0,
+          effectiveFrom: new Date("2026-01-01T00:00:00Z"),
+          effectiveTo: null,
+        },
+      ],
+    ],
+  ]);
+
+  const entry = (over: Record<string, unknown> = {}) => ({
+    lineItemId: "li_1",
+    craftClassificationId: CARPENTER,
+    date: new Date("2026-06-01T00:00:00Z"),
+    hours: 10,
+    payType: "STRAIGHT" as const,
+    perDiemAmount: null,
+    travelPayAmount: null,
+    ...over,
+  });
+
+  const row = (over: Record<string, unknown> = {}) => ({
+    quantity: 1000,
+    costEntries: [{ amount: 500, category: "MATERIAL" }],
+    timeEntries: [entry()],
+    job: { status: "COMPLETE" },
+    ...over,
+  });
+
+  it("reads the hours, at $50/hr burdened", () => {
+    const line = catalogSourcedLine(row(), schedules);
+    expect(line.laborCost).toBe(500);
+    expect(line.costEntryTotal).toBe(500);
+    expect(line.laborHours).toBe(10);
+    expect(line.unpricedLaborHours).toBe(0);
+  });
+
+  it("counts hours no schedule covers as hours, with no dollars", () => {
+    const line = catalogSourcedLine(
+      row({ timeEntries: [entry({ craftClassificationId: "craft_unknown", hours: 6 })] }),
+      schedules,
+    );
+    expect(line.laborCost).toBe(0);
+    expect(line.laborHours).toBe(6);
+    expect(line.unpricedLaborHours).toBe(6);
+  });
+
+  it("makes a line with hours and no cost entries a COSTED line", () => {
+    const line = catalogSourcedLine(row({ costEntries: [] }), schedules);
+    expect(line.costEntryCount).toBe(0);
+    expect(line.laborHours).toBe(10);
+    // The whole point: catalogActuals must not drop this line.
+    expect(catalogActuals([line, line], 5).linesWithCosts).toBe(2);
+  });
+
+  it("carries the job status through, so #105's unfinished rule still applies", () => {
+    expect(catalogSourcedLine(row({ job: { status: "IN_PROGRESS" } }), schedules).jobStatus).toBe(
+      "IN_PROGRESS",
+    );
+  });
+});
+
+describe("a line that counts its labor twice is not evidence (#287 review)", () => {
+  // THE LEDGER RULE DOES NOT TRANSFER HERE, and that is the whole point of
+  // this suite.
+  //
+  // `lineItemCostToDate` ADDS logged hours to manual cost entries and lets a
+  // duplicate stand, deliberately: on /jobs/[id] that is a ledger, nothing can
+  // tell a duplicate from two real costs, and hiding money somebody entered
+  // would be worse than showing it twice.
+  //
+  // The catalog is not a ledger. It is a SAMPLE the app learns a unit cost
+  // from and then WRITES into `defaultBudgetedUnitCost`, which prices every
+  // future bid. The question stops being "is this money real?" and becomes
+  // "is this line interpretable as a unit cost?" — and a line carrying both
+  // priced hours and LABOR-category cost entries is not. It is either two
+  // genuine labor costs (own crew plus a labor-only sub invoice) or the same
+  // labor entered twice, and nothing in the schema distinguishes them.
+  //
+  // Which is exactly the predicate this file already applies twice: an
+  // unfinished job's cost is real but is not a unit cost, and unpriced hours
+  // are real hours but are not dollars. Both are excluded and named. This is
+  // the third member of that family, not a new rule.
+  //
+  // The asymmetry that decides it: exclusion is visible and recoverable — the
+  // badge says why, and recategorising the entry or finishing another job
+  // fixes it. A doubled figure written into the catalog is silent, compounds
+  // on every reprice, and prices bids HIGH, which loses work rather than
+  // losing money on work. A contractor gets no signal from a bid they didn't win.
+
+  const ambiguous = (over: Record<string, unknown> = {}) =>
+    selfPerformedLine({
+      quantity: 1000,
+      costEntryTotal: 1500,
+      laborCostEntryTotal: 1500,
+      laborCost: 1500,
+      laborHours: 30,
+      ...over,
+    });
+
+  it("excludes the line and names why", () => {
+    const result = catalogActuals(
+      [
+        ambiguous(),
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 1500, laborHours: 30 }),
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 1500, laborHours: 30 }),
+      ],
+      2,
+    );
+
+    expect(result.linesWithCosts).toBe(2);
+    expect(result.linesExcludedDoubleCountedLabor).toBe(1);
+    expect(result.actualUnitCost).toBe(2);
+    // Counting it at face value: $4,000 + $3,000 over 3,000 SF = $2.33/SF —
+    // 17% HIGH, past the flag threshold, and one click from being banked.
+    expect(result.actualUnitCost).not.toBeCloseTo(7000 / 3000, 6);
+  });
+
+  it("leaves a LABOR cost entry alone when no hours were logged", () => {
+    // A contractor who tracks labor purely as cost entries is unambiguous.
+    // Excluding them would refuse to learn from a perfectly clear line.
+    const result = catalogActuals(
+      [
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 2000, laborCostEntryTotal: 2000, laborCost: 0, laborHours: 0 }),
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 2000, laborCostEntryTotal: 2000, laborCost: 0, laborHours: 0 }),
+      ],
+      5,
+    );
+    expect(result.linesWithCosts).toBe(2);
+    expect(result.linesExcludedDoubleCountedLabor).toBe(0);
+    expect(result.actualUnitCost).toBe(2);
+  });
+
+  it("leaves logged hours alone when no LABOR cost entry sits beside them", () => {
+    const result = catalogActuals(
+      [
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCostEntryTotal: 0, laborCost: 1500, laborHours: 30 }),
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCostEntryTotal: 0, laborCost: 1500, laborHours: 30 }),
+      ],
+      5,
+    );
+    expect(result.linesWithCosts).toBe(2);
+    expect(result.linesExcludedDoubleCountedLabor).toBe(0);
+  });
+
+  it("does not exclude over a zero-dollar LABOR entry", () => {
+    // No dollars, no double count. Excluding on the mere presence of a row
+    // would throw away a line for nothing.
+    const result = catalogActuals(
+      [
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCostEntryTotal: 0, costEntryCount: 2, laborCost: 1500, laborHours: 30 }),
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCostEntryTotal: 0, costEntryCount: 2, laborCost: 1500, laborHours: 30 }),
+      ],
+      5,
+    );
+    expect(result.linesExcludedDoubleCountedLabor).toBe(0);
+    expect(result.linesWithCosts).toBe(2);
+  });
+
+  it("does not exclude when the hours could not be priced — they added no dollars", () => {
+    // Unpriced hours contribute nothing, so there is nothing to double. That
+    // line is already excluded for the OTHER reason, and must be counted
+    // under one heading, not two.
+    const result = catalogActuals(
+      [ambiguous({ laborCost: 0, unpricedLaborHours: 30 })],
+      2,
+    );
+    expect(result.linesExcludedUnpricedHours).toBe(1);
+    expect(result.linesExcludedDoubleCountedLabor).toBe(0);
+  });
+
+  it("excludes a per-diem-only day beside a Labor cost entry — dollars, not hours", () => {
+    // The case that distinguishes `laborCost > 0` from `laborHours > 0`, and
+    // the reason the predicate is written in DOLLARS.
+    //
+    // A travel or per-diem day is a TimeEntry with no hours on it:
+    // calculateBurdenedLaborCost adds the allowance regardless of hours, so
+    // the line carries labor MONEY and zero labor HOURS. Asking "were hours
+    // logged?" answers no and lets the line through; asking "did labor
+    // dollars land here?" answers yes, which is the question that matters
+    // when a payroll import may have booked that same per diem as a
+    // Labor-category cost entry too.
+    const perDiemOnly = selfPerformedLine({
+      quantity: 1000,
+      costEntryTotal: 1500,
+      laborCostEntryTotal: 1500,
+      laborCost: 250,
+      laborHours: 0,
+    });
+    const result = catalogActuals([perDiemOnly, perDiemOnly], 2);
+    expect(result.linesExcludedDoubleCountedLabor).toBe(2);
+    expect(result.actualUnitCost).toBeNull();
+  });
+
+  it("counts an allowance-only line as costed — dollars, not hours, again", () => {
+    // THE SAME WORD, TWENTY LINES UP. `hasAnyCost` decided "is there labor
+    // here?" by asking about HOURS, while `hasAmbiguousLaborCost` had just
+    // been corrected to ask about DOLLARS.
+    //
+    // A per-diem or travel day is a TimeEntry with no hours on it, so a line
+    // whose only labor is allowance money and which has no CostEntry rows
+    // read as having no cost at all. It did not merely drop out of the
+    // sample — it never entered `costedAnywhere`, so it reached none of the
+    // three exclusion counts either and NOTHING ON SCREEN said a word. That
+    // is exactly the silent disappearance `hasAnyCost`'s own docstring warns
+    // about.
+    const allowanceOnly = selfPerformedLine({
+      quantity: 1000,
+      costEntryTotal: 0,
+      costEntryCount: 0,
+      laborCost: 900,
+      laborHours: 0,
+    });
+    const result = catalogActuals([allowanceOnly, allowanceOnly], 5);
+
+    expect(result.linesWithCosts).toBe(2);
+    expect(result.actualUnitCost).toBeCloseTo(0.9, 10);
+    expect(result.laborCost).toBe(1800);
+  });
+
+  it("still sees a line whose hours could not be priced, so it can be REPORTED as excluded", () => {
+    // The regression guard on the fix above, and the reason it is an OR
+    // rather than a swap. An unpriced line carries hours and NO dollars, so
+    // a `hasAnyCost` rewritten to ask only about dollars would drop it out of
+    // `costedAnywhere` — and a line that never enters cannot be counted as
+    // excluded. The caveat this branch added would silently go to zero while
+    // looking like there was nothing to report.
+    const unpricedOnly = selfPerformedLine({
+      quantity: 1000,
+      costEntryTotal: 0,
+      costEntryCount: 0,
+      laborCost: 0,
+      laborHours: 40,
+      unpricedLaborHours: 40,
+    });
+    const result = catalogActuals([unpricedOnly, unpricedOnly], 5);
+
+    expect(result.linesExcludedUnpricedHours).toBe(2);
+    expect(result.linesWithCosts).toBe(0);
+    expect(result.actualUnitCost).toBeNull();
+  });
+
+  it("reports every costed line under exactly one heading", () => {
+    const result = catalogActuals(
+      [
+        ambiguous(),
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 0, laborHours: 30, unpricedLaborHours: 30 }),
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 1500, laborHours: 30, jobStatus: "IN_PROGRESS" }),
+        selfPerformedLine({ quantity: 1000, costEntryTotal: 500, laborCost: 1500, laborHours: 30 }),
+      ],
+      2,
+    );
+    expect(result.linesWithCosts).toBe(1);
+    expect(result.linesExcludedUnfinished).toBe(1);
+    expect(result.linesExcludedUnpricedHours).toBe(1);
+    expect(result.linesExcludedDoubleCountedLabor).toBe(1);
+    expect(
+      result.linesWithCosts +
+        result.linesExcludedUnfinished +
+        result.linesExcludedUnpricedHours +
+        result.linesExcludedDoubleCountedLabor,
+    ).toBe(4);
+  });
+
+  it("refuses to write a default when every line double-counts, and says how to fix it", () => {
+    const allAmbiguous = catalogActuals([ambiguous(), ambiguous()], 2);
+    const result = repriceDecision(allAmbiguous, null, false);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.error).toContain("logged hours");
+    expect(result.error).not.toContain("no finished job has used this entry");
+  });
+
+  it("catalogSourcedLine reads the LABOR slice off the cost entries", () => {
+    const CARPENTER = "craft_carpenter";
+    const schedules = new Map([
+      [
+        CARPENTER,
+        [
+          {
+            baseWage: 40,
+            pensionRate: 5,
+            vacationRate: 3,
+            healthWelfareRate: 2,
+            trainingRate: 0,
+            effectiveFrom: new Date("2026-01-01T00:00:00Z"),
+            effectiveTo: null,
+          },
+        ],
+      ],
+    ]);
+    const line = catalogSourcedLine(
+      {
+        quantity: 1000,
+        costEntries: [
+          { amount: 500, category: "MATERIAL" },
+          { amount: 1200, category: "LABOR" },
+        ],
+        timeEntries: [
+          {
+            lineItemId: "li_1",
+            craftClassificationId: CARPENTER,
+            date: new Date("2026-06-01T00:00:00Z"),
+            hours: 10,
+            payType: "STRAIGHT" as const,
+            perDiemAmount: null,
+            travelPayAmount: null,
+          },
+        ],
+        job: { status: "COMPLETE" },
+      },
+      schedules,
+    );
+    expect(line.costEntryTotal).toBe(1700);
+    expect(line.laborCostEntryTotal).toBe(1200);
+    expect(line.laborCost).toBe(500);
   });
 });

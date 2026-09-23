@@ -322,4 +322,133 @@ describe("theme contrast", () => {
       );
     }
   });
+
+  /**
+   * THE OTHER HALF OF THE CENSUS ABOVE, AND THE HALF THAT WAS MISSING.
+   *
+   * The `bg-brand` scan asks "is the label on a brand fill dark enough". It
+   * can ask nothing about a RAW grey, because it matches on `bg-brand` and a
+   * grey has no fill to match — which is how `components/MetricBar.tsx`
+   * carried `text-slate-500` at **3.66:1** on `surface`, at 10px, uppercase,
+   * on the strip that says WHICH of four money figures you are reading, on
+   * every screen in the app, with this suite green throughout. Verbatim the
+   * scar this file's own header records ("a muted grey at 2.4:1 that was
+   * carrying stat-tile labels"), returning through the door nobody shut.
+   *
+   * WHY A BAN CAN BE SOUND WITHOUT KNOWING THE GROUND. Working out what a
+   * given element sits on needs layout, which nothing in this environment
+   * has — happy-dom returns zeros from `getBoundingClientRect`, which is why
+   * every measured number in CLAUDE.md comes from real Chromium. So this
+   * check bans only the shades that fail 4.5:1 on BOTH sides at once: every
+   * dark ground the app paints (`canvas`, `surface`, `rail`) AND the
+   * brand-yellow fill, the one light ground it puts text on. A shade that
+   * fails both is unreadable wherever it lands, and the ban is DERIVED from
+   * that arithmetic rather than asserted — see the `BANNED` loop.
+   *
+   * WHAT IT THEREFORE CANNOT CATCH, said plainly rather than implied. The
+   * 600s and darker are legitimate dark labels on a light fill — `neutral-900`
+   * on `bg-brand` is the app's own convention and is 11.7:1 — so a `-600`
+   * misplaced on the RAIL (2.29:1, which shipped on the disabled nav items
+   * until 2026-09-21) is invisible to this and needs eyes. That is a real
+   * hole, and naming it is better than a rule that bans the convention.
+   *
+   * Shades come from Tailwind's palette, never a literal here: a hand-copied
+   * hex is a second copy of a number that can drift from what the build
+   * compiles.
+   *
+   * ONLY BARE UTILITIES. `print:text-slate-700` and
+   * `placeholder:text-slate-500` are out on purpose — a `print:` variant
+   * lands on white paper, where slate-700 is 10.4:1. A variant's ground is a
+   * different question from this one.
+   */
+  it("puts no grey on screen that is unreadable on every ground this app paints", async () => {
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const { join, relative, resolve } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    // Through `unknown`: `DefaultColors` types the deprecated aliases as
+    // strings, so it does not structurally overlap a plain nested record.
+    // The shape is checked at the point of use — `palette[family]?.[shade]`
+    // — and a family or shade that is not there is skipped rather than
+    // assumed, which is what the anti-vacuity assertions below exist for.
+    const palette = (await import("tailwindcss/colors")).default as unknown as Record<
+      string,
+      Record<string, string> | undefined
+    >;
+
+    const appDir = fileURLToPath(new URL("..", import.meta.url));
+
+    // Derived from `content` for the reason the sibling census above spells
+    // out at length: nothing is ever missing from a directory you do not
+    // walk. Repeated rather than shared with it, on the grounds
+    // rowActionsCensus.test.ts already gives for its own `openingTagAt` —
+    // two independent checks that happen to need the same walk are better
+    // than one helper whose next change silently moves both.
+    const globs = (Array.isArray(config.content) ? config.content : []) as string[];
+    const roots = globs.map((glob) => {
+      const star = glob.indexOf("*");
+      return resolve(appDir, star === -1 ? glob : glob.slice(0, star));
+    });
+    expect(roots.length).toBe(globs.length);
+    expect(roots.length).toBeGreaterThanOrEqual(3);
+    for (const root of roots) {
+      expect(statSync(root).isDirectory(), `${root} does not exist`).toBe(true);
+    }
+
+    const darkGrounds = [colors.canvas, colors.surface, colors.rail];
+    const BANNED: string[] = [];
+    for (const family of ["slate", "neutral", "gray", "zinc", "stone"]) {
+      for (const shade of ["400", "500", "600", "700", "800", "900"]) {
+        const hex = palette[family]?.[shade];
+        if (!hex) continue;
+        const failsDark = darkGrounds.every((ground) => contrastRatio(hex, ground) < 4.5);
+        const failsBrand = contrastRatio(hex, colors.brand) < 4.5;
+        if (failsDark && failsBrand) BANNED.push(`${family}-${shade}`);
+      }
+    }
+
+    // Anti-vacuity on the BAN, which is derived like everything else here:
+    // an empty ban list makes the walk below find nothing and pass on an app
+    // full of unreadable text.
+    expect(BANNED, "the ban derived no shades at all").toContain("slate-500");
+    expect(BANNED).toContain("neutral-500");
+    expect(BANNED.length).toBeGreaterThanOrEqual(5);
+    // And the rule has to be about legibility rather than about greys. The
+    // shade one step brighter reads on a dark ground; the dark end is the
+    // app's own label on a brand fill. Neither may be swept up.
+    expect(BANNED).not.toContain("neutral-400");
+    expect(BANNED).not.toContain("neutral-900");
+
+    const sources = (dir: string, out: string[] = []) => {
+      for (const name of readdirSync(dir)) {
+        if (name === "node_modules" || name === ".next" || name.startsWith(".")) continue;
+        const full = join(dir, name);
+        if (statSync(full).isDirectory()) sources(full, out);
+        else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) out.push(full);
+      }
+      return out;
+    };
+    const withoutComments = (source: string) =>
+      source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+    let scanned = 0;
+    const offenders: string[] = [];
+    for (const full of roots.flatMap((root) => sources(root))) {
+      scanned += 1;
+      const code = withoutComments(readFileSync(full, "utf8"));
+      for (const shade of BANNED) {
+        // `(?<![:\w-])` is what keeps `print:` and `placeholder:` out, and
+        // what stops `text-slate-50` matching the head of `text-slate-500`.
+        if (new RegExp(`(?<![:\\w-])text-${shade}\\b`).test(code)) {
+          offenders.push(`${relative(appDir, full)}: text-${shade}`);
+        }
+      }
+    }
+
+    expect(scanned, "the walk read no files").toBeGreaterThan(200);
+    expect(
+      offenders,
+      "this shade clears 4.5:1 on no ground this app paints, dark or brand — " +
+        "use text-ink-muted (6.9:1 on surface) or brighter",
+    ).toEqual([]);
+  });
 });
