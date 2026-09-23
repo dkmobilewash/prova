@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@prova/db";
-import { ASK_LIMITS, askAllowance, recordAskUsage, usageSummary } from "./usage";
+import { ASK_LIMITS, askAllowance, PROVENANCE_OUTCOME, recordAskUsage, usageSummary } from "./usage";
 
 /**
  * The bound against a real Postgres: rows written by recordAskUsage are
@@ -46,11 +46,45 @@ describe("ask usage against a real database", () => {
       readable: true,
       questions: 1,
       calls: 1,
+      blockedAnswers: 0,
       inputTokens: 100,
       outputTokens: 10,
       byFeature: [{ feature: "ask", label: "Ask", calls: 1, tokens: 110 }],
       byPerson: [{ who: "Usage Tester", calls: 1, tokens: 110 }],
     });
+  });
+
+  /**
+   * The number-provenance guard's firing rate, against a real `groupBy`.
+   *
+   * `usage.test.ts` proves the arithmetic over a fake. What only Postgres
+   * can answer is whether grouping by a THIRD column still returns the
+   * outcome to read it from — and whether the totals beside it, which all
+   * sum across groups, survive the extra split. A held-back answer is a
+   * question and a model call like any other; only `blockedAnswers` should
+   * single it out.
+   */
+  it("counts an answer the provenance guard held back, without disturbing the totals", async () => {
+    const before = await usageSummary(companyId);
+    await recordAskUsage({ companyId, userId, model: "claude-opus-5", usage: totals, outcome: PROVENANCE_OUTCOME });
+    try {
+      const after = await usageSummary(companyId);
+      expect(after.blockedAnswers).toBe(before.blockedAnswers + 1);
+      // A held-back answer is still a question and still a model call — it
+      // cost one and it counts against the limits. Only `blockedAnswers`
+      // singles it out.
+      expect(after.questions).toBe(before.questions + 1);
+      expect(after.calls).toBe(before.calls + 1);
+      // One person and one feature still, so the extra grouping column did
+      // not split the rows a reader sees into two lines.
+      expect(after.byPerson).toHaveLength(1);
+      expect(after.byFeature).toHaveLength(1);
+    } finally {
+      // Put the window back exactly as it was: the cases below this one
+      // count rows, and a test that leaves data behind fails the NEXT one.
+      await prisma.askUsage.deleteMany({ where: { companyId, outcome: PROVENANCE_OUTCOME } });
+    }
+    expect((await usageSummary(companyId)).blockedAnswers).toBe(before.blockedAnswers);
   });
 
   /**

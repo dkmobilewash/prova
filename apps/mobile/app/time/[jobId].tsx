@@ -1,27 +1,31 @@
 import { useAuth } from "@clerk/expo";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
 import { DateField } from "@/components/DateField";
 import { Field } from "@/components/Field";
-import { List } from "@/components/List";
-import { RefusedBanner } from "@/components/RefusedBanner";
+import { GroupedList } from "@/components/GroupedList";
+import { GroupedRow } from "@/components/GroupedRow";
+import { JobContextChip } from "@/components/JobContextChip";
+import { SectionHeader } from "@/components/SectionHeader";
 import { Sheet } from "@/components/Sheet";
 import { SignaturePad } from "@/components/SignaturePad";
+import { SyncStatus } from "@/components/SyncStatus";
 import { JobSections } from "@/components/JobSections";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
 import { tokenOrNull } from "@/lib/clerk-token";
-import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
 import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
 import { useMe } from "@/lib/use-me";
-import { colors, typography } from "@/lib/theme";
+import { dayKey, todayKey } from "@/lib/today";
+import { leadingFor, type Palette, radius, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import {
   clearSession,
@@ -82,21 +86,29 @@ function people(n: number, one: string, many = `${one}s`): string {
 
 /** The line under "Craft": why the list is what it is. */
 function CraftHint({ required, fallback, who }: { required: boolean; fallback: boolean; who: string }) {
+  const palette = usePalette();
+  const hint = useMemo(
+    () =>
+      StyleSheet.create({
+        hint: { color: palette.colors.inkMuted, fontSize: typography.size.sm },
+      }),
+    [palette],
+  );
   if (!required) {
     return (
-      <Text style={styles.hint}>
+      <Text style={hint.hint}>
         No crafts are set up for this company, so these hours will show as untagged on certified payroll.
       </Text>
     );
   }
   if (fallback) {
     return (
-      <Text style={styles.hint}>
+      <Text style={hint.hint}>
         No crafts are ticked for {who} yet, so every craft is shown. Tick them on the web under Union compliance.
       </Text>
     );
   }
-  return <Text style={styles.hint}>Required.</Text>;
+  return <Text style={hint.hint}>Required.</Text>;
 }
 
 function formatElapsed(ms: number): string {
@@ -108,6 +120,8 @@ function formatElapsed(ms: number): string {
 
 export default function TimeScreen() {
   const { me } = useMe();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [entries, setEntries] = useState<TimeEntry[]>([]);
@@ -121,7 +135,6 @@ export default function TimeScreen() {
   // Job names by id, so the clock card can name the job a session is on —
   // which may not be the job this screen is showing.
   const [jobNames, setJobNames] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState<string | "nothing" | null>(null);
   // Apprentice-ratio breaches for today on this job, from the crew schedule
   // and the hours already logged. Empty when within ratio, or when it could
@@ -186,7 +199,6 @@ export default function TimeScreen() {
       // asked about at the end of the week.
       cachedRead(cacheKeys.time(jobId), requireToken(token, (t) => api.listTimeEntries(jobId, t))).then(
         async (result) => {
-          setError(null);
           if (result.from === "nothing") {
             setOffline("nothing");
             return;
@@ -564,13 +576,70 @@ export default function TimeScreen() {
   // an empty screen with no explanation.
   if (!holds(me, SCREEN_CAPABILITY["time/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["time/[jobId]"]} />;
 
+  const allEntries = [...optimistic, ...entries];
+  const todayIso = todayKey();
+  const todayEntries = allEntries.filter((item) => dayKey(item.date) === todayIso);
+  const earlierEntries = allEntries.filter((item) => dayKey(item.date) !== todayIso);
+  const empty = emptyFor(offline, "the hours", {
+    title: "No time logged",
+    description: "Tap “Log time” to record the day's hours.",
+  });
+
+  const renderDay = (items: typeof allEntries, heading: string) =>
+    items.length === 0 ? null : (
+      <>
+        <SectionHeader>{heading}</SectionHeader>
+        <GroupedList>
+          {items.map((item, i) => (
+            <GroupedRow
+              key={item.id}
+              title={item.employeeName}
+              subtitle={
+                [
+                  item.id.startsWith("local-") ? "Syncing…" : null,
+                  item.payType.replace(/_/g, " "),
+                  item.craftLabel,
+                ]
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .join(" · ") || undefined
+              }
+              detail={
+                item.clockStartedAt && item.clockEndedAt
+                  ? `${formatClockTime(item.clockStartedAt)}–${formatClockTime(item.clockEndedAt)}${
+                      item.clockBreakMinutes ? ` · ${item.clockBreakMinutes} min break` : ""
+                    }`
+                  : undefined
+              }
+              note={[item.lineItemDescription, item.note].filter(Boolean).join(" · ") || undefined}
+              value={`${item.hours}h`}
+              trailing={
+                signedByDate.get(item.date) ? (
+                  <Text style={styles.signed}>
+                    {signedByDate.get(item.date)!.state === "APPROVED" ? "Approved" : "Signed"} · locked
+                  </Text>
+                ) : undefined
+              }
+              divider={i > 0}
+            />
+          ))}
+        </GroupedList>
+      </>
+    );
+
   return (
     <View style={styles.screen}>
       <JobSections jobId={jobId} active="time" />
-      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <OfflineNote state={offline} />
-      <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
+      <View style={styles.chipWrap}>
+        <JobContextChip />
+      </View>
+      <SyncStatus
+        pending={pending}
+        state={offline}
+        refused={refused}
+        onDismiss={dismissRefused}
+        onRetry={retrySetAside}
+      />
 
       {ratioWarnings.length > 0 ? (
         <View style={styles.ratioBanner}>
@@ -629,40 +698,22 @@ export default function TimeScreen() {
         )}
       </View>
 
-      <List
-        data={[...optimistic, ...entries]}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <Card>
-            <View style={styles.entryHead}>
-              <Text style={styles.date}>{item.date}</Text>
-              <Text style={styles.hours}>{item.hours}h</Text>
-            </View>
-            {item.id.startsWith("local-") ? <Text style={styles.syncing}>Syncing…</Text> : null}
-            {signedByDate.get(item.date) ? (
-              <Text style={styles.signed}>
-                {signedByDate.get(item.date)!.state === "APPROVED" ? "Approved" : "Signed"} · locked
-              </Text>
-            ) : null}
-            <Text style={styles.meta}>
-              {item.employeeName} · {item.payType.replace(/_/g, " ")}
-              {item.craftLabel ? ` · ${item.craftLabel}` : ""}
-            </Text>
-            {item.clockStartedAt && item.clockEndedAt ? (
-              <Text style={styles.meta}>
-                {formatClockTime(item.clockStartedAt)}–{formatClockTime(item.clockEndedAt)}
-                {item.clockBreakMinutes ? ` · ${item.clockBreakMinutes} min break` : ""}
-              </Text>
-            ) : null}
-            {item.lineItemDescription ? <Text style={styles.note}>{item.lineItemDescription}</Text> : null}
-            {item.note ? <Text style={styles.note}>{item.note}</Text> : null}
-          </Card>
+      {/* The hours, grouped by the day they belong to — "Today" is the
+          row a foreman opens this screen for, and everything else can
+          wait below the fold. */}
+      <ScrollView style={styles.listScroll} contentContainerStyle={styles.listContent}>
+        {allEntries.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>{empty.emptyTitle}</Text>
+            {empty.emptyDescription ? <Text style={styles.emptyBody}>{empty.emptyDescription}</Text> : null}
+          </View>
+        ) : (
+          <>
+            {renderDay(todayEntries, "Today")}
+            {renderDay(earlierEntries, "Earlier")}
+          </>
         )}
-        {...emptyFor(offline, "the hours", {
-          title: "No time logged",
-          description: "Tap “Log time” to record the day's hours.",
-        })}
-      />
+      </ScrollView>
 
       <View style={[styles.footer, styles.footerRow]}>
         <Button variant="secondary" onPress={openSign}>
@@ -896,68 +947,92 @@ export default function TimeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  handoverNote: { color: colors.inkBody, fontSize: typography.size.sm, lineHeight: 20 },
-  handoverList: { gap: 8 },
-  handoverPick: {
-    borderWidth: 1,
-    borderColor: colors.lineCard,
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-  },
-  handoverPicked: { backgroundColor: colors.brand, borderColor: colors.brand },
-  handoverPickText: { color: colors.ink, fontSize: typography.size.md },
-  handoverPickedText: { color: colors.canvas, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
-  clockCard: { padding: 16, paddingBottom: 4 },
-  clockElapsed: { color: colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
-  clockContext: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
-  clockJob: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
-  clockOtherJob: {
-    color: colors.tagRoseInk,
-    fontSize: typography.size.md,
-    fontWeight: typography.weight.semibold,
-    marginTop: 4,
-  },
-  clockBreak: { color: colors.inkBody, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  clockErrorText: { color: colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 8 },
-  clockIdle: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  breakRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8 },
-  clockActions: { gap: 8, marginTop: 8 },
-  entryHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  date: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  hours: { color: colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
-  meta: { color: colors.inkMuted, fontSize: typography.size.sm },
-  note: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
-  chipLabel: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  hint: { color: colors.inkMuted, fontSize: typography.size.sm },
-  crewRow: {
-    gap: 8,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.lineCard,
-  },
-  crewName: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  rowProblem: { color: colors.tagRoseInk, fontSize: typography.size.sm },
-  ratioBanner: {
-    margin: 16,
-    marginBottom: 0,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.tagRoseInk,
-    gap: 4,
-  },
-  ratioTitle: { color: colors.tagRoseInk, fontSize: typography.size.md, fontWeight: typography.weight.bold },
-  ratioLine: { color: colors.inkBody, fontSize: typography.size.sm },
-  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
-  footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-  footerMain: { flex: 1 },
-  signed: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  syncing: { color: colors.inkMuted, fontSize: typography.size.sm, fontStyle: "italic" },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    // The handover sheet — who is taking the phone, and the PIN that
+    // brings it back. Picked = the brand fill with the DARK label, the
+    // one-yellow rule; the pre-rebase version put canvas-coloured text on
+    // it, which is light-on-yellow in light mode.
+    handoverNote: { color: p.colors.inkBody, fontSize: typography.size.sm, lineHeight: 20 },
+    handoverList: { gap: 8 },
+    handoverPick: {
+      borderWidth: 1,
+      borderColor: p.colors.lineCard,
+      borderRadius: radius.field,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+    },
+    handoverPicked: { backgroundColor: p.colors.brand, borderColor: p.colors.brand },
+    handoverPickText: { color: p.colors.ink, fontSize: typography.size.md },
+    handoverPickedText: {
+      color: p.colors.brandInk,
+      fontSize: typography.size.md,
+      fontWeight: typography.weight.semibold,
+    },
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    chipWrap: { padding: space.md, paddingBottom: 0 },
+    clockCard: { padding: space.md, paddingBottom: space.xxs },
+    clockElapsed: { color: p.colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
+    clockContext: { color: p.colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
+    clockJob: { color: p.colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
+    clockOtherJob: {
+      color: p.colors.tagRoseInk,
+      fontSize: typography.size.md,
+      fontWeight: typography.weight.semibold,
+      marginTop: 4,
+    },
+    clockBreak: { color: p.colors.inkBody, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+    clockErrorText: { color: p.colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 8 },
+    clockIdle: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+    breakRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8 },
+    clockActions: { gap: 8, marginTop: 8 },
+    listScroll: { flex: 1 },
+    listContent: { padding: space.md, paddingTop: 0, gap: space.xs },
+    empty: { gap: space.xs, paddingTop: space.xl, alignItems: "center" },
+    emptyTitle: {
+      color: p.colors.ink,
+      fontSize: typography.size.lg,
+      fontWeight: typography.weight.semibold,
+      textAlign: "center",
+    },
+    emptyBody: {
+      color: p.colors.inkBody,
+      fontSize: typography.size.md,
+      lineHeight: leadingFor(typography.size.md),
+      textAlign: "center",
+    },
+    meta: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    chipLabel: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    hint: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    crewRow: {
+      gap: 8,
+      padding: 12,
+      borderRadius: radius.card,
+      borderWidth: 1,
+      borderColor: p.colors.lineCard,
+    },
+    crewName: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+    rowProblem: { color: p.colors.tagRoseInk, fontSize: typography.size.sm },
+    ratioBanner: {
+      margin: space.md,
+      marginBottom: 0,
+      padding: 12,
+      borderRadius: radius.card,
+      borderWidth: 1,
+      borderColor: p.colors.tagRoseInk,
+      gap: 4,
+    },
+    ratioTitle: { color: p.colors.tagRoseInk, fontSize: typography.size.md, fontWeight: typography.weight.bold },
+    ratioLine: { color: p.colors.inkBody, fontSize: typography.size.sm },
+    footer: {
+      padding: space.md,
+      paddingTop: space.xs,
+      borderTopWidth: 1,
+      borderTopColor: p.colors.lineRow,
+    },
+    footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+    footerMain: { flex: 1 },
+    signed: { color: p.colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+  });
+}

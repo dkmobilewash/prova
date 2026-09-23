@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
+import { determinationFactsFromForm } from "@/lib/determination-facts";
 import { prisma } from "@prova/db";
 import {
   actionFail,
@@ -558,6 +559,15 @@ export async function uploadPrevailingWageDetermination(
     return actionFail("Attach the determination document, or paste a link to it — either one is enough.");
   }
 
+  // What the document says about itself — its number, issue and expiration
+  // dates and the asterisk after the expiration — all optional, all read
+  // off the document by the person attaching it. The standing line on the
+  // tab is derived from these (lib/determination-standing.ts); a row
+  // attached with none of them is reported as unchecked, exactly like every
+  // row that predates the columns.
+  const facts = determinationFactsFromForm(formData);
+  if (!facts.ok) return actionFail(facts.error);
+
   await prisma.prevailingWageDetermination.create({
     data: {
       jobId,
@@ -567,6 +577,7 @@ export async function uploadPrevailingWageDetermination(
       sourceUrl: sourceUrl || null,
       note: note || null,
       uploadedByUserId: user.id,
+      ...facts.value,
     },
   });
 

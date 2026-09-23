@@ -115,27 +115,45 @@ const DETERMINATIONS = [
     sourceUrl: null,
     note: null,
     createdAt: new Date("2026-09-01T00:00:00.000Z"),
-    job: { name: "Riverside Medical" },
+    // The 2026-1 issue (effective 4 Mar 2026) on a job advertised 10 Aug:
+    // the right issue, but its double-asterisk expiration has passed by
+    // TODAY, so a predetermined increase is due.
+    determinationRef: "SC-023-31-2, 2026-1",
+    issuedOn: new Date("2026-02-22T00:00:00.000Z"),
+    expiresOn: new Date("2026-06-30T00:00:00.000Z"),
+    expirationMarker: "DOUBLE",
+    job: { name: "Riverside Medical", bidAdvertisedOn: new Date("2026-08-10T00:00:00.000Z"), publicWorks: true },
   },
   {
-    // Link only, no file. Still producible.
+    // Link only, no file. Still producible. No issue date entered, so its
+    // standing is unchecked whatever the job says.
     jurisdiction: "Davis-Bacon",
     fileName: null,
     fileUrl: null,
     sourceUrl: "https://sam.gov/wage-determination/CA20260001",
     note: null,
     createdAt: new Date("2026-08-20T00:00:00.000Z"),
-    job: { name: "Northgate Apartments" },
+    determinationRef: null,
+    issuedOn: null,
+    expiresOn: null,
+    expirationMarker: null,
+    job: { name: "Northgate Apartments", bidAdvertisedOn: new Date("2026-08-10T00:00:00.000Z"), publicWorks: null },
   },
   {
-    // NEITHER. A determination in name only — the row this flags.
+    // NEITHER. A determination in name only — the row this flags. Its dates
+    // say 2026-2 (issued 22 Aug, effective 1 Sep) on a job advertised 10
+    // Aug: the newer issue, and the wrong one.
     jurisdiction: "California DIR",
     fileName: null,
     fileUrl: null,
     sourceUrl: null,
     note: "PM said he'd send it",
     createdAt: new Date("2026-08-02T00:00:00.000Z"),
-    job: { name: "Northgate Apartments" },
+    determinationRef: null,
+    issuedOn: new Date("2026-08-22T00:00:00.000Z"),
+    expiresOn: null,
+    expirationMarker: null,
+    job: { name: "Northgate Apartments", bidAdvertisedOn: new Date("2026-08-10T00:00:00.000Z"), publicWorks: null },
   },
 ];
 
@@ -167,6 +185,10 @@ vi.mock("@prova/db", async (importOriginal) => ({
 
 vi.mock("@/lib/apprenticeship-query", () => ({ loadApprenticeships: async () => STANDINGS }));
 vi.mock("@/lib/serverToday", () => ({ serverToday: () => TODAY }));
+// The standing line judges an expiration against the viewer's day, and a
+// test that read the real clock would flip from "in force" to "increase
+// due" on the morning the fixture's expiration passed.
+vi.mock("@/lib/viewerToday", () => ({ viewerToday: async () => TODAY }));
 
 async function ask(name: string, input: Record<string, string> = {}) {
   const { runTool } = await import("./handlers");
@@ -274,5 +296,60 @@ describe("wage_determinations", () => {
   it("counts jobs covered rather than implying every job needs one", async () => {
     const result = await ask("wage_determinations");
     expect(result.summary).toMatchObject({ jobsCovered: 2 });
+  });
+
+  it("reports each row's standing — read off the entered dates, not researched", async () => {
+    const rows = (await ask("wage_determinations")).data as {
+      job: string;
+      jurisdiction: string;
+      standing: string;
+      standingLine: string;
+      jobBidAdvertisedOn: string | null;
+      jobIsPublicWorks: boolean | null;
+    }[];
+
+    // Pick by the two fields the tool ACTUALLY returns, and fail naming what
+    // was looked for. An earlier version of this test selected rows by
+    // `note`, which the tool has never returned: `find` gave undefined, the
+    // non-null assertion silenced the typechecker, and the failure read
+    // "Cannot read properties of undefined". A selector that can miss has to
+    // say so itself (CLAUDE.md: absence of a failure is not a pass).
+    const rowCount = 3;
+    expect(rows).toHaveLength(rowCount);
+    const pick = (job: string, jurisdiction: string) => {
+      const found = rows.filter((row) => row.job === job && row.jurisdiction === jurisdiction);
+      if (found.length !== 1) {
+        throw new Error(
+          `expected exactly one ${jurisdiction} row on ${job}, got ${found.length} of ${rows
+            .map((row) => `${row.job}/${row.jurisdiction}`)
+            .join(", ")}`,
+        );
+      }
+      return found[0];
+    };
+
+    // Right issue, expiration passed, double asterisk.
+    const riverside = pick("Riverside Medical", "California DIR");
+    expect(riverside.standing).toBe("increase_due");
+    expect(riverside.standingLine).toContain("Expiration Jun 30, 2026 has passed");
+    expect(riverside.jobBidAdvertisedOn).toBe("2026-08-10");
+    expect(riverside.jobIsPublicWorks).toBe(true);
+
+    // No issue date entered: unchecked, and it says which date is missing.
+    const davisBacon = pick("Northgate Apartments", "Davis-Bacon");
+    expect(davisBacon.standing).toBe("unchecked");
+    expect(davisBacon.standingLine).toContain("issue date hasn't been entered");
+    // "Nobody has said" is null, never false.
+    expect(davisBacon.jobIsPublicWorks).toBe(null);
+
+    // The newer issue on a job advertised before it took effect.
+    const wrongIssue = pick("Northgate Apartments", "California DIR");
+    expect(wrongIssue.standing).toBe("wrong_issue");
+    expect(wrongIssue.standingLine).toContain("Not the determination in force on your bid-advertisement date (Aug 10, 2026)");
+  });
+
+  it("sums the three kinds of stale in the summary, so 'is anything stale' is one number each", async () => {
+    const result = await ask("wage_determinations");
+    expect(result.summary).toMatchObject({ wrongIssue: 1, increaseDue: 1, unchecked: 1 });
   });
 });

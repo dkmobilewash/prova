@@ -36,6 +36,20 @@ vi.mock("./usage", () => ({
   recordAskUsage: async () => {},
 }));
 
+// The paid monthly cap (lib/ask/allowance.ts) claims a unit before the
+// model runs, and it fails CLOSED — so a test that leaves it real refuses
+// every question here rather than exercising what it came to exercise.
+// Stubbed open on purpose; `allowance.test.ts`, `allowanceStream.test.ts`
+// and `allowance.dbtest.ts` are where the cap itself is proved.
+vi.mock("./allowance", () => ({
+  claimAskAllowance: async () => ({
+    ok: true,
+    claim: { companyId: "co1", periodStart: new Date("2026-09-01T00:00:00.000Z"), questions: 1, pages: 0 },
+    left: { questions: 299, pages: 300 },
+  }),
+  markAskAllowanceFailure: async () => {},
+}));
+
 /**
  * No database, and that is about the clock as much as about isolation.
  *

@@ -127,7 +127,12 @@ describe("usageSummary", () => {
     ]);
     const summary = await usageSummary("co-1", now);
     expect(fake.prisma.askUsage.groupBy.mock.calls[0][0]).toMatchObject({
-      by: ["userId", "feature"],
+      // `outcome` joined the grouping when the number-provenance guard
+      // needed a firing rate on this page. It splits the groups further and
+      // changes none of the totals below, which all sum across groups —
+      // asserted here so that stays a deliberate shape rather than
+      // something a later reader has to re-derive.
+      by: ["userId", "feature", "outcome"],
       where: { companyId: "co-1", createdAt: { gte: new Date("2026-08-12T12:00:00.000Z") } },
     });
 
@@ -165,6 +170,38 @@ describe("usageSummary", () => {
     ]);
     expect(summary.calls).toBe(2);
     expect(summary.questions).toBe(0);
+  });
+
+  it("counts the answers the number-provenance guard held back, and nothing else", async () => {
+    // The firing rate the settings page prints. Pinned against three other
+    // outcomes in the same window — a normal answer, a card, and a
+    // DIFFERENT error — because the failure worth catching here is a count
+    // that quietly folds in every `error:` row and reports the box as
+    // fabricating figures whenever the API is having a bad afternoon.
+    fake.prisma.askUsage.groupBy.mockResolvedValue([
+      { userId: "u-1", feature: "ask", outcome: "answered", _count: { _all: 40 }, _sum: { inputTokens: 1, outputTokens: 1 } },
+      { userId: "u-1", feature: "ask", outcome: "error:number_provenance", _count: { _all: 2 }, _sum: { inputTokens: 1, outputTokens: 1 } },
+      { userId: "u-2", feature: "ask", outcome: "error:number_provenance", _count: { _all: 1 }, _sum: { inputTokens: 1, outputTokens: 1 } },
+      { userId: "u-2", feature: "ask", outcome: "error:api", _count: { _all: 7 }, _sum: { inputTokens: 1, outputTokens: 1 } },
+      { userId: "u-2", feature: "ask", outcome: "proposal", _count: { _all: 3 }, _sum: { inputTokens: 1, outputTokens: 1 } },
+    ]);
+    fake.prisma.user.findMany.mockResolvedValue([
+      { id: "u-1", name: "Dana", email: "d@example.test" },
+      { id: "u-2", name: "Mike", email: "m@example.test" },
+    ]);
+    const summary = await usageSummary("co-1", now);
+    expect(summary.blockedAnswers).toBe(3);
+    // Still counted as questions: they cost a model call and they count
+    // against the limits, which is what `questions` means.
+    expect(summary.questions).toBe(53);
+  });
+
+  it("reports none held back as none, not as an absence", async () => {
+    fake.prisma.askUsage.groupBy.mockResolvedValue([
+      { userId: "u-1", feature: "ask", outcome: "answered", _count: { _all: 12 }, _sum: { inputTokens: 1, outputTokens: 1 } },
+    ]);
+    fake.prisma.user.findMany.mockResolvedValue([{ id: "u-1", name: "Dana", email: "d@example.test" }]);
+    expect((await usageSummary("co-1", now)).blockedAnswers).toBe(0);
   });
 });
 
@@ -261,6 +298,10 @@ describe("usageSummary when AskUsage cannot be read", () => {
       readable: false,
       questions: 0,
       calls: 0,
+      // Zero held back is the same kind of lie as zero questions when the
+      // table cannot be read, and `readable` is what the page reads to
+      // decide not to print either.
+      blockedAnswers: 0,
       inputTokens: 0,
       outputTokens: 0,
       byFeature: [],

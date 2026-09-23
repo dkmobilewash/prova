@@ -24,9 +24,19 @@ import { formatHours } from "./render-hours";
  * with no imports, and so the two cannot drift into two shapes.
  *
  * `wageCost` is base-plus-fringe for the hours a fringe schedule could
- * price. `allowanceCost` is per diem and travel pay, which are stored
- * dollars and need no schedule. `total` is whichever of those job cost
- * currently counts -- see LABOR_ALLOWANCES_IN_JOB_COST.
+ * price. `burdenCost` is the employer's share on top of that -- FICA,
+ * FUTA/SUTA, workers' comp -- at the EmployerBurdenRate in force on each
+ * entry's own day, and ZERO for a company that has recorded no rate, which
+ * is every company until an owner enters one. `allowanceCost` is per diem
+ * and travel pay, which are stored dollars and need no schedule. `total` is
+ * whichever of those job cost currently counts -- see
+ * LABOR_ALLOWANCES_IN_JOB_COST.
+ *
+ * `wageCost` and `burdenCost` are separate fields rather than one sum
+ * because the screen has to be able to say which it is showing: the caption
+ * that read "burdened rate" over a wage-and-fringes figure is the defect
+ * this field exists to end, and a caption cannot follow a number it cannot
+ * see inside.
  *
  * `unpricedHours` is the point of the split. Hours whose craft has no
  * effective fringe schedule get NO wage dollars, by design (labor-cost.ts
@@ -36,6 +46,11 @@ import { formatHours } from "./render-hours";
  */
 export interface WipLaborCost {
   wageCost: number;
+  /** Employer burden on the BASE wages inside `wageCost`, never on the
+   * fringes -- see lib/employer-burden.ts, which states why and that it is a
+   * modelling choice for a CPA rather than a verified tax rule. 0 when no
+   * EmployerBurdenRate is in force. */
+  burdenCost: number;
   allowanceCost: number;
   total: number;
   pricedHours: number;
@@ -47,6 +62,7 @@ export interface WipLaborCost {
  * how two of them end up disagreeing. */
 export const NO_LABOR_COST: WipLaborCost = {
   wageCost: 0,
+  burdenCost: 0,
   allowanceCost: 0,
   total: 0,
   pricedHours: 0,
@@ -160,9 +176,17 @@ export interface WipJobResult {
    * laborWageCost alone when it is off -- which is why it is its own field
    * rather than a sum a reader is expected to do. */
   laborCostToDate: number;
-  /** Burdened wages inside actualCostToDate -- base plus fringes, over every
-   * hour a fringe schedule could price. */
+  /** Wages inside actualCostToDate -- base plus fringes, over every hour a
+   * fringe schedule could price. NOT the employer's share on top: that is
+   * laborBurdenCost below, and conflating the two is what made the job-cost
+   * caption wrong. */
   laborWageCost: number;
+  /** The employer's share on top of those wages -- FICA, FUTA/SUTA, workers'
+   * comp -- at the rate in force on each entry's own day. 0 for a company
+   * with no EmployerBurdenRate recorded, which is every company until an
+   * owner enters one on /settings, and that zero is what keeps this change
+   * from moving anybody's existing figures. */
+  laborBurdenCost: number;
   /** Per diem and travel pay inside actualCostToDate. Named apart from wages
    * because whether they belong in job cost at all is a live decision -- see
    * LABOR_ALLOWANCES_IN_JOB_COST in lib/labor-job-cost.ts. With that flip
@@ -322,6 +346,8 @@ export function calculateJobWip(
     lineItems.reduce((sum, item) => sum + item.labor.total, 0) + unassignedLabor.total;
   const laborWageCost =
     lineItems.reduce((sum, item) => sum + item.labor.wageCost, 0) + unassignedLabor.wageCost;
+  const laborBurdenCost =
+    lineItems.reduce((sum, item) => sum + item.labor.burdenCost, 0) + unassignedLabor.burdenCost;
   const laborAllowanceCost =
     lineItems.reduce((sum, item) => sum + item.labor.allowanceCost, 0) +
     unassignedLabor.allowanceCost;
@@ -337,6 +363,7 @@ export function calculateJobWip(
     actualCostToDate,
     laborCostToDate,
     laborWageCost,
+    laborBurdenCost,
     laborAllowanceCost,
     unassignedLaborCost: unassignedLabor.total,
     pricedLaborHours,

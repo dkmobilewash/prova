@@ -49,6 +49,7 @@ vi.mock("@prova/db", () => ({
   Prisma: {},
   prisma: {
     backcharge: { findMany: empty },
+    employerBurdenRate: { findMany: empty },
     job: { findMany: empty },
     alertAcknowledgement: { findMany: empty },
     contactInteraction: { findMany: empty },

@@ -4,7 +4,11 @@ import { NoAccess } from "@/components/NoAccess";
 import { createLineItemCatalogEntry, updateCatalogDefaultsFromActuals } from "@/lib/actions";
 import { catalogActuals, catalogSourcedLine, type CatalogLineRow } from "@/lib/catalog-actuals";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
+import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import type { FringeRateScheduleInput } from "@/lib/labor-cost";
+import type { EmployerBurdenRates } from "@/lib/labor-job-cost";
+import { employerBurdenPercentOnDay, laborCostBasisLabel } from "@/lib/employer-burden";
+import { serverToday } from "@/lib/serverToday";
 import { CatalogImport } from "@/components/CatalogImport";
 import { CatalogEntryRow } from "@/components/CatalogEntryRow";
 import { TRADE_SCOPE_OPTIONS, tradeScopeLabel } from "@/lib/trade-scopes";
@@ -42,10 +46,16 @@ function formatVariancePct(pct: number) {
 function ActualsLine({
   entry,
   fringeSchedulesByCraft,
+  employerBurdenRates,
   isOwner,
 }: {
   entry: CatalogEntryWithLines;
   fringeSchedulesByCraft: ReadonlyMap<string, FringeRateScheduleInput[]>;
+  /* The company's employer-burden rates, in the same shape the WRITE
+     (`updateCatalogDefaultsFromActuals`) reads them. Handed down rather than
+     loaded here for the same reason the schedules are: the badge and the
+     button that banks it must be built from one set of inputs. */
+  employerBurdenRates: EmployerBurdenRates;
   /* Whether to render the re-price CONTROL at all. Not a security boundary
      — `updateCatalogDefaultsFromActuals` refuses a non-owner itself — but
      the badge above it stays visible either way, because "worth re-pricing"
@@ -56,7 +66,7 @@ function ActualsLine({
   // Built by the same function the WRITE uses (#287). A badge that disagreed
   // with the button under it would be worse than either being wrong alone.
   const actuals = catalogActuals(
-    entry.jobLineItems.map((line) => catalogSourcedLine(line, fringeSchedulesByCraft)),
+    entry.jobLineItems.map((line) => catalogSourcedLine(line, fringeSchedulesByCraft, employerBurdenRates)),
     entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
   );
 
@@ -100,7 +110,8 @@ function ActualsLine({
           cheap. Named rather than left to be inferred. */}
       {actuals.laborCost > 0 && (
         <p className="text-xs text-ink-muted">
-          Includes {money(actuals.laborCost)} of burdened labor from logged hours.
+          Includes {money(actuals.laborCost)} of labor from logged hours —{" "}
+          {laborCostBasisLabel(employerBurdenPercentOnDay(employerBurdenRates, serverToday()))}.
         </p>
       )}
       {/* Hours nobody could price are left OUT of the figure above, so the
@@ -182,7 +193,7 @@ export default async function CatalogPage() {
      non-owner themselves. */
   const isOwner = context.role === "OWNER";
 
-  const [entries, craftClassifications, fringeSchedulesByCraft] = await Promise.all([
+  const [entries, craftClassifications, fringeSchedulesByCraft, employerBurdenRates] = await Promise.all([
     prisma.lineItemCatalogEntry.findMany({
       where: { companyId: company.id },
       orderBy: { description: "asc" },
@@ -214,6 +225,7 @@ export default async function CatalogPage() {
       orderBy: { name: "asc" },
     }),
     loadFringeSchedulesByCraft(company.id),
+    loadEmployerBurdenRates(company.id),
   ]);
 
   return (
@@ -294,7 +306,12 @@ export default async function CatalogPage() {
                       <> · {entry.defaultLaborHours.toString()} hrs/line</>
                     )}
                   </p>
-                  <ActualsLine entry={entry} fringeSchedulesByCraft={fringeSchedulesByCraft} isOwner={isOwner} />
+                  <ActualsLine
+                    entry={entry}
+                    fringeSchedulesByCraft={fringeSchedulesByCraft}
+                    employerBurdenRates={employerBurdenRates}
+                    isOwner={isOwner}
+                  />
                 </>
               </CatalogEntryRow>
             ))}

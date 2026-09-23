@@ -208,6 +208,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/gc-reliability.test.ts": "Pins that a retainage-bearing invoice can settle, and that a genuine shortfall still cannot (#288).",
   "lib/ask/handlers.receivables.test.ts":
     "Fakes the invoice rows the receivables tool sums, snapshot included — the first behavioural test that tool's arithmetic has ever had (#288).",
+  "lib/ask/provenance.corpus.ts":
+    "Fixture only, and reads nothing. The number-provenance corpus copies the receivables tool's own result SHAPE — field names and all, so the guard is measured against the JSON the model is really handed — and that shape carries the retainage snapshot beside `outstanding`. No query, no formula, no total: the figures are literals in a test fixture.",
   "lib/today-dashboard.test.ts":
     "Fakes the invoice rows the receivables tile and the GC reliability column are built from, snapshot included — and asserts that the COMPANY-WIDE retainage figure is still whatever loadRetainageHeld returns, which is the #97 guarantee that grep used to provide for that file.",
   "lib/actions/billing.dbtest.ts":
