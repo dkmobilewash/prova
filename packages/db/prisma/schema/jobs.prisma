@@ -138,6 +138,7 @@ model Job {
   delayEvents                    DelayEvent[]
   dailyFieldReports              DailyFieldReport[]
   media                          JobMedia[]
+  takeoffPlans                   TakeoffPlan[]
   /// Documents dropped into `/intake` and filed against this job. Optional
   /// on that side, so this is SET NULL rather than a blocker — see
   /// intake.prisma.

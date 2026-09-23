@@ -107,6 +107,12 @@ export const HANDLED_MODELS = [
   // counts. Deleting the link deletes nothing in Bluebeam; the Studio
   // Session itself is left exactly as it was.
   "BluebeamStudioSession",
+  // An uploaded plan PDF somebody is measuring off. RESTRICT on Job, so
+  // this one genuinely blocks the delete. Its pages, calibrations and
+  // measurements are NOT listed here and do not need to be: they CASCADE
+  // from this row, so deleting the plan reaches all of them, and none of
+  // them carries a jobId for clean-test-jobs.mjs to count.
+  "TakeoffPlan",
   "JobAssignment",
   "EquipmentAssignment",
   "EstimateVersion",
