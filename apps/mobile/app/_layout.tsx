@@ -3,12 +3,14 @@ import { ClerkProvider } from "@clerk/expo";
 import { Redirect, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SecureStore from "expo-secure-store";
+import { StyleSheet, Text, View } from "react-native";
+import { apiBaseUrl, clerkPublishableKey, configProblem } from "@/lib/env";
 import { getHandover } from "@/lib/handover";
-import { typography } from "@/lib/theme";
+import { leadingFor, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import { useQueueDrain } from "@/lib/use-queue-drain";
 
-const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
+
 
 // Clerk stores the session token on-device; SecureStore (Keychain/Keystore)
 // is the recommended cache for it on native.
@@ -60,8 +62,43 @@ function DrainTimer() {
   return null;
 }
 
+/**
+ * What a build that was never given its configuration says.
+ *
+ * Rendered INSTEAD of the app, and before ClerkProvider, for two
+ * reasons: an empty publishable key throws inside the provider, and a
+ * crash cannot explain itself. The old behaviour was worse than a crash
+ * — the API URL fell back to localhost, so every screen reported "No
+ * connection" and blamed the jobsite for a mistake made at build time.
+ */
+function ConfigProblem({ message }: { message: string }) {
+  const palette = usePalette();
+  return (
+    <View style={[styles.problem, { backgroundColor: palette.colors.canvas }]}>
+      <Text style={[styles.problemTitle, { color: palette.colors.ink }]}>
+        {"This build isn't finished"}
+      </Text>
+      <Text style={[styles.problemBody, { color: palette.colors.inkBody }]}>{message}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  problem: { flex: 1, justifyContent: "center", padding: space.xl, gap: space.sm },
+  problemTitle: { fontSize: typography.size.xl, fontWeight: typography.weight.bold },
+  problemBody: { fontSize: typography.size.md, lineHeight: leadingFor(typography.size.md) },
+});
+
 export default function RootLayout() {
   const palette = usePalette();
+
+  // Checked before anything else draws: a misconfigured build should say
+  // what it is missing rather than impersonate a phone with no signal.
+  const problem = configProblem({
+    apiUrl: apiBaseUrl,
+    clerkKey: clerkPublishableKey,
+    isDev: __DEV__,
+  });
 
   /** Every pushed screen wears the app's own chrome rather than the stock
    * iOS one. `rail` is deliberately LIFTED off the canvas — the same trick
@@ -87,8 +124,10 @@ export default function RootLayout() {
     [palette],
   );
 
+  if (problem) return <ConfigProblem message={problem} />;
+
   return (
-    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+    <ClerkProvider publishableKey={clerkPublishableKey} tokenCache={tokenCache}>
       {/* Auto follows the system appearance — the light palette needs dark
           glyphs, the dark palette needs light ones, and only the OS knows
           which is showing. */}

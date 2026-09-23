@@ -121,3 +121,37 @@ email sends them to the office, a wrong password sends them to the reset
 — while password-rule errors pass Clerk's sentence through untouched,
 since the minimum length lives in the dashboard and any copy repeating it
 here would go stale the day it changes.
+
+**And the build config that would have shipped an app pointed at
+nothing.** Both `EXPO_PUBLIC_` values are baked in at BUILD time, and on
+a laptop they come from `apps/mobile/.env` — which is gitignored, and
+which Expo's own docs say is "not available for jobs that run on a remote
+server, for example, EAS Build". `eas.json` supplied neither. The first
+TestFlight build would therefore have installed, launched, and reported
+"No connection" on every screen, because the address it falls back to
+(`http://localhost:3000`) is the phone itself — the app blaming a
+jobsite for a mistake made at build time.
+
+Three parts. `eas.json` now gives every profile an EAS `environment` and
+hardcodes the API URL only where the answer never changes (production =
+`app.cstream.ai`). Preview is deliberately left out, because a preview
+build must be TOLD which deployment it is testing and the convenient
+default has testers writing real rows; development is left out because a
+dev client takes its JS, and therefore its values, from Metro — and
+because a hardcoded localhost would be wrong on a device, where
+localhost is the device. That last point was already written down in
+`.env.example` and was nearly lost: this change overwrote that file
+before reading it, and the warning had to be restored from the diff. `lib/env.ts`
+owns both reads and answers `configProblem()`, so a release build with
+no server address says exactly that instead of impersonating bad signal
+— rendered before ClerkProvider, since an empty publishable key throws
+inside it and a crash cannot explain itself. And
+`lib/eas-config.test.ts` derives the variable list from the app's own
+source and fails the build unless every profile accounts for every one,
+either with a literal or by being named — with a reason — as coming from
+the EAS environment. Keys stay out of the repo; `.env.example` carries
+the `eas env:create` lines instead.
+
+Mutation-tested three ways: dropping the production URL, blinding the
+capture pattern, and adding a new `EXPO_PUBLIC_` read to the app each
+turn it red, the last naming all three profiles that would ship without it.
