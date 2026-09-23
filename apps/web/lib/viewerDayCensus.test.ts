@@ -86,11 +86,11 @@
  *     stamp a row with the current instant.
  */
 
-import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { listGitFiles } from "../test/git-files";
 
 /** apps/web. `process.cwd()` under this suite, but resolved from this
  * file so a runner started elsewhere cannot silently change the scope. */
@@ -159,13 +159,10 @@ function walk(root: string): string[] {
  * above. Untracked build output is not source, so the two agree only when
  * the walk is actually walking. */
 function tracked(root: string): string[] {
-  const out = execFileSync(
-    "git",
-    ["-C", REPO_ROOT, "ls-files", "--cached", "--", `${relative(REPO_ROOT, root)}/`],
-    { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
-  );
-  return out
-    .split("\n")
+  // Deduped by the shared helper: a conflicted file is listed once per
+  // merge stage, which used to make this disagree with the walk over a
+  // merge rather than over the code. See test/git-files.ts.
+  return listGitFiles(["--cached", "--", `${relative(REPO_ROOT, root)}/`], REPO_ROOT)
     .filter((line) => SOURCE_EXTENSIONS.some((ext) => line.endsWith(ext)))
     .map((line) => join(REPO_ROOT, line))
     .sort();

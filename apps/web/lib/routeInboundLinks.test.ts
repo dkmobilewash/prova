@@ -59,6 +59,7 @@ const SCANNED_ROOTS = ["app", "components", "lib"] as const;
 /** Top-level directories holding source that are deliberately not scanned. */
 const NOT_SCANNED: Record<string, string> = {
   e2e: "browser tests navigate by typing a URL; a test visiting a page is not a way in for a person",
+  test: "test-only helpers for the suite itself (an in-memory Web Storage); nothing here renders, so a route named in it would be a fixture rather than a way in",
 };
 
 /** Pages with no inbound link that are reached from OUTSIDE the app. Each
