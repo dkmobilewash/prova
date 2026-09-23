@@ -16,6 +16,11 @@ import { accessContext, refusalFor } from "./access";
 import { askAllowance, PROVENANCE_OUTCOME, recordAskUsage, type AskUsageOutcome } from "./usage";
 import { checkNumberProvenance, describeUnaccounted } from "./provenance";
 import {
+  claimAskAllowance,
+  markAskAllowanceFailure,
+  type AllowanceClaim,
+} from "./allowance";
+import {
   type BidResearcher,
   canRunCommand,
   commandNamed,
@@ -35,7 +40,8 @@ import { pageContextSentence } from "./page-context";
 import { businessScopeContext } from "./business-scope-context";
 import { UNANSWERED_SCOPE } from "@/lib/businessScope";
 import { can } from "@/lib/permissions";
-import { loadAskAttachment, type AskAttachmentRef } from "./attachment";
+import type { AskAttachmentRef } from "./attachment";
+import { loadAskAttachment } from "./attachmentLoad";
 import type { WebSuggestion } from "./webSuggestions";
 import { resolvePageJob } from "./page-context-query";
 import { PRIOR_TURNS_RULE, type AskTurn } from "./turns";
@@ -48,8 +54,24 @@ import {
   toolsFor,
   TOOLS,
   type Citation,
+  type ItemLink,
   type ToolName,
 } from "./tools";
+
+/** How many "go here" buttons an answer may carry.
+ *
+ * The cap is the point, and it is deliberately far below what a tool may
+ * return: `needs_attention` hands back up to ATTENTION_ROWS (25) rows.
+ * Without a cap, "what needs my attention" on a busy company renders the
+ * whole alert page as a stack of buttons under a three-line answer, and
+ * the item that is nine days overdue is somewhere in the middle of it —
+ * which is the alert page again, rendered worse.
+ *
+ * Six because the answer above it is prose a person reads: buttons are
+ * for the handful it actually named. The handler returns them in the
+ * order it wants them read, most urgent first, so truncating keeps the
+ * ones that matter rather than an arbitrary slice. */
+const MAX_ITEM_LINKS = 6;
 
 /**
  * The model call behind Ask.
@@ -382,7 +404,7 @@ export type AskStreamEvent =
   | { type: "answering" }
   | { type: "reset" }
   | { type: "text"; delta: string }
-  | { type: "done"; citations: AskCitation[]; toolsUsed: ToolName[] }
+  | { type: "done"; citations: AskCitation[]; links: ItemLink[]; toolsUsed: ToolName[] }
   | { type: "error"; error: string }
   | AskHalt;
 
@@ -614,8 +636,11 @@ export async function* streamAnswer(
     return;
   }
 
-  // The bound on spend, checked BEFORE the model rather than after: a
-  // person or a company at its limit gets the sentence and no pass runs.
+  // THE COURTESY BOUND, checked BEFORE the model rather than after: a
+  // person or a company at its rolling limit gets the sentence and no pass
+  // runs. FAILS OPEN when it cannot be read (#257) — see usage.ts. The paid
+  // monthly cap below is a different thing and fails CLOSED; the two are
+  // deliberately not merged.
   const allowance = await askAllowance(ctx.companyId, ctx.userId);
   if (!allowance.ok) {
     yield { type: "error", error: allowance.error };
@@ -627,7 +652,14 @@ export async function* streamAnswer(
   // from nothing, which is the one thing this box must never do. Intake's
   // capability, because the file lives in intake's folder and a person who
   // cannot open the tray must not read its contents through here.
+  //
+  // IT IS LOADED BEFORE THE ALLOWANCE IS CLAIMED, and the order matters: the
+  // page count comes out of the bytes, so how much this question costs is
+  // not known until the file is in hand. Fetching a blob from our own store
+  // spends no model money, so nothing is at risk in doing it first — and a
+  // file that is refused here never touches the allowance at all.
   let attachment: AskAttachmentBlock | undefined;
+  let pages = 0;
   if (request.attachment) {
     if (!can(ctx.principal, "MANAGE_JOBS")) {
       yield { type: "error", error: "Attaching files uses document intake, which isn't part of your job function." };
@@ -639,7 +671,21 @@ export async function* streamAnswer(
       return;
     }
     attachment = loaded.block;
+    pages = loaded.charge.pages;
   }
+
+  // THE PAID CAP. One question and this file's pages are CLAIMED here,
+  // before a single pass runs — not recorded afterwards. A claim that fails
+  // is the hard stop: the sentence says what ran out, when it comes back
+  // and who to ask, nothing is billed, and no model call happens. A claim
+  // that cannot be made at all is ALSO a refusal; this one fails closed on
+  // purpose, unlike the rolling limits above. lib/ask/allowance.ts.
+  const claimed = await claimAskAllowance(ctx.companyId, { questions: 1, pages });
+  if (!claimed.ok) {
+    yield { type: "error", error: claimed.error };
+    return;
+  }
+  const claim: AllowanceClaim = claimed.claim;
 
   // Web research for a new bid, bound to this company for the usage row.
   // Only the Ask loop supplies it; the confirm tap never researches.
@@ -670,6 +716,13 @@ export async function* streamAnswer(
   const loopCtx: CommandContext = { ...ctx, research };
 
   const citations: AskCitation[] = [];
+  /* Per-record destinations, collected exactly as citations are and capped
+   * the same way a tool's rows are capped. A dozen buttons under an answer
+   * is not more useful than three — it is the alert list again, rendered
+   * worse, and it buries the one that matters. The cap is applied at the
+   * end rather than here so that dedupe runs against everything collected,
+   * not against the first N. */
+  const links: ItemLink[] = [];
   const toolsUsed: ToolName[] = [];
   /** Every `content` string the model was handed this turn — the sources
    * the number-provenance guard checks the answer against. The strings, not
@@ -794,6 +847,17 @@ export async function* streamAnswer(
           citations.push(citation);
         }
       }
+      // Same dedupe rule as citations, and it does real work here rather
+      // than being defensive: several alerts legitimately point at one
+      // page (three closeout items are all `/closeout`), and three buttons
+      // reading the same destination is noise. First label wins, because
+      // the handler returns them in the order it wants them read —
+      // most urgent first.
+      for (const link of result.links ?? []) {
+        if (!links.some((existing) => existing.href === link.href)) {
+          links.push(link);
+        }
+      }
       if (result.unavailable) {
         return { content: JSON.stringify({ unavailable: result.unavailable }) };
       }
@@ -815,108 +879,149 @@ export async function* streamAnswer(
   // that crossed the wire.
   let shown = NOTHING_SHOWN;
 
-  for await (const event of events) {
-    switch (event.type) {
-      case "text":
-      case "reset":
-      case "answering":
-        shown = showing(shown, event);
-        yield event;
-        break;
-      case "tools":
-        yield { type: "tools", names: event.names, label: labelFor(event.names) };
-        break;
-      case "usage":
-        usage = event.usage;
-        break;
-      case "halt":
-        await record(event.halt.type);
-        yield event.halt;
-        return;
-      case "error":
-        await record(`error:${event.reason}`);
-        yield { type: "error", error: messageFor(event.reason) };
-        return;
-      case "done": {
-        /* THE NUMBER-PROVENANCE GUARD. Every figure the answer says out
-         * loud must appear in a tool result of this turn or in the person's
-         * own question; lib/ask/provenance.ts is the rule and the reasoning.
-         *
-         * WHY IT IS CHECKED HERE AND NOT BEFORE THE TEXT STREAMS. It cannot
-         * be: the guard needs the whole answer, and the whole answer is not
-         * known until the model has finished writing it. Buffering the last
-         * pass instead would add its full streaming time — measured at
-         * 8-11s to the end of a multi-tool question — to every GOOD answer
-         * to spare a rare bad one a second on screen, and streaming is the
-         * reason this is a route handler rather than a Server Action at all.
-         *
-         * So the answer is RETRACTED rather than withheld, using the
-         * mechanism the loop already has for exactly this: an `error` event
-         * clears the answer in AskPanel (`setAnswer("")`), the same way
-         * `exhausted` and an API failure clear a half-written turn. `reset`
-         * goes first so the intent is explicit and any future client that
-         * handles one and not the other still ends up blank.
-         *
-         * What the person does NOT get: the figure as an answer, a citation
-         * link implying it was sourced, a line in their transcript, or a
-         * prior turn the next question could quote. `done` never fires, and
-         * every one of those hangs off `done` in the panel.
-         *
-         * What they DO briefly get, said plainly rather than left for
-         * somebody to find: the text is on screen while it streams. That is
-         * the cost of not buffering, it is the same window the "let me
-         * check…" preamble already occupies, and whether it is worth
-         * closing is Cyrus's call with the latency figures above.
-         *
-         * TWO KINDS OF ANSWER ARE NOT CHECKED AT ALL, because their real
-         * source is invisible to this process and every honest answer would
-         * be refused:
-         *   - a web-search answer. The search runs server-side inside the
-         *     model's own response and never reaches `execute`, so its
-         *     figures are in no tool text. The prompt already makes these
-         *     answers say where they came from and that they need checking.
-         *   - an answer about an ATTACHED FILE. The figures are in the
-         *     person's own document, which is a PDF or an image here, not
-         *     text this code can read.
-         * Both are named in the log line so the firing rate is read against
-         * the right denominator. */
-        const answerText = shownText(shown);
-        const searched = (usage?.webSearches ?? 0) > 0;
-        const guarded = !searched && !attachment;
-        if (guarded) {
-          const report = checkNumberProvenance(answerText, toolTexts, question);
-          if (!report.ok) {
-            // Ids, the question and the figures — the three things needed to
-            // work out whether the guard was right. Never the answer itself:
-            // the point of holding it back is that its numbers do not go in
-            // front of people, and a log line is read by people.
-            console.error("[ask] answer held back: a number was not traceable to a tool result", {
-              companyId: ctx.companyId,
-              userId: ctx.userId,
-              question,
-              unaccounted: describeUnaccounted(report),
-              figuresChecked: report.checked,
-              valuesOffered: report.offered,
-              toolResults: toolTexts.length,
-              toolsUsed,
-            });
-            await record(PROVENANCE_OUTCOME);
-            yield { type: "reset" };
-            yield { type: "error", error: PROVENANCE_REFUSAL };
-            return;
+  // The claim above is MARKED, never released, when the question does not
+  // produce an answer. Releasing would let anyone defeat the cap by making
+  // calls fail, and the provider bills a stream that died halfway anyway —
+  // allowance.ts's header argues it in full. The mark is what lets an owner
+  // see failed questions on /settings/assistant and ask a human for a
+  // credit; nothing in this app adjusts an allowance by itself.
+  //
+  // Note the asymmetry with `record`, which returns early when the loop
+  // never reported any usage. This does not: a question that claimed its
+  // unit and then never reached the model is exactly the case worth
+  // marking, and it is the one where `usage` is null.
+  const markFailed = async () => {
+    await markAskAllowanceFailure(claim);
+  };
+
+  // The `throw` arm of the same rule. The loop reports most failures as an
+  // `error` EVENT, but a thrown one — a tool handler that blew up, a
+  // database that went away mid-question — reaches here instead, and it is
+  // the same outcome for the person and the same claim to mark. Re-thrown
+  // afterwards, unchanged: marking is bookkeeping, not error handling, and
+  // swallowing the error here would hide a genuine bug behind a tidy
+  // stream.
+  try {
+    for await (const event of events) {
+      switch (event.type) {
+        case "text":
+        case "reset":
+        case "answering":
+          shown = showing(shown, event);
+          yield event;
+          break;
+        case "tools":
+          yield { type: "tools", names: event.names, label: labelFor(event.names) };
+          break;
+        case "usage":
+          usage = event.usage;
+          break;
+        case "halt":
+          await record(event.halt.type);
+          yield event.halt;
+          return;
+        case "error":
+          await record(`error:${event.reason}`);
+          await markFailed();
+          yield { type: "error", error: messageFor(event.reason) };
+          return;
+        case "done": {
+          /* THE NUMBER-PROVENANCE GUARD. Every figure the answer says out
+           * loud must appear in a tool result of this turn or in the person's
+           * own question; lib/ask/provenance.ts is the rule and the reasoning.
+           *
+           * WHY IT IS CHECKED HERE AND NOT BEFORE THE TEXT STREAMS. It cannot
+           * be: the guard needs the whole answer, and the whole answer is not
+           * known until the model has finished writing it. Buffering the last
+           * pass instead would add its full streaming time — measured at
+           * 8-11s to the end of a multi-tool question — to every GOOD answer
+           * to spare a rare bad one a second on screen, and streaming is the
+           * reason this is a route handler rather than a Server Action at all.
+           *
+           * So the answer is RETRACTED rather than withheld, using the
+           * mechanism the loop already has for exactly this: an `error` event
+           * clears the answer in AskPanel (`setAnswer("")`), the same way
+           * `exhausted` and an API failure clear a half-written turn. `reset`
+           * goes first so the intent is explicit and any future client that
+           * handles one and not the other still ends up blank.
+           *
+           * What the person does NOT get: the figure as an answer, a citation
+           * link implying it was sourced, a line in their transcript, or a
+           * prior turn the next question could quote. `done` never fires, and
+           * every one of those hangs off `done` in the panel.
+           *
+           * What they DO briefly get, said plainly rather than left for
+           * somebody to find: the text is on screen while it streams. That is
+           * the cost of not buffering, it is the same window the "let me
+           * check…" preamble already occupies, and whether it is worth
+           * closing is Cyrus's call with the latency figures above.
+           *
+           * TWO KINDS OF ANSWER ARE NOT CHECKED AT ALL, because their real
+           * source is invisible to this process and every honest answer would
+           * be refused:
+           *   - a web-search answer. The search runs server-side inside the
+           *     model's own response and never reaches `execute`, so its
+           *     figures are in no tool text. The prompt already makes these
+           *     answers say where they came from and that they need checking.
+           *   - an answer about an ATTACHED FILE. The figures are in the
+           *     person's own document, which is a PDF or an image here, not
+           *     text this code can read.
+           * Both are named in the log line so the firing rate is read against
+           * the right denominator. */
+          const answerText = shownText(shown);
+          const searched = (usage?.webSearches ?? 0) > 0;
+          const guarded = !searched && !attachment;
+          if (guarded) {
+            const report = checkNumberProvenance(answerText, toolTexts, question);
+            if (!report.ok) {
+              // Ids, the question and the figures — the three things needed to
+              // work out whether the guard was right. Never the answer itself:
+              // the point of holding it back is that its numbers do not go in
+              // front of people, and a log line is read by people.
+              console.error("[ask] answer held back: a number was not traceable to a tool result", {
+                companyId: ctx.companyId,
+                userId: ctx.userId,
+                question,
+                unaccounted: describeUnaccounted(report),
+                figuresChecked: report.checked,
+                valuesOffered: report.offered,
+                toolResults: toolTexts.length,
+                toolsUsed,
+              });
+              await record(PROVENANCE_OUTCOME);
+              // A held-back answer is a question that produced no answer, so
+              // its allowance claim is MARKED here for the same reason the
+              // `error` arm marks one: the unit was genuinely spent (the model
+              // wrote the answer; this code declined to show it), releasing it
+              // would let anyone defeat the cap by provoking refusals, and the
+              // mark is what lets an owner see it on /settings/assistant and
+              // ask a person for a credit. allowance.ts's header argues it.
+              await markFailed();
+              yield { type: "reset" };
+              yield { type: "error", error: PROVENANCE_REFUSAL };
+              return;
+            }
           }
+          await record("answered");
+          // Citations only where a tool actually ran. An answer built from
+          // no data — a refusal to guess, a clarifying question — must not
+          // carry links implying it was sourced from the rows.
+          yield {
+            type: "done",
+            citations: toolsUsed.length ? citations : [],
+            // Same condition as citations, for the same reason: a refusal
+            // or a clarifying question ran no tool, so it has no record to
+            // send anyone to, and a button under one would be pointing at
+            // something the answer never looked at.
+            links: toolsUsed.length ? links.slice(0, MAX_ITEM_LINKS) : [],
+            toolsUsed,
+          };
+          return;
         }
-        await record("answered");
-        // Citations only where a tool actually ran. An answer built from
-        // no data — a refusal to guess, a clarifying question — must not
-        // carry links implying it was sourced from the rows.
-        yield {
-          type: "done",
-          citations: toolsUsed.length ? citations : [],
-          toolsUsed,
-        };
-        return;
       }
     }
+  } catch (err) {
+    await markFailed();
+    throw err;
   }
 }

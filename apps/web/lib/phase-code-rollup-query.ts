@@ -1,5 +1,6 @@
 import { prisma } from "@prova/db";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "./fringe-schedules-query";
+import { loadEmployerBurdenRates } from "./employer-burden-query";
 import {
   phaseCodeRollupLine,
   rollUpPhaseCodes,
@@ -35,7 +36,7 @@ import {
  *     left would report a variance nobody could reconcile.
  */
 export async function loadPhaseCodeRollup(companyId: string): Promise<PhaseCodeRollup> {
-  const [phases, lineItems, fringeSchedulesByCraft] = await Promise.all([
+  const [phases, lineItems, fringeSchedulesByCraft, employerBurdenRates] = await Promise.all([
     prisma.phaseCode.findMany({
       where: { companyId },
       orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
@@ -60,6 +61,7 @@ export async function loadPhaseCodeRollup(companyId: string): Promise<PhaseCodeR
       },
     }),
     loadFringeSchedulesByCraft(companyId),
+    loadEmployerBurdenRates(companyId),
   ]);
 
   const meta: PhaseCodeMeta[] = phases.map((phase) => ({
@@ -77,7 +79,7 @@ export async function loadPhaseCodeRollup(companyId: string): Promise<PhaseCodeR
   // in the pure file next door, where a unit test can reach it. See its
   // docstring for why that one step crossed the split.
   const lines: PhaseCodeRollupLine[] = lineItems.map((item) =>
-    phaseCodeRollupLine(item, fringeSchedulesByCraft),
+    phaseCodeRollupLine(item, fringeSchedulesByCraft, employerBurdenRates),
   );
 
   return rollUpPhaseCodes(meta, lines);

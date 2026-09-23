@@ -24,7 +24,9 @@ import type {
   Vendor,
 } from "./types";
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+import { apiBaseUrl } from "./env";
+
+const BASE_URL = apiBaseUrl;
 
 export class ApiError extends Error {
   status: number;

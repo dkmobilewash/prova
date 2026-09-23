@@ -4,6 +4,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { anthropicIsConfigured, ASK_DEFAULT_MODEL } from "@prova/integrations";
 import { auditSummary, listAskProposals, OUTCOME_LABEL, type AuditOutcome } from "@/lib/ask/audit";
 import { ASK_LIMITS, MIGRATE_COMMAND, usageSummary } from "@/lib/ask/usage";
+import { allowanceSummary } from "@/lib/ask/allowance";
 import { AssistantConnectionCheck } from "@/components/AssistantConnectionCheck";
 import { StatusLine } from "@/components/StatusLine";
 import { assistantStatus } from "@/lib/status-sentences";
@@ -52,7 +53,11 @@ export default async function AssistantAuditPage() {
   }
 
   const now = new Date();
-  const [rows, usage] = await Promise.all([listAskProposals(company.id, now), usageSummary(company.id, now)]);
+  const [rows, usage, allowance] = await Promise.all([
+    listAskProposals(company.id, now),
+    usageSummary(company.id, now),
+    allowanceSummary(company.id, now),
+  ]);
   const summary = auditSummary(rows, now);
   const configured = anthropicIsConfigured();
 
@@ -86,6 +91,74 @@ export default async function AssistantAuditPage() {
           . Model: <span className="text-ink-label">{ASK_DEFAULT_MODEL}</span>.
         </p>
         <AssistantConnectionCheck />
+      </section>
+
+      {/* THIS MONTH'S PAID ALLOWANCE — the hard stop, above the usage
+          figures because it is the one an owner came here to find. It is a
+          DIFFERENT THING from the section below it: that one counts what
+          has been spent, in rolling windows, as a courtesy bound; this one
+          is the ceiling attached to what the company pays for, and passing
+          it stops the box rather than slowing it down.
+
+          Shown BEFORE it runs out, which is the whole reason it is on a
+          screen at all. A hard stop nobody could see coming is a support
+          call, and the amber band exists so the call happens while there is
+          still something left to do about it.
+
+          The unreadable arm says the OPPOSITE of the one below: when the
+          AskUsage rows cannot be read the box keeps answering unbounded,
+          and when THIS ledger cannot be read the box refuses everything.
+          Both sentences have to be on this page and they have to disagree,
+          because the two checks genuinely behave differently — see
+          lib/ask/allowance.ts. */}
+      <section className="mb-6 rounded-lg border border-line-card bg-surface p-4" data-ask="allowance">
+        <h2 className="mb-1 text-sm font-semibold text-ink">This month&apos;s AI allowance</h2>
+        {allowance.readable ? (
+          <>
+            <p className="mb-3 text-sm text-ink-body" data-ask="allowance-left">
+              <span className={allowance.low ? "text-tag-amber-ink" : "text-tag-green-ink"}>
+                {allowance.questionsLeft} of {allowance.allowance.questions} questions
+              </span>{" "}
+              and{" "}
+              <span className={allowance.low ? "text-tag-amber-ink" : "text-tag-green-ink"}>
+                {allowance.pagesLeft} of {allowance.allowance.pages} document pages
+              </span>{" "}
+              left. Used so far: {allowance.questionsUsed}{" "}
+              {allowance.questionsUsed === 1 ? "question" : "questions"} and {allowance.pagesUsed}{" "}
+              {allowance.pagesUsed === 1 ? "page" : "pages"}. It starts again on {allowance.resetsOn}.
+            </p>
+            {allowance.low && (
+              <p className="mb-3 text-sm text-tag-amber-ink" data-ask="allowance-low">
+                Running low. When either number reaches zero the assistant stops answering and says so —
+                it is a hard stop, not a slow-down, and <strong>nothing is ever billed for going over</strong>.
+                Contact C Stream if you need more before {allowance.resetsOn}.
+              </p>
+            )}
+            <p className="mb-3 text-sm text-ink-body">
+              A question costs one question. A file costs its real page count on top — a PDF is counted
+              page by page, a photo is one page, and a PDF whose page count can&apos;t be read is charged
+              as a fixed number and says so at the time.
+            </p>
+            {(allowance.failedQuestions > 0 || allowance.failedPages > 0) && (
+              <p className="mb-3 text-sm text-ink-body" data-ask="allowance-failed">
+                {allowance.failedQuestions} {allowance.failedQuestions === 1 ? "question" : "questions"} and{" "}
+                {allowance.failedPages} {allowance.failedPages === 1 ? "page" : "pages"} of that was claimed
+                for something that then failed to answer. It is counted rather than quietly given back, because
+                an allowance that hands itself back whenever a call fails is not a cap — contact C Stream and
+                a person will credit it.
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="mb-3 text-sm text-red-300" data-ask="allowance-unreadable">
+            This month&apos;s allowance can&apos;t be read on this deployment — the{" "}
+            <code>AskAllowancePeriod</code> table is missing or unreadable, which means this database is behind
+            the code. <strong>The assistant is refusing every question</strong> until it is fixed: this cap fails
+            closed on purpose, because a paid ceiling that answers unbounded when it can&apos;t check itself is
+            not a ceiling. Run <code>{MIGRATE_COMMAND}</code> against this database — or, on a preview, the{" "}
+            <strong>Migrate demo database</strong> workflow.
+          </p>
+        )}
       </section>
 
       {/* Counted from AskUsage rows, the same rows the limits are counted

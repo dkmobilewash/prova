@@ -102,12 +102,50 @@ vi.mock("./handlers", () => ({
 
 /** The person's own document, already verified as theirs. Nothing here
  * fetches a blob; what matters is only that `streamAnswer` saw one. */
+// SPLIT ACROSS TWO MODULES SINCE #465, and the split is why this needs
+// saying. `loadAskAttachment` moved out of `./attachment` into
+// `./attachmentLoad` — a server-only module, because counting a PDF's pages
+// needs `node:zlib`, which cannot be bundled for the browser and broke the
+// build while typecheck and lint stayed green. Mocking `./attachment` alone
+// therefore stopped intercepting the loader: the REAL loader ran and asked
+// the mock for `askAttachmentRefusal`, which it does not export. Each module
+// is now mocked where its function actually lives.
 vi.mock("./attachment", () => ({
   attachmentRefOf: () => undefined,
+}));
+
+vi.mock("./attachmentLoad", () => ({
   loadAskAttachment: async () => ({
     ok: true,
+    // `charge` is what #465 added: the pages this file costs the monthly
+    // allowance, read off the real bytes by `pageCount.ts`. `streamAnswer`
+    // reads `loaded.charge.pages` to claim them, so a stub without it makes
+    // the attachment case die on `undefined` before the guard is reached —
+    // which is not a provenance failure and must not look like one here.
+    charge: { pages: 3, basis: "pdf" },
     block: { kind: "pdf", fileName: "turner-invoice.pdf", base64: "" },
   }),
+}));
+
+// THE PAID ALLOWANCE, STUBBED AS GRANTED — added when #465 merged.
+// `streamAnswer` now claims a unit of the monthly allowance BEFORE it calls
+// the model, and that claim FAILS CLOSED: if the ledger cannot be read the
+// question is refused. Against this file's fake `prisma` it cannot be read,
+// so without this stub every test here ends in `error` and none of them ever
+// reaches the provenance guard they exist to exercise — green-looking setup,
+// vacuous assertions. Stubbed rather than removed: the guard runs INSIDE the
+// claim, and a test that skipped the claim would not be testing the real
+// path. `markAskAllowanceFailure` is recorded so the retraction case can
+// assert the claim is marked rather than silently released.
+const markAskAllowanceFailure = vi.fn(async () => {});
+
+vi.mock("./allowance", () => ({
+  claimAskAllowance: async () => ({
+    ok: true as const,
+    claim: { companyId: "co1", periodStart: new Date("2026-09-01T00:00:00.000Z"), questions: 1, pages: 0 },
+    left: { questions: 299, pages: 300 },
+  }),
+  markAskAllowanceFailure: (...args: unknown[]) => markAskAllowanceFailure(...(args as [])),
 }));
 
 vi.mock("@prova/db", async (importOriginal) => ({

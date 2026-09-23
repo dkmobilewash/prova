@@ -61,6 +61,121 @@ export function calculatePayAppLineItem(input: PayAppLineItemInput): PayAppLineI
 
 /** Decimal(12,2) round-tripped through JS numbers: tolerate half a cent so
  * a legitimate exactly-100% entry is not refused by floating-point dust. */
+/**
+ * "We're at 60% on framing" -> the dollars that belong in This period.
+ *
+ * THE INVERSE OF `percentOfScheduledValue` ABOVE, and it has to stay
+ * exactly that. A sub reports progress as a percentage; the G703 wants a
+ * dollar figure in column E. Somebody has been doing that conversion on a
+ * calculator, per line, every month — and a calculator does not know what
+ * was billed last period, which is the half that goes wrong.
+ *
+ * THE ROUND TRIP IS THE CONTRACT: feed this result back into
+ * `calculatePayAppLineItem` and `percentOfScheduledValue` comes back as
+ * the percentage that was asked for. If those two ever disagree, the form
+ * shows a different percent complete from the one the person said, on a
+ * document that goes to the GC. The test file pins the round trip rather
+ * than the arithmetic, because the arithmetic is only correct insofar as
+ * it inverts.
+ *
+ * COMPLETED TO DATE INCLUDES STORED MATERIALS, because that is what the
+ * form it feeds means by the column. `percentOfScheduledValue` is
+ * `(previousBilled + thisPeriodBilled + materialsStoredToDate) /
+ * scheduledValue` — G703 column G over column C — so hitting a stated 60%
+ * on a line carrying stored material bills LESS this period than a line
+ * without it. That is the G703's own definition and not a choice made
+ * here; it is called out because "we're 60% done" said out loud usually
+ * means work in place, and on a line with material in the yard those two
+ * readings differ by the value of the material.
+ *
+ * A LOWER PERCENT THAN ALREADY BILLED RETURNS A NEGATIVE, deliberately.
+ * That is the downward correction `payAppEntryError` documents at length —
+ * over-billed in March, corrected in a later application, the way column E
+ * carries it in practice. This function does not refuse it; the bound that
+ * matters (you cannot un-bill more than was ever billed) belongs to
+ * `payAppEntryError`, which is the single gate every entry already passes
+ * through. Duplicating it here would be two rules free to disagree.
+ *
+ * SO THIS REFUSES ONLY WHAT THAT GATE CANNOT SEE: a percentage that is not
+ * a percentage, and a line with no contract value to take a percentage of.
+ * Everything else is computed and handed on to be validated.
+ */
+export interface PercentCompleteInput {
+  /** 0-100, NOT a 0-1 ratio. `parseNumericInput` strips a trailing `%` and
+   * returns `60` for "60%", which is the form this takes. Passing `0.6`
+   * here is not refused — it is a valid "0.6% complete" — so the result
+   * carries `percentOfScheduledValue` back for the caller to SHOW. A
+   * figure alone can hide that mistake; "this takes the line to 0.6%"
+   * cannot. */
+  percentComplete: number;
+  scheduledValue: number;
+  previousBilled: number;
+  /** The running stored balance as of this application, i.e.
+   * `previousMaterialsStored + materialsStoredValue` — the same
+   * `materialsStoredToDate` `calculatePayAppLineItem` derives, passed in
+   * rather than re-derived so the two cannot drift. */
+  materialsStoredToDate: number;
+}
+
+export interface PercentCompleteResult {
+  /** What to put in This period. Rounded to the cent the Decimal(12, 2)
+   * column stores, BEFORE anything is derived from it — the same ordering
+   * `submitPayApplication` uses for the certificate total, and for the
+   * same reason: the stored figure and the derived figures must come from
+   * one number rather than from a float and its rounding. */
+  thisPeriodBilled: number;
+  /** Where the line lands once that is entered: completed and stored to
+   * date over scheduled value, as a 0-100 percentage. Equal to the
+   * requested percent to within a cent's worth of rounding, and the thing
+   * to put on screen. */
+  landsAtPercent: number;
+}
+
+export function thisPeriodForPercentComplete(
+  input: PercentCompleteInput,
+): { ok: true; result: PercentCompleteResult } | { ok: false; error: string } {
+  if (!Number.isFinite(input.percentComplete)) {
+    return { ok: false, error: "Percent complete has to be a number." };
+  }
+  if (input.percentComplete < 0) {
+    return {
+      ok: false,
+      error: `${input.percentComplete}% is not a percent complete. A line that has gone backwards is entered as a lower percent than last time, not as a negative one.`,
+    };
+  }
+  // Over 100 is refused HERE rather than left to payAppEntryError, because
+  // that gate reads dollars and would report the overage as a figure the
+  // person never typed. "110%" said out loud is a slip worth naming in the
+  // words it was said in.
+  if (input.percentComplete > 100) {
+    return {
+      ok: false,
+      error: `${input.percentComplete}% is more than the line is worth. Work beyond the contract value belongs on a change order, which becomes its own line once it is approved.`,
+    };
+  }
+  if (!(input.scheduledValue > 0)) {
+    return {
+      ok: false,
+      error:
+        "This line has no contract value, so there is no amount to take a percentage of. Bill it as a figure, or price the line first.",
+    };
+  }
+
+  const completedToDate = round2((input.percentComplete / 100) * input.scheduledValue);
+  const thisPeriodBilled = round2(completedToDate - input.previousBilled - input.materialsStoredToDate);
+  const landsAtPercent =
+    ((input.previousBilled + thisPeriodBilled + input.materialsStoredToDate) / input.scheduledValue) * 100;
+
+  return { ok: true, result: { thisPeriodBilled, landsAtPercent } };
+}
+
+/** Money, to the cent the column stores. `Math.round` on a scaled value
+ * rather than `toFixed` — `toFixed` returns a string and every caller here
+ * wants a number to keep computing with. */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 const CENT_TOLERANCE = 0.005;
 
 const usd = (value: number) => value.toLocaleString("en-US", { style: "currency", currency: "USD" });

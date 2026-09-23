@@ -1564,6 +1564,12 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // three in MUST_ASSERT and each is executed below as a principal without
   // it — a FIELD foreman must not be able to post a mod rate a GC will read.
   emr: () => import("./actions/emr"),
+  // The employer burden percentage. All three writes are reachable only
+  // from /settings, which demands MANAGE_COMPLIANCE, so each asserts it
+  // before the owner check and before any query — this one number multiplies
+  // the labor cost on every job, and a Server Action answers whoever posts
+  // to it whether or not the page rendered for them.
+  employerBurden: () => import("./actions/employerBurden"),
   rfis: () => import("./actions/rfis"),
   submittals: () => import("./actions/submittals"),
   // setWorkerCraft is the first action in this module to assert its

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@prova/db";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
@@ -33,6 +34,9 @@ import {
 } from "@/lib/wip";
 import { jobEarnedRevenue, jobOverUnderBilling } from "@/lib/company-financials";
 import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
+import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
+import { employerBurdenPercentOnDay, laborCostBasisLabel } from "@/lib/employer-burden";
+import { serverToday } from "@/lib/serverToday";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { ActionForm } from "@/components/ActionForm";
 import {
@@ -147,7 +151,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
 
   const isEstimateStage = job.status === "ESTIMATE";
 
-  const [catalogEntries, craftClassifications, phaseCodes] = await Promise.all([
+  const [catalogEntries, craftClassifications, phaseCodes, employerBurdenRates] = await Promise.all([
     prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
     prisma.craftClassification.findMany({
       where: { companyId: company.id },
@@ -162,6 +166,11 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
       select: { id: true, code: true, name: true, isActive: true },
       orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
     }),
+    // The employer's share on top of wage and fringes -- FICA, FUTA/SUTA,
+    // workers' comp -- as the owner recorded it on /settings. Empty for a
+    // company that has recorded none, which adds nothing and leaves every
+    // figure below exactly as it was.
+    loadEmployerBurdenRates(company.id),
   ]);
 
   const laborRateDate = laborRateDateFor(job, new Date());
@@ -204,7 +213,13 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
       budgetedUnitCost: item.budgetedUnitCost != null ? Number(item.budgetedUnitCost) : null,
       currentEstimatedUnitCost: item.currentEstimatedUnitCost != null ? Number(item.currentEstimatedUnitCost) : null,
       estimatedCostToComplete: item.estimatedCostToComplete != null ? Number(item.estimatedCostToComplete) : null,
-      ...lineItemCostToDate(item.id, item.costEntries, job.timeEntries, schedulesByCraft),
+      ...lineItemCostToDate(
+        item.id,
+        item.costEntries,
+        job.timeEntries,
+        schedulesByCraft,
+        employerBurdenRates,
+      ),
     }),
   }));
 
@@ -212,10 +227,13 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
   const jobWip = calculateJobWip(
     lineItemWip.map((l) => l.wip),
     billedToDate,
-    unassignedLaborCost(job.timeEntries, schedulesByCraft),
+    unassignedLaborCost(job.timeEntries, schedulesByCraft, employerBurdenRates),
   );
   const billingPosition = jobOverUnderBilling(jobWip);
   const earnedRevenue = jobEarnedRevenue(jobWip);
+  // Only for the sentence under the heading. Nothing computed above reads it
+  // -- the dollars use each TIME ENTRY's own day, not today's.
+  const burdenPercentToday = employerBurdenPercentOnDay(employerBurdenRates, serverToday());
 
   const addLineItemWithId = addLineItem.bind(null, job.id);
   const addLineItemFromCatalogWithId = addLineItemFromCatalog.bind(null, job.id);
@@ -316,7 +334,33 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
   return (
     <div>
       <section className="mb-10">
-        <h2 className="mb-3 text-lg font-semibold text-ink">Job costing &amp; WIP</h2>
+        <h2 className="mb-1 text-lg font-semibold text-ink">Job costing &amp; WIP</h2>
+        {/* WHAT THE LABOR IN THESE FIGURES IS MADE OF, SAID OUT LOUD AND
+            DRIVEN BY THE DATA. This screen used to describe logged hours as
+            "burdened", which to a contractor means fully loaded -- employer
+            FICA, FUTA/SUTA and workers' comp included -- while the
+            arithmetic was base wage and CBA fringes and nothing else. With
+            no EmployerBurdenRate recorded this now says "wage and fringes",
+            which is what it has always computed; record one on Settings and
+            the sentence changes with the number. */}
+        <p className="mb-3 text-xs text-ink-muted">
+          Cost-to-cost percentage of completion. Logged hours are costed at{" "}
+          {laborCostBasisLabel(burdenPercentToday)}
+          {burdenPercentToday === null ? (
+            <>
+              {" "}
+              — employer payroll taxes and workers&apos; comp are not in these figures. Record an
+              employer burden percentage on{" "}
+              <Link href="/settings" className="text-link hover:text-link-hover">
+                Settings
+              </Link>{" "}
+              to include them.
+            </>
+          ) : (
+            ", applied to the base wage and not to the fringes"
+          )}
+          .
+        </p>
 
         <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-line-card bg-surface p-4 sm:grid-cols-4">
           <div>

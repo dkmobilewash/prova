@@ -48,6 +48,44 @@ import { can, type Capability, type Principal } from "@/lib/permissions";
  * answer. */
 export type Citation = { label: string; href: string };
 
+/**
+ * One specific record the answer is about, and where to go and act on it.
+ *
+ * NOT a citation. A citation answers "where did this figure come from" and
+ * is a PAGE — `/alerts`, `/certifications`. An item link answers "take me
+ * to the one you just told me about" and is a ROW: the GC whose
+ * prequalification is due, the job whose lien deadline is running out.
+ * Diego, clicking the box on 2026-09-19: the answer named three things and
+ * left him to go and find each one by hand.
+ *
+ * TWO RULES, AND THEY ARE THE WHOLE SAFETY OF THIS FIELD.
+ *
+ * 1. THE HANDLER BUILDS THESE FROM ITS OWN DATA. The model never supplies
+ *    an href and never edits one. It cannot: `links` is not in `data`, so
+ *    it is not in what the model is shown, and nothing parses hrefs back
+ *    out of the model's prose. A link the model wrote would be a link it
+ *    could invent — a confident button to a record that does not exist,
+ *    which is worse than no button, and is exactly the failure this app
+ *    refuses everywhere else (it does not let the model do arithmetic
+ *    either).
+ *
+ * 2. THE ASKER MUST BE ABLE TO OPEN IT. A button is a stronger promise
+ *    than a citation: it says "go here and fix it". Handing somebody a
+ *    button to a page their capability refuses is a dead end with their
+ *    name on it. So a handler may only put a row here once it has already
+ *    filtered those rows for this person — which is why `needs_attention`
+ *    can: `visibleToPrincipal` has dropped every alert whose page the
+ *    asker could not open before the handler ever sees it.
+ */
+export type ItemLink = {
+  /** The row in the person's own words — an alert's title, a job's name.
+   * Taken from the record, never composed by the model. */
+  label: string;
+  href: string;
+  /** Optional one-liner under the label: which one, and why now. */
+  detail?: string;
+};
+
 /** What every handler returns. `data` is what the model narrates; it never
  * sees anything else. */
 export type ToolResult = {
@@ -65,6 +103,17 @@ export type ToolResult = {
    */
   summary?: Record<string, number>;
   citations: Citation[];
+  /**
+   * The specific records this answer is about, each with somewhere to go
+   * and do something. Optional: most tools answer a question that has no
+   * single row behind it ("what is our backlog"), and a button under such
+   * an answer would be inventing a destination.
+   *
+   * Read `ItemLink`'s own comment before adding these to a tool — both of
+   * its rules are load-bearing, and the second one (the asker must be able
+   * to open it) is not satisfied by default.
+   */
+  links?: ItemLink[];
   /**
    * Set when the question is reasonable but the data to answer it does not
    * exist. The model is instructed to say this plainly rather than reach
@@ -539,7 +588,7 @@ export const TOOLS: ToolDefinition[] = [
     // /prevailing-wage
     capability: "MANAGE_COMPLIANCE",
     description:
-      "The prevailing-wage determinations filed against each job, with the jurisdiction and whether the actual document is attached or linked. Answers 'do we have the determination for this job on file'. A determination row with NEITHER a file nor a source link is flagged: it is a determination in name only, and it cannot be produced in an audit. It does not know whether a job is public works, so it cannot tell you a determination is MISSING — only what has been filed.",
+      "The prevailing-wage determinations filed against each job, with the jurisdiction, whether the actual document is attached or linked, and each one's STANDING: in force on the job's bid-advertisement date, the wrong issue for that date, a predetermined increase now due past its expiration, or unchecked because the advertisement date or the document's issue date was never entered. Answers 'do we have the determination for this job on file' and 'is our determination still current'. The standing is derived from dates a person entered on the job's Compliance tab (the published DIR rule: the issue in force on the first advertisement for bids governs the job), never looked up, and no wage rate is known here. A determination row with NEITHER a file nor a source link is flagged: it is a determination in name only, and it cannot be produced in an audit. Whether a job is public works is only what somebody ENTERED (jobIsPublicWorks, null when nobody has), so it cannot tell you a determination is MISSING — only what has been filed and how it stands.",
     input_schema: jobFilter,
   },
   {

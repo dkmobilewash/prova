@@ -65,6 +65,7 @@ vi.mock("@prova/db", async (importOriginal) => ({
     fringeRateSchedule: {
       findMany: async () => [],
     },
+    employerBurdenRate: { findMany: async () => [] },
   },
 }));
 

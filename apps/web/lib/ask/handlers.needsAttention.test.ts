@@ -96,4 +96,35 @@ describe("needs_attention", () => {
     expect(silenced.unavailable).toMatch(/2 items are silenced/);
     expect(silenced.summary?.silencedByYou).toBe(2);
   });
+
+  /* The "go straight to" buttons. Diego, clicking the box: the answer named
+   * three things on one GC and left him to find each by hand. */
+  it("hands back a link per alert, straight to the record", async () => {
+    const result = await runTool({ companyId: "co-1", principal: OWNER, userId: "u-1" }, "needs_attention", {});
+    expect(result.links).toEqual([
+      { label: "RFI 4 unanswered on Riverside", href: "/rfis", detail: "Riverside" },
+      { label: "Backcharge 2 needs an answer", href: "/backcharges", detail: "Riverside" },
+    ]);
+  });
+
+  it("never offers a button to a page the asker cannot open", async () => {
+    // RETAINAGE_RELEASE is gated MANAGE_BILLING and points at /closeout,
+    // which is MANAGE_JOBS — a real mismatch on main, recorded in
+    // itemLinksCensus.test.ts's KNOWN_UNREACHABLE. ACCOUNTING holds the
+    // first and not the second, so the alert reaches them and the page
+    // refuses them.
+    //
+    // It must still be ANSWERED (they are the ones chasing the money) and
+    // must not be BUTTONED. A button is a promise that the door opens.
+    BY_COMPANY["co-4"] = [
+      alert({ key: "r1", kind: "RETAINAGE_RELEASE", title: "Retainage on Riverside is collectable", href: "/closeout", amount: 42000 }),
+      alert({ key: "r2", kind: "BACKCHARGE_RESPONSE", title: "Backcharge 2 needs an answer", href: "/backcharges" }),
+    ];
+    const accounting: Principal = { role: "MEMBER", jobFunction: "ACCOUNTING" };
+    const result = await runTool({ companyId: "co-4", principal: accounting, userId: "u-1" }, "needs_attention", {});
+
+    const rows = result.data as { what: string }[];
+    expect(rows.map((row) => row.what)).toContain("Retainage on Riverside is collectable");
+    expect(result.links?.map((link) => link.href)).toEqual(["/backcharges"]);
+  });
 });

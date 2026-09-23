@@ -96,6 +96,21 @@ const COMPUTED_HREFS: Record<string, { why: string; followTo?: string }> = {
     why: "the other arm of `openableFor` — a prefix with every dynamic segment removed, or /dashboard.",
     followTo: "apps/web/lib/ask/appHelp.ts",
   },
+  "alert.href": {
+    why:
+      "needs_attention's per-record \"go straight to\" links, and the same value /alerts links its own " +
+      "rows to. `Alert.href` is built in alerts.ts from literals and job/contact id templates — never " +
+      "composed from anything a person typed, and never supplied by the model (ItemLink in tools.ts " +
+      "says why: `links` is not in `data`, so the model cannot see or edit an href).",
+    followTo: "apps/web/lib/alerts.ts",
+  },
+  "renewal.href": {
+    why:
+      "surfaced by following alerts.ts above: the RENEWAL alert copies `renewal.href` rather than " +
+      "building one, so the real values are one file further out. Following it is the point — a census " +
+      "that stops at the first hop cannot see the file the href is actually written in.",
+    followTo: "apps/web/lib/renewals.ts",
+  },
   string: { why: "a type annotation (`href: string`), not a value." },
 };
 

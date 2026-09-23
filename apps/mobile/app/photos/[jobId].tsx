@@ -1,16 +1,16 @@
 import { useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Image, PixelRatio, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FlatList, Image, PixelRatio, StyleSheet, Text, View } from "react-native";
 import ViewShot, { type ViewShotRef } from "react-native-view-shot";
 import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
+import { EmptyState } from "@/components/EmptyState";
 import { Field } from "@/components/Field";
-import { List } from "@/components/List";
-import { RefusedBanner } from "@/components/RefusedBanner";
+import { JobContextChip } from "@/components/JobContextChip";
 import { Sheet } from "@/components/Sheet";
+import { SyncStatus } from "@/components/SyncStatus";
 import * as api from "@/lib/api";
 import { dayFromClockIn } from "@/lib/clock-session";
 import { uuid } from "@/lib/id";
@@ -30,13 +30,13 @@ import { JobSections } from "@/components/JobSections";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
 import { tokenOrNull } from "@/lib/clerk-token";
-import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
 import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
 import { useMe } from "@/lib/use-me";
-import { colors, typography } from "@/lib/theme";
+import { type Palette, radius, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import type { Media, MediaTag, PunchListItem } from "@/lib/types";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 import { useSync } from "@/lib/use-sync";
@@ -69,6 +69,8 @@ type Shot = {
 
 export default function PhotosScreen() {
   const { me } = useMe();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   // `punchListItemId` arrives when the punch list sent us here to
   // photograph a specific fix, so the attachment is already chosen by the
   // time the sheet opens — the prompt that offered it would be a lie if it
@@ -286,59 +288,90 @@ export default function PhotosScreen() {
   // an empty screen with no explanation.
   if (!holds(me, SCREEN_CAPABILITY["photos/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["photos/[jobId]"]} />;
 
+  const empty = emptyFor(offline, "the photos", {
+    title: "No photos yet",
+    description:
+      "Tap “Take photo”. Each one is stamped with the time and place it was taken, and goes up when there's signal.",
+  });
+
   return (
     <View style={styles.screen}>
       <JobSections jobId={jobId} active="photos" />
+      <View style={styles.chipWrap}>
+        <JobContextChip />
+      </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <OfflineNote state={offline} />
+      <SyncStatus state={offline} refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
       {busy ? <Text style={styles.busy}>{busy}</Text> : null}
-      <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
 
-      <List
+      {/* The gallery as tiles, two-up: a photo is an object, not a list
+          row, and a grid of them reads as the day's record at a glance.
+          Time and place share one line; tags and attachments share the
+          next — two facts to a line, never the old five-fact chain. */}
+      <FlatList
         data={[
           ...pending.map((p) => ({ kind: "pending" as const, key: p.clientOperationId, uri: p.uri, capturedAt: p.capturedAt })),
           ...media.map((m) => ({ kind: "saved" as const, key: m.id, media: m })),
         ]}
         keyExtractor={(item) => item.key}
+        numColumns={2}
+        columnWrapperStyle={styles.column}
+        contentContainerStyle={styles.grid}
         renderItem={({ item }) =>
           item.kind === "pending" ? (
-            <Card>
-              <Image source={{ uri: item.uri }} style={styles.photo} resizeMode="cover" />
-              <Text style={styles.syncing}>Syncing…</Text>
-              <Text style={styles.meta}>{item.capturedAt.slice(0, 10)}</Text>
-            </Card>
+            <View style={styles.tile}>
+              <Image source={{ uri: item.uri }} style={styles.tileImage} resizeMode="cover" />
+              <View style={styles.tileBody}>
+                <Text style={styles.syncing}>Syncing…</Text>
+                <Text style={styles.meta}>{item.capturedAt.slice(0, 10)}</Text>
+              </View>
+            </View>
           ) : (
-            <Card>
-              <Image source={{ uri: item.media.blobUrl }} style={styles.photo} resizeMode="cover" />
-              {item.media.caption ? <Text style={styles.caption}>{item.media.caption}</Text> : null}
-              <Text style={styles.meta}>{formatStampMoment(new Date(item.media.capturedAt))}</Text>
-              <Text style={styles.meta}>
-                {item.media.capturedLatitude !== null && item.media.capturedLongitude !== null
-                  ? [
-                      formatCoordinate({
-                        latitude: item.media.capturedLatitude,
-                        longitude: item.media.capturedLongitude,
-                        accuracyMeters: item.media.capturedAccuracyMeters,
-                      }),
-                      formatAccuracy(item.media.capturedAccuracyMeters),
+            <View style={styles.tile}>
+              <Image source={{ uri: item.media.blobUrl }} style={styles.tileImage} resizeMode="cover" />
+              <View style={styles.tileBody}>
+                {item.media.caption ? (
+                  <Text style={styles.caption} numberOfLines={1}>
+                    {item.media.caption}
+                  </Text>
+                ) : null}
+                <Text style={styles.meta} numberOfLines={1}>
+                  {[
+                    formatStampMoment(new Date(item.media.capturedAt)),
+                    item.media.capturedLatitude !== null && item.media.capturedLongitude !== null
+                      ? formatCoordinate({
+                          latitude: item.media.capturedLatitude,
+                          longitude: item.media.capturedLongitude,
+                          accuracyMeters: item.media.capturedAccuracyMeters,
+                        })
+                      : "No location recorded",
+                    item.media.capturedLatitude !== null ? formatAccuracy(item.media.capturedAccuracyMeters) : null,
+                  ]
+                    .filter(Boolean)
+                    .join("  ")}
+                </Text>
+                {item.media.tags && item.media.tags.length > 0 ? (
+                  <Text style={styles.meta} numberOfLines={1}>
+                    {item.media.tags.map((t) => t.name).join(" · ")}
+                  </Text>
+                ) : null}
+                {item.media.dailyFieldReportId || item.media.punchListItemId ? (
+                  <Text style={styles.attached} numberOfLines={1}>
+                    {[
+                      item.media.dailyFieldReportId ? "On the day's report" : null,
+                      item.media.punchListItemId ? "On a punch list item" : null,
                     ]
                       .filter(Boolean)
-                      .join("  ")
-                  : "No location recorded"}
-              </Text>
-              {item.media.tags && item.media.tags.length > 0 ? (
-                <Text style={styles.meta}>{item.media.tags.map((t) => t.name).join(" · ")}</Text>
-              ) : null}
-              {item.media.dailyFieldReportId ? <Text style={styles.attached}>On the day&rsquo;s report</Text> : null}
-              {item.media.punchListItemId ? <Text style={styles.attached}>On a punch list item</Text> : null}
-            </Card>
+                      .join(" · ")}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
           )
         }
-        {...emptyFor(offline, "the photos", {
-          title: "No photos yet",
-          description:
-            "Tap “Take photo”. Each one is stamped with the time and place it was taken, and goes up when there's signal.",
-        })}
+        ListEmptyComponent={
+          <EmptyState icon="photos" title={empty.emptyTitle} description={empty.emptyDescription} />
+        }
       />
 
       <View style={[styles.footer, styles.footerRow]}>
@@ -441,31 +474,56 @@ export default function PhotosScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
-  busy: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  photo: { width: "100%", height: 200, borderRadius: 8, backgroundColor: colors.lineCard },
-  preview: { width: "100%", height: 220, borderRadius: 8, backgroundColor: colors.lineCard },
-  caption: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 6 },
-  meta: { color: colors.inkMuted, fontSize: typography.size.sm, marginTop: 2 },
-  warn: { color: colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 2 },
-  attached: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold, marginTop: 2 },
-  syncing: { color: colors.inkMuted, fontSize: typography.size.sm, fontStyle: "italic", marginTop: 6 },
-  hint: { color: colors.inkMuted, fontSize: typography.size.sm },
-  label: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
-  footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-  footerMain: { flex: 1 },
-  offscreen: { position: "absolute", left: -10000, top: 0 },
-  stamp: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.55)",
-  },
-  stampText: { color: "#ffffff" },
-  stampTitle: { fontWeight: "700" },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    chipWrap: { padding: space.md, paddingBottom: 0 },
+    error: { color: p.colors.tagRoseInk, padding: space.md, paddingBottom: 0, fontSize: typography.size.sm },
+    busy: {
+      color: p.colors.link,
+      padding: space.md,
+      paddingBottom: 0,
+      fontSize: typography.size.sm,
+      fontWeight: typography.weight.semibold,
+    },
+    column: { gap: space.sm },
+    grid: { padding: space.md, gap: space.sm },
+    tile: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: p.colors.lineCard,
+      borderRadius: radius.card,
+      backgroundColor: p.colors.surface,
+      overflow: "hidden",
+    },
+    tileImage: { width: "100%", aspectRatio: 1, backgroundColor: p.colors.lineCard },
+    tileBody: { padding: 10, gap: space.one },
+    preview: { width: "100%", height: 220, borderRadius: radius.small, backgroundColor: p.colors.lineCard },
+    caption: { color: p.colors.inkBody, fontSize: typography.size.sm, marginTop: 2 },
+    meta: { color: p.colors.inkMuted, fontSize: typography.size.xs, marginTop: 2 },
+    warn: { color: p.colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 2 },
+    attached: {
+      color: p.colors.link,
+      fontSize: typography.size.xs,
+      fontWeight: typography.weight.semibold,
+      marginTop: 2,
+    },
+    syncing: { color: p.colors.inkMuted, fontSize: typography.size.sm, fontStyle: "italic", marginTop: 2 },
+    hint: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    label: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
+    footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+    footerMain: { flex: 1 },
+    offscreen: { position: "absolute", left: -10000, top: 0 },
+    stamp: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: "rgba(0,0,0,0.55)",
+    },
+    stampText: { color: "#ffffff" },
+    stampTitle: { fontWeight: "700" },
+  });
+}

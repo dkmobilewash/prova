@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { calculatePayAppLineItem, payAppEntryError, type PayAppLineItemInput } from "./pay-application";
+import {
+  calculatePayAppLineItem,
+  payAppEntryError,
+  thisPeriodForPercentComplete,
+  type PayAppLineItemInput,
+} from "./pay-application";
 
 /**
  * #95 — stored materials could be billed twice, and the GC got invoiced
@@ -399,5 +404,172 @@ describe("submitPayApplication keeps negative rows", () => {
     // deletes the condition while that file's mocks still satisfy it.
     expect(source).toContain('formData.get("confirmCredit")');
     expect(source).toMatch(/Number\(amountValue\)\s*<\s*0/);
+  });
+});
+
+/**
+ * Percent complete -> This period.
+ *
+ * The prompt this came from: "Do the pay app for Riverside. We're at 60% on
+ * framing, 35% on board, 10% on tape, nothing on ACT yet." Every figure a
+ * sub says about progress is a percentage; every figure the G703 wants is
+ * dollars. Somebody converts, per line, every month, on a calculator that
+ * does not know what was billed last period.
+ *
+ * THESE TESTS PIN THE ROUND TRIP, NOT THE ARITHMETIC. Asserting that 60% of
+ * $200,000 is $120,000 re-states the expression; it would pass just as
+ * happily if the result disagreed with the form it feeds. What has to hold
+ * is that entering this figure makes `percentOfScheduledValue` — the G703's
+ * own column G — read back the percent that was asked for. So each case
+ * computes a figure, feeds it through `calculatePayAppLineItem`, and checks
+ * the percent it lands at.
+ */
+describe("percent complete converts to this period's dollars", () => {
+  const line = (over: Partial<PayAppLineItemInput> = {}): PayAppLineItemInput => ({
+    lineItemId: "l1",
+    description: "Framing",
+    scheduledValue: 200_000,
+    previousBilled: 0,
+    thisPeriodBilled: 0,
+    previousMaterialsStored: 0,
+    materialsStoredValue: 0,
+    ...over,
+  });
+
+  /** The contract, run for real: convert, enter, read the percent back. */
+  function landsAt(percent: number, over: Partial<PayAppLineItemInput> = {}) {
+    const base = line(over);
+    const materialsStoredToDate = base.previousMaterialsStored + base.materialsStoredValue;
+    const converted = thisPeriodForPercentComplete({
+      percentComplete: percent,
+      scheduledValue: base.scheduledValue,
+      previousBilled: base.previousBilled,
+      materialsStoredToDate,
+    });
+    if (!converted.ok) throw new Error(`expected a figure, got: ${converted.error}`);
+    const entered = calculatePayAppLineItem({ ...base, thisPeriodBilled: converted.result.thisPeriodBilled });
+    return { ...converted.result, entered };
+  }
+
+  it("bills the percentage on a line nothing has been billed against", () => {
+    const { thisPeriodBilled, entered } = landsAt(60);
+    expect(thisPeriodBilled).toBe(120_000);
+    expect(entered.percentOfScheduledValue).toBeCloseTo(0.6, 10);
+  });
+
+  it("bills only the DIFFERENCE when the line was billed last period", () => {
+    // The half a calculator gets wrong: 60% of the line is $120,000, but
+    // $75,000 of it went out in September, so this period is $45,000 — not
+    // $120,000 again, which is how a line reaches 90% complete on a job
+    // that is 60% built.
+    const { thisPeriodBilled, entered } = landsAt(60, { previousBilled: 75_000 });
+    expect(thisPeriodBilled).toBe(45_000);
+    expect(entered.percentOfScheduledValue).toBeCloseTo(0.6, 10);
+  });
+
+  it("counts stored materials toward the percent, the way column G does", () => {
+    // $40,000 sitting in the yard on a $200,000 line is already 20% of the
+    // line by the form's own definition, so reaching 60% bills $80,000 of
+    // work rather than $120,000. Stated out loud this is the surprising
+    // one, which is why it is a test and a paragraph in the source.
+    const { thisPeriodBilled, entered } = landsAt(60, { previousMaterialsStored: 40_000 });
+    expect(thisPeriodBilled).toBe(80_000);
+    expect(entered.percentOfScheduledValue).toBeCloseTo(0.6, 10);
+  });
+
+  it("returns a negative for a percent BELOW what was already billed", () => {
+    // A downward correction, which payAppEntryError documents as the only
+    // route back on an over-billed line: 70% went out, the real figure is
+    // 60%, so this period carries -$20,000 and column G comes down.
+    const { thisPeriodBilled, entered } = landsAt(60, { previousBilled: 140_000 });
+    expect(thisPeriodBilled).toBe(-20_000);
+    expect(entered.percentOfScheduledValue).toBeCloseTo(0.6, 10);
+    // And it is still a legal entry — the bound belongs to the gate, not here.
+    expect(payAppEntryError({ ...line({ previousBilled: 140_000 }), thisPeriodBilled })).toBeNull();
+  });
+
+  it("takes a line to exactly 100% without drifting a cent over", () => {
+    // A third of an odd number, three times: the case where rounding to the
+    // cent either lands the line on its contract value or leaves it at
+    // 100.0001% and trips the over-billing gate on the final application.
+    const scheduledValue = 100_000 / 3;
+    const first = landsAt(33.33, { scheduledValue });
+    const second = landsAt(66.66, { scheduledValue, previousBilled: first.thisPeriodBilled });
+    const final = landsAt(100, {
+      scheduledValue,
+      previousBilled: first.thisPeriodBilled + second.thisPeriodBilled,
+    });
+    const billed = first.thisPeriodBilled + second.thisPeriodBilled + final.thisPeriodBilled;
+    expect(billed).toBeCloseTo(scheduledValue, 2);
+    expect(final.entered.percentOfScheduledValue).toBeCloseTo(1, 6);
+    expect(
+      payAppEntryError({
+        ...line({ scheduledValue, previousBilled: first.thisPeriodBilled + second.thisPeriodBilled }),
+        thisPeriodBilled: final.thisPeriodBilled,
+      }),
+      "the last application on a line must not trip the over-billing gate",
+    ).toBeNull();
+  });
+
+  it("bills nothing at 0%, rather than treating it as nothing said", () => {
+    // "nothing on ACT yet" is a real statement about a line, and it must
+    // come back as a figure of zero rather than an error — the caller
+    // decides whether a zero row is worth submitting.
+    const converted = thisPeriodForPercentComplete({
+      percentComplete: 0,
+      scheduledValue: 50_000,
+      previousBilled: 0,
+      materialsStoredToDate: 0,
+    });
+    expect(converted.ok && converted.result.thisPeriodBilled).toBe(0);
+  });
+
+  it("refuses a percent over 100 in the words it was said in", () => {
+    const converted = thisPeriodForPercentComplete({
+      percentComplete: 110,
+      scheduledValue: 200_000,
+      previousBilled: 0,
+      materialsStoredToDate: 0,
+    });
+    expect(converted.ok).toBe(false);
+    expect(!converted.ok && converted.error).toMatch(/110% is more than the line is worth/);
+    expect(!converted.ok && converted.error).toMatch(/change order/);
+  });
+
+  it("refuses a line with no contract value rather than dividing by zero", () => {
+    const converted = thisPeriodForPercentComplete({
+      percentComplete: 60,
+      scheduledValue: 0,
+      previousBilled: 0,
+      materialsStoredToDate: 0,
+    });
+    expect(converted.ok).toBe(false);
+    expect(!converted.ok && converted.error).toMatch(/no contract value/);
+  });
+
+  it("refuses a negative percent, and says how to go backwards instead", () => {
+    const converted = thisPeriodForPercentComplete({
+      percentComplete: -5,
+      scheduledValue: 200_000,
+      previousBilled: 0,
+      materialsStoredToDate: 0,
+    });
+    expect(converted.ok).toBe(false);
+    expect(!converted.ok && converted.error).toMatch(/lower percent than last time/);
+  });
+
+  it("hands back where the line LANDS, so a 0.6-for-60 slip is visible", () => {
+    // The one mistake the type cannot prevent: this takes 0-100, and a 0-1
+    // ratio passed into it is a valid, tiny, plausible-looking percentage.
+    // $1,200 on a $200,000 line is not obviously wrong; "this takes the
+    // line to 0.6%" is. That is why the result carries it.
+    const converted = thisPeriodForPercentComplete({
+      percentComplete: 0.6,
+      scheduledValue: 200_000,
+      previousBilled: 0,
+      materialsStoredToDate: 0,
+    });
+    expect(converted.ok && converted.result.thisPeriodBilled).toBe(1_200);
+    expect(converted.ok && converted.result.landsAtPercent).toBeCloseTo(0.6, 10);
   });
 });

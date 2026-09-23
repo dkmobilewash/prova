@@ -1,22 +1,26 @@
 import { useAuth } from "@clerk/expo";
 import { useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
+import { DateField } from "@/components/DateField";
 import { Field } from "@/components/Field";
+import { JobContextChip } from "@/components/JobContextChip";
 import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
+import { SyncStatus } from "@/components/SyncStatus";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { emptyFor } from "@/lib/empty-state";
-import { OfflineNote } from "@/components/OfflineNote";
 import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
 import { useMe } from "@/lib/use-me";
-import { colors, typography } from "@/lib/theme";
+import { localToday } from "@/lib/local-today";
+import { type Palette, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
 import { enqueue } from "@/lib/sync-queue";
@@ -25,6 +29,8 @@ import type { MaterialOrder, Vendor } from "@/lib/types";
 
 export default function MaterialsScreen() {
   const { me } = useMe();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [orders, setOrders] = useState<MaterialOrder[]>([]);
@@ -34,7 +40,7 @@ export default function MaterialsScreen() {
 
   const [showForm, setShowForm] = useState(false);
   const [description, setDescription] = useState("");
-  const [orderedOn, setOrderedOn] = useState("");
+  const [orderedOn, setOrderedOn] = useState(localToday());
   const [promisedFor, setPromisedFor] = useState("");
   const [vendorId, setVendorId] = useState<string | null>(null);
 
@@ -67,12 +73,12 @@ export default function MaterialsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
-  const { pending, sync } = useSync(load);
+  const { pending, sync, refused, dismissRefused, retrySetAside } = useSync(load);
 
   const submit = async () => {
     if (!jobId || !description || !orderedOn || !vendorId) return;
     setDescription("");
-    setOrderedOn("");
+    setOrderedOn(localToday());
     setPromisedFor("");
     setShowForm(false);
     await enqueue({
@@ -95,9 +101,17 @@ export default function MaterialsScreen() {
 
   return (
     <View style={styles.screen}>
-      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      <View style={styles.chipWrap}>
+        <JobContextChip />
+      </View>
+      <SyncStatus
+        pending={pending}
+        state={offline}
+        refused={refused}
+        onDismiss={dismissRefused}
+        onRetry={retrySetAside}
+      />
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <OfflineNote state={offline} />
       <List
         data={orders}
         keyExtractor={(item) => item.id}
@@ -134,8 +148,8 @@ export default function MaterialsScreen() {
         onPrimary={submit}
       >
         <Field label="What was ordered" placeholder="e.g. 2x4 lumber" value={description} onChangeText={setDescription} />
-        <Field label="Date ordered" placeholder="YYYY-MM-DD" value={orderedOn} onChangeText={setOrderedOn} />
-        <Field label="Promised for" placeholder="YYYY-MM-DD (optional)" value={promisedFor} onChangeText={setPromisedFor} />
+        <DateField label="Date ordered" value={orderedOn} onChange={setOrderedOn} max={localToday()} />
+        <DateField label="Promised for" value={promisedFor} onChange={setPromisedFor} max={localToday()} allowFuture />
         <Text style={styles.vendorLabel}>Vendor</Text>
         <View style={styles.chips}>
           {vendors.map((v) => (
@@ -147,16 +161,18 @@ export default function MaterialsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
-  orderHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  number: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.bold },
-  vendor: { color: colors.inkMuted, fontSize: typography.size.sm },
-  description: { color: colors.ink, fontSize: typography.size.md, marginTop: 4 },
-  meta: { color: colors.inkBody, fontSize: typography.size.sm, marginTop: 4 },
-  vendorLabel: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    chipWrap: { padding: space.md, paddingBottom: 0 },
+    error: { color: p.colors.tagRoseInk, padding: space.md, paddingBottom: 0, fontSize: typography.size.sm },
+    orderHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    number: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.bold },
+    vendor: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    description: { color: p.colors.ink, fontSize: typography.size.md, marginTop: 4 },
+    meta: { color: p.colors.inkBody, fontSize: typography.size.sm, marginTop: 4 },
+    vendorLabel: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
+  });
+}

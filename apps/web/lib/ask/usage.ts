@@ -24,6 +24,18 @@ import type { AskUsageTotals } from "@prova/integrations";
  * thirty. Sixty an hour per person is far above either and far below what
  * a runaway agent produces; five hundred a day per company bounds the
  * bill at roughly the cost of a lunch. Both are one constant to retune.
+ *
+ * THESE TWO ARE A COURTESY, AND THEY ARE NOT THE PAID ALLOWANCE. The
+ * monthly cap a customer has actually bought — questions AND document
+ * pages, company-scoped, a hard stop — lives in `lib/ask/allowance.ts`,
+ * on its own table, and it FAILS CLOSED where these fail open. The split
+ * is deliberate rather than an inconsistency waiting to be tidied:
+ * answering unbounded when THIS check breaks costs us a slightly larger
+ * model bill, which #257 proved is the lesser fault; answering unbounded
+ * when the PAID cap breaks is an unmetered spend surface on something a
+ * customer pays a fixed price for. Anyone changing the fail-open below
+ * should read that file's header first, and anyone tempted to merge the
+ * two should read it twice.
  */
 export const ASK_LIMITS = {
   /** Questions one person may send the model in a rolling hour. */

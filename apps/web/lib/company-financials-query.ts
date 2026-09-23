@@ -5,6 +5,7 @@ import { loadRetainageHeld } from "./retainage-query";
 import { calculateCompanyFinancials, type CompanyFinancials } from "./company-financials";
 import { lineItemCostToDate, unassignedLaborCost } from "./labor-job-cost";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "./fringe-schedules-query";
+import { loadEmployerBurdenRates } from "./employer-burden-query";
 import { groupRowsBy, rowsFor } from "./group-rows";
 
 /**
@@ -94,7 +95,8 @@ export const loadActiveJobCostRows = cache(readActiveJobCostRows);
  * already dropped it.
  */
 export async function loadCompanyFinancials(companyId: string): Promise<CompanyFinancials> {
-  const [jobs, paymentTotal, invoiceTotal, retainageHeld, fringeSchedulesByCraft] = await Promise.all([
+  const [jobs, paymentTotal, invoiceTotal, retainageHeld, fringeSchedulesByCraft, employerBurdenRates] =
+    await Promise.all([
     loadActiveJobCostRows(companyId),
     prisma.payment.aggregate({
       where: { invoice: { job: { companyId } } },
@@ -106,6 +108,7 @@ export async function loadCompanyFinancials(companyId: string): Promise<CompanyF
     }),
     loadRetainageHeld(companyId),
     loadFringeSchedulesByCraft(companyId),
+    loadEmployerBurdenRates(companyId),
   ]);
 
   const wipByJob = jobs.map((job) => {
@@ -118,14 +121,20 @@ export async function loadCompanyFinancials(companyId: string): Promise<CompanyF
           line.currentEstimatedUnitCost === null ? null : Number(line.currentEstimatedUnitCost),
         estimatedCostToComplete:
           line.estimatedCostToComplete === null ? null : Number(line.estimatedCostToComplete),
-        ...lineItemCostToDate(line.id, line.costEntries, job.timeEntries, fringeSchedulesByCraft),
+        ...lineItemCostToDate(
+          line.id,
+          line.costEntries,
+          job.timeEntries,
+          fringeSchedulesByCraft,
+          employerBurdenRates,
+        ),
       }),
     );
     const billedToDate = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
     return calculateJobWip(
       lineItems,
       billedToDate,
-      unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft),
+      unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft, employerBurdenRates),
     );
   });
 
