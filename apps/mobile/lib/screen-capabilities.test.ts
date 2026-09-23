@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SCREEN_CAPABILITY, SCREEN_NOUN, SCREEN_ROUTE, type GuardedScreen } from "./screen-capabilities";
@@ -60,17 +60,25 @@ describe("the phone's role shell against the server's own guards", () => {
     }
   });
 
-  it("guards the two tabs that make field records", () => {
-    // Create and Camera write field records and have no jobId, so they are
-    // not in the table above — but they are the two tabs an estimator used
-    // to be handed, every option on them 403ing.
-    for (const tab of ["create", "camera"]) {
-      const source = readFileSync(join(__dirname, "..", "app", "(tabs)", `${tab}.tsx`), "utf8");
-      expect(source, `the ${tab} tab does not check MANAGE_FIELD`).toContain('holds(me, "MANAGE_FIELD")');
-      expect(source).toContain("NotYourJobFunction");
-    }
+  it("gates the capture surface that makes field records", () => {
+    // Create and Camera used to be tabs; both wrote field records and had
+    // no jobId, so they sat outside the table above — and were the two tabs
+    // an estimator used to be handed, every option on them 403ing. They are
+    // one floating button over one sheet now, and the gate moved with them:
+    // the button is the only way to open the sheet, and it renders only for
+    // MANAGE_FIELD.
     const layout = readFileSync(join(__dirname, "..", "app", "(tabs)", "_layout.tsx"), "utf8");
-    // …and are taken off the bar rather than sitting there as a trap.
-    expect(layout).toContain("href: field ? undefined : null");
+    expect(layout, "the capture button is not gated by MANAGE_FIELD").toContain('holds(me, "MANAGE_FIELD")');
+    expect(layout, "the capture button renders for people who must not have it").toContain(
+      "field ? <FloatingCaptureButton",
+    );
+    const sheet = readFileSync(join(__dirname, "..", "components", "CaptureSheet.tsx"), "utf8");
+    expect(sheet.length, "the capture sheet is missing").toBeGreaterThan(100);
+    expect(sheet, "the capture sheet lost the pick-a-job refusal").toContain("Pick a job first");
+    // …and the old tab files are GONE, not just off the bar — a route that
+    // still exists is a route a stale deep link can reach unguarded.
+    for (const tab of ["create", "camera"]) {
+      expect(existsSync(join(__dirname, "..", "app", "(tabs)", `${tab}.tsx`)), `${tab} tab still exists`).toBe(false);
+    }
   });
 });

@@ -654,6 +654,8 @@ export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
   AlertAcknowledgement: "notification record — who dismissed or snoozed an alert",
   DeviceToken: "notification record — a phone's push address, and a credential in its own right",
   AskUsage: "AI usage metering",
+  AskAllowancePeriod:
+    "AI usage metering — how much of this month's included allowance has been claimed. Our bookkeeping about what we owe them, not a record of their work, and it is meaningless outside this app.",
   AskProposal: "AI usage — a change the assistant proposed and waited on; anything confirmed is in the real tables",
   LicenseClassificationReference: "shared reference table of licence classifications, the same for every company",
 };

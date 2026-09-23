@@ -9,6 +9,7 @@ import {
 } from "@/lib/prevailing-wage";
 import { weekStart } from "@/components/fieldReportWeeks";
 import { timeEntryWorkerName, timeEntryWorkerId } from "@/lib/worker-name";
+import type { DeterminationFacts, DeterminationMarker, JobBidFacts } from "@/lib/determination-standing";
 
 /**
  * Fetching and normalising for the prevailing wage page.
@@ -72,6 +73,11 @@ export type DeterminationRow = {
   jurisdiction: string;
   ruleSetId: string | null;
   ruleSetName: string | null;
+  /** The entered facts the standing line is derived from — carried raw so
+   * the page decides with `determinationStanding` against the viewer's
+   * day, and this module keeps to fetching. */
+  facts: DeterminationFacts;
+  job: JobBidFacts;
 };
 
 export async function loadDeterminations(companyId: string): Promise<DeterminationRow[]> {
@@ -79,7 +85,7 @@ export async function loadDeterminations(companyId: string): Promise<Determinati
     where: { job: { companyId } },
     orderBy: { createdAt: "desc" },
     include: {
-      job: { select: { id: true, name: true } },
+      job: { select: { id: true, name: true, bidAdvertisedOn: true } },
       ruleSet: { select: { id: true, name: true } },
     },
   });
@@ -91,6 +97,12 @@ export async function loadDeterminations(companyId: string): Promise<Determinati
     jurisdiction: d.jurisdiction,
     ruleSetId: d.ruleSet?.id ?? null,
     ruleSetName: d.ruleSet?.name ?? null,
+    facts: {
+      issuedOn: d.issuedOn,
+      expiresOn: d.expiresOn,
+      expirationMarker: d.expirationMarker as DeterminationMarker | null,
+    },
+    job: { bidAdvertisedOn: d.job.bidAdvertisedOn },
   }));
 }
 

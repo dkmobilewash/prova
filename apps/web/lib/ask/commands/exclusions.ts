@@ -108,6 +108,14 @@ export const notYetRegistered: Exclusion[] = [
   // globalSearch. Never a command.
   { action: "search.*", reason: "Its own box and shortcut, not a fact for Ask to narrate; app_help already answers 'how do I find X'. Never a command." },
   { action: "prevailingWage.*", reason: "Rule sets are compliance configuration edited on their own page; needs a File for determinations." },
+  // The dates a prevailing-wage determination's standing is derived from
+  // (lib/determination-standing.ts): the job's bid-advertisement date and
+  // the document's issue/expiration dates and asterisk. Every one is read
+  // off a document by a person, and a wrong one flips "in force" to "wrong
+  // issue" on a GC-facing job — the exact date a model could plausibly
+  // mis-supply on a confirm card. Reading the standing is the
+  // `wage_determinations` tool; entering the dates is the Compliance tab.
+  { action: "complianceFacts.*", reason: "Bid-advertisement, issue and expiration dates are read off documents by a person on the job's Compliance tab; a plausible wrong date from a card flips a determination's standing. Page only." },
   { action: "apprenticeship.*", reason: "Enrollment and period sign-off are evidence with sign-off dates; page only for now." },
   { action: "unionCompliance.*", reason: "Craft, local and rate configuration; several writes are global reference data. Never a command." },
   // Phase codes. A company's cost-coding vocabulary is the thing every

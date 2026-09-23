@@ -1,6 +1,8 @@
-import type { ReactNode } from "react";
-import { Pressable, StyleSheet, Text } from "react-native";
-import { colors, typography } from "@/lib/theme";
+import { useMemo, type ReactNode } from "react";
+import { StyleSheet, Text } from "react-native";
+import { PressableScale } from "@/components/PressableScale";
+import { type Palette, radius, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 
 type Variant = "primary" | "secondary" | "ghost";
 
@@ -8,7 +10,8 @@ type Variant = "primary" | "secondary" | "ghost";
  * Primary = the brand yellow fill with a DARK label (yellow is a fill, never
  * text on a light canvas). Secondary = hairline on surface. Ghost = a link.
  * Min height 52pt, comfortably above the 44pt floor, and the label is 17pt
- * semibold — a gloved thumb hits it without aiming.
+ * semibold — a gloved thumb hits it without aiming. Pressed = a 3% spring
+ * scale (PressableScale), not the old opacity wash.
  */
 export function Button({
   variant = "primary",
@@ -23,53 +26,60 @@ export function Button({
   fullWidth?: boolean;
   children: ReactNode;
 }) {
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
+
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       disabled={disabled}
-      style={({ pressed }) => [
+      style={[
         styles.base,
-        variantStyles[variant],
+        variantStyles(palette)[variant],
         fullWidth && styles.fullWidth,
         disabled && styles.disabled,
-        pressed && styles.pressed,
       ]}
     >
-      <Text style={[styles.label, labelStyles[variant]]}>{children}</Text>
-    </Pressable>
+      <Text style={[styles.label, labelStyles(palette)[variant]]}>{children}</Text>
+    </PressableScale>
   );
 }
 
-const styles = StyleSheet.create({
-  base: {
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 12,
-    minHeight: 52,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  fullWidth: { alignSelf: "stretch" },
-  disabled: { opacity: 0.4 },
-  pressed: { opacity: 0.85 },
-  label: {
-    fontSize: typography.size.md,
-    fontWeight: typography.weight.semibold,
-  },
-});
+function variantStyles(p: Palette): Record<Variant, object> {
+  return {
+    primary: { backgroundColor: p.colors.brand },
+    secondary: {
+      borderWidth: 1,
+      borderColor: p.colors.lineCard,
+      backgroundColor: p.colors.surface,
+    },
+    ghost: {},
+  };
+}
 
-const variantStyles: Record<Variant, object> = {
-  primary: { backgroundColor: colors.brand },
-  secondary: {
-    borderWidth: 1,
-    borderColor: colors.lineCard,
-    backgroundColor: colors.surface,
-  },
-  ghost: {},
-};
+function labelStyles(p: Palette): Record<Variant, object> {
+  return {
+    primary: { color: p.colors.brandInk },
+    secondary: { color: p.colors.ink },
+    ghost: { color: p.colors.link },
+  };
+}
 
-const labelStyles: Record<Variant, object> = {
-  primary: { color: colors.brandInk },
-  secondary: { color: colors.ink },
-  ghost: { color: colors.link },
-};
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    base: {
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: radius.card,
+      minHeight: 52,
+      paddingHorizontal: space.lg,
+      paddingVertical: space.sm,
+    },
+    fullWidth: { alignSelf: "stretch" },
+    disabled: { opacity: 0.4 },
+    label: {
+      fontSize: typography.size.md,
+      fontWeight: typography.weight.semibold,
+    },
+  });
+}

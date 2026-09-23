@@ -1,27 +1,28 @@
 import { useLocalSearchParams } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
 import { DateField } from "@/components/DateField";
 import { Field } from "@/components/Field";
+import { JobContextChip } from "@/components/JobContextChip";
 import { List } from "@/components/List";
-import { RefusedBanner } from "@/components/RefusedBanner";
 import { Sheet } from "@/components/Sheet";
+import { SyncStatus } from "@/components/SyncStatus";
 import * as api from "@/lib/api";
 import { tokenOrNull } from "@/lib/clerk-token";
 import { dayFromClockIn } from "@/lib/clock-session";
 import { uuid } from "@/lib/id";
 import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
 import { JobSections } from "@/components/JobSections";
-import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
 import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
 import { useMe } from "@/lib/use-me";
-import { colors, typography } from "@/lib/theme";
+import { type Palette, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import type { DelayRow, FieldReportRow } from "@/lib/types";
 import { useFieldReports } from "@/lib/use-field-reports";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
@@ -72,6 +73,8 @@ function daysOf(reports: FieldReportRow[], delays: DelayRow[]): Day[] {
 
 export default function ReportsScreen() {
   const { me } = useMe();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const getToken = useStableGetToken();
   const { reports, pending, error, offline, create, refresh } = useFieldReports(jobId ?? "");
@@ -221,10 +224,17 @@ export default function ReportsScreen() {
   return (
     <View style={styles.screen}>
       <JobSections jobId={jobId} active="reports" />
-      {pending > 0 ? <Text style={styles.pending}>Pending sync: {pending}</Text> : null}
+      <View style={styles.chipWrap}>
+        <JobContextChip />
+      </View>
+      <SyncStatus
+        pending={pending}
+        state={offline}
+        refused={refused}
+        onDismiss={dismissRefused}
+        onRetry={retrySetAside}
+      />
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <OfflineNote state={offline} />
-      <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
 
       <List
         data={daysOf(reports, [...delays, ...optimisticDelays])}
@@ -391,26 +401,28 @@ export default function ReportsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
-  head: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
-  date: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  locked: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  work: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 2 },
-  meta: { color: colors.inkMuted, fontSize: typography.size.sm, marginTop: 2 },
-  delay: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
-  syncing: { color: colors.inkMuted, fontSize: typography.size.sm, fontStyle: "italic" },
-  delayTitle: { color: colors.ink, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  delayText: { color: colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 2 },
-  label: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  hint: { color: colors.inkMuted, fontSize: typography.size.sm },
-  problem: { color: colors.tagRoseInk, fontSize: typography.size.sm },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  row: { flexDirection: "row", gap: 8 },
-  half: { flex: 1 },
-  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
-  footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-  footerMain: { flex: 1 },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    chipWrap: { padding: space.md, paddingBottom: 0 },
+    error: { color: p.colors.tagRoseInk, padding: space.md, paddingBottom: 0, fontSize: typography.size.sm },
+    head: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+    date: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+    locked: { color: p.colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    work: { color: p.colors.inkBody, fontSize: typography.size.md, marginTop: 2 },
+    meta: { color: p.colors.inkMuted, fontSize: typography.size.sm, marginTop: 2 },
+    delay: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
+    syncing: { color: p.colors.inkMuted, fontSize: typography.size.sm, fontStyle: "italic" },
+    delayTitle: { color: p.colors.ink, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    delayText: { color: p.colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 2 },
+    label: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    hint: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    problem: { color: p.colors.tagRoseInk, fontSize: typography.size.sm },
+    chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    row: { flexDirection: "row", gap: 8 },
+    half: { flex: 1 },
+    footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
+    footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+    footerMain: { flex: 1 },
+  });
+}

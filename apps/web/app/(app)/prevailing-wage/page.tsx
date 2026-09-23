@@ -14,6 +14,8 @@ import { splitLabel } from "@/components/prevailingWageLabels";
 import { formatHours } from "@/lib/render-hours";
 import { reviewIsClean, weeklyUnresolvedSentence } from "@/lib/prevailing-wage";
 import { viewerToday } from "@/lib/viewerToday";
+import { determinationStanding, determinationStandingLine } from "@/lib/determination-standing";
+import { DeterminationStandingLine } from "@/components/DeterminationStandingLine";
 
 export default async function PrevailingWagePage({
   searchParams,
@@ -219,6 +221,17 @@ export default async function PrevailingWagePage({
                     {determination.jobName}
                   </Link>
                   <p className="text-sm text-ink-muted">{determination.jurisdiction}</p>
+                  {/* The same sentence the job's Compliance tab shows, so a
+                      stale determination is visible from the compliance side
+                      too. Derived here from the entered dates against the
+                      viewer's day; the dates themselves are entered on the
+                      job's Compliance tab. */}
+                  <DeterminationStandingLine
+                    className="mt-1"
+                    line={determinationStandingLine(
+                      determinationStanding(determination.facts, determination.job, today),
+                    )}
+                  />
                 </div>
                 <DeterminationRuleSetPicker
                   determinationId={determination.id}

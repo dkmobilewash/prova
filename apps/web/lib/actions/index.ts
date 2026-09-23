@@ -15,6 +15,7 @@ export * from "./jobDetails";
 export * from "./estimating";
 export * from "./billing";
 export * from "./labor";
+export * from "./complianceFacts";
 export * from "./timesheetSignoff";
 export * from "./crewMembers";
 export * from "./compliance";
