@@ -31,7 +31,7 @@
  * to care; the mark tells them it is a different read.
  */
 
-import type { Citation } from "./tools";
+import type { Citation, ItemLink } from "./tools";
 
 export type TranscriptEntry = {
   /** The person's own words. */
@@ -45,6 +45,11 @@ export type TranscriptEntry = {
    * remedy for staleness: not hiding the number, but making the live one
    * one tap away. */
   citations: Citation[];
+  /** The specific records that answer was about, each with somewhere to go
+   * and act on it. Optional because most answers have no single row behind
+   * them, and because an entry stored before this field existed has none —
+   * an old transcript must keep rendering rather than be dropped. */
+  links?: ItemLink[];
   /** Epoch milliseconds. Browser-local and never compared across devices. */
   askedAt: number;
   /** The name of a file attached to this question, if one was. The name
@@ -61,6 +66,12 @@ export const MAX_TRANSCRIPT = 20;
  * conversation, it is a payload — and a browser can put anything here. */
 export const MAX_ENTRY_CHARS = 2_000;
 
+/** A button's label and its one-line detail. Far shorter than an entry,
+ * because these render on a control rather than in a paragraph — an alert
+ * title is a handful of words and anything longer is a tampered entry or a
+ * bug, either way not something to render at full width. */
+export const MAX_LINK_LABEL_CHARS = 120;
+
 /**
  * Parse whatever the browser stored, drop anything malformed, never throw.
  *
@@ -75,7 +86,10 @@ export function boundTranscript(value: unknown): TranscriptEntry[] {
   const clean: TranscriptEntry[] = [];
   for (const entry of value) {
     if (typeof entry !== "object" || entry === null) continue;
-    const { question, answer, citations, askedAt, attachmentName } = entry as Record<string, unknown>;
+    const { question, answer, citations, links, askedAt, attachmentName } = entry as Record<
+      string,
+      unknown
+    >;
     if (typeof question !== "string") continue;
     const asked = question.trim();
     if (!asked) continue;
@@ -96,6 +110,30 @@ export function boundTranscript(value: unknown): TranscriptEntry[] {
             return [{ label, href }];
           })
         : [],
+      // Same shape and the SAME off-site rule as citations above, and it
+      // matters more here: a citation is a link under an answer, but these
+      // render as buttons that say "go and fix this". A stored transcript
+      // is browser input, so a tampered entry must not be able to put an
+      // off-site destination behind one.
+      ...(Array.isArray(links)
+        ? {
+            links: links.flatMap((link) => {
+              if (typeof link !== "object" || link === null) return [];
+              const { label, href, detail } = link as Record<string, unknown>;
+              if (typeof label !== "string" || typeof href !== "string") return [];
+              if (!href.startsWith("/") || href.startsWith("//")) return [];
+              return [
+                {
+                  label: label.slice(0, MAX_LINK_LABEL_CHARS),
+                  href,
+                  ...(typeof detail === "string" && detail.trim()
+                    ? { detail: detail.trim().slice(0, MAX_LINK_LABEL_CHARS) }
+                    : {}),
+                },
+              ];
+            }),
+          }
+        : {}),
       askedAt,
       ...(typeof attachmentName === "string" && attachmentName.trim()
         ? { attachmentName: attachmentName.trim().slice(0, 120) }

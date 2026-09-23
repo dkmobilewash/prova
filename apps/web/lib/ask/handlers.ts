@@ -45,7 +45,7 @@ import {
 } from "@/components/drawingLabels";
 import { orderState, stateLabel as orderStateLabel, daysLate } from "@/components/materialOrderLabels";
 import { currentAssignment } from "@/components/equipmentDeployment";
-import { can, type Capability, type Principal } from "@/lib/permissions";
+import { can, canReach, type Capability, type Principal } from "@/lib/permissions";
 import { refusalFor } from "./access";
 import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
 import { NAME_NOT_RECORDED, crewMemberName, timeEntryWorkerId, timeEntryWorkerName } from "@/lib/worker-name";
@@ -3626,8 +3626,9 @@ async function needsAttention(companyId: string, _input: Input, actor?: ToolActo
   const today = await viewerToday();
   const { visible, silenced } = await loadAlerts(companyId, actor.userId, today, actor.principal);
   const summary = summarizeAlerts(visible);
+  const shown = visible.slice(0, ATTENTION_ROWS);
   return {
-    data: visible.slice(0, ATTENTION_ROWS).map((alert) => ({
+    data: shown.map((alert) => ({
       what: alert.title,
       detail: alert.detail,
       severity: alert.severity,
@@ -3649,6 +3650,38 @@ async function needsAttention(companyId: string, _input: Input, actor?: ToolActo
       silencedByYou: silenced.length,
     },
     citations,
+    /*
+     * A button per alert, straight to the record rather than to the list.
+     * Diego asked for this after clicking the box: the answer named three
+     * things on one GC and left him to go and find each of them.
+     *
+     * FILTERED BY `canReach` HERE, rather than trusting that it is already
+     * true. `loadAlerts` has run `visibleToPrincipal`, and ALERT_CAPABILITY
+     * is chosen so an alert never points at a page its recipient cannot
+     * open — its own comment says so ("not to a foreman, who could not
+     * open the page the alert points at"). That convention is REAL and it
+     * is also currently broken: RETAINAGE_RELEASE is gated MANAGE_BILLING
+     * and points at /closeout, which is MANAGE_JOBS, so an ACCOUNTING
+     * member gets it and cannot open it. `itemLinksCensus.test.ts` found
+     * that and records it; fixing the routing is a separate decision,
+     * because no one page is reachable by everyone holding MANAGE_BILLING.
+     *
+     * So the button does not inherit the convention's word. A dead button
+     * is worse than no button — the person went looking because we invited
+     * them — and the alert still appears in the prose either way, so
+     * filtering costs them nothing and removes the whole class of failure
+     * even if ALERT_CAPABILITY drifts again.
+     *
+     * `alert.href` is the field the alert page's own rows link to, so the
+     * button lands exactly where clicking the row would.
+     */
+    links: shown
+      .filter((alert) => (actor.principal ? canReach(actor.principal, alert.href) : false))
+      .map((alert) => ({
+        label: alert.title,
+        href: alert.href,
+        detail: alert.detail,
+      })),
     unavailable:
       visible.length === 0
         ? silenced.length > 0
