@@ -126,6 +126,16 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
         invoice.lineItems.filter((row) => row.lineItemId === item.id).reduce((rowSum, row) => rowSum + Number(row.materialsStoredValue), 0),
       0,
     ),
+    // Summed the same way, and needed for the same kind of reason: the
+    // percent-complete box converts "60%" into THIS period's dollars, which
+    // is 60% of the line minus what has already gone out on it. Without
+    // this the box would bill the whole 60% again every month.
+    previousBilled: job.invoices.reduce(
+      (sum, invoice) =>
+        sum +
+        invoice.lineItems.filter((row) => row.lineItemId === item.id).reduce((rowSum, row) => rowSum + Number(row.thisPeriodBilled), 0),
+      0,
+    ),
   }));
 
   const timeZone = await viewerTimeZone();

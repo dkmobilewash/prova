@@ -41,10 +41,34 @@ export const ICON_GLYPHS = {
 
   /** "There is more behind this row", on a settings link. */
   chevron: ["chevron-forward", "chevron-forward"],
+  /** The calendar's previous-month arrow. */
+  chevronBack: ["chevron-back", "chevron-back"],
 
   /** The tick inside a checkbox. Both halves are the same glyph: it is
    * already inside a filled box, so a second weight would say nothing. */
   check: ["checkmark", "checkmark"],
+
+  // Redesign additions — the chrome and status vocabulary. Every glyph
+  // here is a real Ionicons key; icon-names.test.ts fails the build on a
+  // name the font does not carry, which is the guard against inventing
+  // one. (Verified against the glyphmap 2026-09-21.)
+  more: ["ellipsis-horizontal", "ellipsis-horizontal"],
+  plus: ["add", "add"],
+  close: ["close", "close"],
+  person: ["person-outline", "person"],
+  people: ["people-outline", "people"],
+  location: ["location-outline", "location"],
+  cloudOffline: ["cloud-offline-outline", "cloud-offline"],
+  cloudDone: ["cloud-done-outline", "cloud-done"],
+  refresh: ["refresh-outline", "refresh"],
+  warning: ["warning-outline", "warning"],
+  alert: ["alert-circle-outline", "alert-circle"],
+  checkCircle: ["checkmark-circle-outline", "checkmark-circle"],
+  logOut: ["log-out-outline", "log-out"],
+  keypad: ["keypad-outline", "keypad"],
+  hourglass: ["hourglass-outline", "hourglass"],
+  pencil: ["pencil-outline", "pencil"],
+  trash: ["trash-outline", "trash"],
 } as const;
 
 export type IconName = keyof typeof ICON_GLYPHS;

@@ -1,15 +1,17 @@
 import { useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Card } from "@/components/Card";
+import { JobContextChip } from "@/components/JobContextChip";
 import { List } from "@/components/List";
-import { OfflineNote } from "@/components/OfflineNote";
+import { SyncStatus } from "@/components/SyncStatus";
 import { emptyFor } from "@/lib/empty-state";
 import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
 import { useMe } from "@/lib/use-me";
-import { colors, typography } from "@/lib/theme";
+import { type Palette, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
@@ -32,6 +34,8 @@ import type { ScheduleRow } from "@/lib/types";
  */
 export default function ScheduleScreen() {
   const { me } = useMe();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const getToken = useStableGetToken();
   const [rows, setRows] = useState<ScheduleRow[]>([]);
@@ -73,7 +77,10 @@ export default function ScheduleScreen() {
 
   return (
     <View style={styles.screen}>
-      <OfflineNote state={offline} />
+      <View style={styles.chipWrap}>
+        <JobContextChip />
+      </View>
+      <SyncStatus state={offline} />
 
       <List
         data={days}
@@ -104,12 +111,19 @@ export default function ScheduleScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  card: { gap: 8 },
-  date: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  person: { borderTopWidth: 1, borderTopColor: colors.lineRow, paddingTop: 8, gap: 2 },
-  name: { color: colors.inkBody, fontSize: typography.size.md },
-  craft: { color: colors.inkMuted, fontSize: typography.size.sm },
-  missing: { color: colors.tagAmberInk, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    chipWrap: { padding: space.md, paddingBottom: 0 },
+    card: { gap: 8 },
+    date: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+    person: { borderTopWidth: 1, borderTopColor: p.colors.lineRow, paddingTop: 8, gap: 2 },
+    name: { color: p.colors.inkBody, fontSize: typography.size.md },
+    craft: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    missing: {
+      color: p.colors.tagAmberInk,
+      fontSize: typography.size.sm,
+      fontWeight: typography.weight.semibold,
+    },
+  });
+}

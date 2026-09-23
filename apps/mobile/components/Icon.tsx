@@ -1,7 +1,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { ColorValue } from "react-native";
-import { colors } from "@/lib/theme";
 import { ICON_GLYPHS, type IconName } from "@/lib/icon-glyphs";
+import { usePalette } from "@/lib/use-palette";
 
 /**
  * The app's icons. The names and the reasoning live in lib/icon-glyphs.ts;
@@ -14,18 +14,25 @@ import { ICON_GLYPHS, type IconName } from "@/lib/icon-glyphs";
 export function Icon({
   name,
   size = 22,
-  color = colors.inkBody,
+  color,
   filled = false,
 }: {
   name: IconName;
   size?: number;
-  /** Defaults to body ink so an icon never out-shouts the label beside it.
-   * A tab passes the tint the bar gives it. */
+  /** Defaults to the active palette's body ink so an icon never out-shouts
+   * the label beside it. A tab passes the tint the bar gives it. */
   color?: ColorValue;
   filled?: boolean;
 }) {
+  const palette = usePalette();
   const [outline, solid] = ICON_GLYPHS[name];
-  return <Ionicons name={filled ? solid : outline} size={size} color={color} />;
+  return (
+    <Ionicons
+      name={filled ? solid : outline}
+      size={size}
+      color={color ?? palette.colors.inkBody}
+    />
+  );
 }
 
 export type { IconName };

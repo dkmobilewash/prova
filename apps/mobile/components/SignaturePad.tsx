@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
-import { colors, typography } from "@/lib/theme";
+import { type Palette, radius, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 
 type Point = { x: number; y: number };
 
@@ -40,6 +41,8 @@ export function strokesToPath(strokes: Point[][]): string | null {
  * scroll.
  */
 export function SignaturePad({ onChange }: { onChange: (path: string | null) => void }) {
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const [strokes, setStrokes] = useState<Point[][]>([]);
   const [drawing, setDrawing] = useState(false);
 
@@ -133,36 +136,41 @@ export function SignaturePad({ onChange }: { onChange: (path: string | null) => 
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { gap: 6 },
-  pad: {
-    width: SIGNATURE_WIDTH,
-    height: SIGNATURE_HEIGHT,
-    alignSelf: "center",
-    borderWidth: 1,
-    borderColor: colors.lineCard,
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    overflow: "hidden",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  placeholder: { color: colors.inkMuted, fontSize: typography.size.md },
-  dot: {
-    position: "absolute",
-    width: STROKE * 2,
-    height: STROKE * 2,
-    borderRadius: STROKE,
-    backgroundColor: "#111111",
-  },
-  segment: {
-    position: "absolute",
-    height: STROKE,
-    borderRadius: STROKE / 2,
-    backgroundColor: "#111111",
-  },
-  // Left, not right: the app-wide floating Tools button sits over the
-  // bottom-right of a sheet and covered a right-aligned Clear.
-  clear: { alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 4 },
-  clearLabel: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    wrap: { gap: space.six },
+    pad: {
+      width: SIGNATURE_WIDTH,
+      height: SIGNATURE_HEIGHT,
+      alignSelf: "center",
+      borderWidth: 1,
+      borderColor: p.colors.lineCard,
+      borderRadius: radius.small,
+      // Paper stays paper in both palettes — a signature must look like a
+      // signature, which is why these two literals are the census's
+      // whitelisted ones.
+      backgroundColor: "#ffffff",
+      overflow: "hidden",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    placeholder: { color: p.colors.inkMuted, fontSize: typography.size.md },
+    dot: {
+      position: "absolute",
+      width: STROKE * 2,
+      height: STROKE * 2,
+      borderRadius: STROKE,
+      backgroundColor: "#111111",
+    },
+    segment: {
+      position: "absolute",
+      height: STROKE,
+      borderRadius: STROKE / 2,
+      backgroundColor: "#111111",
+    },
+    // Left, not right: the app-wide floating Tools button sits over the
+    // bottom-right of a sheet and covered a right-aligned Clear.
+    clear: { alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 4 },
+    clearLabel: { color: p.colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+  });
+}

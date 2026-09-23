@@ -26,6 +26,8 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   test: {
     environment: "node",
+    // Web Storage where the runtime gives none — see vitest.setup.ts.
+    setupFiles: ["./vitest.setup.ts"],
     include: ["**/*.test.ts"],
     exclude: ["node_modules/**", ".next/**"],
     /* VITEST'S 5000ms DEFAULT IS TOO TIGHT FOR THIS SUITE, AND THE COST IS

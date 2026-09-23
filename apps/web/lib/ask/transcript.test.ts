@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type TranscriptEntry,
   MAX_ENTRY_CHARS,
+  MAX_LINK_LABEL_CHARS,
   MAX_TRANSCRIPT,
   answeredAgo,
   boundTranscript,
@@ -212,5 +213,54 @@ describe("an attached file in the scrollback", () => {
     ]);
     expect(withJunk).not.toHaveProperty("attachmentName");
     expect(without).not.toHaveProperty("attachmentName");
+  });
+});
+
+describe("the go-straight-to links a browser handed back", () => {
+  const entry = (links: unknown) => [
+    { question: "what needs my attention", answer: "Three things.", citations: [], links, askedAt: 1 },
+  ];
+
+  it("keeps in-app links, with their detail", () => {
+    const [read] = boundTranscript(
+      entry([{ label: "Prequalification due", href: "/contacts/c-1", detail: "Halvorsen, in 8 days" }]),
+    );
+    expect(read.links).toEqual([
+      { label: "Prequalification due", href: "/contacts/c-1", detail: "Halvorsen, in 8 days" },
+    ]);
+  });
+
+  it("refuses to render a button that leaves the app", () => {
+    // The same rule citations get, and it matters more here: a citation is
+    // a link under a sentence, this is a control that says "go and fix
+    // this". A tampered entry must not be able to put evil.example behind
+    // one. Protocol-relative is the one that looks in-app at a glance.
+    const [read] = boundTranscript(
+      entry([
+        { label: "Off site", href: "https://evil.example/x" },
+        { label: "Protocol relative", href: "//evil.example/x" },
+        { label: "Fine", href: "/alerts" },
+      ]),
+    );
+    expect(read.links).toEqual([{ label: "Fine", href: "/alerts" }]);
+  });
+
+  it("drops a malformed link rather than the whole entry", () => {
+    const [read] = boundTranscript(entry([{ label: 7 }, null, "nope", { href: "/alerts" }]));
+    expect(read.answer).toBe("Three things.");
+    expect(read.links).toEqual([]);
+  });
+
+  it("reads an entry stored before links existed", () => {
+    const [read] = boundTranscript([
+      { question: "q", answer: "a", citations: [], askedAt: 1 },
+    ]);
+    expect(read.links).toBeUndefined();
+    expect(read.answer).toBe("a");
+  });
+
+  it("caps a label long enough to be a payload", () => {
+    const [read] = boundTranscript(entry([{ label: "x".repeat(5_000), href: "/alerts" }]));
+    expect(read.links?.[0].label.length).toBe(MAX_LINK_LABEL_CHARS);
   });
 });
