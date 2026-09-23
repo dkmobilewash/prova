@@ -1466,6 +1466,7 @@ async function undo(companyId) {
     // RESTRICT on Job — see the note in clean-scratch-data.mjs about the
     // blobs these rows point at, which this does not remove.
     await del("jobMedia", () => prisma.jobMedia.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("takeoffPlan", () => prisma.takeoffPlan.deleteMany({ where: { jobId: { in: jobIds } } }));
     // SCOPED TO THE DEMO JOBS, unlike the same delete in
     // clean-scratch-data.mjs, which scopes to the company. The difference is
     // what each script is allowed to touch: this undo removes only what the

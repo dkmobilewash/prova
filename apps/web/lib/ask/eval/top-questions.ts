@@ -174,6 +174,12 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   // ══════════════════════════════════ cost and margin
   t("q-losing-money", "which jobs are losing money?", "job_margin"),
   t("q-margin-job", "how is Riverside doing against what we bid it at?", "job_margin", ESTIMATOR),
+  // The question this box was asked for, and the one a single tool cannot
+  // answer: `job_overview` holds the margin and the counts and no
+  // receivables at all, so "how's it doing" answered from it alone says
+  // nothing about the GC being 42 days late. Routed `several` because that
+  // is what it is.
+  many("q-job-how-doing", "how's Maple Street doing?", ["job_overview", "receivables", "open_rfis", "open_punch_list"]),
   t("q-over-under", "are we overbilled or underbilled right now?", "job_margin"),
   t("q-cost-to-complete", "what is Riverside going to cost us to finish?", "job_margin"),
   t("q-backlog", "how much work have we got left on the books?", "job_margin"),
@@ -454,7 +460,7 @@ export const CENSUS_REFUSALS = 2;
 /** 110 -> 113 on 2026-09-18: three getting-started questions for the
  * `getting_started` tool, one of them the real question a new account asked
  * and was told "nothing here reads it". No gap and no refusal changed. */
-export const TOTAL_QUESTIONS = 113;
+export const TOTAL_QUESTIONS = 114;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the

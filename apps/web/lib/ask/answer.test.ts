@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Principal } from "@/lib/permissions";
-import { SYSTEM_PROMPT, forModel, offeredTools, EXTRA_TOOLS } from "./answer";
+import { COMPOSE_RULE, SYSTEM_PROMPT, forModel, offeredTools, EXTRA_TOOLS } from "./answer";
 import { COMMANDS } from "./commands";
 import { KNOWN_GAPS, TOOLS } from "./tools";
 
@@ -78,6 +78,49 @@ describe("what the model is told", () => {
     // And the inverse, so this does not turn a genuinely broad question
     // into a narrow answer.
     expect(SYSTEM_PROMPT).toMatch(/cast wide only when the question is wide/i);
+  });
+
+  it("tells the model to answer a wide question over SEVERAL tools at once", () => {
+    // The loop has always composed — several tool_use blocks in one pass,
+    // run together, with toolsUsed, citations and links accumulated across
+    // all of them. What said "one tool" was this prompt: it illustrated a
+    // wide read with two COMPANY-WIDE questions only, and had no answer
+    // shape at all for one subject with several AREAS. Delete the section
+    // and this goes red — which is the only check there can be on a change
+    // whose whole mechanism is words.
+    expect(SYSTEM_PROMPT).toContain(COMPOSE_RULE);
+    expect(SYSTEM_PROMPT).toMatch(/a question can be wide without being company-wide/i);
+    // The per-JOB case specifically. A prompt that permits a wide read and
+    // only ever shows it on "how are we doing?" leaves "how's the Hilton
+    // doing?" reading as narrow, which is the question this exists for.
+    expect(COMPOSE_RULE).toMatch(/one job and four areas at once/i);
+    // One round, not four round trips. The person is waiting through every
+    // one of them.
+    expect(COMPOSE_RULE).toMatch(/in one round/i);
+  });
+
+  it("does not let composing become arithmetic, a report, or a way around a gap", () => {
+    // Three ways this section could make the box worse, each refused in the
+    // section itself. They are separate assertions because they fail
+    // separately: an answer that totals two tools is a wrong number, one
+    // that runs long is an unreadable one, and one that fills a gap from an
+    // adjacent figure is the failure this whole app is built to avoid.
+    expect(COMPOSE_RULE).toMatch(/composing never makes a figure/i);
+    expect(COMPOSE_RULE).toMatch(/still an answer and not a report/i);
+    expect(COMPOSE_RULE).toMatch(/composing is not a way around a gap/i);
+    // And the narrow rule has to SURVIVE it, or every question becomes
+    // expensive. Asserted here as well as in its own test above because
+    // this section is what would erode it.
+    expect(SYSTEM_PROMPT).toMatch(/call the tools the question needs and no more/i);
+  });
+
+  it("never lets its own example become a figure somebody says", () => {
+    // The guard's sources are this turn's tool results and the person's
+    // question — deliberately NOT the system prompt. So a figure copied out
+    // of the shape in this section gets the whole answer retracted, which
+    // is the right failure and still a wasted question.
+    expect(COMPOSE_RULE).toMatch(/those figures are the SHAPE of an answer/i);
+    expect(COMPOSE_RULE).toMatch(/never repeat one of them/i);
   });
 
   it("forbids arithmetic in as many words", () => {

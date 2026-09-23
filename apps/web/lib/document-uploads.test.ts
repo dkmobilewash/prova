@@ -31,22 +31,26 @@ const ENV = { BLOB_READ_WRITE_TOKEN: `vercel_blob_rw_${OURS}_s3cr3t` };
 const url = (store: string, path: string) =>
   `https://${store}.public.blob.vercel-storage.com/${path}`;
 
-group("the five purposes and where each one lands", () => {
+group("the six purposes and where each one lands", () => {
   it("gives every purpose a target, and no purpose is missing one", () => {
     // Guards the table itself: every assertion below reads through it, and
     // a table that quietly lost an entry would make them all vacuous.
     expect(Object.keys(DOCUMENT_UPLOAD_TARGETS).sort()).toEqual([...DOCUMENT_UPLOAD_PURPOSES].sort());
-    expect(DOCUMENT_UPLOAD_PURPOSES).toHaveLength(5);
+    expect(DOCUMENT_UPLOAD_PURPOSES).toHaveLength(6);
   });
 
   it("puts each kind in the folder its existing documents already live in", () => {
-    // These four prefixes are not a fresh choice — every document already
-    // stored is under one of them, and changing one would strand it.
+    // These prefixes are not a fresh choice — every document already
+    // stored is under one of them, and changing one would strand it. The
+    // exception is `plan-takeoff`, which is new and therefore strands
+    // nothing; it gets its own folder rather than sharing one, so a drawing
+    // somebody is measuring is never mistaken for a contract.
     expect(DOCUMENT_UPLOAD_TARGETS["dispatch-slip"].root).toBe("dispatch-slips");
     expect(DOCUMENT_UPLOAD_TARGETS["prevailing-wage"].root).toBe("prevailing-wage");
     expect(DOCUMENT_UPLOAD_TARGETS["contract-document"].root).toBe("contracts");
     expect(DOCUMENT_UPLOAD_TARGETS["executed-subcontract"].root).toBe("contracts");
     expect(DOCUMENT_UPLOAD_TARGETS["compliance-document"].root).toBe("compliance");
+    expect(DOCUMENT_UPLOAD_TARGETS["plan-takeoff"].root).toBe("plan-takeoff");
   });
 
   it("shares the contracts folder between two purposes with DIFFERENT guards", () => {

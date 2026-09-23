@@ -18,10 +18,17 @@ import { recipeLines, RECIPES, type RecipeInput, type RecipeArgs } from "@/lib/t
  * quantity posted from a browser is a number the browser chose, and these
  * end up in a bid.
  *
- * It does not measure anything. Somebody measures — on paper, with a wheel,
- * in Bluebeam — and types it here. Said out loud in the UI too, because a
- * field called "Length" on a construction screen invites the assumption that
+ * THIS FORM does not measure anything. Somebody measures — on paper, with a
+ * wheel, in Bluebeam — and types it here. Said out loud in the UI too, because
+ * a field called "Length" on a construction screen invites the assumption that
  * something measured it for you.
+ *
+ * THE APP NOW DOES, THOUGH, and this comment claimed otherwise until
+ * 2026-09-23. The Takeoff tab (`/jobs/[id]/takeoff`) renders a PDF and
+ * measures off it. The two are deliberately separate rather than merged: this
+ * one is faster when the dimensions are already in hand, and it is the only
+ * path to the `ceiling` recipe, which needs a length and a width that a traced
+ * outline does not have.
  */
 export function TakeoffForm({ jobId }: { jobId: string }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -178,7 +185,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
         <h3 className="text-sm font-semibold text-ink-label">Add from a takeoff</h3>
         <p className="mt-1 text-xs text-ink-muted">
           Enter dimensions you have already measured — on paper, with a wheel, or in your takeoff
-          software. This does the arithmetic; it does not measure drawings.
+          software. This box does the arithmetic; it does not measure drawings.
         </p>
       </div>
 

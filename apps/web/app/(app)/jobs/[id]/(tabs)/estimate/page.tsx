@@ -532,6 +532,16 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
             <h2 className="mb-3 text-lg font-semibold text-ink">Line items (estimate)</h2>
             <DraftLineItemsForm jobId={job.id} initialScope={job.scope ?? ""} />
             <TakeoffForm jobId={job.id} />
+            {/* The other way in. This form does the arithmetic from
+                dimensions somebody already has; the Takeoff tab is where you
+                get those dimensions off a drawing. */}
+            <p className="mb-3 text-sm text-ink-muted">
+              Working from a PDF instead?{" "}
+              <Link href={`/jobs/${job.id}/takeoff`} className="text-link hover:text-link-hover">
+                Measure off a plan
+              </Link>{" "}
+              — set the scale on a sheet and trace what you&rsquo;re taking off.
+            </p>
             <div className="rounded-lg border border-line-card bg-surface p-4">
               {job.lineItems.length === 0 && <p className="py-2 text-sm text-ink-body">No line items yet — add one below.</p>}
               {job.lineItems.map((item) => (
