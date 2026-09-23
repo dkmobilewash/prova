@@ -108,6 +108,7 @@ export const DOCUMENT_UPLOAD_PURPOSES = [
   "contract-document",
   "executed-subcontract",
   "compliance-document",
+  "plan-takeoff",
 ] as const;
 
 export type DocumentUploadPurpose = (typeof DOCUMENT_UPLOAD_PURPOSES)[number];
@@ -191,6 +192,17 @@ export const DOCUMENT_UPLOAD_TARGETS: Record<DocumentUploadPurpose, DocumentUplo
     // the company's paid monthly allowance.
     capability: "MANAGE_COMPLIANCE",
     refusal: "Compliance documents aren't part of your job function.",
+  },
+  "plan-takeoff": {
+    root: "plan-takeoff",
+    scope: "job",
+    // The second non-null entry, and unlike the four above it is mirroring an
+    // action that is genuinely guarded rather than recording a debt:
+    // `recordTakeoffPlan` asserts VIEW_JOB_COSTS, because the Takeoff tab
+    // withholds its content on VIEW_JOB_COSTS (issue #383, the same reasoning
+    // as every other write on that tab).
+    capability: "VIEW_JOB_COSTS",
+    refusal: "A job's costs and pricing aren't part of your job function.",
   },
 };
 

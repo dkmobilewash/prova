@@ -305,7 +305,6 @@ const ROSTER_ADDITIONS: Record<string, string> = {
   apprenticePeriod: "unionCompliance.ts reads it through setupText() first",
   lengthFt: "jobs.ts takeoff builds its own labelled reader",
   widthFt: "jobs.ts takeoff",
-  heightFt: "jobs.ts takeoff",
   spacingIn: "jobs.ts takeoff",
   wastePercent: "jobs.ts takeoff",
   openingWidth: "jobs.ts takeoff, read through getAll()",
