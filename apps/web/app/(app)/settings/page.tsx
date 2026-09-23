@@ -21,6 +21,9 @@ import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { CompanyLicenses } from "@/components/CompanyLicenses";
 import { PhaseCodes } from "@/components/PhaseCodes";
+import { EmployerBurdenRates } from "@/components/EmployerBurdenRates";
+import { employerBurdenStanding } from "@/lib/employer-burden";
+import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import { CompanyProfileForm } from "@/components/CompanyProfileForm";
 import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
 import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsForm";
@@ -151,7 +154,7 @@ export default async function SettingsPage({
     );
   }
 
-  const [connection, locations, insurancePolicies, bonds, licences, accountMappings, rawSyncAttempts, classifications, phaseCodes] = await Promise.all([
+  const [connection, locations, insurancePolicies, bonds, licences, accountMappings, rawSyncAttempts, classifications, phaseCodes, employerBurdenRates] = await Promise.all([
     prisma.quickBooksConnection.findUnique({
       where: { companyId: company.id },
       include: { connectedByUser: true },
@@ -191,6 +194,9 @@ export default async function SettingsPage({
       orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
       include: { _count: { select: { lineItems: true } } },
     }),
+    // The employer-burden percentages. Which one is IN FORCE is derived from
+    // the dates below, never stored — see lib/employer-burden.ts.
+    loadEmployerBurdenRates(company.id),
   ]);
 
   // Picked field by field rather than spread: this crosses into a client
@@ -639,6 +645,16 @@ export default async function SettingsPage({
             lineItemCount: phaseCode._count.lineItems,
           }))}
           canManage={currentUser.role === "OWNER"}
+        />
+      </section>
+
+      {/* Directly under phase codes because it is the other half of the same
+          question — what a job actually costs. Every write here is
+          owner-only, which this page already is. */}
+      <section className="mb-10">
+        <EmployerBurdenRates
+          standing={employerBurdenStanding(employerBurdenRates, serverToday())}
+          canDelete={currentUser.role === "OWNER"}
         />
       </section>
 

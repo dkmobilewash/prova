@@ -159,6 +159,29 @@ export const notYetRegistered: Exclusion[] = [
     reason: "Deletes are never commands (T5); owner-only on /compliance.",
   },
 
+  // The employer burden percentage, for the same reason as the mod rate and
+  // then some: one number here multiplies the labor inside every job's cost
+  // to date, and therefore percent complete, earned revenue and the WIP
+  // schedule a surety reads. It comes off an accountant's working, not out of
+  // a model that — asked "what should our burden be" — has every incentive to
+  // supply a plausible 20%. A card confirmed by reflex would restate every
+  // job on the books.
+  {
+    action: "recordEmployerBurdenRate",
+    reason:
+      "The percentage comes from the company's accountant. The model must never supply one, so recording it is not a command — done on /settings, owner-only.",
+  },
+  {
+    action: "updateEmployerBurdenRate",
+    reason:
+      "Correcting the percentage is the same act as recording it: the figure has to come off the accountant's working, not out of a model. Done on /settings, beside the rate being changed.",
+  },
+  {
+    action: "deleteEmployerBurdenRate",
+    reason:
+      "Deletes are never commands (T5); owner-only on /settings, and removing a rate makes cost to date on already-costed jobs go DOWN.",
+  },
+
   // Correcting or removing a job's own identity. Deliberately NOT commands,
   // and the reason is the same for both: they are the two writes on this
   // page a person should have to look at while making. A rename reaches

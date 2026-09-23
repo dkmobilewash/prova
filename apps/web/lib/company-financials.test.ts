@@ -21,6 +21,7 @@ const job = (over: Partial<WipJobResult> = {}): WipJobResult => ({
   actualCostToDate: 30_000,
   laborCostToDate: 0,
   laborWageCost: 0,
+  laborBurdenCost: 0,
   laborAllowanceCost: 0,
   unassignedLaborCost: 0,
   pricedLaborHours: 0,

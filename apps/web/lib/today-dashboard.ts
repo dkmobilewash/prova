@@ -2,6 +2,7 @@ import { prisma } from "@prova/db";
 import { calculateJobWip, calculateLineItemWip, type WipJobResult } from "./wip";
 import { lineItemCostToDate, unassignedLaborCost } from "./labor-job-cost";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "./fringe-schedules-query";
+import { loadEmployerBurdenRates } from "./employer-burden-query";
 import { loadRetainageHeld } from "./retainage-query";
 import { calculatePaymentReliability, type PaymentReliability } from "./gc-reliability";
 import { arBalanceFor, daysPastDueFor, effectiveDueDateFor } from "./cash-flow";
@@ -85,7 +86,7 @@ export type GcReliabilityRow = {
  * called `now` and /dashboard passed exactly that.
  */
 export async function loadTodayDashboard(companyId: string, asOf: Date) {
-  const [invoices, activeJobs, retainageHeld, contacts, fringeSchedulesByCraft] =
+  const [invoices, activeJobs, retainageHeld, contacts, fringeSchedulesByCraft, employerBurdenRates] =
     await Promise.all([
     prisma.invoice.findMany({
       where: { job: { companyId } },
@@ -178,6 +179,7 @@ export async function loadTodayDashboard(companyId: string, asOf: Date) {
       },
     }),
     loadFringeSchedulesByCraft(companyId),
+    loadEmployerBurdenRates(companyId),
   ]);
 
   /* -------------------------------------------------- receivables ---- */
@@ -259,14 +261,20 @@ export async function loadTodayDashboard(companyId: string, asOf: Date) {
           line.currentEstimatedUnitCost === null ? null : Number(line.currentEstimatedUnitCost),
         estimatedCostToComplete:
           line.estimatedCostToComplete === null ? null : Number(line.estimatedCostToComplete),
-        ...lineItemCostToDate(line.id, line.costEntries, job.timeEntries, fringeSchedulesByCraft),
+        ...lineItemCostToDate(
+          line.id,
+          line.costEntries,
+          job.timeEntries,
+          fringeSchedulesByCraft,
+          employerBurdenRates,
+        ),
       }),
     );
     const billed = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
     const wip = calculateJobWip(
       lineItems,
       billed,
-      unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft),
+      unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft, employerBurdenRates),
     );
 
     // What share of this job's contract value sits on lines that actually

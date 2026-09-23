@@ -7,6 +7,7 @@ import {
 } from "@/lib/wip";
 import { laborCostForRows, lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
+import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import {
   jobCostVariance,
   jobEarnedRevenue,
@@ -492,7 +493,7 @@ async function drawingCurrency(companyId: string, input: Input): Promise<ToolRes
 }
 
 async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
-  const [jobs, fringeSchedulesByCraft] = await Promise.all([
+  const [jobs, fringeSchedulesByCraft, employerBurdenRates] = await Promise.all([
     prisma.job.findMany({
     where: { companyId, status: { in: ["CONTRACTED", "IN_PROGRESS"] } },
     select: {
@@ -520,6 +521,7 @@ async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
     },
     }),
     loadFringeSchedulesByCraft(companyId),
+    loadEmployerBurdenRates(companyId),
   ]);
 
   const filtered = jobs.filter((job) => matchesJobName(job.name, input.jobName));
@@ -535,14 +537,20 @@ async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
             line.currentEstimatedUnitCost === null ? null : Number(line.currentEstimatedUnitCost),
           estimatedCostToComplete:
             line.estimatedCostToComplete === null ? null : Number(line.estimatedCostToComplete),
-          ...lineItemCostToDate(line.id, line.costEntries, job.timeEntries, fringeSchedulesByCraft),
+          ...lineItemCostToDate(
+            line.id,
+            line.costEntries,
+            job.timeEntries,
+            fringeSchedulesByCraft,
+            employerBurdenRates,
+          ),
         }),
       );
       const billed = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
       const wip = calculateJobWip(
         lines,
         billed,
-        unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft),
+        unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft, employerBurdenRates),
       );
 
       return {
@@ -1323,7 +1331,7 @@ async function jobLaborCost(companyId: string, input: Input): Promise<ToolResult
   const mismatch = await jobNameMismatch(companyId, input.jobName);
   if (mismatch) return { data: [], citations: [], unavailable: mismatch };
 
-  const [jobs, schedulesByCraft] = await Promise.all([
+  const [jobs, schedulesByCraft, employerBurdenRates] = await Promise.all([
     prisma.job.findMany({
       where: { companyId },
       select: {
@@ -1334,13 +1342,14 @@ async function jobLaborCost(companyId: string, input: Input): Promise<ToolResult
       },
     }),
     loadFringeSchedulesByCraft(companyId),
+    loadEmployerBurdenRates(companyId),
   ]);
 
   const rows = jobs
     .filter((job) => matchesJobName(job.name, input.jobName))
     .filter((job) => job.timeEntries.length > 0)
     .map((job) => {
-      const labor = laborCostForRows(job.timeEntries, schedulesByCraft);
+      const labor = laborCostForRows(job.timeEntries, schedulesByCraft, employerBurdenRates);
       const hours = labor.pricedHours + labor.unpricedHours;
       return {
         job: job.name,

@@ -90,6 +90,15 @@ vi.mock("./fringe-schedules-query", async (importOriginal) => ({
   loadFringeSchedulesByCraft: async () => new Map(),
 }));
 
+// The other half of the same read: job cost now also loads the company's
+// employer-burden rates. Stubbed at the same boundary and for the same
+// reason — none of these jobs carry time entries, so an empty list is the
+// honest fixture, and it is also the default every company starts on.
+vi.mock("./employer-burden-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./employer-burden-query")>()),
+  loadEmployerBurdenRates: async () => [],
+}));
+
 async function load() {
   const { loadTodayDashboard } = await import("./today-dashboard");
   return loadTodayDashboard("company-1", new Date("2026-09-16T12:00:00.000Z"));
