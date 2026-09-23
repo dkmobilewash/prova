@@ -45,10 +45,10 @@ import {
 } from "@/components/drawingLabels";
 import { orderState, stateLabel as orderStateLabel, daysLate } from "@/components/materialOrderLabels";
 import { currentAssignment } from "@/components/equipmentDeployment";
-import { can, type Capability, type Principal } from "@/lib/permissions";
+import { can, canReach, type Capability, type Principal } from "@/lib/permissions";
 import { refusalFor } from "./access";
 import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
-import { timeEntryWorkerId, timeEntryWorkerName } from "@/lib/worker-name";
+import { NAME_NOT_RECORDED, crewMemberName, timeEntryWorkerId, timeEntryWorkerName } from "@/lib/worker-name";
 import {
   loadPlannedDaysMissingHours,
   loadUpcomingSchedule,
@@ -1897,7 +1897,7 @@ async function apprenticeshipStanding(companyId: string): Promise<ToolResult> {
       contradictory: rows.filter((row) => row.state === "CONTRADICTORY").length,
     },
     citations,
-    unavailable: rows.length === 0 ? "Nobody is enrolled in an apprenticeship programme here." : undefined,
+    unavailable: rows.length === 0 ? "Nobody is enrolled in an apprenticeship program here." : undefined,
   };
 }
 
@@ -2947,7 +2947,7 @@ async function scheduleStatus(companyId: string, input: Input): Promise<ToolResu
     citations,
     unavailable:
       rows.length === 0
-        ? "No job is contracted or in progress, so there is no programme to be on or off."
+        ? "No job is contracted or in progress, so there is no program to be on or off."
         : undefined,
   };
 }
@@ -3228,6 +3228,10 @@ async function dispatchSlips(companyId: string, input: Input): Promise<ToolResul
       note: true,
       job: { select: { name: true } },
       employeeUser: { select: { name: true, email: true } },
+      // A slip names a User OR a crew member (the XOR CHECK on DispatchSlip);
+      // before that migration it could only name a User, so a crew member
+      // dispatched by the hall would read as nobody here.
+      crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
       craftClassification: {
         select: {
           name: true,
@@ -3243,7 +3247,14 @@ async function dispatchSlips(companyId: string, input: Input): Promise<ToolResul
 
   const rows = slips.map((slip) => ({
     job: slip.job.name,
-    worker: slip.employeeUser.name ?? slip.employeeUser.email,
+    worker: slip.employeeUser
+      ? (slip.employeeUser.name ?? slip.employeeUser.email)
+      : slip.crewMember
+        ? crewMemberName(slip.crewMember).label
+        : NAME_NOT_RECORDED,
+    // Which table the person is in, so a crew member and a teammate who share
+    // a name are not read as the same dispatch.
+    workerKind: slip.employeeUser ? ("teammate" as const) : ("crew" as const),
     dispatchedOn: iso(slip.dispatchDate),
     dispatchNumber: slip.dispatchNumber,
     craft: slip.craftClassification?.name ?? null,
@@ -3615,8 +3626,9 @@ async function needsAttention(companyId: string, _input: Input, actor?: ToolActo
   const today = await viewerToday();
   const { visible, silenced } = await loadAlerts(companyId, actor.userId, today, actor.principal);
   const summary = summarizeAlerts(visible);
+  const shown = visible.slice(0, ATTENTION_ROWS);
   return {
-    data: visible.slice(0, ATTENTION_ROWS).map((alert) => ({
+    data: shown.map((alert) => ({
       what: alert.title,
       detail: alert.detail,
       severity: alert.severity,
@@ -3638,6 +3650,38 @@ async function needsAttention(companyId: string, _input: Input, actor?: ToolActo
       silencedByYou: silenced.length,
     },
     citations,
+    /*
+     * A button per alert, straight to the record rather than to the list.
+     * Diego asked for this after clicking the box: the answer named three
+     * things on one GC and left him to go and find each of them.
+     *
+     * FILTERED BY `canReach` HERE, rather than trusting that it is already
+     * true. `loadAlerts` has run `visibleToPrincipal`, and ALERT_CAPABILITY
+     * is chosen so an alert never points at a page its recipient cannot
+     * open — its own comment says so ("not to a foreman, who could not
+     * open the page the alert points at"). That convention is REAL and it
+     * is also currently broken: RETAINAGE_RELEASE is gated MANAGE_BILLING
+     * and points at /closeout, which is MANAGE_JOBS, so an ACCOUNTING
+     * member gets it and cannot open it. `itemLinksCensus.test.ts` found
+     * that and records it; fixing the routing is a separate decision,
+     * because no one page is reachable by everyone holding MANAGE_BILLING.
+     *
+     * So the button does not inherit the convention's word. A dead button
+     * is worse than no button — the person went looking because we invited
+     * them — and the alert still appears in the prose either way, so
+     * filtering costs them nothing and removes the whole class of failure
+     * even if ALERT_CAPABILITY drifts again.
+     *
+     * `alert.href` is the field the alert page's own rows link to, so the
+     * button lands exactly where clicking the row would.
+     */
+    links: shown
+      .filter((alert) => (actor.principal ? canReach(actor.principal, alert.href) : false))
+      .map((alert) => ({
+        label: alert.title,
+        href: alert.href,
+        detail: alert.detail,
+      })),
     unavailable:
       visible.length === 0
         ? silenced.length > 0
@@ -4042,15 +4086,40 @@ async function appHelp(_companyId: string, input: Input, actor?: ToolActor): Pro
     };
   }
 
+  // `match.href`, NEVER `match.route`. A walkthrough's route is written the
+  // way `app/` writes it, so the six job-detail tabs are PATTERNS —
+  // `/jobs/[id]/billing`. This handler used to hand that straight out as
+  // both the route the model narrates and the citation AskPanel renders as
+  // a `<Link>`, which navigates to `/jobs/%5Bid%5D/billing` and 404s. The
+  // answer itself was right; the place it sent people did not exist.
+  //
+  // The match is NOT dropped, which is where this differs from #408's fix
+  // for the search box. A search row is only a link, so a link to the jobs
+  // list labelled "A job — billing" is worse than no row. Ask has prose and
+  // the page's own steps, so it can say "open the job from Jobs, then its
+  // Billing tab" — a true sentence with a link that works, rather than
+  // silence on a question the app can genuinely answer.
   return {
     data: {
       pages: matches.map((match) => ({
         page: match.title,
-        route: match.route,
+        route: match.href,
+        ...(match.insideOneJob ? { insideOneJob: true } : {}),
         steps: match.steps,
       })),
     },
     summary: { pagesFound: matches.length },
-    citations: matches.map((match) => ({ label: match.title, href: match.route })),
+    // Deduplicated by href because three job tabs collapse onto one `/jobs`,
+    // and AskPanel keys its citation links by href — duplicates would be a
+    // React key collision as well as three identical links. First wins, so
+    // the best-scoring match keeps its label.
+    citations: dedupeByHref(
+      matches.map((match) => ({ label: match.insideOneJob ? "Jobs" : match.title, href: match.href })),
+    ),
   };
+}
+
+function dedupeByHref(links: { label: string; href: string }[]): { label: string; href: string }[] {
+  const seen = new Set<string>();
+  return links.filter((link) => (seen.has(link.href) ? false : (seen.add(link.href), true)));
 }

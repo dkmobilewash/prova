@@ -22,6 +22,7 @@ import {
   type RevisionData,
 } from "@/components/submittalLabels";
 import { localToday } from "@/components/localToday";
+import { formatCalendarDay } from "@/lib/render-date";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 
 export type SubmittalRowData = SubmittalDefaults & {
@@ -283,11 +284,11 @@ export function SubmittalRow({
                 return (
                   <li key={rev.revisionNumber} className="text-xs text-ink-body">
                     <span className="font-mono text-ink-muted">R{rev.revisionNumber}</span>
-                    {` · sent ${rev.sentOn}`}
-                    {rev.dueBack && !rev.returnedOn && ` · due back ${rev.dueBack}`}
+                    {` · sent ${formatCalendarDay(rev.sentOn)}`}
+                    {rev.dueBack && !rev.returnedOn && ` · due back ${formatCalendarDay(rev.dueBack)}`}
                     {rev.returnedOn && rev.outcome && (
                       <>
-                        {` · ${outcomeLabel(rev.outcome).toLowerCase()} ${rev.returnedOn}`}
+                        {` · ${outcomeLabel(rev.outcome).toLowerCase()} ${formatCalendarDay(rev.returnedOn)}`}
                         {days !== null && days >= 0 && ` · ${days} day${days === 1 ? "" : "s"}`}
                       </>
                     )}

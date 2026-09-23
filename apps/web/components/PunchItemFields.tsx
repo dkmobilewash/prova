@@ -4,7 +4,7 @@ import { useState } from "react";
 // The delay log's list, not a second copy of it — the schema reuses the
 // same enum, so the labels have to be the same words or one report ends up
 // unable to add up the other.
-import { RESPONSIBLE_PARTIES } from "@/lib/delays-core";
+import { RESPONSIBLE_PARTIES } from "@/lib/delay-options";
 
 /**
  * The fields a punch item has beyond its description, shared by the create

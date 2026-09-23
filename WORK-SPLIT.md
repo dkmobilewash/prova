@@ -5,13 +5,26 @@ lines every day.
 
 ## The two lanes
 
-**Diego's lane — the core estimating/costing/AI engine.** This is the
+**Diego's lane — the core estimating/costing engine.** This is the
 stuff that's already deep and interconnected: `lib/actions.ts`'s
 estimating and job-costing functions, `lib/wip.ts`, `lib/
-gc-reliability.ts`, `packages/integrations/src/anthropic.ts`, and the
-`apps/web/app/(app)/jobs/[id]/page.tsx` page. Also anything touching
-billing/AIA pay applications and retainage next, since those extend the
-existing `Invoice`/`Payment` models Diego's been building on.
+gc-reliability.ts`, and the `apps/web/app/(app)/jobs/[id]/page.tsx`
+page. Also anything touching billing/AIA pay applications and retainage
+next, since those extend the existing `Invoice`/`Payment` models Diego's
+been building on.
+
+**AI is Cyrus's lane, as of 2026-09-21.** This heading used to read
+"estimating/costing/AI engine" and listed
+`packages/integrations/src/anthropic.ts` under Diego. That's no longer
+true. The move was announced in `#prova-build` the same night. Cyrus
+owns the Ask assistant (`apps/web/lib/ask/**`, the `Ask*` components,
+its tools and write commands, research and web search), the model
+integration (`packages/integrations/src/anthropic.ts`, `ask.ts`), AI
+document extraction, and AI usage metering and billing (`AskUsage`).
+Where an AI feature reads Diego's numbers — Ask's `draft_invoice`, the
+WIP narrative — the logic underneath stays Diego's and the AI layer on
+top is Cyrus's, so a change that reaches into both still gets a Slack
+heads-up first.
 
 **Cyrus's lane — new, self-contained feature verticals.** Greenfield
 areas: nothing existing depends on them, so there's very little to

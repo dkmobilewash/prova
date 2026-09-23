@@ -83,8 +83,6 @@ const NOT_PER_JOB: Record<string, string> = {
  * reason. A screen added to this list is a decision; a screen missing
  * from it is a bug. */
 const NOT_CACHED: Record<string, string> = {
-  "(tabs)/camera.tsx": "a doorway to the photo screen; it loads nothing itself",
-  "(tabs)/create.tsx": "a launcher; the screens it opens do the loading",
   "(tabs)/settings.tsx": "the signed-in account, which Clerk holds on the device",
 };
 

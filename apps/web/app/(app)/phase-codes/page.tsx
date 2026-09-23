@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
+import { formatHours } from "@/lib/render-hours";
 import { formatCoveragePercent } from "@/lib/wip";
 import { loadPhaseCodeRollup } from "@/lib/phase-code-rollup-query";
 import type { PhaseCodeRollupRow } from "@/lib/phase-code-rollup";
@@ -133,9 +134,9 @@ function Row({ row, uncoded = false }: { row: PhaseCodeRollupRow; uncoded?: bool
         {row.unpricedLaborHours > 0 && (
           <span
             className="ml-1 text-xs text-tag-amber-ink"
-            title={`${row.unpricedLaborHours} hour${row.unpricedLaborHours === 1 ? "" : "s"} logged against this phase have no wage rate behind them, so this total is lower than what the work really cost. Add a fringe rate schedule for that craft and those dates.`}
+            title={`${formatHours(row.unpricedLaborHours)} hour${row.unpricedLaborHours === 1 ? "" : "s"} logged against this phase have no wage rate behind them, so this total is lower than what the work really cost. Add a fringe rate schedule for that craft and those dates.`}
           >
-            +{row.unpricedLaborHours} hrs unpriced
+            +{formatHours(row.unpricedLaborHours)} hrs unpriced
           </span>
         )}
       </td>
@@ -248,7 +249,7 @@ export default async function PhaseCodesPage() {
                 is another, and coverage above cannot answer it. */}
             {rollup.totals.unpricedLaborHours > 0 && (
               <p className="mt-1 text-sm text-tag-amber-ink">
-                {rollup.totals.unpricedLaborHours} logged{" "}
+                {formatHours(rollup.totals.unpricedLaborHours)} logged{" "}
                 {rollup.totals.unpricedLaborHours === 1 ? "hour has" : "hours have"} no wage rate
                 behind {rollup.totals.unpricedLaborHours === 1 ? "it" : "them"}, so every actual
                 and variance below is lower than what the work really cost. Add a fringe rate

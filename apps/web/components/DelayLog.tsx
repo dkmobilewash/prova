@@ -170,11 +170,17 @@ export function DelayLog({
             </label>
             <label className={labelClass}>
               Workers affected
-              <input name="workersAffected" inputMode="numeric" placeholder="4" className={inputClass} />
+              <input name="workersAffected" type="text" inputMode="numeric" placeholder="4" className={inputClass} />
             </label>
             <label className={labelClass}>
               Crew-hours lost
-              <input name="hoursLost" inputMode="decimal" placeholder="worked out if blank" className={inputClass} />
+              <input
+                name="hoursLost"
+                type="text"
+                inputMode="decimal"
+                placeholder="worked out if blank"
+                className={inputClass}
+              />
             </label>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">

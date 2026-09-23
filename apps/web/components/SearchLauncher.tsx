@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { searchApp } from "@/lib/actions";
+import { runSearch } from "@/lib/search/panel";
 import { SEARCH_TYPE_LABELS } from "@/lib/search/types";
 import type { SearchRecordResult, SearchPageResult } from "@/lib/search/types";
 
@@ -157,7 +158,13 @@ export function SearchLauncher() {
     setLoading(true);
     const id = ++requestId.current;
     const timer = setTimeout(async () => {
-      const result = await searchApp(trimmed);
+      // Through `runSearch`, which cannot reject. This callback is a
+      // FLOATING promise — `setTimeout` does not await it — so a rejection
+      // here is an unhandled rejection, and every line below it,
+      // `setLoading(false)` first among them, simply never runs. That is
+      // what left the panel reading "Searching…" until it was closed, for
+      // any cause at all. See lib/search/panel.ts.
+      const result = await runSearch(() => searchApp(trimmed));
       // A slower, earlier request landing after a faster, later one must
       // not overwrite it — the classic race in anything typed-as-you-go.
       if (id !== requestId.current) return;

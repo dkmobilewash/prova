@@ -73,9 +73,18 @@ export function ReceivablesList() {
     // that has raised none — and absurd to read on your first morning. The
     // count distinguishes them; the list cannot.
     return invoicesRaised === 0 ? (
+      // The way out used to be missing from the one empty state on the
+      // first screen of the first morning. It described a condition — no
+      // invoices — and left the reader to work out for himself that an
+      // invoice is raised from a job's Billing tab, which he has no way of
+      // knowing on day one.
       <p className="text-sm text-ink-body">
         No invoices raised yet. Once you bill a job, what each GC still owes shows up here, longest
-        overdue first.
+        overdue first.{" "}
+        <Link href="/jobs" className="text-link hover:underline">
+          Open a job
+        </Link>{" "}
+        and bill it under Billing.
       </p>
     ) : (
       <p className="text-sm text-ink-body">
@@ -178,9 +187,7 @@ export function ReceivablesDetailPanel() {
       }
     >
       <dl className="flex flex-col gap-3">
-            <Row label="Invoiced" value={money(open.amount)} />
-            <Row label="Paid" value={money(open.paid)} />
-            <Row label="Outstanding" value={money(open.outstanding)} emphasis />
+            <ReceivablesFigures row={open} />
             <Row
               label="Due"
               value={
@@ -235,6 +242,38 @@ export function ReceivablesDetailPanel() {
             </p>
           </div>
     </SidePanel>
+  );
+}
+
+/**
+ * The money figures, as their own component so a test can execute them.
+ *
+ * They are the figures a bookkeeper ties out, and they lived inside a
+ * panel that only renders after a click on a list that only renders after
+ * a database read — which is why three numbers that did not add up sat on
+ * this screen with nothing able to see them. `receivablesFigures.test.ts`
+ * renders this and does the subtraction.
+ */
+export function ReceivablesFigures({ row }: { row: OverdueInvoice }) {
+  // Null is "no retainage clause on this contract" and gets no line at
+  // all; zero is "a clause applies and this invoice withheld nothing",
+  // which is a fact worth printing. Collapsing the two would either
+  // invent a fourth number to wonder about or claim a job has no
+  // retainage when it does.
+  const retainage = row.retainageWithheld;
+  return (
+    <>
+      <Row label="Invoiced" value={money(row.amount)} />
+      <Row label="Paid" value={money(row.paid)} />
+      {retainage !== null && <Row label="Retainage withheld" value={money(retainage)} />}
+      <Row label="Outstanding" value={money(row.outstanding)} emphasis />
+      {retainage !== null && (
+        <p className="-mt-1 text-xs text-ink-body">
+          Outstanding is net of retainage. That money is not late — it is not due until
+          substantial completion, and it is reported on Cash flow as retainage receivable.
+        </p>
+      )}
+    </>
   );
 }
 

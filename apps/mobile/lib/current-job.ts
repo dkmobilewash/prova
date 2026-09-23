@@ -34,10 +34,39 @@ export async function getCurrentJob(): Promise<CurrentJob | null> {
   }
 }
 
+/**
+ * Everyone currently showing the job, so a change reaches them at once.
+ *
+ * Reading on FOCUS alone is not enough, and the gap is not cosmetic. The
+ * capture sheet takes its job from the tab LAYOUT, which never loses
+ * focus while you move between tabs — so after "Leave <job>" the sheet
+ * kept offering Photo, Field report and Time against the job the phone
+ * had just left, and a tap would have filed work against it. Found on a
+ * phone during #427's click-list; no test could see it, because the two
+ * stale readers were two different components agreeing with each other.
+ *
+ * A module-level set rather than a context: `setCurrentJob` is called
+ * from row handlers deep in screens that have no provider above them.
+ */
+const listeners = new Set<() => void>();
+
+export function onCurrentJobChange(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function announce(): void {
+  for (const listener of [...listeners]) listener();
+}
+
 export async function setCurrentJob(job: CurrentJob): Promise<void> {
   await AsyncStorage.setItem(KEY, JSON.stringify(job));
+  announce();
 }
 
 export async function clearCurrentJob(): Promise<void> {
   await AsyncStorage.removeItem(KEY);
+  announce();
 }

@@ -261,6 +261,22 @@ export const laborExclusions: Exclusion[] = [
     reason: "Taking a person off the crew is an owner's roster decision, made on the Team page in front of the name; page only.",
   },
   {
+    action: "createCrewMember",
+    // Genuinely tempting — "add Luis Ortega to the crew" is one sentence,
+    // and this is a name with no other consequence. It is page-only anyway
+    // because of what the name IS: a locked identity field. A WH-347 names
+    // this person, the legal name cannot be edited afterwards (a database
+    // trigger refuses it), and the correction path is archive-and-re-add,
+    // which only an owner can do. A transcribed or autocorrected surname
+    // is therefore not a typo, it is a filing somebody has to retire. The
+    // form puts the spelling in front of the person before it is saved.
+    reason: "The legal name is locked once saved and prints on a filed payroll; it is typed and read back on the Team page, never transcribed.",
+  },
+  {
+    action: "updateCrewMember",
+    reason: "Edits a crew record in front of the row it belongs to — and what it may change (the employee number, the craft) is exactly what the screen shows; page only.",
+  },
+  {
     action: "approveTimesheetDay",
     reason: "Approving a signed day makes it payroll; it is done in front of the signature and the hours it covers, on the job page only.",
   },

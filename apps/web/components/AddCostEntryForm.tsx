@@ -2,8 +2,10 @@
 
 import { useRef, useState, useTransition } from "react";
 import { addCostEntry } from "@/lib/actions";
-
-const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const;
+// The four values used to be an inline `as const` array rendered raw, so
+// this picker offered "LABOR" and "SUBCONTRACTOR" in capitals. See
+// components/costCategoryLabels.ts.
+import { COST_CATEGORY_LABEL, COST_CATEGORY_ORDER } from "@/components/costCategoryLabels";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -64,9 +66,21 @@ export function AddCostEntryForm({
           required
           className="flex-1 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
         />
+        {/* The placeholder was "Amount", in a 24-character box, beside a
+            description box and a category picker, with nothing on the screen
+            saying dollars. Hours and square feet are both plausible readings
+            of a bare "Amount" to a man logging job costs.
+
+            `type="text" inputMode="decimal"` is #414's convention and stays
+            exactly as it shipped — `type="number"` submits an empty string
+            for a value it cannot parse and drops a typed comma before the
+            server sees it, both measured in real Chromium. Only the
+            placeholder changes here. */}
         <input
           name="amount"
-          placeholder="Amount"
+          type="text"
+          inputMode="decimal"
+          placeholder="$ amount"
           required
           className="w-24 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
         />
@@ -75,9 +89,9 @@ export function AddCostEntryForm({
           defaultValue="OTHER"
           className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
         >
-          {COST_CATEGORIES.map((c) => (
+          {COST_CATEGORY_ORDER.map((c) => (
             <option key={c} value={c}>
-              {c}
+              {COST_CATEGORY_LABEL[c]}
             </option>
           ))}
         </select>

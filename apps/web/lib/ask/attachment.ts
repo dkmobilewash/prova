@@ -1,4 +1,3 @@
-import type { AskAttachmentBlock } from "@prova/integrations";
 import { isOurBlobStoreUrl, type BlobCredentialEnv } from "@/lib/blob-urls";
 import { displayFileName, isAllowedIntakeType, isIntakeBlobUrl } from "@/lib/intake/upload";
 
@@ -101,60 +100,4 @@ export function askAttachmentRefusal(
   // transfer — and then the narrower list of what a model can read.
   if (!isAllowedIntakeType(ref.contentType)) return "That is not a file type this app can take in.";
   return askAttachmentTypeOrSizeProblem(ref.contentType, ref.size);
-}
-
-export type LoadedAttachment = { ok: true; block: AskAttachmentBlock } | { ok: false; error: string };
-
-/**
- * Fetches a verified reference and turns it into a model block.
- *
- * The declared size and type are the browser's claims. The fetched bytes
- * are measured again, and the store's own content type is what decides the
- * block: a file uploaded as a PDF is refused by the store if it is not one
- * (the signed token carries the type), so the header here is the store's
- * word, not the browser's.
- */
-export async function loadAskAttachment(
-  ref: AskAttachmentRef,
-  companyId: string,
-  env: BlobCredentialEnv,
-  fetchImpl: typeof fetch = fetch,
-): Promise<LoadedAttachment> {
-  const refused = askAttachmentRefusal(ref, companyId, env);
-  if (refused) return { ok: false, error: refused };
-
-  let response: Response;
-  try {
-    response = await fetchImpl(ref.url, { cache: "no-store" });
-  } catch {
-    return { ok: false, error: "The attached file couldn't be read. Attach it again." };
-  }
-  if (!response.ok) return { ok: false, error: "The attached file couldn't be read. Attach it again." };
-
-  const declaredLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > ASK_ATTACHMENT_MAX_BYTES) {
-    return { ok: false, error: askAttachmentTypeOrSizeProblem(ref.contentType, declaredLength) ?? "That file is too large." };
-  }
-  const bytes = Buffer.from(await response.arrayBuffer());
-  const sizeProblem = askAttachmentTypeOrSizeProblem(ref.contentType, bytes.length);
-  if (sizeProblem) return { ok: false, error: sizeProblem };
-
-  const storeType = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
-  // The store's word over the browser's where the store gave one.
-  const contentType = storeType || ref.contentType;
-
-  const fileName = ref.name;
-  switch (contentType) {
-    case "application/pdf":
-      return { ok: true, block: { kind: "pdf", fileName, base64: bytes.toString("base64") } };
-    case "image/jpeg":
-    case "image/png":
-    case "image/webp":
-      return { ok: true, block: { kind: "image", fileName, mediaType: contentType, base64: bytes.toString("base64") } };
-    case "text/plain":
-    case "text/csv":
-      return { ok: true, block: { kind: "text", fileName, text: bytes.toString("utf8") } };
-    default:
-      return { ok: false, error: askAttachmentTypeOrSizeProblem(contentType, bytes.length) ?? "That file type can't be read." };
-  }
 }

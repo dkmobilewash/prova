@@ -125,6 +125,9 @@ model Company {
   warrantyServiceRequests   WarrantyServiceRequest[]
   askProposals              AskProposal[]
   askUsage                  AskUsage[]
+  /// The paid AI allowance this company has claimed, one row per calendar
+  /// month — see ask-allowance.prisma.
+  askAllowancePeriods       AskAllowancePeriod[]
   vendorPriceQuotes         VendorPriceQuote[]
   outboundMessages          OutboundMessage[]
   contactInteractions       ContactInteraction[]

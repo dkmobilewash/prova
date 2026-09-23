@@ -66,6 +66,8 @@ export function ApprenticeshipPeriodRow({
               Classroom hours
               <input
                 name="classroomHours"
+                type="text"
+                inputMode="decimal"
                 defaultValue={classroomHours === null ? "" : String(classroomHours)}
                 placeholder="blank"
                 className={`w-28 ${field}`}

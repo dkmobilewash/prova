@@ -1,4 +1,47 @@
 import { PrismaClient } from "@prisma/client";
+import { markSchemaDrift } from "./schema-drift";
+
+/**
+ * The client, with ONE query hook: a Prisma "table/column does not exist"
+ * error (P2021/P2022) gets a `SCHEMA_DRIFT_*` digest before Next.js ever
+ * sees it, so the browser's error boundary can name schema drift when it
+ * is drift and stay quiet about migrations when it is not. See
+ * ./schema-drift.ts for why a digest is the only thing that survives
+ * production's redaction, and components/PageLoadError.tsx (apps/web) for
+ * what reads it. Every other error is rethrown untouched.
+ *
+ * `$allOperations` at the top level of `query` covers every model
+ * operation AND the raw-query methods, inside interactive transactions
+ * too — which is the point: drift can surface from any query on any page.
+ */
+function createClient(): PrismaClient {
+  const extended = new PrismaClient({
+    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+  }).$extends({
+    query: {
+      $allOperations: async ({ args, query }) => {
+        try {
+          return await query(args);
+        } catch (err) {
+          throw markSchemaDrift(err);
+        }
+      },
+    },
+  });
+  // TYPED AS THE PLAIN CLIENT ON PURPOSE. `$extends` returns a Proxy over
+  // the same client with the same models, the same `$transaction` and the
+  // same raw methods — but Prisma types it as `DynamicClientExtensionThis`,
+  // and the callback of ITS `$transaction` is not assignable to
+  // `Prisma.TransactionClient`, which twenty call sites across both lanes
+  // declare (`tx: Prisma.TransactionClient`). Measured: exporting the
+  // extended type produced 20 TS2345 errors in files this change has no
+  // business touching. The only members an extended client drops are
+  // `$on` and `$use`; nothing in this repo calls either, and
+  // apps/web/lib/errorBoundaryCoverage.test.ts fails the build if
+  // something starts to. The runtime proof that the hook fires on a real
+  // P2022 is apps/web/lib/schema-drift.dbtest.ts.
+  return extended as unknown as PrismaClient;
+}
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -55,11 +98,7 @@ function logConnectionTarget() {
 
 logConnectionTarget();
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
-  });
+export const prisma = globalForPrisma.prisma ?? createClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;

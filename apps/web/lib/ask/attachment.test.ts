@@ -5,9 +5,11 @@ import {
   askAttachmentRefusal,
   askAttachmentTypeOrSizeProblem,
   attachmentRefOf,
-  loadAskAttachment,
   type AskAttachmentRef,
 } from "./attachment";
+// The fetching half is server-only and lives next door, so `attachment.ts`
+// can stay importable from AskPanel — see attachmentLoad.ts's header.
+import { loadAskAttachment } from "./attachmentLoad";
 
 /**
  * A file on an Ask question: the refusals (type, size, whose file), and the
@@ -123,6 +125,10 @@ describe("reading the file", () => {
     expect(loaded).toEqual({
       ok: true,
       block: { kind: "pdf", fileName: "bid.pdf", base64: Buffer.from("%PDF-1.4 hello").toString("base64") },
+      // The page charge rides back with the block, counted from the bytes
+      // this function fetched — lib/ask/pageCount.ts. These bytes have no
+      // readable page tree, so the uncountable rule applies and says so.
+      charge: { pages: 10, basis: "pdf-uncountable" },
     });
   });
 
@@ -133,7 +139,11 @@ describe("reading the file", () => {
       ENV,
       (async () => fileResponse("a,b\n1,2", "text/csv")) as never,
     );
-    expect(csv).toEqual({ ok: true, block: { kind: "text", fileName: "items.csv", text: "a,b\n1,2" } });
+    expect(csv).toEqual({
+      ok: true,
+      block: { kind: "text", fileName: "items.csv", text: "a,b\n1,2" },
+      charge: { pages: 1, basis: "text" },
+    });
 
     const photo = await loadAskAttachment(
       ref({ url: url("co1", "ask-site.jpg"), name: "site.jpg", contentType: "image/jpeg" }),

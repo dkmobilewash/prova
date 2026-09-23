@@ -48,6 +48,44 @@ import { can, type Capability, type Principal } from "@/lib/permissions";
  * answer. */
 export type Citation = { label: string; href: string };
 
+/**
+ * One specific record the answer is about, and where to go and act on it.
+ *
+ * NOT a citation. A citation answers "where did this figure come from" and
+ * is a PAGE — `/alerts`, `/certifications`. An item link answers "take me
+ * to the one you just told me about" and is a ROW: the GC whose
+ * prequalification is due, the job whose lien deadline is running out.
+ * Diego, clicking the box on 2026-09-19: the answer named three things and
+ * left him to go and find each one by hand.
+ *
+ * TWO RULES, AND THEY ARE THE WHOLE SAFETY OF THIS FIELD.
+ *
+ * 1. THE HANDLER BUILDS THESE FROM ITS OWN DATA. The model never supplies
+ *    an href and never edits one. It cannot: `links` is not in `data`, so
+ *    it is not in what the model is shown, and nothing parses hrefs back
+ *    out of the model's prose. A link the model wrote would be a link it
+ *    could invent — a confident button to a record that does not exist,
+ *    which is worse than no button, and is exactly the failure this app
+ *    refuses everywhere else (it does not let the model do arithmetic
+ *    either).
+ *
+ * 2. THE ASKER MUST BE ABLE TO OPEN IT. A button is a stronger promise
+ *    than a citation: it says "go here and fix it". Handing somebody a
+ *    button to a page their capability refuses is a dead end with their
+ *    name on it. So a handler may only put a row here once it has already
+ *    filtered those rows for this person — which is why `needs_attention`
+ *    can: `visibleToPrincipal` has dropped every alert whose page the
+ *    asker could not open before the handler ever sees it.
+ */
+export type ItemLink = {
+  /** The row in the person's own words — an alert's title, a job's name.
+   * Taken from the record, never composed by the model. */
+  label: string;
+  href: string;
+  /** Optional one-liner under the label: which one, and why now. */
+  detail?: string;
+};
+
 /** What every handler returns. `data` is what the model narrates; it never
  * sees anything else. */
 export type ToolResult = {
@@ -65,6 +103,17 @@ export type ToolResult = {
    */
   summary?: Record<string, number>;
   citations: Citation[];
+  /**
+   * The specific records this answer is about, each with somewhere to go
+   * and do something. Optional: most tools answer a question that has no
+   * single row behind it ("what is our backlog"), and a button under such
+   * an answer would be inventing a destination.
+   *
+   * Read `ItemLink`'s own comment before adding these to a tool — both of
+   * its rules are load-bearing, and the second one (the asker must be able
+   * to open it) is not satisfied by default.
+   */
+  links?: ItemLink[];
   /**
    * Set when the question is reasonable but the data to answer it does not
    * exist. The model is instructed to say this plainly rather than reach
@@ -523,7 +572,7 @@ export const TOOLS: ToolDefinition[] = [
     // /union-compliance
     capability: "MANAGE_COMPLIANCE",
     description:
-      "Every apprentice enrolled, their programme and sponsor, which period they are in, the on-the-job hours recorded this period against what the programme requires, and how short they are. Answers 'is anybody behind on their hours'. It distinguishes THREE things a summary would flatten into one: hours recorded and short, a programme with no required figure on file so there is nothing to measure against, and a requirement with no hours recorded at all. An enrollment carrying both a completion AND a cancellation date is reported as contradictory rather than resolved by precedence — picking one would hide a data-entry error on a compliance record.",
+      "Every apprentice enrolled, their program and sponsor, which period they are in, the on-the-job hours recorded this period against what the program requires, and how short they are. Answers 'is anybody behind on their hours'. It distinguishes THREE things a summary would flatten into one: hours recorded and short, a program with no required figure on file so there is nothing to measure against, and a requirement with no hours recorded at all. An enrollment carrying both a completion AND a cancellation date is reported as contradictory rather than resolved by precedence — picking one would hide a data-entry error on a compliance record.",
     input_schema: noInput,
   },
   {
@@ -633,7 +682,7 @@ export const TOOLS: ToolDefinition[] = [
     // know where they are working." That is why no cost figure is in here.
     capability: null,
     description:
-      "Each contracted or in-progress job's scheduled start and end, how far through that window today is, and how many days until — or past — the end date. Answers 'where does this job stand against its dates'. IT DOES NOT FORECAST A COMPLETION DATE AND NOTHING IN THIS APP CAN. `scheduleElapsedPercent` is a DATE fact and is not percent complete: percent complete is money spent against money expected and lives in job_margin, and a job can be 80% through its budget and 40% through its programme. Never read one as the other, and do not offer an 'ahead or behind' verdict from the two together — a fit-out job front-loads material cost and a framing job does not, so the gap between them means different things on different work. A job missing a start or end date reports null rather than zero and is counted in `withoutBothDates`.",
+      "Each contracted or in-progress job's scheduled start and end, how far through that window today is, and how many days until — or past — the end date. Answers 'where does this job stand against its dates'. IT DOES NOT FORECAST A COMPLETION DATE AND NOTHING IN THIS APP CAN. `scheduleElapsedPercent` is a DATE fact and is not percent complete: percent complete is money spent against money expected and lives in job_margin, and a job can be 80% through its budget and 40% through its schedule. Never read one as the other, and do not offer an 'ahead or behind' verdict from the two together — a fit-out job front-loads material cost and a framing job does not, so the gap between them means different things on different work. A job missing a start or end date reports null rather than zero and is counted in `withoutBothDates`.",
     input_schema: jobFilter,
   },
   {
@@ -669,7 +718,7 @@ export const TOOLS: ToolDefinition[] = [
     name: "dispatch_slips",
     capability: "MANAGE_COMPLIANCE",
     description:
-      "Union dispatch slips on file — which worker the hall dispatched to which job, on what date, under which craft and local, and whether the actual slip document is attached. Answers 'do we have dispatch on file for this job'. IT IS NOT A CREW SCHEDULE AND MUST NOT BE USED AS ONE: a slip records that somebody WAS dispatched, never that they are on site today or tomorrow. A slip row with no document attached proves nothing in an audit, the same distinction wage_determinations makes.",
+      "Union dispatch slips on file — which worker the hall dispatched to which job, on what date, under which craft and local, and whether the actual slip document is attached. The worker is either a teammate with a login or a field crew member without one, and workerKind says which. Answers 'do we have dispatch on file for this job'. IT IS NOT A CREW SCHEDULE AND MUST NOT BE USED AS ONE: a slip records that somebody WAS dispatched, never that they are on site today or tomorrow. A slip row with no document attached proves nothing in an audit, the same distinction wage_determinations makes.",
     input_schema: jobFilter,
   },
   {
@@ -748,7 +797,7 @@ export const TOOLS: ToolDefinition[] = [
     // level this tool actually varies.
     capability: null,
     description:
-      "How to DO something inside the app, from its own registered 'Walk me through this page' walkthroughs — never a fact about this company's data. Answers 'how do I log a backcharge', 'where do I add a punch list item', 'how do I connect QuickBooks'. Cites the page and quotes its own steps. Filtered to pages this person can actually open — a page they cannot reach is never named, and never invents a step the app does not have. NOT for a question about the company's own records — a number, a list, a status, an amount: use the tool that reads that data instead, never this one. If nothing in the app's own walkthroughs matches, say so rather than guessing at a page.",
+      "How to DO something inside the app, from its own registered 'Walk me through this page' walkthroughs — never a fact about this company's data. Answers 'how do I log a backcharge', 'where do I add a punch list item', 'how do I connect QuickBooks'. Cites the page and quotes its own steps. Filtered to pages this person can actually open — a page they cannot reach is never named, and never invents a step the app does not have. `route` is always a path that opens; say exactly it and never a path of your own, and never one containing square brackets. When a result carries `insideOneJob`, its `route` is the list to START from and NOT the page — that page lives inside one job, so say to open the job from `route` first and then the tab named in `page` (\"A job — billing\" is the Billing tab). NOT for a question about the company's own records — a number, a list, a status, an amount: use the tool that reads that data instead, never this one. If nothing in the app's own walkthroughs matches, say so rather than guessing at a page.",
     input_schema: appHelpFilter,
   },
 ];
@@ -811,7 +860,7 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
    * recorded from the bureau and never derived from the OSHA log. */
   {
     topic: "whether a job will finish on time, or a forecast completion date",
-    why: "nothing forecasts a date. `schedule_status` says where a job stands against the dates somebody entered, which is as far as the data goes. Percent complete is COST-based — money spent against money expected — and a job can be 80% through its budget and nowhere near 80% through its programme.",
+    why: "nothing forecasts a date. `schedule_status` says where a job stands against the dates somebody entered, which is as far as the data goes. Percent complete is COST-based — money spent against money expected — and a job can be 80% through its budget and nowhere near 80% through its schedule.",
   },
   {
     topic: "who is clocked in right now, or who has not clocked out",

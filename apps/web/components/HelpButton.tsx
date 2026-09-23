@@ -302,7 +302,7 @@ export function HelpButton({
                 >
                   Open this in your email app
                 </a>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-ink-muted">
                   It opens a new message to{" "}
                   <span className="font-mono">{channel.to}</span> with the subject already naming
                   your company and this page. Nothing is filled in for you beyond that, and nothing
@@ -357,12 +357,12 @@ export function HelpButton({
 
                 <div className="rounded-md border border-slate-800 bg-slate-950 p-3">
                   <p className="text-xs font-medium text-slate-400">We will send with it:</p>
-                  <ul className="mt-1 list-disc pl-4 text-xs text-slate-500">
+                  <ul className="mt-1 list-disc pl-4 text-xs text-ink-muted">
                     {discloses.map((line) => (
                       <li key={line}>{line}</li>
                     ))}
                   </ul>
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-2 text-xs text-ink-muted">
                     Nothing else. No screenshot, no record of what you clicked, and none of your
                     data beyond what you type above.
                   </p>
@@ -391,7 +391,7 @@ export function HelpButton({
                     Cancel
                   </button>
                 </div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-ink-muted">
                   It goes to <span className="font-mono">{channel.to}</span> as an email from your
                   own address, and lands in Messages with its delivery status, the same as anything
                   else this app sends.

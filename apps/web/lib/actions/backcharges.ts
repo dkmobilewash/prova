@@ -1,11 +1,20 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseNumericInput } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
+import { viewerToday } from "@/lib/viewerToday";
 import { can } from "@/lib/permissions";
 import { money as formatMoney } from "@/lib/money";
 import { Prisma, prisma } from "@prova/db";
-import { actionFail as fail, actionOk as ok, isUniqueConstraintError, type ActionResult } from "./shared";
+import {
+  InputError,
+  actionFail as fail,
+  actionOk as ok,
+  isUniqueConstraintError,
+  runAction,
+  type ActionResult,
+} from "./shared";
 
 /** Actions in this module RETURN their failures instead of throwing them.
  * Production redacts a thrown Server Action message to an opaque digest, so
@@ -38,7 +47,12 @@ import { actionFail as fail, actionOk as ok, isUniqueConstraintError, type Actio
 const BILLING_ONLY =
   "Backcharges aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
-class InputError extends Error {}
+// `InputError` and `runAction` are imported from ./shared rather than
+// declared here. Two classes with the same name are not the same class:
+// `instanceof` is false between them, so a refusal thrown by a shared
+// parser walked straight past a local boundary and reached production as a
+// redacted digest. That is what #407 found on /welcome, and this module
+// held the fifteenth copy of the class it found there.
 
 const CATEGORIES = [
   "CLEANUP",
@@ -95,26 +109,26 @@ function requiredDate(formData: FormData, key: string, label: string): Date {
   return date;
 }
 
-function utcMidnightToday() {
-  return new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+/** Today on the READER'S calendar, at the UTC midnight this app stores
+ * dates on — the fallback when a form leaves an optional date blank.
+ *
+ * `new Date().toISOString().slice(0, 10)` was the server's UTC day, which
+ * west of UTC is already TOMORROW from 17:00. So a date nobody typed was
+ * stamped a day into the future, on a record that is correspondence with a
+ * GC. `viewerToday()` never throws and falls back to UTC, so the floor
+ * here is exactly the old behaviour. */
+async function utcMidnightToday() {
+  return new Date(`${await viewerToday()}T00:00:00.000Z`);
 }
 
 function money(formData: FormData, key: string, label: string): string {
   const raw = required(formData, key, label);
-  const value = Number(raw);
-  if (Number.isNaN(value)) throw new InputError(`${label} must be a number`);
-  if (value <= 0) throw new InputError(`${label} has to be more than $0`);
-  return value.toFixed(2);
+  const parsed = parseNumericInput(raw, { label, maxDecimals: 2 });
+  if (!parsed.ok) throw new InputError(parsed.error);
+  if (parsed.n <= 0) throw new InputError(`${label} has to be more than $0`);
+  return parsed.n.toFixed(2);
 }
 
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
-}
 
 async function assertJob(jobId: string, companyId: string) {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
@@ -337,7 +351,7 @@ export async function disputeBackcharge(id: string, formData: FormData): Promise
       return fail("This backcharge has already been answered.");
     }
 
-    const disputedOn = optionalDate(formData, "disputedOn", "Date we objected") ?? utcMidnightToday();
+    const disputedOn = optionalDate(formData, "disputedOn", "Date we objected") ?? (await utcMidnightToday());
     if (disputedOn < backcharge.issuedOn) {
       return fail("We can't have objected before the GC issued the backcharge.");
     }
@@ -380,7 +394,7 @@ export async function resolveBackcharge(id: string, formData: FormData): Promise
     }
 
     const outcome = enumFrom(formData, "outcome", OUTCOMES, "Outcome");
-    const resolvedOn = optionalDate(formData, "resolvedOn", "Date it was resolved") ?? utcMidnightToday();
+    const resolvedOn = optionalDate(formData, "resolvedOn", "Date it was resolved") ?? (await utcMidnightToday());
 
     if (resolvedOn < backcharge.issuedOn) {
       return fail("It can't have been resolved before the GC issued it.");

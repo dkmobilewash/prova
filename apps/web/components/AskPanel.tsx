@@ -16,7 +16,7 @@ import {
 import { EXAMPLES } from "@/components/askExamples";
 import { ASK_PREFILL_EVENT, takePendingAsk } from "@/lib/empty-state-events";
 import type { AskRequest, AskStreamEvent, ClarifyView, ProposalView } from "@/lib/ask/answer";
-import type { Citation } from "@/lib/ask/tools";
+import type { Citation, ItemLink } from "@/lib/ask/tools";
 import {
   cancelAskProposal,
   confirmAskProposal,
@@ -188,6 +188,42 @@ type PendingAttachment =
 // a "use client" module crosses the RSC boundary as a client-reference
 // proxy, which is the Hint.tsx scar in CLAUDE.md.
 
+/**
+ * "Go straight to" — one control per record the answer named.
+ *
+ * A LINK, not a button, and styled as a control: it navigates, so it must
+ * middle-click, open in a new tab and be read as a link by a screen
+ * reader. `min-h-11` because this is the thing a foreman taps on a phone,
+ * and the app's own touch target elsewhere is 44px (AskProposalCard).
+ *
+ * The label and detail are the RECORD'S OWN WORDS, handed over by the
+ * handler — the model never writes an href and never edits one, which is
+ * why a button here cannot point at something that does not exist. See
+ * `ItemLink` in lib/ask/tools.ts.
+ */
+function ItemLinks({ links }: { links: ItemLink[] }) {
+  return (
+    <div className="mt-3" data-ask="item-links">
+      <p className="text-xs text-ink-body">Go straight to</p>
+      <ul className="mt-1 flex flex-col gap-1">
+        {links.map((link) => (
+          <li key={link.href}>
+            <Link
+              href={link.href}
+              className="flex min-h-11 flex-col justify-center rounded-md border border-line-card px-3 py-2 hover:border-link"
+            >
+              <span className="text-sm font-medium text-ink">{link.label}</span>
+              {link.detail && (
+                <span className="text-xs text-ink-body">{link.detail}</span>
+              )}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function AskPanel() {
   // The route the person is looking at, sent with every question so the
   // assistant does not have to ask which job they mean when they are
@@ -198,6 +234,7 @@ export function AskPanel() {
   const [asked, setAsked] = useState("");
   const [answer, setAnswer] = useState("");
   const [citations, setCitations] = useState<Citation[]>([]);
+  const [links, setLinks] = useState<ItemLink[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   // Text streamed before any tool has run is the model talking to itself
@@ -287,6 +324,7 @@ export function AskPanel() {
   // and would silently open somebody else's row.
   const [openRows, setOpenRows] = useState<number[]>([]);
   const citationsRef = useRef<Citation[]>([]);
+  const linksRef = useRef<ItemLink[]>([]);
   const scrollbackRef = useRef<HTMLDivElement>(null);
 
   // Open at the BOTTOM, which is where the newest prior exchange is. A
@@ -428,6 +466,8 @@ export function AskPanel() {
       case "done":
         setCitations(event.citations);
         citationsRef.current = event.citations;
+        setLinks(event.links);
+        linksRef.current = event.links;
         setStatus(null);
         // An answer that called no tool at all — a refusal, a clarifying
         // question — never gets `answering`, so everything it said is
@@ -461,6 +501,7 @@ export function AskPanel() {
               question: askedRef.current,
               answer: answerRef.current.trim(),
               citations: citationsRef.current,
+              ...(linksRef.current.length ? { links: linksRef.current } : {}),
               askedAt: Date.now(),
               ...(sentAttachmentRef.current ? { attachmentName: sentAttachmentRef.current.name } : {}),
             },
@@ -504,6 +545,8 @@ export function AskPanel() {
     setAnswer("");
     setCitations([]);
     citationsRef.current = [];
+    setLinks([]);
+    linksRef.current = [];
     setError(null);
     setProposal(null);
     setClarify(null);
@@ -856,6 +899,9 @@ export function AskPanel() {
                       ) : (
                         <p className="mt-1 text-sm text-ink-muted">Nothing came back for this one.</p>
                       )}
+                      {entry.links && entry.links.length > 0 && (
+                        <ItemLinks links={entry.links} />
+                      )}
                       {entry.citations.length > 0 && (
                         <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-body">
                           <span>Read from</span>
@@ -1013,6 +1059,13 @@ export function AskPanel() {
               )}
             </div>
           )}
+
+          {/* The specific records the answer named, each a tap from being
+              dealt with. ABOVE the citations deliberately: "go and fix
+              this one" is the next thing a person wants, and "where this
+              came from" is the thing they want when they doubt it. An
+              answer with nothing row-shaped behind it carries none. */}
+          {links.length > 0 && <ItemLinks links={links} />}
 
           {/* Citations arrive with the last event, not the first, so they
               appear once the answer is complete. An answer with no tool

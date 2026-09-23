@@ -15,6 +15,11 @@ import type { Principal } from "@/lib/permissions";
 import { accessContext, refusalFor } from "./access";
 import { askAllowance, recordAskUsage, type AskUsageOutcome } from "./usage";
 import {
+  claimAskAllowance,
+  markAskAllowanceFailure,
+  type AllowanceClaim,
+} from "./allowance";
+import {
   type BidResearcher,
   canRunCommand,
   commandNamed,
@@ -31,8 +36,11 @@ import {
   type PreviewLine,
 } from "./commands";
 import { pageContextSentence } from "./page-context";
+import { businessScopeContext } from "./business-scope-context";
+import { UNANSWERED_SCOPE } from "@/lib/businessScope";
 import { can } from "@/lib/permissions";
-import { loadAskAttachment, type AskAttachmentRef } from "./attachment";
+import type { AskAttachmentRef } from "./attachment";
+import { loadAskAttachment } from "./attachmentLoad";
 import type { WebSuggestion } from "./webSuggestions";
 import { resolvePageJob } from "./page-context-query";
 import { PRIOR_TURNS_RULE, type AskTurn } from "./turns";
@@ -45,8 +53,24 @@ import {
   toolsFor,
   TOOLS,
   type Citation,
+  type ItemLink,
   type ToolName,
 } from "./tools";
+
+/** How many "go here" buttons an answer may carry.
+ *
+ * The cap is the point, and it is deliberately far below what a tool may
+ * return: `needs_attention` hands back up to ATTENTION_ROWS (25) rows.
+ * Without a cap, "what needs my attention" on a busy company renders the
+ * whole alert page as a stack of buttons under a three-line answer, and
+ * the item that is nine days overdue is somewhere in the middle of it —
+ * which is the alert page again, rendered worse.
+ *
+ * Six because the answer above it is prose a person reads: buttons are
+ * for the handful it actually named. The handler returns them in the
+ * order it wants them read, most urgent first, so truncating keeps the
+ * ones that matter rather than an arbitrary slice. */
+const MAX_ITEM_LINKS = 6;
 
 /**
  * The model call behind Ask.
@@ -304,7 +328,7 @@ export type AskStreamEvent =
   | { type: "answering" }
   | { type: "reset" }
   | { type: "text"; delta: string }
-  | { type: "done"; citations: AskCitation[]; toolsUsed: ToolName[] }
+  | { type: "done"; citations: AskCitation[]; links: ItemLink[]; toolsUsed: ToolName[] }
   | { type: "error"; error: string }
   | AskHalt;
 
@@ -536,8 +560,11 @@ export async function* streamAnswer(
     return;
   }
 
-  // The bound on spend, checked BEFORE the model rather than after: a
-  // person or a company at its limit gets the sentence and no pass runs.
+  // THE COURTESY BOUND, checked BEFORE the model rather than after: a
+  // person or a company at its rolling limit gets the sentence and no pass
+  // runs. FAILS OPEN when it cannot be read (#257) — see usage.ts. The paid
+  // monthly cap below is a different thing and fails CLOSED; the two are
+  // deliberately not merged.
   const allowance = await askAllowance(ctx.companyId, ctx.userId);
   if (!allowance.ok) {
     yield { type: "error", error: allowance.error };
@@ -549,7 +576,14 @@ export async function* streamAnswer(
   // from nothing, which is the one thing this box must never do. Intake's
   // capability, because the file lives in intake's folder and a person who
   // cannot open the tray must not read its contents through here.
+  //
+  // IT IS LOADED BEFORE THE ALLOWANCE IS CLAIMED, and the order matters: the
+  // page count comes out of the bytes, so how much this question costs is
+  // not known until the file is in hand. Fetching a blob from our own store
+  // spends no model money, so nothing is at risk in doing it first — and a
+  // file that is refused here never touches the allowance at all.
   let attachment: AskAttachmentBlock | undefined;
+  let pages = 0;
   if (request.attachment) {
     if (!can(ctx.principal, "MANAGE_JOBS")) {
       yield { type: "error", error: "Attaching files uses document intake, which isn't part of your job function." };
@@ -561,7 +595,21 @@ export async function* streamAnswer(
       return;
     }
     attachment = loaded.block;
+    pages = loaded.charge.pages;
   }
+
+  // THE PAID CAP. One question and this file's pages are CLAIMED here,
+  // before a single pass runs — not recorded afterwards. A claim that fails
+  // is the hard stop: the sentence says what ran out, when it comes back
+  // and who to ask, nothing is billed, and no model call happens. A claim
+  // that cannot be made at all is ALSO a refusal; this one fails closed on
+  // purpose, unlike the rolling limits above. lib/ask/allowance.ts.
+  const claimed = await claimAskAllowance(ctx.companyId, { questions: 1, pages });
+  if (!claimed.ok) {
+    yield { type: "error", error: claimed.error };
+    return;
+  }
+  const claim: AllowanceClaim = claimed.claim;
 
   // Web research for a new bid, bound to this company for the usage row.
   // Only the Ask loop supplies it; the confirm tap never researches.
@@ -592,6 +640,13 @@ export async function* streamAnswer(
   const loopCtx: CommandContext = { ...ctx, research };
 
   const citations: AskCitation[] = [];
+  /* Per-record destinations, collected exactly as citations are and capped
+   * the same way a tool's rows are capped. A dozen buttons under an answer
+   * is not more useful than three — it is the alert list again, rendered
+   * worse, and it buries the one that matters. The cap is applied at the
+   * end rather than here so that dedupe runs against everything collected,
+   * not against the first N. */
+  const links: ItemLink[] = [];
   const toolsUsed: ToolName[] = [];
   // Set synchronously, before the first await in a command's branch, so a
   // batch of two commands running under Promise.all yields one proposal
@@ -614,6 +669,12 @@ export async function* streamAnswer(
   const perRequestContext =
     [
       accessContext(ctx.principal),
+      // What kind of contractor this is — the three onboarding answers, so
+      // the wording fits the business rather than the average of every
+      // business. Nothing at all for a company that skipped them, which is
+      // most of them. Costs no database read: the answers came off the
+      // Company row the session had already loaded.
+      businessScopeContext(ctx.businessScope ?? UNANSWERED_SCOPE),
       pageContextSentence(pageJob),
       priorTurns.length > 0 ? PRIOR_TURNS_RULE : null,
       attachment ? ATTACHMENT_RULE : null,
@@ -683,6 +744,17 @@ export async function* streamAnswer(
           citations.push(citation);
         }
       }
+      // Same dedupe rule as citations, and it does real work here rather
+      // than being defensive: several alerts legitimately point at one
+      // page (three closeout items are all `/closeout`), and three buttons
+      // reading the same destination is noise. First label wins, because
+      // the handler returns them in the order it wants them read —
+      // most urgent first.
+      for (const link of result.links ?? []) {
+        if (!links.some((existing) => existing.href === link.href)) {
+          links.push(link);
+        }
+      }
       if (result.unavailable) {
         return { content: JSON.stringify({ unavailable: result.unavailable }) };
       }
@@ -706,38 +778,71 @@ export async function* streamAnswer(
     await recordAskUsage({ companyId: ctx.companyId, userId: ctx.userId, model: ASK_DEFAULT_MODEL, usage, outcome });
   };
 
-  for await (const event of events) {
-    switch (event.type) {
-      case "text":
-      case "reset":
-      case "answering":
-        yield event;
-        break;
-      case "tools":
-        yield { type: "tools", names: event.names, label: labelFor(event.names) };
-        break;
-      case "usage":
-        usage = event.usage;
-        break;
-      case "halt":
-        await record(event.halt.type);
-        yield event.halt;
-        return;
-      case "error":
-        await record(`error:${event.reason}`);
-        yield { type: "error", error: messageFor(event.reason) };
-        return;
-      case "done":
-        await record("answered");
-        // Citations only where a tool actually ran. An answer built from
-        // no data — a refusal to guess, a clarifying question — must not
-        // carry links implying it was sourced from the rows.
-        yield {
-          type: "done",
-          citations: toolsUsed.length ? citations : [],
-          toolsUsed,
-        };
-        return;
+  // The claim above is MARKED, never released, when the question does not
+  // produce an answer. Releasing would let anyone defeat the cap by making
+  // calls fail, and the provider bills a stream that died halfway anyway —
+  // allowance.ts's header argues it in full. The mark is what lets an owner
+  // see failed questions on /settings/assistant and ask a human for a
+  // credit; nothing in this app adjusts an allowance by itself.
+  //
+  // Note the asymmetry with `record`, which returns early when the loop
+  // never reported any usage. This does not: a question that claimed its
+  // unit and then never reached the model is exactly the case worth
+  // marking, and it is the one where `usage` is null.
+  const markFailed = async () => {
+    await markAskAllowanceFailure(claim);
+  };
+
+  // The `throw` arm of the same rule. The loop reports most failures as an
+  // `error` EVENT, but a thrown one — a tool handler that blew up, a
+  // database that went away mid-question — reaches here instead, and it is
+  // the same outcome for the person and the same claim to mark. Re-thrown
+  // afterwards, unchanged: marking is bookkeeping, not error handling, and
+  // swallowing the error here would hide a genuine bug behind a tidy
+  // stream.
+  try {
+    for await (const event of events) {
+      switch (event.type) {
+        case "text":
+        case "reset":
+        case "answering":
+          yield event;
+          break;
+        case "tools":
+          yield { type: "tools", names: event.names, label: labelFor(event.names) };
+          break;
+        case "usage":
+          usage = event.usage;
+          break;
+        case "halt":
+          await record(event.halt.type);
+          yield event.halt;
+          return;
+        case "error":
+          await record(`error:${event.reason}`);
+          await markFailed();
+          yield { type: "error", error: messageFor(event.reason) };
+          return;
+        case "done":
+          await record("answered");
+          // Citations only where a tool actually ran. An answer built from
+          // no data — a refusal to guess, a clarifying question — must not
+          // carry links implying it was sourced from the rows.
+          yield {
+            type: "done",
+            citations: toolsUsed.length ? citations : [],
+            // Same condition as citations, for the same reason: a refusal
+            // or a clarifying question ran no tool, so it has no record to
+            // send anyone to, and a button under one would be pointing at
+            // something the answer never looked at.
+            links: toolsUsed.length ? links.slice(0, MAX_ITEM_LINKS) : [],
+            toolsUsed,
+          };
+          return;
+      }
     }
+  } catch (err) {
+    await markFailed();
+    throw err;
   }
 }

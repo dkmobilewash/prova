@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**132 items audited — 105 built / 22 partial / 4 missing / 1 descoped**
+**133 items audited — 106 built / 22 partial / 4 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -101,7 +101,7 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 105 |
+| Built | 106 |
 | Partial | 22 |
 | Missing | 4 |
 | Descoped | 1 |
@@ -193,7 +193,7 @@ subcontract agreement storage and versioning shipped same-day.*
 | Partial | Cost categorization: labor, material, equipment, sub/other, by trade tag | `CostCategory` has LABOR/MATERIAL/SUBCONTRACTOR/OTHER plus a `tradeScope` tag — no distinct EQUIPMENT bucket |
 | Partial | Job cost roll-up dashboard: budget vs. actual vs. forecast, per line item and per job | built per-job on `/jobs/[id]`; no cross-job/company-wide roll-up view |
 
-## 07. Labor & Time Tracking — 6 built · 1 partial · 0 missing
+## 07. Labor & Time Tracking — 7 built · 1 partial · 0 missing
 
 *Updated — field time entry, craft classification per hour, pay-type
 tracking, per diem/travel pay, and dispatch slips shipped 26 Aug 2026.
@@ -201,15 +201,24 @@ Correcting a logged hour shipped 13 Sep 2026 (issue #63); before it, the
 only way to fix a wrong figure was a one-click delete with no
 confirmation, which destroyed the record it was correcting.*
 
+*Updated 21 Sep 2026 — a field worker with no login can be ADDED from the
+UI, and hours can be logged for them from the web. Both of those read as
+built before this date and neither was: `CrewMember` shipped with #292 and
+the phone wrote it, but the only way to create one from a screen was an
+owner-only CSV import inside Settings, `/team` hid its crew section until a
+crew member already existed, and the web time-entry dropdown listed only
+people with Clerk logins. The row below said "by employee" and meant it.*
+
 | Status | Feature | Note |
 | --- | --- | --- |
-| Built | Field time entry by employee, job, cost code/SOV line, date | `TimeEntry` — logged per job, optionally tied to a `JobLineItem` |
+| Built | A field worker who has no login and no email | `CrewMember` — the identity a filed WH-347 names, with the legal name locked after creation by `prova_crew_member_identity_lock`. Added by name from `/team`, which also carries the spreadsheet import for a whole crew; `MANAGE_FIELD`, deliberately not owner-only, so the office manager who runs certified payroll can put the people on the list she then imports a payroll register against. Archiving keeps the owner gate — it is the only one-way door here, since nothing un-archives |
+| Built | Field time entry by employee, job, cost code/SOV line, date | `TimeEntry` — logged per job, optionally tied to a `JobLineItem`. The worker is a `User` OR a `CrewMember`, never both and never neither (a database XOR check), and the web form offers both; until 21 Sep it offered only logins, so a crew member's hours could be entered on the phone and not in the office |
 | Built | Correcting a logged hour, without it changing hands | `updateTimeEntry` corrects the figures (hours, pay type, note, allowances, cost code, craft) and records who corrected it and when; the job, the person, the day and the crew member are locked after creation by the `prova_time_entry_identity_lock` trigger, so a re-attribution is a delete and a re-entry. It does NOT store the previous figure — the amendment row for that is still to come |
 | Built | Craft classification per hour entered | `TimeEntry.craftClassificationId`, optional, same pattern as `JobLineItem` |
 | Built | Straight/overtime/double-time/shift differential tracking | `TimeEntry.payType` — tracks hours by category; does not compute dollar wages (needs a rate-rule engine, still missing) |
 | Built | Per diem / travel pay tracking | `TimeEntry.perDiemAmount` / `.travelPayAmount` — flat daily allowances on the same row |
 | Built | Union hiring-hall dispatch slip tracking | `DispatchSlip` — hall referral onto a job, optional scanned slip via Vercel Blob |
-| Partial | Mobile/field time entry app | `apps/mobile` — a dedicated Expo app (expo-router, Clerk sign-in) on `main`, so the deferral this row recorded is over. Time entry by crew member and job, timesheet sign-off, punch lists (Ready/Verified, offline close), camera capture with GPS at the shutter and a burned-in stamp, drawings, schedule, materials, reports, safety — all through an offline-first engine (a write outbox, cached reads that need no token, reads that never wait on the write, one stuck write no longer holding the queue) on the phone's own calendar day, not UTC's. Tabs are capability-derived, and an API seam (`/api/v1`) serves the same cores the web actions use. Typecheck and both vitest suites (unit and screen) green 2026-09-21; alert pushes landed the same day — the daily digest pushes each phone its own list, and a tap opens the Alerts screen. **Still Partial for two named reasons: it is not distributed — EAS is configured (`com.cstream.prova`) and the Apple Developer Program is enrolled, but no TestFlight build exists — and it has not been clicked through on a device end-to-end. Those are the flips to Built.** |
+| Partial | Mobile/field time entry app | `apps/mobile` — a dedicated Expo app (expo-router, Clerk sign-in: email and password, a reset-by-emailed-code path, and Google) on `main`, so the deferral this row recorded is over. Time entry by crew member and job, timesheet sign-off, punch lists (Ready/Verified, offline close), camera capture with GPS at the shutter and a burned-in stamp, drawings, schedule, materials, reports, safety — all through an offline-first engine (a write outbox, cached reads that need no token, reads that never wait on the write, one stuck write no longer holding the queue) on the phone's own calendar day, not UTC's. Tabs are capability-derived, and an API seam (`/api/v1`) serves the same cores the web actions use. Typecheck and both vitest suites (unit and screen) green 2026-09-21; alert pushes then landed — the daily digest pushes each phone its own list, and a tap opens the Alerts screen. **Still Partial for two named reasons: it is not distributed — EAS is configured (`com.cstream.prova`) and the Apple Developer Program is enrolled, but no TestFlight build exists — and it has not been clicked through on a device end-to-end. Those are the flips to Built.** |
 
 ## 08. Certified Payroll & Prevailing Wage — 3 built · 1 partial · 1 missing
 

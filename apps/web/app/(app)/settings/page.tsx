@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import {
@@ -35,6 +36,7 @@ import {
 } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
 import { quickBooksConnectCardState, quickBooksSetup } from "@/lib/quickbooks-setup";
+import { ActionForm } from "@/components/ActionForm";
 
 const QB_ERROR_MESSAGES: Record<string, string> = {
   access_denied: "You declined the QuickBooks connection request.",
@@ -142,10 +144,10 @@ export default async function SettingsPage({
 
   if (currentUser.role !== "OWNER") {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8">
+      <PageShell width="reading">
         <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
         <p className="text-sm text-ink-body" data-tour="settings-owner-only">Only the account owner can manage integrations.</p>
-      </div>
+      </PageShell>
     );
   }
 
@@ -241,7 +243,18 @@ export default async function SettingsPage({
   }));
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    // `reading`, and the width deliberately does not change: this page is
+    // eight stacked forms — company details, licences, insurance policies,
+    // bonding — and a text input stretched to 1272px is HARDER to read, not
+    // easier. Line length is why the cap was here in the first place. What
+    // changes is that the page no longer owns the number: the measure is the
+    // shell's, so when the type scale moves, this moves with it.
+    //
+    // This page's other problem — 4.7 screens of vertical scroll — is a
+    // density and section-structure problem, not a width one, and belongs to
+    // a later phase. Widening it would have made that worse by stretching
+    // every field.
+    <PageShell width="reading">
       <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
 
       {/* The Integrations page is the framework's own surface; QuickBooks
@@ -777,7 +790,7 @@ export default async function SettingsPage({
 
         <details className="rounded-lg border border-line-card bg-surface p-4">
           <summary className="cursor-pointer text-sm font-medium text-ink-label">Add a bond</summary>
-          <form action={createBond} className="mt-4 flex flex-col gap-3">
+          <ActionForm action={createBond} className="mt-4 flex flex-col gap-3">
             <div className="flex flex-wrap gap-3">
               <label className={labelClass}>
                 Type
@@ -797,11 +810,11 @@ export default async function SettingsPage({
             <div className="flex flex-wrap gap-3">
               <label className={labelClass}>
                 Aggregate bonding capacity (optional)
-                <input name="aggregateBondingCapacity" type="number" step="0.01" className={`w-48 ${inputClass}`} />
+                <input name="aggregateBondingCapacity" type="text" inputMode="decimal" className={`w-48 ${inputClass}`} />
               </label>
               <label className={labelClass}>
                 Single job limit (optional)
-                <input name="singleJobLimit" type="number" step="0.01" className={`w-48 ${inputClass}`} />
+                <input name="singleJobLimit" type="text" inputMode="decimal" className={`w-48 ${inputClass}`} />
               </label>
               <label className={labelClass}>
                 Renewal date (optional)
@@ -825,9 +838,9 @@ export default async function SettingsPage({
             <SubmitButton type="submit" className={`self-start ${addButtonClass}`}>
               Add bond
             </SubmitButton>
-          </form>
+          </ActionForm>
         </details>
       </section>
-    </div>
+    </PageShell>
   );
 }

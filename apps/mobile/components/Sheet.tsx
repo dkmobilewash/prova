@@ -1,6 +1,8 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Dimensions, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { colors, typography } from "@/lib/theme";
+import { Button } from "@/components/Button";
+import { type Palette, radius, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import { useKeyboardHeight } from "@/lib/use-keyboard-height";
 
 /**
@@ -38,6 +40,8 @@ export function Sheet({
   /** Greys the primary button out, e.g. until a required choice is made. */
   primaryDisabled?: boolean;
 }) {
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const keyboard = useKeyboardHeight();
   // 88% of what is left above the keyboard, not of the whole screen: the
   // cap is there to leave the status bar and a strip of backdrop reachable,
@@ -58,65 +62,49 @@ export function Sheet({
           {children}
         </ScrollView>
         {primaryLabel && onPrimary ? (
-          <Pressable
-            onPress={onPrimary}
-            disabled={primaryDisabled}
-            style={({ pressed }) => [styles.primary, primaryDisabled && styles.disabled, pressed && styles.pressed]}
-          >
-            <Text style={styles.primaryLabel}>{primaryLabel}</Text>
-          </Pressable>
+          <Button fullWidth onPress={onPrimary} disabled={primaryDisabled}>
+            {primaryLabel}
+          </Button>
         ) : null}
       </View>
     </Modal>
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(10,10,10,0.4)" },
-  sheet: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    // `bottom` and `maxHeight` are set inline from the keyboard's height —
-    // see the note above the component.
-    backgroundColor: colors.canvas,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.lineCard,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 32,
-    gap: 16,
-  },
-  grabber: {
-    alignSelf: "center",
-    width: 40,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: colors.lineCard,
-  },
-  title: {
-    color: colors.ink,
-    fontSize: typography.size.xl,
-    fontWeight: typography.weight.bold,
-  },
-  // Shrinks to fit when the sheet hits its cap; otherwise only as tall as
-  // its content, so a short sheet stays short.
-  scroll: { flexGrow: 0, flexShrink: 1 },
-  body: { gap: 12 },
-  primary: {
-    minHeight: 52,
-    backgroundColor: colors.brand,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pressed: { opacity: 0.85 },
-  disabled: { opacity: 0.4 },
-  primaryLabel: {
-    color: colors.brandInk,
-    fontSize: typography.size.md,
-    fontWeight: typography.weight.semibold,
-  },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    backdrop: { flex: 1, backgroundColor: "rgba(10,10,10,0.4)" },
+    sheet: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      // `bottom` and `maxHeight` are set inline from the keyboard's height —
+      // see the note above the component.
+      backgroundColor: p.colors.canvas,
+      borderTopLeftRadius: radius.sheet,
+      borderTopRightRadius: radius.sheet,
+      borderWidth: 1,
+      borderColor: p.colors.lineCard,
+      paddingHorizontal: space.lg,
+      paddingTop: space.sm,
+      paddingBottom: space.xxl,
+      gap: space.md,
+    },
+    grabber: {
+      alignSelf: "center",
+      width: 40,
+      height: 5,
+      borderRadius: radius.pill,
+      backgroundColor: p.colors.inkMuted,
+    },
+    title: {
+      color: p.colors.ink,
+      fontSize: typography.size.xl,
+      fontWeight: typography.weight.bold,
+    },
+    // Shrinks to fit when the sheet hits its cap; otherwise only as tall as
+    // its content, so a short sheet stays short.
+    scroll: { flexGrow: 0, flexShrink: 1 },
+    body: { gap: space.sm },
+  });
+}
