@@ -159,6 +159,10 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/ask/handlers.ts":
     "TWO read tools, both per-job by necessity. retainage_held builds the per-job rows the way /cash-flow builds its table and takes the COMPANY-WIDE total from loadRetainageHeld rather than summing them — the rows carry job names, which a scalar cannot; cash_flow_forecast feeds calculateRetainageSummary per job into the forecast the same way that page does. Neither derives a company total from this column. Arrived with roadmap item 4 of the Ask build.",
   "lib/closeout-query.ts": "Retainage at stake on one job's closeout row.",
+  "lib/ask/calculator.ts":
+    "NAMES the column only in prose and in a kind table. The Ask calculator combines figures a tool ALREADY returned this turn, by reference, and names retainageWithheld/stillHeld/companyWideStillHeld so it knows those fields are dollars. It reads no rows, runs no query and computes no total of its own — and it REFUSES a sum that covers every stillHeld row, naming loadRetainageHeld's companyWideStillHeld as the figure that wins. That refusal is this census's rule enforced at the assistant's edge.",
+  "lib/ask/calculator.test.ts":
+    "Pins that refusal, among the rest: a sum of every retainage row must come back as a pointer to companyWideStillHeld and not as an answer.",
 
   // ----------------------------------- writes, exports, documentation ---
   "lib/actions/billing.ts":
