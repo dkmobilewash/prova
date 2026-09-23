@@ -5,7 +5,8 @@ import { useRef, useState, useTransition } from "react";
 import { Hint } from "@/components/Hint";
 import { submitPayApplication, updateInvoiceStatus } from "@/lib/actions";
 import { money } from "@/lib/money";
-import { payAppRowsFromForm, payAppTotal } from "@/lib/pay-application";
+import { parseNumericInput } from "@/lib/numeric-input";
+import { payAppRowsFromForm, payAppTotal, thisPeriodForPercentComplete } from "@/lib/pay-application";
 import { formatInstant } from "@/lib/render-date";
 
 const inputClass =
@@ -30,7 +31,25 @@ export type PayAppLineItemOption = {
    * the documented release mechanism is invisible even now that it works,
    * and stored materials get billed a second time. */
   materialsStoredToDate: number;
+  /** Running total billed on this line across every earlier application.
+   * The percent-complete box needs it: "60%" is 60% of the line MINUS what
+   * has already gone out, and a figure that forgets this bills the whole
+   * 60% again every month. */
+  previousBilled: number;
 };
+
+/** What the percent box did to this line: where it lands, or why it
+ * produced no figure. Its own component so the conditional and the two
+ * colours live in one place rather than three index lookups deep in a
+ * table cell. */
+function PercentNote({ note }: { note?: { ok: boolean; text: string } }) {
+  if (!note?.text) return null;
+  return (
+    <p className={`mt-1 max-w-[12rem] text-xs ${note.ok ? "text-ink-muted" : "text-tag-red-ink"}`}>
+      {note.text}
+    </p>
+  );
+}
 
 export type PayAppInvoice = {
   id: string;
@@ -93,7 +112,86 @@ export function PayApplications({
    * will name that field on submit, and inventing a total over a figure
    * nobody could read would be worse than showing none. */
   const [total, setTotal] = useState<number | null>(0);
+  /**
+   * The percent-complete boxes, and what each one did.
+   *
+   * THIS PERIOD IS STILL THE FIGURE THAT IS SUBMITTED. The percent box has
+   * no `name`, so it never reaches FormData and the action never sees it —
+   * it is an input aid that writes dollars into the box next to it, not a
+   * second way to bill. That matters beyond tidiness: the G703 that leaves
+   * this company carries dollars, `payAppEntryError` validates dollars, and
+   * a percent travelling alongside them would be a second source of truth
+   * free to disagree on the document itself.
+   *
+   * Written through a ref rather than by making This period a controlled
+   * input. That box is deliberately uncontrolled — `formRef.current.reset()`
+   * clears it on success, and #414's history is written around what it
+   * does and does not refuse. Controlling it to gain this one convenience
+   * would put a money field's behaviour on a re-render, and this is the
+   * form that bills the GC.
+   */
   const formRef = useRef<HTMLFormElement>(null);
+  const billedRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  /** Per line: what the conversion said. Either where the line lands, or
+   * why no figure was produced — shown under the box, because a percent box
+   * that silently does nothing is worse than no percent box. */
+  const [pctNote, setPctNote] = useState<Record<string, { ok: boolean; text: string }>>({});
+
+  /** The running total, re-read from the form the same way the change
+   * handler does — one parse, the action's own. Called after a percent box
+   * has written into This period, since that write happens outside React's
+   * event flow and the form's `onChange` does not fire for it. */
+  function recomputeTotal() {
+    if (!formRef.current) return;
+    const parsed = payAppRowsFromForm(new FormData(formRef.current));
+    setTotal(parsed.ok ? payAppTotal(parsed.rows) : null);
+  }
+
+  /** "60" in the percent box -> this period's dollars in the box beside it. */
+  function applyPercent(item: PayAppLineItemOption, raw: string) {
+    const box = billedRefs.current[item.id];
+    if (!box) return;
+    if (raw.trim() === "") {
+      // Clearing the percent clears what it put there. Not clearing it
+      // would leave a figure nobody typed sitting in a money box with
+      // nothing on screen explaining where it came from.
+      box.value = "";
+      setPctNote((n) => ({ ...n, [item.id]: { ok: true, text: "" } }));
+      recomputeTotal();
+      return;
+    }
+    // `parseNumericInput`, not a sixteenth parser. Its own header is about
+    // exactly this: fourteen hand-rolled `Number(raw)` calls each refused
+    // `2,800`, the thousands comma a contractor types without thinking. It
+    // also strips the trailing `%` a person types back at a percent box,
+    // and refuses `12,50` rather than guessing between twelve-and-a-half
+    // and twelve-fifty.
+    const parsed = parseNumericInput(raw, { label: "Percent complete", maxDecimals: 2 });
+    if (!parsed.ok) {
+      setPctNote((n) => ({ ...n, [item.id]: { ok: false, text: parsed.error } }));
+      return;
+    }
+    const converted = thisPeriodForPercentComplete({
+      percentComplete: parsed.n,
+      scheduledValue: item.scheduledValue,
+      previousBilled: item.previousBilled,
+      materialsStoredToDate: item.materialsStoredToDate,
+    });
+    if (!converted.ok) {
+      setPctNote((n) => ({ ...n, [item.id]: { ok: false, text: converted.error } }));
+      return;
+    }
+    box.value = String(converted.result.thisPeriodBilled);
+    setPctNote((n) => ({
+      ...n,
+      [item.id]: {
+        ok: true,
+        text: `Takes this line to ${converted.result.landsAtPercent.toFixed(1)}% complete`,
+      },
+    }));
+    recomputeTotal();
+  }
+
   /** What this application would credit the GC, or null when it is not a
    * credit. A number rather than a boolean so the panel below cannot be
    * rendered without the figure that justifies it. */
@@ -166,6 +264,11 @@ export function PayApplications({
                   return;
                 }
                 formRef.current?.reset();
+                // `reset()` clears the percent boxes with everything else,
+                // but the notes under them are React state and would
+                // otherwise survive into the next application, describing
+                // lines on a form that no longer holds those figures.
+                setPctNote({});
                 setTotal(0);
                 setIsOpen(false);
               } catch (err) {
@@ -200,6 +303,7 @@ export function PayApplications({
                 <tr className="text-xs text-ink-muted">
                   <th className="pb-1 pr-3 font-normal">Line item</th>
                   <th className="pb-1 pr-3 text-right font-normal">Scheduled value</th>
+                  <th className="pb-1 pr-3 text-right font-normal">% complete</th>
                   <th className="pb-1 pr-3 text-right font-normal">This period</th>
                   <th className="pb-1 text-right font-normal">New materials stored</th>
                 </tr>
@@ -211,7 +315,32 @@ export function PayApplications({
                     <td className="py-1 pr-3 text-right text-ink-muted">
                       {item.scheduledValue.toLocaleString("en-US", { style: "currency", currency: "USD" })}
                     </td>
-                    <td className="py-1 pr-3 text-right">
+                    {/* NO `name`, so it never reaches FormData: this box
+                        fills the one beside it and is not itself billed.
+                        DELIBERATELY NOT `onChange`: "6" on the way to "60"
+                        is a valid percent, and converting on every
+                        keystroke would rewrite the money box — and show a
+                        note about a figure the person is halfway through
+                        typing. Blur and Enter are where a typed number
+                        settles. */}
+                    <td className="py-1 pr-3 text-right align-top">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="%"
+                        aria-label={`Percent complete on ${item.description}`}
+                        onBlur={(event) => applyPercent(item, event.currentTarget.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            applyPercent(item, event.currentTarget.value);
+                          }
+                        }}
+                        className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-right text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+                      />
+                      <PercentNote note={pctNote[item.id]} />
+                    </td>
+                    <td className="py-1 pr-3 text-right align-top">
                       <input type="hidden" name="lineItemId" value={item.id} />
                       {/* NO FLOOR ON THIS BOX ANY MORE, and the floor was
                           not the markup by the time it went — #414 had
@@ -230,11 +359,20 @@ export function PayApplications({
                           than nothing — see payAppEntryError: you cannot
                           un-bill more than the line has been billed. */}
                       <input
+                        ref={(el) => {
+                          billedRefs.current[item.id] = el;
+                        }}
                         name="thisPeriodBilled"
                         type="text"
                         inputMode="decimal"
                         placeholder="0.00"
                         className={inputClass}
+                        onChange={() => {
+                          // Typing dollars directly wins: the note beside
+                          // the percent box would otherwise keep claiming a
+                          // percent this line is no longer at.
+                          setPctNote((n) => (n[item.id]?.text ? { ...n, [item.id]: { ok: true, text: "" } } : n));
+                        }}
                       />
                     </td>
                     <td className="py-1 text-right">
