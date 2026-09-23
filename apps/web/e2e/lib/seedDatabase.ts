@@ -10,8 +10,33 @@ export const E2E_TAG = "ZZ-E2E";
 type ClerkIds = Record<PersonaKey, { id: string; email: string }>;
 
 /**
+ * MAIN is an ESTABLISHED account, so it has already been asked the
+ * onboarding questions. Without this, `/dashboard` sends MAIN's OWNER to
+ * `/welcome` (lib/onboarding-gate.ts: OWNER + `businessScopeAskedAt` null),
+ * which is outside the app shell: no Topbar, no Help button, no Ask
+ * launcher, no nav rail. Every spec that opened `/dashboard` as MAIN and
+ * then looked for one of those (ask-panel, ask-panel.mobile, tour and
+ * money-rail-gate's OWNER control) was failing on the wrong screen rather
+ * than on anything about the feature it names. money-rail-gate is the
+ * worst of them: its OWNER test is the POSITIVE control, so with it dead
+ * only the negative test ran, and "FIELD sees no dollar figure" passed
+ * without anything showing that a figure can render at all.
+ *
+ * Deliberately NOT set on EMPTY, JOB_CREATE, JOURNEY or BAD_INPUTS. Those
+ * companies are created by the app's own first-sign-in path, and they are
+ * meant to be brand new, so they get the gate a real new customer gets.
+ * journey.ts's `landOnDashboard` walks through it for that reason. FIELD
+ * needs nothing: it is a MEMBER, and a MEMBER is never gated.
+ *
+ * A fixed instant, not `new Date()`: the value says "asked once, long ago",
+ * and a date that moves on every run is a date nobody can reason about.
+ */
+export const ESTABLISHED_ACCOUNT_ASKED_AT = new Date("2026-01-01T00:00:00.000Z");
+
+/**
  * Pre-seeds the two personas that need to exist BEFORE any spec's first
- * navigation: MAIN (a company with one contact and one job, so job-detail,
+ * navigation: MAIN (an established company, already past the onboarding
+ * questions, with one contact and one job, so job-detail,
  * schedule, ask-panel, the tour and settings/import all have something to
  * show without racing another spec that creates it) and FIELD (a second
  * User inside MAIN's company, so the money-rail invariant has a
@@ -39,9 +64,18 @@ export async function seedDatabase(clerkIds: ClerkIds): Promise<void> {
       email: clerkIds.main.email,
       name: "E2E MAIN",
       role: "OWNER",
-      company: { create: { name: `${E2E_TAG} Main Co` } },
+      company: { create: { name: `${E2E_TAG} Main Co`, businessScopeAskedAt: ESTABLISHED_ACCOUNT_ASKED_AT } },
     },
     select: { id: true, companyId: true },
+  });
+
+  // The same fact for a scratch database seeded BEFORE this line existed:
+  // `upsert`'s `update: {}` above never touches the company, so a local
+  // re-run would otherwise keep a MAIN that is still gated. Only a null is
+  // filled in; a value already there is left alone.
+  await prisma.company.updateMany({
+    where: { id: main.companyId, businessScopeAskedAt: null },
+    data: { businessScopeAskedAt: ESTABLISHED_ACCOUNT_ASKED_AT },
   });
 
   const existingJob = await prisma.job.findFirst({

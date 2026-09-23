@@ -1,24 +1,32 @@
 import { useAuth } from "@clerk/expo";
-import { useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
 import { DateField } from "@/components/DateField";
 import { Field } from "@/components/Field";
-import { List } from "@/components/List";
-import { RefusedBanner } from "@/components/RefusedBanner";
+import { GroupedList } from "@/components/GroupedList";
+import { GroupedRow } from "@/components/GroupedRow";
+import { JobContextChip } from "@/components/JobContextChip";
+import { SectionHeader } from "@/components/SectionHeader";
 import { Sheet } from "@/components/Sheet";
 import { SignaturePad } from "@/components/SignaturePad";
+import { SyncStatus } from "@/components/SyncStatus";
 import { JobSections } from "@/components/JobSections";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
 import { tokenOrNull } from "@/lib/clerk-token";
-import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
-import { useT } from "@/lib/i18n";
-import { colors, typography } from "@/lib/theme";
+import { t, useT, type StringKey } from "@/lib/i18n";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
+import { dayKey, todayKey } from "@/lib/today";
+import { leadingFor, type Palette, radius, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import {
   clearSession,
@@ -39,6 +47,7 @@ import {
   type WorkerKey,
 } from "@/lib/crew-entry";
 import { uuid } from "@/lib/id";
+import { isValidPin, startHandover } from "@/lib/handover";
 import { enqueue, queuedOperationIds, type CreateOp } from "@/lib/sync-queue";
 import { useSync } from "@/lib/use-sync";
 import type {
@@ -62,37 +71,46 @@ function formatClockTime(iso: string): string {
  * schedule, hours once logged. */
 function ratioWarningText(w: RatioWarning): string {
   const planned = w.source === "planned";
-  const apprentices = planned ? people(w.apprentices, "apprentice") : `${w.apprentices}h apprentice`;
-  const journeymen = planned ? people(w.journeymen, "journeyman", "journeymen") : `${w.journeymen}h journeyman`;
-  const where = planned ? "Scheduled crew" : "Hours logged";
+  const apprentices = planned
+    ? people(w.apprentices, "time.ratio.apprentices.one", "time.ratio.apprentices.many")
+    : t("time.ratio.apprenticeHours", { hours: w.apprentices });
+  const journeymen = planned
+    ? people(w.journeymen, "time.ratio.journeymen.one", "time.ratio.journeymen.many")
+    : t("time.ratio.journeymanHours", { hours: w.journeymen });
+  const where = planned ? t("time.ratio.scheduledCrew") : t("time.ratio.hoursLogged");
   const rule = `(${w.unionLocalLabel}: ${w.rule})`;
-  if (w.status === "NO_JOURNEYMAN") return `${where}: ${apprentices} and no journeyman ${rule}.`;
+  if (w.status === "NO_JOURNEYMAN") return t("time.ratio.noJourneyman", { where, apprentices, rule });
   const allowed =
-    w.allowedApprentices === null ? "" : ` — ${planned ? w.allowedApprentices : `${w.allowedApprentices}h`} allowed`;
-  return `${where}: ${apprentices} to ${journeymen}${allowed} ${rule}.`;
+    w.allowedApprentices === null
+      ? ""
+      : ` — ${t("time.ratio.allowed", {
+          allowed: planned ? w.allowedApprentices : `${w.allowedApprentices}h`,
+        })}`;
+  return t("time.ratio.line", { where, apprentices, journeymen, allowed, rule });
 }
 
-function people(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`;
+function people(n: number, one: StringKey, many: StringKey): string {
+  return t(n === 1 ? one : many, { count: n });
 }
 
 /** The line under "Craft": why the list is what it is. */
 function CraftHint({ required, fallback, who }: { required: boolean; fallback: boolean; who: string }) {
+  const palette = usePalette();
+  const { t } = useT();
+  const hint = useMemo(
+    () =>
+      StyleSheet.create({
+        hint: { color: palette.colors.inkMuted, fontSize: typography.size.sm },
+      }),
+    [palette],
+  );
   if (!required) {
-    return (
-      <Text style={styles.hint}>
-        No crafts are set up for this company, so these hours will show as untagged on certified payroll.
-      </Text>
-    );
+    return <Text style={hint.hint}>{t("time.craft.noneSetUp")}</Text>;
   }
   if (fallback) {
-    return (
-      <Text style={styles.hint}>
-        No crafts are ticked for {who} yet, so every craft is shown. Tick them on the web under Union compliance.
-      </Text>
-    );
+    return <Text style={hint.hint}>{t("time.craft.noneTicked", { who })}</Text>;
   }
-  return <Text style={styles.hint}>Required.</Text>;
+  return <Text style={hint.hint}>{t("common.required")}</Text>;
 }
 
 function formatElapsed(ms: number): string {
@@ -103,7 +121,10 @@ function formatElapsed(ms: number): string {
 }
 
 export default function TimeScreen() {
+  const { me } = useMe();
   const { t } = useT();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [entries, setEntries] = useState<TimeEntry[]>([]);
@@ -117,7 +138,6 @@ export default function TimeScreen() {
   // Job names by id, so the clock card can name the job a session is on —
   // which may not be the job this screen is showing.
   const [jobNames, setJobNames] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState<string | "nothing" | null>(null);
   // Apprentice-ratio breaches for today on this job, from the crew schedule
   // and the hours already logged. Empty when within ratio, or when it could
@@ -155,6 +175,12 @@ export default function TimeScreen() {
   const [reportDates, setReportDates] = useState<Set<string>>(new Set());
   const [delayCounts, setDelayCounts] = useState<Map<string, number>>(new Map());
   const [showSign, setShowSign] = useState(false);
+  // "Hand the phone to a crew member": who, and the PIN that brings it
+  // back. See lib/handover.ts — this is the C15/D-13 case, the hanger or
+  // taper who does not carry a company phone.
+  const [showHandover, setShowHandover] = useState(false);
+  const [handTo, setHandTo] = useState<string | null>(null);
+  const [handPin, setHandPin] = useState("");
   const [signDate, setSignDate] = useState("");
   const [signerName, setSignerName] = useState("");
   const [signaturePath, setSignaturePath] = useState<string | null>(null);
@@ -176,7 +202,6 @@ export default function TimeScreen() {
       // asked about at the end of the week.
       cachedRead(cacheKeys.time(jobId), requireToken(token, (t) => api.listTimeEntries(jobId, t))).then(
         async (result) => {
-          setError(null);
           if (result.from === "nothing") {
             setOffline("nothing");
             return;
@@ -248,9 +273,7 @@ export default function TimeScreen() {
     // be rejected by the server and block the offline queue, so refuse and
     // SAY SO — the caller keeps the session open so the break can be fixed.
     if (Number(computedHours) <= 0) {
-      setClockError(
-        `Nothing to record: the ${openSession.breakMinutes}-minute break is as long as the time on the clock. Lower the break first.`,
-      );
+      setClockError(t("time.clock.nothingToRecord", { minutes: openSession.breakMinutes }));
       return false;
     }
     setClockError(null);
@@ -287,7 +310,7 @@ export default function TimeScreen() {
           clockStartedAt: op.clockStartedAt ?? null,
           clockEndedAt: op.clockEndedAt ?? null,
           clockBreakMinutes: op.clockBreakMinutes ?? null,
-          employeeName: crewId ? (crew.find((c) => c.id === crewId)?.name ?? "Crew member") : "Me",
+          employeeName: crewId ? (crew.find((c) => c.id === crewId)?.name ?? t("time.crewMember")) : t("time.me"),
           lineItemDescription: lineItems.find((l) => l.id === op.lineItemId)?.description ?? null,
           craftLabel: crafts.find((c) => c.id === op.craftClassificationId)?.name ?? null,
         },
@@ -304,7 +327,7 @@ export default function TimeScreen() {
     if (existing) {
       setOpenSession(existing);
       setShowClockIn(false);
-      setClockError("You're already on the clock. Clock out or switch instead.");
+      setClockError(t("time.clock.alreadyOn"));
       return;
     }
     setClockError(null);
@@ -382,7 +405,7 @@ export default function TimeScreen() {
   };
   const nameOf = (key: WorkerKey): string => {
     const id = crewIdOf(key);
-    return id ? (crew.find((c) => c.id === id)?.name ?? "Crew member") : "Me";
+    return id ? (crew.find((c) => c.id === id)?.name ?? t("time.crewMember")) : t("time.me");
   };
   const craftOptionsFor = (key: WorkerKey) => craftsForWorker(crafts, workerOf(key));
 
@@ -425,6 +448,24 @@ export default function TimeScreen() {
     // what is picked (or the only line) rather than clearing it.
     if (lastDay.lineItemId && lineItems.some((l) => l.id === lastDay.lineItemId)) setLineItemId(lastDay.lineItemId);
     if (lastDay.payType) setPayType(lastDay.payType as TimeEntryPayType);
+  };
+
+  const handOver = async () => {
+    const member = crew.find((c) => c.id === handTo);
+    if (!jobId || !member) return;
+    setShowHandover(false);
+    await startHandover({
+      crewMemberId: member.id,
+      name: member.name,
+      jobId,
+      jobName: jobNames[jobId] ?? "this job",
+      // Blank means no PIN, which is a decision rather than an omission:
+      // the protection is then the foreman standing next to the phone.
+      ...(isValidPin(handPin.trim()) ? { pin: handPin.trim() } : {}),
+    });
+    setHandTo(null);
+    setHandPin("");
+    router.replace("/handover");
   };
 
   const openSign = () => {
@@ -491,8 +532,8 @@ export default function TimeScreen() {
   const today = dayFromClockIn(new Date().toISOString());
   const lastDay = copyFromLastDay(entries, today);
   const rowProblem = (r: CrewRow): string | null => {
-    if (!isValidHours(r.hours ?? sharedHours)) return "Hours must be more than 0 and at most 24.";
-    if (craftRequired && !r.craftId) return "Pick a craft.";
+    if (!isValidHours(r.hours ?? sharedHours)) return t("time.hoursRange");
+    if (craftRequired && !r.craftId) return t("time.pickCraft");
     return null;
   };
   // Days with a live sign-off: their hours are locked. The server refuses a
@@ -516,7 +557,7 @@ export default function TimeScreen() {
     signEntries.length > 0 &&
     signerName.trim().length > 0 &&
     signaturePath !== null;
-  const saveLabel = rows.length > 1 ? `Save ${rows.length} entries` : "Save entry";
+  const saveLabel = rows.length > 1 ? t("time.save.many", { count: rows.length }) : t("time.save.one");
 
   const elapsedMs = openSession ? now.getTime() - new Date(openSession.clockStartedAt).getTime() : 0;
   const clockCraftLabel = openSession?.craftClassificationId
@@ -528,19 +569,86 @@ export default function TimeScreen() {
   // The session is on a different job from the one this screen shows.
   const onOtherJob = openSession != null && openSession.jobId !== jobId;
   const sessionJobName = openSession ? jobNames[openSession.jobId] : undefined;
-  const switchLabel = onOtherJob ? "Switch to this job" : "Switch";
+  const switchLabel = onOtherJob ? t("time.clock.switchToThisJob") : t("time.clock.switch");
+
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["time/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["time/[jobId]"]} />;
+
+  const allEntries = [...optimistic, ...entries];
+  const todayIso = todayKey();
+  const todayEntries = allEntries.filter((item) => dayKey(item.date) === todayIso);
+  const earlierEntries = allEntries.filter((item) => dayKey(item.date) !== todayIso);
+  const empty = emptyFor(offline, "thing.time", {
+    title: "time.empty.title",
+    description: "time.empty.body",
+  });
+
+  const renderDay = (items: typeof allEntries, heading: string) =>
+    items.length === 0 ? null : (
+      <>
+        <SectionHeader>{heading}</SectionHeader>
+        <GroupedList>
+          {items.map((item, i) => (
+            <GroupedRow
+              key={item.id}
+              title={item.employeeName}
+              subtitle={
+                [
+                  item.id.startsWith("local-") ? t("common.syncing") : null,
+                  item.payType.replace(/_/g, " "),
+                  item.craftLabel,
+                ]
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .join(" · ") || undefined
+              }
+              detail={
+                item.clockStartedAt && item.clockEndedAt
+                  ? `${formatClockTime(item.clockStartedAt)}–${formatClockTime(item.clockEndedAt)}${
+                      item.clockBreakMinutes
+                        ? ` · ${t("time.clock.minBreak", { minutes: item.clockBreakMinutes })}`
+                        : ""
+                    }`
+                  : undefined
+              }
+              note={[item.lineItemDescription, item.note].filter(Boolean).join(" · ") || undefined}
+              value={`${item.hours}h`}
+              trailing={
+                signedByDate.get(item.date) ? (
+                  <Text style={styles.signed}>
+                    {signedByDate.get(item.date)!.state === "APPROVED"
+                      ? t("time.locked.approved")
+                      : t("time.locked.signed")}
+                  </Text>
+                ) : undefined
+              }
+              divider={i > 0}
+            />
+          ))}
+        </GroupedList>
+      </>
+    );
 
   return (
     <View style={styles.screen}>
       <JobSections jobId={jobId} active="time" />
-      {pending > 0 ? <Text style={styles.pending}>{t("common.pendingSync", { count: pending })}</Text> : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <OfflineNote state={offline} />
-      <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
+      <View style={styles.chipWrap}>
+        <JobContextChip />
+      </View>
+      <SyncStatus
+        pending={pending}
+        state={offline}
+        refused={refused}
+        onDismiss={dismissRefused}
+        onRetry={retrySetAside}
+      />
 
       {ratioWarnings.length > 0 ? (
         <View style={styles.ratioBanner}>
-          <Text style={styles.ratioTitle}>Apprentice ratio — over today</Text>
+          <Text style={styles.ratioTitle}>{t("time.ratioWarning")}</Text>
           {ratioWarnings.map((w, i) => (
             <Text key={i} style={styles.ratioLine}>{ratioWarningText(w)}</Text>
           ))}
@@ -551,13 +659,17 @@ export default function TimeScreen() {
       <View style={styles.clockCard}>
         {!sessionLoaded ? (
           <Card>
-            <Text style={styles.clockIdle}>Checking the clock…</Text>
+            <Text style={styles.clockIdle}>{t("time.checkingClock")}</Text>
           </Card>
         ) : openSession ? (
           <Card>
-            <Text style={styles.clockElapsed}>On the clock · {formatElapsed(elapsedMs)}</Text>
+            <Text style={styles.clockElapsed}>
+              {t("time.clock.onTheClock", { elapsed: formatElapsed(elapsedMs) })}
+            </Text>
             {onOtherJob ? (
-              <Text style={styles.clockOtherJob}>Clocked in on {sessionJobName ?? "another job"}</Text>
+              <Text style={styles.clockOtherJob}>
+                {t("time.clock.clockedInOn", { job: sessionJobName ?? t("time.clock.anotherJob") })}
+              </Text>
             ) : sessionJobName ? (
               <Text style={styles.clockJob}>{sessionJobName}</Text>
             ) : null}
@@ -570,7 +682,7 @@ export default function TimeScreen() {
               <Button variant="secondary" onPress={() => onBreak(-30)}>
                 −30m
               </Button>
-              <Text style={styles.clockBreak}>Break: {openSession.breakMinutes} min</Text>
+              <Text style={styles.clockBreak}>{t("time.clock.break", { minutes: openSession.breakMinutes })}</Text>
               <Button variant="secondary" onPress={() => onBreak(30)}>
                 +30m
               </Button>
@@ -581,90 +693,115 @@ export default function TimeScreen() {
                 {switchLabel}
               </Button>
               <Button fullWidth onPress={onClockOut}>
-                Clock out
+                {t("time.clockOut")}
               </Button>
             </View>
           </Card>
         ) : (
           <Card>
-            <Text style={styles.clockIdle}>Not on the clock</Text>
+            <Text style={styles.clockIdle}>{t("time.notOnClock")}</Text>
             <Button fullWidth onPress={openClockIn}>
-              Clock in
+              {t("time.clockIn")}
             </Button>
           </Card>
         )}
       </View>
 
-      <List
-        data={[...optimistic, ...entries]}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <Card>
-            <View style={styles.entryHead}>
-              <Text style={styles.date}>{item.date}</Text>
-              <Text style={styles.hours}>{item.hours}h</Text>
-            </View>
-            {item.id.startsWith("local-") ? <Text style={styles.syncing}>{t("common.syncing")}</Text> : null}
-            {signedByDate.get(item.date) ? (
-              <Text style={styles.signed}>
-                {signedByDate.get(item.date)!.state === "APPROVED" ? "Approved" : "Signed"} · locked
-              </Text>
-            ) : null}
-            <Text style={styles.meta}>
-              {item.employeeName} · {item.payType.replace(/_/g, " ")}
-              {item.craftLabel ? ` · ${item.craftLabel}` : ""}
-            </Text>
-            {item.clockStartedAt && item.clockEndedAt ? (
-              <Text style={styles.meta}>
-                {formatClockTime(item.clockStartedAt)}–{formatClockTime(item.clockEndedAt)}
-                {item.clockBreakMinutes ? ` · ${item.clockBreakMinutes} min break` : ""}
-              </Text>
-            ) : null}
-            {item.lineItemDescription ? <Text style={styles.note}>{item.lineItemDescription}</Text> : null}
-            {item.note ? <Text style={styles.note}>{item.note}</Text> : null}
-          </Card>
+      {/* The hours, grouped by the day they belong to — "Today" is the
+          row a foreman opens this screen for, and everything else can
+          wait below the fold. */}
+      <ScrollView style={styles.listScroll} contentContainerStyle={styles.listContent}>
+        {allEntries.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>{empty.emptyTitle}</Text>
+            {empty.emptyDescription ? <Text style={styles.emptyBody}>{empty.emptyDescription}</Text> : null}
+          </View>
+        ) : (
+          <>
+            {renderDay(todayEntries, t("time.day.today"))}
+            {renderDay(earlierEntries, t("time.day.earlier"))}
+          </>
         )}
-        {...emptyFor(offline, "thing.time", {
-          title: "time.empty.title",
-          description: "time.empty.body",
-        })}
-      />
+      </ScrollView>
 
       <View style={[styles.footer, styles.footerRow]}>
         <Button variant="secondary" onPress={openSign}>
-          Sign the day
+          {t("time.signDay")}
+        </Button>
+        <Button variant="secondary" onPress={() => setShowHandover(true)}>
+          {t("time.handover.button")}
         </Button>
         <View style={styles.footerMain}>
           <Button fullWidth onPress={openForm}>
-            Log time
+            {t("time.log")}
           </Button>
         </View>
       </View>
+
+      {/* Handing the phone to a crew member so they put their OWN hours
+          in and sign for them, rather than the foreman typing what he
+          remembers at the end of the day. */}
+      <Sheet
+        visible={showHandover}
+        onClose={() => setShowHandover(false)}
+        title={t("time.handover.title")}
+        primaryLabel={t("time.handover.primary")}
+        onPrimary={handOver}
+        primaryDisabled={!handTo}
+      >
+        <Text style={styles.handoverNote}>{t("time.handover.note")}</Text>
+        <View style={styles.handoverList}>
+          {crew.map((member) => (
+            <Pressable
+              key={member.id}
+              onPress={() => setHandTo(member.id)}
+              style={[styles.handoverPick, handTo === member.id && styles.handoverPicked]}
+              accessibilityRole="button"
+            >
+              <Text style={handTo === member.id ? styles.handoverPickedText : styles.handoverPickText}>
+                {member.name}
+              </Text>
+            </Pressable>
+          ))}
+          {crew.length === 0 ? <Text style={styles.handoverNote}>{t("time.handover.noCrew")}</Text> : null}
+        </View>
+        <Field
+          label={t("time.handover.pin")}
+          value={handPin}
+          onChangeText={setHandPin}
+          keyboardType="number-pad"
+          maxLength={4}
+          placeholder={t("time.handover.pinHint")}
+        />
+        <Text style={styles.handoverNote}>{t("time.handover.pinNote")}</Text>
+      </Sheet>
 
       {/* Clock in / Switch — pick craft + cost code together */}
       <Sheet
         visible={showClockIn || showSwitch}
         onClose={() => { setShowClockIn(false); setShowSwitch(false); }}
-        title={showClockIn ? "Clock in" : switchLabel}
-        primaryLabel={showClockIn ? "Start" : switchLabel}
+        title={showClockIn ? t("time.clockIn") : switchLabel}
+        primaryLabel={showClockIn ? t("time.clock.start") : switchLabel}
         onPrimary={showClockIn ? onClockIn : onSwitch}
         primaryDisabled={(craftRequired && !clockCraftId) || (costCodeRequired && !clockLineItemId)}
       >
-        <Text style={styles.chipLabel}>Cost code</Text>
-        <Text style={styles.hint}>
-          {costCodeRequired ? "Required." : "This job has no cost codes yet, so these hours go on no specific line."}
-        </Text>
+        <Text style={styles.chipLabel}>{t("time.costCode")}</Text>
+        <Text style={styles.hint}>{costCodeRequired ? t("common.required") : t("time.noCostCodes")}</Text>
         <View style={styles.chips}>
           {costCodeRequired ? null : (
-            <Chip label="No specific line" selected={clockLineItemId === null} onPress={() => setClockLineItemId(null)} />
+            <Chip
+              label={t("time.noLine")}
+              selected={clockLineItemId === null}
+              onPress={() => setClockLineItemId(null)}
+            />
           )}
           {lineItems.map((l) => (
             <Chip key={l.id} label={l.description} selected={clockLineItemId === l.id} onPress={() => setClockLineItemId(l.id)} />
           ))}
         </View>
 
-        <Text style={styles.chipLabel}>Craft</Text>
-        <CraftHint required={craftRequired} fallback={myCrafts.fallback} who="you" />
+        <Text style={styles.chipLabel}>{t("time.craft")}</Text>
+        <CraftHint required={craftRequired} fallback={myCrafts.fallback} who={t("time.you")} />
         <View style={styles.chips}>
           {myCrafts.options.map((c) => (
             <Chip key={c.id} label={c.name} selected={clockCraftId === c.id} onPress={() => setClockCraftId(c.id)} />
@@ -676,34 +813,35 @@ export default function TimeScreen() {
       <Sheet
         visible={showForm}
         onClose={() => setShowForm(false)}
-        title="Log time"
+        title={t("time.sheet.title")}
         primaryLabel={saveLabel}
         onPrimary={submit}
         primaryDisabled={!canSave}
       >
         {lastDay ? (
           <Button variant="secondary" onPress={copyLastDay}>
-            {`Copy crew from ${lastDay.date}`}
+            {t("time.copyCrew", { date: lastDay.date })}
           </Button>
         ) : null}
-        <DateField label="Date" value={date} onChange={setDate} max={today} />
+        <DateField label={t("common.date")} value={date} onChange={setDate} max={today} />
         {dateSigned ? (
           <Text style={styles.rowProblem}>
-            {date} is signed{dateSigned.state === "APPROVED" ? " and approved" : ""}, so its hours are locked. The
-            office can reopen it on the web.
+            {dateSigned.state === "APPROVED"
+              ? t("time.dayLocked.approved", { date })
+              : t("time.dayLocked.signed", { date })}
           </Text>
         ) : null}
         <Field
-          label="Hours for everyone"
-          placeholder="e.g. 8 or 8.5"
+          label={t("time.field.hoursAll")}
+          placeholder={t("time.field.hoursHint")}
           value={sharedHours}
           onChangeText={setSharedHours}
           keyboardType="decimal-pad"
         />
 
-        <Text style={styles.chipLabel}>Who</Text>
+        <Text style={styles.chipLabel}>{t("time.who")}</Text>
         <View style={styles.chips}>
-          <Chip label="Me" selected={rows.some((r) => r.worker === "me")} onPress={() => toggleWorker("me")} />
+          <Chip label={t("time.me")} selected={rows.some((r) => r.worker === "me")} onPress={() => toggleWorker("me")} />
           {crew.map((c) => (
             <Chip
               key={c.id}
@@ -721,8 +859,8 @@ export default function TimeScreen() {
             <View key={r.worker} style={styles.crewRow}>
               <Text style={styles.crewName}>{nameOf(r.worker)}</Text>
               <Field
-                label="Hours (if different)"
-                placeholder={`${sharedHours || "—"} — same as everyone`}
+                label={t("time.field.hoursDifferent")}
+                placeholder={t("time.field.sameAsEveryone", { hours: sharedHours || "—" })}
                 value={r.hours ?? ""}
                 onChangeText={(text) => setRowHours(r.worker, text)}
                 keyboardType="decimal-pad"
@@ -730,7 +868,7 @@ export default function TimeScreen() {
               <CraftHint
                 required={craftRequired}
                 fallback={options.fallback}
-                who={r.worker === "me" ? "you" : nameOf(r.worker)}
+                who={r.worker === "me" ? t("time.you") : nameOf(r.worker)}
               />
               <View style={styles.chips}>
                 {options.options.map((c) => (
@@ -742,49 +880,59 @@ export default function TimeScreen() {
           );
         })}
 
-        <Text style={styles.chipLabel}>Pay type</Text>
+        <Text style={styles.chipLabel}>{t("time.payType")}</Text>
         <View style={styles.chips}>
           {PAY_TYPES.map((p) => (
             <Chip key={p} label={p.replace(/_/g, " ")} selected={payType === p} onPress={() => setPayType(p)} />
           ))}
         </View>
 
-        <Text style={styles.chipLabel}>Cost code</Text>
-        <Text style={styles.hint}>
-          {costCodeRequired ? "Required." : "This job has no cost codes yet, so these hours go on no specific line."}
-        </Text>
+        <Text style={styles.chipLabel}>{t("time.costCode")}</Text>
+        <Text style={styles.hint}>{costCodeRequired ? t("common.required") : t("time.noCostCodes")}</Text>
         <View style={styles.chips}>
           {costCodeRequired ? null : (
-            <Chip label="No specific line" selected={lineItemId === null} onPress={() => setLineItemId(null)} />
+            <Chip label={t("time.noLine")} selected={lineItemId === null} onPress={() => setLineItemId(null)} />
           )}
           {lineItems.map((l) => (
             <Chip key={l.id} label={l.description} selected={lineItemId === l.id} onPress={() => setLineItemId(l.id)} />
           ))}
         </View>
 
-        <Field label="Note" placeholder="Optional — goes on every entry" value={note} onChangeText={setNote} />
+        <Field
+          label={t("common.note")}
+          placeholder={t("time.field.noteHint")}
+          value={note}
+          onChangeText={setNote}
+        />
       </Sheet>
 
       {/* "Sign the day" — one signature for everyone's hours on this job */}
       <Sheet
         visible={showSign}
         onClose={() => setShowSign(false)}
-        title="Sign the day"
-        primaryLabel="Sign and lock"
+        title={t("time.sign.title")}
+        primaryLabel={t("time.sign.primary")}
         onPrimary={submitSignoff}
         primaryDisabled={!canSign}
       >
-        <DateField label="Date" value={signDate} onChange={setSignDate} max={today} />
+        <DateField label={t("common.date")} value={signDate} onChange={setSignDate} max={today} />
         {signDateSigned ? (
           <Text style={styles.rowProblem}>
-            {signDate} is already signed by {signDateSigned.signerName}.
+            {t("time.alreadySignedBy", { date: signDate, name: signDateSigned.signerName })}
           </Text>
         ) : signEntries.length === 0 ? (
-          <Text style={styles.rowProblem}>No hours on {signDate || "that day"} to sign.</Text>
+          <Text style={styles.rowProblem}>
+            {t("time.noHoursToSign", { date: signDate || t("time.thatDay") })}
+          </Text>
         ) : (
           <View style={styles.crewRow}>
             <Text style={styles.crewName}>
-              {signEntries.length} {signEntries.length === 1 ? "entry" : "entries"} · {Math.round(signHours * 100) / 100}h
+              {signEntries.length === 1
+                ? t("time.entries.one", { hours: Math.round(signHours * 100) / 100 })
+                : t("time.entries.many", {
+                    count: signEntries.length,
+                    hours: Math.round(signHours * 100) / 100,
+                  })}
             </Text>
             {signEntries.map((e) => (
               <Text key={e.id} style={styles.meta}>
@@ -795,72 +943,119 @@ export default function TimeScreen() {
           </View>
         )}
         <Text style={styles.meta}>
-          Daily report: {reportDates.has(signDate) ? "filed" : "not filed yet"}
-          {delayCounts.get(signDate) ? ` · ${delayCounts.get(signDate)} delay${delayCounts.get(signDate) === 1 ? "" : "s"}` : ""}
+          {reportDates.has(signDate) ? t("time.report.filed") : t("time.report.notFiled")}
+          {delayCounts.get(signDate)
+            ? ` · ${
+                delayCounts.get(signDate) === 1
+                  ? t("time.delays.one")
+                  : t("time.delays.many", { count: delayCounts.get(signDate) ?? 0 })
+              }`
+            : ""}
         </Text>
         <Text style={styles.hint}>
-          Signing locks these hours{reportDates.has(signDate) || delayCounts.get(signDate) ? ", the daily report and its delays" : ""}.
-          Anything still waiting to sync goes up first. If something is wrong later, the office reopens the day on
-          the web.
+          {reportDates.has(signDate) || delayCounts.get(signDate)
+            ? t("time.signing.locksWithReport")
+            : t("time.signing.locks")}
         </Text>
-        <Field label="Your name" placeholder="Printed under the signature" value={signerName} onChangeText={setSignerName} />
-        <Text style={styles.chipLabel}>Signature</Text>
+        <Field
+          label={t("time.field.yourName")}
+          placeholder={t("time.field.yourNameHint")}
+          value={signerName}
+          onChangeText={setSignerName}
+        />
+        <Text style={styles.chipLabel}>{t("time.signature")}</Text>
         <SignaturePad key={showSign ? "open" : "closed"} onChange={setSignaturePath} />
       </Sheet>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
-  clockCard: { padding: 16, paddingBottom: 4 },
-  clockElapsed: { color: colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
-  clockContext: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
-  clockJob: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
-  clockOtherJob: {
-    color: colors.tagRoseInk,
-    fontSize: typography.size.md,
-    fontWeight: typography.weight.semibold,
-    marginTop: 4,
-  },
-  clockBreak: { color: colors.inkBody, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  clockErrorText: { color: colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 8 },
-  clockIdle: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  breakRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8 },
-  clockActions: { gap: 8, marginTop: 8 },
-  entryHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  date: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  hours: { color: colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
-  meta: { color: colors.inkMuted, fontSize: typography.size.sm },
-  note: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
-  chipLabel: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  hint: { color: colors.inkMuted, fontSize: typography.size.sm },
-  crewRow: {
-    gap: 8,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.lineCard,
-  },
-  crewName: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  rowProblem: { color: colors.tagRoseInk, fontSize: typography.size.sm },
-  ratioBanner: {
-    margin: 16,
-    marginBottom: 0,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.tagRoseInk,
-    gap: 4,
-  },
-  ratioTitle: { color: colors.tagRoseInk, fontSize: typography.size.md, fontWeight: typography.weight.bold },
-  ratioLine: { color: colors.inkBody, fontSize: typography.size.sm },
-  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
-  footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-  footerMain: { flex: 1 },
-  signed: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  syncing: { color: colors.inkMuted, fontSize: typography.size.sm, fontStyle: "italic" },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    // The handover sheet — who is taking the phone, and the PIN that
+    // brings it back. Picked = the brand fill with the DARK label, the
+    // one-yellow rule; the pre-rebase version put canvas-coloured text on
+    // it, which is light-on-yellow in light mode.
+    handoverNote: { color: p.colors.inkBody, fontSize: typography.size.sm, lineHeight: 20 },
+    handoverList: { gap: 8 },
+    handoverPick: {
+      borderWidth: 1,
+      borderColor: p.colors.lineCard,
+      borderRadius: radius.field,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+    },
+    handoverPicked: { backgroundColor: p.colors.brand, borderColor: p.colors.brand },
+    handoverPickText: { color: p.colors.ink, fontSize: typography.size.md },
+    handoverPickedText: {
+      color: p.colors.brandInk,
+      fontSize: typography.size.md,
+      fontWeight: typography.weight.semibold,
+    },
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    chipWrap: { padding: space.md, paddingBottom: 0 },
+    clockCard: { padding: space.md, paddingBottom: space.xxs },
+    clockElapsed: { color: p.colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
+    clockContext: { color: p.colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
+    clockJob: { color: p.colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
+    clockOtherJob: {
+      color: p.colors.tagRoseInk,
+      fontSize: typography.size.md,
+      fontWeight: typography.weight.semibold,
+      marginTop: 4,
+    },
+    clockBreak: { color: p.colors.inkBody, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+    clockErrorText: { color: p.colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 8 },
+    clockIdle: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+    breakRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8 },
+    clockActions: { gap: 8, marginTop: 8 },
+    listScroll: { flex: 1 },
+    listContent: { padding: space.md, paddingTop: 0, gap: space.xs },
+    empty: { gap: space.xs, paddingTop: space.xl, alignItems: "center" },
+    emptyTitle: {
+      color: p.colors.ink,
+      fontSize: typography.size.lg,
+      fontWeight: typography.weight.semibold,
+      textAlign: "center",
+    },
+    emptyBody: {
+      color: p.colors.inkBody,
+      fontSize: typography.size.md,
+      lineHeight: leadingFor(typography.size.md),
+      textAlign: "center",
+    },
+    meta: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    chipLabel: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    hint: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    crewRow: {
+      gap: 8,
+      padding: 12,
+      borderRadius: radius.card,
+      borderWidth: 1,
+      borderColor: p.colors.lineCard,
+    },
+    crewName: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+    rowProblem: { color: p.colors.tagRoseInk, fontSize: typography.size.sm },
+    ratioBanner: {
+      margin: space.md,
+      marginBottom: 0,
+      padding: 12,
+      borderRadius: radius.card,
+      borderWidth: 1,
+      borderColor: p.colors.tagRoseInk,
+      gap: 4,
+    },
+    ratioTitle: { color: p.colors.tagRoseInk, fontSize: typography.size.md, fontWeight: typography.weight.bold },
+    ratioLine: { color: p.colors.inkBody, fontSize: typography.size.sm },
+    footer: {
+      padding: space.md,
+      paddingTop: space.xs,
+      borderTopWidth: 1,
+      borderTopColor: p.colors.lineRow,
+    },
+    footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+    footerMain: { flex: 1 },
+    signed: { color: p.colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+  });
+}

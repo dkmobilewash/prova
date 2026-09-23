@@ -19,3 +19,17 @@ export function localToday(now: Date = new Date()): string {
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 10);
 }
+
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** "Sep 1" — the quiet form for a job's date range. Null in, null out:
+ * a job with no dates simply shows no range. */
+export function shortDay(iso: string | null): string | null {
+  if (!iso) return null;
+  const [, m, d] = iso.split("-").map(Number);
+  if (!m || !d) return null;
+  return `${MONTHS[m - 1].slice(0, 3)} ${d}`;
+}

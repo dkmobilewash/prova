@@ -165,8 +165,30 @@ model DispatchSlip {
   jobId String
   job   Job    @relation(fields: [jobId], references: [id])
 
-  employeeUserId String
-  employeeUser   User   @relation(fields: [employeeUserId], references: [id])
+  /// WHO THE HALL SENT: a User (employeeUserId) OR a crew member
+  /// (crewMemberId), never both and never neither — the XOR CHECK
+  /// "DispatchSlip_employee_or_crew" in 20260921120000_allow_crew_dispatch_slips
+  /// enforces it, the same shape as TimeEntry's since #412.
+  ///
+  /// employeeUserId was REQUIRED until that migration, which made the one
+  /// person a hiring hall exists to send — a field worker with no login — the
+  /// one person this form could not record. It was loosened, not replaced:
+  /// the column, its index and its foreign key are unchanged, so a build that
+  /// still reads it keeps working through the deploy window (CLAUDE.md, #378).
+  ///
+  /// onDelete: Restrict is spelled out rather than left to Prisma's default,
+  /// and that is load-bearing: an OPTIONAL relation defaults to SET NULL, so
+  /// leaving it off would have made the migration drop and re-add this
+  /// foreign key — and a SET NULL on a user delete would then trip the XOR
+  /// check instead of the RESTRICT removeTeamMember explains to the owner.
+  employeeUserId String?
+  employeeUser   User?   @relation(fields: [employeeUserId], references: [id], onDelete: Restrict)
+
+  /// The crew member dispatched, when the worker has no login. RESTRICT for
+  /// the reason TimeEntry.crewMemberId gives: crew members archive, they
+  /// never delete, and a referral on file must not lose the person it names.
+  crewMemberId String?
+  crewMember   CrewMember? @relation(fields: [crewMemberId], references: [id], onDelete: Restrict)
 
   craftClassificationId String?
   craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
@@ -182,6 +204,7 @@ model DispatchSlip {
 
   @@index([jobId])
   @@index([employeeUserId])
+  @@index([crewMemberId])
   @@index([craftClassificationId])
 }
 
@@ -212,11 +235,42 @@ model PrevailingWageDetermination {
   sourceUrl String?
   note      String?
 
+  /// What the determination DOCUMENT says about itself, ENTERED off the
+  /// document by a person. All nullable and additive: every row that
+  /// existed before these columns has none of them and is reported as
+  /// "unchecked" rather than judged. Nothing here is a wage rate — there is
+  /// no rate column and none is planned; the rate is read off the linked
+  /// document by a person.
+  ///
+  /// The document's own number, e.g. "SC-023-31-2, issue 2026-1".
+  determinationRef String?
+  /// The issue date printed on the determination. DIR issues general
+  /// determinations twice a year (22 Feb / 22 Aug) and each takes effect
+  /// ten days later; the standing line derives the effective window from
+  /// this date rather than storing it (lib/determination-standing.ts).
+  issuedOn         DateTime?
+  /// The expiration date printed on the determination.
+  expiresOn        DateTime?
+  /// The mark after that expiration date: SINGLE (holds for the life of
+  /// the project) or DOUBLE (a predetermined increase applies to work after
+  /// `expiresOn`). NONE = the document carries no mark. Null = not recorded,
+  /// which the standing line reports as unchecked rather than guessing.
+  expirationMarker DeterminationExpirationMarker?
+
   uploadedByUserId String?
   uploadedByUser   User?    @relation(fields: [uploadedByUserId], references: [id])
   createdAt        DateTime @default(now())
 
   @@index([jobId])
+}
+
+/// The asterisk a DIR general prevailing wage determination prints after
+/// its expiration date. What each one means is a published DIR rule, quoted
+/// in lib/determination-standing.ts with its source.
+enum DeterminationExpirationMarker {
+  NONE
+  SINGLE
+  DOUBLE
 }
 
 /// A global reference table (not scoped to a Company) — the same union

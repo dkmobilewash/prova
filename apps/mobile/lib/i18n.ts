@@ -59,7 +59,17 @@ let choice: LanguageChoice = "auto";
 let language: Language = deviceLanguage();
 const listeners = new Set<() => void>();
 
+/** What `useT` snapshots.
+ *
+ * NOT the language, which is the obvious choice and is wrong: picking
+ * "English" on a phone already in English changes `choice` and leaves
+ * `language` alone, so a snapshot of the language re-renders nothing and
+ * the selected pill in Settings stays on "Automatic". A counter moves on
+ * every publish, so the screen always agrees with what was tapped. */
+let version = 0;
+
 function publish() {
+  version += 1;
   for (const listener of listeners) listener();
 }
 
@@ -67,19 +77,47 @@ export function resolve(pick: LanguageChoice): Language {
   return pick === "auto" ? deviceLanguage() : pick;
 }
 
-/** Called once, before the first render that matters (app/_layout.tsx). */
+/**
+ * Called once, before the first render that matters (app/_layout.tsx).
+ *
+ * It CANNOT throw. The gate that awaits it holds the first frame, so a
+ * storage failure here would be a permanently blank app — and the
+ * fallback is already correct for almost everybody, because `language`
+ * starts on the phone's own setting. Losing the saved choice means the
+ * app opens in the device's language, which is the default this module
+ * is built around rather than a broken state.
+ */
 export async function loadLanguage(): Promise<void> {
-  const saved = await AsyncStorage.getItem(KEY);
+  let saved: string | null = null;
+  try {
+    saved = await AsyncStorage.getItem(KEY);
+  } catch {
+    saved = null;
+  }
   choice = saved === "en" || saved === "es" || saved === "auto" ? saved : "auto";
   language = resolve(choice);
   publish();
 }
 
+/**
+ * The language changes on screen FIRST and is written after.
+ *
+ * Deliberate, and the reason is the phone this is for: a taper tapping
+ * "Español" on a jobsite with no signal is not waiting on AsyncStorage
+ * to acknowledge anything, and a write that fails must not leave the
+ * app in a language nobody asked for. The worst case is the choice not
+ * surviving a relaunch — which is the same place a first-time user
+ * starts, and recoverable with one tap.
+ */
 export async function setLanguage(pick: LanguageChoice): Promise<void> {
   choice = pick;
   language = resolve(pick);
-  await AsyncStorage.setItem(KEY, pick);
   publish();
+  try {
+    await AsyncStorage.setItem(KEY, pick);
+  } catch {
+    // See above: on screen now beats remembered later.
+  }
 }
 
 export function currentLanguage(): Language {
@@ -108,15 +146,17 @@ export function t(key: StringKey, vars?: Record<string, string | number>): strin
 
 /** `t`, in a component, re-rendering when the language changes. */
 export function useT(): { t: typeof t; language: Language; choice: LanguageChoice } {
-  const lang = useSyncExternalStore(
+  useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
-      return () => listeners.delete(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
-    () => language,
-    () => language,
+    () => version,
+    () => version,
   );
-  return { t, language: lang, choice };
+  return { t, language, choice };
 }
 
 /** For tests and for the language switch on a handed-over phone: set the

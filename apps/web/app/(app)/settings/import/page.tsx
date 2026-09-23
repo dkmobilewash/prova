@@ -110,9 +110,13 @@ export default async function ImportPage() {
       <div className="mx-auto max-w-3xl px-6 py-8">
         <h1 className="mb-2 text-xl font-semibold text-ink">Import from a spreadsheet</h1>
         <p className="mb-6 text-sm text-ink-body">
-          Clients, jobs, crew and certificates of insurance are the account owner&apos;s imports.
-          The payroll register below is yours — it is part of certified payroll, not company
-          administration.
+          Clients, jobs and certificates of insurance are the account owner&apos;s imports. The
+          payroll register below is yours — it is part of certified payroll, not company
+          administration. Crew are on the{" "}
+          <Link href="/team" className="text-link hover:text-link-hover">
+            Team
+          </Link>{" "}
+          page, where you can add one by name or paste a whole list.
         </p>
         <div className="mb-8">
           <PayrollRegisterImport crew={crew} existing={registerEntries.map(toRegisterEntry)} />

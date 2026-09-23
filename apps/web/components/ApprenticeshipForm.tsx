@@ -81,7 +81,7 @@ export function ApprenticeshipForm({
         </label>
 
         <label className="flex flex-col gap-1 text-xs text-ink-body">
-          Programme number
+          Program number
           <input name="programNumber" placeholder="optional" className={`w-40 ${field}`} />
         </label>
 
@@ -131,7 +131,7 @@ export function ApprenticeshipForm({
           />
         </label>
         <span className="pb-1 text-xs text-ink-muted">
-          Leave both blank unless the programme has told you. Blank reads as “not looked up”, and
+          Leave both blank unless the program has told you. Blank reads as “not looked up”, and
           nothing is measured against it — a made-up target is worse than none.
         </span>
       </div>

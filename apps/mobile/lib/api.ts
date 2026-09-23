@@ -8,6 +8,7 @@ import type {
   Job,
   LineItem,
   MaterialOrder,
+  Me,
   Media,
   MediaTag,
   DrawingSetRow,
@@ -23,7 +24,9 @@ import type {
   Vendor,
 } from "./types";
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+import { apiBaseUrl } from "./env";
+
+const BASE_URL = apiBaseUrl;
 
 export class ApiError extends Error {
   status: number;
@@ -52,6 +55,12 @@ async function request<T>(
     throw new ApiError(data?.error ?? `Request failed (${res.status})`, res.status);
   }
   return data as T;
+}
+
+/** Who is holding this phone and what they may do — derived on the
+ * server, never re-derived here. See app/api/v1/me. */
+export async function getMe(token: string): Promise<Me> {
+  return request(`/api/v1/me`, { token });
 }
 
 export async function listFieldReports(jobId: string, token: string): Promise<FieldReportRow[]> {

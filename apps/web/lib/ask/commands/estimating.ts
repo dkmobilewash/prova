@@ -7,6 +7,7 @@ import { resolveCatalogEntry, resolveContact, resolveJob } from "../resolve";
 import { dayLabel } from "../dates";
 import { dueDayFor } from "./bids";
 import { keepSuggestions, type WebSuggestion } from "../webSuggestions";
+import { parseNumericInput } from "@/lib/numeric-input";
 import type {
   CommandContext,
   CommandDefinition,
@@ -463,7 +464,10 @@ async function resolveCatalogLine(ctx: CommandContext, input: CommandInput): Pro
   if (!quantity) missing.push("the quantity");
   if (missing.length > 0) return { kind: "need", missing: missing.join(", ") };
 
-  if (Number.isNaN(Number(quantity)) || Number(quantity) <= 0) {
+  // Same parser as the form, so the Ask card and the box on screen cannot
+  // disagree about what a figure means — see lib/numeric-input.ts.
+  const parsedQuantity = parseNumericInput(quantity, { label: "Quantity", min: 0 });
+  if (!parsedQuantity.ok || parsedQuantity.n <= 0) {
     return { kind: "need", missing: "the quantity as a number greater than zero" };
   }
 
@@ -606,7 +610,19 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "deleteCostEntry", reason: "Deletes are never commands (T5)." },
   { action: "assignCrewMember", reason: "Its duplicate check uses the instanceof form shared.ts documents as false at runtime; not registered until that is fixed." },
   { action: "unassignCrewMember", reason: "Removing a person from a roster is done where the roster is shown." },
-  { action: "addTakeoffLineItems", reason: "Takeoff needs dimensions in a form the model should not be transcribing; the job page's takeoff form is the path." },
+  { action: "addTakeoffLines", reason: "Takeoff needs dimensions in a form the model should not be transcribing; the job page's takeoff form is the path." },
+  // ON-SCREEN PLAN TAKEOFF. None of these is a command and none ever will
+  // be: every one of them is about geometry on a drawing the model cannot
+  // see. A scale, a traced run and a counted fixture are things a person
+  // points at, and a model transcribing them would be inventing the one
+  // number this whole feature exists to make checkable.
+  { action: "recordTakeoffPlan", reason: "A plan is uploaded from the browser under a one-shot token; there is no file for a command to attach." },
+  { action: "deleteTakeoffPlan", reason: "Deletes are never commands (T5)." },
+  { action: "saveTakeoffCalibration", reason: "A scale is set by dragging along a dimension on the drawing; a model has not seen the drawing." },
+  { action: "saveTakeoffMeasurement", reason: "The measurement IS the traced geometry, which only the viewer produces." },
+  { action: "deleteTakeoffMeasurement", reason: "Deletes are never commands (T5)." },
+  { action: "rescaleTakeoffMeasurements", reason: "Moving quantities onto a corrected scale needs the before-and-after figures on screen, which is the page's job." },
+  { action: "postTakeoffMeasurements", reason: "Posting takes ids of shapes picked on the sheet; the picking is the decision and it happens on the drawing." },
   // createBidInvitation left this list in phase 4c: registered as
   // log_bid_invitation in commands/bids.ts, DIRECT over the lifted core
   // in lib/estimating/bid-invitation.ts.

@@ -5,9 +5,10 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
-import { ActionResult, actionFail, actionOk, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, assertOwner, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { ActionResult, actionFail, actionOk, InputError, runAction, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, ownerRefusal, tradeScopeFromForm } from "./shared";
 import { catalogActuals, catalogSourcedLine, repriceDecision } from "@/lib/catalog-actuals";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
+import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import { addCatalogLine } from "@/lib/estimating/catalog-line";
 import { createBidInvitationRecord } from "@/lib/estimating/bid-invitation";
 import { issueEstimateVersionNumber } from "@/lib/estimating/estimate-version";
@@ -19,47 +20,54 @@ import { issueEstimateVersionNumber } from "@/lib/estimating/estimate-version";
  * command `log_bid_invitation`; this keeps its throw for the form, and
  * throws the core's own sentences, so the page and the card refuse a
  * missing name or a foreign contact in one voice. */
-export async function createBidInvitation(contactId: string, formData: FormData) {
+export async function createBidInvitation(contactId: string, formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
+  return runAction(async () => {
+    const projectName = String(formData.get("projectName") ?? "").trim();
+    const dueDateRaw = String(formData.get("dueDate") ?? "").trim();
+    const notes = String(formData.get("notes") ?? "").trim();
+    const tradeScope = tradeScopeFromForm(formData);
+    const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
 
-  const projectName = String(formData.get("projectName") ?? "").trim();
-  const dueDateRaw = String(formData.get("dueDate") ?? "").trim();
-  const notes = String(formData.get("notes") ?? "").trim();
-  const tradeScope = tradeScopeFromForm(formData);
-  const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
+    const result = await createBidInvitationRecord(company.id, {
+      contactId,
+      projectName,
+      dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+      notes: notes || null,
+      tradeScope,
+      bidAmount,
+    });
+    if (!result.ok) return actionFail(result.error);
 
-  const result = await createBidInvitationRecord(company.id, {
-    contactId,
-    projectName,
-    dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
-    notes: notes || null,
-    tradeScope,
-    bidAmount,
+    revalidatePath(`/contacts/${contactId}`);
+    revalidatePath("/bids");
+    return actionOk;
   });
-  if (!result.ok) throw new Error(result.error);
-
-  revalidatePath(`/contacts/${contactId}`);
-  revalidatePath("/bids");
 }
 
 /** Updates a bid invitation's outcome (invited/submitted/won/lost/declined)
  * and, once known, what was actually bid — together with tradeScope this
  * is what makes the table a historical bid database, not just a log. */
-export async function updateBidInvitationStatus(bidInvitationId: string, formData: FormData) {
+export async function updateBidInvitationStatus(
+  bidInvitationId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
+  return runAction(async () => {
+      const bid = await prisma.bidInvitation.findUnique({ where: { id: bidInvitationId } });
+      if (!bid || bid.companyId !== company.id) {
+        throw new Error("Bid invitation not found");
+      }
 
-  const bid = await prisma.bidInvitation.findUnique({ where: { id: bidInvitationId } });
-  if (!bid || bid.companyId !== company.id) {
-    throw new Error("Bid invitation not found");
-  }
+      const status = enumFromForm(formData, "status", BID_INVITATION_STATUSES);
+      const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
 
-  const status = enumFromForm(formData, "status", BID_INVITATION_STATUSES);
-  const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
+      await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { status, bidAmount } });
 
-  await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { status, bidAmount } });
-
-  revalidatePath(`/contacts/${bid.contactId}`);
-  revalidatePath("/bids");
+      revalidatePath(`/contacts/${bid.contactId}`);
+      revalidatePath("/bids");
+      return actionOk;
+  });
 }
 
 export async function deleteBidInvitation(bidInvitationId: string) {
@@ -105,42 +113,46 @@ async function duplicateCatalogEntry(companyId: string, description: string) {
 
 /** Adds a reusable line-item template, scoped to the company. Not tied to
  * any job — see LineItemCatalogEntry in schema.prisma. */
-export async function createLineItemCatalogEntry(formData: FormData) {
+export async function createLineItemCatalogEntry(formData: FormData): Promise<ActionResult> {
   const { company } = await requireCompanyContext();
+  return runAction(async () => {
+    const description = String(formData.get("description") ?? "").trim();
+    const unit = String(formData.get("unit") ?? "").trim();
+    const tradeScope = tradeScopeFromForm(formData);
+    const defaultUnitPrice = nullableDecimalFromForm(formData, "defaultUnitPrice");
+    const defaultBudgetedUnitCost = nullableDecimalFromForm(formData, "defaultBudgetedUnitCost");
+    const defaultLaborHours = nullableDecimalFromForm(formData, "defaultLaborHours");
+    const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
 
-  const description = String(formData.get("description") ?? "").trim();
-  const unit = String(formData.get("unit") ?? "").trim();
-  const tradeScope = tradeScopeFromForm(formData);
-  const defaultUnitPrice = nullableDecimalFromForm(formData, "defaultUnitPrice");
-  const defaultBudgetedUnitCost = nullableDecimalFromForm(formData, "defaultBudgetedUnitCost");
-  const defaultLaborHours = nullableDecimalFromForm(formData, "defaultLaborHours");
-  const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
+    // InputError, not Error: both of these are things a person can fix, and
+    // a thrown one arrives redacted. Same reason the parsers above changed.
+    if (!description) {
+      throw new InputError("Description is required");
+    }
 
-  if (!description) {
-    throw new Error("Description is required");
-  }
+    const duplicate = await duplicateCatalogEntry(company.id, description);
+    if (duplicate) {
+      throw new InputError(
+        `"${duplicate.description}" is already in the catalog. Edit that entry instead — a second copy splits its actuals history between the two and can hide a bad price on both.`,
+      );
+    }
 
-  const duplicate = await duplicateCatalogEntry(company.id, description);
-  if (duplicate) {
-    throw new Error(
-      `"${duplicate.description}" is already in the catalog. Edit that entry instead — a second copy splits its actuals history between the two and can hide a bad price on both.`,
-    );
-  }
+    await prisma.lineItemCatalogEntry.create({
+      data: {
+        companyId: company.id,
+        description,
+        unit: unit || null,
+        tradeScope,
+        defaultUnitPrice,
+        defaultBudgetedUnitCost,
+        defaultLaborHours,
+        craftClassificationId,
+      },
+    });
 
-  await prisma.lineItemCatalogEntry.create({
-    data: {
-      companyId: company.id,
-      description,
-      unit: unit || null,
-      tradeScope,
-      defaultUnitPrice,
-      defaultBudgetedUnitCost,
-      defaultLaborHours,
-      craftClassificationId,
-    },
+    revalidatePath("/catalog");
+    return actionOk;
   });
-
-  revalidatePath("/catalog");
 }
 
 export async function deleteLineItemCatalogEntry(catalogEntryId: string): Promise<ActionResult> {
@@ -220,21 +232,22 @@ export async function saveLineItemAsCatalogEntry(lineItemId: string) {
 /** Adds a new JobLineItem pre-filled from a catalog entry, through the
  * exact same create call addLineItem uses — a catalog entry is a template
  * for that call, not a second live copy of estimate data. */
-export async function addLineItemFromCatalog(jobId: string, formData: FormData) {
+export async function addLineItemFromCatalog(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  if (!can(context, "VIEW_JOB_COSTS")) throw new Error(JOB_COSTS_ONLY);
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company } = context;
   const catalogEntryId = String(formData.get("catalogEntryId") ?? "").trim();
   const quantity = String(formData.get("quantity") ?? "").trim();
 
   // The body lives in lib/estimating/catalog-line.ts, shared with the Ask
-  // command `add_catalog_line`; the sentences thrown here are the core's.
+  // command `add_catalog_line`; the sentences it returns are the core's.
   const added = await addCatalogLine(company.id, { jobId, catalogEntryId, quantity });
   if (!added.ok) {
-    throw new Error(added.error);
+    return actionFail(added.error);
   }
 
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
 }
 
 /** Saves a manual checkpoint of the estimate's current line items — "what
@@ -319,12 +332,28 @@ export async function saveEstimateVersion(jobId: string, formData: FormData) {
  * the margin checkbox — see repriceDecision in lib/catalog-actuals.ts, which
  * also re-checks the flag and the sample size that made this button appear,
  * since the page that rendered it may be minutes old.
+ *
+ * RETURNS ITS REFUSALS RATHER THAN THROWING THEM, as of 2026-09-21, and the
+ * conversion is not cosmetic. Every refusal in here was a `throw`, which
+ * production redacts to a digest, on a control reachable by somebody it
+ * always refuses: `/catalog` demands MANAGE_ESTIMATING and ESTIMATOR holds
+ * it, so an estimator can open the page and click this. The owner case is
+ * not even the common one — `repriceDecision` refuses the OWNER on an
+ * ordinary race, when the page is minutes old and a costed line has landed
+ * since, and that sentence (which names the fringe schedule to add, or the
+ * cost entry to recategorise) was thrown away too. `ownerRefusal` is the
+ * right guard now that this declares `ActionResult`; `assertOwner` throws
+ * and belongs only in the throw-style actions — see shared.ts.
  */
-export async function updateCatalogDefaultsFromActuals(entryId: string, formData: FormData) {
+export async function updateCatalogDefaultsFromActuals(
+  entryId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
-  assertOwner(user, "Only the account owner can re-price the catalog");
+  const refusal = ownerRefusal(user, "Only the account owner can re-price the catalog.");
+  if (refusal) return refusal;
 
-  const [entry, fringeSchedulesByCraft] = await Promise.all([
+  const [entry, fringeSchedulesByCraft, employerBurdenRates] = await Promise.all([
     prisma.lineItemCatalogEntry.findUnique({
       where: { id: entryId },
       include: {
@@ -349,13 +378,19 @@ export async function updateCatalogDefaultsFromActuals(entryId: string, formData
       },
     }),
     loadFringeSchedulesByCraft(company.id),
+    loadEmployerBurdenRates(company.id),
   ]);
   if (!entry || entry.companyId !== company.id) {
-    throw new Error("Catalog entry not found");
+    // Returned rather than thrown like its siblings elsewhere: this
+    // function now promises a readable refusal, and half-keeping the promise
+    // is how a person ends up looking at a digest for one branch and a
+    // sentence for the next. Reachable by an ordinary stale tab — the entry
+    // was deleted from another window.
+    return actionFail("Catalog entry not found — it may have been deleted. Reload the page.");
   }
 
   const actuals = catalogActuals(
-    entry.jobLineItems.map((line) => catalogSourcedLine(line, fringeSchedulesByCraft)),
+    entry.jobLineItems.map((line) => catalogSourcedLine(line, fringeSchedulesByCraft, employerBurdenRates)),
     entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
   );
 
@@ -365,7 +400,13 @@ export async function updateCatalogDefaultsFromActuals(entryId: string, formData
     String(formData.get("alsoUpdatePrice") ?? "") === "on",
   );
   if (!decision.ok) {
-    throw new Error(decision.error);
+    // THE REFUSAL THE OWNER ACTUALLY MEETS. `repriceDecision` re-checks the
+    // flag and the sample that made this button render, because the page may
+    // be minutes old, and its messages are the useful ones — add a fringe
+    // rate schedule for that craft and dates, recategorise the Labor cost
+    // entry, the variance has closed. Every one of them was thrown, and so
+    // redacted to a digest in production.
+    return actionFail(decision.error);
   }
 
   // Only ever the entry's own defaults — no JobLineItem is in scope here.
@@ -379,6 +420,7 @@ export async function updateCatalogDefaultsFromActuals(entryId: string, formData
   await prisma.lineItemCatalogEntry.update({ where: { id: entryId }, data });
 
   revalidatePath("/catalog");
+  return actionOk;
 }
 
 /**
@@ -395,19 +437,36 @@ export async function updateCatalogDefaultsFromActuals(entryId: string, formData
  * two "5/8in Type X board" rows at different prices is worse than one that
  * refused the second. Updating a price stays where it already lives: the
  * entry's own controls, and the actuals loop.
+ *
+ * RETURNS ITS REFUSALS RATHER THAN THROWING THEM, as of 2026-09-21, and on
+ * this action that is the difference between a sentence and a lost
+ * afternoon. THE INPUT IS A PASTE — two hundred rows out of a supplier's
+ * spreadsheet, living in `CatalogImport`'s React state and nowhere else.
+ * Every refusal here was a `throw`; production redacts a thrown Server
+ * Action message to a digest, so the person got the error boundary, and the
+ * error boundary UNMOUNTS THE COMPONENT HOLDING THE PASTE. No reason, and
+ * nothing to go back to.
+ *
+ * Who meets it: `/catalog` demands MANAGE_ESTIMATING and nothing else, and
+ * ESTIMATOR holds that (lib/permissions.ts). So the one job function this
+ * page exists for is the one this action always refuses. The page no longer
+ * renders the control to them at all — that is the other half, and the more
+ * important one — but a page guard stops a page rendering and does nothing
+ * about the endpoint behind it.
  */
-export async function importCatalogEntries(formData: FormData) {
+export async function importCatalogEntries(formData: FormData): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
-  assertOwner(user, "Only the account owner can import a price list");
+  const refusal = ownerRefusal(user, "Only the account owner can import a price list.");
+  if (refusal) return refusal;
 
   const text = String(formData.get("csv") ?? "");
   if (!text.trim()) {
-    throw new Error("Paste a price list, or choose a CSV file, before importing");
+    return actionFail("Paste a price list, or choose a CSV file, before importing.");
   }
 
   const { rows } = parseCatalogImport(text);
   if (rows.length === 0) {
-    throw new Error("Nothing readable to import — check the preview for what went wrong");
+    return actionFail("Nothing readable to import — check the preview for what went wrong.");
   }
 
   const existing = await prisma.lineItemCatalogEntry.findMany({
@@ -420,7 +479,7 @@ export async function importCatalogEntries(formData: FormData) {
   );
 
   if (fresh.length === 0) {
-    throw new Error("Every item in that list is already in the catalog — nothing to add");
+    return actionFail("Every item in that list is already in the catalog — nothing to add.");
   }
 
   await prisma.lineItemCatalogEntry.createMany({
@@ -436,4 +495,5 @@ export async function importCatalogEntries(formData: FormData) {
   });
 
   revalidatePath("/catalog");
+  return actionOk;
 }

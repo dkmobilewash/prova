@@ -58,6 +58,11 @@ export function BusinessScopeFields({
                 name="contractingRelationship"
                 value={option.value}
                 defaultChecked={defaults.contractingRelationship === option.value}
+                // `required` on a radio group makes the browser refuse a Save
+                // with that question unanswered, with its own tooltip on the
+                // group — before any request is made. `saveBusinessScope`
+                // requires all three anyway; this just says so a step earlier.
+                required
                 className="h-4 w-4 shrink-0"
               />
               {option.label}
@@ -98,11 +103,11 @@ function YesNo({
   return (
     <div className={rowClass}>
       <label className={`flex items-center gap-2 ${optionClass}`}>
-        <input type="radio" name={name} value="true" defaultChecked={value === true} className="h-4 w-4 shrink-0" />
+        <input type="radio" name={name} value="true" defaultChecked={value === true} required className="h-4 w-4 shrink-0" />
         Yes
       </label>
       <label className={`flex items-center gap-2 ${optionClass}`}>
-        <input type="radio" name={name} value="false" defaultChecked={value === false} className="h-4 w-4 shrink-0" />
+        <input type="radio" name={name} value="false" defaultChecked={value === false} required className="h-4 w-4 shrink-0" />
         No
       </label>
     </div>

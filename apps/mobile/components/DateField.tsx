@@ -1,8 +1,21 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Chip } from "@/components/Chip";
-import { colors, typography } from "@/lib/theme";
+import { Icon } from "@/components/Icon";
+import { useT } from "@/lib/i18n";
+import { type Palette, hitTarget, radius, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 
+/**
+ * NOT translated, and deliberately: these render a DATE, which is the one
+ * class of string the translation layer leaves alone (`lib/i18n.ts`, and
+ * the same reason `describeOp` hands `toLocaleDateString` the device's own
+ * locale). `dayLabel` is also exported and read by other screens, so its
+ * output is a format rather than a sentence. Translating the calendar is a
+ * date-formatting job — month and weekday names in the right order for the
+ * language — not a dictionary one, and doing half of it here would put a
+ * Spanish month inside an English-shaped label.
+ */
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -51,16 +64,23 @@ export function DateField({
   value,
   onChange,
   max,
+  allowFuture = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   /** The latest pickable day, yyyy-mm-dd — the phone's today. */
   max: string;
+  /** A promised-for date may be ahead of today. The calendar then lets
+   * you move forward, and days after `max` are pickable. */
+  allowFuture?: boolean;
 }) {
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const selected = parse(value);
-  const limit = parse(max);
+  const limit = allowFuture ? null : parse(max);
   const [month, setMonth] = useState(() => {
     const start = selected ?? limit ?? { y: 2026, m: 0, d: 1 };
     return { y: start.y, m: start.m };
@@ -89,10 +109,10 @@ export function DateField({
     <View style={styles.wrap}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.chips}>
-        <Chip label="Today" selected={value === max} onPress={() => pick(max)} />
-        <Chip label="Yesterday" selected={value === yesterday} onPress={() => pick(yesterday)} />
+        <Chip label={t("time.day.today")} selected={value === max} onPress={() => pick(max)} />
+        <Chip label={t("date.yesterday")} selected={value === yesterday} onPress={() => pick(yesterday)} />
         <Chip
-          label={value === max || value === yesterday || !selected ? "Other day…" : dayLabel(value)}
+          label={value === max || value === yesterday || !selected ? t("date.otherDay") : dayLabel(value)}
           selected={open || (!!selected && value !== max && value !== yesterday)}
           onPress={() => {
             if (selected) setMonth({ y: selected.y, m: selected.m });
@@ -105,8 +125,12 @@ export function DateField({
       {open ? (
         <View style={styles.calendar}>
           <View style={styles.monthRow}>
-            <Pressable onPress={() => shift(-1)} style={styles.arrow} accessibilityLabel="Previous month">
-              <Text style={styles.arrowText}>‹</Text>
+            <Pressable
+              onPress={() => shift(-1)}
+              style={styles.arrow}
+              accessibilityLabel={t("date.previousMonth")}
+            >
+              <Icon name="chevronBack" size={20} color={palette.colors.link} />
             </Pressable>
             <Text style={styles.monthTitle}>
               {MONTHS[month.m]} {month.y}
@@ -115,9 +139,9 @@ export function DateField({
               onPress={() => shift(1)}
               disabled={atLimitMonth}
               style={[styles.arrow, atLimitMonth && styles.disabled]}
-              accessibilityLabel="Next month"
+              accessibilityLabel={t("date.nextMonth")}
             >
-              <Text style={styles.arrowText}>›</Text>
+              <Icon name="chevron" size={20} color={palette.colors.link} />
             </Pressable>
           </View>
           <View style={styles.grid}>
@@ -129,7 +153,7 @@ export function DateField({
             {cells.map((day, i) => {
               if (day === null) return <View key={`e${i}`} style={styles.cell} />;
               const text = format(month.y, month.m, day);
-              const future = text > max;
+              const future = !allowFuture && text > max;
               const isSelected = text === value;
               return (
                 <Pressable
@@ -152,22 +176,23 @@ export function DateField({
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { gap: 6 },
-  label: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  picked: { color: colors.inkMuted, fontSize: typography.size.sm },
-  calendar: { borderWidth: 1, borderColor: colors.lineCard, borderRadius: 12, padding: 8 },
-  monthRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
-  monthTitle: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  arrow: { paddingHorizontal: 14, paddingVertical: 6 },
-  arrowText: { color: colors.link, fontSize: 22, fontWeight: typography.weight.bold },
-  disabled: { opacity: 0.3 },
-  grid: { flexDirection: "row", flexWrap: "wrap" },
-  cell: { width: `${100 / 7}%`, height: 38, alignItems: "center", justifyContent: "center", borderRadius: 19 },
-  weekday: { color: colors.inkMuted, fontSize: typography.size.sm, textAlign: "center", lineHeight: 38 },
-  dayText: { color: colors.ink, fontSize: typography.size.md },
-  futureText: { color: colors.inkMuted, opacity: 0.4 },
-  selectedCell: { backgroundColor: colors.ink },
-  selectedText: { color: colors.canvas, fontWeight: typography.weight.bold },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    wrap: { gap: space.six },
+    label: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    picked: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    calendar: { borderWidth: 1, borderColor: p.colors.lineCard, borderRadius: radius.card, padding: 8 },
+    monthRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
+    monthTitle: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+    arrow: { width: hitTarget, height: hitTarget, alignItems: "center", justifyContent: "center" },
+    disabled: { opacity: 0.3 },
+    grid: { flexDirection: "row", flexWrap: "wrap" },
+    cell: { width: `${100 / 7}%`, height: 38, alignItems: "center", justifyContent: "center", borderRadius: radius.dayCell },
+    weekday: { color: p.colors.inkMuted, fontSize: typography.size.sm, textAlign: "center", lineHeight: 38 },
+    dayText: { color: p.colors.ink, fontSize: typography.size.md },
+    futureText: { color: p.colors.inkMuted, opacity: 0.4 },
+    selectedCell: { backgroundColor: p.colors.ink },
+    selectedText: { color: p.colors.canvas, fontWeight: typography.weight.bold },
+  });
+}

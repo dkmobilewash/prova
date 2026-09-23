@@ -51,7 +51,55 @@ export interface PayAppAssemblyInput {
    * shape as the change-order target read on the job page. */
   lineItems: PayAppJobLineItem[];
   invoices: PayAppInvoiceRow[];
-  retainagePercent: DecimalLike;
+}
+
+/**
+ * WHICH INVOICES THIS CERTIFICATE IS MADE OF, and it is not all of them.
+ *
+ * A job can be billed two ways in this product. `submitPayApplication`
+ * writes an invoice WITH `InvoiceLineItem` rows against the schedule of
+ * values — that is a pay application. `createInvoice` writes a quick
+ * lump-sum bill with NO line items (billing.prisma says so on the
+ * `lineItems` field). Both land in `Job.invoices` and both can carry a
+ * `retainageWithheld` snapshot.
+ *
+ * Until this function existed, "earlier invoice" meant "any lower invoice
+ * number", and that fed the two halves of the G702 from different
+ * populations: `previousBilled` is summed from earlier invoices' LINE
+ * ITEMS, which a lump-sum bill has none of, while
+ * `previousRetainageWithheld` was summed from earlier invoices' SNAPSHOTS,
+ * which a lump-sum bill does have. So a lump-sum invoice contributed to one
+ * side and nothing to the other, and line 7 of the certificate — "LESS
+ * PREVIOUS CERTIFICATES FOR PAYMENT" — came out NEGATIVE: bill $10,000
+ * lump sum at 10%, then submit a pay application, and the sheet printed
+ * -$1,000.00 there, a "retainage to date" inflated by the same $1,000, and
+ * a balance to finish overstated by it too.
+ *
+ * WHAT IS CORRECT ON A G702, since the fix is a judgement and not a typo.
+ * Every figure on that form has to foot to the G703 continuation sheet
+ * behind it: line 4 (TOTAL COMPLETED AND STORED TO DATE) is the sum of
+ * column G, and a GC's accounting department reconciles them column by
+ * column. A lump-sum bill has no column G to appear in — it was never
+ * billed against the schedule of values — so there are only two
+ * self-consistent answers: give it a synthetic continuation-sheet row so
+ * it appears on BOTH sides, or leave it off BOTH. It cannot be on one.
+ *
+ * This takes the second. A synthetic row would have to claim scope against
+ * the SOV that the SOV does not contain, so the contract sum and every
+ * percentage beside it would stop meaning what the form says they mean.
+ * Leaving it off both sides keeps the certificate an exact statement about
+ * the schedule of values, which is what a G702 is. The lump-sum bill is
+ * still a real receivable and still appears on the job's billing tab, in
+ * `/cash-flow`, and in the company retainage figure — nothing is hidden, it
+ * is only absent from a document that is about the SOV.
+ *
+ * Mixing the two billing modes on one contract is itself a data-entry
+ * mistake, and this is deliberately NOT the place that refuses it: a
+ * certificate a GC is waiting for has to render whatever history the job
+ * already has.
+ */
+function isPayApplicationInvoice(invoice: PayAppInvoiceRow): boolean {
+  return invoice.lineItems.length > 0;
 }
 
 export interface PayAppAssembly {
@@ -108,8 +156,13 @@ export function assemblePayApplication(input: PayAppAssemblyInput): PayAppAssemb
     return null;
   }
 
-  const isPayApplication = invoice.lineItems.length > 0;
-  const earlierInvoices = input.invoices.filter((inv) => inv.number < invoice.number);
+  const isPayApplication = isPayApplicationInvoice(invoice);
+  // Earlier PAY APPLICATIONS, not earlier invoices. See
+  // `isPayApplicationInvoice` — this one predicate is what keeps both
+  // halves of the certificate over the same population.
+  const earlierInvoices = input.invoices.filter(
+    (inv) => inv.number < invoice.number && isPayApplicationInvoice(inv),
+  );
 
   // Every line item this application should show a row for: everything
   // currently on the SOV, plus anything billed on an earlier or later
@@ -177,9 +230,16 @@ export function assemblePayApplication(input: PayAppAssemblyInput): PayAppAssemb
 
   const summary = calculatePayAppSummary({
     lineItems: lineItemResults,
-    retainagePercent: input.retainagePercent != null ? Number(input.retainagePercent) : null,
     previousRetainageWithheld: earlierInvoices.reduce((sum, inv) => sum + Number(inv.retainageWithheld ?? 0), 0),
-    thisPeriodRetainageWithheld: Number(invoice.retainageWithheld ?? 0),
+    // The same rule applied to the invoice being VIEWED, not just to the
+    // earlier ones. Open a lump-sum bill at this URL and its own snapshot
+    // would otherwise land in `retainageToDate` on top of line items it
+    // contributed nothing to — the same one-sided arithmetic, one row
+    // closer. The page declines to print a certificate for one of these at
+    // all (`isPayApplication` is false and it says so in words), so nothing
+    // on screen changes; what changes is that the summary is no longer
+    // quietly wrong for anything that reads it next.
+    thisPeriodRetainageWithheld: isPayApplication ? Number(invoice.retainageWithheld ?? 0) : 0,
   });
 
   return { isPayApplication, lineItems: lineItemResults, summary };
@@ -217,7 +277,6 @@ export async function loadPayApplication(jobId: string, invoiceId: string, compa
     invoiceId,
     lineItems: job.lineItems,
     invoices: job.invoices,
-    retainagePercent: job.retainagePercent,
   });
   if (!assembly) {
     return null;

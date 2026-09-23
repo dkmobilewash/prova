@@ -1,55 +1,63 @@
 import { useLocalSearchParams } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
 import { DateField } from "@/components/DateField";
 import { Field } from "@/components/Field";
+import { JobContextChip } from "@/components/JobContextChip";
 import { List } from "@/components/List";
-import { RefusedBanner } from "@/components/RefusedBanner";
 import { Sheet } from "@/components/Sheet";
+import { SyncStatus } from "@/components/SyncStatus";
 import * as api from "@/lib/api";
 import { tokenOrNull } from "@/lib/clerk-token";
 import { dayFromClockIn } from "@/lib/clock-session";
+import { useT } from "@/lib/i18n";
 import { uuid } from "@/lib/id";
 import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
 import { JobSections } from "@/components/JobSections";
-import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
-import { useT } from "@/lib/i18n";
-import { colors, typography } from "@/lib/theme";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
+import { type Palette, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import type { DelayRow, FieldReportRow } from "@/lib/types";
 import { useFieldReports } from "@/lib/use-field-reports";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 import { useSync } from "@/lib/use-sync";
 
-// The same choices the server accepts (lib/delays-core.ts on the web).
+// The same choices the server accepts (lib/delays-core.ts on the web). The
+// value is the server's; the second element is the KEY of what the chip
+// says, so the choices read in the language the phone is set to while the
+// value that goes up stays the enum the server takes.
 const CAUSES = [
-  ["WEATHER", "Weather"],
-  ["GC_SCHEDULE", "GC schedule"],
-  ["OTHER_TRADE", "Other trade"],
-  ["MATERIAL", "Material"],
-  ["INSPECTION", "Inspection"],
-  ["DESIGN_RFI", "Design / RFI"],
-  ["SITE_ACCESS", "Site access"],
-  ["EQUIPMENT", "Equipment"],
-  ["OTHER", "Other"],
+  ["WEATHER", "reports.cause.weather"],
+  ["GC_SCHEDULE", "reports.cause.gcSchedule"],
+  ["OTHER_TRADE", "reports.cause.otherTrade"],
+  ["MATERIAL", "reports.cause.material"],
+  ["INSPECTION", "reports.cause.inspection"],
+  ["DESIGN_RFI", "reports.cause.designRfi"],
+  ["SITE_ACCESS", "reports.cause.siteAccess"],
+  ["EQUIPMENT", "reports.cause.equipment"],
+  ["OTHER", "reports.cause.other"],
 ] as const;
 const PARTIES = [
-  ["GC", "GC"],
-  ["OWNER", "Owner"],
-  ["OTHER_TRADE", "Another trade"],
-  ["SUPPLIER", "Supplier"],
-  ["OURSELVES", "Us"],
-  ["NOBODY", "Nobody"],
+  ["GC", "reports.party.gc"],
+  ["OWNER", "reports.party.owner"],
+  ["OTHER_TRADE", "reports.party.otherTrade"],
+  ["SUPPLIER", "reports.party.supplier"],
+  ["OURSELVES", "reports.party.us"],
+  ["NOBODY", "reports.party.nobody"],
 ] as const;
 const METHODS = [
-  ["PHONE", "Phone"],
-  ["EMAIL", "Email"],
-  ["TEXT", "Text"],
-  ["IN_PERSON", "In person"],
-  ["MEETING", "Meeting"],
+  ["PHONE", "reports.method.phone"],
+  ["EMAIL", "reports.method.email"],
+  ["TEXT", "reports.method.text"],
+  ["IN_PERSON", "reports.method.inPerson"],
+  ["MEETING", "reports.method.meeting"],
 ] as const;
 
 type Day = { date: string; report: FieldReportRow | null; delays: DelayRow[] };
@@ -69,6 +77,9 @@ function daysOf(reports: FieldReportRow[], delays: DelayRow[]): Day[] {
 
 export default function ReportsScreen() {
   const { t } = useT();
+  const { me } = useMe();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const getToken = useStableGetToken();
   const { reports, pending, error, offline, create, refresh } = useFieldReports(jobId ?? "");
@@ -108,8 +119,8 @@ export default function ReportsScreen() {
   const existing = reports.find((r) => r.reportDate === reportDate);
   const reportProblem = existing
     ? existing.lockState
-      ? `${reportDate} is signed, so its report is locked.`
-      : `There's already a report for ${reportDate}. Edit it on the web.`
+      ? t("reports.problem.daySigned", { date: reportDate })
+      : t("reports.problem.exists", { date: reportDate })
     : null;
   const canFile = workPerformed.trim().length > 0 && reportProblem === null;
 
@@ -181,8 +192,10 @@ export default function ReportsScreen() {
     setTold(null);
     setToldWho("");
     setShowDelay(false);
-    const causeText = CAUSES.find(([v]) => v === op.cause)?.[1] ?? op.cause;
-    const partyText = PARTIES.find(([v]) => v === op.responsibleParty)?.[1] ?? op.responsibleParty;
+    const causeKey = CAUSES.find(([v]) => v === op.cause)?.[1];
+    const causeText = causeKey ? t(causeKey) : op.cause;
+    const partyKey = PARTIES.find(([v]) => v === op.responsibleParty)?.[1];
+    const partyText = partyKey ? t(partyKey) : op.responsibleParty;
     setOptimisticDelays((rows) => [
       ...rows,
       {
@@ -209,13 +222,26 @@ export default function ReportsScreen() {
     await sync();
   };
 
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["reports/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["reports/[jobId]"]} />;
+
   return (
     <View style={styles.screen}>
       <JobSections jobId={jobId} active="reports" />
-      {pending > 0 ? <Text style={styles.pending}>{t("common.pendingSync", { count: pending })}</Text> : null}
+      <View style={styles.chipWrap}>
+        <JobContextChip />
+      </View>
+      <SyncStatus
+        pending={pending}
+        state={offline}
+        refused={refused}
+        onDismiss={dismissRefused}
+        onRetry={retrySetAside}
+      />
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <OfflineNote state={offline} />
-      <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
 
       <List
         data={daysOf(reports, [...delays, ...optimisticDelays])}
@@ -225,46 +251,61 @@ export default function ReportsScreen() {
             <View style={styles.head}>
               <Text style={styles.date}>{item.date}</Text>
               {item.report?.lockState ? (
-                <Text style={styles.locked}>{item.report.lockState === "APPROVED" ? "Approved" : "Signed"} · locked</Text>
+                <Text style={styles.locked}>
+                  {t(item.report.lockState === "APPROVED" ? "reports.locked.approved" : "reports.locked.signed")}
+                </Text>
               ) : null}
             </View>
             {item.report ? (
               <>
-                {item.report.manpowerLine ? <Text style={styles.meta}>Crew: {item.report.manpowerLine}</Text> : null}
+                {item.report.manpowerLine ? (
+                  <Text style={styles.meta}>{t("reports.crew", { crew: item.report.manpowerLine })}</Text>
+                ) : null}
                 <Text style={styles.work}>{item.report.workPerformed}</Text>
-                {item.report.crewPresent ? <Text style={styles.meta}>Also on site: {item.report.crewPresent}</Text> : null}
+                {item.report.crewPresent ? (
+                  <Text style={styles.meta}>{t("reports.alsoOnSite", { who: item.report.crewPresent })}</Text>
+                ) : null}
                 {item.report.weatherLine ? (
                   <Text style={styles.meta}>
-                    Weather{item.report.weatherKind === "forecast" ? " (forecast)" : ""}: {item.report.weatherLine}
+                    {item.report.weatherKind === "forecast"
+                      ? t("reports.weatherForecast", { weather: item.report.weatherLine })
+                      : t("reports.weather", { weather: item.report.weatherLine })}
                   </Text>
                 ) : null}
                 {item.report.weather ? (
                   <Text style={styles.meta}>
-                    {item.report.weatherLine ? "Site conditions" : "Weather"}: {item.report.weather}
+                    {item.report.weatherLine
+                      ? t("reports.siteConditions", { conditions: item.report.weather })
+                      : t("reports.weather", { weather: item.report.weather })}
                   </Text>
                 ) : null}
-                {item.report.delays ? <Text style={styles.delayText}>Delays: {item.report.delays}</Text> : null}
+                {item.report.delays ? (
+                  <Text style={styles.delayText}>{t("reports.delays", { delays: item.report.delays })}</Text>
+                ) : null}
               </>
             ) : (
-              <Text style={styles.meta}>No report filed for this day.</Text>
+              <Text style={styles.meta}>{t("reports.noReportForDay")}</Text>
             )}
             {item.delays.map((d) => (
               <View key={d.id} style={styles.delay}>
                 {d.id.startsWith("local-") ? <Text style={styles.syncing}>{t("common.syncing")}</Text> : null}
                 <Text style={styles.delayTitle}>
-                  Delay · {d.causeLabel} · {d.responsibleLabel}
+                  {t("reports.delay.headline", { cause: d.causeLabel, party: d.responsibleLabel })}
                   {d.responsibleName ? ` (${d.responsibleName})` : ""}
                 </Text>
                 <Text style={styles.meta}>{d.description}</Text>
                 {d.hoursLost || d.start ? (
                   <Text style={styles.meta}>
-                    {[d.start || d.end ? `${d.start ?? "?"}–${d.end ?? "?"}` : null, d.hoursLost ? `${d.hoursLost} crew-hours` : null]
+                    {[
+                      d.start || d.end ? `${d.start ?? "?"}–${d.end ?? "?"}` : null,
+                      d.hoursLost ? t("reports.delay.crewHours", { count: d.hoursLost }) : null,
+                    ]
                       .filter(Boolean)
                       .join(" · ")}
                   </Text>
                 ) : null}
                 <Text style={d.gcNotifiedHow ? styles.meta : styles.delayText}>
-                  {d.gcNotifiedHow ? `GC told by ${d.gcNotifiedHow.toLowerCase().replace("_", " ")}${d.gcNotifiedWho ? ` (${d.gcNotifiedWho})` : ""}` : "GC not told yet"}
+                  {d.gcNotifiedHow ? `${t("reports.delay.gcTold", { how: d.gcNotifiedHow.toLowerCase().replace("_", " ") })}${d.gcNotifiedWho ? ` (${d.gcNotifiedWho})` : ""}` : t("reports.delay.gcNotTold")}
                 </Text>
               </View>
             ))}
@@ -278,7 +319,7 @@ export default function ReportsScreen() {
 
       <View style={[styles.footer, styles.footerRow]}>
         <Button variant="secondary" onPress={openDelay}>
-          Log a delay
+          {t("reports.delay.log")}
         </Button>
         <View style={styles.footerMain}>
           <Button
@@ -288,7 +329,7 @@ export default function ReportsScreen() {
               setShowReport(true);
             }}
           >
-            New report
+            {t("reports.new")}
           </Button>
         </View>
       </View>
@@ -296,111 +337,142 @@ export default function ReportsScreen() {
       <Sheet
         visible={showReport}
         onClose={() => setShowReport(false)}
-        title="New daily report"
-        primaryLabel="File report"
+        title={t("reports.sheet.title")}
+        primaryLabel={t("reports.sheet.save")}
         onPrimary={submitReport}
         primaryDisabled={!canFile}
       >
-        <DateField label="Date" value={reportDate} onChange={setReportDate} max={today} />
+        <DateField label={t("common.date")} value={reportDate} onChange={setReportDate} max={today} />
         {reportProblem ? <Text style={styles.problem}>{reportProblem}</Text> : null}
-        <Field label="Work performed" placeholder="What got done" value={workPerformed} onChangeText={setWorkPerformed} multiline />
         <Field
-          label="Other trades / visitors on site"
-          placeholder="Optional — e.g. electricians on L3, inspector at 10"
+          label={t("reports.field.work")}
+          placeholder={t("reports.field.workHint")}
+          value={workPerformed}
+          onChangeText={setWorkPerformed}
+          multiline
+        />
+        <Field
+          label={t("reports.field.others")}
+          placeholder={t("reports.field.othersHint")}
           value={otherTrades}
           onChangeText={setOtherTrades}
         />
         <Field
-          label="Site conditions"
-          placeholder="Optional — the weather fills in on its own"
+          label={t("reports.field.conditions")}
+          placeholder={t("reports.field.conditionsHint")}
           value={conditions}
           onChangeText={setConditions}
         />
-        <Text style={styles.hint}>
-          The crew comes from the day&rsquo;s logged hours and the weather from the job&rsquo;s site address. Log delays
-          separately so each has a cause and crew-hours.
-        </Text>
+        <Text style={styles.hint}>{t("reports.sheet.hint")}</Text>
       </Sheet>
 
       <Sheet
         visible={showDelay}
         onClose={() => setShowDelay(false)}
-        title="Log a delay"
-        primaryLabel="Save delay"
+        title={t("reports.delay.sheetTitle")}
+        primaryLabel={t("reports.delay.save")}
         onPrimary={submitDelay}
         primaryDisabled={!canLogDelay}
       >
-        <DateField label="Date" value={delayDate} onChange={setDelayDate} max={today} />
-        {delayDayLocked ? <Text style={styles.problem}>{delayDate} is signed, so its delays are locked.</Text> : null}
-        <Text style={styles.label}>Cause</Text>
+        <DateField label={t("common.date")} value={delayDate} onChange={setDelayDate} max={today} />
+        {delayDayLocked ? (
+          <Text style={styles.problem}>{t("reports.problem.delaysLocked", { date: delayDate })}</Text>
+        ) : null}
+        <Text style={styles.label}>{t("reports.field.cause")}</Text>
         <View style={styles.chips}>
-          {CAUSES.map(([value, label]) => (
-            <Chip key={value} label={label} selected={cause === value} onPress={() => setCause(value)} />
+          {CAUSES.map(([value, labelKey]) => (
+            <Chip key={value} label={t(labelKey)} selected={cause === value} onPress={() => setCause(value)} />
           ))}
         </View>
-        <Text style={styles.label}>Caused by</Text>
+        <Text style={styles.label}>{t("reports.field.causedBy")}</Text>
         <View style={styles.chips}>
-          {PARTIES.map(([value, label]) => (
-            <Chip key={value} label={label} selected={party === value} onPress={() => setParty(value)} />
+          {PARTIES.map(([value, labelKey]) => (
+            <Chip key={value} label={t(labelKey)} selected={party === value} onPress={() => setParty(value)} />
           ))}
         </View>
-        <Field label="Who, by name" placeholder="Optional — e.g. Acme Electric" value={partyName} onChangeText={setPartyName} />
-        <Field label="What happened" placeholder="What stopped the work" value={what} onChangeText={setWhat} multiline />
+        <Field
+          label={t("reports.field.who")}
+          placeholder={t("reports.field.whoHint")}
+          value={partyName}
+          onChangeText={setPartyName}
+        />
+        <Field
+          label={t("reports.field.what")}
+          placeholder={t("reports.field.whatHint")}
+          value={what}
+          onChangeText={setWhat}
+          multiline
+        />
         <View style={styles.row}>
           <View style={styles.half}>
-            <Field label="From" placeholder="7:30" value={from} onChangeText={setFrom} />
+            <Field label={t("reports.field.from")} placeholder="7:30" value={from} onChangeText={setFrom} />
           </View>
           <View style={styles.half}>
-            <Field label="To" placeholder="10:00" value={to} onChangeText={setTo} />
+            <Field label={t("reports.field.to")} placeholder="10:00" value={to} onChangeText={setTo} />
           </View>
         </View>
         <View style={styles.row}>
           <View style={styles.half}>
-            <Field label="Workers affected" placeholder="4" value={workers} onChangeText={setWorkers} keyboardType="number-pad" />
+            <Field
+              label={t("reports.field.workers")}
+              placeholder="4"
+              value={workers}
+              onChangeText={setWorkers}
+              keyboardType="number-pad"
+            />
           </View>
           <View style={styles.half}>
             <Field
-              label="Crew-hours lost"
-              placeholder="Worked out"
+              label={t("reports.field.hoursLost")}
+              placeholder={t("reports.field.hoursLostHint")}
               value={hoursLost}
               onChangeText={setHoursLost}
               keyboardType="decimal-pad"
             />
           </View>
         </View>
-        <Text style={styles.label}>GC told?</Text>
+        <Text style={styles.label}>{t("reports.field.gcTold")}</Text>
         <View style={styles.chips}>
-          <Chip label="Not yet" selected={told === null} onPress={() => setTold(null)} />
-          {METHODS.map(([value, label]) => (
-            <Chip key={value} label={label} selected={told === value} onPress={() => setTold(value)} />
+          <Chip label={t("reports.gcTold.notYet")} selected={told === null} onPress={() => setTold(null)} />
+          {METHODS.map(([value, labelKey]) => (
+            <Chip key={value} label={t(labelKey)} selected={told === value} onPress={() => setTold(value)} />
           ))}
         </View>
-        {told ? <Field label="Told who" placeholder="e.g. Sam, the super" value={toldWho} onChangeText={setToldWho} /> : null}
+        {told ? (
+          <Field
+            label={t("reports.field.toldWho")}
+            placeholder={t("reports.field.toldWhoHint")}
+            value={toldWho}
+            onChangeText={setToldWho}
+          />
+        ) : null}
       </Sheet>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
-  head: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
-  date: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  locked: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  work: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 2 },
-  meta: { color: colors.inkMuted, fontSize: typography.size.sm, marginTop: 2 },
-  delay: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
-  syncing: { color: colors.inkMuted, fontSize: typography.size.sm, fontStyle: "italic" },
-  delayTitle: { color: colors.ink, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  delayText: { color: colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 2 },
-  label: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  hint: { color: colors.inkMuted, fontSize: typography.size.sm },
-  problem: { color: colors.tagRoseInk, fontSize: typography.size.sm },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  row: { flexDirection: "row", gap: 8 },
-  half: { flex: 1 },
-  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
-  footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-  footerMain: { flex: 1 },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    chipWrap: { padding: space.md, paddingBottom: 0 },
+    error: { color: p.colors.tagRoseInk, padding: space.md, paddingBottom: 0, fontSize: typography.size.sm },
+    head: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+    date: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+    locked: { color: p.colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    work: { color: p.colors.inkBody, fontSize: typography.size.md, marginTop: 2 },
+    meta: { color: p.colors.inkMuted, fontSize: typography.size.sm, marginTop: 2 },
+    delay: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
+    syncing: { color: p.colors.inkMuted, fontSize: typography.size.sm, fontStyle: "italic" },
+    delayTitle: { color: p.colors.ink, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    delayText: { color: p.colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 2 },
+    label: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    hint: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    problem: { color: p.colors.tagRoseInk, fontSize: typography.size.sm },
+    chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    row: { flexDirection: "row", gap: 8 },
+    half: { flex: 1 },
+    footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
+    footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+    footerMain: { flex: 1 },
+  });
+}

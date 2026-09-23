@@ -1,16 +1,16 @@
 import { useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Image, PixelRatio, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FlatList, Image, PixelRatio, StyleSheet, Text, View } from "react-native";
 import ViewShot, { type ViewShotRef } from "react-native-view-shot";
 import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
+import { EmptyState } from "@/components/EmptyState";
 import { Field } from "@/components/Field";
-import { List } from "@/components/List";
-import { RefusedBanner } from "@/components/RefusedBanner";
+import { JobContextChip } from "@/components/JobContextChip";
 import { Sheet } from "@/components/Sheet";
+import { SyncStatus } from "@/components/SyncStatus";
 import * as api from "@/lib/api";
 import { dayFromClockIn } from "@/lib/clock-session";
 import { uuid } from "@/lib/id";
@@ -30,10 +30,14 @@ import { JobSections } from "@/components/JobSections";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
 import { tokenOrNull } from "@/lib/clerk-token";
-import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
 import { useT } from "@/lib/i18n";
-import { colors, typography } from "@/lib/theme";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
+import { type Palette, radius, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import type { Media, MediaTag, PunchListItem } from "@/lib/types";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 import { useSync } from "@/lib/use-sync";
@@ -65,7 +69,10 @@ type Shot = {
 };
 
 export default function PhotosScreen() {
+  const { me } = useMe();
   const { t } = useT();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   // `punchListItemId` arrives when the punch list sent us here to
   // photograph a specific fix, so the attachment is already chosen by the
   // time the sheet opens — the prompt that offered it would be a lie if it
@@ -158,7 +165,7 @@ export default function PhotosScreen() {
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (!permission.granted) {
-        return { location: null, note: "Location is off for C Stream, so this photo has no place on it." };
+        return { location: null, note: t("photos.locationOff") };
       }
       const fix = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       return {
@@ -170,14 +177,14 @@ export default function PhotosScreen() {
         note: null,
       };
     } catch {
-      return { location: null, note: "Couldn't get a location fix, so this photo has no place on it." };
+      return { location: null, note: t("photos.locationFailed") };
     }
   };
 
   const afterPick = async (result: ImagePicker.ImagePickerResult, fallbackNow: Date) => {
     if (result.canceled) return;
     const asset = result.assets[0];
-    setBusy("Reading location…");
+    setBusy(t("photos.busy.location"));
     const { location, note } = await readLocation();
     setBusy(null);
     setShot({
@@ -197,7 +204,7 @@ export default function PhotosScreen() {
   const takePhoto = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      setError("The camera is off for C Stream. Turn it on in Settings to take site photos.");
+      setError(t("photos.cameraOff"));
       return;
     }
     const now = new Date();
@@ -229,10 +236,10 @@ export default function PhotosScreen() {
    * system will not clear it, and queues the upload. */
   const save = async () => {
     if (!shot || !jobId) return;
-    setBusy("Stamping…");
+    setBusy(t("photos.busy.stamping"));
     try {
       const capture = stampRef.current?.capture;
-      if (!capture) throw new Error("The stamp could not be drawn. Try the photo again.");
+      if (!capture) throw new Error(t("photos.stampFailed"));
       const stampedUri = await capture();
       const fileName = stampedFileName(shot.capturedAt);
       const kept = keepForUpload(stampedUri, fileName);
@@ -262,7 +269,7 @@ export default function PhotosScreen() {
       await sync();
     } catch (e) {
       setBusy(null);
-      setError(e instanceof Error ? e.message : "Could not save that photo");
+      setError(e instanceof Error ? e.message : t("photos.saveFailed"));
     }
   };
 
@@ -277,67 +284,104 @@ export default function PhotosScreen() {
   const stampScale = layoutWidth / STAMP_WIDTH;
   const lines = shot ? stampLines({ jobName: jobName || "This job", capturedAt: shot.capturedAt, location: shot.location }) : [];
 
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["photos/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["photos/[jobId]"]} />;
+
+  const empty = emptyFor(offline, "thing.photos", {
+    title: "photos.empty.title",
+    description: "photos.empty.body",
+  });
+
   return (
     <View style={styles.screen}>
       <JobSections jobId={jobId} active="photos" />
+      <View style={styles.chipWrap}>
+        <JobContextChip />
+      </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <OfflineNote state={offline} />
+      <SyncStatus state={offline} refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
       {busy ? <Text style={styles.busy}>{busy}</Text> : null}
-      <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
 
-      <List
+      {/* The gallery as tiles, two-up: a photo is an object, not a list
+          row, and a grid of them reads as the day's record at a glance.
+          Time and place share one line; tags and attachments share the
+          next — two facts to a line, never the old five-fact chain. */}
+      <FlatList
         data={[
           ...pending.map((p) => ({ kind: "pending" as const, key: p.clientOperationId, uri: p.uri, capturedAt: p.capturedAt })),
           ...media.map((m) => ({ kind: "saved" as const, key: m.id, media: m })),
         ]}
         keyExtractor={(item) => item.key}
+        numColumns={2}
+        columnWrapperStyle={styles.column}
+        contentContainerStyle={styles.grid}
         renderItem={({ item }) =>
           item.kind === "pending" ? (
-            <Card>
-              <Image source={{ uri: item.uri }} style={styles.photo} resizeMode="cover" />
-              <Text style={styles.syncing}>{t("common.syncing")}</Text>
-              <Text style={styles.meta}>{item.capturedAt.slice(0, 10)}</Text>
-            </Card>
+            <View style={styles.tile}>
+              <Image source={{ uri: item.uri }} style={styles.tileImage} resizeMode="cover" />
+              <View style={styles.tileBody}>
+                <Text style={styles.syncing}>{t("common.syncing")}</Text>
+                <Text style={styles.meta}>{item.capturedAt.slice(0, 10)}</Text>
+              </View>
+            </View>
           ) : (
-            <Card>
-              <Image source={{ uri: item.media.blobUrl }} style={styles.photo} resizeMode="cover" />
-              {item.media.caption ? <Text style={styles.caption}>{item.media.caption}</Text> : null}
-              <Text style={styles.meta}>{formatStampMoment(new Date(item.media.capturedAt))}</Text>
-              <Text style={styles.meta}>
-                {item.media.capturedLatitude !== null && item.media.capturedLongitude !== null
-                  ? [
-                      formatCoordinate({
-                        latitude: item.media.capturedLatitude,
-                        longitude: item.media.capturedLongitude,
-                        accuracyMeters: item.media.capturedAccuracyMeters,
-                      }),
-                      formatAccuracy(item.media.capturedAccuracyMeters),
+            <View style={styles.tile}>
+              <Image source={{ uri: item.media.blobUrl }} style={styles.tileImage} resizeMode="cover" />
+              <View style={styles.tileBody}>
+                {item.media.caption ? (
+                  <Text style={styles.caption} numberOfLines={1}>
+                    {item.media.caption}
+                  </Text>
+                ) : null}
+                <Text style={styles.meta} numberOfLines={1}>
+                  {[
+                    formatStampMoment(new Date(item.media.capturedAt)),
+                    item.media.capturedLatitude !== null && item.media.capturedLongitude !== null
+                      ? formatCoordinate({
+                          latitude: item.media.capturedLatitude,
+                          longitude: item.media.capturedLongitude,
+                          accuracyMeters: item.media.capturedAccuracyMeters,
+                        })
+                      : t("photos.noLocation"),
+                    item.media.capturedLatitude !== null ? formatAccuracy(item.media.capturedAccuracyMeters) : null,
+                  ]
+                    .filter(Boolean)
+                    .join("  ")}
+                </Text>
+                {item.media.tags && item.media.tags.length > 0 ? (
+                  <Text style={styles.meta} numberOfLines={1}>
+                    {item.media.tags.map((t) => t.name).join(" · ")}
+                  </Text>
+                ) : null}
+                {item.media.dailyFieldReportId || item.media.punchListItemId ? (
+                  <Text style={styles.attached} numberOfLines={1}>
+                    {[
+                      item.media.dailyFieldReportId ? t("photos.onReport") : null,
+                      item.media.punchListItemId ? t("photos.onPunchItem") : null,
                     ]
                       .filter(Boolean)
-                      .join("  ")
-                  : "No location recorded"}
-              </Text>
-              {item.media.tags && item.media.tags.length > 0 ? (
-                <Text style={styles.meta}>{item.media.tags.map((t) => t.name).join(" · ")}</Text>
-              ) : null}
-              {item.media.dailyFieldReportId ? <Text style={styles.attached}>On the day&rsquo;s report</Text> : null}
-              {item.media.punchListItemId ? <Text style={styles.attached}>On a punch list item</Text> : null}
-            </Card>
+                      .join(" · ")}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
           )
         }
-        {...emptyFor(offline, "thing.photos", {
-          title: "photos.empty.title",
-          description: "photos.empty.body",
-        })}
+        ListEmptyComponent={
+          <EmptyState icon="photos" title={empty.emptyTitle} description={empty.emptyDescription} />
+        }
       />
 
       <View style={[styles.footer, styles.footerRow]}>
         <Button variant="secondary" onPress={pickFromLibrary}>
-          Library
+          {t("photos.library")}
         </Button>
         <View style={styles.footerMain}>
           <Button fullWidth onPress={takePhoto}>
-            Take photo
+            {t("photos.take")}
           </Button>
         </View>
       </View>
@@ -391,15 +435,20 @@ export default function PhotosScreen() {
             <Text style={shot.location ? styles.meta : styles.warn}>
               {shot.location
                 ? [formatCoordinate(shot.location), formatAccuracy(shot.location.accuracyMeters)].filter(Boolean).join("  ")
-                : (shot.locationNote ?? "No location recorded")}
+                : (shot.locationNote ?? t("photos.noLocation"))}
             </Text>
-            <Text style={styles.hint}>The time and place are burned into the photo when you save it.</Text>
+            <Text style={styles.hint}>{t("photos.stamped")}</Text>
 
-            <Field label="Caption" placeholder="Optional" value={caption} onChangeText={setCaption} />
+            <Field
+              label={t("photos.caption")}
+              placeholder={t("common.optional")}
+              value={caption}
+              onChangeText={setCaption}
+            />
 
             {tags.length > 0 ? (
               <>
-                <Text style={styles.label}>Tags</Text>
+                <Text style={styles.label}>{t("photos.tags")}</Text>
                 <View style={styles.chips}>
                   {tags.map((t) => (
                     <Chip key={t.id} label={t.name} selected={pickedTags.includes(t.id)} onPress={() => toggleTag(t.id)} />
@@ -408,10 +457,10 @@ export default function PhotosScreen() {
               </>
             ) : null}
 
-            <Text style={styles.label}>Attach to</Text>
+            <Text style={styles.label}>{t("photos.attachTo")}</Text>
             <View style={styles.chips}>
               <Chip
-                label={todaysReportId ? "Today's report" : "No report today"}
+                label={todaysReportId ? t("photos.todaysReport") : t("photos.noReportToday")}
                 selected={attachReport && todaysReportId !== null}
                 onPress={() => todaysReportId && setAttachReport((a) => !a)}
               />
@@ -431,31 +480,56 @@ export default function PhotosScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
-  busy: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  photo: { width: "100%", height: 200, borderRadius: 8, backgroundColor: colors.lineCard },
-  preview: { width: "100%", height: 220, borderRadius: 8, backgroundColor: colors.lineCard },
-  caption: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 6 },
-  meta: { color: colors.inkMuted, fontSize: typography.size.sm, marginTop: 2 },
-  warn: { color: colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 2 },
-  attached: { color: colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold, marginTop: 2 },
-  syncing: { color: colors.inkMuted, fontSize: typography.size.sm, fontStyle: "italic", marginTop: 6 },
-  hint: { color: colors.inkMuted, fontSize: typography.size.sm },
-  label: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
-  footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-  footerMain: { flex: 1 },
-  offscreen: { position: "absolute", left: -10000, top: 0 },
-  stamp: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.55)",
-  },
-  stampText: { color: "#ffffff" },
-  stampTitle: { fontWeight: "700" },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    chipWrap: { padding: space.md, paddingBottom: 0 },
+    error: { color: p.colors.tagRoseInk, padding: space.md, paddingBottom: 0, fontSize: typography.size.sm },
+    busy: {
+      color: p.colors.link,
+      padding: space.md,
+      paddingBottom: 0,
+      fontSize: typography.size.sm,
+      fontWeight: typography.weight.semibold,
+    },
+    column: { gap: space.sm },
+    grid: { padding: space.md, gap: space.sm },
+    tile: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: p.colors.lineCard,
+      borderRadius: radius.card,
+      backgroundColor: p.colors.surface,
+      overflow: "hidden",
+    },
+    tileImage: { width: "100%", aspectRatio: 1, backgroundColor: p.colors.lineCard },
+    tileBody: { padding: 10, gap: space.one },
+    preview: { width: "100%", height: 220, borderRadius: radius.small, backgroundColor: p.colors.lineCard },
+    caption: { color: p.colors.inkBody, fontSize: typography.size.sm, marginTop: 2 },
+    meta: { color: p.colors.inkMuted, fontSize: typography.size.xs, marginTop: 2 },
+    warn: { color: p.colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 2 },
+    attached: {
+      color: p.colors.link,
+      fontSize: typography.size.xs,
+      fontWeight: typography.weight.semibold,
+      marginTop: 2,
+    },
+    syncing: { color: p.colors.inkMuted, fontSize: typography.size.sm, fontStyle: "italic", marginTop: 2 },
+    hint: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    label: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
+    footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+    footerMain: { flex: 1 },
+    offscreen: { position: "absolute", left: -10000, top: 0 },
+    stamp: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: "rgba(0,0,0,0.55)",
+    },
+    stampText: { color: "#ffffff" },
+    stampTitle: { fontWeight: "700" },
+  });
+}

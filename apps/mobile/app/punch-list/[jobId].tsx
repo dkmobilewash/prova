@@ -1,17 +1,23 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
+import { GroupedList } from "@/components/GroupedList";
+import { GroupedRow } from "@/components/GroupedRow";
 import { Icon } from "@/components/Icon";
-import { OfflineNote } from "@/components/OfflineNote";
+import { JobContextChip } from "@/components/JobContextChip";
+import { SyncStatus } from "@/components/SyncStatus";
 import { emptyFor } from "@/lib/empty-state";
-import { useT, type StringKey } from "@/lib/i18n";
 import { Field } from "@/components/Field";
-import { List } from "@/components/List";
 import { Sheet } from "@/components/Sheet";
 import { JobSections } from "@/components/JobSections";
-import { colors, typography } from "@/lib/theme";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
+import { useT, type StringKey } from "@/lib/i18n";
+import { leadingFor, type Palette, radius, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
 import { cacheKeys } from "@/lib/cache-keys";
@@ -32,6 +38,9 @@ const STATUS_LABEL: Record<PunchItemStatus, StringKey> = {
 
 export default function PunchListScreen() {
   const { t } = useT();
+  const { me } = useMe();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const router = useRouter();
   const getToken = useStableGetToken();
@@ -128,67 +137,76 @@ export default function PunchListScreen() {
     await sync();
   };
 
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["punch-list/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["punch-list/[jobId]"]} />;
+
+  const empty = emptyFor(loadedFrom, "thing.punchList", {
+    title: "punch.empty.title",
+    description: "punch.empty.body",
+  });
+
   return (
     <View style={styles.screen}>
       <JobSections jobId={jobId} active="punch-list" />
-      {pending > 0 ? <Text style={styles.pending}>{t("common.pendingSync", { count: pending })}</Text> : null}
+      <View style={styles.chipWrap}>
+        <JobContextChip />
+      </View>
+      <SyncStatus
+        pending={pending}
+        state={loadedFrom}
+        refused={refused}
+        onDismiss={dismissRefused}
+        onRetry={retrySetAside}
+        refusedTitle={(n) => (n === 1 ? t("common.notSaved.one") : t("common.notSaved.many", { count: n }))}
+        refusedLine={(r) => r.error}
+        dismissLabel={t("common.dismiss")}
+        maxRefused={3}
+      />
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <OfflineNote state={loadedFrom} />
 
-      {refused.length > 0 ? (
-        <Card style={styles.refused}>
-          <Text style={styles.refusedTitle}>
-            {refused.length === 1
-              ? t("common.notSaved.one")
-              : t("common.notSaved.many", { count: refused.length })}
-          </Text>
-          {refused.slice(0, 3).map((entry, index) => (
-            <Text key={index} style={styles.refusedLine}>
-              {entry.error}
-            </Text>
-          ))}
-          <View style={styles.refusedActions}>
-            <Pressable onPress={retrySetAside} accessibilityRole="button">
-              <Text style={styles.refusedAction}>{t("common.tryAgain")}</Text>
-            </Pressable>
-            <Pressable onPress={dismissRefused} accessibilityRole="button">
-              <Text style={styles.refusedAction}>{t("common.dismiss")}</Text>
-            </Pressable>
+      <ScrollView style={styles.listScroll} contentContainerStyle={styles.listContent}>
+        {items.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>{empty.emptyTitle}</Text>
+            {empty.emptyDescription ? <Text style={styles.emptyBody}>{empty.emptyDescription}</Text> : null}
           </View>
-        </Card>
-      ) : null}
-
-      <List
-        data={items}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => {
-          const status = statusOf(item);
-          const queued = local[item.id] !== undefined;
-          return (
-            <Card style={styles.itemCard}>
-              <Pressable
-                onPress={() => toggle(item)}
-                style={styles.itemRow}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: status !== "OPEN" }}
-                accessibilityLabel={
-                  status === "OPEN" ? t("punch.markReady") : t("punch.markOpen")
-                }
-              >
-                <View style={[styles.box, status !== "OPEN" && styles.boxDone]}>
-                  {status !== "OPEN" ? <Icon name="check" size={18} color={colors.brandInk} /> : null}
-                </View>
-                <View style={styles.itemBody}>
-                  <Text style={[styles.description, status === "VERIFIED" && styles.descriptionDone]}>
-                    {item.description}
-                  </Text>
-                  <Text style={styles.meta}>
-                    {t(STATUS_LABEL[status])}
-                    {queued ? ` · ${t("common.syncing").toLowerCase()}` : ""}
-                    {item.area ? ` · ${item.area}` : ""}
-                    {item.assignedName ? ` · ${item.assignedName}` : ""}
-                    {item.dueOn ? ` · ${t("punch.due", { date: item.dueOn.slice(0, 10) })}` : ""}
-                  </Text>
+        ) : (
+          <GroupedList>
+            {items.map((item, i) => {
+              const status = statusOf(item);
+              const queued = local[item.id] !== undefined;
+              return (
+                <GroupedRow
+                  key={item.id}
+                  role="checkbox"
+                  checked={status !== "OPEN"}
+                  icon={
+                    <View style={[styles.box, status !== "OPEN" && styles.boxDone]}>
+                      {status !== "OPEN" ? (
+                        <Icon name="check" size={16} color={palette.colors.brandInk} />
+                      ) : null}
+                    </View>
+                  }
+                  title={item.description}
+                  titleStyle={status === "VERIFIED" ? styles.descriptionDone : undefined}
+                  subtitle={[t(STATUS_LABEL[status]) + (queued ? ` · ${t("common.syncing")}` : ""), item.area]
+                    .filter(Boolean)
+                    .join(" · ") || undefined}
+                  detail={[
+                    item.assignedName,
+                    item.dueOn ? t("punch.due", { date: item.dueOn.slice(0, 10) }) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || undefined}
+                  divider={i > 0}
+                  onPress={() => toggle(item)}
+                  accessibilityLabel={
+                    status === "OPEN" ? t("punch.markReady") : t("punch.markOpen")
+                  }
+                >
                   {/* Asked for, not required — a crew with no signal still
                       has to be able to close the item. The camera screen
                       attaches the photo to THIS item at the shutter. */}
@@ -200,16 +218,12 @@ export default function PunchListScreen() {
                       <Text style={styles.photoPrompt}>{t("punch.noPhoto")}</Text>
                     </Pressable>
                   ) : null}
-                </View>
-              </Pressable>
-            </Card>
-          );
-        }}
-        {...emptyFor(loadedFrom, "thing.punchList", {
-          title: "punch.empty.title",
-          description: "punch.empty.body",
-        })}
-      />
+                </GroupedRow>
+              );
+            })}
+          </GroupedList>
+        )}
+      </ScrollView>
 
       <View style={styles.footer}>
         <Button fullWidth onPress={() => setShowForm(true)}>
@@ -244,33 +258,39 @@ export default function PunchListScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
-  refused: { margin: 16, marginBottom: 0, borderColor: colors.tagRoseInk, borderWidth: 1, gap: 4 },
-  refusedTitle: { color: colors.tagRoseInk, fontSize: typography.size.md, fontWeight: typography.weight.bold },
-  refusedLine: { color: colors.ink, fontSize: typography.size.sm },
-  refusedActions: { flexDirection: "row", justifyContent: "flex-end", gap: 20, marginTop: 8 },
-  refusedAction: { color: colors.link, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  itemCard: { padding: 0 },
-  itemRow: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: 16 },
-  itemBody: { flex: 1, gap: 2 },
-  box: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: colors.lineCard,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 1,
-  },
-  boxDone: { backgroundColor: colors.brand, borderColor: colors.brand },
-  description: { color: colors.ink, fontSize: typography.size.md },
-  descriptionDone: { color: colors.inkMuted, textDecorationLine: "line-through" },
-  meta: { color: colors.inkMuted, fontSize: typography.size.sm },
-  photoPrompt: { color: colors.link, fontSize: typography.size.sm, marginTop: 2 },
-  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    chipWrap: { padding: space.md, paddingBottom: 0 },
+    error: { color: p.colors.tagRoseInk, padding: space.md, paddingBottom: 0, fontSize: typography.size.sm },
+    listScroll: { flex: 1 },
+    listContent: { padding: space.md, paddingTop: 0 },
+    empty: { gap: space.xs, paddingTop: space.xl, alignItems: "center" },
+    emptyTitle: {
+      color: p.colors.ink,
+      fontSize: typography.size.lg,
+      fontWeight: typography.weight.semibold,
+      textAlign: "center",
+    },
+    emptyBody: {
+      color: p.colors.inkBody,
+      fontSize: typography.size.md,
+      lineHeight: leadingFor(typography.size.md),
+      textAlign: "center",
+    },
+    box: {
+      width: 24,
+      height: 24,
+      borderRadius: radius.checkbox,
+      borderWidth: 2,
+      borderColor: p.colors.lineCard,
+      backgroundColor: p.colors.surface,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    boxDone: { backgroundColor: p.colors.brand, borderColor: p.colors.brand },
+    descriptionDone: { color: p.colors.inkMuted, textDecorationLine: "line-through" },
+    photoPrompt: { color: p.colors.link, fontSize: typography.size.sm, marginTop: 2 },
+    footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
+  });
+}

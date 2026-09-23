@@ -33,7 +33,7 @@ export const certificationsWalkthrough: Walkthrough = {
       anchor: "certifications-required",
       title: "What everyone must have",
       body:
-        "Press Require a certification to say every worker needs a card, like OSHA 10. Anyone with no record of it then shows up above by name.",
+        "Press Require a certification to say every worker needs a card, like OSHA 10. Anyone with no record of it then shows up by name in the list of people to sort out.",
     },
   ],
 };

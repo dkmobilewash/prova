@@ -548,7 +548,12 @@ const OPEN_BEHIND_AN_ALREADY_GUARDED_PAGE: Record<string, Capability> = {
   "compliance.deleteInsurancePolicy": "MANAGE_COMPLIANCE",
   "compliance.createBond": "MANAGE_COMPLIANCE",
   "compliance.deleteBond": "MANAGE_COMPLIANCE",
-  "compliance.uploadComplianceDocument": "MANAGE_COMPLIANCE",
+  // `compliance.uploadComplianceDocument` was here until 2026-09-22 and the
+  // debt is paid. It is the one action in this module that SPENDS — a whole
+  // document through the model against the company's paid monthly
+  // allowance — so leaving the endpoint open was a money leak rather than a
+  // filing-permission question, and gating one of this module's nine is
+  // justified where gating one of six for tidiness would not be.
   "compliance.updateComplianceDocument": "MANAGE_COMPLIANCE",
   "compliance.deleteComplianceDocument": "MANAGE_COMPLIANCE",
   "compliance.markComplianceDocumentReceived": "MANAGE_COMPLIANCE",
@@ -991,8 +996,20 @@ describe("the walk this file's claims rest on", () => {
 
     // And it must have found SOMETHING. An equality between two empty
     // sets is the exact failure the paragraph above describes.
-    expect(PAGES_THAT_WITHHOLD.length).toBeGreaterThanOrEqual(9);
-    expect(SOFT_GATED.size).toBeGreaterThanOrEqual(5);
+    //
+    // 9 until 2026-09-21, when the bid wizard's "Review" step — which
+    // withheld its total behind VIEW_JOB_COSTS — became a redirect and
+    // stopped withholding anything. This floor moved because a page really
+    // did leave the set, which is this assertion working rather than
+    // failing: the number is meant to be unmissable when it changes, and
+    // whoever moves it has to be able to say which page and why.
+    expect(PAGES_THAT_WITHHOLD.length).toBeGreaterThanOrEqual(8);
+    // 5 until the same change, and one below it for the same one page:
+    // "Review" withheld behind exactly one capability, so it was in this
+    // set too. The equality above is the assertion that actually catches a
+    // pattern going blind; these two floors only catch a walk that finds
+    // NOTHING, and both still do.
+    expect(SOFT_GATED.size).toBeGreaterThanOrEqual(4);
 
     // Named, because a count is not a claim about WHICH. These three are
     // the tabs issue #383 is about: each returns a single sentence and
@@ -1280,7 +1297,7 @@ describe("every write behind a guarded page answers to the same capability", () 
       "jobs.updateLineItem": "VIEW_JOB_COSTS",
       "jobs.updateLineItemForecast": "VIEW_JOB_COSTS",
       "jobs.deleteLineItem": "VIEW_JOB_COSTS",
-      "jobs.addTakeoffLineItems": "VIEW_JOB_COSTS",
+      "takeoff.addTakeoffLines": "VIEW_JOB_COSTS",
       "jobs.draftLineItemsFromScope": "VIEW_JOB_COSTS",
       "jobs.addCostEntry": "VIEW_JOB_COSTS",
       "jobs.deleteCostEntry": "VIEW_JOB_COSTS",
@@ -1429,6 +1446,12 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // and this suite found it by the walk on the day it was added, which is
   // the behaviour the file is for.
   company: () => import("./actions/company"),
+  // Only `uploadComplianceDocument` — the other eight actions in this
+  // module are still recorded in OPEN_BEHIND_AN_ALREADY_GUARDED_PAGE. It is
+  // the one that spends the company's paid AI allowance, so its refusal is
+  // EXECUTED here as every job function that lacks MANAGE_COMPLIANCE, and
+  // the control case proves the people who hold it still get through.
+  compliance: () => import("./actions/compliance"),
   // The Jobber import's three actions: reachable only from
   // /settings/integrations, so they assert its MANAGE_COMPLIANCE before
   // the owner check and before anything is read.
@@ -1492,6 +1515,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // Only the three estimate-tab writes; the catalog actions in the same
   // module sit behind `/catalog` and remain in KNOWN_OPEN.
   estimating: () => import("./actions/estimating"),
+  // The generalized takeoff action. Reachable only from the estimate tab and
+  // the bid wizard's pricing step — both withhold on VIEW_JOB_COSTS — so the
+  // walk derives its assertion and executes it as a principal without it,
+  // same as the jobs/estimating modules above.
+  takeoff: () => import("./actions/takeoff"),
   // Crew & time. Five of the seven actions here are decided per SECTION
   // rather than per page (SECTION_DECIDED) — `/jobs/[id]/crew` withholds
   // on two capabilities, so the ordinary rule derives nothing for it. The
@@ -1547,6 +1575,12 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // three in MUST_ASSERT and each is executed below as a principal without
   // it — a FIELD foreman must not be able to post a mod rate a GC will read.
   emr: () => import("./actions/emr"),
+  // The employer burden percentage. All three writes are reachable only
+  // from /settings, which demands MANAGE_COMPLIANCE, so each asserts it
+  // before the owner check and before any query — this one number multiplies
+  // the labor cost on every job, and a Server Action answers whoever posts
+  // to it whether or not the page rendered for them.
+  employerBurden: () => import("./actions/employerBurden"),
   rfis: () => import("./actions/rfis"),
   submittals: () => import("./actions/submittals"),
   // setWorkerCraft is the first action in this module to assert its

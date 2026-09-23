@@ -8,6 +8,7 @@ import {
   CONTACT_TYPES,
   LOCATION_TYPES,
   type ActionResult,
+  InputError,
   actionFail as fail,
   actionOk as ok,
   assertOwner,
@@ -18,9 +19,11 @@ import {
   optionalEnumFromForm,
   ownerRefusal,
   plural,
+  runAction,
 } from "./shared";
 import { normalizeEin, normalizeWebsite } from "@/lib/company-profile";
 import { can } from "@/lib/permissions";
+import { numericReaders, PERCENT_BOUNDS } from "@/lib/numeric-input";
 import { CONTRACTING_RELATIONSHIPS } from "@/lib/businessScope";
 
 /** The job-function refusal for the company record, worded the way
@@ -32,10 +35,20 @@ import { CONTRACTING_RELATIONSHIPS } from "@/lib/businessScope";
 const COMPLIANCE_ONLY =
   "The company record isn't part of your job function. The account owner sets who sees what, on the Team page.";
 
-/** Thrown by the form parsers below, caught at each action's boundary and
- * converted to a returned failure — same shape as submittals.ts, the
- * reference implementation for this pattern. */
-class InputError extends Error {}
+// `InputError` and `runAction` come from ./shared, and that is a fix rather
+// than tidiness. Until 2026-09-21 this file declared its OWN `InputError`
+// class and its own `runAction` that caught only that class — while the
+// shared parsers it also calls (`enumFromForm`, `optionalEnumFromForm`)
+// threw shared.ts's. Same name, two classes, `instanceof` false, so a
+// refusal from those parsers left every action here as a throw and reached
+// production as a digest. `/welcome`'s empty Save was the one a person
+// actually hit. One class, one boundary, no way for the two to disagree.
+
+/** One parser for every typed figure — see `lib/numeric-input.ts`. Raises
+ * THIS module's InputError so the local `runAction` catch still sees it. */
+const { optionalNumber } = numericReaders((message) => {
+  throw new InputError(message);
+});
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -63,15 +76,6 @@ function optionalDate(formData: FormData, key: string): Date | null {
 function isForeignKeyViolation(err: unknown): boolean {
   const code = (err as { code?: unknown } | null)?.code;
   return code === "P2003" || code === "P2014";
-}
-
-async function runAction(fn: () => Promise<ActionResult>): Promise<ActionResult> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (err instanceof InputError) return fail(err.message);
-    throw err;
-  }
 }
 
 /**
@@ -180,8 +184,8 @@ export async function updateCompanyProfile(formData: FormData): Promise<ActionRe
    form appeared to do nothing on a duplicate email, and a failed removal left
    the teammate on the list with no explanation anywhere.
    `lib/actions/submittals.ts` is the reference for the shape; the
-   `InputError`/`runAction`/`fail()` machinery above already existed here for
-   the contact actions and is reused rather than duplicated.
+   `InputError`/`runAction`/`fail()` machinery comes from ./shared (see the
+   note above `text()` for why this file no longer has its own copy).
 
    The owner check is `ownerRefusal`, not `assertOwner`: an action whose type
    promises `{ ok: false, error }` must not refuse by throwing, which is
@@ -190,17 +194,26 @@ export async function updateCompanyProfile(formData: FormData): Promise<ActionRe
  * and updateContact (#218 added them to create; they previously only
  * existed on the update path). */
 function standingTermsFromForm(formData: FormData) {
-  const defaultRetainagePercent = nullableDecimalFromForm(formData, "defaultRetainagePercent");
-  const paymentTermsDaysRaw = text(formData, "paymentTermsDays");
+  // A percent, so 0-100 and never a fraction of one: this pre-fills
+  // Job.retainagePercent, where 0.10 meaning ten percent used to store a
+  // tenth of one percent all the way onto an invoice.
+  const defaultRetainagePercent = optionalNumber(formData, "defaultRetainagePercent", {
+    label: "Default retainage",
+    ...PERCENT_BOUNDS,
+    maxDecimals: 2,
+  });
+  const paymentTermsDays = optionalNumber(formData, "paymentTermsDays", {
+    label: "Payment terms",
+    integer: true,
+    min: 0,
+    max: 365,
+    unit: " days",
+  });
   const standardFormsUsed = text(formData, "standardFormsUsed");
 
-  if (paymentTermsDaysRaw && Number.isNaN(Number(paymentTermsDaysRaw))) {
-    throw new InputError('"paymentTermsDays" must be a number');
-  }
-
   return {
-    defaultRetainagePercent,
-    paymentTermsDays: paymentTermsDaysRaw ? Number(paymentTermsDaysRaw) : null,
+    defaultRetainagePercent: defaultRetainagePercent?.value ?? null,
+    paymentTermsDays: paymentTermsDays?.n ?? null,
     standardFormsUsed: standardFormsUsed || null,
   };
 }
@@ -275,7 +288,8 @@ export async function removeTeamMember(memberUserId: string): Promise<ActionResu
   } catch (error) {
     /* A teammate with work recorded against them cannot be deleted at all:
        TimeEntry.employeeUser, DispatchSlip.employeeUser and the certification
-       holder are REQUIRED relations, which Prisma defaults to RESTRICT. That
+       holder are RESTRICT relations (the first two nullable now, since a row
+       can name a crew member instead, but still RESTRICT on purpose). That
        refusal comes from the database, and before this it reached the person
        as a redacted digest on a page that then looked broken. Checked by
        `code` rather than `instanceof`, for the reason isUniqueConstraintError
@@ -521,6 +535,20 @@ export async function saveBusinessScope(formData: FormData): Promise<ActionResul
       "Only the account owner can set this — it decides what the whole team's menu shows.",
     );
     if (refusal) return refusal;
+
+    // Said in the person's terms BEFORE the parsers get a turn. The radios
+    // are `required`, so a browser refuses an empty Save on its own — but a
+    // dispatched submit, an old tab, or a hand-built request reaches here
+    // with a group unanswered, and what the parsers would say about that is
+    // `"contractingRelationship" must be one of: …`, a sentence addressed to
+    // the form rather than to the person filling it in. This is the one
+    // that was the raw digest on /welcome (lib/businessScope-save.test.ts).
+    const unanswered = (["contractingRelationship", "doesPublicWork", "filesMonthlyPayApps"] as const).filter(
+      (key) => !text(formData, key),
+    );
+    if (unanswered.length > 0) {
+      return fail("Answer all three questions to save, or choose Skip for now and come back to this in Settings.");
+    }
 
     const contractingRelationship = enumFromForm(
       formData,

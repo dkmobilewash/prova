@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import { timeEntryWorkerName } from "@/lib/worker-name";
 import { isValidSignaturePath } from "@/lib/signature-path";
 
 export const dynamic = "force-dynamic";
+
+const FIELD_ONLY =
+  "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
@@ -43,6 +47,11 @@ export async function GET(
 ) {
   const context = await requireApiContext();
   if (!context) return jsonError("Not authenticated", 401);
+  // Hours and T&M are field records, and the equivalent web surface has
+  // withheld on MANAGE_FIELD since #396. These two routes asserted
+  // nothing at all: the phone's role shell would have been decoration
+  // without them, because a hidden tab is not a guard.
+  if (!can(context, "MANAGE_FIELD")) return jsonError(FIELD_ONLY, 403);
 
   const { id } = await params;
   const job = await prisma.job.findUnique({ where: { id }, select: { id: true, companyId: true } });
@@ -62,6 +71,11 @@ export async function POST(
 ) {
   const context = await requireApiContext();
   if (!context) return jsonError("Not authenticated", 401);
+  // Hours and T&M are field records, and the equivalent web surface has
+  // withheld on MANAGE_FIELD since #396. These two routes asserted
+  // nothing at all: the phone's role shell would have been decoration
+  // without them, because a hidden tab is not a guard.
+  if (!can(context, "MANAGE_FIELD")) return jsonError(FIELD_ONLY, 403);
 
   const { id } = await params;
   const job = await prisma.job.findUnique({ where: { id }, select: { id: true, companyId: true } });

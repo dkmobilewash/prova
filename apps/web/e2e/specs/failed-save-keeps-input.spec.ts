@@ -23,7 +23,29 @@ test("a failed contact save keeps what was typed", async ({ page }) => {
   await signInAs(page, PERSONAS.main.email);
   await page.goto("/contacts");
 
-  await page.locator('[data-opens="contacts-add"]').click();
+  /* `[data-opens="contacts-add"]` WAS HERE AND COULD NEVER HAVE MATCHED,
+     which is the direct cost of a suite nothing invokes: this spec has
+     never run, so nothing ever said so.
+
+     That attribute is on EmptyStateButtons.tsx's OpenFormButton, inside the
+     `<EmptyState>` that app/(app)/contacts/page.tsx renders only when
+     `contacts.length === 0`. This spec runs on MAIN, and MAIN is seeded
+     with a contact (seedDatabase.ts). So the empty state is not on the
+     page, the locator matches nothing, and the run dies here on a 10s
+     timeout — one line before the assertion the task flagged as stale.
+
+     That assertion is in fact still CORRECT: `standingTermsFromForm` in
+     lib/actions/company.ts still throws `InputError('"paymentTermsDays"
+     must be a number')`, `runAction` still turns it into
+     `{ ok: false, error }`, and ContactForm.tsx still renders
+     `result.error` verbatim. Checked against main 2026-09-21. The stale
+     thing was the way IN.
+
+     ContactForm's own collapsed button is always rendered, whatever the
+     list contains, so it is what this spec presses. specs/contacts.spec.ts
+     keeps the attribute selector and is right to: it runs on EMPTY, where
+     both buttons exist and role+name alone would match two elements. */
+  await page.getByRole("button", { name: "Add a contact" }).click();
 
   const nameInput = page.locator('input[name="name"]');
   const typedName = `ZZ-E2E Keep Typed ${Date.now()}`;

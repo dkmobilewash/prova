@@ -6,7 +6,14 @@
 // the deciding is testable with hand-written inputs, and the row-reading
 // half is where a Decimal or a null silently becomes the wrong thing.
 //
-import { laborCostForRows, type CostEntryCostRow, type DecimalLike, type TimeEntryCostRow } from "./labor-job-cost";
+import {
+  laborCostForRows,
+  NO_EMPLOYER_BURDEN,
+  type CostEntryCostRow,
+  type DecimalLike,
+  type EmployerBurdenRates,
+  type TimeEntryCostRow,
+} from "./labor-job-cost";
 import type { FringeRateScheduleInput } from "./labor-cost";
 
 // THE ONE THING THIS FILE EXISTS TO GET RIGHT: a line item with no phase
@@ -73,8 +80,9 @@ export function phaseCodeRollupLine(
     timeEntries: readonly TimeEntryCostRow[];
   },
   schedulesByCraft: ReadonlyMap<string, FringeRateScheduleInput[]>,
+  burdenRates: EmployerBurdenRates = NO_EMPLOYER_BURDEN,
 ): PhaseCodeRollupLine {
-  const labor = laborCostForRows(row.timeEntries, schedulesByCraft);
+  const labor = laborCostForRows(row.timeEntries, schedulesByCraft, burdenRates);
   const manualCost = row.costEntries.reduce((sum, entry) => sum + Number(entry.amount), 0);
   return {
     phaseCodeId: row.phaseCodeId,

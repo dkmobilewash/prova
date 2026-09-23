@@ -25,6 +25,7 @@ import { calculateRetainageSummary } from "@/lib/retainage";
 import { calculateJobWip, calculateLineItemWip } from "@/lib/wip";
 import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
+import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import { jobIsOverBudget } from "@/lib/company-financials";
 import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
 import { can, type Principal } from "@/lib/permissions";
@@ -194,6 +195,7 @@ export async function loadAlerts(
     submittals,
     drawingSets,
     fringeSchedulesByCraft,
+    employerBurdenRates,
     lienDeadlines,
   ] = await Promise.all([
     renewalSourcesForCompany(companyId),
@@ -310,6 +312,7 @@ export async function loadAlerts(
       },
     }),
     loadFringeSchedulesByCraft(companyId),
+    loadEmployerBurdenRates(companyId),
 
     // Lien deadlines not yet served. Scoped by company in the WHERE like
     // every read here; `servedOn: null` is only a narrowing —
@@ -453,14 +456,20 @@ export async function loadAlerts(
             item.currentEstimatedUnitCost != null ? Number(item.currentEstimatedUnitCost) : null,
           estimatedCostToComplete:
             item.estimatedCostToComplete != null ? Number(item.estimatedCostToComplete) : null,
-          ...lineItemCostToDate(item.id, item.costEntries, job.timeEntries, fringeSchedulesByCraft),
+          ...lineItemCostToDate(
+            item.id,
+            item.costEntries,
+            job.timeEntries,
+            fringeSchedulesByCraft,
+            employerBurdenRates,
+          ),
         }),
       );
       const billedToDate = job.invoices.reduce((sum, i) => sum + Number(i.amount), 0);
       const wip = calculateJobWip(
         lineItems,
         billedToDate,
-        unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft),
+        unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft, employerBurdenRates),
       );
 
       // jobIsOverBudget already encodes when this question has an answer

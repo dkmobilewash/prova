@@ -3,6 +3,8 @@ import {
   findEffectiveRuleSet,
   hasOvertimeRules,
   reviewDays,
+  reviewIsClean,
+  weeklyUnresolvedSentence,
   type DayEntryInput,
   type PrevailingWageRuleSetInput,
 } from "./prevailing-wage";
@@ -315,5 +317,193 @@ describe("reviewDays — comparison", () => {
     );
     expect(review.days.map((d) => d.date)).toEqual(["2026-08-17", "2026-08-19"]);
     expect(review.disagreements).toHaveLength(2);
+  });
+});
+
+describe("reviewDays — shift-differential hours and the weekly threshold", () => {
+  // THE REPRODUCTION. Mon-Fri eight straight hours, then eight
+  // shift-differential hours on Saturday: forty-eight hours worked, and a
+  // forty-hour week. Eight hours have crossed the weekly threshold.
+  //
+  // Before this was fixed, the Saturday contributed ZERO to the weekly
+  // total (its `expected` is null, and the weekly pass summed
+  // `day.expected?.STRAIGHT ?? 0`), so the threshold never tripped and the
+  // page printed "Every day matches what the rules imply." over a week
+  // owing eight hours of overtime premium. A footnote explained the
+  // Saturday; nothing said Monday to Friday's verdict had been affected.
+  const rules = ruleSet({ dailyOvertimeAfterHours: 8, weeklyOvertimeAfterHours: 40 });
+  const monToFri = ["2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21"];
+  const saturday = "2026-08-22";
+
+  const withShiftDifferential = reviewDays(
+    [...monToFri.map((d) => day(d, 8)), day(saturday, 8, "SHIFT_DIFFERENTIAL")],
+    rules,
+  );
+  // The control the auditor ran alongside it: identical hours, Saturday
+  // entered as straight time. This one has always been right, and it is
+  // here so a regression cannot quietly make BOTH weeks wrong together.
+  const control = reviewDays([...monToFri.map((d) => day(d, 8)), day(saturday, 8)], rules);
+
+  it("counts them toward the forty, so the week is not certified clean", () => {
+    expect(withShiftDifferential.totalHours).toBe(48);
+    expect(control.totalHours).toBe(48);
+    // The control finds its eight hours on the Saturday.
+    expect(control.days[5].expected).toMatchObject({ STRAIGHT: 0, OVERTIME: 8 });
+    expect(control.disagreements).toHaveLength(1);
+    // The suspect must not come back with nothing to say about a week
+    // that is eight hours over the threshold.
+    expect(withShiftDifferential.weeklyUnresolved).toEqual([{ date: saturday, hours: 8 }]);
+  });
+
+  it("does not manufacture overtime on Monday to Friday instead", () => {
+    // The hours that crossed forty are SATURDAY's. Pushing the excess back
+    // onto the last judgeable day would report Friday as overtime for
+    // hours worked inside the first forty of the week — a different wrong
+    // answer, not a fix.
+    for (const index of [0, 1, 2, 3, 4]) {
+      expect(withShiftDifferential.days[index].expected).toMatchObject({
+        STRAIGHT: 8,
+        OVERTIME: 0,
+        DOUBLE_TIME: 0,
+      });
+    }
+    expect(withShiftDifferential.disagreements).toEqual([]);
+    expect(withShiftDifferential.weeklyThresholdApplied).toBe(false);
+  });
+
+  it("still judges the days it can when the excess lands on judgeable hours", () => {
+    // Shift differential on MONDAY this time. Those eight hours sit inside
+    // the first forty, so nothing about them is unresolved, and the eight
+    // hours past forty are Saturday's ordinary straight time.
+    const review = reviewDays(
+      [
+        day("2026-08-17", 8, "SHIFT_DIFFERENTIAL"),
+        ...["2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", saturday].map((d) => day(d, 8)),
+      ],
+      rules,
+    );
+    expect(review.totalHours).toBe(48);
+    expect(review.weeklyUnresolved).toEqual([]);
+    expect(review.weeklyThresholdApplied).toBe(true);
+    expect(review.days[5].expected).toMatchObject({ STRAIGHT: 0, OVERTIME: 8 });
+  });
+
+  it("splits the excess when it straddles a shift-differential day", () => {
+    // Mon-Fri 8 straight, Saturday 4 shift-differential, Sunday 8 straight
+    // = 52 hours, 12 past the threshold. Sunday's eight are judgeable and
+    // become overtime; Saturday's four crossed the line on hours this
+    // review cannot judge, and are reported as such rather than dropped.
+    const review = reviewDays(
+      [
+        ...monToFri.map((d) => day(d, 8)),
+        day(saturday, 4, "SHIFT_DIFFERENTIAL"),
+        day("2026-08-23", 8),
+      ],
+      rules,
+    );
+    expect(review.totalHours).toBe(52);
+    expect(review.days[6].expected).toMatchObject({ STRAIGHT: 0, OVERTIME: 8 });
+    expect(review.weeklyUnresolved).toEqual([{ date: saturday, hours: 4 }]);
+  });
+
+  it("says nothing about a shift-differential week that never reaches the threshold", () => {
+    // Four days straight, one shift-differential: 40 hours exactly. No
+    // excess, nothing unresolved, and no warning to cry wolf with.
+    const review = reviewDays(
+      [...monToFri.slice(0, 4).map((d) => day(d, 8)), day("2026-08-21", 8, "SHIFT_DIFFERENTIAL")],
+      rules,
+    );
+    expect(review.totalHours).toBe(40);
+    expect(review.weeklyUnresolved).toEqual([]);
+    expect(review.disagreements).toEqual([]);
+  });
+});
+
+describe("the verdict the page prints", () => {
+  // These two exist so the green sentence is something a test can execute.
+  // It used to be `disagreements.length === 0` written inline in JSX, and
+  // that condition is TRUE of the 48-hour week above — a week owing eight
+  // hours of overtime premium was told "Every day matches what the rules
+  // imply." on the screen built to prevent exactly that finding.
+  const rules = ruleSet({ dailyOvertimeAfterHours: 8, weeklyOvertimeAfterHours: 40 });
+  const week = ["2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21"];
+
+  it("is clean for a week that really is", () => {
+    const review = reviewDays(week.map((d) => day(d, 8)), rules);
+    expect(reviewIsClean(review)).toBe(true);
+    expect(weeklyUnresolvedSentence(review)).toBeNull();
+  });
+
+  it("is NOT clean when the weekly overtime landed on unjudgeable hours", () => {
+    const review = reviewDays(
+      [...week.map((d) => day(d, 8)), day("2026-08-22", 8, "SHIFT_DIFFERENTIAL")],
+      rules,
+    );
+    expect(review.disagreements).toEqual([]); // nothing to list…
+    expect(reviewIsClean(review)).toBe(false); // …and still not clean.
+    const sentence = weeklyUnresolvedSentence(review) as string;
+    expect(sentence).toContain("8 hours past the weekly overtime threshold");
+    expect(sentence).toContain("2026-08-22");
+    expect(sentence).toContain("check them by hand");
+  });
+
+  it("is never clean when there was nothing to check against", () => {
+    // An unchecked week has no disagreements either, and "no disagreements"
+    // must not read as agreement anywhere.
+    const review = reviewDays([day("2026-08-17", 10)], null);
+    expect(review.disagreements).toEqual([]);
+    expect(reviewIsClean(review)).toBe(false);
+  });
+
+  it("prints hours a payroll clerk believes, not a float sum", () => {
+    // COMPOSES WITH #408 rather than sitting beside it. Two
+    // shift-differential days of 0.1 and 4.1 hours: 4.199999999999999 in
+    // JavaScript, which is exactly the figure that printed on the
+    // certified-payroll page (`lib/render-hours.ts` header) — on the one
+    // screen whose purpose is to be believed by somebody filing with a
+    // government agency. Reachable here, so it is pinned here.
+    const review = reviewDays(
+      [
+        ...week.map((d) => day(d, 8)),
+        day("2026-08-22", 0.1, "SHIFT_DIFFERENTIAL"),
+        day("2026-08-23", 4.1, "SHIFT_DIFFERENTIAL"),
+      ],
+      rules,
+    );
+    // The raw sum really is dusty — assert that, so this test cannot pass
+    // because the arithmetic quietly stopped producing the case.
+    const raw = review.weeklyUnresolved.reduce((sum, row) => sum + row.hours, 0);
+    expect(String(raw)).toBe("4.199999999999999");
+    expect(weeklyUnresolvedSentence(review)).toContain("4.2 hours past");
+    expect(weeklyUnresolvedSentence(review)).not.toContain("4.199");
+  });
+
+  it("says one HOUR, singular, when that is what it is", () => {
+    const review = reviewDays(
+      [...week.map((d) => day(d, 8)), day("2026-08-22", 1, "SHIFT_DIFFERENTIAL")],
+      rules,
+    );
+    expect(weeklyUnresolvedSentence(review)).toContain("1 hour past");
+  });
+
+  it("names every unjudgeable day the excess reached", () => {
+    // Two shift-differential days at the end of a long week: 4 + 8 = 12
+    // hours past forty, and the sentence has to name both or a clerk
+    // checks one and signs.
+    const review = reviewDays(
+      [
+        ...week.map((d) => day(d, 8)),
+        day("2026-08-22", 4, "SHIFT_DIFFERENTIAL"),
+        day("2026-08-23", 8, "SHIFT_DIFFERENTIAL"),
+      ],
+      rules,
+    );
+    expect(review.weeklyUnresolved).toEqual([
+      { date: "2026-08-22", hours: 4 },
+      { date: "2026-08-23", hours: 8 },
+    ]);
+    const sentence = weeklyUnresolvedSentence(review) as string;
+    expect(sentence).toContain("12 hours");
+    expect(sentence).toContain("2026-08-22 and 2026-08-23");
   });
 });

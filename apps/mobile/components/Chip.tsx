@@ -1,5 +1,8 @@
-import { Pressable, StyleSheet, Text } from "react-native";
-import { colors, hitTarget, typography } from "@/lib/theme";
+import { useMemo } from "react";
+import { StyleSheet, Text } from "react-native";
+import { PressableScale } from "@/components/PressableScale";
+import { type Palette, hitTarget, radius, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 
 /** A single-select chip — pay type, vendor, classification. Selected = the
  * brand-yellow fill with a dark label; the whole pill is the target. */
@@ -12,38 +15,38 @@ export function Chip({
   selected: boolean;
   onPress: () => void;
 }) {
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
+
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      style={({ pressed }) => [
-        styles.chip,
-        selected && styles.selected,
-        pressed && styles.pressed,
-      ]}
+      style={[styles.chip, selected && styles.selected]}
     >
       <Text style={[styles.label, selected && styles.labelSelected]}>{label}</Text>
-    </Pressable>
+    </PressableScale>
   );
 }
 
-const styles = StyleSheet.create({
-  chip: {
-    minHeight: hitTarget,
-    paddingHorizontal: 14,
-    justifyContent: "center",
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.lineCard,
-    backgroundColor: colors.surface,
-  },
-  selected: { backgroundColor: colors.brand, borderColor: colors.brand },
-  pressed: { opacity: 0.85 },
-  label: {
-    color: colors.ink,
-    fontSize: typography.size.sm,
-    fontWeight: typography.weight.medium,
-  },
-  labelSelected: { color: colors.brandInk, fontWeight: typography.weight.semibold },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    chip: {
+      minHeight: hitTarget,
+      paddingHorizontal: 14,
+      justifyContent: "center",
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: p.colors.lineCard,
+      backgroundColor: p.colors.surface,
+    },
+    selected: { backgroundColor: p.colors.brand, borderColor: p.colors.brand },
+    label: {
+      color: p.colors.ink,
+      fontSize: typography.size.sm,
+      fontWeight: typography.weight.medium,
+    },
+    labelSelected: { color: p.colors.brandInk, fontWeight: typography.weight.semibold },
+  });
+}

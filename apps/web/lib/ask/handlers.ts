@@ -7,6 +7,7 @@ import {
 } from "@/lib/wip";
 import { laborCostForRows, lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
+import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import {
   jobCostVariance,
   jobEarnedRevenue,
@@ -16,6 +17,11 @@ import { renewalAlerts, renewalCoverage, renewalCoverageMessage, renewalTiming }
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { serverToday } from "@/lib/serverToday";
 import { viewerToday } from "@/lib/viewerToday";
+import {
+  determinationStanding,
+  determinationStandingLine,
+  type DeterminationMarker,
+} from "@/lib/determination-standing";
 import { daysBetween } from "./dates";
 import {
   arBalanceFor,
@@ -45,10 +51,10 @@ import {
 } from "@/components/drawingLabels";
 import { orderState, stateLabel as orderStateLabel, daysLate } from "@/components/materialOrderLabels";
 import { currentAssignment } from "@/components/equipmentDeployment";
-import { can, type Capability, type Principal } from "@/lib/permissions";
+import { can, canReach, type Capability, type Principal } from "@/lib/permissions";
 import { refusalFor } from "./access";
 import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
-import { timeEntryWorkerId, timeEntryWorkerName } from "@/lib/worker-name";
+import { NAME_NOT_RECORDED, crewMemberName, timeEntryWorkerId, timeEntryWorkerName } from "@/lib/worker-name";
 import {
   loadPlannedDaysMissingHours,
   loadUpcomingSchedule,
@@ -487,7 +493,7 @@ async function drawingCurrency(companyId: string, input: Input): Promise<ToolRes
 }
 
 async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
-  const [jobs, fringeSchedulesByCraft] = await Promise.all([
+  const [jobs, fringeSchedulesByCraft, employerBurdenRates] = await Promise.all([
     prisma.job.findMany({
     where: { companyId, status: { in: ["CONTRACTED", "IN_PROGRESS"] } },
     select: {
@@ -515,6 +521,7 @@ async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
     },
     }),
     loadFringeSchedulesByCraft(companyId),
+    loadEmployerBurdenRates(companyId),
   ]);
 
   const filtered = jobs.filter((job) => matchesJobName(job.name, input.jobName));
@@ -530,14 +537,20 @@ async function jobMargin(companyId: string, input: Input): Promise<ToolResult> {
             line.currentEstimatedUnitCost === null ? null : Number(line.currentEstimatedUnitCost),
           estimatedCostToComplete:
             line.estimatedCostToComplete === null ? null : Number(line.estimatedCostToComplete),
-          ...lineItemCostToDate(line.id, line.costEntries, job.timeEntries, fringeSchedulesByCraft),
+          ...lineItemCostToDate(
+            line.id,
+            line.costEntries,
+            job.timeEntries,
+            fringeSchedulesByCraft,
+            employerBurdenRates,
+          ),
         }),
       );
       const billed = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
       const wip = calculateJobWip(
         lines,
         billed,
-        unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft),
+        unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft, employerBurdenRates),
       );
 
       return {
@@ -1318,7 +1331,7 @@ async function jobLaborCost(companyId: string, input: Input): Promise<ToolResult
   const mismatch = await jobNameMismatch(companyId, input.jobName);
   if (mismatch) return { data: [], citations: [], unavailable: mismatch };
 
-  const [jobs, schedulesByCraft] = await Promise.all([
+  const [jobs, schedulesByCraft, employerBurdenRates] = await Promise.all([
     prisma.job.findMany({
       where: { companyId },
       select: {
@@ -1329,13 +1342,14 @@ async function jobLaborCost(companyId: string, input: Input): Promise<ToolResult
       },
     }),
     loadFringeSchedulesByCraft(companyId),
+    loadEmployerBurdenRates(companyId),
   ]);
 
   const rows = jobs
     .filter((job) => matchesJobName(job.name, input.jobName))
     .filter((job) => job.timeEntries.length > 0)
     .map((job) => {
-      const labor = laborCostForRows(job.timeEntries, schedulesByCraft);
+      const labor = laborCostForRows(job.timeEntries, schedulesByCraft, employerBurdenRates);
       const hours = labor.pricedHours + labor.unpricedHours;
       return {
         job: job.name,
@@ -1897,7 +1911,7 @@ async function apprenticeshipStanding(companyId: string): Promise<ToolResult> {
       contradictory: rows.filter((row) => row.state === "CONTRADICTORY").length,
     },
     citations,
-    unavailable: rows.length === 0 ? "Nobody is enrolled in an apprenticeship programme here." : undefined,
+    unavailable: rows.length === 0 ? "Nobody is enrolled in an apprenticeship program here." : undefined,
   };
 }
 
@@ -1982,43 +1996,78 @@ async function dailyFieldReports(companyId: string, input: Input): Promise<ToolR
  * to be mistaken for coverage. Flagged rather than counted as filed.
  *
  * What this deliberately does NOT do is say a determination is MISSING.
- * Nothing in the schema records whether a job is public works, so "this job
- * has no determination" is not evidence of a gap — it may simply be private
- * work. Claiming otherwise would put a compliance alarm on a job that never
- * needed one.
+ * The only record of whether a job is public works is what a person
+ * ENTERED on its Compliance tab (`Job.publicWorks`, null when nobody has),
+ * so "this job has no determination" is not evidence of a gap — it may
+ * simply be private work, or nobody has said. Claiming otherwise would put
+ * a compliance alarm on a job that never needed one.
+ *
+ * WHAT IT DOES SAY NOW: each row's STANDING — in force on the job's
+ * bid-advertisement date, the wrong issue for it, a predetermined increase
+ * now due, or unchecked because a date was never entered. Read, not
+ * researched: the same `determinationStanding` the Compliance tab and
+ * /prevailing-wage derive from the entered dates, against the viewer's
+ * day, so the box and the page cannot disagree.
  */
 async function wageDeterminations(companyId: string, input: Input): Promise<ToolResult> {
   const citations = [{ label: "Prevailing wage", href: "/prevailing-wage" }];
   const jobMismatch = await jobNameMismatch(companyId, input.jobName);
   if (jobMismatch) return { data: [], citations, unavailable: jobMismatch };
 
-  const determinations = await prisma.prevailingWageDetermination.findMany({
-    where: { job: { companyId } },
-    select: {
-      jurisdiction: true,
-      fileName: true,
-      fileUrl: true,
-      sourceUrl: true,
-      note: true,
-      createdAt: true,
-      job: { select: { name: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const [determinations, today] = await Promise.all([
+    prisma.prevailingWageDetermination.findMany({
+      where: { job: { companyId } },
+      select: {
+        jurisdiction: true,
+        fileName: true,
+        fileUrl: true,
+        sourceUrl: true,
+        note: true,
+        createdAt: true,
+        determinationRef: true,
+        issuedOn: true,
+        expiresOn: true,
+        expirationMarker: true,
+        job: { select: { name: true, bidAdvertisedOn: true, publicWorks: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    viewerToday(),
+  ]);
 
   const rows = determinations
     .filter((determination) => matchesJobName(determination.job.name, input.jobName))
-    .map((determination) => ({
-      job: determination.job.name,
-      jurisdiction: determination.jurisdiction,
-      fileName: determination.fileName,
-      hasDocument: Boolean(determination.fileUrl),
-      hasSourceLink: Boolean(determination.sourceUrl),
-      // The one that matters. Neither attached nor linked is a row that
-      // proves nothing.
-      producibleInAnAudit: Boolean(determination.fileUrl) || Boolean(determination.sourceUrl),
-      filedOn: iso(determination.createdAt),
-    }));
+    .map((determination) => {
+      const standing = determinationStanding(
+        {
+          issuedOn: determination.issuedOn ?? null,
+          expiresOn: determination.expiresOn ?? null,
+          expirationMarker: (determination.expirationMarker as DeterminationMarker | null | undefined) ?? null,
+        },
+        { bidAdvertisedOn: determination.job.bidAdvertisedOn ?? null },
+        today,
+      );
+      return {
+        job: determination.job.name,
+        // What a person entered, or null for "nobody has said" — never inferred.
+        jobIsPublicWorks: determination.job.publicWorks ?? null,
+        jobBidAdvertisedOn: iso(determination.job.bidAdvertisedOn ?? null),
+        jurisdiction: determination.jurisdiction,
+        determinationRef: determination.determinationRef ?? null,
+        issuedOn: iso(determination.issuedOn ?? null),
+        expiresOn: iso(determination.expiresOn ?? null),
+        expirationMarker: determination.expirationMarker ?? null,
+        fileName: determination.fileName,
+        hasDocument: Boolean(determination.fileUrl),
+        hasSourceLink: Boolean(determination.sourceUrl),
+        // The one that matters. Neither attached nor linked is a row that
+        // proves nothing.
+        producibleInAnAudit: Boolean(determination.fileUrl) || Boolean(determination.sourceUrl),
+        filedOn: iso(determination.createdAt),
+        standing: standing.kind,
+        standingLine: determinationStandingLine(standing).text,
+      };
+    });
 
   return {
     data: rows,
@@ -2026,13 +2075,16 @@ async function wageDeterminations(companyId: string, input: Input): Promise<Tool
       determinations: rows.length,
       withoutDocumentOrLink: rows.filter((row) => !row.producibleInAnAudit).length,
       jobsCovered: new Set(rows.map((row) => row.job)).size,
+      wrongIssue: rows.filter((row) => row.standing === "wrong_issue").length,
+      increaseDue: rows.filter((row) => row.standing === "increase_due").length,
+      unchecked: rows.filter((row) => row.standing === "unchecked").length,
     },
     citations,
     unavailable:
       rows.length === 0
         ? input.jobName
-          ? "No wage determination has been filed against that job. Whether one is required is not recorded anywhere here."
-          : "No wage determination has been filed against any job. Whether any of them are public works is not recorded anywhere here."
+          ? "No wage determination has been filed against that job. Whether one is required is only what somebody entered under Public-works facts on its Compliance tab."
+          : "No wage determination has been filed against any job. Whether any of them are public works is only what somebody entered on each job's Compliance tab."
         : undefined,
   };
 }
@@ -2947,7 +2999,7 @@ async function scheduleStatus(companyId: string, input: Input): Promise<ToolResu
     citations,
     unavailable:
       rows.length === 0
-        ? "No job is contracted or in progress, so there is no programme to be on or off."
+        ? "No job is contracted or in progress, so there is no program to be on or off."
         : undefined,
   };
 }
@@ -3228,6 +3280,10 @@ async function dispatchSlips(companyId: string, input: Input): Promise<ToolResul
       note: true,
       job: { select: { name: true } },
       employeeUser: { select: { name: true, email: true } },
+      // A slip names a User OR a crew member (the XOR CHECK on DispatchSlip);
+      // before that migration it could only name a User, so a crew member
+      // dispatched by the hall would read as nobody here.
+      crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
       craftClassification: {
         select: {
           name: true,
@@ -3243,7 +3299,14 @@ async function dispatchSlips(companyId: string, input: Input): Promise<ToolResul
 
   const rows = slips.map((slip) => ({
     job: slip.job.name,
-    worker: slip.employeeUser.name ?? slip.employeeUser.email,
+    worker: slip.employeeUser
+      ? (slip.employeeUser.name ?? slip.employeeUser.email)
+      : slip.crewMember
+        ? crewMemberName(slip.crewMember).label
+        : NAME_NOT_RECORDED,
+    // Which table the person is in, so a crew member and a teammate who share
+    // a name are not read as the same dispatch.
+    workerKind: slip.employeeUser ? ("teammate" as const) : ("crew" as const),
     dispatchedOn: iso(slip.dispatchDate),
     dispatchNumber: slip.dispatchNumber,
     craft: slip.craftClassification?.name ?? null,
@@ -3615,8 +3678,9 @@ async function needsAttention(companyId: string, _input: Input, actor?: ToolActo
   const today = await viewerToday();
   const { visible, silenced } = await loadAlerts(companyId, actor.userId, today, actor.principal);
   const summary = summarizeAlerts(visible);
+  const shown = visible.slice(0, ATTENTION_ROWS);
   return {
-    data: visible.slice(0, ATTENTION_ROWS).map((alert) => ({
+    data: shown.map((alert) => ({
       what: alert.title,
       detail: alert.detail,
       severity: alert.severity,
@@ -3638,6 +3702,38 @@ async function needsAttention(companyId: string, _input: Input, actor?: ToolActo
       silencedByYou: silenced.length,
     },
     citations,
+    /*
+     * A button per alert, straight to the record rather than to the list.
+     * Diego asked for this after clicking the box: the answer named three
+     * things on one GC and left him to go and find each of them.
+     *
+     * FILTERED BY `canReach` HERE, rather than trusting that it is already
+     * true. `loadAlerts` has run `visibleToPrincipal`, and ALERT_CAPABILITY
+     * is chosen so an alert never points at a page its recipient cannot
+     * open — its own comment says so ("not to a foreman, who could not
+     * open the page the alert points at"). That convention is REAL and it
+     * is also currently broken: RETAINAGE_RELEASE is gated MANAGE_BILLING
+     * and points at /closeout, which is MANAGE_JOBS, so an ACCOUNTING
+     * member gets it and cannot open it. `itemLinksCensus.test.ts` found
+     * that and records it; fixing the routing is a separate decision,
+     * because no one page is reachable by everyone holding MANAGE_BILLING.
+     *
+     * So the button does not inherit the convention's word. A dead button
+     * is worse than no button — the person went looking because we invited
+     * them — and the alert still appears in the prose either way, so
+     * filtering costs them nothing and removes the whole class of failure
+     * even if ALERT_CAPABILITY drifts again.
+     *
+     * `alert.href` is the field the alert page's own rows link to, so the
+     * button lands exactly where clicking the row would.
+     */
+    links: shown
+      .filter((alert) => (actor.principal ? canReach(actor.principal, alert.href) : false))
+      .map((alert) => ({
+        label: alert.title,
+        href: alert.href,
+        detail: alert.detail,
+      })),
     unavailable:
       visible.length === 0
         ? silenced.length > 0
@@ -4042,15 +4138,40 @@ async function appHelp(_companyId: string, input: Input, actor?: ToolActor): Pro
     };
   }
 
+  // `match.href`, NEVER `match.route`. A walkthrough's route is written the
+  // way `app/` writes it, so the six job-detail tabs are PATTERNS —
+  // `/jobs/[id]/billing`. This handler used to hand that straight out as
+  // both the route the model narrates and the citation AskPanel renders as
+  // a `<Link>`, which navigates to `/jobs/%5Bid%5D/billing` and 404s. The
+  // answer itself was right; the place it sent people did not exist.
+  //
+  // The match is NOT dropped, which is where this differs from #408's fix
+  // for the search box. A search row is only a link, so a link to the jobs
+  // list labelled "A job — billing" is worse than no row. Ask has prose and
+  // the page's own steps, so it can say "open the job from Jobs, then its
+  // Billing tab" — a true sentence with a link that works, rather than
+  // silence on a question the app can genuinely answer.
   return {
     data: {
       pages: matches.map((match) => ({
         page: match.title,
-        route: match.route,
+        route: match.href,
+        ...(match.insideOneJob ? { insideOneJob: true } : {}),
         steps: match.steps,
       })),
     },
     summary: { pagesFound: matches.length },
-    citations: matches.map((match) => ({ label: match.title, href: match.route })),
+    // Deduplicated by href because three job tabs collapse onto one `/jobs`,
+    // and AskPanel keys its citation links by href — duplicates would be a
+    // React key collision as well as three identical links. First wins, so
+    // the best-scoring match keeps its label.
+    citations: dedupeByHref(
+      matches.map((match) => ({ label: match.insideOneJob ? "Jobs" : match.title, href: match.href })),
+    ),
   };
+}
+
+function dedupeByHref(links: { label: string; href: string }[]): { label: string; href: string }[] {
+  const seen = new Set<string>();
+  return links.filter((link) => (seen.has(link.href) ? false : (seen.add(link.href), true)));
 }

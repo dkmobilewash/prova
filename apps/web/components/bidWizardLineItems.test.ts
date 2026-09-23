@@ -11,10 +11,13 @@
  * that same proof for the two forms `BidWizardLineItems` adds: type a line
  * by hand, or pull one from the catalog.
  *
- * `addLineItem` and `addLineItemFromCatalog` are throw-style actions (they
- * predate the ActionResult convention), so the failure path under test is
- * a rejected promise, caught locally — same shape TakeoffForm already
- * relies on for the same two actions' shared guards.
+ * `addLineItem` and `addLineItemFromCatalog` RETURN their refusals as of
+ * 2026-09-21. They used to throw, and that is what made this the worst
+ * form in the app to get wrong: production redacts a thrown Server Action
+ * message, so a quantity of `2,800` — a thousands comma, on the second
+ * screen of creating a first job — rendered "the specific message is
+ * omitted in production builds" under the Qty box. The error slot was
+ * there the whole time; it had nothing legible to put in it.
  */
 
 import { createElement, type ReactNode } from "react";
@@ -22,10 +25,12 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+type Result = { ok: true } | { ok: false; error: string };
+
 const fake = {
-  addLineItem: vi.fn<(jobId: string, formData: FormData) => Promise<void>>(),
-  addLineItemFromCatalog: vi.fn<(jobId: string, formData: FormData) => Promise<void>>(),
-  addTakeoffLineItems:
+  addLineItem: vi.fn<(jobId: string, formData: FormData) => Promise<Result>>(),
+  addLineItemFromCatalog: vi.fn<(jobId: string, formData: FormData) => Promise<Result>>(),
+  addTakeoffLines:
     vi.fn<(jobId: string, formData: FormData) => Promise<{ ok: true } | { ok: false; error: string }>>(),
   deleteLineItem: vi.fn<(jobId: string, lineItemId: string) => Promise<void>>(),
 };
@@ -46,9 +51,9 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  fake.addLineItem.mockReset().mockResolvedValue(undefined);
-  fake.addLineItemFromCatalog.mockReset().mockResolvedValue(undefined);
-  fake.addTakeoffLineItems.mockReset().mockResolvedValue({ ok: true });
+  fake.addLineItem.mockReset().mockResolvedValue({ ok: true });
+  fake.addLineItemFromCatalog.mockReset().mockResolvedValue({ ok: true });
+  fake.addTakeoffLines.mockReset().mockResolvedValue({ ok: true });
   fake.deleteLineItem.mockReset().mockResolvedValue(undefined);
 });
 
@@ -124,8 +129,42 @@ describe("the manual add-a-line form", () => {
     expect(field("unitPrice").value).toBe("");
   });
 
+  it("SENDS a quantity with a thousands comma through untouched, and clears on success", async () => {
+    // The reproduction, as close as a DOM test gets to it: 2,800 typed into
+    // Qty. What this pins is that the BOX does not eat the comma before the
+    // action sees it — `type="number"` did exactly that, measured in real
+    // Chromium, which is why these inputs are text with inputMode. What the
+    // action then makes of "2,800" is lib/numeric-input.test.ts's job.
+    renderWizard();
+    field("description").value = "5/8 Type X drywall, level 2 corridor";
+    field("quantity").value = "2,800";
+
+    await submit("description");
+
+    const sent = fake.addLineItem.mock.calls[0][1];
+    expect(sent.get("quantity")).toBe("2,800");
+    expect(field("description").value).toBe("");
+  });
+
+  it("shows the refusal as a sentence, not a digest, when the figure really is not a number", async () => {
+    fake.addLineItem.mockResolvedValue({
+      ok: false,
+      error: "Quantity: “two thousand” isn't a number. Digits, one decimal point, and commas between thousands.",
+    });
+    renderWizard();
+    field("description").value = "Corridor";
+    field("quantity").value = "two thousand";
+
+    await submit("description");
+
+    expect(container.textContent).toContain("isn't a number");
+    // And nothing typed is gone, which is the other half of a readable
+    // refusal: being told what is wrong with fields that are still there.
+    expect(field("quantity").value).toBe("two thousand");
+  });
+
   it("keeps every field the contractor typed when the save is refused", async () => {
-    fake.addLineItem.mockRejectedValue(new Error("Description is required"));
+    fake.addLineItem.mockResolvedValue({ ok: false, error: "Description is required" });
     renderWizard();
     field("description").value = "Level 2 corridor — hang and finish";
     field("quantity").value = "480";
@@ -160,7 +199,7 @@ describe("the add-from-catalog form", () => {
   });
 
   it("keeps the picked entry and quantity when the save is refused", async () => {
-    fake.addLineItemFromCatalog.mockRejectedValue(new Error("Job not found"));
+    fake.addLineItemFromCatalog.mockResolvedValue({ ok: false, error: "Job not found" });
     renderWizard();
     field("catalogEntryId").value = "cat-1";
     fieldIn("catalogEntryId", "quantity").value = "12";

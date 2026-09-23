@@ -50,12 +50,19 @@ export function BusinessScopeSettingsForm({
             const formData = new FormData(event.currentTarget);
             setError(null);
             startTransition(async () => {
-              const result = await saveBusinessScope(formData);
-              if (!result.ok) {
-                setError(result.error);
-                return;
+              // Same net as CompanySetupGate, for the same action: a thrown
+              // (redacted) failure becomes a sentence here instead of
+              // taking the Settings page down to the (app) error boundary.
+              try {
+                const result = await saveBusinessScope(formData);
+                if (!result.ok) {
+                  setError(result.error);
+                  return;
+                }
+                router.refresh();
+              } catch {
+                setError("Couldn't save just now. Nothing was changed — try again.");
               }
-              router.refresh();
             });
           }}
           className="flex flex-col gap-5"
@@ -83,12 +90,16 @@ export function BusinessScopeSettingsForm({
                 onClick={() => {
                   setError(null);
                   startTransition(async () => {
-                    const result = await clearBusinessScope();
-                    if (!result.ok) {
-                      setError(result.error);
-                      return;
+                    try {
+                      const result = await clearBusinessScope();
+                      if (!result.ok) {
+                        setError(result.error);
+                        return;
+                      }
+                      router.refresh();
+                    } catch {
+                      setError("Couldn't change this just now. Nothing was changed — try again.");
                     }
-                    router.refresh();
                   });
                 }}
                 className="inline-flex min-h-11 items-center justify-center rounded-md px-3 text-sm text-ink-body hover:bg-rail-hover hover:text-ink disabled:opacity-50"

@@ -100,10 +100,10 @@ function SignoffRow({ row, canApprove }: { row: TimesheetSignoffRowData; canAppr
           <span className="text-xs text-slate-400">
             {row.signerName} signed {row.entryCount} {row.entryCount === 1 ? "entry" : "entries"}, {row.totalHours}h
           </span>
-          <span className="text-xs text-slate-500">{row.signedLabel}</span>
-          {row.approvedLabel && <span className="text-xs text-slate-500">Approved {row.approvedLabel}</span>}
+          <span className="text-xs text-ink-muted">{row.signedLabel}</span>
+          {row.approvedLabel && <span className="text-xs text-ink-muted">Approved {row.approvedLabel}</span>}
           {row.reopenedLabel && (
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-ink-muted">
               Reopened {row.reopenedLabel}
               {row.reopenReason ? ` — ${row.reopenReason}` : ""}
             </span>

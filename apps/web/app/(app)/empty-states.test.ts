@@ -99,6 +99,10 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/lib/viewerToday", () => ({
   viewerToday: vi.fn(async () => "2026-09-12"),
   viewerTimeZone: vi.fn(async () => "UTC"),
+  // The same day as a Date, which is what /cash-flow and /dashboard age
+  // invoices against. Nothing here has an invoice, so the value only has
+  // to be the day above.
+  viewerAsOf: vi.fn(async () => new Date("2026-09-12T00:00:00.000Z")),
 }));
 // The empty state's "Walk me through this page" button asks which page it is
 // on, and its Ask button holds a router; neither exists in a bare render.
@@ -109,6 +113,11 @@ vi.mock("next/navigation", () => ({
 }));
 // Server actions, imported by these pages only to hand to a form.
 vi.mock("@/lib/actions/notifications", () => ({ sendMyAlertDigest: vi.fn() }));
+// `/team` builds the sign-up link to share from the request's own headers,
+// and there is no request here.
+vi.mock("next/headers", () => ({
+  headers: async () => new Map([["host", "app.example.com"], ["x-forwarded-proto", "https"]]),
+}));
 
 /** Each page is imported and called at its own call site below, so its real
  * props are typechecked rather than widened away by a shared helper. */
@@ -304,6 +313,52 @@ describe("/settings with nothing filled in", () => {
     expect(html).toContain("No bonding recorded");
     // The one that was already right, unchanged.
     expect(html).toContain("No licences recorded");
+  });
+});
+
+/**
+ * THE PAGE A UNION SUB LANDS ON WHEN THE DASHBOARD SAYS "ADD YOUR CREW".
+ *
+ * Rendered against an EMPTY database, which is the only state that matters
+ * here: the crew section was wrapped in `crew.length > 0 ||
+ * archivedCrewCount > 0`, so on a brand-new account — every account today —
+ * the page offered an email invite, a sign-up link, and nothing at all for
+ * the fifteen to forty people who do the work and will never have a login.
+ *
+ * A component test cannot see this and a source scan can be satisfied
+ * without it. This calls the real page with nothing in the database and
+ * reads what comes out.
+ */
+describe("/team on a brand-new account with nobody on the crew", () => {
+  const load = async () => {
+    const { default: Page } = await import("@/app/(app)/team/page");
+    return renderToStaticMarkup(await Page());
+  };
+
+  it("renders, and the crew section is on it", async () => {
+    const html = await load();
+    // Anti-vacuity: a real render of the real page.
+    expect(html).toContain("Team members");
+    expect(html).toContain("Nobody on the crew yet");
+  });
+
+  it("puts the add form on the screen, not behind anything", async () => {
+    const html = await load();
+    expect(html).toContain('name="legalFirstName"');
+    expect(html).toContain('name="legalLastName"');
+    expect(html).toContain("Add to crew");
+  });
+
+  it("names the spreadsheet import here, where the crew is", async () => {
+    expect(await load()).toContain("Import crew");
+  });
+
+  it("says at the top that this page holds two kinds of people", async () => {
+    const html = await load();
+    expect(html).toContain("Two kinds of people");
+    // The paragraph that was there instead: true, and written for somebody
+    // who reads permission models for a living.
+    expect(html).not.toContain("leaving it unset gives the full office access");
   });
 });
 
@@ -540,4 +595,69 @@ describe("pages that use the shared empty state, on an empty account", () => {
       });
     });
   }
+});
+
+/**
+ * THE PAGES THAT DESCRIBED A CONDITION AND GAVE NO WAY OUT OF IT.
+ *
+ * The cases above are the top-level list pages, all of which route through
+ * the shared `EmptyState`. These two do not, which is exactly why they
+ * drifted: nothing shared was there to carry the promise for them.
+ *
+ * `/prevailing-wage` was the worst of the set, and it is worth naming the
+ * shape rather than the page. It NAMED the way out and then did not give
+ * it — "Upload one on a job first" with nothing to press, on a screen a
+ * compliance clerk reaches with a filing deadline in front of her. A
+ * sentence that tells somebody what to do and not where is worse than one
+ * that says nothing, because it proves the product knows the answer.
+ *
+ * Both are rendered, not grepped, for the reason the header of this file
+ * gives: a link inside a branch that never runs greps identically to one
+ * that renders. Each case asserts the page rendered at all before it
+ * asserts anything about what is missing from it.
+ */
+describe("an empty state has to offer a way out of being empty", () => {
+  const wayOut = (html: string): string[] =>
+    [...html.matchAll(/<a[^>]*href="([^"]*)"/g)].map((m) => m[1]);
+
+  describe("/prevailing-wage with nothing filed", () => {
+    const load = async () => {
+      const { default: Page } = await import("@/app/(app)/prevailing-wage/page");
+      return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+    };
+
+    it("renders both of its empty sections", async () => {
+      const html = await load();
+      // Anti-vacuity, twice: these are the two headings the sections below
+      // belong to, so a page that failed to render fails here rather than
+      // passing the link assertions on an empty string.
+      expect(html).toContain("Check a week against the rules");
+      expect(html).toContain("Which rules apply to which job");
+      expect(html).toContain("No wage determinations recorded yet");
+    });
+
+    it("gives the reader somewhere to press, not just something to read", async () => {
+      expect(wayOut(await load())).toContain("/jobs");
+    });
+  });
+
+  describe("/union-compliance with no hours logged", () => {
+    const load = async () => {
+      const { default: Page } = await import("@/app/(app)/union-compliance/page");
+      return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+    };
+
+    it("renders its two empty sections", async () => {
+      const html = await load();
+      expect(html).toContain("Apprentice ratio");
+      expect(html).toContain("No hours logged this month");
+    });
+
+    it("says where hours are logged, as a link", async () => {
+      const html = await load();
+      expect(wayOut(html)).toContain("/jobs");
+      // Named, so the reader knows which tab when he gets there.
+      expect(html).toContain("Crew &amp; time");
+    });
+  });
 });

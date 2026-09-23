@@ -37,11 +37,13 @@ const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 export function ComplianceUploadForm({ companyId, jobs }: { companyId: string; jobs: JobOption[] }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [charged, setCharged] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setCharged(null);
     const formData = new FormData(event.currentTarget);
     startTransition(async () => {
       try {
@@ -64,7 +66,16 @@ export function ComplianceUploadForm({ companyId, jobs }: { companyId: string; j
 
         const result = await uploadComplianceDocument(formData);
         if (result.ok) {
+          // Only on success. A failed upload leaves every field exactly as
+          // the person typed it, so a refusal they can act on — a document
+          // over the single-upload ceiling, a month that has run out —
+          // costs them the file picker and nothing else.
           formRef.current?.reset();
+          setCharged(
+            `Read ${result.value.note} — ${result.value.pagesLeft} document ${
+              result.value.pagesLeft === 1 ? "page" : "pages"
+            } left in this month's allowance.`,
+          );
         } else {
           setError(result.error);
         }
@@ -105,6 +116,7 @@ export function ComplianceUploadForm({ companyId, jobs }: { companyId: string; j
         {isPending ? "Uploading & extracting…" : "Upload & extract"}
       </button>
       {error && <p className="text-sm text-red-400">{error}</p>}
+      {charged && <p className="text-sm text-ink-muted">{charged}</p>}
     </form>
   );
 }

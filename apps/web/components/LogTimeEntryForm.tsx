@@ -6,14 +6,14 @@ import { logTimeEntry } from "@/lib/actions";
 import {
   TimeEntryFields,
   type TimeEntryCraftOption,
-  type TimeEntryEmployeeOption,
   type TimeEntryLineItemOption,
+  type TimeEntryWorkerOption,
 } from "@/components/TimeEntryFields";
 
 export type {
   TimeEntryCraftOption,
-  TimeEntryEmployeeOption,
   TimeEntryLineItemOption,
+  TimeEntryWorkerOption,
 } from "@/components/TimeEntryFields";
 
 /**
@@ -48,26 +48,30 @@ export type {
  * `date` — one crew sheet is one day. Retyping it per entry is the
  * keystrokes, and a mistyped one is a WH-347 that does not foot.
  *
- * `employeeUserId` — kept not because the next entry is the same person (it
+ * `worker` — kept not because the next entry is the same person (it
  * usually is not) but because a reset put the select on the FIRST name in
  * the company every time, which is a wrong answer wearing a confident face.
  * What was last chosen is at least what is on screen. Neither behaviour
  * guards against logging the same person twice; `logTimeEntry` is what does
  * that, refusing an exact repeat within a few seconds.
  *
+ * It was called `employeeUserId` until the dropdown learned to offer crew
+ * members, who are not users. The name of the sticky field has to match the
+ * name of the control, or the sticky restore silently finds nothing.
+ *
  * Everything else — hours, pay type, cost code, craft, per diem, travel,
  * note — clears, because carrying an unseen 8 or a stale per diem into the
  * next person's entry is the error this cannot let happen quietly.
  */
-const STICKY_FIELDS = ["employeeUserId", "date"] as const;
+const STICKY_FIELDS = ["worker", "date"] as const;
 export function LogTimeEntryForm({
   jobId,
-  employees,
+  workers,
   lineItems,
   craftOptions,
 }: {
   jobId: string;
-  employees: TimeEntryEmployeeOption[];
+  workers: TimeEntryWorkerOption[];
   lineItems: TimeEntryLineItemOption[];
   craftOptions: TimeEntryCraftOption[];
 }) {
@@ -113,7 +117,7 @@ export function LogTimeEntryForm({
       className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface p-3"
     >
       <div className="flex flex-wrap items-end gap-2">
-        <TimeEntryFields employees={employees} lineItems={lineItems} craftOptions={craftOptions} />
+        <TimeEntryFields workers={workers} lineItems={lineItems} craftOptions={craftOptions} />
         <button
           type="submit"
           disabled={isPending}

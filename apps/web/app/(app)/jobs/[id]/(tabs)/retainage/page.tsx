@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageColumn } from "@prova/ui";
 import { RowActions, ConfirmDelete } from "@/components/RowActions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
@@ -8,6 +10,8 @@ import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { money } from "@/lib/money";
 import { updateJobRetainageTerms, createRetainageRelease, deleteRetainageRelease } from "@/lib/actions";
+import { ActionForm } from "@/components/ActionForm";
+import { PercentField } from "@/components/PercentField";
 
 const rowDeleteClass = "text-xs text-red-400 hover:underline";
 const rowCancelClass =
@@ -49,11 +53,25 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
       retainagePercent: true,
       substantialCompletionDate: true,
       contact: { select: { defaultRetainagePercent: true } },
+      // Read-only, for the percent field's money preview only. Same
+      // arithmetic as calculateLineItemWip.contractValue and the dashboard's
+      // jobValue — quantity x unitPrice over non-deleted lines — and it is
+      // not stored, not written and not part of the retainage computation
+      // another branch owns.
+      lineItems: {
+        where: { isDeleted: false },
+        select: { quantity: true, unitPrice: true },
+      },
       invoices: { select: { retainageWithheld: true } },
       retainageReleases: { orderBy: { releasedAt: "desc" } },
     },
   });
   if (!job) throw new Error("job disappeared between checks");
+
+  const contractValue = job.lineItems.reduce(
+    (sum, line) => sum + Number(line.quantity) * Number(line.unitPrice ?? 0),
+    0,
+  );
 
   const retainageSummary = calculateRetainageSummary({
     invoiceRetainageWithheld: job.invoices.map((invoice) => (invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null)),
@@ -61,29 +79,37 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
     substantialCompletionDate: job.substantialCompletionDate,
   });
 
+  // Nothing withheld on any invoice and no release logged: the three
+  // figures would all read $0.00 and "Log release" would offer to release
+  // money nobody is holding. Said once, in words, with the way to change it.
+  // Decided from the same summary the figures come from, so it cannot
+  // disagree with them.
+  const nothingYet = retainageSummary.totalWithheld === 0 && job.retainageReleases.length === 0;
+
   const timeZone = await viewerTimeZone();
   const updateJobRetainageTermsWithId = updateJobRetainageTerms.bind(null, job.id);
   const createRetainageReleaseWithId = createRetainageRelease.bind(null, job.id);
   const deleteRetainageReleaseWithId = (releaseId: string) => deleteRetainageRelease.bind(null, job.id, releaseId);
 
   return (
+    <PageColumn width="reading">
     <section>
       <h2 className="mb-1 text-lg font-semibold text-ink">Retainage</h2>
       <p className="mb-3 text-sm text-ink-muted">
-        Withheld amounts are snapshotted onto each invoice when it&rsquo;s created from the rate below — changing
-        the rate only affects invoices created after the change.
+        Each invoice keeps the retainage worked out when it was created, at the rate below. Changing the rate
+        only affects invoices you create after the change.
       </p>
 
-      <form action={updateJobRetainageTermsWithId} className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-line-card bg-surface p-3">
-        <label className="flex flex-col gap-1 text-xs text-ink-body">
-          Retainage %
-          <input
-            name="retainagePercent"
-            defaultValue={job.retainagePercent?.toString() ?? job.contact.defaultRetainagePercent?.toString() ?? ""}
-            placeholder="e.g. 10"
-            className="w-24 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-          />
-        </label>
+      <ActionForm action={updateJobRetainageTermsWithId} resetOnSuccess={false} className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-line-card bg-surface p-3">
+        {/* A `%` that stays put and a live money preview — `0.10` typed
+            meaning ten percent used to save as a tenth of one percent in
+            total silence. See components/PercentField.tsx. */}
+        <PercentField
+          name="retainagePercent"
+          label="Retainage"
+          defaultValue={job.retainagePercent?.toString() ?? job.contact.defaultRetainagePercent?.toString() ?? ""}
+          contractValue={contractValue}
+        />
         <label className="flex flex-col gap-1 text-xs text-ink-body">
           Expected substantial completion
           <input
@@ -96,8 +122,18 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
         <SubmitButton type="submit" className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700">
           Save
         </SubmitButton>
-      </form>
+      </ActionForm>
 
+      {nothingYet ? (
+        <p className="rounded-lg border border-line-card bg-surface p-4 text-sm text-ink-body" data-retainage-empty="">
+          Nothing withheld yet. Retainage comes off each invoice you create on the{" "}
+          <Link href={`/jobs/${job.id}/billing`} className="text-link hover:underline">
+            Billing tab
+          </Link>
+          , at the rate above.
+        </p>
+      ) : (
+      <>
       <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-line-card bg-surface p-4 sm:grid-cols-3">
         <div>
           <p className="text-xs text-ink-muted">Total withheld</p>
@@ -161,11 +197,13 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
         </ul>
       )}
 
-      <form action={createRetainageReleaseWithId} className="flex flex-wrap items-end gap-2 rounded-lg border border-line-card bg-surface p-3">
+      <ActionForm action={createRetainageReleaseWithId} className="flex flex-wrap items-end gap-2 rounded-lg border border-line-card bg-surface p-3">
         <label className="flex flex-col gap-1 text-xs text-ink-body">
           Amount released
           <input
             name="amount"
+            type="text"
+            inputMode="decimal"
             placeholder="Amount"
             required
             className="w-28 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
@@ -187,7 +225,10 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
         <SubmitButton type="submit" className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700">
           Log release
         </SubmitButton>
-      </form>
+      </ActionForm>
+      </>
+      )}
     </section>
+    </PageColumn>
   );
 }

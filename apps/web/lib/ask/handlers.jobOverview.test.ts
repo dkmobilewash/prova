@@ -104,6 +104,10 @@ vi.mock("@/lib/fringe-schedules-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/fringe-schedules-query")>()),
   loadFringeSchedulesByCraft: async () => new Map(),
 }));
+vi.mock("@/lib/employer-burden-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/employer-burden-query")>()),
+  loadEmployerBurdenRates: async () => [],
+}));
 vi.mock("@/lib/serverToday", () => ({ serverToday: () => "2026-09-18" }));
 vi.mock("@/lib/viewerToday", () => ({ viewerToday: async () => "2026-09-18", viewerTimeZone: async () => "UTC" }));
 

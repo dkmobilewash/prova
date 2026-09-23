@@ -2,6 +2,7 @@
 
 import {
   cloneElement,
+  isValidElement,
   useId,
   useRef,
   useState,
@@ -147,9 +148,38 @@ export function Hint({
         if (event.key === "Escape") hide();
       }}
     >
-      {cloneElement(children, {
-        "aria-describedby": [children.props["aria-describedby"], id].filter(Boolean).join(" "),
-      })}
+      {/* THE GUARD IS NOT DEFENSIVENESS — IT IS THE 2026-09-21 OUTAGE.
+          This line read `children.props[...]` unguarded, and a child
+          created by a SERVER component does not always arrive here as an
+          element. React's PRODUCTION Flight serializer defers any element
+          it reaches once the current row has passed 3,200 bytes into a row
+          of its own (`3200 < serializedSize` — twice, in
+          `react-server-dom-webpack-server.edge.production.js`) and writes
+          `"$L<id>"` in its place; the browser turns that back into a LAZY
+          (`createLazyChunkWrapper`, `…client.browser.production.js`), which
+          is `{ $$typeof, _payload, _init }` and has no `.props` at all.
+          React renders a lazy child perfectly well. Reading its props
+          throws, and this component is mounted by the app shell, so the
+          throw took every signed-in page down at once.
+
+          The byte count is why nobody saw it coming: the threshold does
+          not exist in the DEVELOPMENT build of the same file, so no amount
+          of `next dev` can produce it, and on production a few bytes of
+          ordinary data — one invoice moving "$0.00" to "$1,000.00" — moves
+          the row across the line.
+
+          `isValidElement` is false for a lazy, so the hint's text still
+          renders and the control still works; only the `aria-describedby`
+          wiring is lost, for a child this component cannot see into.
+          Losing it is never meant to happen: `hintClientOnly.test.ts`
+          fails the build if any file rendering <Hint> is not a client
+          component, which is what keeps a lazy child out of here. This
+          branch is the floor under that test, not a substitute for it. */}
+      {isValidElement<Described>(children)
+        ? cloneElement(children, {
+            "aria-describedby": [children.props["aria-describedby"], id].filter(Boolean).join(" "),
+          })
+        : children}
       <span
         id={id}
         role="tooltip"

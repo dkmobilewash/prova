@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Principal } from "@/lib/permissions";
-import { SYSTEM_PROMPT, forModel, offeredTools } from "./answer";
+import { SYSTEM_PROMPT, forModel, offeredTools, EXTRA_TOOLS } from "./answer";
 import { COMMANDS } from "./commands";
 import { KNOWN_GAPS, TOOLS } from "./tools";
 
@@ -130,7 +130,12 @@ describe("what the API is handed (issue #251)", () => {
     // read tools and commands must BOTH be present, in full.
     expect(TOOLS.length).toBeGreaterThan(0);
     expect(COMMANDS.length).toBeGreaterThan(0);
-    expect(offeredTools(OWNER)).toHaveLength(TOOLS.length + COMMANDS.length);
+    // Three registries now, not two: the calculator is neither a database
+    // read nor a command, so it has its own list. Pinned the same way — a
+    // third source that nobody adds to this sum is exactly how a tool ships
+    // offered to nobody, or offered twice.
+    expect(EXTRA_TOOLS.length).toBeGreaterThan(0);
+    expect(offeredTools(OWNER)).toHaveLength(TOOLS.length + COMMANDS.length + EXTRA_TOOLS.length);
   });
 
   it("projects a filtered principal's tools the same way", () => {

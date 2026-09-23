@@ -54,6 +54,7 @@ export function LaborHoursField({ crafts }: { crafts: CraftOption[] }) {
         Labor hrs
         <input
           name="laborHours"
+              type="text"
           value={hours}
           onChange={(event) => setHours(event.target.value)}
           placeholder="hrs"

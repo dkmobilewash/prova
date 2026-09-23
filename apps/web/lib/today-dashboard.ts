@@ -2,6 +2,7 @@ import { prisma } from "@prova/db";
 import { calculateJobWip, calculateLineItemWip, type WipJobResult } from "./wip";
 import { lineItemCostToDate, unassignedLaborCost } from "./labor-job-cost";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "./fringe-schedules-query";
+import { loadEmployerBurdenRates } from "./employer-burden-query";
 import { loadRetainageHeld } from "./retainage-query";
 import { calculatePaymentReliability, type PaymentReliability } from "./gc-reliability";
 import { arBalanceFor, daysPastDueFor, effectiveDueDateFor } from "./cash-flow";
@@ -29,6 +30,21 @@ export type OverdueInvoice = {
   number: number;
   amount: number;
   paid: number;
+  /**
+   * Retainage snapshotted on this invoice. Null means the contract has no
+   * retainage clause; 0 means it has one and this invoice withheld
+   * nothing. The two are different and must not be collapsed — see the
+   * field comment in billing.prisma.
+   *
+   * CARRIED BECAUSE `outstanding` IS NET OF IT AND THE OTHER TWO FIGURES
+   * ARE GROSS. Without this the receivables panel printed Invoiced
+   * $100,000 / Paid $85,000 / Outstanding $5,000 and had nothing on hand
+   * to caption the missing $10,000 with. `/cash-flow` reports the same
+   * subtraction and captions it (`ArAgingSummary.retainageExcluded`), and
+   * the `outstanding_invoices` Ask tool names it separately for exactly
+   * this reason; this tile was the one AR surface that could not.
+   */
+  retainageWithheld: number | null;
   outstanding: number;
   dueOn: string | null;
   /** True when the date came from the GC's payment terms rather than the
@@ -61,8 +77,16 @@ export type GcReliabilityRow = {
 };
 
 
-export async function loadTodayDashboard(companyId: string, now: Date) {
-  const [invoices, activeJobs, retainageHeld, contacts, fringeSchedulesByCraft] =
+/**
+ * @param asOf The READER'S calendar day, at UTC midnight —
+ * `viewerAsOf()` from lib/viewerToday.ts, not the current instant. It
+ * reaches `daysPastDueFor`, whose own note says why: an instant makes
+ * "overdue" depend on the time of day, and west of UTC an invoice due
+ * today starts reading as a day late every evening. The parameter was
+ * called `now` and /dashboard passed exactly that.
+ */
+export async function loadTodayDashboard(companyId: string, asOf: Date) {
+  const [invoices, activeJobs, retainageHeld, contacts, fringeSchedulesByCraft, employerBurdenRates] =
     await Promise.all([
     prisma.invoice.findMany({
       where: { job: { companyId } },
@@ -155,6 +179,7 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
       },
     }),
     loadFringeSchedulesByCraft(companyId),
+    loadEmployerBurdenRates(companyId),
   ]);
 
   /* -------------------------------------------------- receivables ---- */
@@ -169,15 +194,17 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
       // /cash-flow reports it as retainage receivable. Mirroring the rule
       // by hand is how this tile and that page disagreed about overdue
       // invoices twice already.
+      // Read once and passed on, rather than read here and re-read by the
+      // panel: the figure that was subtracted has to be the figure that is
+      // captioned, or the caption is its own second opinion.
+      const retainageWithheld =
+        invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null;
       return {
         invoice,
         amount,
         paid,
-        outstanding: arBalanceFor({
-          amount,
-          paidAmount: paid,
-          retainageWithheld: invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
-        }),
+        retainageWithheld,
+        outstanding: arBalanceFor({ amount, paidAmount: paid, retainageWithheld }),
       };
     })
     // A rounding cent should not appear as an unpaid invoice.
@@ -208,12 +235,13 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
       number: row.invoice.number,
       amount: row.amount,
       paid: row.paid,
+      retainageWithheld: row.retainageWithheld,
       outstanding: row.outstanding,
       dueOn: effectiveDue.toISOString().slice(0, 10),
       // Derived rather than stored, so the row says "due in 4 days" where
       // it used to say "no due date" for an invoice that was already late.
       dueIsDerived: row.invoice.dueAt === null,
-      daysOverdue: Math.max(0, daysPastDueFor(effectiveDue, now)),
+      daysOverdue: Math.max(0, daysPastDueFor(effectiveDue, asOf)),
     };
   });
 
@@ -233,14 +261,20 @@ export async function loadTodayDashboard(companyId: string, now: Date) {
           line.currentEstimatedUnitCost === null ? null : Number(line.currentEstimatedUnitCost),
         estimatedCostToComplete:
           line.estimatedCostToComplete === null ? null : Number(line.estimatedCostToComplete),
-        ...lineItemCostToDate(line.id, line.costEntries, job.timeEntries, fringeSchedulesByCraft),
+        ...lineItemCostToDate(
+          line.id,
+          line.costEntries,
+          job.timeEntries,
+          fringeSchedulesByCraft,
+          employerBurdenRates,
+        ),
       }),
     );
     const billed = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
     const wip = calculateJobWip(
       lineItems,
       billed,
-      unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft),
+      unassignedLaborCost(job.timeEntries, fringeSchedulesByCraft, employerBurdenRates),
     );
 
     // What share of this job's contract value sits on lines that actually

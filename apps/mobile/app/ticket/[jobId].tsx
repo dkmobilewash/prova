@@ -1,21 +1,26 @@
 import { useAuth } from "@clerk/expo";
 import { useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { DateField } from "@/components/DateField";
 import { Field } from "@/components/Field";
+import { JobContextChip } from "@/components/JobContextChip";
 import { List } from "@/components/List";
-import { RefusedBanner } from "@/components/RefusedBanner";
 import { Sheet } from "@/components/Sheet";
 import { SignaturePad } from "@/components/SignaturePad";
+import { SyncStatus } from "@/components/SyncStatus";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
-import { OfflineNote } from "@/components/OfflineNote";
 import { emptyFor } from "@/lib/empty-state";
 import { useT } from "@/lib/i18n";
-import { colors, typography } from "@/lib/theme";
+import { NotYourJobFunction } from "@/components/NotYourJobFunction";
+import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
+import { holds } from "@/lib/capabilities";
+import { useMe } from "@/lib/use-me";
+import { type Palette, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
 import { enqueue } from "@/lib/sync-queue";
@@ -32,6 +37,9 @@ function localToday(): string {
 
 export default function TicketScreen() {
   const { t } = useT();
+  const { me } = useMe();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [tickets, setTickets] = useState<TmTicket[]>([]);
@@ -83,12 +91,25 @@ export default function TicketScreen() {
     await sync();
   };
 
+  // The server refuses this route to anybody without the
+  // capability (see lib/screen-capabilities.ts, checked against the
+  // route itself in its test). Saying so beats a 403 rendering as
+  // an empty screen with no explanation.
+  if (!holds(me, SCREEN_CAPABILITY["ticket/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["ticket/[jobId]"]} />;
+
   return (
     <View style={styles.screen}>
-      {pending > 0 ? <Text style={styles.pending}>{t("common.pendingSync", { count: pending })}</Text> : null}
+      <View style={styles.chipWrap}>
+        <JobContextChip />
+      </View>
+      <SyncStatus
+        pending={pending}
+        state={offline}
+        refused={refused}
+        onDismiss={dismissRefused}
+        onRetry={retrySetAside}
+      />
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <OfflineNote state={offline} />
-      <RefusedBanner refused={refused} onDismiss={dismissRefused} onRetry={retrySetAside} />
       <List
         data={tickets}
         keyExtractor={(item) => item.id}
@@ -97,15 +118,20 @@ export default function TicketScreen() {
             <View style={styles.head}>
               <Text style={styles.date}>{item.workDate}</Text>
               <Text style={styles.signer}>
-                Signed: {item.signerName}
-                {item.hasSignature === false ? " (typed)" : ""}
+                {t("tickets.signed", { name: item.signerName })}
+                {item.hasSignature === false ? ` ${t("tickets.typed")}` : ""}
               </Text>
             </View>
             <Text style={styles.description}>{item.workDescription}</Text>
             {item.snapshot ? (
               <Text style={styles.summary}>
-                {item.snapshot.labor.length} labour entr{item.snapshot.labor.length === 1 ? "y" : "ies"} ·{" "}
-                {item.snapshot.materials.length} material{item.snapshot.materials.length === 1 ? "" : "s"}
+                {item.snapshot.labor.length === 1
+                  ? t("tickets.snapshot.labor.one")
+                  : t("tickets.snapshot.labor.many", { count: item.snapshot.labor.length })}
+                {" · "}
+                {item.snapshot.materials.length === 1
+                  ? t("tickets.snapshot.materials.one")
+                  : t("tickets.snapshot.materials.many", { count: item.snapshot.materials.length })}
               </Text>
             ) : null}
           </Card>
@@ -118,48 +144,50 @@ export default function TicketScreen() {
 
       <View style={styles.footer}>
         <Button fullWidth onPress={() => setShowForm(true)}>
-          New ticket
+          {t("tickets.new")}
         </Button>
       </View>
 
       <Sheet
         visible={showForm}
         onClose={() => setShowForm(false)}
-        title="New T&M ticket"
-        primaryLabel="Sign & save"
+        title={t("tickets.sheet.title")}
+        primaryLabel={t("tickets.sheet.save")}
         onPrimary={submit}
         primaryDisabled={!canSubmit}
       >
-        <DateField label="Date" value={workDate} onChange={setWorkDate} max={localToday()} />
+        <DateField label={t("common.date")} value={workDate} onChange={setWorkDate} max={localToday()} />
         <Field
-          label="What was done"
-          placeholder="Describe the extra work"
+          label={t("tickets.field.what")}
+          placeholder={t("tickets.field.whatHint")}
           value={workDescription}
           onChangeText={setWorkDescription}
           multiline
         />
         <Field
-          label="Client's name"
-          placeholder="Printed under their signature"
+          label={t("tickets.field.signer")}
+          placeholder={t("tickets.field.signerHint")}
           value={signerName}
           onChangeText={setSignerName}
         />
-        <Text style={styles.label}>Client&rsquo;s signature</Text>
+        <Text style={styles.label}>{t("tickets.field.signature")}</Text>
         <SignaturePad key={showForm ? "open" : "closed"} onChange={setSignaturePath} />
       </Sheet>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  pending: { color: colors.link, padding: 16, paddingBottom: 0, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  error: { color: colors.tagRoseInk, padding: 16, paddingBottom: 0, fontSize: typography.size.sm },
-  head: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  date: { color: colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-  signer: { color: colors.inkMuted, fontSize: typography.size.sm },
-  description: { color: colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
-  label: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  summary: { color: colors.inkMuted, fontSize: typography.size.sm, marginTop: 4 },
-  footer: { padding: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.lineRow },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    chipWrap: { padding: space.md, paddingBottom: 0 },
+    error: { color: p.colors.tagRoseInk, padding: space.md, paddingBottom: 0, fontSize: typography.size.sm },
+    head: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    date: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
+    signer: { color: p.colors.inkMuted, fontSize: typography.size.sm },
+    description: { color: p.colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
+    label: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    summary: { color: p.colors.inkMuted, fontSize: typography.size.sm, marginTop: 4 },
+    footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
+  });
+}
