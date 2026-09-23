@@ -2,41 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { ClerkProvider } from "@clerk/expo";
 import { Redirect, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import * as SecureStore from "expo-secure-store";
 import { StyleSheet, Text, View } from "react-native";
 import { apiBaseUrl, clerkPublishableKey, configProblem } from "@/lib/env";
 import { getHandover } from "@/lib/handover";
+import { tokenCache } from "@/lib/token-cache";
 import { leadingFor, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import { useQueueDrain } from "@/lib/use-queue-drain";
-
-
-
-// Clerk stores the session token on-device; SecureStore (Keychain/Keystore)
-// is the recommended cache for it on native. The storage key is namespaced
-// by the publishable key so a session from a DIFFERENT Clerk instance (e.g.
-// dev vs production) can never be read as this one's — switching instances
-// starts signed-out instead of hanging on a foreign, unvalidatable token.
-//
-// The separator must be SecureStore-safe: keys allow only alphanumerics,
-// '.', '-', and '_'. A ':' here threw "Invalid key provided to SecureStore"
-// and silently stalled Clerk init (isLoaded stayed false).
-const tokenCache = {
-  async getToken(key: string): Promise<string | null> {
-    try {
-      return await SecureStore.getItemAsync(`${publishableKey}_${key}`);
-    } catch {
-      return null;
-    }
-  },
-  async saveToken(key: string, value: string): Promise<void> {
-    try {
-      await SecureStore.setItemAsync(`${publishableKey}_${key}`, value);
-    } catch {
-      // best-effort — never block Clerk init on a cache write failure
-    }
-  },
-};
 
 /**
  * A handover survives a relaunch, and this is where that is enforced.
