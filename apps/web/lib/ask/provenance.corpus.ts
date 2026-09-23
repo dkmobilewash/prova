@@ -1,5 +1,7 @@
 import { money } from "@/lib/money";
 import { formatHours } from "@/lib/render-hours";
+import { toolResultContent } from "./answer";
+import { calculate, FigureLedger, type CalculationResult, type Operation } from "./calculator";
 
 /**
  * LEGITIMATE ANSWERS. Every number in every one of these came out of the
@@ -56,10 +58,28 @@ import { formatHours } from "@/lib/render-hours";
  */
 
 export type CorpusTool = {
+  /** The tool's own name, which is also the root of every path the
+   * calculator can address inside its result — `receivables.rows[0].
+   * outstanding`. Optional only because the single-tool entries written
+   * before composition never needed it; REQUIRED on any entry that goes on
+   * to calculate, and the test fails the build if one is missing. */
+  name?: string;
   /** Shaped from the handler that really returns it. */
   data: unknown;
   summary?: Record<string, number>;
 };
+
+/** A `calculate` call on top of this entry's tool results.
+ *
+ * REAL, not written out: the test builds a `FigureLedger` from the same
+ * content strings above and runs the actual `calculate` from
+ * `calculator.ts`, so the combined figure in the answer is whatever the
+ * shipping code produces and a path that has stopped resolving fails the
+ * build rather than quietly offering nothing. Composing is the case that
+ * makes this tool matter — two areas on the table is exactly when a model
+ * is tempted to add them — so a corpus of composed answers that never
+ * calculated would be missing the shape it exists to measure. */
+export type CorpusCalculation = { operation: Operation; figures: string };
 
 export type CorpusEntry = {
   id: string;
@@ -71,10 +91,56 @@ export type CorpusEntry = {
    * silently. */
   ownWords?: true;
   tools: CorpusTool[];
+  /** A combined figure, computed by the real calculator over the tools
+   * above. Composed entries only. */
+  calculate?: CorpusCalculation;
   answer: string;
   /** One line on what this entry is here to stress. */
   stresses: string;
+  /** Set on an entry that reads MORE THAN ONE tool and answers over all of
+   * them — the shape this guard had never been measured against, and the
+   * one most likely to trip it. Counted separately in the test, so the
+   * composed false-positive rate is a figure of its own rather than being
+   * averaged into the single-tool entries that were already passing. */
+  composed?: true;
 };
+
+/**
+ * The exact strings this turn's model would have been handed, built the way
+ * the executor builds them.
+ *
+ * It lives here rather than in the test because there are now two kinds of
+ * source and only one of them is a tool result. A `calculate` outcome
+ * reaches the model as `JSON.stringify(calculate(ledger, input))` —
+ * `answer.ts`'s executor, first branch — and the guard checks the answer
+ * against it like any other, which is the whole reason a composed answer
+ * may state a total at all.
+ */
+export function sourcesFor(entry: CorpusEntry): string[] {
+  const texts = entry.tools.map((tool) => toolResultContent(tool));
+  if (!entry.calculate) return texts;
+  const ledger = new FigureLedger();
+  entry.tools.forEach((tool, index) => {
+    // A missing name would silently register the figures under "undefined"
+    // and every path in the entry would miss, so it is an error rather than
+    // a default.
+    if (!tool.name) throw new Error(`${entry.id}: tool ${index} needs a name to be calculated over`);
+    ledger.record(tool.name, texts[index]);
+  });
+  return [...texts, JSON.stringify(calculate(ledger, entry.calculate))];
+}
+
+/** The calculator's own outcome for an entry, so the test can insist it
+ * COMPUTED rather than refused. A refusal is a legitimate outcome in
+ * production and a broken fixture here: it offers no figure, so the answer
+ * quoting one would be refused for the wrong reason. */
+export function calculationFor(entry: CorpusEntry): CalculationResult | { problem?: string; unavailable?: string } {
+  const ledger = new FigureLedger();
+  entry.tools.forEach((tool, index) => {
+    ledger.record(tool.name ?? `tool${index}`, toolResultContent(tool));
+  });
+  return calculate(ledger, entry.calculate ?? { operation: "sum", figures: "" }) as CalculationResult;
+}
 
 /** A floating-point sum of `Decimal(5,2)` hours, the exact value
  * `render-hours.ts` was written for: 7 + 7 + 7 + 7.1 + 7.2. */
@@ -740,6 +806,267 @@ export const PROVENANCE_CORPUS: CorpusEntry[] = [
     answer: `One — pay app 3 on Maple Street, ${money(7250.4)} held back since 2026-09-04 against a backcharge offset.`,
     stresses: "a money figure with one decimal in the payload and two on screen",
   },
+
+  /* ─────────────────────────────────────────────────────────────────────
+   * COMPOSED ANSWERS: several tools, one answer, figures from each.
+   *
+   * Everything above this line reads ONE tool. That is what the guard was
+   * measured against when it shipped, and it is not the shape that worries
+   * anyone: a composed answer names more figures, from more sources, in
+   * more formats, and it is the shape most likely to make a guard tuned on
+   * single-tool answers start refusing good work. A guard that refuses good
+   * answers is switched off within a week, so these entries — and the
+   * separate blocked count the test keeps for them — are the measurement
+   * this change is judged on.
+   *
+   * What they are chosen to stress, beyond what the single-tool entries
+   * already cover:
+   *
+   *   - the same figure kind arriving from two different tools in one
+   *     answer, where a naive matcher could credit the wrong source;
+   *   - a TOTAL the app does not hold, produced by the real calculator and
+   *     traceable only because its outcome is itself a tool text;
+   *   - areas that came back EMPTY, said together on one closing line —
+   *     the case where the answer names a thing and states no figure;
+   *   - a composed answer that still REFUSES half of what was asked,
+   *     because composing must not become a way of answering a gap from
+   *     whatever numbers happen to be on the table;
+   *   - a figure the PERSON typed ("the 15th") surviving beside four tools'
+   *     worth of figures.
+   * ───────────────────────────────────────────────────────────────────── */
+  {
+    id: "compose-job-rundown",
+    composed: true,
+    question: "how's Maple Street doing?",
+    tools: [
+      {
+        name: "job_overview",
+        data: {
+          job: "Maple Street",
+          status: "ACTIVE",
+          gc: "Turner",
+          contractValue: 412000,
+          billedToDate: 268400,
+          costToDate: 201300,
+          percentComplete: "61.2%",
+          openRfis: 3,
+          rfisPastResponseDate: 1,
+          openPunchItems: 14,
+          changeOrdersAwaitingGc: 2,
+        },
+      },
+      {
+        name: "receivables",
+        data: [
+          {
+            invoice: 8,
+            job: "Maple Street",
+            gc: "Turner",
+            amount: 86500,
+            paid: 0,
+            retainageWithheld: 0,
+            outstanding: 86500,
+            dueOn: "2026-08-12",
+            dueFromTerms: false,
+            daysOverdue: 42,
+          },
+        ],
+        summary: { outstandingInvoiceCount: 1, overdueInvoiceCount: 1, notYetDueInvoiceCount: 0 },
+      },
+    ],
+    answer: [
+      "Turner is 42 days late on the one invoice out.",
+      "",
+      `• Owed — ${money(86500)}, 42 days over`,
+      `• Billed — ${money(268400)} of ${money(412000)}, 61.2% complete`,
+      "• RFIs — 3 open, 1 past its answer date",
+      "• Punch — 14 open",
+    ].join("\n"),
+    stresses:
+      "the headline shape: one job, money from two different tools and field counts from a third, every figure from a different result",
+  },
+  {
+    id: "compose-attention-friday",
+    composed: true,
+    question: "what needs my attention on Riverside before Friday?",
+    tools: [
+      {
+        name: "open_rfis",
+        data: [{ rfi: 14, job: "Riverside Medical", subject: "Header detail at grid C", askedOf: "Turner", daysPastResponseDate: 6 }],
+        summary: { open: 1, pastResponseDate: 1 },
+      },
+      { name: "open_submittals", data: [], summary: { open: 0 } },
+      {
+        name: "open_punch_list",
+        data: [
+          { item: "Patch soffit at lobby", job: "Riverside Medical", dueOn: "2026-09-25", overdue: false },
+          { item: "Caulk head of wall, level 3", job: "Riverside Medical", dueOn: "2026-09-18", overdue: true },
+        ],
+        summary: { open: 9, overdue: 2 },
+      },
+      { name: "material_deliveries", data: [], summary: { outstanding: 0 } },
+    ],
+    answer: [
+      "Two things before Friday.",
+      "",
+      "• RFI 14 — 6 days past its answer date with Turner",
+      "• Punch — 9 open, 2 of them overdue",
+      "",
+      "Submittals and deliveries are clear.",
+    ].join("\n"),
+    stresses:
+      "two areas that came back EMPTY, named together on one closing line with no figure of their own, beside two that did not",
+  },
+  {
+    id: "compose-paid-this-month",
+    composed: true,
+    question: "are we going to get paid on Riverside this month?",
+    tools: [
+      {
+        name: "pay_application_status",
+        data: [
+          {
+            payApplication: 6,
+            job: "Riverside Medical",
+            gc: "Turner",
+            amount: 94200,
+            status: "AWAITING_APPROVAL",
+            daysSinceIssued: 11,
+          },
+        ],
+        summary: { applications: 1, awaitingApproval: 1, disputed: 0, awaitingApprovalTotal: 94200 },
+      },
+      {
+        name: "receivables",
+        data: [
+          {
+            invoice: 9,
+            job: "Riverside Medical",
+            gc: "Turner",
+            amount: 30000,
+            paid: 0,
+            retainageWithheld: 0,
+            outstanding: 30000,
+            dueOn: "2026-09-30",
+            dueFromTerms: false,
+            daysOverdue: 0,
+          },
+          {
+            invoice: 10,
+            job: "Riverside Medical",
+            gc: "Turner",
+            amount: 18400,
+            paid: 0,
+            retainageWithheld: 0,
+            outstanding: 18400,
+            dueOn: "2026-09-28",
+            dueFromTerms: true,
+            daysOverdue: 0,
+          },
+          {
+            invoice: 12,
+            job: "Cedar Park",
+            gc: "Halvorsen",
+            amount: 7200,
+            paid: 0,
+            retainageWithheld: 0,
+            outstanding: 7200,
+            dueOn: "2026-10-09",
+            dueFromTerms: false,
+            daysOverdue: 0,
+          },
+        ],
+        summary: { outstandingInvoiceCount: 3, overdueInvoiceCount: 0, notYetDueInvoiceCount: 3 },
+      },
+    ],
+    // TWO of the three rows — the Riverside ones. A subset is exactly what
+    // the calculator is for; naming all three would be the company-wide AR
+    // question and `CANONICAL` refuses it in favour of the figure the
+    // cash-flow page already owns.
+    calculate: {
+      operation: "sum",
+      figures: "receivables.rows[0].outstanding, receivables.rows[1].outstanding",
+    },
+    answer: [
+      `${money(48400)} is due on Riverside this month, none of it late.`,
+      "",
+      `• Invoices — ${money(30000)} and ${money(18400)}, both due before the 30th`,
+      `• Pay app 6 — ${money(94200)}, 11 days with Turner and not approved`,
+    ].join("\n"),
+    stresses:
+      "a TOTAL no tool returned, computed by the real calculator over a subset of rows and traceable only because its outcome is a tool text",
+  },
+  {
+    id: "compose-payroll-declined",
+    composed: true,
+    question: "do we have enough coming in to cover payroll on the 15th?",
+    tools: [
+      {
+        name: "cash_flow_forecast",
+        data: { month: "2026-10", rows: [{ gc: "Turner", expected: 214500, dueOn: "2026-10-15" }, { gc: "Halvorsen", expected: 18400, dueOn: "2026-10-28" }] },
+        summary: { expectedTotal: 232900, arOutstanding: 262900, overdueNow: 30000 },
+      },
+      {
+        name: "receivables",
+        data: [
+          {
+            invoice: 5,
+            job: "Maple Street",
+            gc: "Turner",
+            amount: 45000,
+            paid: 15000,
+            retainageWithheld: 0,
+            outstanding: 30000,
+            dueOn: "2026-07-31",
+            dueFromTerms: false,
+            daysOverdue: 42,
+          },
+        ],
+        summary: { outstandingInvoiceCount: 1, overdueInvoiceCount: 1, notYetDueInvoiceCount: 0 },
+      },
+    ],
+    answer: [
+      `${money(232900)} is due in next month, ${money(30000)} of it already 42 days over.`,
+      "",
+      "No bank balance and no payroll are recorded here, so I can't tell you whether that covers the 15th.",
+    ].join("\n"),
+    stresses:
+      "a composed answer that still REFUSES the half this app cannot answer, with two tools' figures on the table and the person's own 15th repeated back",
+  },
+  {
+    id: "compose-closeout",
+    composed: true,
+    question: "what is stopping us closing out Riverside?",
+    tools: [
+      {
+        name: "closeout_status",
+        data: [
+          { job: "Riverside Medical", requirement: "O&M manuals", submitted: false },
+          { job: "Riverside Medical", requirement: "Warranty letter", submitted: false },
+        ],
+        summary: { requirements: 7, outstanding: 2 },
+      },
+      {
+        name: "open_punch_list",
+        data: [{ item: "Touch up level 2 corridor", job: "Riverside Medical", dueOn: "2026-09-30", overdue: false }],
+        summary: { open: 5, overdue: 0 },
+      },
+      {
+        name: "retainage_held",
+        data: [{ job: "Riverside Medical", gc: "Turner", withheldToDate: 41200, releasedToDate: 0, stillHeld: 41200, substantialCompletionOn: "2026-08-14" }],
+        summary: { jobsHoldingRetainage: 1, companyWideStillHeld: 41200, jobsWithNoCompletionDate: 0 },
+      },
+    ],
+    answer: [
+      "Two closeout items and the punch list, and the retainage is what it is holding up.",
+      "",
+      "• Closeout — O&M manuals and the warranty letter not submitted",
+      "• Punch — 5 open, none overdue",
+      `• Retainage — ${money(41200)} held, collectable from 2026-08-14`,
+    ].join("\n"),
+    stresses:
+      "an area named with NO figure of its own beside two that have one, and a money figure whose company-wide twin sits in the same result",
+  },
 ];
 
 /**
@@ -750,7 +1077,7 @@ export const PROVENANCE_CORPUS: CorpusEntry[] = [
  * shrunk, and "the guard blocked none of them" is worth exactly nothing if
  * "them" quietly became six. Editing this number is a diff somebody reads.
  */
-export const CORPUS_ENTRIES = 43;
+export const CORPUS_ENTRIES = 48;
 
 /**
  * How many numeric CLAIMS the guard should find across the whole corpus —
@@ -767,4 +1094,42 @@ export const CORPUS_ENTRIES = 43;
  * the counter census does it. It moves only when somebody edits the corpus,
  * and then it moves in the same diff.
  */
-export const CORPUS_CLAIMS = 153;
+export const CORPUS_CLAIMS = 180;
+
+/**
+ * How many of those entries are COMPOSED — more than one tool, answered
+ * over all of them.
+ *
+ * Declared for the same reason as the total, and for one more that is
+ * specific to this change. The headline figure is "how many legitimate
+ * COMPOSED answers would the guard block", and a zero is worth nothing if
+ * the set it was measured over quietly became one entry, or none. The test
+ * derives the composed set from the `composed` flag and checks its size
+ * against this number, so a flag dropped in an edit fails the build instead
+ * of shrinking the denominator.
+ */
+export const COMPOSED_ENTRIES = 5;
+
+/**
+ * How many numeric claims the guard finds across the composed entries
+ * alone — the same size assertion as `CORPUS_CLAIMS`, narrowed to the set
+ * the composed false-positive rate is computed over.
+ *
+ * Both are needed, and the reason is the scar this file's test header
+ * quotes: a size assertion over the WHOLE corpus can stay green while the
+ * extractor stops finding anything in the five entries that matter, because
+ * 153 claims from 43 single-tool answers would drown five composed ones.
+ * Nothing is ever missing from a subset nobody counted separately.
+ */
+export const COMPOSED_CLAIMS = 27;
+
+/**
+ * How many entries are exempt from the verbatim-census check because they
+ * are the asker's own words — a follow-up, or a phrasing the hundred does
+ * not carry.
+ *
+ * It was a bare `- 4` in the test until composition added entries; a
+ * literal buried in an expression is a count that grows by one every time
+ * somebody finds a reason, which is how an exemption becomes the rule.
+ */
+export const CORPUS_OWN_WORDS = 4;
