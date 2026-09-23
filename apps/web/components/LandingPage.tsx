@@ -72,7 +72,10 @@ import { AskCanDo } from "@/components/landing/AskCanDo";
  * Ranked by what costs this buyer money, which is not the order a feature
  * list would fall into:
  *
- *   1. Hero (+ pay application summary in the right half)
+ *   1. Hero (+ THE ASK DEMO in the right half, 2026-09-23 — the scene
+ *      used to sit beside the assistant section's words at 6 below, and
+ *      the pay application summary used to sit here. The pay application
+ *      still has its own placement at 3.)
  *      — then the FACT TICKER, hugging the hero's foot: a continuously
  *        moving band of short verified statements about how the product
  *        is built (components/landing/FactTicker.tsx owns the list and
@@ -83,14 +86,15 @@ import { AskCanDo } from "@/components/landing/AskCanDo";
  *   4. Certified payroll
  *   5. Apprentice ratios
  *   6. Whether the job is making money
- *      — then ASK C STREAM, a twenty-second scene of the assistant raising
- *        an RFI and logging hours, beside the list of what else it can be
- *        told to do (components/landing/AskDemo.tsx, AskCanDo.tsx,
- *        askDemoScript.ts). Placed after the four document panels because
- *        it is the thing that WRITES those documents' inputs, and before
- *        the evidence section because the RFI it raises is that evidence.
- *        It is a ranked section in SECTIONS_IN_ORDER (app/page.test.ts)
- *        and inside a <Reveal>, so the derived reveal count includes it.
+ *      — then ASK C STREAM: the words and the list of what else the
+ *        assistant can be told to do (components/landing/AskCanDo.tsx,
+ *        askDemoScript.ts). The twenty-second SCENE that used to sit
+ *        beside them is in the hero now; this section keeps its place in
+ *        the running order because it is the thing that WRITES those
+ *        documents' inputs, and it comes before the evidence section
+ *        because the RFI it raises is that evidence. It is a ranked
+ *        section in SECTIONS_IN_ORDER (app/page.test.ts) and inside a
+ *        <Reveal>, so the derived reveal count includes it.
  *   7. Protecting yourself
  *   8. Everything else it does (the rail/tabs)
  *   9. Not generic construction software
@@ -348,82 +352,140 @@ export function LandingPage() {
           there immediately, at full size, not fade in.
 
           The right half used to be empty at desktop — the single most
-          visible thing wrong with this page. It now holds the pay
-          application summary, which is both the thing this buyer most
-          wants and the fastest possible proof that this is not generic
-          construction software. */}
-      {/* THE HEADLINE SPANS THE FULL WIDTH AND THE SPLIT HAPPENS BELOW IT,
-          and that is a measured decision rather than a stylistic one.
+          visible thing wrong with this page. It now holds THE ASK DEMO
+          (Cyrus, 2026-09-23): the assistant animation is the first thing
+          a visitor sees, sharing the first screen with the headline. It
+          was beside the assistant section's words further down; the pay
+          application summary that stood here is not replaced by a second
+          drawing, because it already has a placement of its own under
+          "Getting paid" below — this was its second, and the two were the
+          same panel twice. */}
+      {/* THE HEADLINE SPANS THE FULL WIDTH AND THE SPLIT HAPPENS BELOW IT.
+          THIS IS THE ONE PART OF THE MOVE THAT COULD NOT BE BUILT AS ASKED,
+          and the reason is a measured number rather than a preference.
 
-          The obvious way to fill the empty right half is a two-column hero
-          with the headline in the left column. Tried, measured, rejected:
-          at 1440 the container is 1088px inside its padding, so a 420px
-          panel column leaves the headline about 612px — and
-          "subcontractors." alone is wider than that at 96px. It wrapped to
-          six ragged lines and pushed past its own column. The only ways to
-          make it fit were to shrink the headline (the 96px is a spec this
-          page was tuned to) or to shrink the panel past the point a G703
-          is legible.
+          The ask was headline LEFT, demo RIGHT, in two columns. That needs
+          a headline column, and this headline cannot have one. Measured in
+          real Chromium on a production build, as the min-content width of
+          the <h1> — the widest thing in it that cannot be broken,
+          "subcontractors.":
+
+            1500 / 1280   824.3px   of an 1088px content box  (76%)
+            1024          791.3px   of a  960px content box  (82%)
+
+          The container is `max-w-6xl` less its padding, so 1088px is all
+          there will ever be. Leaving 824px for the headline leaves 264px
+          for a gap and a demo, and the demo is not a demo at 208px. Every
+          way out was already closed: the headline's clamp, leading and
+          tracking are measured specs the comment below refuses to trade
+          away, and the earlier attempt at this same layout (with a 420px
+          PANEL beside it) is recorded as six ragged lines pushing past
+          their own column.
 
           So the headline keeps the full 1088px and its three lines, and
-          the subhead, chips, CTAs and panel share the row underneath. The
-          right half is full either way, which was the actual problem. */}
-      <section className="flex min-h-[78svh] flex-col justify-center gap-8 py-10 sm:gap-10">
-        {/* THE FLOOR WAS 3rem AND IT MADE THE WHOLE PAGE WIDER THAN A
-            320px PHONE. Measured in real Chromium 2026-09-21, which is the
-            only thing that can see it — happy-dom does no layout:
+          the demo takes the right half of the row underneath — where the
+          pay application was. It is on the first screen beside the words,
+          which is what the decision was for; it is simply under the
+          headline rather than next to it. ON A PHONE IT IS FIRST, ABOVE
+          THE HEADLINE, exactly as asked: the three children are ordered
+          demo / headline / words below `lg`, and the <h1> stays FIRST IN
+          THE MARKUP so a screen reader meets the headline before a pause
+          button. */}
+      <section className="flex min-h-[78svh] flex-col justify-center py-10">
+        {/* The two cells of that row, plus the headline spanning both of
+            them at `lg`. `items-start`, NOT `items-center`, for the reason
+            below the next comment — and now for a second one: the demo's
+            height changes as it plays, and centring would turn that into a
+            hole above the words that moves with every frame.
 
-              device 320 -> window.innerWidth 342   (the page pans sideways)
-              device 360 -> window.innerWidth 360
-              device 375 -> window.innerWidth 375
+            `lg:gap-y-10` keeps the headline-to-row gap at the 40px it was
+            when the headline was a sibling of this grid rather than a cell
+            in it; `lg:gap-x-14` is the 56px between the two columns, which
+            #459 measured and pinned. */}
+        <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:gap-x-14 lg:gap-y-10">
+          {/* THE FLOOR WAS 3rem AND IT MADE THE WHOLE PAGE WIDER THAN A
+              320px PHONE. Measured in real Chromium 2026-09-21, which is the
+              only thing that can see it — happy-dom does no layout:
 
-            Isolated by hiding this element and watching 342 become 320,
-            not inferred. The cause is "subcontractors." — one unbreakable
-            word, 326px wide at 48px, in a 288px content box. A word that
-            cannot fit sets the page's MINIMUM CONTENT WIDTH, the browser
-            widens the layout viewport to hold it, and then
-            `scrollWidth === innerWidth` is true the whole time: the check
-            everybody writes for this passes while the page is 22px wider
-            than the phone. 320 CSS px is iPhone SE 1st gen and 5/5s, and —
-            the bigger audience — any iPhone with Display Zoom on.
+                device 320 -> window.innerWidth 342   (the page pans sideways)
+                device 360 -> window.innerWidth 360
+                device 375 -> window.innerWidth 375
 
-            2.5rem is the largest floor that fits: at 40px the word needs
-            288px in 288px. 2.75rem still needs 300. Nothing at or above
-            444px changes, because 9vw passes 40px there and the clamp has
-            not been on its floor since — the measured desktop scale the
-            comment below defends is untouched, and 96px at the top end
-            still is. `e2e/specs/public-layout.public.spec.ts` asserts the
-            layout viewport equals the device at 320 and 375, so this
-            cannot come back unnoticed. */}
-        {/* The clamp's upper end, the 1.03 leading and the -0.02em tracking
-            are MEASURED specs carried forward from the scale pass and are
-            not to be traded away for layout convenience. A `lg:` override
-            was tried here and silently dropped the desktop headline from
-            96px to 72px; the layout is sized to the type instead. */}
-        <h1 className="max-w-4xl text-[clamp(2.5rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink">
-          The job-site system for union specialty-trade subcontractors.
-        </h1>
-        {/* `items-start`, NOT `items-center`. The pay-application panel is
-            ~578px tall. When the left column was ~242px (subhead, chips,
-            buttons), centring the row split the difference and left a
-            207px hole between the headline and the subhead — read as "the
-            page looks empty" twice before anyone measured it. Top-aligning
-            put the subhead directly under the headline, where it belongs,
-            and moved the surplus to the BOTTOM: ~336px of bare background
-            under the Sign in button, beside the lower half of the panel,
-            which is where the founder pointed the third time.
+              Isolated by hiding this element and watching 342 become 320,
+              not inferred. The cause is "subcontractors." — one unbreakable
+              word, 326px wide at 48px, in a 288px content box. A word that
+              cannot fit sets the page's MINIMUM CONTENT WIDTH, the browser
+              widens the layout viewport to hold it, and then
+              `scrollWidth === innerWidth` is true the whole time: the check
+              everybody writes for this passes while the page is 22px wider
+              than the phone. 320 CSS px is iPhone SE 1st gen and 5/5s, and —
+              the bigger audience — any iPhone with Display Zoom on.
 
-            The fix for that is content, not alignment. The column now
-            carries the paperwork list (PAPERWORK above) under the buttons,
-            and the subhead and chips step up one size at `lg` where the
-            96px headline had left them undersized. Measured at 1440x900
-            after this change: the left column and the panel are within a
-            few tens of pixels of each other — see the changelog entry for
-            the numbers. Do not put `items-center` back, and do not close
-            the gap with padding: the column has to be the height it is
-            because of what is in it. */}
-        <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:gap-14">
-          <div className="flex min-w-0 flex-col gap-8">
+              2.5rem is the largest floor that fits: at 40px the word needs
+              288px in 288px. 2.75rem still needs 300. Nothing at or above
+              444px changes, because 9vw passes 40px there and the clamp has
+              not been on its floor since — the measured desktop scale the
+              comment below defends is untouched, and 96px at the top end
+              still is. `e2e/specs/public-layout.public.spec.ts` asserts the
+              layout viewport equals the device at 320 and 375, so this
+              cannot come back unnoticed.
+
+              THAT SENTENCE IS NO LONGER TRUE AND THE PAGE STILL OVERFLOWS
+              AT 320. Measured 2026-09-23 in real Chromium against a
+              production build, BEFORE and AFTER the Ask demo moved into
+              this hero — identical on both sides, so it is not the demo's:
+
+                320 device   scrollWidth 359   innerWidth 320
+                360 device   scrollWidth 360   innerWidth 360
+                375 device   scrollWidth 375   innerWidth 375
+
+              Isolated the documented way rather than inferred: hiding this
+              <h1> takes scrollWidth from 359 to 320, and hiding the demo
+              figure changes nothing. The <h1>'s min-content width at the
+              40px floor is 343.5px, not the 288px this paragraph claims, so
+              the word needs 343.5 in a 288px box and the page scrolls
+              sideways by 39px on a 320px screen.
+
+              NOT FIXED HERE — fixing it means touching the clamp, which is
+              the one thing the comment below refuses to trade for layout,
+              and it wants its own change with its own measurement. Recorded
+              because the old sentence is the one that stops the next person
+              looking. The e2e assertion quoted above is real and would
+              catch it (`expectFitsTheViewport` asserts scrollWidth <=
+              innerWidth at a 320 project), but ci.yml runs test, lint,
+              typecheck and build — not the public e2e suite — so nothing
+              automatic has been asking. */}
+          {/* The clamp's upper end, the 1.03 leading and the -0.02em tracking
+              are MEASURED specs carried forward from the scale pass and are
+              not to be traded away for layout convenience. A `lg:` override
+              was tried here and silently dropped the desktop headline from
+              96px to 72px; the layout is sized to the type instead. */}
+          <h1 className="order-2 max-w-4xl text-[clamp(2.5rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink lg:order-none lg:col-span-2">
+            The job-site system for union specialty-trade subcontractors.
+          </h1>
+          {/* THE WORDS. `items-start` on the grid above, NOT `items-center`,
+              and this is where that was learned. The cell beside this one
+              was ~578px tall (the pay application) while this column was
+              ~242px (subhead, chips, buttons), and centring the row split
+              the difference into a 207px hole between the headline and the
+              subhead — read as "the page looks empty" twice before anyone
+              measured it. Top-aligning put the subhead directly under the
+              headline, where it belongs, and moved the surplus to the
+              BOTTOM: ~336px of bare background under the Sign in button,
+              which is where the founder pointed the third time.
+
+              The fix for that is content, not alignment. The column carries
+              the paperwork list (PAPERWORK above) under the buttons, and
+              the subhead and chips step up one size at `lg` where the 96px
+              headline had left them undersized. Do not put `items-center`
+              back, and do not close the gap with padding: the column has to
+              be the height it is because of what is in it.
+
+              It is now ~578px against a demo whose tallest frame is taller
+              than that, which is why the cell below carries a reserve — see
+              its note. The column's height is load-bearing in a way it was
+              not when a still panel sat beside it. */}
+          <div className="order-3 flex min-w-0 flex-col gap-8 lg:order-none">
             <p className="max-w-2xl text-lg leading-relaxed text-ink-body sm:text-xl lg:text-2xl">
               The estimate, the contract, the crew&rsquo;s hours, certified payroll and the GC&rsquo;s
               pay application &mdash; all in one place, so the same numbers don&rsquo;t get typed in
@@ -468,14 +530,96 @@ export function LandingPage() {
               </ul>
             </div>
           </div>
-          {/* `data-landing-panel` is this file's own handle on a placement,
-              deliberately NOT an attribute reached for inside
-              components/landing/ — those components belong to another lane,
-              and a guard that asserts on markup it does not own breaks on
-              somebody else's refactor without saying anything useful. See
-              app/page.test.ts, which counts these. */}
-          <div data-landing-panel="pay-application" className="min-w-0">
-            <PayApplicationPanel />
+          {/* THE ASK DEMO'S CELL, and every class on it is a measured
+              number. Sampled every 100ms across a full loop of the scene
+              (26 steps, one clock wrap, ~260 samples per width) in real
+              Chromium against a production build — the only thing that can
+              see any of this, since happy-dom does no layout and returns
+              zeros from getBoundingClientRect.
+
+              `data-landing-demo` is this file's own handle on the
+              placement, the same reasoning `data-landing-panel` carries: a
+              guard should not assert on markup inside components/landing/,
+              which belongs to another lane. app/page.test.ts uses it to
+              hold the demo inside the hero.
+
+              `order-first lg:order-none`: below `lg` the demo comes FIRST,
+              above the headline — Cyrus's call, 2026-09-23. The markup
+              keeps the <h1> first (a screen reader meets the headline
+              before a pause button); only the visual order flips.
+
+              `lg:flex lg:justify-end`, NOT `lg:justify-self-end`: the
+              latter sizes a grid item to fit-content, so the cell resizes
+              with every frame and, pinned right, spends all of it on its
+              LEFT edge — 170.1px on this page, which is what #459 fixed in
+              the assistant section. A full-width flex cell keeps the figure
+              at the track's width on every frame. `lg:items-start` keeps
+              the figure its own height rather than stretching it to the row.
+
+              THE RESERVE IS THE POINT OF THIS NOTE. The demo's own height
+              swings 422px per loop (201.9 → 623.9 at `lg`), and it sets the
+              row unless something taller is beside it.
+
+              BELOW `lg` NOTHING IS: the demo is first and full width, so
+              the row IS the demo, and without a reserve the headline and
+              every section under it would jump that far on the first screen
+              of the marketing site. That is what the tiers below are for,
+              and they are what makes the headline's y constant at 375, 320
+              and 640.
+
+              AT `lg` THE RESERVE DOES NOT BIND, and this was measured
+              rather than assumed — the first draft of this comment claimed
+              it did, on a remembered "~578px" for the words column. The
+              words column is 691px at 1280 and 1500 and 769px at 1024, both
+              TALLER than the tallest frame (623.9), so the column sets the
+              row and the demo varies inside it. The margin is 67.1px at
+              1280 and up, 145.1px at 1024. `lg:min-h-[660px]` is kept as
+              insurance sized above the tallest frame: if the words column
+              is ever cut — an item off the paperwork list, a shorter
+              subhead — the row holds at 660 instead of starting to follow
+              the frame. The assistant section this demo came from has the
+              same shape and only 7.1px of margin, which is how thin this
+              can get without anyone noticing.
+
+              The tiers are the tallest frame at each figure width, because
+              a narrower figure wraps taller. Measured, with the headroom
+              each tier leaves:
+
+                750px   base, to 575     tallest 733.8 (figure 343.5)  16.2
+                620px   from 576         tallest 603.9 (figure 544)    16.1
+                660px   from `lg`        tallest 623.9 (figure 420)    36.1
+
+              `min-[576px]` rather than `sm`, because 576 is where the
+              figure reaches its 34rem cap and stops getting taller — not
+              640. The cell measures EXACTLY its min-height at every width
+              above, so each tier is what sets the cell's height rather than
+              the frame — and below `lg`, where the cell is alone in its
+              row, that is the row's height too.
+
+              WHY THERE IS NO NARROWER TIER BELOW 375, WHICH LOOKS LIKE AN
+              OVERSIGHT AND IS NOT. At 320 the content box is 288px, so the
+              figure should be 288 wide and 889.8 tall. It is 343.5 and
+              733.8 — because the <h1> in this same grid has a min-content
+              width of 343.5px at its 40px floor and widens the column to
+              hold it. (That overflow is the page's, not this cell's: the
+              320px note above the headline says the floor fits in 288 and
+              the measurement says it needs 343.5 — scrollWidth 359 against
+              an innerWidth of 320, unchanged by this change and present
+              before it.) SO: IF THAT OVERFLOW IS EVER FIXED, THE FIGURE
+              DROPS BACK TO 288 WIDE AND THIS BASE TIER IS 140px SHORT.
+              Re-measure with it. Same rule if the script gains a taller
+              frame: a reserve shorter than the frame is a wobble of exactly
+              the difference.
+
+              The price below `lg` is page background between a short frame
+              and the headline — the trade Cyrus made for the demo coming
+              first. `min-w-0` here and `w-full min-w-0 max-w-[34rem]` on the
+              figure are what stop any frame widening the page. */}
+          <div
+            data-landing-demo
+            className="order-first min-h-[750px] min-w-0 min-[576px]:min-h-[620px] lg:order-none lg:flex lg:min-h-[660px] lg:items-start lg:justify-end"
+          >
+            <AskDemo />
           </div>
         </div>
       </section>
@@ -620,21 +764,31 @@ export function LandingPage() {
       </Reveal>
 
       {/* ------------------------------------------------------ Ask C Stream
-          The assistant, shown rather than described. components/landing/
-          AskDemo.tsx plays a scripted scene of two real commands and
-          AskCanDo.tsx lists the rest; askDemoScript.ts owns every word and
-          holds it to lib/ask/commands.ts in its test. The scene is NOT a
-          `data-landing-panel`: it is prose to the page-wide statistic
-          guard, which is wanted, and it carries its own "Example" line
-          rather than the panels' figures-are-illustrative caption.
+          The assistant, described here and SHOWN IN THE HERO — the scene
+          moved up to the first screen on 2026-09-23 (Cyrus's call). What
+          is left here is the words and AskCanDo's list.
 
-          `items-start`, not `items-center`, for the hero's reason: the two
-          columns are different heights and centring one against the other
-          opens a gap under the heading that reads as an empty page. At
-          phone width the words come first and the scene last, the same
-          order CapabilitySection uses — the claim, then the evidence. */}
+          ONE COLUMN, not a two-column grid with an empty half. The demo
+          was the right-hand cell; a grid with nothing in that cell is the
+          defect this page was rebuilt to remove, so the words become a
+          column of their own at `max-w-3xl` — the reading measure the rest
+          of this page's prose uses.
+
+          NOT merged into the hero, and not deleted. The hero's words
+          column is already the taller of its two cells by a margin the
+          demo's reserve depends on, and this list would make the first
+          screen a wall of text; and the sentence that keeps the assistant
+          honest ("Nothing is saved until you tap") lives here, where
+          app/page.test.ts requires the section and its heading to stay in
+          the page's running order.
+
+          ONE LIST, still. AskCanDo (askDemoScript.ts CAN_DO) appears here
+          and nowhere else; the demo in the hero carries no list of its
+          own. components/landing/AskDemo.tsx holds the scene and
+          askDemoScript.ts owns every word of it, held to
+          lib/ask/commands.ts in its own test. */}
       <Reveal className={sectionSpace}>
-        <div className="grid items-start gap-8 lg:grid-cols-2 lg:gap-14">
+        <div className="max-w-3xl">
           <div className="min-w-0">
             <h2 className="text-3xl font-semibold leading-tight text-ink sm:text-4xl">
               Tell it what happened. Approve it with one tap.
@@ -646,41 +800,6 @@ export function LandingPage() {
               your account. Nothing is saved until you tap.
             </p>
             <AskCanDo className="mt-8 border-t border-line-card pt-6" />
-          </div>
-          {/* `lg:flex lg:justify-end`, NOT `lg:justify-self-end`: the latter
-              shrink-wraps the cell to each frame's content, so the demo's
-              left edge moved 170.1px every loop (750->920.1 at 1500,
-              448->618.1 at 1024) and its width breathed 373.9->544. At 1024
-              that fit-content cell also OVERFLOWED its 452px track by 36px:
-              elementFromPoint across that strip returned the figure, so the
-              scene painted over the column of words beside it. A full-width
-              flex cell keeps the figure at its own max width every frame,
-              pinned right — measured constant x and width across a full loop
-              at 1024, 1280, 1500 and 1920, with a constant 56px gap (the
-              `lg:gap-14`) to the words. `lg:items-start` keeps the figure its
-              own height rather than stretching it to the row.
-
-              NO `lg:min-h-[...]` HERE, AND THAT IS MEASURED RATHER THAN
-              FORGOTTEN. WwccaLanding.tsx reserves 620px because its demo is
-              the tallest thing in its row. On THIS page it is not: the left
-              column (heading, paragraph and AskCanDo's four groups) is taller
-              than the demo's tallest frame at every `lg` width, so the row
-              height never follows the frame and nothing below the section
-              moves — the next section's y held to a delta of 0.0px over a
-              full loop at both 1500 and 1024, before and after this change.
-              A reserve would bind on nothing.
-
-              The margin is 165.1px at 1024 (789px column, 623.9px frame) but
-              only 7.1px from 1280 up (625px column, 617.9px frame), where the
-              section is at its 1088px cap and the numbers stop changing. So
-              if AskCanDo loses an item or the heading loses a line, RE-MEASURE
-              before assuming this still holds: once the column drops under the
-              tallest frame the row starts following it and the reserve becomes
-              the fix. Under `lg` there is deliberately no reserve either — the
-              tallest frame is 733.8px at 375, and reserving that would strand
-              up to 522px of empty page under a short frame. */}
-          <div className="min-w-0 lg:flex lg:items-start lg:justify-end">
-            <AskDemo />
           </div>
         </div>
       </Reveal>
