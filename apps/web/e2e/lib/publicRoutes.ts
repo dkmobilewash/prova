@@ -64,6 +64,18 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
     pattern: "/pilot",
     mustShow: "Your whole job, in one place.",
   },
+  {
+    // components/associations/WwccaLanding.tsx — unlinked and noindex, but
+    // public: the association's committee opens it without an account, on
+    // whatever device, so it is walked at 320 and 375 like the landing page.
+    // The needle is the "We load your data for you" heading, below all four
+    // panels, rather than the hero headline — a page that died after its
+    // hero would otherwise still pass.
+    path: "/associations/wwcca",
+    label: "WWCCA member page",
+    pattern: "/associations/wwcca",
+    mustShow: "We load your data for you",
+  },
   // A section heading from the body of each, not the title in the header —
   // the shared PublicDocument chrome links to both pages by name from every
   // page, so "Privacy" and "Terms" are on screen whether or not the document
