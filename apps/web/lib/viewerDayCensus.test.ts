@@ -167,6 +167,11 @@ function tracked(root: string): string[] {
   return out
     .split("\n")
     .filter((line) => SOURCE_EXTENSIONS.some((ext) => line.endsWith(ext)))
+    // One line per MERGE STAGE otherwise: a conflicted file appears three
+    // times and this list stops equalling the walk, so the census reports
+    // a disagreement about the code when the only thing wrong is an
+    // unfinished merge. Same fix as numericInputCensus.
+    .filter((line, i, all) => all.indexOf(line) === i)
     .map((line) => join(REPO_ROOT, line))
     .sort();
 }

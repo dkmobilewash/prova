@@ -105,6 +105,13 @@ function sourcesByGit(): string[] {
   })
     .split("\n")
     .filter((p) => p && SOURCE.test(p) && !p.includes("node_modules/"))
+    // DEDUPED, and not for tidiness: during an unresolved merge `git
+    // ls-files --cached` prints a conflicted path ONCE PER STAGE — three
+    // lines for one file — so this list stopped equalling the walk and
+    // the census went red about a merge rather than about the code. A
+    // red that is really "you are mid-merge" is a red nobody believes
+    // the day it is real. errorBoundaryCoverage already does this.
+    .filter((p, i, all) => all.indexOf(p) === i)
     .sort();
 }
 
