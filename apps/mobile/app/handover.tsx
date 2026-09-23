@@ -1,12 +1,15 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { router, useFocusEffect } from "expo-router";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
 import { Field } from "@/components/Field";
+import { GroupedList } from "@/components/GroupedList";
+import { Icon } from "@/components/Icon";
 import { Sheet } from "@/components/Sheet";
 import { SignaturePad } from "@/components/SignaturePad";
-import { colors, typography } from "@/lib/theme";
+import { type Palette, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 import { endHandover, getHandover, pinAccepted, type Handover } from "@/lib/handover";
 import { uuid } from "@/lib/id";
 import { localToday } from "@/lib/local-today";
@@ -30,6 +33,8 @@ import { enqueue } from "@/lib/sync-queue";
  * new idea of who did what.
  */
 export default function HandoverScreen() {
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
   const [handover, setHandover] = useState<Handover | null>(null);
   const [hours, setHours] = useState("");
   const [note, setNote] = useState("");
@@ -104,12 +109,12 @@ export default function HandoverScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.header}>
+      <SafeAreaView edges={["top"]} style={styles.header}>
         <Text style={styles.who}>{handover.name}</Text>
         <Text style={styles.where}>
           {handover.jobName} · {today}
         </Text>
-      </View>
+      </SafeAreaView>
 
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.intro}>
@@ -117,37 +122,41 @@ export default function HandoverScreen() {
           phone is open while you have it.
         </Text>
 
-        <Card>
-          <Field
-            label="Hours worked today"
-            value={hours}
-            onChangeText={setHours}
-            keyboardType="decimal-pad"
-            placeholder="8"
-          />
-          <Field
-            label="Anything worth noting (optional)"
-            value={note}
-            onChangeText={setNote}
-            placeholder="Hung rock, level 3"
-          />
-          <Button fullWidth disabled={!canAdd} onPress={addHours}>
-            Add these hours
-          </Button>
-        </Card>
+        <GroupedList>
+          <View style={styles.entry}>
+            <Field
+              label="Hours worked today"
+              value={hours}
+              onChangeText={setHours}
+              keyboardType="decimal-pad"
+              placeholder="8"
+            />
+            <Field
+              label="Anything worth noting (optional)"
+              value={note}
+              onChangeText={setNote}
+              placeholder="Hung rock, level 3"
+            />
+            <Button fullWidth disabled={!canAdd} onPress={addHours}>
+              Add these hours
+            </Button>
+          </View>
+        </GroupedList>
 
         {saved.length > 0 ? (
-          <Card>
-            <Text style={styles.savedTitle}>On this phone, waiting to send</Text>
-            {saved.map((row, index) => (
-              <Text key={`${row.at}-${index}`} style={styles.savedRow}>
-                {row.hours} hours · {handover.name}
+          <GroupedList>
+            <View style={styles.saved}>
+              <Text style={styles.savedTitle}>On this phone, waiting to send</Text>
+              {saved.map((row, index) => (
+                <Text key={`${row.at}-${index}`} style={styles.savedRow}>
+                  {row.hours} hours · {handover.name}
+                </Text>
+              ))}
+              <Text style={styles.savedNote}>
+                Kept on the phone and sent when there is signal. Nothing is lost if there is none.
               </Text>
-            ))}
-            <Text style={styles.savedNote}>
-              Kept on the phone and sent when there is signal. Nothing is lost if there is none.
-            </Text>
-          </Card>
+            </View>
+          </GroupedList>
         ) : null}
 
         <Button fullWidth variant="secondary" onPress={() => setShowSign(true)} disabled={saved.length === 0}>
@@ -195,41 +204,47 @@ export default function HandoverScreen() {
             : "This ends your turn on the phone. Anything you have put in is kept and sent either way."}
         </Text>
         {handover.pin ? (
-          <Field
-            label="Foreman's PIN"
-            value={pin}
-            onChangeText={(text) => {
-              setPin(text);
-              setPinWrong(false);
-            }}
-            keyboardType="number-pad"
-            secureTextEntry
-            maxLength={4}
-            error={pinWrong ? "That is not the PIN this phone was handed over with." : undefined}
-          />
+          <>
+            <Icon name="keypad" size={22} color={palette.colors.inkMuted} />
+            <Field
+              label="Foreman's PIN"
+              value={pin}
+              onChangeText={(text) => {
+                setPin(text);
+                setPinWrong(false);
+              }}
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={4}
+              error={pinWrong ? "That is not the PIN this phone was handed over with." : undefined}
+            />
+          </>
         ) : null}
       </Sheet>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  header: {
-    backgroundColor: colors.rail,
-    paddingTop: 64,
-    paddingBottom: 16,
-    paddingHorizontal: 16,
-    gap: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.lineCard,
-  },
-  who: { color: colors.ink, fontSize: typography.size.xxl, fontWeight: typography.weight.bold },
-  where: { color: colors.inkBody, fontSize: typography.size.sm },
-  content: { padding: 16, gap: 12 },
-  intro: { color: colors.inkBody, fontSize: typography.size.sm, lineHeight: 20 },
-  savedTitle: { color: colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  savedRow: { color: colors.ink, fontSize: typography.size.md },
-  savedNote: { color: colors.inkMuted, fontSize: typography.size.xs },
-  signNote: { color: colors.inkBody, fontSize: typography.size.sm, lineHeight: 20 },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    header: {
+      backgroundColor: p.colors.rail,
+      paddingBottom: space.md,
+      paddingHorizontal: space.md,
+      gap: 4,
+      borderBottomWidth: 1,
+      borderBottomColor: p.colors.lineCard,
+    },
+    who: { color: p.colors.ink, fontSize: typography.size.xl2, fontWeight: typography.weight.bold },
+    where: { color: p.colors.inkBody, fontSize: typography.size.sm },
+    content: { padding: space.md, gap: space.sm, paddingBottom: space.xxl },
+    intro: { color: p.colors.inkBody, fontSize: typography.size.sm, lineHeight: 20 },
+    entry: { padding: space.md, gap: space.sm },
+    saved: { padding: space.md, gap: space.xxs },
+    savedTitle: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    savedRow: { color: p.colors.ink, fontSize: typography.size.md },
+    savedNote: { color: p.colors.inkMuted, fontSize: typography.size.xs },
+    signNote: { color: p.colors.inkBody, fontSize: typography.size.sm, lineHeight: 20 },
+  });
+}

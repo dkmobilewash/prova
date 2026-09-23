@@ -67,4 +67,26 @@ describe("the rails on a handed-over phone", () => {
     expect(closes).toBeGreaterThan(opens);
     expect(stack > opens && stack < closes, "the app's screens are not inside the handover gate").toBe(true);
   });
+
+  it("keeps the drain timer inside ClerkProvider, where it can read the session", () => {
+    // THE RED-SCREEN RAIL. The drain reads the session token through
+    // useAuth, and the handover move put the useQueueDrain() call in
+    // RootLayout itself — ABOVE the ClerkProvider it depends on — so every
+    // launch died with "useAuth can only be used within the ClerkProvider
+    // component" before anything drew. A typecheck cannot see it: the
+    // dependency is a runtime context, not a type.
+    //
+    // The call must live in a component that is RENDERED under the
+    // provider — and outside the handover gate, because the whole reason
+    // it left the tabs is that a crew member's hours must keep draining
+    // while the tabs are unmounted.
+    const [head, root] = layout.split("export default function RootLayout");
+    expect(head).toMatch(/function DrainTimer\(\)\s*\{[\s\S]*?useQueueDrain\(\)/);
+    expect(root).not.toMatch(/useQueueDrain\(\)/);
+    expect(root).toMatch(/<DrainTimer \/>/);
+    const drain = root.indexOf("<DrainTimer />");
+    const gate = root.indexOf("<HandoverGate>");
+    expect(drain, "the drain timer is not mounted at all").toBeGreaterThan(-1);
+    expect(drain < gate, "the drain timer is inside the handover gate, so it stops during a handover").toBe(true);
+  });
 });

@@ -1,9 +1,13 @@
 import { router } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
-import { colors, typography } from "@/lib/theme";
+import { useMemo } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { type Palette, radius, space, typography } from "@/lib/theme";
+import { usePalette } from "@/lib/use-palette";
 
 /**
- * The four sections of a working day, switchable in place.
+ * The four sections of a working day, switchable in place — drawn as an
+ * iOS segmented control: one contained track, the active segment the
+ * brand fill with its dark label (the one-yellow rule).
  *
  * Every section used to be a push from the job hub, so moving from photos
  * to the punch list meant back, read, tap — three gestures for something
@@ -26,57 +30,70 @@ const SECTIONS = [
 export type JobSection = (typeof SECTIONS)[number]["path"];
 
 export function JobSections({ jobId, active }: { jobId: string; active: JobSection }) {
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
+
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.bar}
-      // The strip is chrome: it should never take a drag that was meant
-      // for the list underneath it.
-      keyboardShouldPersistTaps="handled"
-    >
-      {SECTIONS.map((section) => {
-        const isActive = section.path === active;
-        return (
-          <Pressable
-            key={section.path}
-            onPress={() => {
-              if (!isActive) router.replace(`/${section.path}/${jobId}`);
-            }}
-            style={[styles.segment, isActive && styles.segmentActive]}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: isActive }}
-          >
-            <Text style={[styles.label, isActive && styles.labelActive]}>{section.label}</Text>
-          </Pressable>
-        );
-      })}
-    </ScrollView>
+    <View style={styles.chrome}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.track}
+        // The strip is chrome: it should never take a drag that was meant
+        // for the list underneath it.
+        keyboardShouldPersistTaps="handled"
+      >
+        {SECTIONS.map((section) => {
+          const isActive = section.path === active;
+          return (
+            <Pressable
+              key={section.path}
+              onPress={() => {
+                if (!isActive) router.replace(`/${section.path}/${jobId}`);
+              }}
+              style={[styles.segment, isActive && styles.segmentActive]}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
+            >
+              <Text style={[styles.label, isActive && styles.labelActive]}>{section.label}</Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  bar: {
-    flexDirection: "row",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: colors.rail,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.lineCard,
-  },
-  segment: {
-    minHeight: 44,
-    justifyContent: "center",
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.lineCard,
-    backgroundColor: colors.surface,
-  },
-  // The brand fill always carries the dark label — the one rule this
-  // palette makes easy to break.
-  segmentActive: { backgroundColor: colors.brand, borderColor: colors.brand },
-  label: { color: colors.inkBody, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-  labelActive: { color: colors.brandInk },
-});
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    chrome: {
+      backgroundColor: p.colors.rail,
+      borderBottomWidth: 1,
+      borderBottomColor: p.colors.lineCard,
+      paddingHorizontal: space.md,
+      paddingVertical: space.xs,
+    },
+    track: {
+      flexDirection: "row",
+      gap: 2,
+      borderRadius: radius.field,
+      borderWidth: 1,
+      borderColor: p.colors.lineCard,
+      backgroundColor: p.colors.surface,
+      padding: 2,
+      flexGrow: 0,
+    },
+    segment: {
+      minHeight: 44,
+      justifyContent: "center",
+      alignItems: "center",
+      paddingHorizontal: space.md,
+      borderRadius: radius.field - 2,
+    },
+    // The brand fill always carries the dark label — the one rule this
+    // palette makes easy to break.
+    segmentActive: { backgroundColor: p.colors.brand },
+    label: { color: p.colors.inkBody, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
+    labelActive: { color: p.colors.brandInk },
+  });
+}
