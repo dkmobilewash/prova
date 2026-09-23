@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { checkNumberProvenance, describeUnaccounted } from "./provenance";
-import { CORPUS_CLAIMS, CORPUS_ENTRIES, PROVENANCE_CORPUS, type CorpusEntry } from "./provenance.corpus";
-import { toolResultContent } from "./answer";
+import {
+  calculationFor,
+  COMPOSED_CLAIMS,
+  COMPOSED_ENTRIES,
+  CORPUS_CLAIMS,
+  CORPUS_ENTRIES,
+  CORPUS_OWN_WORDS,
+  PROVENANCE_CORPUS,
+  sourcesFor,
+  type CorpusEntry,
+} from "./provenance.corpus";
 import { TOP_QUESTIONS } from "./eval/top-questions";
 
 /**
@@ -44,10 +53,11 @@ import { TOP_QUESTIONS } from "./eval/top-questions";
  *    passing quietly.
  */
 
-/** The sources a turn offers, built the way the executor builds them. */
-function sourcesFor(entry: CorpusEntry): string[] {
-  return entry.tools.map((tool) => toolResultContent(tool));
-}
+/** Every composed entry: more than one tool, answered over all of them.
+ * DERIVED from the flag rather than listed here, and its size is checked
+ * against a declared literal below — a composed entry that loses its flag
+ * must fail the build, not quietly leave the measurement. */
+const COMPOSED = PROVENANCE_CORPUS.filter((entry) => entry.composed);
 
 function reportFor(entry: CorpusEntry) {
   return checkNumberProvenance(entry.answer, sourcesFor(entry), entry.question);
@@ -76,7 +86,7 @@ describe("the corpus itself", () => {
     for (const entry of borrowed) {
       expect(census.has(entry.question), `${entry.id}: "${entry.question}" is not in top-questions.ts`).toBe(true);
     }
-    expect(borrowed.length).toBe(CORPUS_ENTRIES - 4);
+    expect(borrowed.length).toBe(CORPUS_ENTRIES - CORPUS_OWN_WORDS);
   });
 
   it("explains what every entry is stressing", () => {
@@ -123,7 +133,58 @@ describe("the parse meant something", () => {
   });
 });
 
+describe("the composed entries", () => {
+  it("are the number somebody typed, and every one really reads several tools", () => {
+    // The denominator of the headline figure. Derived from the flag, pinned
+    // to a literal: "it blocked none of the composed answers" is worth
+    // nothing if "composed" quietly became one entry.
+    expect(COMPOSED).toHaveLength(COMPOSED_ENTRIES);
+    for (const entry of COMPOSED) {
+      expect(entry.tools.length, `${entry.id} is flagged composed and reads one tool`).toBeGreaterThan(1);
+    }
+  });
+
+  it("find the declared number of claims — the size assertion, narrowed", () => {
+    // CORPUS_CLAIMS cannot see this. 153 claims from 43 single-tool answers
+    // would stay green while the extractor found nothing at all in the five
+    // entries this change is judged on.
+    const claims = COMPOSED.reduce((total, entry) => total + reportFor(entry).checked, 0);
+    expect(claims).toBe(COMPOSED_CLAIMS);
+  });
+
+  it("really ran the calculator, and it COMPUTED rather than refused", () => {
+    // A composed entry that calculates is the one place a fixture can go
+    // wrong invisibly: a path that stopped resolving returns a `problem`
+    // with no figure in it, the answer's total then matches nothing, and
+    // the guard refuses it — which would read as a false positive when it
+    // is a broken fixture. So the outcome is required to be a computation.
+    const calculating = PROVENANCE_CORPUS.filter((entry) => entry.calculate);
+    expect(calculating.length, "no composed entry exercises the calculator").toBeGreaterThan(0);
+    for (const entry of calculating) {
+      const outcome = calculationFor(entry) as { result?: string; problem?: string; unavailable?: string };
+      expect(outcome.problem ?? outcome.unavailable, `${entry.id}: calculate refused`).toBeUndefined();
+      expect(outcome.result, `${entry.id}: calculate returned no figure`).toBeTruthy();
+      // And the answer must actually SAY it, or the entry is not stressing
+      // the thing it claims to stress.
+      expect(entry.answer, `${entry.id} never states the computed figure`).toContain(outcome.result);
+    }
+  });
+});
+
 describe("how many legitimate answers the guard would block", () => {
+  it("blocks none of the COMPOSED ones — the figure this change is judged on", () => {
+    // THE HEADLINE. A composed answer names more figures, from more
+    // sources, than anything the guard was measured against when it
+    // shipped. If composition makes it start refusing good answers the
+    // feature is worse than useless, because a person cannot tell a
+    // withheld answer from a broken one.
+    const blocked = COMPOSED.map((entry) => ({ entry, report: reportFor(entry) })).filter(({ report }) => !report.ok);
+    const detail = blocked
+      .map(({ entry, report }) => `${entry.id}: ${describeUnaccounted(report)} — ${entry.stresses}`)
+      .join("\n");
+    expect(blocked.length, `composed answers this guard would wrongly refuse:\n${detail}`).toBe(0);
+  });
+
   it("blocks none of them", () => {
     const blocked = PROVENANCE_CORPUS.map((entry) => ({ entry, report: reportFor(entry) })).filter(
       ({ report }) => !report.ok,
@@ -153,7 +214,16 @@ describe("how many legitimate answers the guard would block", () => {
         expect(report.offered, `${entry.id} invented values from digit-free sources`).toBe(0);
       } else {
         expect(report.offered, `${entry.id} offered nothing`).toBeGreaterThan(0);
-        expect(report.offered, `${entry.id} offered implausibly many values`).toBeLessThan(60);
+        // Per SOURCE, not per entry. The original bound was a flat 60 —
+        // "what a real tool result holds" — and a composed turn legitimately
+        // holds several tool results plus a calculator outcome, so a flat
+        // bound would have had to be raised to admit them and would then
+        // have stopped bounding anything. The rule is unchanged; only the
+        // denominator is stated properly.
+        expect(
+          report.offered,
+          `${entry.id} offered implausibly many values for ${sourcesFor(entry).length} sources`,
+        ).toBeLessThan(60 * Math.max(1, sourcesFor(entry).length));
       }
     }
   });
