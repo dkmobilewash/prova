@@ -168,7 +168,7 @@ describe("job tab widths", () => {
         /<PageColumn width="reading">/,
       );
     }
-    for (const tab of ["page.tsx", "billing/page.tsx", "estimate/page.tsx", "crew/page.tsx", "photos/page.tsx"]) {
+    for (const tab of ["page.tsx", "billing/page.tsx", "estimate/page.tsx", "crew/page.tsx", "photos/page.tsx", "takeoff/page.tsx"]) {
       expect(read(`./(tabs)/${tab}`), `${tab} should be working width`).not.toMatch(/PageColumn|max-w-3xl/);
     }
   });

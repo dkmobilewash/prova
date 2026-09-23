@@ -3,12 +3,28 @@
  *
  * WHAT THIS IS AND, MORE IMPORTANTLY, WHAT IT IS NOT
  *
- * It is NOT drawing measurement. There is no PDF canvas, no scale
- * calibration, no click-to-measure. Somebody measures — on paper, with a
- * wheel, in Bluebeam — and types the dimensions here. Pretending otherwise
- * would be the worst version of this feature: a measuring tool that is
+ * It is NOT drawing measurement. Somebody measures — on paper, with a wheel,
+ * in Bluebeam — and types the dimensions here.
+ *
+ * THIS PARAGRAPH SAID "there is no PDF canvas, no scale calibration, no
+ * click-to-measure" UNTIL 2026-09-23, AND THAT HALF IS NOW FALSE: the Takeoff
+ * tab does exactly that, and `lib/takeoff-plan.ts` is the module that turns
+ * what somebody traced into the primitives this file's recipes consume.
+ *
+ * The REST of what it said is why that took so long to build, and it stands
+ * unchanged as the bar the new module had to clear: "a measuring tool that is
  * slightly wrong is more dangerous than no measuring tool, because a number
- * that came off a screen gets trusted.
+ * that came off a screen gets trusted." So the scale is calibrated against a
+ * dimension printed on the drawing and read back in the estimator's own
+ * vocabulary before it is saved; the calibration line is stored so it can be
+ * redrawn over the sheet and disagreed with; no length, area or quantity is
+ * ever stored, only the geometry and the scale they are derived from; and a
+ * ring that crosses itself is refused rather than given a plausible number.
+ *
+ * THIS FILE IS STILL THE ARITHMETIC AND ONLY THE ARITHMETIC. It has no idea a
+ * canvas exists. The capture layer produces primitives and hands them here,
+ * which is the division `takeoff-recipes.ts` describes: the fuzzy part is
+ * confirmed by a person, the exact part cannot drift.
  *
  * What it does is the arithmetic between a measurement and a bid, which the
  * competitor research names directly as the missing leg —

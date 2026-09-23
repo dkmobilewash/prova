@@ -295,6 +295,12 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // own page.tsx doc comments for why a hard gate on those three would
   // claim a boundary their Server Actions do not enforce.
   "/jobs/[id]/photos": "MANAGE_FIELD",
+  // The measuring surface. VIEW_JOB_COSTS, because the quantities it
+  // produces are estimate line items and the Estimate tab beside it
+  // withholds on exactly that (issue #383). One capability on this page
+  // and no other: a second would make it ambiguous to the action guard
+  // suite and push every write behind it onto a known-open list.
+  "/jobs/[id]/takeoff": "VIEW_JOB_COSTS",
 };
 
 /**

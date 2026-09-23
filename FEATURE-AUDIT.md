@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**133 items audited — 106 built / 22 partial / 4 missing / 1 descoped**
+**134 items audited — 107 built / 22 partial / 4 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -101,7 +101,7 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 106 |
+| Built | 107 |
 | Partial | 22 |
 | Missing | 4 |
 | Descoped | 1 |
@@ -144,7 +144,7 @@ closing "we track the GC but not who to actually call."*
 | Built | Interaction log per contact (calls, emails, site visits, notes, optional follow-up) | `ContactInteraction` (`crm.prisma`) — dated, entered not stamped; follow-up date and follow-up owner are separate from who logged the entry. Not an evidence record (no counter, no locked fields): any team member can log/edit/delete one, same access as bid invitations. A due/overdue follow-up now surfaces in `/alerts` too — see Sheet 26 |
 | Built | Individual people at an account (name, title, email/phone, who to actually call) | `ContactPerson` (`crm.prisma`), nested under `Contact`. No stored "last contact" — derived at read time from `ContactInteraction.contactPersonId` (optional, `SET NULL` on delete so removing a person never blocks on their call history). `deleteContact`'s guard extended again to count people as account history |
 
-## 03. Estimating & Bidding — 10 built · 0 partial · 0 missing
+## 03. Estimating & Bidding — 11 built · 0 partial · 0 missing
 
 *Updated from the original audit (was 2 built / 1 partial / 5 missing) — the
 catalog, bid tracking, historical bid database, labor hours, and estimate
@@ -160,6 +160,7 @@ versioning all shipped same-day.*
 | Built | Union fringe/burden rate tables applied to labor cost estimates | `lib/estimate-labor-cost.ts` reuses the same `findEffectiveFringeRateSchedule`/`calculateTimeEntryLaborCost` the actuals use, at straight time, priced at the job's planned start date. Read-only hint beside the hours field — never written into `budgetedUnitCost`, and shows nothing rather than a wrong number when no schedule is effective |
 | Built | Bulk import of a price list into the catalog | Paste from a spreadsheet or upload a CSV; headers matched loosely so an existing price list needs no renaming. Preview shows what will be added, what is already in the catalog, and every row it couldn't read, before anything is written. Existing entries are never overwritten or duplicated |
 | Built | Catalog defaults learn from what jobs actually cost | `JobLineItem.sourceCatalogEntryId` records which template a line came from; `/catalog` reports actual unit cost against the default across every line created from it, flags variance past 15% on 2+ costed lines, and offers a one-click update. Template only — never touches a `JobLineItem`, snapshot or invoice that already exists |
+| Built | On-screen plan takeoff — measure a PDF and get estimate quantities | `/jobs/[id]/takeoff`. Upload a sheet, calibrate its scale against a dimension printed on it, then trace runs, outlines and counts; selected measurements become unpriced line items through the SAME `recipeLines` the typed form uses (`lib/takeoff-plan.ts`, pure, 35 tests). Renders with pdf.js on a canvas with an SVG overlay for the geometry, the pattern `JobMediaAnnotator` set. **Nothing derived is stored** — no feet, square-feet or feet-per-page-width column exists; every figure is recomputed from the traced points and the calibration on each read. Calibrations are APPEND-ONLY and each measurement points at the one it was drawn to, so correcting a scale moves no existing quantity by itself and re-scaling is an explicit act that shows each before/after figure. The scale is read back before saving — named against the standard architectural and engineering scales, with the sheet width in feet and the click-error band — because `lib/takeoff.ts` warns that a measuring tool slightly wrong is worse than none. A ring that crosses itself is refused rather than shoelaced into a plausible number; a quote per MSF has its analogue here in units that are never converted. Wall runs are summed into ONE wall input, since the `wall` recipe takes only the first. Ceilings stay on the typed form: a traced outline has an area, not a length and a width. Measurement only, deliberately — no markup, no sheet register, no revision compare (`NAV-IA-AUDIT.md`) |
 | Built | Estimate versioning as scope changes pre-award | `EstimateVersion` — manual JSON snapshot checkpoint, not automatic |
 | Built | Estimate-to-contract conversion (winning bid becomes the SOV) | `markJobContracted` — the same line items become the contract, by design |
 

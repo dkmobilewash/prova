@@ -51,6 +51,7 @@ export default async function JobTabsLayout({
   const tabs: JobSectionTab[] = [
     { href: `/jobs/${id}`, label: "Overview" },
     ...(showsJobMoney ? [{ href: `/jobs/${id}/estimate`, label: "Estimate" }] : []),
+    ...(showsJobMoney ? [{ href: `/jobs/${id}/takeoff`, label: "Takeoff" }] : []),
     { href: `/jobs/${id}/crew`, label: "Crew & time" },
     { href: `/jobs/${id}/compliance`, label: "Compliance" },
     ...(!isEstimateStage && showsBilling ? [{ href: `/jobs/${id}/billing`, label: "Billing" }] : []),

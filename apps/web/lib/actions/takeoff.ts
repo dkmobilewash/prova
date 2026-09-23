@@ -319,12 +319,11 @@ export async function recordTakeoffPlan(jobId: string, formData: FormData): Prom
 /** Removes a plan and everything traced on it. The blob itself is left alone:
  * a dangling file costs storage, and a delete that half-succeeded costs a
  * drawing somebody was working from. */
-export async function deleteTakeoffPlan(jobId: string, formData: FormData): Promise<ActionResult> {
+export async function deleteTakeoffPlan(jobId: string, planId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company } = context;
 
-  const planId = String(formData.get("planId") ?? "");
   const deleted = await prisma.takeoffPlan.deleteMany({ where: planScope(planId, jobId, company.id) });
   if (deleted.count === 0) return actionFail("That plan is no longer on this job. Reload the page.");
 
@@ -469,14 +468,13 @@ export async function saveTakeoffMeasurement(jobId: string, formData: FormData):
   return actionOk;
 }
 
-export async function deleteTakeoffMeasurement(jobId: string, formData: FormData): Promise<ActionResult> {
+export async function deleteTakeoffMeasurement(jobId: string, measurementId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company } = context;
 
-  const id = String(formData.get("measurementId") ?? "");
   const deleted = await prisma.takeoffMeasurement.deleteMany({
-    where: { id, page: { plan: { jobId, companyId: company.id } } },
+    where: { id: measurementId, page: { plan: { jobId, companyId: company.id } } },
   });
   if (deleted.count === 0) return actionFail("That measurement is already gone. Reload the page.");
 
