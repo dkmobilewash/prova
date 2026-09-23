@@ -1,5 +1,6 @@
 import { prisma } from "@prova/db";
 import { QuickBooksApiError, refreshTokens } from "@prova/integrations";
+import { openQuickBooksToken, sealQuickBooksToken } from "@/lib/quickbooks-token-storage";
 
 /**
  * A usable QuickBooks access token for one company, refreshing it when it is
@@ -20,7 +21,7 @@ export async function accessTokenFor(companyId: string) {
   if (!connection) return null;
 
   if (connection.accessTokenExpiresAt.getTime() - Date.now() >= 60_000) {
-    return { accessToken: connection.accessToken, realmId: connection.realmId };
+    return { accessToken: openQuickBooksToken(connection.accessToken), realmId: connection.realmId };
   }
 
   // A refresh that fails is not a transient error and no retry fixes it:
@@ -36,7 +37,7 @@ export async function accessTokenFor(companyId: string) {
   // page.
   let refreshed;
   try {
-    refreshed = await refreshTokens(connection.refreshToken);
+    refreshed = await refreshTokens(openQuickBooksToken(connection.refreshToken));
   } catch (error) {
     const detail =
       error instanceof QuickBooksApiError
@@ -52,8 +53,10 @@ export async function accessTokenFor(companyId: string) {
   await prisma.quickBooksConnection.update({
     where: { companyId },
     data: {
-      accessToken: refreshed.accessToken,
-      refreshToken: refreshed.refreshToken,
+      // Sealed on the way in (#353). A row written as plaintext before the
+      // seam existed becomes sealed here, on its first refresh.
+      accessToken: sealQuickBooksToken(refreshed.accessToken),
+      refreshToken: sealQuickBooksToken(refreshed.refreshToken),
       accessTokenExpiresAt: refreshed.accessTokenExpiresAt,
       refreshTokenExpiresAt: refreshed.refreshTokenExpiresAt,
       // A successful refresh clears it. Leaving a stale NEEDS_REAUTH on a

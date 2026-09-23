@@ -49,12 +49,6 @@ const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
  * a second one added to the same file later.
  */
 const KNOWN_EXCEPTIONS: Record<string, { sites: number; reason: string }> = {
-  "apps/web/components/QuickBooksMapping.tsx": {
-    sites: 1,
-    reason:
-      "BUG, Diego's integrations lane — GitHub issue #311. A refused mapping save resets the " +
-      "account picker. Remove this line when #311 is fixed.",
-  },
   "apps/web/components/JobDetailsForm.tsx": {
     sites: 1,
     reason:
@@ -234,8 +228,8 @@ describe("no client form submits through `action`", () => {
     expect(stale, "KNOWN_EXCEPTIONS no longer matches the code — update or remove the line").toEqual([]);
   });
 
-  it("keeps #311 on the list until it is fixed", () => {
-    expect(KNOWN_EXCEPTIONS["apps/web/components/QuickBooksMapping.tsx"]?.reason).toContain("#311");
+  it("no longer lists QuickBooksMapping — #311 is fixed and the scan covers it", () => {
+    expect(KNOWN_EXCEPTIONS["apps/web/components/QuickBooksMapping.tsx"]).toBeUndefined();
   });
 });
 

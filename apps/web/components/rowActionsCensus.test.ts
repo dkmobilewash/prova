@@ -378,9 +378,9 @@ describe("the armed-delete census", () => {
  * queue of checks that were green about a question nobody asked:
  *
  *   - a CLIENT component calling a destructive action from `onClick` or
- *     `onSubmit` rather than through a form action. That shape exists in this
- *     app today (`ChangeOrders.tsx`: remove-a-proposal and discard-a-draft),
- *     and it is deliberately out of this rule's reach rather than
+ *     `onSubmit` rather than through a form action. That shape existed in
+ *     this app (`ChangeOrders.tsx`: remove-a-proposal and discard-a-draft,
+ *     both converted under #258) and is deliberately out of this rule's reach rather than
  *     silently missed: including it would need an exception list of six
  *     actions whose bodies delete something incidentally (`restoreAlert`,
  *     `sendOutboundEmail`, the two QuickBooks pushes…), and an exception list
@@ -805,13 +805,11 @@ describe("the destructive-form census", () => {
    * Files allowed to call a removal with no confirm in them, each with the
    * reason. One entry, and it is a REPORTED GAP rather than an accepted one.
    */
-  const CALLBACK_EXCEPTIONS: Record<string, string> = {
-    "components/ChangeOrders.tsx":
-      "two real one-click destructives (remove-a-proposal, discard-a-draft) reached from " +
-      "onClick/onSubmit. Change orders are the other lane (WORK-SPLIT.md), so this is a " +
-      "GitHub issue for Diego rather than a drive-by edit in a 2000-line file — listed here " +
-      "so the rule stays armed for everybody else in the meantime.",
-  };
+  /* `ChangeOrders.tsx` was the one entry here — remove-a-proposal and
+     discard-a-draft, filed as #258 to the lane that owns the file — until
+     both became <ConfirmDelete> inside <RowActions>. Nothing is excepted
+     now, and the rule below reads every component. */
+  const CALLBACK_EXCEPTIONS: Record<string, string> = {};
 
   it("keeps a confirm in every component that calls a removal from a callback", () => {
     const offenders = tsxFiles(appDir)

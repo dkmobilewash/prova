@@ -218,6 +218,9 @@ function standingTermsFromForm(formData: FormData) {
   };
 }
 
+const NOT_INVITEABLE =
+  "That address can't be invited from here — it already has an account or a pending invitation. Ask them to sign in.";
+
 /** Invites a teammate by email. They join the OWNER's Company as a MEMBER
  * the next time they sign up with that email — see requireCompanyContext(). */
 export async function inviteTeamMember(formData: FormData): Promise<ActionResult> {
@@ -228,9 +231,16 @@ export async function inviteTeamMember(formData: FormData): Promise<ActionResult
   return runAction(async () => {
     const email = required(formData, "email", "Email").toLowerCase();
 
+    // ONE sentence for "already has an account" and "already invited"
+    // (#352 finding 3). The two used to differ, which let any owner learn
+    // whether an arbitrary address has a C Stream account by typing it here
+    // — an existence oracle, minor but free to close. The residual is
+    // stated rather than hidden: a FRESH address still succeeds where these
+    // two refuse, so the form still distinguishes "known to us" from "not";
+    // it just no longer says which kind of known.
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      return fail("Someone with that email already has an account");
+      return fail(NOT_INVITEABLE);
     }
 
     try {
@@ -242,7 +252,7 @@ export async function inviteTeamMember(formData: FormData): Promise<ActionResult
          guard written here never fired and a second invite to the same
          address 500'd instead of saying so. */
       if (isUniqueConstraintError(error)) {
-        return fail("That email has already been invited (here or elsewhere)");
+        return fail(NOT_INVITEABLE);
       }
       throw error;
     }

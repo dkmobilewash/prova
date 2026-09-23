@@ -18,6 +18,7 @@ import {
 } from "@/lib/contract-execution";
 import type { JobStatusValue } from "@/lib/job-status-transitions";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
+import { EXECUTED_CONTRACT_KEPT, executedContractIsKept } from "@/lib/billing/contract-document-rules";
 import { dateInputValue } from "@/lib/jobs/date-input";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
@@ -494,7 +495,14 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                         />
                       )}
                     </div>
-                    {currentUser.role === "OWNER" && (
+                    {/* #351: the executed subcontract on a contracted job is
+                        evidence, not a file — `deleteContractDocument` refuses
+                        it, so the control is replaced by the sentence. */}
+                    {executedContractIsKept(doc, job) ? (
+                      <span className="max-w-[16rem] shrink-0 text-right text-xs text-ink-muted">
+                        {EXECUTED_CONTRACT_KEPT}
+                      </span>
+                    ) : currentUser.role === "OWNER" && (
                       <RowActions
                         className="flex shrink-0 flex-col items-end gap-1"
                         destructive={
@@ -510,8 +518,8 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                             hint={
                               doc.executedSignedDate ? (
                                 <span className="max-w-[16rem] text-right text-amber-300">
-                                  This is the EXECUTED subcontract — the evidence that made this job billable.
-                                  Deleting it removes the file and the signed date.
+                                  This carries an executed date, but the job is still at estimate stage and
+                                  nothing has been built on it. Deleting it removes the file and the signed date.
                                 </span>
                               ) : (
                                 <span className="max-w-[16rem] text-right text-ink-muted">

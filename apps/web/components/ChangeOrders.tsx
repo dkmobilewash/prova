@@ -16,6 +16,7 @@ import {
   voidChangeOrder,
 } from "@/lib/actions";
 import { TRADE_SCOPE_OPTIONS } from "@/lib/trade-scopes";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 // `import type` on its own line, not `{ TRADE_SCOPE_OPTIONS, type ActionResult }`:
 // an inline `type` specifier still loads the module at runtime, and
 // actions/shared.ts imports prisma. A type-only IMPORT is erased.
@@ -464,6 +465,12 @@ function Correction({ changeOrder }: { changeOrder: ChangeOrderView }) {
   );
 }
 
+const proposalRemoveClass = "text-xs text-ink-muted hover:text-rose-600 disabled:opacity-50";
+const proposalCancelClass =
+  "rounded-md border border-line-card px-2 py-0.5 text-xs text-ink-label hover:border-slate-500 disabled:opacity-50";
+const proposalConfirmClass =
+  "rounded-md border border-rose-500 px-2 py-0.5 text-xs text-rose-500 hover:bg-rose-500/10 disabled:opacity-50";
+
 function ProposalRow({ proposal, canRemove }: { proposal: ProposalView; canRemove: boolean }) {
   const { isPending, error, run } = useActionRunner();
 
@@ -473,15 +480,30 @@ function ProposalRow({ proposal, canRemove }: { proposal: ProposalView; canRemov
         <span>
           <span className="text-ink-muted">{proposal.changeType.toLowerCase()}</span> {proposal.summary}
         </span>
+        {/* Two steps, not one (#258). This cluster is the last child of a
+            `justify-between` row, so its right edge is pinned and the LAST
+            control keeps its pixel: `pinned="end"` puts Cancel there and the
+            confirm clear of a hurried second click (CLAUDE.md's rule, and
+            the component handles phone widths itself). */}
         {canRemove && (
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={() => run(() => removeProposal(proposal.id))}
-            className="text-xs text-ink-muted hover:text-rose-600 disabled:opacity-50"
-          >
-            {isPending ? "removing…" : "remove"}
-          </button>
+          <RowActions
+            as="span"
+            className="flex shrink-0 items-center gap-2"
+            destructive={
+              <ConfirmDelete
+                pinned="end"
+                label="remove"
+                confirmLabel="Confirm remove"
+                describe="Takes this proposal off the draft. The line item it named is untouched; nothing has gone to the GC."
+                pendingLabel="removing…"
+                pending={isPending}
+                onConfirm={() => run(() => removeProposal(proposal.id))}
+                deleteClassName={proposalRemoveClass}
+                cancelClassName={proposalCancelClass}
+                confirmClassName={proposalConfirmClass}
+              />
+            }
+          />
         )}
       </div>
       {error && <p className="text-xs text-tag-rose-ink">{error}</p>}
@@ -516,21 +538,29 @@ function DraftActions({ changeOrder, today }: { changeOrder: ChangeOrderView } &
         </button>
         {submit.error && <p className="w-full text-xs text-tag-rose-ink">{submit.error}</p>}
       </form>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          discard.run(() => deleteChangeOrderDraft(changeOrder.id));
-        }}
-      >
-        <button
-          type="submit"
-          disabled={discard.isPending}
-          className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {discard.isPending ? "Discarding…" : "Discard draft"}
-        </button>
-        {discard.error && <p className="mt-1 text-xs text-tag-rose-ink">{discard.error}</p>}
-      </form>
+      {/* Two steps (#258): a draft with proposals on it is an afternoon's
+          work, and this button sat one click from "Send to GC" with no
+          confirm. The cluster is left-aligned, so the default order puts
+          Cancel first, on the pixel the button vacated. */}
+      <div className="flex flex-col gap-1">
+        <RowActions
+          className="flex flex-wrap items-center gap-2"
+          destructive={
+            <ConfirmDelete
+              label="Discard"
+              confirmLabel="Confirm discard"
+              pendingLabel="Discarding…"
+              pending={discard.isPending}
+              onConfirm={() => discard.run(() => deleteChangeOrderDraft(changeOrder.id))}
+              describe="Deletes this draft change order and every proposal on it. Nothing has been sent to the GC, so nothing else moves."
+              deleteClassName="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+              cancelClassName="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-800 disabled:opacity-50"
+              confirmClassName="rounded-md border border-rose-500 px-3 py-2 text-sm text-rose-500 hover:bg-rose-500/10 disabled:opacity-50"
+            />
+          }
+        />
+        {discard.error && <p className="text-xs text-tag-rose-ink">{discard.error}</p>}
+      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { exchangeCodeForTokens } from "@prova/integrations";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
+import { sealQuickBooksToken } from "@/lib/quickbooks-token-storage";
 import { QUICKBOOKS_OAUTH_STATE_COOKIE, type QuickBooksOAuthCookiePayload } from "@/lib/quickbooks-constants";
 
 function settingsRedirect(request: NextRequest, status: "connected" | "error", detail?: string) {
@@ -143,16 +144,18 @@ export async function GET(request: NextRequest) {
       create: {
         companyId: context.company.id,
         realmId,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
+        // Sealed at rest like every other integration's (#353 finding 4);
+        // lib/quickbooks-token-storage.ts is the only way in or out.
+        accessToken: sealQuickBooksToken(tokens.accessToken),
+        refreshToken: sealQuickBooksToken(tokens.refreshToken),
         accessTokenExpiresAt: tokens.accessTokenExpiresAt,
         refreshTokenExpiresAt: tokens.refreshTokenExpiresAt,
         connectedByUserId: context.id,
       },
       update: {
         realmId,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
+        accessToken: sealQuickBooksToken(tokens.accessToken),
+        refreshToken: sealQuickBooksToken(tokens.refreshToken),
         accessTokenExpiresAt: tokens.accessTokenExpiresAt,
         refreshTokenExpiresAt: tokens.refreshTokenExpiresAt,
         connectedByUserId: context.id,

@@ -85,8 +85,17 @@ export function QuickBooksMapping({ mappings }: { mappings: MappingRow[] }) {
                   {mapped ? mapped.qboAccountName : "Not mapped"}
                 </p>
               ) : (
+                /* onSubmit, not `action={fn}` (#311): React 19 resets a form
+                   before a form ACTION runs, unconditionally — so a refused
+                   save wiped the account the person had just picked and left
+                   them redoing it beside the error. An onSubmit handler
+                   reads the fields and resets nothing; `formActionCensus`
+                   holds the shape for every client component. */
                 <form
-                  action={(formData) => save(purpose.value, formData)}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    save(purpose.value, new FormData(event.currentTarget));
+                  }}
                   className="flex flex-wrap items-center gap-2"
                 >
                   <input type="hidden" name="purpose" value={purpose.value} />

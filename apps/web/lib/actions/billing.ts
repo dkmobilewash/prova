@@ -44,6 +44,8 @@ import {
   runAction,
   type ActionResultWith,
 } from "./shared";
+import { openQuickBooksToken, sealQuickBooksToken } from "@/lib/quickbooks-token-storage";
+import { EXECUTED_CONTRACT_KEPT, executedContractIsKept } from "@/lib/billing/contract-document-rules";
 
 /**
  * The refusals, in the house voice (lib/actions/payrollRegister.ts): the
@@ -802,6 +804,16 @@ export async function logPayment(jobId: string, invoiceId: string, formData: For
 export async function deletePayment(jobId: string, paymentId: string) {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_BILLING")) throw new Error(BILLING_ONLY);
+  // Owner-only, and the page hides the control from everyone else (#351).
+  // A recorded payment is money the books say arrived; un-recording it moves
+  // cash collected and the invoice balance with no trace, and a pushed
+  // payment then drifts against QuickBooks silently — reconcile compares
+  // invoices only. Same order as deleteContractDocument: capability first,
+  // then owner, so the check survives a third role. Throw-style on purpose:
+  // this is a bound <form action>, so a returned result has nowhere to
+  // render — which is exactly why the control is withheld rather than
+  // refused after the click.
+  assertOwner(context, "Only the account owner can remove a recorded payment");
   const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
@@ -863,6 +875,11 @@ export async function createRetainageRelease(jobId: string, formData: FormData):
 export async function deleteRetainageRelease(jobId: string, releaseId: string) {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_BILLING")) throw new Error(BILLING_ONLY);
+  // Owner-only for the same reason as deletePayment (#351): a release is a
+  // record of money the GC let go of, and both aggregates on the retainage
+  // tab move when it disappears. The page withholds the control from
+  // non-owners; this is the server's half.
+  assertOwner(context, "Only the account owner can remove a retainage release");
   const { company } = context;
   await assertJobInCompany(jobId, company.id);
 
@@ -893,7 +910,7 @@ export async function disconnectQuickBooks() {
   }
 
   try {
-    await revokeToken(connection.refreshToken);
+    await revokeToken(openQuickBooksToken(connection.refreshToken));
   } catch {
     // Already revoked, expired, or a transient network error — either way,
     // proceed to remove our record.
@@ -920,15 +937,15 @@ export async function testQuickBooksConnection(): Promise<QuickBooksCompanyInfo>
     throw new Error("QuickBooks is not connected");
   }
 
-  let accessToken = connection.accessToken;
+  let accessToken = openQuickBooksToken(connection.accessToken);
 
   if (connection.accessTokenExpiresAt.getTime() - Date.now() < 60_000) {
-    const refreshed = await refreshTokens(connection.refreshToken);
+    const refreshed = await refreshTokens(openQuickBooksToken(connection.refreshToken));
     await prisma.quickBooksConnection.update({
       where: { companyId: company.id },
       data: {
-        accessToken: refreshed.accessToken,
-        refreshToken: refreshed.refreshToken,
+        accessToken: sealQuickBooksToken(refreshed.accessToken),
+        refreshToken: sealQuickBooksToken(refreshed.refreshToken),
         accessTokenExpiresAt: refreshed.accessTokenExpiresAt,
         refreshTokenExpiresAt: refreshed.refreshTokenExpiresAt,
       },
@@ -1156,6 +1173,21 @@ export async function deleteContractDocument(contractDocumentId: string) {
   });
   if (!document || document.job.companyId !== company.id) {
     throw new Error("Contract document not found");
+  }
+
+  // CLAUDE.md's evidence-record rule, applied to the one document it was
+  // written for (#351): sent correspondence can close but never delete. A
+  // document carrying an executed-signed date on a job that has LEFT the
+  // estimate stage is the evidence `markJobContracted` accepted — the thing
+  // that made every invoice, pay application and change order on this job
+  // legitimate. Deleting it destroys the blob too, and nothing can put it
+  // back. A job still at ESTIMATE keeps the delete, because an executed
+  // date typed on the wrong file is a mistake that should stay cheap to
+  // undo, and nothing has been built on it yet. The page hides the control
+  // in the same case, so this refusal is the server's half of a rule the
+  // person never meets as a digest.
+  if (executedContractIsKept(document, document.job)) {
+    throw new Error(EXECUTED_CONTRACT_KEPT);
   }
 
   await prisma.contractDocument.delete({ where: { id: contractDocumentId } });

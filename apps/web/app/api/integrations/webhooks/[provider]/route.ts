@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@prova/db";
 import type { IntegrationProvider } from "@prova/db";
+import { shouldRecordWebhook } from "@/lib/integrations/webhook-throttle";
 
 /**
  * Generic inbound webhook receiver.
@@ -47,7 +48,13 @@ export const dynamic = "force-dynamic";
  * accepted here as well would keep an unverified second door open for the
  * one provider that now has a verified one — so /webhooks/docusign 404s.
  */
-const PROVIDERS = ["SANDBOX", "QUICKBOOKS", "PROCORE", "MYCOI"] as const;
+/*
+ * SANDBOX IS NOT HERE EITHER (#353 finding 3). Its connection's
+ * externalAccountId is the constant "sandbox-000" for every company, so
+ * "the payload has to name a real account" bounded nothing for it — and no
+ * real system ever posts to a sandbox. It 404s like an unknown provider.
+ */
+const PROVIDERS = ["QUICKBOOKS", "PROCORE", "MYCOI"] as const;
 
 function asProvider(value: string): IntegrationProvider | null {
   const upper = value.toUpperCase();
@@ -126,6 +133,20 @@ export async function POST(
   }
 
   const occurredAt = new Date();
+
+  // At most one breadcrumb per connection per window (#353 finding 3).
+  // Without this, anyone holding the URL and one account id could grow the
+  // log table at whatever rate they could POST; with it, the table grows by
+  // one row a minute per connection at most, and the row an operator reads
+  // — "the provider did reach us" — is the same either way.
+  const last = await prisma.integrationSyncLog.findFirst({
+    where: { connectionId: connection.id, direction: "WEBHOOK_RECEIVED" },
+    orderBy: { occurredAt: "desc" },
+    select: { occurredAt: true },
+  });
+  if (!shouldRecordWebhook(last?.occurredAt ?? null, occurredAt)) {
+    return NextResponse.json({ received: true });
+  }
 
   // ONLY the log row. This handler is unauthenticated, and it used to also
   // stamp `lastSyncedAt` / `lastSyncStatus: "SUCCESS"` on the connection —

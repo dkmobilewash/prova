@@ -171,6 +171,9 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
                 <span className="text-ink-label">{money(Number(release.amount))}</span>
                 {release.note && <span className="text-xs text-ink-muted">— {release.note}</span>}
               </div>
+              {/* Owner-only (#351), for the reason the action gives; withheld
+                  here so nobody meets the refusal as a digest. */}
+              {principal.role === "OWNER" && (
               <RowActions
                 className="flex shrink-0 flex-col items-end gap-1"
                 destructive={
@@ -192,6 +195,7 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
                   />
                 }
               />
+              )}
             </li>
           ))}
         </ul>

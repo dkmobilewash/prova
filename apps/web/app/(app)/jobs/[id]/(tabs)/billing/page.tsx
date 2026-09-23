@@ -217,10 +217,17 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                             </span>
                           )}
                           <span className="text-ink">{money(Number(payment.amount))}</span>
+                          {/* Owner-only (#351): `deletePayment` asserts it and would
+                              answer a non-owner with a redacted digest, so the
+                              control is withheld rather than refused after the
+                              click — the same split the catalog page documents.
+                              The QuickBooks push inside stays visible to every
+                              MANAGE_BILLING holder, as before. */}
                           <RowActions
                             as="span"
                             className="flex shrink-0 items-center justify-end gap-2"
                             destructive={
+                              principal.role === "OWNER" ? (
                               <ConfirmDelete
                                 pinned="end"
                                 action={deletePayment.bind(null, job.id, payment.id)}
@@ -237,6 +244,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                                   </span>
                                 }
                               />
+                              ) : null
                             }
                           >
                             <PushPaymentToQuickBooks

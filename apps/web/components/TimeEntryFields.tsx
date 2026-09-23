@@ -122,9 +122,16 @@ export function TimeEntryFields({
 
       <label className={labelClass}>
         Hours
+        {/* "hrs", not "8" (#305): a digit in the placeholder sat where a value
+            sits, at nearly the same weight, and read as already filled in — so
+            an empty submit's only feedback was the browser's transient
+            "fill out this field" bubble, and a click-through reported a silent
+            payroll failure that was not one. NOT fixed by defaulting to 8: a
+            pre-filled 8 logs eight hours for anyone who forgets, straight onto
+            a WH-347. Empty and required is the right behaviour. */}
         <input
           name="hours"
-          placeholder="8"
+          placeholder="hrs"
           required
           defaultValue={defaults?.hours ?? ""}
           className={`w-20 ${fieldClass}`}
