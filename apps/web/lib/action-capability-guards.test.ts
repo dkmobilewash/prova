@@ -548,7 +548,12 @@ const OPEN_BEHIND_AN_ALREADY_GUARDED_PAGE: Record<string, Capability> = {
   "compliance.deleteInsurancePolicy": "MANAGE_COMPLIANCE",
   "compliance.createBond": "MANAGE_COMPLIANCE",
   "compliance.deleteBond": "MANAGE_COMPLIANCE",
-  "compliance.uploadComplianceDocument": "MANAGE_COMPLIANCE",
+  // `compliance.uploadComplianceDocument` was here until 2026-09-22 and the
+  // debt is paid. It is the one action in this module that SPENDS — a whole
+  // document through the model against the company's paid monthly
+  // allowance — so leaving the endpoint open was a money leak rather than a
+  // filing-permission question, and gating one of this module's nine is
+  // justified where gating one of six for tidiness would not be.
   "compliance.updateComplianceDocument": "MANAGE_COMPLIANCE",
   "compliance.deleteComplianceDocument": "MANAGE_COMPLIANCE",
   "compliance.markComplianceDocumentReceived": "MANAGE_COMPLIANCE",
@@ -1441,6 +1446,12 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // and this suite found it by the walk on the day it was added, which is
   // the behaviour the file is for.
   company: () => import("./actions/company"),
+  // Only `uploadComplianceDocument` — the other eight actions in this
+  // module are still recorded in OPEN_BEHIND_AN_ALREADY_GUARDED_PAGE. It is
+  // the one that spends the company's paid AI allowance, so its refusal is
+  // EXECUTED here as every job function that lacks MANAGE_COMPLIANCE, and
+  // the control case proves the people who hold it still get through.
+  compliance: () => import("./actions/compliance"),
   // The Jobber import's three actions: reachable only from
   // /settings/integrations, so they assert its MANAGE_COMPLIANCE before
   // the owner check and before anything is read.
