@@ -400,6 +400,7 @@ model CraftClassification {
   fringeRateSchedules       FringeRateSchedule[]
   jobLineItems              JobLineItem[]
   catalogEntries            LineItemCatalogEntry[]
+  wallTypeComponents        WallTypeComponent[]
   timeEntries               TimeEntry[]
   dispatchSlips             DispatchSlip[]
   apprenticeshipEnrollments ApprenticeshipEnrollment[]

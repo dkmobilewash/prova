@@ -52,6 +52,7 @@ export const notYetRegistered: Exclusion[] = [
   { action: "backcharges.*", reason: MONEY },
   { action: "closeoutSubmissions.*", reason: "Counter-numbered closeout packages go to a GC; phase 3 once retries are safe." },
   { action: "proposals.*", reason: "Bid proposals are a scope + price + exclusions document built from a job's estimate; clauses are edited where the document is shown. Never a command." },
+  { action: "wallTypes.*", reason: "Wall types are the company's partition schedule and a job's wall runs are measurements off the drawings; both are entered where the schedule and the runs are shown, and every run write regenerates estimate lines. Never a command." },
   { action: "quickbooks.*", reason: ADMIN },
   { action: "integrations.*", reason: ADMIN },
   // company.* was here. createContact became `add_contact`

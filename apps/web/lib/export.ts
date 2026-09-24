@@ -235,6 +235,33 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: byCompany,
   },
   {
+    key: "wallTypes",
+    model: "wallType",
+    label: "Wall types",
+    note: "Your partition schedule — each wall type by its tag from the drawings.",
+    columns: ["id", "code", "name", "defaultHeightFt", "sides", "studSpacingIn", "notes", "sortOrder", "createdAt", "updatedAt"],
+    scope: byCompany,
+  },
+  {
+    key: "wallTypeComponents",
+    model: "wallTypeComponent",
+    label: "Wall type parts",
+    note: "What each wall type is built from, and how each part is counted.",
+    columns: [
+      "id", "wallTypeId", "description", "unit", "basis", "factor", "wastePercent", "roundUp",
+      "catalogEntryId", "productionRate", "craftClassificationId", "sortOrder", "createdAt", "updatedAt",
+    ],
+    scope: (companyId: string) => ({ wallType: { companyId } }),
+  },
+  {
+    key: "wallRuns",
+    model: "wallRun",
+    label: "Wall runs",
+    note: "Each run of wall measured on a job — type, length, height, openings.",
+    columns: ["id", "jobId", "wallTypeId", "label", "lengthFt", "heightFt", "openings", "sortOrder", "createdAt", "updatedAt"],
+    scope: byCompany,
+  },
+  {
     key: "rfis",
     model: "rfi",
     label: "RFIs",
