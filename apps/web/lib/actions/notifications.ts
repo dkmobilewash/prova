@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { requireCompanyContext } from "@/lib/auth";
 import { dispatchAlertDigest } from "@/lib/notification-dispatch";
+import { dispatchAlertPush } from "@/lib/notification-push";
 import { viewerToday } from "@/lib/viewerToday";
 import {
   actionFail as fail,
@@ -81,6 +82,14 @@ export async function sendMyAlertDigest(): Promise<ActionResult> {
     },
     today,
     await originFromRequest(),
+  );
+
+  // The push half is independent of the email outcome: its own claim
+  // namespace, its own config. Fire-and-forget — this button's result
+  // keeps speaking for the email, and the push outcome lands in the log.
+  void dispatchAlertPush(
+    { id: user.id, companyId: company.id, role: user.role, jobFunction: user.jobFunction },
+    today,
   );
 
   revalidatePath("/alerts");

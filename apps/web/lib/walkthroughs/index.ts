@@ -25,6 +25,8 @@ import { jobDetailFieldReportsWalkthrough } from "./job-detail-field-reports";
 import { jobDetailPhotosWalkthrough } from "./job-detail-photos";
 import { newJobWalkthrough } from "./jobs-new";
 import { pipelineWalkthrough } from "./pipeline";
+import { proposalsWalkthrough } from "./proposals";
+import { wallTypesWalkthrough } from "./wall-types";
 import { punchListsWalkthrough } from "./punch-lists";
 import { scheduleWalkthrough } from "./schedule";
 import { settingsImportWalkthrough } from "./settings-import";
@@ -65,6 +67,8 @@ export const WALKTHROUGHS: Walkthrough[] = [
   jobDetailPhotosWalkthrough,
   scheduleWalkthrough,
   pipelineWalkthrough,
+  proposalsWalkthrough,
+  wallTypesWalkthrough,
   contactsWalkthrough,
   punchListsWalkthrough,
   fieldReportsWalkthrough,

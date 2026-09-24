@@ -163,9 +163,27 @@ model LineItemCatalogEntry {
   /// actually costed. Never a live link back into those rows.
   jobLineItems JobLineItem[]
 
-  /// What vendors have quoted for this item. Read-only reference for
-  /// estimating — a quote never writes a price back into this template,
-  /// and nothing here is summed into a job. Cyrus, Sheet 19.
+  /// Wall-type components priced from this entry. A template link only.
+  wallTypeComponents WallTypeComponent[]
+
+  /// What vendors have quoted for this item. Reference data for pricing,
+  /// in the same family as this entry's own defaults. Cyrus, Sheet 19.
+  ///
+  /// NOTHING HERE IS EVER SUMMED INTO A JOB, and that half of this comment is
+  /// permanent: a quote is what a vendor said something costs on a date, and
+  /// job cost lives on `CostEntry` against a `JobLineItem`. Two paths to a
+  /// job's money is the anti-pattern ARCHITECTURE.md exists to prevent.
+  ///
+  /// AMENDED 2026-09-22. This line used to read "a quote never writes a price
+  /// back into this template", which was too absolute in one direction and is
+  /// why the other half of the feature went unbuilt for weeks. `/vendors/pricing`
+  /// has always ended its own warning with "updating the catalog is a decision
+  /// about your own pricing, and it belongs on the catalog" — a link to a
+  /// button that did not exist. It exists now
+  /// (`priceCatalogEntryFromQuotes`): owner-only, one click, the figure
+  /// re-derived server-side from the cheapest LIVE quote in this entry's own
+  /// unit, and never across units. What stays true is the part that was always
+  /// the point: nothing automatic moves a price, and no quote reaches a job.
   priceQuotes VendorPriceQuote[]
 
   createdAt DateTime @default(now())

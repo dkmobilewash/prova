@@ -1,4 +1,5 @@
 import type { DispatchOutcome } from "@/lib/notification-dispatch";
+import type { PushOutcome } from "@/lib/notification-push";
 
 /**
  * The semantics of ONE unattended run: who is mailed, in what order, and
@@ -44,12 +45,39 @@ export type RunRecipient = {
 
 /** What happened to one person. No email address in here: the run report
  * goes into a log and a cron response, and neither is a place to put a
- * list of everyone's address. The user id is enough to look one up. */
-export type RecipientOutcome =
-  | { userId: string; result: "sent"; noticeCount: number }
-  | { userId: string; result: "nothing-due" }
-  | { userId: string; result: "already-claimed" }
-  | { userId: string; result: "failed"; error: string };
+ * list of everyone's address. The user id is enough to look one up.
+ * `push` carries the phone half, when a push dispatcher was supplied. */
+export type PushStatus =
+  | "sent"
+  | "skipped"
+  | "nothing-due"
+  | "already-claimed"
+  | "failed"
+  | "unconfigured";
+
+/** The status nouns carry hyphens; the counter object cannot. One mapping
+ * so the report's keys stay plain while the outcomes stay readable. */
+function toCounterKey(
+  status: PushStatus,
+): "sent" | "skipped" | "nothingDue" | "alreadyClaimed" | "failed" | "unconfigured" {
+  return status === "nothing-due"
+    ? "nothingDue"
+    : status === "already-claimed"
+      ? "alreadyClaimed"
+      : status;
+}
+
+export type RecipientOutcome = {
+  userId: string;
+  result: "sent" | "nothing-due" | "already-claimed" | "failed";
+  /** Present on a sent email digest. */
+  noticeCount?: number;
+  /** Present on a failed email dispatch. */
+  error?: string;
+  /** The push half, recorded independently of the email half. Absent when
+   * the run was given no push dispatcher. */
+  push?: PushStatus;
+};
 
 /** Why a run stopped before reaching everybody. `null` means it didn't. */
 export type RunStop = "email-not-configured" | "time-budget";
@@ -68,6 +96,16 @@ export type RunReport = {
    * skipped person gets no email at all today. */
   notAttempted: number;
   stopped: RunStop | null;
+  /** The push half's own tally, so the log can say what each channel did.
+   * All zeros when the run was given no push dispatcher. */
+  push: {
+    sent: number;
+    skipped: number;
+    nothingDue: number;
+    alreadyClaimed: number;
+    failed: number;
+    unconfigured: number;
+  };
   outcomes: RecipientOutcome[];
 };
 
@@ -178,16 +216,30 @@ export function configuredBaseUrl(raw: string | undefined | null): string | null
 export async function runDigests(options: {
   recipients: RunRecipient[];
   dispatch: (recipient: RunRecipient) => Promise<DispatchOutcome>;
+  /** The push half. Optional: a run with no push dispatcher behaves
+   * byte-identically to the email-only runs of old. When supplied it runs
+   * FIRST for each person, so an unconfigured EMAIL provider can never
+   * starve the push of the person in flight — and a push outcome, of any
+   * kind, never stops the run. */
+  pushDispatch?: (recipient: RunRecipient) => Promise<PushOutcome>;
   /** Injected so the budget is testable without waiting for it. */
   now?: () => number;
   budgetMs?: number;
 }): Promise<RunReport> {
-  const { recipients, dispatch } = options;
+  const { recipients, dispatch, pushDispatch } = options;
   const now = options.now ?? (() => Date.now());
   const budgetMs = options.budgetMs ?? DEFAULT_RUN_BUDGET_MS;
   const startedAt = now();
 
   const outcomes: RecipientOutcome[] = [];
+  const push = {
+    sent: 0,
+    skipped: 0,
+    nothingDue: 0,
+    alreadyClaimed: 0,
+    failed: 0,
+    unconfigured: 0,
+  };
   let stopped: RunStop | null = null;
 
   for (const recipient of recipients) {
@@ -198,6 +250,34 @@ export async function runDigests(options: {
       break;
     }
 
+    let pushStatus: PushStatus | undefined;
+
+    if (pushDispatch) {
+      let pushOutcome: PushOutcome | undefined;
+      try {
+        pushOutcome = await pushDispatch(recipient);
+      } catch {
+        // A thrown push dispatch is that person's push outcome and nothing
+        // more — the same no-one-ends-the-run rule the email half obeys.
+        pushOutcome = undefined;
+      }
+
+      if (!pushOutcome) {
+        pushStatus = "failed";
+      } else if (!pushOutcome.ok) {
+        pushStatus =
+          "unconfigured" in pushOutcome && pushOutcome.unconfigured
+            ? "unconfigured"
+            : "failed";
+      } else if (pushOutcome.sent) {
+        pushStatus = "sent";
+      } else {
+        pushStatus =
+          pushOutcome.reason === "no-devices" ? "skipped" : pushOutcome.reason;
+      }
+      push[toCounterKey(pushStatus)] += 1;
+    }
+
     let outcome: DispatchOutcome;
     try {
       outcome = await dispatch(recipient);
@@ -206,6 +286,7 @@ export async function runDigests(options: {
         userId: recipient.id,
         result: "failed",
         error: error instanceof Error ? error.message : String(error),
+        push: pushStatus,
       });
       continue;
     }
@@ -215,6 +296,7 @@ export async function runDigests(options: {
         userId: recipient.id,
         result: "failed",
         error: outcome.error,
+        push: pushStatus,
       });
       if ("unconfigured" in outcome && outcome.unconfigured) {
         stopped = "email-not-configured";
@@ -228,11 +310,12 @@ export async function runDigests(options: {
         userId: recipient.id,
         result: "sent",
         noticeCount: outcome.noticeCount,
+        push: pushStatus,
       });
       continue;
     }
 
-    outcomes.push({ userId: recipient.id, result: outcome.reason });
+    outcomes.push({ userId: recipient.id, result: outcome.reason, push: pushStatus });
   }
 
   const count = (result: RecipientOutcome["result"]) =>
@@ -247,6 +330,7 @@ export async function runDigests(options: {
     failed: count("failed"),
     notAttempted: recipients.length - outcomes.length,
     stopped,
+    push,
     outcomes,
   };
 }

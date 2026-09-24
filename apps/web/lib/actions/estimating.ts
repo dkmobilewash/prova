@@ -7,6 +7,9 @@ import { prisma } from "@prova/db";
 import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
 import { ActionResult, actionFail, actionOk, InputError, runAction, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, ownerRefusal, tradeScopeFromForm } from "./shared";
 import { catalogActuals, catalogSourcedLine, repriceDecision } from "@/lib/catalog-actuals";
+import { quotePriceDecision } from "@/lib/catalog-quote-price";
+import { todayInZone } from "@/lib/viewer-timezone";
+import { viewerTimeZone } from "@/lib/viewerToday";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import { addCatalogLine } from "@/lib/estimating/catalog-line";
@@ -417,6 +420,94 @@ export async function updateCatalogDefaultsFromActuals(
     data.defaultUnitPrice = decision.defaultUnitPrice;
   }
 
+  await prisma.lineItemCatalogEntry.update({ where: { id: entryId }, data });
+
+  revalidatePath("/catalog");
+  return actionOk;
+}
+
+/**
+ * Sets a catalog entry's default COST from the cheapest live vendor quote in
+ * that entry's own unit. Explicit, one click, never automatic — the same
+ * shape as `updateCatalogDefaultsFromActuals` above, for the same reasons.
+ *
+ * WHY THIS IS ALLOWED TO EXIST, given that `estimating.prisma` said for a
+ * while that "a quote never writes a price back into this template". The half
+ * of that sentence which matters is untouched and always will be: nothing here
+ * is ever summed into a JOB — a quote is reference data, and job cost lives on
+ * `CostEntry`. What the sentence got too absolute about was the template: the
+ * vendors page has always ended its own warning with "updating the catalog is
+ * a decision about your own pricing, and it belongs on the catalog", and this
+ * is the button that link points at. Nothing automatic writes anything; an
+ * owner presses this, having read which vendor, at what price, on what date.
+ *
+ * THE FIGURE IS RE-DERIVED HERE and the form carries no numbers — #105
+ * finding 3, on the one control in the app that edits a price every future bid
+ * and every AI draft reads. The only thing taken from the request is the
+ * margin checkbox, which is a pricing judgement rather than a fact the quotes
+ * establish.
+ */
+export async function priceCatalogEntryFromQuotes(entryId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  // MANAGE_ESTIMATING first — the capability /catalog itself withholds — and
+  // THEN the owner check. Its sibling above asserts only the owner, which
+  // `action-capability-guards.test.ts` records as a known-open door; a new
+  // action does not get to inherit that.
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company, ...user } = context;
+  const refusal = ownerRefusal(user, "Only the account owner can re-price the catalog.");
+  if (refusal) return refusal;
+
+  const entry = await prisma.lineItemCatalogEntry.findFirst({
+    where: { id: entryId, companyId: company.id },
+    include: {
+      priceQuotes: {
+        include: { vendor: { select: { name: true } } },
+        orderBy: { quotedOn: "desc" },
+      },
+    },
+  });
+  if (!entry) {
+    return actionFail("Catalog entry not found — it may have been deleted. Reload the page.");
+  }
+
+  const decision = quotePriceDecision(
+    {
+      unit: entry.unit,
+      defaultBudgetedUnitCost: entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
+      defaultUnitPrice: entry.defaultUnitPrice != null ? Number(entry.defaultUnitPrice) : null,
+    },
+    entry.priceQuotes.map((quote) => ({
+      id: quote.id,
+      vendorId: quote.vendorId,
+      vendorName: quote.vendor.name,
+      catalogEntryId: quote.catalogEntryId,
+      description: quote.description,
+      unit: quote.unit,
+      unitPrice: Number(quote.unitPrice),
+      quotedOn: quote.quotedOn.toISOString().slice(0, 10),
+      validUntil: quote.validUntil ? quote.validUntil.toISOString().slice(0, 10) : null,
+      source: quote.source,
+      notes: quote.notes,
+    })),
+    // The viewer's own calendar day: whether a quote expired "today" is a
+    // question about where the person reading it is standing.
+    todayInZone(await viewerTimeZone()),
+    String(formData.get("alsoUpdatePrice") ?? "") === "on",
+  );
+  if (!decision.ok) return actionFail(decision.error);
+
+  // Only ever the entry's own defaults. Every JobLineItem already priced from
+  // this template keeps its numbers, as do every EstimateVersion snapshot and
+  // every invoice drawn from them.
+  const data: { defaultBudgetedUnitCost: string; defaultUnitPrice?: string } = {
+    defaultBudgetedUnitCost: decision.defaultBudgetedUnitCost,
+  };
+  if (decision.defaultUnitPrice !== undefined) {
+    data.defaultUnitPrice = decision.defaultUnitPrice;
+  }
   await prisma.lineItemCatalogEntry.update({ where: { id: entryId }, data });
 
   revalidatePath("/catalog");

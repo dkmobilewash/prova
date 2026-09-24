@@ -14,13 +14,32 @@ import { vi } from "vitest";
  */
 
 // Navigation. `useFocusEffect` is React's effect: in a test the screen is
-// mounted and therefore focused.
+// mounted and therefore focused. `router` and `useRouter` share the same
+// fns, so a test can assert on `router.push` what a mounted hook did
+// through `useRouter().push`.
+const routerPush = vi.fn();
+const routerReplace = vi.fn();
+const routerBack = vi.fn();
+const routerNavigate = vi.fn();
 vi.mock("expo-router", async () => {
   const react = await import("react");
   return {
     useLocalSearchParams: () => ({ jobId: "job_1" }),
-    useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), navigate: vi.fn() }),
-    router: { push: vi.fn(), replace: vi.fn(), back: vi.fn(), navigate: vi.fn() },
+    // Shared spies rather than fresh vi.fn()s per call: the push-tap
+    // tests assert WHERE a tap landed, which is unaskable of a mock the
+    // hook received and the test never sees.
+    useRouter: () => ({
+      push: routerPush,
+      replace: routerReplace,
+      back: routerBack,
+      navigate: routerNavigate,
+    }),
+    router: {
+      push: routerPush,
+      replace: routerReplace,
+      back: routerBack,
+      navigate: routerNavigate,
+    },
     useFocusEffect: (effect: () => void | (() => void)) => react.useEffect(effect, [effect]),
     Redirect: () => null,
     Link: ({ children }: { children?: unknown }) => children ?? null,
@@ -92,9 +111,33 @@ vi.mock("expo-notifications", () => ({
   getExpoPushTokenAsync: async () => ({ data: "ExponentPushToken[test]" }),
   scheduleNotificationAsync: async () => "id_1",
   cancelScheduledNotificationAsync: async () => {},
+  // The tap half. vi.fn so a test can reach inside with vi.mocked; the
+  // listener is whatever the mock was handed, read back via mock.calls.
+  DEFAULT_ACTION_IDENTIFIER: "expo.modules.notifications.actions.DEFAULT",
+  getLastNotificationResponse: vi.fn(() => null),
+  clearLastNotificationResponse: vi.fn(),
+  addNotificationResponseReceivedListener: vi.fn(() => ({ remove: vi.fn() })),
 }));
 
 vi.mock("expo-device", () => ({ isDevice: false }));
+
+/**
+ * `expo-constants`, mocked for the reason this config's header already
+ * gives: this suite cannot see native modules.
+ *
+ * `lib/push.ts` began importing it when #477's explicit `projectId`
+ * landed, and importing it for real drags in `expo-modules-core`, which
+ * reads `globalThis.expo.EventEmitter` at module scope — a global only
+ * the native runtime sets. Unmocked, `screens/push.test.tsx` failed to
+ * LOAD, so vitest reported a failed file and zero failed assertions,
+ * which reads nothing like a broken test.
+ *
+ * The project id is the one field the app reads, via `expoProjectId`,
+ * and its own parsing is tested for real in `lib/push-project-id.test.ts`.
+ */
+vi.mock("expo-constants", () => ({
+  default: { expoConfig: { extra: { eas: { projectId: "test-project-id" } } } },
+}));
 
 vi.mock("expo-sharing", () => ({ isAvailableAsync: async () => false, shareAsync: async () => {} }));
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: async () => ({ type: "dismiss" }) }));

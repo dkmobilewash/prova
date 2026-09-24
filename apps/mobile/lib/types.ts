@@ -327,3 +327,19 @@ export type Me = {
   restricted: boolean;
   company: { id: string; name: string };
 };
+
+/** One alert, already filtered to what this principal may see and already
+ * money-stripped server-side. `amount` rides along null — the phone
+ * renders no money, and it must never be a second place deciding the
+ * rule. */
+export type AlertRow = {
+  key: string;
+  kind: string;
+  severity: "OVERDUE" | "DUE_SOON" | "STANDING";
+  title: string;
+  detail: string;
+  href: string;
+  dueOn: string | null;
+  daysUntil: number | null;
+  amount: number | null;
+};

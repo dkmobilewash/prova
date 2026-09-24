@@ -11,6 +11,12 @@ export const jobDetailEstimateWalkthrough: Walkthrough = {
   title: "A job — estimate",
   steps: [
     {
+      anchor: "job-wall-schedule",
+      title: "Enter the walls",
+      body:
+        "Add each run of wall by its type, length and height — the tag from the drawings, like W1. The studs, track and board are worked out and added to the lines below, and change when you change a run.",
+    },
+    {
       anchor: "job-line-items",
       title: "Price the job",
       body:

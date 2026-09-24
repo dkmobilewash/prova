@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { dispatchAlertDigest } from "@/lib/notification-dispatch";
+import { dispatchAlertPush } from "@/lib/notification-push";
 import {
   DEFAULT_RUN_BUDGET_MS,
   configuredBaseUrl,
@@ -105,11 +106,15 @@ export async function GET(request: Request) {
     recipients,
     budgetMs,
     dispatch: (recipient) => dispatchAlertDigest(recipient, today, baseUrl),
+    // The push half rides the same run, same budget, same order. An
+    // unconfigured Expo token is recorded, never a stop — the email half's
+    // status and the run's status stay what they were.
+    pushDispatch: (recipient) => dispatchAlertPush(recipient, today),
   });
 
   // One line per run, in the deployment log, with no addresses in it.
   console.log(
-    `[alert-digest] ${today} considered=${report.considered} sent=${report.sent} nothing-due=${report.nothingDue} already-claimed=${report.alreadyClaimed} failed=${report.failed} not-attempted=${report.notAttempted} stopped=${report.stopped ?? "no"}`,
+    `[alert-digest] ${today} considered=${report.considered} sent=${report.sent} nothing-due=${report.nothingDue} already-claimed=${report.alreadyClaimed} failed=${report.failed} not-attempted=${report.notAttempted} stopped=${report.stopped ?? "no"} push-sent=${report.push.sent} push-skipped=${report.push.skipped} push-nothing-due=${report.push.nothingDue} push-failed=${report.push.failed} push-unconfigured=${report.push.unconfigured}`,
   );
 
   // **THE STATUS CODE ANSWERS "DID THIS RUN DO ITS WHOLE JOB", NOT "DID IT
