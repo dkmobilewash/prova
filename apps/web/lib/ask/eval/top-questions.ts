@@ -391,6 +391,7 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   c("q-contact-add", "add Halvorsen Builders to our contacts, they're a GC, 555-0142", "add_contact", ESTIMATOR),
   c("q-pursuit-add", "add Northgate Medical to what we're chasing, Turner and Skanska are bidding it", "add_bid_pursuit", ESTIMATOR),
   c("q-pursuit-stage", "we called about Northgate Medical, move it to contacted", "set_pursuit_stage", ESTIMATOR),
+  c("q-leads-find", "anything out to bid near us for drywall that we don't know about yet?", "find_bid_leads", ESTIMATOR),
   c("q-schedule-crew", "put Mike on Riverside tomorrow", "schedule_crew", FIELD),
   // The clock-in model (#309) records an interval once it is CLOSED; a
   // running clock lives only in the phone's own storage. So "who is on the
@@ -460,7 +461,9 @@ export const CENSUS_REFUSALS = 2;
 /** 110 -> 113 on 2026-09-18: three getting-started questions for the
  * `getting_started` tool, one of them the real question a new account asked
  * and was told "nothing here reads it". No gap and no refusal changed. */
-export const TOTAL_QUESTIONS = 114;
+/** 114 -> 115 on 2026-09-24: one question for `find_bid_leads`, the
+ * lead-search command. No gap and no refusal changed. */
+export const TOTAL_QUESTIONS = 115;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the

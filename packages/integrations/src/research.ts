@@ -165,8 +165,9 @@ export function searchedUrls(blocks: readonly unknown[]): Map<string, ResearchSo
 
 /** Bounded at a word, with an ellipsis, so a long scope reads as cut
  * rather than ending mid-word as though that were what the page said. A
- * URL is never cut: a shortened link is a different link. */
-function clipValue(value: string): string {
+ * URL is never cut: a shortened link is a different link. Exported for
+ * leads.ts, which bounds a found project's fields the same way. */
+export function clipValue(value: string): string {
   if (/^https?:\/\//.test(value)) return value.length <= 1000 ? value : "";
   if (value.length <= MAX_VALUE_CHARS) return value;
   const cut = value.slice(0, MAX_VALUE_CHARS - 1);
@@ -210,8 +211,9 @@ export function verifiedSuggestions(raw: unknown, seen: Map<string, ResearchSour
 }
 
 /** Did the search tool itself report that it could not run? A success is a
- * list; an error is a single object (the API returns HTTP 200 either way). */
-function searchErrored(blocks: readonly unknown[]): boolean {
+ * list; an error is a single object (the API returns HTTP 200 either way).
+ * Exported for leads.ts, which must tell the same two apart. */
+export function searchErrored(blocks: readonly unknown[]): boolean {
   return blocks.some((block) => {
     const b = block as { type?: unknown; content?: unknown };
     return b?.type === "web_search_tool_result" && !Array.isArray(b.content);
