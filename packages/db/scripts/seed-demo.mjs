@@ -1671,6 +1671,16 @@ async function undo(companyId) {
     await del("dispatchSlip", () =>
       prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    // DAS 140 / DAS 142 notices -- the #227 shape: jobId-keyed RESTRICT
+    // children nothing else's delete reaches. The seed creates none; these
+    // lines are here so a demo job somebody clicked a notice onto can still
+    // be undone.
+    await del("das140Notice", () =>
+      prisma.das140Notice.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("das142Request", () =>
+      prisma.das142Request.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     await del("jobLineItem", () => prisma.jobLineItem.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("job", () => prisma.job.deleteMany({ where: { id: { in: jobIds } } }));
   }

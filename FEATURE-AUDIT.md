@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**139 items audited — 112 built / 22 partial / 4 missing / 1 descoped**
+**141 items audited — 114 built / 22 partial / 4 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -101,7 +101,7 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 112 |
+| Built | 114 |
 | Partial | 22 |
 | Missing | 4 |
 | Descoped | 1 |
@@ -239,11 +239,14 @@ costing, and prevailing wage attachment shipped 26 Aug 2026.*
 | Missing | Multi-state prevailing wage rule variation support | not built as a rules engine — no real government wage-rate dataset to vary across states with; a job is already jurisdiction-scoped via `operatingLocationId` |
 | Partial | Certified payroll document storage/history per job, per pay period | `ComplianceDocument.type = CERTIFIED_PAYROLL` stores/tracks a submission, with AI extraction; not structured strictly by pay period |
 
-## 09. Union Fringe & Apprenticeship Compliance — 4 built · 0 partial · 0 missing
+## 09. Union Fringe & Apprenticeship Compliance — 6 built · 0 partial · 0 missing
 
-*Updated 1 Sep 2026 — the remittance generator and the daily ratio check
-shipped. Both were blocked on there being no time-entry data; `TimeEntry`
-landed, and `CraftClassification.tier` supplied the other missing half.*
+*Updated 26 Sep 2026 — DAS 140 and DAS 142 shipped, which is the first thing
+in this sheet that acts BEFORE a breach rather than reporting one after it.
+Previously updated 1 Sep 2026, when the remittance generator and the daily
+ratio check shipped; both were blocked on there being no time-entry data,
+`TimeEntry` landed, and `CraftClassification.tier` supplied the other
+missing half.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
@@ -251,6 +254,8 @@ landed, and `CraftClassification.tier` supplied the other missing half.*
 | Built | Apprentice-to-journeyman ratio tracking per crew/job | `lib/apprentice-ratio.ts` — per job, per union local, **per day**, because that is how the rule is enforced and a monthly average would hide the exact day an inspector asks about. Measured in hours (what `TimeEntry` holds). Hours on a craft with no tier are NEVER counted as journeyman hours: the day reads "can't be judged", so a half-configured company never gets a clean bill of health. Also raises the Sheet 26 alert that was blocked on this existing |
 | Built | Apprenticeship program enrollment/hours tracking | `apprenticeship.prisma` (`ApprenticeshipEnrollment`, `ApprenticeshipPeriodRecord`), `lib/apprenticeship.ts`, `lib/apprenticeship-query.ts`, on `/union-compliance` with create/edit/remove for both. The registration side the ratio work could not derive: sponsor, programme number, indenture date, classroom hours, and the sign-off that closes a period. **On-the-job hours are still never stored** — they are summed from `TimeEntry` over the window from the last sign-off to today, so a corrected timesheet moves them. Classroom hours ARE stored, because related instruction happens at a training centre and there is no `TimeEntry` to sum. A period closes on a SIGNATURE, never on an hour count: the sponsor decides, and recording our arithmetic as their decision would invent a fact about someone else's programme. Nothing defaults the hour requirements — blank reads as "not looked up" and is reported unchecked rather than measured against the conventional 2000 |
 | Built | Multi-CBA support (a company may run crews under more than one agreement) | `CompanyUnionAgreement` is a list per company, not a single field |
+| Built | California DAS 140 / DAS 142 apprenticeship notices | `das-forms.prisma` (`ApprenticeshipCommittee`, `Das140Notice`, `Das142Request`), `lib/das-forms.ts` (deadlines, standing, proposals), `lib/das-print.ts` (the two printed forms), `lib/das-query.ts`, `lib/actions/dasForms.ts`; on each job's Compliance tab with the committee directory on `/union-compliance`, and print views at `/jobs/[id]/das-140/[noticeId]` and `/jobs/[id]/das-142/[requestId]`. **TWO tables, deliberately not one with a type flag** — different unique keys (a 140 is one per award per craft; a 142 repeats per need-date), deadline arithmetic running in opposite directions (ten days forward from contract execution, bounded by the first day anybody works; 72 hours backward from the day an apprentice is needed), non-overlapping fields, and an outcome only the 142 has. **The 72-hour answer is deliberately weaker than the rule and says so**: it excludes holidays and is counted to the hour, this app holds neither, so `latestSendDayIgnoringHolidays` counts whole days skipping weekends and carries its two caveats as DATA on the standing — no screen can render the date without them. A holiday can only make the real deadline earlier, so "already late" is trustworthy and "looks in time" always arrives with what was not checked. **No committee registry and none planned**: a committee is a row the contractor pastes from DIR's own lookup once and reuses, every contact field nullable, a blank printed as a blank with a sentence. The forms also refuse to print a licence from the wrong state and refuse to derive the estimated journeyman/apprentice hours from the estimate's labor lines. `dasProposals` names what a job looks like it owes from its own records and creates nothing; it applies NO statutory ratio, and a job whose `publicWorks` is null proposes nothing at all. No sequence counter, because neither form has a number box. **Every rule behind it is UNVERIFIED against a primary DIR page** — see the row below |
+| Built | DAS rule provenance, on the screen rather than in a comment | `DAS_CITATIONS` in `lib/das-forms.ts` — nine rules, each `verified: false`, each with the primary DIR URL that would settle it and the question a staff attorney is being asked. `DAS_UNVERIFIED_FOR_COUNSEL` is derived from it, not written twice, and `DasUnverifiedNote` renders the whole list on the job's Compliance tab. **This exists because of the row two sheets up**: sheet 08 records that the prevailing-wage determination rule (8 CCR 16000) was located by web search and never clicked through to DIR by a human, and that sentence lives in a file no contractor opens. Outbound HTTPS to `dir.ca.gov` is blocked from the container this was built in (`WebFetch` -> `EGRESS_BLOCKED`), so the same gap exists here and is on screen instead of only here. `das-forms.test.ts` fails the build if an entry claims `verified` without a `dir.ca.gov` URL |
 
 ## 10. Billing — AIA-Style Pay Applications — 5 built · 0 partial · 0 missing
 

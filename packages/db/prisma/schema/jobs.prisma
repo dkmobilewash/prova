@@ -150,6 +150,8 @@ model Job {
   contractDocumentVersionCounter ContractDocumentVersionCounter?
   wh347PayrollNumbers            Wh347PayrollNumber[]
   wh347PayrollCounter            Wh347PayrollCounter?
+  das140Notices                  Das140Notice[]
+  das142Requests                 Das142Request[]
   rfiCounter                     RfiCounter?
   submittals                     Submittal[]
   submittalCounter               SubmittalCounter?

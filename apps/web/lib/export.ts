@@ -508,6 +508,17 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     models: ["RetainageRelease", "Backcharge"],
   },
   {
+    key: "das-apprenticeship-notices",
+    title: "DAS 140 and DAS 142 apprenticeship notices, and the committee directory",
+    detail:
+      "The California award notices and dispatch requests recorded against a job, and the " +
+      "apprenticeship committees they are addressed to. Deliberately not in this file: each one " +
+      "is a printable form in its own right, and the thing that matters about it is the signed " +
+      "copy you sent and your proof of transmission, neither of which lives here. Print the form " +
+      "from the job's Compliance tab instead — a row in a spreadsheet is not the document.",
+    models: ["ApprenticeshipCommittee", "Das140Notice", "Das142Request"],
+  },
+  {
     key: "payroll-rates",
     title: "Pay rates, crews, classifications and union agreements",
     detail:

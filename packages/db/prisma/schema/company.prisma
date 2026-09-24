@@ -139,6 +139,7 @@ model Company {
   proposalClauses          ProposalClause[]
   jobProposalClauses       JobProposalClause[]
   apprenticeshipEnrollments ApprenticeshipEnrollment[]
+  apprenticeshipCommittees  ApprenticeshipCommittee[]
   contactPeople             ContactPerson[]
   salesLeads                SalesLead[]
   salesOpportunities        SalesOpportunity[]

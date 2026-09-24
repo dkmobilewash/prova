@@ -71,6 +71,7 @@ export const notYetRegistered: Exclusion[] = [
   // screen was built to prevent.
   { action: "intake.*", reason: "Recording needs a real File in the blob store, and confirming a proposal is the human judgement the whole screen exists for — never a command." },
   { action: "compliance.*", reason: "Compliance documents need a real File and are evidence records; page only until a hand-off mode exists." },
+  { action: "dasForms.*", reason: "DAS 140 and DAS 142 notices are evidence records sent to a state apprenticeship committee, and the three fields that matter most — which of the form's three boxes applies, the committee's own address, and the date it actually went out — are a declaration to the state, a lookup on DIR's site, and a postmark. None of the three is something a model may supply, and a card that got one wrong would be wrong on a document the state keeps. The committee directory is a paste from DIR, entered where it is read. Never a command." },
   { action: "crm.*", reason: "Contact people and interactions: a natural T1 command, unassigned in WORK-SPLIT.md (open question in the plan)." },
   // Spreadsheet import. Owner-only bulk writes whose whole claim is that a
   // PERSON reads the preview — what will be created, what is already here,

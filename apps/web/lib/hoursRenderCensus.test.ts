@@ -109,6 +109,10 @@ const NOT_AN_HOURS_NUMBER: Record<string, string> = {
     "Already a string: the crew tab passes String(Number(signoff.totalHours)) from a Decimal column.",
   "lib/actions/changeOrders.ts\t{Number(delay.hoursLost)}":
     "Decimal(5,2) from one row, not a sum — exact, and the surrounding string is an audit note rather than a screen.",
+  "app/(app)/jobs/[id]/das-140/[noticeId]/page.tsx\t{DAS_BLOCKING_REASON.estimatedHours}":
+    "A SENTENCE, not a number — the reason the form's estimated-hours box cannot be filled in, " +
+    "printed in red where the figure would have gone. lib/das-print.ts's DAS_BLOCKING_REASON is a " +
+    "Record<field, string>; the field is merely named `estimatedHours`.",
   "lib/payroll-register-import.ts\t{hoursRaw}":
     "The raw cell text off the imported CSV, echoed back in a parse error so the user can see what they typed.",
 
