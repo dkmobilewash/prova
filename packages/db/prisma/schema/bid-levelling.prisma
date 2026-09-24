@@ -1,0 +1,91 @@
+/// LEVELLING — the quotes a sub collects from ITS OWN suppliers and subs for
+/// one bid, laid side by side.
+///
+/// THIS IS NOT `VendorPriceQuote`, and the difference is the reason this file
+/// exists rather than a `jobId` being added over there. That model says of
+/// itself, at length: "A quote belongs to a VENDOR and a DATE, never to a job
+/// or a `JobLineItem`." It is a PRICE HISTORY — what this vendor charges for
+/// this catalogued item, generally, so a catalog default can be checked
+/// against the market. Putting a bid on it would give one table two jobs and
+/// make "the cheapest live quote" a question with two answers.
+///
+/// What this holds is the other thing: what somebody quoted FOR THIS PROJECT'S
+/// scope, once, with that project's drawings in front of them. It expires with
+/// the bid and teaches nothing about the market.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// THE POINT OF LEVELLING IS NOT "WHO IS CHEAPEST". IT IS "ARE THEY EVEN
+/// BIDDING THE SAME THING".
+/// ─────────────────────────────────────────────────────────────────────────
+///
+/// A sub who left the soffits out is cheaper and is not comparable. Reading
+/// the low number off a column without reading the exclusions is how a
+/// contractor buys a hole in their own scope and finds it on site — and the
+/// app saying "Acme, $82,000, lowest" in bold would be actively helping.
+///
+/// So `exclusions` is a first-class column rather than a line in `notes`, and
+/// `lib/bid-levelling.ts` refuses to call anything "lowest" without saying in
+/// the same breath whether the quotes carry the same exclusions. A comparison
+/// that cannot say that is a comparison worth less than none.
+
+/// One quote received against one scope package on one bid.
+model BidQuote {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// CASCADE, the same call `BidLine` makes and for the same reason: a quote
+  /// received for a bid is PART of that bid's working out, not a record that
+  /// would be silently lost with it. Deleting the invitation must not be
+  /// blocked because somebody logged three quotes against it.
+  ///
+  /// It carries no `jobId`, so nothing here reaches a job and no cleanup
+  /// script needs to know about it.
+  bidInvitationId String
+  bidInvitation   BidInvitation @relation(fields: [bidInvitationId], references: [id], onDelete: Cascade)
+
+  /// WHAT IS BEING BOUGHT OUT — "Metal stud framing", "EIFS", "Hang and
+  /// finish". Quotes are compared only within one package, because two prices
+  /// for different scopes are two prices for different things.
+  ///
+  /// Free text and grouped by its exact value, which is a deliberate
+  /// trade-off rather than an oversight: a fixed list would not survive
+  /// contact with how differently one sub packages a job from the next, and
+  /// the form offers the labels already used on this bid so the common case
+  /// is picking rather than typing. The cost is that a typo splits a group —
+  /// visibly, as two headings, which is the failure mode worth having.
+  packageLabel String
+
+  /// WHO QUOTED. A recorded vendor when there is one, and their name as text
+  /// either way — a quote from somebody not yet in the vendor list is still a
+  /// quote, and refusing to record it would make the comparison partial,
+  /// which is worse than none because nobody would know it was partial.
+  vendorId   String?
+  vendor     Vendor? @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  vendorName String
+
+  amount Decimal @db.Decimal(12, 2)
+
+  /// The day they gave it, ENTERED and not stamped — the rule every other
+  /// dated record in this app follows. A quote logged on Friday for a price
+  /// given on Tuesday is a Tuesday price.
+  quotedOn DateTime
+
+  /// WHAT THIS QUOTE LEAVES OUT, one exclusion per line as the sub wrote it.
+  ///
+  /// A COLUMN AND NOT A LINE IN `notes`, because this is the field that
+  /// decides whether the cheapest number is the best number, and a comparison
+  /// that cannot read it is the comparison that buys a hole in the scope.
+  /// Text rather than a related table: these are somebody's sentences, they
+  /// are never aggregated, and a table of them would invite exactly the
+  /// summing that makes no sense here.
+  exclusions String?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([bidInvitationId, packageLabel])
+  @@index([companyId])
+}

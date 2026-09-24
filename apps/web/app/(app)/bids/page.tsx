@@ -6,6 +6,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
 import { formatCalendarDate } from "@/lib/render-date";
 import { summariseWonValue, valueIsPartial } from "@/lib/bid-pipeline";
+import { BidLevelling, type BidQuoteRow } from "@/components/BidLevelling";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -48,6 +49,12 @@ export default async function BidsPage({
   const tradeFilter = trade && trade in TradeScope ? (trade as TradeScope) : undefined;
   const statusFilter = status && status in BidInvitationStatus ? (status as BidInvitationStatus) : undefined;
 
+  const vendors = await prisma.vendor.findMany({
+    where: { companyId: company.id },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+
   const bids = await prisma.bidInvitation.findMany({
     where: {
       companyId: company.id,
@@ -55,7 +62,7 @@ export default async function BidsPage({
       status: statusFilter,
     },
     orderBy: { createdAt: "desc" },
-    include: { contact: true },
+    include: { contact: true, quotes: { orderBy: [{ packageLabel: "asc" }, { amount: "asc" }] } },
   });
 
   // #79: a WON bid with no bidAmount used to be dropped from both the sum
@@ -219,6 +226,24 @@ export default async function BidsPage({
                   <p className="text-sm font-medium text-ink">{money(Number(bid.bidAmount))}</p>
                 )}
               </Link>
+              <BidLevelling
+                bidInvitationId={bid.id}
+                vendors={vendors}
+                quotes={bid.quotes.map(
+                  (quote): BidQuoteRow => ({
+                    id: quote.id,
+                    packageLabel: quote.packageLabel,
+                    vendorId: quote.vendorId,
+                    vendorName: quote.vendorName,
+                    amount: Number(quote.amount),
+                    // Rendered from the stored UTC midnight as YYYY-MM-DD, the
+                    // same string the date input round-trips.
+                    quotedOn: quote.quotedOn.toISOString().slice(0, 10),
+                    exclusions: quote.exclusions,
+                    notes: quote.notes,
+                  }),
+                )}
+              />
             </li>
           ))}
         </ul>

@@ -8,6 +8,8 @@ import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/cata
 import { ActionResult, actionFail, actionOk, InputError, runAction, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, ownerRefusal, tradeScopeFromForm } from "./shared";
 import { catalogActuals, catalogSourcedLine, repriceDecision } from "@/lib/catalog-actuals";
 import { quotePriceDecision } from "@/lib/catalog-quote-price";
+import { bidQuoteProblem } from "@/lib/bid-levelling";
+import { optionalDateFromString } from "@/lib/bid-pursuits";
 import { todayInZone } from "@/lib/viewer-timezone";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
@@ -586,5 +588,105 @@ export async function importCatalogEntries(formData: FormData): Promise<ActionRe
   });
 
   revalidatePath("/catalog");
+  return actionOk;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// LEVELLING — the quotes a sub collects from its OWN suppliers and subs for
+// one bid. Not `VendorPriceQuote`, which is price history and carries no bid.
+// MANAGE_ESTIMATING, the same capability `/bids` withholds on.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Creates or updates one quote received against a bid's scope package. */
+export async function saveBidQuote(bidInvitationId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const bid = await prisma.bidInvitation.findFirst({
+    where: { id: bidInvitationId, companyId: company.id },
+    select: { id: true },
+  });
+  if (!bid) return actionFail("That bid is no longer on this company. Reload the page.");
+
+  return runAction(async () => {
+    const packageLabel = String(formData.get("packageLabel") ?? "").trim();
+    const vendorName = String(formData.get("vendorName") ?? "").trim();
+    const amountValue = nullableDecimalFromForm(formData, "amount");
+    const exclusions = String(formData.get("exclusions") ?? "").trim();
+    const notes = String(formData.get("notes") ?? "").trim();
+
+    const problem = bidQuoteProblem({
+      packageLabel,
+      vendorName,
+      amount: amountValue === null ? null : Number(amountValue),
+    });
+    if (problem) return actionFail(problem);
+    // `bidQuoteProblem` has already refused a missing amount; this narrows it
+    // for the compiler rather than asserting past it, so the two cannot drift
+    // apart if that rule ever moves.
+    if (amountValue === null) return actionFail("A quote needs an amount.");
+
+    // Entered, not stamped: a quote logged on Friday for a price given on
+    // Tuesday is a Tuesday price, the rule every dated record here follows.
+    // Read through the shared YYYY-MM-DD -> UTC-midnight parser rather than a
+    // fourth private copy of one (materialOrders, closeout and backcharges
+    // each grew their own).
+    const quotedOn = optionalDateFromString(formData.get("quotedOn"));
+    if (!quotedOn) return actionFail("Say what day the quote was given — the day they gave it, not today.");
+
+    // Optional. A quote from somebody not yet in the vendor list is still a
+    // quote — refusing it would make the comparison partial, which is worse
+    // than none because nobody would know it was partial.
+    const vendorIdRaw = String(formData.get("vendorId") ?? "").trim();
+    let vendorId: string | null = null;
+    if (vendorIdRaw) {
+      const vendor = await prisma.vendor.findFirst({
+        where: { id: vendorIdRaw, companyId: company.id },
+        select: { id: true },
+      });
+      if (!vendor) return actionFail("That supplier isn't on this company. Reload the page.");
+      vendorId = vendor.id;
+    }
+
+    const data = {
+      packageLabel,
+      vendorName,
+      vendorId,
+      amount: amountValue,
+      quotedOn,
+      exclusions: exclusions || null,
+      notes: notes || null,
+    };
+
+    const bidQuoteId = String(formData.get("bidQuoteId") ?? "").trim();
+    if (bidQuoteId) {
+      const updated = await prisma.bidQuote.updateMany({
+        where: { id: bidQuoteId, companyId: company.id, bidInvitationId },
+        data,
+      });
+      if (updated.count === 0) return actionFail("That quote is no longer on this bid. Reload the page.");
+    } else {
+      await prisma.bidQuote.create({ data: { ...data, companyId: company.id, bidInvitationId } });
+    }
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+export async function deleteBidQuote(bidQuoteId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const deleted = await prisma.bidQuote.deleteMany({ where: { id: bidQuoteId, companyId: company.id } });
+  if (deleted.count === 0) return actionFail("That quote is already gone. Reload the page.");
+
+  revalidatePath("/bids");
   return actionOk;
 }

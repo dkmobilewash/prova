@@ -262,6 +262,20 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: byCompany,
   },
   {
+    key: "bidQuotes",
+    model: "bidQuote",
+    label: "Quotes received for levelling, per bid",
+    note:
+      "What your own suppliers and subs quoted for each scope package on a bid. Distinct from the " +
+      "vendor price history: these belong to one bid and expire with it. Read the exclusions column " +
+      "before comparing the amounts -- a quote that leaves work out is cheaper and is not the same bid.",
+    columns: [
+      "id", "bidInvitationId", "packageLabel", "vendorId", "vendorName", "amount", "quotedOn",
+      "exclusions", "notes", "createdAt", "updatedAt",
+    ],
+    scope: byCompany,
+  },
+  {
     key: "bidRecaps",
     model: "jobBidRecap",
     label: "Bid recap per job",
