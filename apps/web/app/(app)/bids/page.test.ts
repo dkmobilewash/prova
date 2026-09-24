@@ -67,12 +67,11 @@ vi.mock("@prova/db", () => ({
   },
   BidInvitationStatus: {},
   TradeScope: {},
-  // `Prisma: {}` was enough until this page's import graph reached the
-  // actions barrel, which pulls in lib/change-order.ts -- and that builds a
-  // `new Prisma.Decimal(0)` at MODULE SCOPE, so an empty stub throws on
-  // import rather than in a test. Only the constructor is needed here;
-  // nothing in these tests does Decimal arithmetic.
-  Prisma: { Decimal: class { constructor(public value: unknown) {} } },
+  // Back to an empty stub, and that is the POINT: lib/change-order.ts no
+  // longer builds a Decimal at module scope, so this page's import graph can
+  // be walked with Prisma mocked away. `moduleScopePrismaCensus.test.ts`
+  // keeps it that way.
+  Prisma: {},
 }));
 vi.mock("@/lib/authz", () => ({ requireCapability: vi.fn(async () => ({ allowed: true, context })) }));
 

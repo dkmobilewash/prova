@@ -17,7 +17,22 @@ import { Prisma, prisma } from "@prova/db";
  * point this figure is history: what this change order added when it landed.
  */
 
-const ZERO = new Prisma.Decimal(0);
+/**
+ * Zero, CONSTRUCTED ON CALL rather than at module scope.
+ *
+ * It was a module-scope `new Prisma.Decimal(0)` until 2026-09-24, and that one
+ * line made this module impossible to import without a live Prisma client.
+ * Not a theoretical cost: 148 test files in `apps/web` mock `@prova/db` and
+ * 53 of them stub `Prisma`, so ANY page whose import graph reaches this file
+ * — `/bids` does, through the actions barrel — threw "Prisma.Decimal is not a
+ * constructor" at IMPORT time, before a single test ran. Three branches
+ * patched their own mock around it before anybody looked at the cause.
+ *
+ * A module-scope `new` is a side effect on import. Deferring it costs one
+ * call per use and removes the whole class of failure.
+ * `moduleScopePrismaCensus.test.ts` keeps it deferred.
+ */
+const zero = () => new Prisma.Decimal(0);
 
 /** A line item as much of it as this calculation needs. */
 export type LineItemForChangeOrder = {
@@ -58,7 +73,7 @@ function isApplied(proposal: ProposalForCalc) {
  * it just isn't billed.
  */
 function lineValue(quantity: Prisma.Decimal | null, unitPrice: Prisma.Decimal | null) {
-  if (!quantity || !unitPrice) return ZERO;
+  if (!quantity || !unitPrice) return zero();
   return quantity.mul(unitPrice);
 }
 
@@ -103,7 +118,7 @@ export function proposalValueDelta(
   proposal: ProposalForCalc,
   target: LineItemForChangeOrder | null,
 ): Prisma.Decimal {
-  if (!proposalIsBookable(proposal, target)) return ZERO;
+  if (!proposalIsBookable(proposal, target)) return zero();
 
   switch (proposal.changeType) {
     case "ADD":
@@ -114,7 +129,7 @@ export function proposalValueDelta(
       if (isApplied(proposal)) {
         return lineValue(proposal.previousQuantity ?? null, proposal.previousUnitPrice ?? null).neg();
       }
-      if (!target) return ZERO;
+      if (!target) return zero();
       return lineValue(target.quantity, target.unitPrice).neg();
 
     case "EDIT": {
@@ -129,7 +144,7 @@ export function proposalValueDelta(
         );
       }
       // Not applied: the live row is still the "before".
-      if (!target) return ZERO;
+      if (!target) return zero();
       const before = lineValue(target.quantity, target.unitPrice);
       const after = lineValue(
         proposal.quantity ?? target.quantity,
@@ -157,7 +172,7 @@ export function changeOrderValueDelta(
       sum.add(
         proposalValueDelta(proposal, proposal.lineItemId ? targets.get(proposal.lineItemId) ?? null : null),
       ),
-    ZERO,
+    zero(),
   );
 }
 
@@ -191,7 +206,7 @@ export function pendingChangeOrderExposure(
 ): Prisma.Decimal {
   return changeOrders
     .filter((co) => co.status === "SUBMITTED")
-    .reduce((sum, co) => sum.add(changeOrderValueDelta(co.proposals, targets)), ZERO);
+    .reduce((sum, co) => sum.add(changeOrderValueDelta(co.proposals, targets)), zero());
 }
 
 /** How many pending proposals the exposure figure above had to drop because

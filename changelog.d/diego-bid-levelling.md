@@ -63,3 +63,17 @@ partial, which is worse than none because nobody would know it was partial.
 The date goes through `optionalDateFromString` rather than a fourth private copy
 of a date reader — `materialOrders`, `closeout` and `backcharges` have each
 grown their own.
+
+**And one thing that was not the plan.** This branch was the third to
+independently patch `/bids`' test mock, where `Prisma: {}` threw *on import*
+because `lib/change-order.ts` built a `new Prisma.Decimal(0)` at module scope.
+Three patches, all local and reasonable, none of whose authors looked at the
+cause. The module-scope `new` is now a lazy `zero()`, all three workarounds
+become unnecessary, and `moduleScopePrismaCensus.test.ts` keeps it deferred —
+mutation-tested by restoring the original line and watching it name the file
+and line.
+
+The census is narrow on purpose: constructing inside a function is fine, since
+the client exists by the time anything calls it. Only the module-scope `new` is
+refused, because that is the one that runs on import — and it breaks the 53
+test files that stub `Prisma` before a single test in them starts.
