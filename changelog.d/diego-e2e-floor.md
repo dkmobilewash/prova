@@ -154,9 +154,62 @@ A duplicate would not fail where it was made — it fails inside
 `createUser` on whichever persona is seeded second, as the same opaque 422
 this whole PR started with.
 
+## Seeding cleared, and the next layer was one setting wearing 24 disguises
+
+With the users created, `verdicts: collected 36, returned 36` — every
+verdict came back for the first time. 24 of them were failures, and they
+read as 24 different bugs: `1. sign in` timing out at **120 seconds**,
+six empty states failing `toBeVisible`, two fixtures timing out at 180s,
+eleven journey steps SKIPPED.
+
+They are one cause. Every persona landed on
+
+```
+/sign-in/tasks/choose-organization?redirect_url=/dashboard
+```
+
+which renders **0 visible characters**, because *this app does not use
+Clerk organizations at all* — tenancy is Prova's own `Company`, adopted by
+verified email in `lib/auth.ts`. Grepped rather than assumed: one hit for
+`orgId` in the whole app and it is a string inside an unrelated test.
+
+Clerk made **"Membership required" the default** for instances with
+Organizations enabled on **2025-08-22**, and that setting routes every
+session through `choose-organization` and disables personal accounts. It
+is an instance setting the app cannot satisfy, so no amount of suite work
+fixes it — **Configure → Organizations → membership optional**, on the
+instance whose keys the secrets hold.
+
+`failOnSessionTask` now fails in milliseconds and says that sentence,
+instead of 24 assertions each failing on its own terms with nothing naming
+the cause. It matches ANY `/sign-in/tasks` route rather than the one task
+we have met — Clerk adds tasks, and an unknown one must not degrade back
+into a two-minute timeout (mutation M10).
+
+| mutation | result |
+| --- | --- |
+| only catch `choose-organization` | RED, 3 failed |
+| stop checking at all | RED, 3 failed |
+
+**A test-writing mistake I made twice in one session, so it is written
+down.** Both `seedClerkUsers.test.ts` and `signIn.test.ts` first asserted
+an exact PHRASE against a message that is hard-wrapped for a CI log, and
+both failed on *where the text wrapped* rather than on a missing idea. A
+test that breaks when you reflow a paragraph is measuring the wrong thing.
+Assert against `text.replace(/\s+/g, " ")`, or per word.
+
 **One thing for Diego rather than for this PR:** development requires
 username and phone; nothing here establishes whether production
 (`cstream.ai`) does. If it does not, the two instances disagree about what
 a user needs, which is the kind of drift CLAUDE.md's Clerk table exists
 for. Flagging, not fixing — it needs somebody who can read both
 dashboards.
+
+**And the same question about organizations is the more urgent half.** If
+production also has Organizations with membership required, a brand new
+signer-up there walks into the same blank `choose-organization` page — and
+pilot contractors are the people who would find it. NOT ESTABLISHED from
+here, and deliberately not asserted either way: an agent container cannot
+reach either dashboard. What IS established is that the app has no code
+that could satisfy that task on any instance. Worth ten seconds of
+somebody's attention before it is somebody's first impression.
