@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { StyleSheet, Text, View } from "react-native";
 import { apiBaseUrl, clerkPublishableKey, configProblem } from "@/lib/env";
 import { getHandover } from "@/lib/handover";
+import { usePushTapRouter } from "@/lib/push";
 import { tokenCache } from "@/lib/token-cache";
 import { leadingFor, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
@@ -42,6 +43,15 @@ function HandoverGate({ children }: { children: React.ReactNode }) {
  * only be used within the ClerkProvider component". */
 function DrainTimer() {
   useQueueDrain();
+  return null;
+}
+
+/** The one place a notification tap is answered. Mounted inside
+ * ClerkProvider and OUTSIDE the handover gate, so the listener stays
+ * alive while the phone is in a crew member's hands — and the swallow
+ * still works, which is the point. */
+function PushTapRouter() {
+  usePushTapRouter();
   return null;
 }
 
@@ -119,6 +129,7 @@ export default function RootLayout() {
           so the queue keeps going during a handover: a crew member's hours
           must not wait for the foreman to take the phone back. */}
       <DrainTimer />
+      <PushTapRouter />
       <HandoverGate>
         <Stack screenOptions={screenOptions}>
           {/* The title is never shown — the tabs draw their own headers. */}
@@ -135,6 +146,7 @@ export default function RootLayout() {
           <Stack.Screen name="drawings/[jobId]" options={{ title: "Drawings" }} />
           <Stack.Screen name="schedule/[jobId]" options={{ title: "Schedule" }} />
           <Stack.Screen name="outbox" options={{ title: "Waiting to send" }} />
+          <Stack.Screen name="alerts" options={{ title: "Alerts" }} />
           {/* No header and no swipe-back: the way out of a handover is
               handing the phone back, not an iOS gesture. */}
           <Stack.Screen name="handover" options={{ headerShown: false, gestureEnabled: false }} />

@@ -99,6 +99,8 @@ model Company {
   vendors                   Vendor[]
   equipment                 Equipment[]
   lineItemCatalogEntries    LineItemCatalogEntry[]
+  wallTypes                 WallType[]
+  wallRuns                  WallRun[]
   punchListItems            PunchListItem[]
   tmTickets                 TmTicket[]
   timesheetSignoffs         TimesheetSignoff[]
@@ -106,6 +108,7 @@ model Company {
   deviceTokens              DeviceToken[]
   dailyFieldReports         DailyFieldReport[]
   jobMedia                  JobMedia[]
+  takeoffPlans              TakeoffPlan[]
   jobMediaTags              JobMediaTag[]
   documentIntakes           DocumentIntake[]
   rfis                      Rfi[]
@@ -131,6 +134,8 @@ model Company {
   vendorPriceQuotes         VendorPriceQuote[]
   outboundMessages          OutboundMessage[]
   contactInteractions       ContactInteraction[]
+  proposalClauses          ProposalClause[]
+  jobProposalClauses       JobProposalClause[]
   apprenticeshipEnrollments ApprenticeshipEnrollment[]
   contactPeople             ContactPerson[]
   salesLeads                SalesLead[]
@@ -254,6 +259,9 @@ model User {
   uploadedDocumentIntakes              DocumentIntake[]              @relation("DocumentIntakeUploadedBy")
   sharedJobMedia                       JobMedia[]                    @relation("JobMediaSharedBy")
   jobMediaAnnotations                  JobMediaAnnotation[]          @relation("JobMediaAnnotationBy")
+  takeoffPlansUploaded                 TakeoffPlan[]                 @relation("TakeoffPlanUploadedBy")
+  takeoffCalibrations                  TakeoffScaleCalibration[]     @relation("TakeoffCalibrationBy")
+  takeoffMeasurements                  TakeoffMeasurement[]          @relation("TakeoffMeasurementBy")
   jobMediaTagAssignments               JobMediaTagAssignment[]
   askedRfis                            Rfi[]
   loggedBackcharges                    Backcharge[]

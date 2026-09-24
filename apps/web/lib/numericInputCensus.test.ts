@@ -303,11 +303,8 @@ const ROSTER_ADDITIONS: Record<string, string> = {
   claimedAmount: "backcharges.ts money() takes a label, and the key is the caller's",
   resolvedAmount: "same as claimedAmount",
   apprenticePeriod: "unionCompliance.ts reads it through setupText() first",
-  lengthFt: "jobs.ts takeoff builds its own labelled reader",
   widthFt: "jobs.ts takeoff",
-  heightFt: "jobs.ts takeoff",
   spacingIn: "jobs.ts takeoff",
-  wastePercent: "jobs.ts takeoff",
   openingWidth: "jobs.ts takeoff, read through getAll()",
   openingHeight: "jobs.ts takeoff, read through getAll()",
   thisPeriodBilled: "billing.ts pay applications read parallel arrays via getAll()",
@@ -578,6 +575,18 @@ const INPUT_EXCEPTIONS: Record<string, { reason: string }> = {
   },
   "apps/web/components/JobMediaAnnotator.tsx (unnamed)": {
     reason: "a photo annotation label — free text, and explicitly not a measurement",
+  },
+  "apps/web/components/TakeoffPlanViewer.tsx pageNumber": {
+    reason:
+      "A HIDDEN input, and a hidden input has no keyboard for inputMode to hint at. It carries " +
+      "which sheet of the PDF the viewer is showing — machine output, never typed. It is in the " +
+      "roster because the action reads it with numberFromForm, which is correct: it IS a number " +
+      "and it goes through the one parser like every other.",
+  },
+  "apps/web/components/TakeoffPlanViewer.tsx pageWidthPt": {
+    reason:
+      "The same, for the page box's width in PDF points, which pdf.js reports and nobody types. " +
+      "It is used only to NAME the paper scale back to the estimator; no quantity depends on it.",
   },
   "apps/web/components/TimeEntryFields.tsx hours": {
     reason:

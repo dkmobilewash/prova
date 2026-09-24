@@ -76,6 +76,7 @@ const FLUSH_WITHOUT_LIST: Record<string, string> = {
 const NOT_PER_JOB: Record<string, string> = {
   jobs: "the job list — refreshed by opening the Jobs tab",
   me: "who is holding the phone and what they may do; read on every screen focus, not per job",
+  alerts: "the company alert list — not a per-job section, refreshed by opening the Alerts screen",
 };
 
 /** Screens that legitimately call the API without caching, each with its

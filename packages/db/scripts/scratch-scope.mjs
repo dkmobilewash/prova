@@ -107,6 +107,12 @@ export const HANDLED_MODELS = [
   // counts. Deleting the link deletes nothing in Bluebeam; the Studio
   // Session itself is left exactly as it was.
   "BluebeamStudioSession",
+  // An uploaded plan PDF somebody is measuring off. RESTRICT on Job, so
+  // this one genuinely blocks the delete. Its pages, calibrations and
+  // measurements are NOT listed here and do not need to be: they CASCADE
+  // from this row, so deleting the plan reaches all of them, and none of
+  // them carries a jobId for clean-test-jobs.mjs to count.
+  "TakeoffPlan",
   "JobAssignment",
   "EquipmentAssignment",
   "EstimateVersion",
@@ -128,6 +134,16 @@ export const HANDLED_MODELS = [
   // RESTRICT on Job, and deleting the job's estimate versions does not
   // reach it.
   "EstimateVersionCounter",
+  // Clauses on a job's bid proposal (proposals.prisma). Required jobId,
+  // RESTRICT on Job — the #227 shape, so it is here AND in both scripts'
+  // del() order. The company-scoped ProposalClause library is not: these
+  // scripts never delete a company.
+  "JobProposalClause",
+  // A job's wall runs (wall-types.prisma). Required jobId, RESTRICT on Job —
+  // the #227 shape, so it is here AND in both scripts' del() order. The
+  // company-level WallType library is not: these scripts never delete a
+  // company.
+  "WallRun",
   // WH-347 payroll numbers for a job's weeks, and the per-job counter that
   // issues them (#227 shape: jobId-keyed RESTRICT children of Job that no
   // other delete reaches). The numbers are a sequence record, not signed

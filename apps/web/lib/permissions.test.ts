@@ -284,6 +284,14 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // links this — it is reached from the job's photo section and from
   // `/photos`, the way wh-347 is reached from certified payroll.
   "/jobs/[id]/photo-report": "MANAGE_FIELD",
+  // A job's bid proposal — scope, schedule of values and the structured
+  // inclusions/exclusions/clarifications/alternates. MANAGE_ESTIMATING,
+  // what /catalog, /bids, /pipeline and /proposals (its clause library)
+  // take, and what every action behind it asserts itself: a proposal is a
+  // bid. Linked from the Estimate tab, which withholds on VIEW_JOB_COSTS —
+  // so an ACCOUNTING member reaches the link and gets NoAccess, deliberately:
+  // pricing a bid for a GC is an estimator's job, not a bookkeeper's.
+  "/jobs/[id]/proposal": "MANAGE_ESTIMATING",
 
   // The job page's rebuild into tabs, 2026-09-20 — see
   // `app/(app)/jobs/[id]/(tabs)/layout.tsx`'s doc comment. Photos is the
@@ -295,6 +303,12 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // own page.tsx doc comments for why a hard gate on those three would
   // claim a boundary their Server Actions do not enforce.
   "/jobs/[id]/photos": "MANAGE_FIELD",
+  // The measuring surface. VIEW_JOB_COSTS, because the quantities it
+  // produces are estimate line items and the Estimate tab beside it
+  // withholds on exactly that (issue #383). One capability on this page
+  // and no other: a second would make it ambiguous to the action guard
+  // suite and push every write behind it onto a known-open list.
+  "/jobs/[id]/takeoff": "VIEW_JOB_COSTS",
 };
 
 /**

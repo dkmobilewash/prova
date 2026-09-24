@@ -161,6 +161,37 @@ describe("bid_status / material_deliveries status filter (issue #103, finding 4)
   });
 });
 
+describe("a tool that a WIDE question would otherwise be answered from alone", () => {
+  const jobOverview = TOOLS.find((tool) => tool.name === "job_overview");
+
+  it("says what it does NOT hold, so the wide question reads more than it", () => {
+    // The third thing standing in composition's way, and the least obvious:
+    // this tool's description claims "how's Riverside looking" for itself,
+    // and it holds no receivables. So the exact question this box is asked
+    // most — how is this job doing — routed to the one tool that cannot say
+    // the GC is 42 days late, and the answer looked complete.
+    //
+    // A tool that names the question it answers has to name the half it
+    // does not, or the model has no reason to read a second one.
+    expect(jobOverview?.description).toMatch(/holds no receivables/i);
+    expect(jobOverview?.description).toMatch(/read together/i);
+    // And the specific trap underneath it: this tool DOES carry
+    // billedToDate, which reads like money received and is money invoiced.
+    expect(jobOverview?.description).toMatch(/what was invoiced, not what was paid/i);
+  });
+
+  it("names the tools that hold the missing half, and they exist", () => {
+    // A description that says "read something else" and does not say WHAT
+    // is an instruction nobody can follow. Both names are checked against
+    // the registry so a rename cannot leave this pointing at nothing.
+    const names = TOOLS.map((tool) => tool.name);
+    for (const named of ["receivables", "retainage_held"] as const) {
+      expect(jobOverview?.description, named).toContain(named);
+      expect(names).toContain(named);
+    }
+  });
+});
+
 describe("KNOWN_GAPS", () => {
   it("explains every gap rather than just naming it", () => {
     // "We don't track that" is only a good answer when it says what would

@@ -39,6 +39,8 @@ import { employerBurdenPercentOnDay, laborCostBasisLabel } from "@/lib/employer-
 import { serverToday } from "@/lib/serverToday";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { ActionForm } from "@/components/ActionForm";
+import { WallSchedule } from "@/components/WallSchedule";
+import { openingsFromJson, scheduleLines, type WallComponentBasis, type WallTypeInput } from "@/lib/wall-assemblies";
 import {
   addLineItem,
   addLineItemFromCatalog,
@@ -151,7 +153,8 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
 
   const isEstimateStage = job.status === "ESTIMATE";
 
-  const [catalogEntries, craftClassifications, phaseCodes, employerBurdenRates] = await Promise.all([
+  const [catalogEntries, craftClassifications, phaseCodes, employerBurdenRates, wallTypes, wallRuns] =
+    await Promise.all([
     prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
     prisma.craftClassification.findMany({
       where: { companyId: company.id },
@@ -171,7 +174,53 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
     // company that has recorded none, which adds nothing and leaves every
     // figure below exactly as it was.
     loadEmployerBurdenRates(company.id),
+    // The wall schedule: the company's wall types and this job's runs. Read
+    // only while the job is an estimate — after award the runs are the
+    // record the contract was priced from and change only by change order.
+    isEstimateStage
+      ? prisma.wallType.findMany({
+          where: { companyId: company.id },
+          orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+          include: { components: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] } },
+        })
+      : Promise.resolve([]),
+    isEstimateStage
+      ? prisma.wallRun.findMany({
+          where: { jobId: job.id, companyId: company.id },
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        })
+      : Promise.resolve([]),
   ]);
+
+  const wallTypeInputs: WallTypeInput[] = wallTypes.map((type) => ({
+    id: type.id,
+    code: type.code,
+    defaultHeightFt: type.defaultHeightFt != null ? Number(type.defaultHeightFt) : null,
+    sides: type.sides,
+    studSpacingIn: Number(type.studSpacingIn),
+    components: type.components.map((c) => ({
+      id: c.id,
+      description: c.description,
+      unit: c.unit,
+      basis: c.basis as WallComponentBasis,
+      factor: Number(c.factor),
+      wastePercent: Number(c.wastePercent),
+      roundUp: c.roundUp,
+      productionRate: c.productionRate != null ? Number(c.productionRate) : null,
+    })),
+  }));
+  const wallRunViews = wallRuns.map((run) => ({
+    id: run.id,
+    label: run.label,
+    wallTypeId: run.wallTypeId,
+    lengthFt: run.lengthFt.toString(),
+    heightFt: run.heightFt?.toString() ?? null,
+    openings: openingsFromJson(run.openings),
+  }));
+  const unpricedWallRuns = scheduleLines(
+    wallRunViews.map((run) => ({ ...run, lengthFt: Number(run.lengthFt), heightFt: run.heightFt != null ? Number(run.heightFt) : null })),
+    wallTypeInputs,
+  ).unpricedRuns.map((run) => run.label);
 
   const laborRateDate = laborRateDateFor(job, new Date());
   const schedulesByCraft = new Map(
@@ -334,7 +383,16 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
   return (
     <div>
       <section className="mb-10">
-        <h2 className="mb-1 text-lg font-semibold text-ink">Job costing &amp; WIP</h2>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-lg font-semibold text-ink">Job costing &amp; WIP</h2>
+          {/* The GC-facing bid document built from these lines, with its
+              inclusions and exclusions. Its own route asserts
+              MANAGE_ESTIMATING; this tab only needs VIEW_JOB_COSTS, so a
+              member with one and not the other gets NoAccess there. */}
+          <Link href={`/jobs/${job.id}/proposal`} className="text-sm text-link hover:underline">
+            Proposal &amp; exclusions →
+          </Link>
+        </div>
         {/* WHAT THE LABOR IN THESE FIGURES IS MADE OF, SAID OUT LOUD AND
             DRIVEN BY THE DATA. This screen used to describe logged hours as
             "burdened", which to a contractor means fully loaded -- employer
@@ -528,10 +586,25 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
 
       {isEstimateStage ? (
         <>
+          <section className="mb-10" data-tour="job-wall-schedule">
+            <h2 className="mb-3 text-lg font-semibold text-ink">Wall schedule</h2>
+            <WallSchedule jobId={job.id} types={wallTypeInputs} runs={wallRunViews} unpricedRunLabels={unpricedWallRuns} />
+          </section>
+
           <section className="mb-10" data-tour="job-line-items">
             <h2 className="mb-3 text-lg font-semibold text-ink">Line items (estimate)</h2>
             <DraftLineItemsForm jobId={job.id} initialScope={job.scope ?? ""} />
             <TakeoffForm jobId={job.id} />
+            {/* The other way in. This form does the arithmetic from
+                dimensions somebody already has; the Takeoff tab is where you
+                get those dimensions off a drawing. */}
+            <p className="mb-3 text-sm text-ink-muted">
+              Working from a PDF instead?{" "}
+              <Link href={`/jobs/${job.id}/takeoff`} className="text-link hover:text-link-hover">
+                Measure off a plan
+              </Link>{" "}
+              — set the scale on a sheet and trace what you&rsquo;re taking off.
+            </p>
             <div className="rounded-lg border border-line-card bg-surface p-4">
               {job.lineItems.length === 0 && <p className="py-2 text-sm text-ink-body">No line items yet — add one below.</p>}
               {job.lineItems.map((item) => (
@@ -539,6 +612,14 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                   <ActionForm action={updateLineItemWithId(item.id)} resetOnSuccess={false} className="flex flex-col gap-2">
                     <div className="flex flex-wrap items-center gap-2">
                       {item.aiDrafted && <PriceBasisBadge basis={item.priceBasis} />}
+                      {item.wallTypeComponentId && (
+                        <span
+                          className="inline-flex items-center rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-ink-label"
+                          title="Worked out from the wall schedule above. Its quantity follows the runs; the price is yours to change."
+                        >
+                          From wall schedule
+                        </span>
+                      )}
                       <input
                         name="description"
                         defaultValue={item.description}

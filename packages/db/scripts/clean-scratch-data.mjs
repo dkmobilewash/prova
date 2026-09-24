@@ -258,6 +258,7 @@ async function main() {
     // per row and a token this script does not have; deleteJobMedia in
     // lib/actions/jobMedia.ts is the path that removes both.
     await del("jobMedia", () => prisma.jobMedia.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("takeoffPlan", () => prisma.takeoffPlan.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("punchListItem", () => prisma.punchListItem.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("rfi", () => prisma.rfi.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("rfiCounter", () => prisma.rfiCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
@@ -270,6 +271,8 @@ async function main() {
     await del("drawingRevision", () => prisma.drawingRevision.deleteMany({ where: { set: { jobId: { in: jobIds } } } }));
     await del("drawingSet", () => prisma.drawingSet.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("closeoutItem", () => prisma.closeoutItem.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("jobProposalClause", () => prisma.jobProposalClause.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("wallRun", () => prisma.wallRun.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("warrantyServiceRequest", () => prisma.warrantyServiceRequest.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("warrantyPeriod", () => prisma.warrantyPeriod.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("toolboxTalk", () => prisma.toolboxTalk.deleteMany({ where: { jobId: { in: jobIds } } }));

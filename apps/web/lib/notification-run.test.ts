@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DispatchOutcome } from "./notification-dispatch";
+import type { PushOutcome } from "./notification-push";
 import {
   configuredBaseUrl,
   orderRecipients,
@@ -290,6 +291,110 @@ describe("runDigests — the report", () => {
   it("reports an empty recipient list without pretending it ran", async () => {
     const report = await runDigests({ recipients: [], dispatch: async () => sent() });
     expect(report).toMatchObject({ considered: 0, attempted: 0, stopped: null });
+  });
+});
+
+describe("runDigests — the push half", () => {
+  const pushSent: PushOutcome = { ok: true, sent: true, noticeCount: 1 };
+  const pushSkipped: PushOutcome = { ok: true, sent: false, reason: "no-devices" };
+  const pushUnconfigured: PushOutcome = {
+    ok: false,
+    error: "EXPO_ACCESS_TOKEN is not set",
+    claimed: 0,
+    unconfigured: true,
+  };
+
+  it("records the push outcome beside the email outcome, per person", async () => {
+    const report = await runDigests({
+      recipients: [person("a"), person("b")],
+      dispatch: async () => sent(),
+      pushDispatch: async (recipient) =>
+        recipient.id === "a" ? pushSent : pushSkipped,
+    });
+
+    expect(report.push).toMatchObject({ sent: 1, skipped: 1 });
+    expect(report.outcomes[0]).toMatchObject({ userId: "a", push: "sent" });
+    expect(report.outcomes[1]).toMatchObject({ userId: "b", push: "skipped" });
+  });
+
+  it("runs the push BEFORE the email, for the same person", async () => {
+    const order: string[] = [];
+    await runDigests({
+      recipients: [person("a")],
+      dispatch: async () => {
+        order.push("email");
+        return sent();
+      },
+      pushDispatch: async () => {
+        order.push("push");
+        return pushSent;
+      },
+    });
+
+    expect(order).toEqual(["push", "email"]);
+  });
+
+  it("never lets a push failure end the run", async () => {
+    const attempted: string[] = [];
+    const report = await runDigests({
+      recipients: [person("a"), person("b"), person("c")],
+      dispatch: async (recipient) => {
+        attempted.push(recipient.id);
+        return sent();
+      },
+      pushDispatch: async () => {
+        throw new Error("push provider down");
+      },
+    });
+
+    expect(attempted).toEqual(["a", "b", "c"]);
+    expect(report.stopped).toBeNull();
+    expect(report.push.failed).toBe(3);
+  });
+
+  it("records push unconfigured without stopping anything", async () => {
+    // Wrong behaviour: treating push's unconfigured like the email's. The
+    // email one stops the run because it is the identical answer for every
+    // remaining person; the push one must not — it says nothing about
+    // whether the EMAIL for the next person could go out.
+    const report = await runDigests({
+      recipients: [person("a"), person("b")],
+      dispatch: async () => sent(),
+      pushDispatch: async () => pushUnconfigured,
+    });
+
+    expect(report.stopped).toBeNull();
+    expect(report.sent).toBe(2);
+    expect(report.push.unconfigured).toBe(2);
+  });
+
+  it("still stops the whole run when the EMAIL provider is unconfigured", async () => {
+    const report = await runDigests({
+      recipients: [person("a"), person("b")],
+      dispatch: async () => unconfigured,
+      pushDispatch: async () => pushSent,
+    });
+
+    expect(report.stopped).toBe("email-not-configured");
+    expect(report.attempted).toBe(1);
+  });
+
+  it("behaves byte-identically to old runs when no push dispatcher is given", async () => {
+    const report = await runDigests({
+      recipients: [person("a"), person("b")],
+      dispatch: async (recipient) =>
+        recipient.id === "a" ? sent() : nothingDue,
+    });
+
+    expect(report.push).toEqual({
+      sent: 0,
+      skipped: 0,
+      nothingDue: 0,
+      alreadyClaimed: 0,
+      failed: 0,
+      unconfigured: 0,
+    });
+    expect(report.outcomes.every((outcome) => outcome.push === undefined)).toBe(true);
   });
 });
 
