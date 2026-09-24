@@ -254,6 +254,10 @@ export const EVAL_CASES: EvalCase[] = [
   command("cmd-pursuit-stage", "move Northgate Medical to contacted", "set_pursuit_stage", { projectName: "Northgate", stage: "contacted" }, ESTIMATOR),
   command("cmd-schedule-crew", "put Mike on Riverside tomorrow", "schedule_crew", { workerName: "Mike", jobName: "Riverside", workDate: "tomorrow" }, FIELD),
   command("cmd-contact-add", "add Halvorsen Builders to our contacts, they're a GC, 555-0142", "add_contact", { name: "Halvorsen" }, ESTIMATOR),
+  // Lead search: an open question about the web, not a named project — the
+  // trades in the person's words, the area as typed. "Start a bid on X" is
+  // create_estimate_job; this is "what should we be bidding".
+  command("cmd-leads-find", "what drywall and ceiling jobs are out to bid around Long Beach that we haven't heard of?", "find_bid_leads", { trades: "drywall", region: "Long Beach" }, ESTIMATOR),
   command("cmd-retainage-accounting", "Turner released 12,500 of the Riverside retainage on September 8, check 5102", "release_retainage", { jobName: "Riverside", amount: "12", releasedAt: "September 8" }, ACCOUNTING),
 
   // ------------------------------------ nothing offered, so no card
