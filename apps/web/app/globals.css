@@ -29,7 +29,15 @@ body {
    "snap" reserved for brief interactive feedback (button hover). Both are
    scoped to :root rather than tailwind.config.ts on purpose — additive
    custom properties nothing else reads, so this page's motion pass cannot
-   regress a class used anywhere else in the app. */
+   regress a class used anywhere else in the app.
+
+   There is now a THIRD curve on this page and it is deliberately not here:
+   the submittal stamp's overshoot lives on `.landing-stamp` further down,
+   next to its own durations, the way the fact ticker keeps its gap and its
+   duration in `.landing-ticker`. The reason is that it is not a general
+   curve and must not be reached for as one — a stamp that eases gently to
+   rest does not read as a stamp, and nothing else on this page should
+   overshoot. Two curves at :root, one where it is used. */
 :root {
   --ease-landing: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-landing-snap: cubic-bezier(0.16, 1, 0.3, 1);
@@ -73,6 +81,52 @@ body {
 }
 .landing-ticker__clone {
   display: none;
+}
+
+/* ── The two animated figures on the landing page, AT REST ───────────────
+   components/landing/SubmittalStamp.tsx and
+   components/landing/RetainageCountUp.tsx. Read the ticker note above
+   first: the shape is identical, and the ORDER matters for the same reason
+   — these rules must stay ABOVE the prefers-reduced-motion block, because
+   they share its specificity and the later rule wins.
+
+   AT REST MEANS FINISHED HERE, not "stopped at the start". The stamp is
+   landed and legible at its angle; the bar is full. That is what a server
+   render, a browser with no JavaScript, and a reader who asked for reduced
+   motion all get — there is no state in which something is invisible
+   waiting for a script. The motion inside the block below only replays the
+   arrival.
+
+   The stamp's resting rotation is HERE rather than a Tailwind `rotate-`
+   class on purpose: the keyframes below set `transform` outright, so the
+   angle has to be in the same declaration or the last frame would drop it.
+   One source for the angle, and it is this line. */
+.landing-stamp {
+  --landing-stamp-duration: 520ms;
+  /* The stamp lands a beat after the figure is looked at, and the derived
+     state (the chips) a beat after the stamp — the order the product itself
+     works in: the revision comes back, and then the app says "Approved". */
+  --landing-stamp-delay: 140ms;
+  --landing-stamp-settle-delay: 600ms;
+  /* The one overshoot curve on this page, kept next to its only use. It
+     goes past 1 and comes back, which is what makes a stamp read as
+     struck rather than placed; see the note beside the two :root curves. */
+  --landing-stamp-ease: cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.landing-stamp__mark {
+  transform: translate(-50%, -50%) rotate(-9deg);
+}
+.landing-countup {
+  /* The same 1300ms the JS count uses (COUNT_MS in RetainageCountUp.tsx),
+     so the bar and the last digit arrive together. Two numbers that must
+     agree; there is no way to share one between a stylesheet and a module,
+     so they are named in each other's comments instead. */
+  --landing-countup-duration: 1300ms;
+}
+.landing-countup__fill {
+  /* The fill grows from the left by transform, never by width — a width
+     animation is layout, and layout is what moves the page. */
+  transform-origin: left center;
 }
 
 /* The capability scroller (components/LandingPage.tsx): a real horizontal
@@ -185,6 +239,67 @@ body {
     }
     to {
       transform: translateX(-50%);
+    }
+  }
+
+  /* ── The submittal stamp's MOTION (components/landing/SubmittalStamp.tsx)
+     Everything that moves is here, inside this one block, for the same
+     reason the ticker's is: under prefers-reduced-motion: reduce none of it
+     applies and the drawing is simply the finished record. The JS half is
+     gated independently — `useMotionCue` never sets `playing` when reduced
+     motion is asked for — so this is the second of two locks, not the only
+     one.
+
+     `[data-motion-play="playing"]` is the attribute that hook writes. It
+     goes back to "idle" when the figure leaves the screen, which REMOVES
+     these rules, which is what makes the stamp land again on the way back.
+
+     TRANSFORM AND OPACITY ONLY, in both keyframes — the page's rule, and
+     here it is also the height rule: the mark is absolutely positioned in a
+     clipped, fixed-height stage, so a stamp that starts at twice its size
+     cannot push anything or widen the page. */
+  [data-motion-play="playing"] .landing-stamp__mark {
+    animation: landing-stamp var(--landing-stamp-duration) var(--landing-stamp-ease)
+      var(--landing-stamp-delay) both;
+  }
+  [data-motion-play="playing"] .landing-stamp__settled {
+    animation: landing-settle var(--speed-fast) var(--ease-landing) var(--landing-stamp-settle-delay)
+      both;
+  }
+  @keyframes landing-stamp {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -50%) translateY(-30px) rotate(-17deg) scale(2.1);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, -50%) rotate(-9deg);
+    }
+  }
+  @keyframes landing-settle {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* ── The money count-up's bar (components/landing/RetainageCountUp.tsx)
+     The digits are counted in JavaScript (they are text, and text is not a
+     thing CSS can tick); the bar under them is this, and it is `scaleX` on
+     purpose — animating `width` would be animating layout. `--ease-landing`
+     is the page's general content curve, which is what a bar arriving at
+     rest is. */
+  [data-motion-play="playing"] .landing-countup__fill {
+    animation: landing-countup var(--landing-countup-duration) var(--ease-landing) both;
+  }
+  @keyframes landing-countup {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
     }
   }
 }
