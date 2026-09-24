@@ -2,31 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { ClerkProvider } from "@clerk/expo";
 import { Redirect, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import * as SecureStore from "expo-secure-store";
 import { StyleSheet, Text, View } from "react-native";
 import { apiBaseUrl, clerkPublishableKey, configProblem } from "@/lib/env";
 import { getHandover } from "@/lib/handover";
 import { usePushTapRouter } from "@/lib/push";
+import { tokenCache } from "@/lib/token-cache";
 import { leadingFor, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import { useQueueDrain } from "@/lib/use-queue-drain";
-
-
-
-// Clerk stores the session token on-device; SecureStore (Keychain/Keystore)
-// is the recommended cache for it on native.
-const tokenCache = {
-  async getToken(key: string): Promise<string | null> {
-    try {
-      return await SecureStore.getItemAsync(key);
-    } catch {
-      return null;
-    }
-  },
-  async saveToken(key: string, value: string): Promise<void> {
-    await SecureStore.setItemAsync(key, value);
-  },
-};
 
 /**
  * A handover survives a relaunch, and this is where that is enforced.
