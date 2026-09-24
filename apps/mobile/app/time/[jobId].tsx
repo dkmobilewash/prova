@@ -47,7 +47,8 @@ import {
 } from "@/lib/crew-entry";
 import { uuid } from "@/lib/id";
 import { isValidPin, startHandover } from "@/lib/handover";
-import { enqueue, queuedOperationIds, type CreateOp } from "@/lib/sync-queue";
+import { saveQueued } from "@/lib/save-queued";
+import { queuedOperationIds, type CreateOp } from "@/lib/sync-queue";
 import { useSync } from "@/lib/use-sync";
 import type {
   Craft,
@@ -172,6 +173,9 @@ export default function TimeScreen() {
   const [reportDates, setReportDates] = useState<Set<string>>(new Set());
   const [delayCounts, setDelayCounts] = useState<Map<string, number>>(new Map());
   const [showSign, setShowSign] = useState(false);
+  /** This screen had no error slot either: hours and a day's signature
+   * both went to the queue with nothing watching the write. */
+  const [saveError, setSaveError] = useState<string | null>(null);
   // "Hand the phone to a crew member": who, and the PIN that brings it
   // back. See lib/handover.ts — this is the C15/D-13 case, the hanger or
   // taper who does not carry a company phone.
@@ -316,7 +320,15 @@ export default function TimeScreen() {
         ...rows,
       ]);
     }
-    await enqueue(op);
+    const saved = await saveQueued(op);
+    if (!saved.ok) {
+      // The optimistic row above claims these hours are logged. They are
+      // not, so take it back off rather than leave a false one up.
+      setOptimistic((rows) => rows.filter((r) => r.clientOperationId !== op.clientOperationId));
+      setSaveError(saved.error);
+      return;
+    }
+    setSaveError(null);
   };
 
   const onClockIn = async () => {
@@ -483,9 +495,15 @@ export default function TimeScreen() {
       signerName: signerName.trim(),
       signaturePath,
     };
+    const saved = await saveQueued(op);
+    if (!saved.ok) {
+      setShowSign(false);
+      setSaveError(saved.error);
+      return;
+    }
+    setSaveError(null);
     setShowSign(false);
     setSignaturePath(null);
-    await enqueue(op);
     await sync();
   };
 
@@ -640,6 +658,8 @@ export default function TimeScreen() {
         onDismiss={dismissRefused}
         onRetry={retrySetAside}
       />
+
+      {saveError ? <Text style={styles.saveError}>{saveError}</Text> : null}
 
       {ratioWarnings.length > 0 ? (
         <View style={styles.ratioBanner}>
@@ -1014,6 +1034,13 @@ function makeStyles(p: Palette) {
     },
     crewName: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
     rowProblem: { color: p.colors.tagRoseInk, fontSize: typography.size.sm },
+    saveError: {
+      color: p.colors.barRose,
+      fontSize: typography.size.md,
+      lineHeight: leadingFor(typography.size.md),
+      paddingHorizontal: space.md,
+      paddingBottom: space.sm,
+    },
     ratioBanner: {
       margin: space.md,
       marginBottom: 0,

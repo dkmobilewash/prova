@@ -25,7 +25,8 @@ import {
   type PhotoLocation,
 } from "@/lib/photo-stamp";
 import { keepForUpload } from "@/lib/photo-store";
-import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
+import { saveQueued } from "@/lib/save-queued";
+import { queuedOperationIds } from "@/lib/sync-queue";
 import { JobSections } from "@/components/JobSections";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
@@ -246,7 +247,7 @@ export default function PhotosScreen() {
         { clientOperationId, uri: kept, capturedAt: shot.capturedAt.toISOString() },
         ...rows,
       ]);
-      await enqueue({
+      const saved = await saveQueued({
         type: "media:create",
         jobId,
         clientOperationId,
@@ -262,6 +263,16 @@ export default function PhotosScreen() {
         dailyFieldReportId: attachReport && todaysReportId ? todaysReportId : undefined,
         punchListItemId: punchItemId ?? undefined,
       });
+      if (!saved.ok) {
+        // Take the tile back off. It was added before the write and is a
+        // picture claiming to be on its way to the office.
+        setPending((rows) => rows.filter((r) => r.clientOperationId !== clientOperationId));
+        setBusy(null);
+        // saveQueued's wording, not the native error's: `e.message` here
+        // would be raw AsyncStorage text.
+        setError(saved.error);
+        return;
+      }
       setShot(null);
       setBusy(null);
       await sync();

@@ -23,7 +23,7 @@ import { type Palette, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
-import { enqueue } from "@/lib/sync-queue";
+import { saveQueued } from "@/lib/save-queued";
 import { useSync } from "@/lib/use-sync";
 import type { MaterialOrder, Vendor } from "@/lib/types";
 
@@ -77,11 +77,8 @@ export default function MaterialsScreen() {
 
   const submit = async () => {
     if (!jobId || !description || !orderedOn || !vendorId) return;
-    setDescription("");
-    setOrderedOn(localToday());
-    setPromisedFor("");
-    setShowForm(false);
-    await enqueue({
+    // Queued BEFORE the form is cleared — see lib/save-queued.ts.
+    const saved = await saveQueued({
       type: "material:create",
       jobId,
       clientOperationId: uuid(),
@@ -90,6 +87,15 @@ export default function MaterialsScreen() {
       promisedFor: promisedFor || undefined,
       vendorId,
     });
+    if (!saved.ok) {
+      setError(saved.error);
+      return;
+    }
+    setError(null);
+    setDescription("");
+    setOrderedOn(localToday());
+    setPromisedFor("");
+    setShowForm(false);
     await sync();
   };
 

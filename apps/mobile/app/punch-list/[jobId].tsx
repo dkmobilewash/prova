@@ -21,7 +21,7 @@ import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
-import { enqueue } from "@/lib/sync-queue";
+import { saveQueued } from "@/lib/save-queued";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 import { useSync } from "@/lib/use-sync";
 import type { PunchItemStatus, PunchListItem } from "@/lib/types";
@@ -103,16 +103,22 @@ export default function PunchListScreen() {
     if (!jobId || !description.trim()) return;
     const text = description.trim();
     const where = area.trim();
-    setDescription("");
-    setArea("");
-    setShowForm(false);
-    await enqueue({
+    // Queued BEFORE the form is cleared — see lib/save-queued.ts.
+    const saved = await saveQueued({
       type: "punch-list:create",
       jobId,
       clientOperationId: uuid(),
       description: text,
       ...(where ? { area: where } : {}),
     });
+    if (!saved.ok) {
+      setError(saved.error);
+      return;
+    }
+    setError(null);
+    setDescription("");
+    setArea("");
+    setShowForm(false);
     await sync();
   };
 
@@ -131,7 +137,14 @@ export default function PunchListScreen() {
     const next: PunchItemStatus = current === "OPEN" ? "READY_FOR_REVIEW" : "OPEN";
     setError(null);
     setLocal((existing) => ({ ...existing, [item.id]: next }));
-    await enqueue({ type: "punch-list:status", jobId, itemId: item.id, status: next });
+    const saved = await saveQueued({ type: "punch-list:status", jobId, itemId: item.id, status: next });
+    if (!saved.ok) {
+      // Put the row back the way it was: the optimistic flip above is now
+      // a claim about a change nothing recorded.
+      setLocal((existing) => ({ ...existing, [item.id]: current }));
+      setError(saved.error);
+      return;
+    }
     await sync();
   };
 

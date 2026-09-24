@@ -7,7 +7,8 @@ import { tokenOrNull } from "./clerk-token";
 import { syncOnce } from "./sync-order";
 import { getClientId } from "./client-id";
 import { uuid } from "./id";
-import { enqueue, flushQueue, pendingCount } from "./sync-queue";
+import { saveQueued, type SaveResult } from "./save-queued";
+import { flushQueue, pendingCount } from "./sync-queue";
 import { useStableGetToken } from "./use-stable-get-token";
 import type { FieldReportFields, FieldReportRow } from "./types";
 
@@ -80,7 +81,7 @@ export function useFieldReports(jobId: string) {
   }, [isSignedIn, refresh]);
 
   const create = useCallback(
-    async (fields: FieldReportFields & { reportDate: string }) => {
+    async (fields: FieldReportFields & { reportDate: string }): Promise<SaveResult> => {
       const clientId = await getClientId();
       const clientOperationId = uuid();
       const clientUpdatedAt = new Date().toISOString();
@@ -99,7 +100,7 @@ export function useFieldReports(jobId: string) {
         updatedAt: new Date().toISOString(),
       };
       setReports((prev) => [optimistic, ...prev]);
-      await enqueue({
+      const saved = await saveQueued({
         type: "field-report:create",
         jobId,
         reportDate: fields.reportDate,
@@ -113,23 +114,52 @@ export function useFieldReports(jobId: string) {
           delays: fields.delays,
         },
       });
+      if (!saved.ok) {
+        // TAKE THE OPTIMISTIC ROW BACK OFF. It was a promise that this
+        // report is on its way, and nothing was queued — leaving it up is
+        // a filed report on screen that no drain will ever send.
+        setReports((prev) => prev.filter((r) => r.id !== optimistic.id));
+        setError(saved.error);
+        return saved;
+      }
+      setError(null);
       await sync();
+      return saved;
     },
     [jobId, sync],
   );
 
   const update = useCallback(
-    async (reportId: string, fields: FieldReportFields) => {
+    async (reportId: string, fields: FieldReportFields): Promise<SaveResult> => {
       const clientId = await getClientId();
       const clientUpdatedAt = new Date().toISOString();
+      const before = reports.find((r) => r.id === reportId);
       setReports((prev) =>
         prev.map((r) => (r.id === reportId ? { ...r, ...fields, clientUpdatedAt } : r)),
       );
-      await enqueue({ type: "field-report:update", reportId, clientId, clientUpdatedAt, fields });
+      const saved = await saveQueued({
+        type: "field-report:update",
+        reportId,
+        clientId,
+        clientUpdatedAt,
+        fields,
+      });
+      if (!saved.ok) {
+        // Put the row back as it was: the edit above is on screen and
+        // nowhere else.
+        if (before) setReports((prev) => prev.map((r) => (r.id === reportId ? before : r)));
+        setError(saved.error);
+        return saved;
+      }
+      setError(null);
       await sync();
+      return saved;
     },
-    [sync],
+    [reports, sync],
   );
 
-  return { reports, pending, loading, error, offline, refresh, create, update, sync };
+  // `setError` is returned because the reports SCREEN queues its own
+  // writes too (a delay is not a report), and one error line on that
+  // screen should say whichever of the two failed.
+  return { reports, pending, loading, error, setError, offline, refresh, create, update, sync };
 }

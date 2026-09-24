@@ -14,7 +14,8 @@ import * as api from "@/lib/api";
 import { tokenOrNull } from "@/lib/clerk-token";
 import { dayFromClockIn } from "@/lib/clock-session";
 import { uuid } from "@/lib/id";
-import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
+import { saveQueued } from "@/lib/save-queued";
+import { queuedOperationIds } from "@/lib/sync-queue";
 import { JobSections } from "@/components/JobSections";
 import { emptyFor } from "@/lib/empty-state";
 import { NotYourJobFunction } from "@/components/NotYourJobFunction";
@@ -77,7 +78,7 @@ export default function ReportsScreen() {
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const getToken = useStableGetToken();
-  const { reports, pending, error, offline, create, refresh } = useFieldReports(jobId ?? "");
+  const { reports, pending, error, setError, offline, create, refresh } = useFieldReports(jobId ?? "");
   const [delays, setDelays] = useState<DelayRow[]>([]);
   // Delays logged on this phone that the server hasn't returned yet — shown
   // at once as "Syncing…" rather than appearing seconds after Save.
@@ -211,7 +212,16 @@ export default function ReportsScreen() {
         changeOrderId: null,
       },
     ]);
-    await enqueue(op);
+    // Queued BEFORE the form is cleared and the optimistic row goes up —
+    // see lib/save-queued.ts. A delay that never reached the queue must
+    // not sit on this screen looking logged.
+    const saved = await saveQueued(op);
+    if (!saved.ok) {
+      setOptimisticDelays((rows) => rows.filter((r) => r.clientOperationId !== op.clientOperationId));
+      setError(saved.error);
+      return;
+    }
+    setError(null);
     await sync();
   };
 

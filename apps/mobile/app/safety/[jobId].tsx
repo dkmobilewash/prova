@@ -23,7 +23,7 @@ import { type Palette, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
-import { enqueue } from "@/lib/sync-queue";
+import { saveQueued } from "@/lib/save-queued";
 import { useSync } from "@/lib/use-sync";
 import type { SafetyIncident, ToolboxTalk } from "@/lib/types";
 
@@ -91,20 +91,30 @@ export default function SafetyScreen() {
 
   const submitTalk = async () => {
     if (!jobId || !topic || !heldOn) return;
+    // Queued BEFORE the form is cleared, so a phone that cannot write to
+    // its own storage does not swallow what somebody typed. See
+    // lib/save-queued.ts.
+    const saved = await saveQueued({
+      type: "toolbox-talk:create",
+      jobId,
+      clientOperationId: uuid(),
+      topic,
+      heldOn,
+    });
+    if (!saved.ok) {
+      setError(saved.error);
+      return;
+    }
+    setError(null);
     setTopic("");
     setHeldOn(localToday());
     setShowTalkForm(false);
-    await enqueue({ type: "toolbox-talk:create", jobId, clientOperationId: uuid(), topic, heldOn });
     await sync();
   };
 
   const submitIncident = async () => {
     if (!jobId || !employeeName || !description || !occurredAt) return;
-    setEmployeeName("");
-    setDescription("");
-    setOccurredAt(localToday());
-    setShowIncidentForm(false);
-    await enqueue({
+    const saved = await saveQueued({
       type: "incident:create",
       jobId,
       clientOperationId: uuid(),
@@ -114,6 +124,15 @@ export default function SafetyScreen() {
       classification,
       outcome,
     });
+    if (!saved.ok) {
+      setError(saved.error);
+      return;
+    }
+    setError(null);
+    setEmployeeName("");
+    setDescription("");
+    setOccurredAt(localToday());
+    setShowIncidentForm(false);
     await sync();
   };
 
