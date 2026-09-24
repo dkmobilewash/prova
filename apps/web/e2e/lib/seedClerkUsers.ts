@@ -19,6 +19,77 @@ import { PERSONAS, type PersonaKey } from "./personas";
  * the OWNER-creates-a-company branch on first sign-in with no further
  * setup needed on our side.
  */
+/**
+ * Clerk's own error detail, which the thrown `ClerkAPIResponseError`
+ * carries and whose `toString()` throws away — it renders as the bare
+ * HTTP reason phrase, "Unprocessable Entity", and nothing else.
+ *
+ * That cost a CI round trip on 2026-09-24: the `e2e` job's first real
+ * run after the two Clerk secrets were added died here, and the log said
+ * only `ClerkAPIResponseError: Unprocessable Entity` at line 46. A 422
+ * from this endpoint is ALWAYS a rule on the instance refusing an
+ * address — an allowlist, a blocklist, blocked subaddresses — and Clerk
+ * names which in `errors[].code` and writes `longMessage` for a person
+ * to read. All of it was in the thrown object the whole time.
+ *
+ * Deliberately NOT a lookup table keyed by Clerk's error codes. Writing
+ * one means guessing code strings that are not verifiable from here, and
+ * a hint keyed to a code that does not exist is the "written, documented,
+ * and never called" shape this repo keeps finding — it would read as
+ * coverage while matching nothing. Clerk's own `code` and `longMessage`
+ * are printed instead, plus one pointer that is true whatever the code.
+ */
+type ClerkErrorItem = { code: string; message?: string; longMessage?: string };
+
+/**
+ * Shape-checked rather than `instanceof`. The class is re-exported by
+ * `@clerk/backend` from `@clerk/shared`, which is not a direct dependency
+ * here, so an `instanceof` can be tested against a DIFFERENT copy of the
+ * class and silently return false — putting us straight back to a bare
+ * "Unprocessable Entity". A duck-typed check cannot fail that way.
+ */
+function clerkErrorItems(error: unknown): ClerkErrorItem[] {
+  const errors = (error as { errors?: unknown } | null | undefined)?.errors;
+  if (!Array.isArray(errors)) return [];
+  return errors.filter((e): e is ClerkErrorItem => typeof (e as ClerkErrorItem)?.code === "string");
+}
+
+export function describeClerkSeedFailure(
+  error: unknown,
+  persona: { email: string; label: string },
+): string {
+  const items = clerkErrorItems(error);
+  const status = (error as { status?: unknown })?.status;
+  const traceId = (error as { clerkTraceId?: unknown })?.clerkTraceId;
+
+  const said = items.length
+    ? items
+        .map((e) => `  - [${e.code}] ${e.message ?? ""}${e.longMessage ? `\n    ${e.longMessage}` : ""}`)
+        .join("\n")
+    : `  (no structured detail — raw: ${error instanceof Error ? error.message : String(error)})`;
+
+  return [
+    `e2e: Clerk refused to create the test user ${persona.email} (${persona.label}).`,
+    "",
+    `Clerk said${typeof status === "number" ? ` (HTTP ${status})` : ""}:`,
+    said,
+    typeof traceId === "string" && traceId ? `  clerkTraceId: ${traceId}` : null,
+    "",
+    "Nothing was seeded, so no spec ran — the whole signed-in suite is",
+    "blocked on this one call. This is a SETTING on the development Clerk",
+    "instance whose keys E2E_CLERK_SECRET_KEY holds, not a bug in the suite",
+    "or in the app: this suite MINTS its six users, and every address carries",
+    "Clerk's `+clerk_test` suffix (see personas.ts).",
+    "",
+    "Look at Configure → Restrictions on THAT instance first — an allowlist,",
+    "a blocklist, or 'Block email subaddresses' each refuse an address the",
+    "Backend API would otherwise be entitled to create, and each reports as a",
+    "422. Name the instance before changing anything; there is more than one.",
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+}
+
 export async function seedClerkUsers(): Promise<Record<PersonaKey, { id: string; email: string }>> {
   const secretKey = process.env.CLERK_SECRET_KEY;
   const publishableKey =
@@ -40,16 +111,23 @@ export async function seedClerkUsers(): Promise<Record<PersonaKey, { id: string;
 
   const result = {} as Record<PersonaKey, { id: string; email: string }>;
   for (const [key, persona] of Object.entries(PERSONAS) as [PersonaKey, (typeof PERSONAS)[PersonaKey]][]) {
-    const existing = await clerk.users.getUserList({ emailAddress: [persona.email] });
-    const user =
-      existing.data[0] ??
-      (await clerk.users.createUser({
-        emailAddress: [persona.email],
-        firstName: "E2E",
-        lastName: persona.label,
-        skipPasswordRequirement: true,
-        skipPasswordChecks: true,
-      }));
+    let user;
+    try {
+      const existing = await clerk.users.getUserList({ emailAddress: [persona.email] });
+      user =
+        existing.data[0] ??
+        (await clerk.users.createUser({
+          emailAddress: [persona.email],
+          firstName: "E2E",
+          lastName: persona.label,
+          skipPasswordRequirement: true,
+          skipPasswordChecks: true,
+        }));
+    } catch (error) {
+      // `cause` keeps the original for a stack; the message is what a
+      // person reads out of a CI log, and it has to stand alone there.
+      throw new Error(describeClerkSeedFailure(error, persona), { cause: error });
+    }
     result[key] = { id: user.id, email: persona.email };
   }
   return result;
