@@ -271,6 +271,121 @@ describe("/ landing content renders signed out, with no auth call of its own", (
   });
 
   /**
+   * THE TWO ANIMATED FIGURES ADDED 2026-09-24 (Cyrus) — the submittal stamp
+   * beside the evidence section's words, and the retainage count-up under the
+   * bullet that claims it in "Getting paid". Same reasoning as the demo guard
+   * above, and the same limit: every pixel count lives in LandingPage.tsx's
+   * notes and in the changelog, because nothing in this suite can see layout
+   * — happy-dom does no layout and returns zeros from getBoundingClientRect.
+   * What this file can do is insist the classes that CARRY those measurements
+   * are still on the cells, that each figure is where it was placed, and that
+   * neither is in the hero (the Ask demo has the first screen, #475).
+   *
+   * `data-landing-motion` is this file's own handle on the placements, for the
+   * reason `data-landing-panel` and `data-landing-demo` carry: a guard should
+   * not assert on markup inside components/landing/, which can be restyled
+   * without this being wrong.
+   */
+  it("places the submittal stamp in the evidence section, above its cards, with a tiered height reserve", () => {
+    const heroEnd = html.indexOf("</section>");
+    const placements = html.match(/data-landing-motion="submittal-stamp"/g) ?? [];
+    expect(placements.length, "the stamp is placed exactly once").toBe(1);
+    const at = html.indexOf('data-landing-motion="submittal-stamp"');
+    // Not in the hero, and inside "Protecting yourself" ABOVE its three cards
+    // — a figure that drifted below them would still "be on the page".
+    expect(at).toBeGreaterThan(heroEnd);
+    expect(at).toBeGreaterThan(html.indexOf("Protecting yourself when it goes wrong"));
+    expect(at).toBeLessThan(html.indexOf("Numbered, never reissued"));
+
+    const cell = html.match(/<div data-landing-motion="submittal-stamp" class="([^"]*)"/)?.[1] ?? "";
+    expect(cell, "no cell carries the stamp placement").not.toBe("");
+    // The reserve, at all four measured tiers. The NUMBERS are in the file's
+    // own note; what must not disappear is the reserve itself.
+    expect(cell).toMatch(/(^|\s)min-h-\[\d+px\]/);
+    expect(cell).toMatch(/min-\[375px\]:min-h-\[\d+px\]/);
+    expect(cell).toMatch(/min-\[480px\]:min-h-\[\d+px\]/);
+    expect(cell).toMatch(/min-\[576px\]:min-h-\[\d+px\]/);
+    // #459, on this very page: `justify-self-end` sizes a grid item to
+    // fit-content, so the cell resizes with its contents and, pinned right,
+    // spends all of it on its left edge — 170.1px last time.
+    expect(cell).not.toContain("justify-self");
+    expect(cell).toContain("lg:justify-end");
+    expect(cell).toContain("min-w-0");
+  });
+
+  it("places the retainage count-up in Getting paid, beside the pay application and never in the hero", () => {
+    const heroEnd = html.indexOf("</section>");
+    const placements = html.match(/data-landing-motion="retainage-countup"/g) ?? [];
+    expect(placements.length, "the count-up is placed exactly once").toBe(1);
+    const at = html.indexOf('data-landing-motion="retainage-countup"');
+    expect(at).toBeGreaterThan(heroEnd);
+    expect(at).toBeGreaterThan(html.indexOf("Getting paid"));
+    expect(at).toBeLessThan(html.indexOf("Certified payroll, from hours already logged"));
+
+    const cell = html.match(/<div data-landing-motion="retainage-countup" class="([^"]*)"/)?.[1] ?? "";
+    expect(cell, "no cell carries the count-up placement").not.toBe("");
+    expect(cell).toMatch(/(^|\s)min-h-\[\d+px\]/);
+    expect(cell).toMatch(/min-\[400px\]:min-h-\[\d+px\]/);
+    expect(cell).toMatch(/(^|\s)sm:min-h-\[\d+px\]/);
+    expect(cell).not.toContain("justify-self");
+    expect(cell).toContain("min-w-0");
+  });
+
+  /**
+   * AT REST MEANS FINISHED, for both of them, and this is the accessibility
+   * requirement rather than a nicety: a reader with prefers-reduced-motion
+   * gets exactly this markup and it has to be the whole record — the stamp
+   * landed, the figure at its real value, the bar full. The server render and
+   * a browser with JavaScript off get the same thing, so nothing is parked
+   * waiting on an observer that may never fire (Reveal.tsx's rule, and
+   * CLAUDE.md's "a watcher whose needle is already on the page").
+   *
+   * "idle" is what `useMotionCue` renders before it has seen anything, and
+   * the CSS in globals.css only animates `[data-motion-play="playing"]` and
+   * only inside the one prefers-reduced-motion: no-preference block.
+   */
+  it("renders both animated figures in their FINISHED state at rest, never mid-animation", () => {
+    expect((html.match(/data-motion-play="idle"/g) ?? []).length).toBe(2);
+    expect(html).not.toContain('data-motion-play="playing"');
+    // The stamp has landed and says what came back, and the state the app
+    // DERIVES from it is on screen too.
+    expect(html).toContain("APPROVED AS NOTED");
+    expect(html).toContain("Build from revision 2");
+    // The money is at its value, not at zero waiting to be counted. Read off
+    // the value element itself rather than the page: a G703 legitimately
+    // prints $0.00 in a column, and a page-wide check would be answering
+    // about the pay application instead.
+    expect(html).toContain("Outstanding balance");
+    const settled = html.match(/data-landing-countup="value"[^>]*>([^<]+)</)?.[1] ?? "";
+    expect(settled, "the count-up's value element is not in the markup").not.toBe("");
+    expect(settled).toMatch(/^\$[\d,]+\.\d\d$/);
+    expect(settled).not.toBe("$0.00");
+    // Both say they are examples, where a reader can see it, at rest. They
+    // are figures rather than `data-landing-panel` placements, so this is
+    // their own caption rather than PanelFrame's — the same convention the
+    // Ask demo's caption already follows ("Example. Your jobs, your crew."),
+    // which is a third match for any looser pattern than these two.
+    expect(html).toContain("Example. Your submittals, your revisions.");
+    expect(html).toContain("Example. Your jobs, your invoices.");
+  });
+
+  /**
+   * The two figures are PROSE as far as the invented-statistic guard is
+   * concerned — they are not `data-landing-panel` placements, so the stripper
+   * leaves them in and the pattern above runs over them. That is deliberate
+   * and it is the reason neither of them contains a single `%`: a class like
+   * `w-[63%]` or an inline `style="width:68%"` is markup like any other and
+   * would trip that guard exactly as a sentence would. The count-up's bar is
+   * two flex children whose grow values are the dollar amounts themselves.
+   */
+  it("keeps both animated figures inside the page-wide statistic guard", () => {
+    const prose = stripPanels(html);
+    expect(prose).toContain('data-landing-motion="submittal-stamp"');
+    expect(prose).toContain('data-landing-motion="retainage-countup"');
+    expect(prose).toContain("APPROVED AS NOTED");
+  });
+
+  /**
    * The hero's LEFT column had the other half of the same defect: ~336px
    * of bare background under the Sign in button at 1440, beside the lower
    * half of the panel. It is filled with the paperwork list — the

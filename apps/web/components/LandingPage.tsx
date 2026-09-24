@@ -9,6 +9,8 @@ import { JobCostPanel } from "@/components/landing/JobCostPanel";
 import { FactTicker } from "@/components/landing/FactTicker";
 import { AskDemo } from "@/components/landing/AskDemo";
 import { AskCanDo } from "@/components/landing/AskCanDo";
+import { RetainageCountUp } from "@/components/landing/RetainageCountUp";
+import { SubmittalStamp } from "@/components/landing/SubmittalStamp";
 
 /**
  * The visitor-facing content of the public landing page (app/page.tsx).
@@ -83,6 +85,10 @@ import { AskCanDo } from "@/components/landing/AskCanDo";
  *        <Reveal>; see the note where it is placed.
  *   2. The old way, and the C Stream way   ← MOVED UP from fourth
  *   3. Getting paid
+ *      — and THE RETAINAGE COUNT-UP under its third bullet, in the WORDS
+ *        column (components/landing/RetainageCountUp.tsx, 2026-09-24): the
+ *        money a GC is still holding, ticking up to a figure that agrees
+ *        with the pay application panel beside it.
  *   4. Certified payroll
  *   5. Apprentice ratios
  *   6. Whether the job is making money
@@ -96,6 +102,10 @@ import { AskCanDo } from "@/components/landing/AskCanDo";
  *        section in SECTIONS_IN_ORDER (app/page.test.ts) and inside a
  *        <Reveal>, so the derived reveal count includes it.
  *   7. Protecting yourself
+ *      — and THE SUBMITTAL STAMP beside its words, above the three cards
+ *        (components/landing/SubmittalStamp.tsx, 2026-09-24). This is the
+ *        section that had no drawing; it has one now, and it is a figure
+ *        rather than a fifth panel.
  *   8. Everything else it does (the rail/tabs)
  *   9. Not generic construction software
  *  10. C Stream is new                     ← MOVED DOWN from second
@@ -126,6 +136,18 @@ import { AskCanDo } from "@/components/landing/AskCanDo";
  * at rest; no horizontal overflow at 375px; the CTA at nav, hero and
  * close; existing tokens only; no new dependencies. The hero is never
  * wrapped in <Reveal> — nothing above the fold should fade in on load.
+ *
+ * AND THE RULE EVERY ANIMATION ON THIS PAGE NOW ANSWERS TO, because it has
+ * been paid for twice in a week: NOTHING MAY CHANGE ITS OWN HEIGHT AS IT
+ * PLAYS, AND NOTHING BELOW IT MAY MOVE. #459 (the demo's cell resized every
+ * frame and, pinned right, spent 170.1px of it sliding its left edge) and
+ * #475 (the block below the demo drifted 14px at desktop, 402px at 640 and
+ * 678px at 320, every loop). Each of the three animated figures on this page
+ * therefore carries a `min-h-[…px]` reserve MEASURED IN A REAL BROWSER at
+ * every width, with the headroom written into the comment beside it so the
+ * next person can see how thin it is. Nothing in this repo's unit suite can
+ * check any of that — happy-dom does no layout — so the guards assert that
+ * the reserves are still there, and the numbers come from Chromium.
  */
 
 const cta =
@@ -244,13 +266,20 @@ const NEW_WAY = [
 ];
 
 /**
- * Section 7's three cards. This is the one ranked section with no rendered
- * panel beside it, and that is a scoping decision rather than an oversight:
+ * Section 7's three cards. This was "the one ranked section with no rendered
+ * panel beside it", and the reason was a real one rather than an oversight:
  * the panel set in components/landing/ is four documents (pay application,
  * WH-347, apprentice ratio, job cost) and an RFI/submittal register is not
- * one of them. Three cards carry the weight instead of a thin two-column
- * row with an empty right half — which is the exact defect this whole pass
- * exists to remove from the hero.
+ * one of them. Three cards carried the weight instead of a thin two-column
+ * row with an empty right half — the exact defect this whole pass exists to
+ * remove from the hero.
+ *
+ * STILL TRUE ABOUT PANELS, NO LONGER TRUE ABOUT DRAWINGS (2026-09-24). The
+ * submittal stamp is beside the section's words now, and it is not a panel:
+ * it is an animated figure of its own, like the Ask demo, so the four-panel
+ * set and its census are untouched. The three cards keep the full width
+ * under that row, so the shape this comment was defending is unchanged —
+ * what changed is that the empty half is no longer empty.
  *
  * Receipts, in order: RfiCounter / SubmittalCounter / ChangeOrderCounter
  * (CLAUDE.md's counter roll-call — they only ever increment);
@@ -295,6 +324,7 @@ function CapabilitySection({
   points,
   panel,
   panelId,
+  aside,
   flip = false,
 }: {
   heading: string;
@@ -303,6 +333,16 @@ function CapabilitySection({
   panel: React.ReactNode;
   /** This placement's handle, counted by app/page.test.ts. */
   panelId: string;
+  /**
+   * Optional, and used by exactly one section: something that goes UNDER the
+   * three points, in the words column rather than the panel column. It
+   * exists for the retainage count-up under "Getting paid" — see that
+   * section's note for why the number belongs beside the bullet that claims
+   * it rather than in the column that already holds a G702. The words
+   * column is the SHORTER of the two there, so this fills a real gap
+   * instead of making a full column longer.
+   */
+  aside?: React.ReactNode;
   flip?: boolean;
 }) {
   return (
@@ -320,6 +360,7 @@ function CapabilitySection({
             </li>
           ))}
         </ul>
+        {aside}
       </div>
       <div data-landing-panel={panelId} className={`min-w-0 ${flip ? "lg:order-1" : ""}`}>
         {panel}
@@ -699,6 +740,69 @@ export function LandingPage() {
           ]}
           panel={<PayApplicationPanel />}
           panelId="pay-application"
+          /* THE MONEY COUNT-UP, under the bullet that claims it (Cyrus,
+             2026-09-24). "Retainage held and released per job" is the one
+             money claim on this page a sub feels in his stomach, and it was
+             a line of text in a list. The figure now counts up to it, with a
+             bar filling under it — components/landing/RetainageCountUp.tsx
+             owns the drawing and the arithmetic receipts.
+
+             WHY HERE AND NOT IN A BAND OF ITS OWN. Three things had to be
+             true at once: the animation stands next to a claim the page
+             already makes, it is not in the hero (the Ask demo has the first
+             screen, #475, and a second animation competing with it would be
+             worse than none), and it does not put a second drawing in the
+             column that already holds a G702/G703. The words column here is
+             the shorter of the two at desktop, so this lands in a gap rather
+             than making a long column longer, and the number sits eighteen
+             inches from the pay application the retainage was withheld ON.
+             The two agree by construction: the snapshots in the count-up sum
+             to the "Retainage to date" the panel computes for the same job,
+             and a test renders both and compares them.
+
+             THE RESERVE, AND THE HEADROOM. Measured in real Chromium against
+             a production build, sampling every 100ms across a full cycle at
+             1500, 1280, 1024, 640, 375 and 320 — nothing in the unit suite
+             can see any of this, because happy-dom does no layout and
+             returns zeros from getBoundingClientRect.
+
+             The figure's own height does not change as it plays, by
+             construction rather than by luck: the digits are tabular and
+             `whitespace-nowrap`, so a growing string changes only the
+             element's WIDTH, and the bar's fill grows by `transform:
+             scaleX`, which is not layout. Measured across a full cycle at
+             every width below, its height's min and max are the same number.
+
+             The reserve is here anyway, for two reasons beyond insurance.
+             Below `lg` this figure is in the single column, so anything it
+             did would push every section under it. And a cell whose height
+             is set by a reserve is an INTEGER: without one, the figure's own
+             421.7/421.8 measured on the stamp at 600 and 639 is real
+             sub-pixel jitter from the scroll offset, and a reserve takes
+             even that to zero.
+
+               tier                      applies      tallest   headroom
+               min-h-[296px]             to 399       287.6     8.4
+               min-[400px]:min-h-[262px] 400 to 639   253.8     8.2
+               sm:min-h-[270px]          640 and up   261.8     8.2
+
+             Each tier is the tallest the figure gets at the NARROWEST width
+             in its range, because the height only ever falls as the column
+             widens (287.6 at 320, 360 and 375; 253.8 from 400; 261.8 from
+             640, where `sm:text-5xl` makes the value line taller again).
+             ~8px of headroom is thin and is written down as thin: one more
+             line in the caption and the reserve is short by the difference.
+
+             At `lg` the row is set by the pay application beside it, which is
+             far taller, so these tiers do not bind there at all. */
+          aside={
+            <div
+              data-landing-motion="retainage-countup"
+              className="mt-8 min-h-[296px] min-w-0 min-[400px]:min-h-[262px] sm:min-h-[270px]"
+            >
+              <RetainageCountUp />
+            </div>
+          }
         />
       </Reveal>
 
@@ -805,17 +909,82 @@ export function LandingPage() {
       </Reveal>
 
       {/* -------------------------------------------------------------- 7
-          Protecting yourself. The evidence trail when there is a dispute. */}
+          Protecting yourself. The evidence trail when there is a dispute.
+
+          THE SUBMITTAL STAMP LANDS HERE (Cyrus, 2026-09-24), and this is the
+          section that was asking for it. The note on EVIDENCE above used to
+          say this was the one ranked section with no drawing beside it,
+          because the panel set is four documents and a submittal register is
+          not one of them — three cards carried the weight instead of "a thin
+          two-column row with an empty right half". That reasoning is intact
+          and this is not that row: the words and the drawing share the top
+          row and the three cards keep the full width underneath.
+
+          It earns its keep against all three cards at once, which is why it
+          is here rather than beside the paperwork list: two revisions, both
+          kept and neither renumbered (card 1); a state worked out from the
+          latest revision on every render and never stored (card 2); dates
+          that were entered when they happened (card 3). And it is the
+          motion every sub in these trades already knows — the stamp coming
+          back is the moment a submittal stops being your problem.
+
+          THE RESERVE, AND THE HEADROOM. Measured in real Chromium against a
+          production build, every 100ms across a full cycle, at 1500, 1280,
+          1024, 640, 375 and 320. The figure cannot change height while it
+          plays by construction — the stage is a fixed height and clips, the
+          stamp is absolutely positioned inside it and animates transform and
+          opacity only, and the two chips are in flow at rest with only their
+          opacity animating — but the reserve is here anyway, and here it is
+          LOAD-BEARING rather than insurance: at `lg` this figure is the
+          taller cell in its row, so the three cards below sit on it, and
+          below `lg` everything under it does.
+
+            tier                      applies      tallest   headroom
+            min-h-[528px]             to 374       519.6     8.4
+            min-[375px]:min-h-[486px] 375 to 479   477.8     8.2
+            min-[480px]:min-h-[446px] 480 to 575   437.8     8.2
+            min-[576px]:min-h-[430px] 576 and up   421.8     8.2
+
+          The NARROW tier is the tallest, which looks backwards and is not:
+          the register line's title and the two revision lines wrap at a
+          288px figure and have stopped wrapping by 544. Each tier is the
+          tallest the figure gets at the narrowest width in its range, and
+          the height only ever falls as the figure widens — 519.6 at 320,
+          501.8 at 360, 477.8 at 375 and 400, 437.8 at 480, 421.8 from 576
+          all the way up (the figure caps at 34rem, and the 452 it gets at
+          `lg` wraps no more than 544 does). ~8px of headroom is thin and is
+          written down as thin: a third revision line in SubmittalStamp.tsx,
+          or a longer title, and the reserve is short by exactly that.
+
+          There is no `lg:` tier because there is nothing for it to do — 576
+          and up measures 421.8 at every width to 1500. And there is no tier
+          below 320: at a 288px figure the base tier is measured, and
+          narrower than that is not a screen anyone has.
+
+          No `justify-self` on the cell, ever: it sizes a grid item to
+          fit-content, which is what slid the Ask demo 170.1px sideways every
+          loop on this same page (#459). A full-width flex cell keeps the
+          figure at its track's width on every frame. */}
       <Reveal className={sectionSpace}>
-        <h2 className="text-3xl font-semibold text-ink sm:text-4xl">
-          Protecting yourself when it goes wrong
-        </h2>
-        <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
-          Every job that ends in an argument ends in an argument about what was asked, when it was
-          asked, and who answered. That record is worth more than anything else on this page &mdash;
-          and it is only worth anything if it was kept as it happened, rather than reconstructed
-          afterwards by the side with the most to lose.
-        </p>
+        <div className="grid items-start gap-8 lg:grid-cols-2 lg:gap-14">
+          <div className="min-w-0">
+            <h2 className="text-3xl font-semibold text-ink sm:text-4xl">
+              Protecting yourself when it goes wrong
+            </h2>
+            <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
+              Every job that ends in an argument ends in an argument about what was asked, when it
+              was asked, and who answered. That record is worth more than anything else on this page
+              &mdash; and it is only worth anything if it was kept as it happened, rather than
+              reconstructed afterwards by the side with the most to lose.
+            </p>
+          </div>
+          <div
+            data-landing-motion="submittal-stamp"
+            className="min-h-[528px] min-w-0 min-[375px]:min-h-[486px] min-[480px]:min-h-[446px] min-[576px]:min-h-[430px] lg:flex lg:items-start lg:justify-end"
+          >
+            <SubmittalStamp />
+          </div>
+        </div>
         <div className="mt-8 grid gap-4 sm:grid-cols-3 sm:gap-6">
           {EVIDENCE.map((item) => (
             <div key={item.title} className="rounded-xl border border-line-card bg-surface p-6">
