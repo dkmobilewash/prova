@@ -101,6 +101,8 @@ model Company {
   lineItemCatalogEntries    LineItemCatalogEntry[]
   wallTypes                 WallType[]
   wallRuns                  WallRun[]
+  jobBidRecaps              JobBidRecap[]
+  bidDefaults               CompanyBidDefaults?
   punchListItems            PunchListItem[]
   tmTickets                 TmTicket[]
   timesheetSignoffs         TimesheetSignoff[]

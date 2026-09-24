@@ -1611,6 +1611,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // which withholds on VIEW_JOB_COSTS. The walk derives each and executes
   // it as a principal without its capability.
   wallTypes: () => import("./actions/wallTypes"),
+  // The bid recap. The rates and cost types are reachable only from the
+  // Estimate tab, which withholds on VIEW_JOB_COSTS; the company defaults
+  // only from /settings (MANAGE_ESTIMATING, owner). Each is executed below
+  // as a principal without its capability.
+  bidRecap: () => import("./actions/bidRecap"),
   // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it
   // is reachable from /settings/assistant alone, which demands
   // MANAGE_COMPLIANCE. The card actions (confirm, cancel, settle, load)

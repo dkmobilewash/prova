@@ -63,6 +63,16 @@ export function LaborHoursField({ crafts }: { crafts: CraftOption[] }) {
         />
       </label>
       <label className="flex flex-col gap-1 text-sm text-ink-label">
+        Rate (units/hr)
+        <input
+          name="productionRate"
+          placeholder="62.5"
+          inputMode="decimal"
+          title="Units per hour — the productivity this line is estimated at. Hours = quantity ÷ rate unless Labor hrs is filled in (which overrides)."
+          className={`w-24 ${inputClass}`}
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-sm text-ink-label">
         Craft
         <select
           name="craftClassificationId"

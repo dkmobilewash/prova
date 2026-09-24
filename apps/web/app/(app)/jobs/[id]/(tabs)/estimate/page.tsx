@@ -11,7 +11,7 @@ import { PhaseCodeField } from "@/components/PhaseCodeField";
 import { SubmitButton } from "@/components/SubmitButton";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
-import { TRADE_SCOPE_OPTIONS, PriceBasisBadge, LaborCostHint } from "@/components/JobEstimateHelpers";
+import { TRADE_SCOPE_OPTIONS, PriceBasisBadge, LaborCostHint, ProductionBackCheckHint } from "@/components/JobEstimateHelpers";
 import {
   changeOrderValueDelta,
   pendingChangeOrderExposure,
@@ -40,7 +40,10 @@ import { serverToday } from "@/lib/serverToday";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { ActionForm } from "@/components/ActionForm";
 import { WallSchedule } from "@/components/WallSchedule";
+import { estimatedHours, productionBackCheck } from "@/lib/labor-productivity";
 import { openingsFromJson, scheduleLines, type WallComponentBasis, type WallTypeInput } from "@/lib/wall-assemblies";
+import { BidRecapPanel, type RecapLineView } from "@/components/BidRecapPanel";
+import type { CostCategoryValue, RecapRates } from "@/lib/bid-recap";
 import {
   addLineItem,
   addLineItemFromCatalog,
@@ -153,7 +156,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
 
   const isEstimateStage = job.status === "ESTIMATE";
 
-  const [catalogEntries, craftClassifications, phaseCodes, employerBurdenRates, wallTypes, wallRuns] =
+  const [catalogEntries, craftClassifications, phaseCodes, employerBurdenRates, wallTypes, wallRuns, bidRecapRow, bidDefaults] =
     await Promise.all([
     prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
     prisma.craftClassification.findMany({
@@ -190,6 +193,11 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
           orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         })
       : Promise.resolve([]),
+    // The bid recap, and the company's defaults which pre-fill a job that has
+    // no recap of its own yet — the Contact.defaultRetainagePercent pattern:
+    // a starting point, never a value enforced from elsewhere afterwards.
+    isEstimateStage ? prisma.jobBidRecap.findFirst({ where: { jobId: job.id, companyId: company.id } }) : Promise.resolve(null),
+    isEstimateStage ? prisma.companyBidDefaults.findUnique({ where: { companyId: company.id } }) : Promise.resolve(null),
   ]);
 
   const wallTypeInputs: WallTypeInput[] = wallTypes.map((type) => ({
@@ -222,6 +230,30 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
     wallTypeInputs,
   ).unpricedRuns.map((run) => run.label);
 
+  const RECAP_RATE_KEYS = [
+    "materialMarkupPercent",
+    "laborMarkupPercent",
+    "subcontractorMarkupPercent",
+    "otherMarkupPercent",
+    "escalationPercent",
+    "materialTaxPercent",
+    "overheadPercent",
+    "profitPercent",
+    "bondPercent",
+    "contingencyPercent",
+  ] as const;
+  const recapSource = bidRecapRow ?? bidDefaults;
+  const bidRecapRates: RecapRates = Object.fromEntries(
+    RECAP_RATE_KEYS.map((key) => [key, recapSource?.[key] != null ? Number(recapSource[key]) : null]),
+  );
+  const bidRecapLines: RecapLineView[] = job.lineItems.map((item) => ({
+    id: item.id,
+    description: item.description,
+    quantity: Number(item.quantity),
+    unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
+    costCategory: (item.costCategory as CostCategoryValue | null) ?? null,
+  }));
+
   const laborRateDate = laborRateDateFor(job, new Date());
   const schedulesByCraft = new Map(
     craftClassifications.map((craft) => [
@@ -243,11 +275,22 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
     hourlyRate: burdenedHourlyRate(schedulesByCraft.get(craft.id) ?? [], laborRateDate),
   }));
 
+  const estimatedHoursByLineItem = new Map(
+    job.lineItems.map((item) => [
+      item.id,
+      estimatedHours({
+        quantity: Number(item.quantity),
+        laborHours: item.laborHours != null ? Number(item.laborHours) : null,
+        productionRate: item.productionRate != null ? Number(item.productionRate) : null,
+      }),
+    ]),
+  );
+
   const estimatedLaborCostByLineItem = new Map(
     job.lineItems.map((item) => [
       item.id,
       estimateBurdenedLaborCost(
-        item.laborHours != null ? Number(item.laborHours) : null,
+        estimatedHoursByLineItem.get(item.id) ?? null,
         item.craftClassificationId ? (schedulesByCraft.get(item.craftClassificationId) ?? []) : [],
         laborRateDate,
       ),
@@ -271,6 +314,17 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
       ),
     }),
   }));
+
+  const productivityByLineItem = new Map(
+    lineItemWip.map(({ item, wip }) => [
+      item.id,
+      productionBackCheck({
+        quantity: Number(item.quantity),
+        estimatedHours: estimatedHoursByLineItem.get(item.id) ?? null,
+        actualHours: wip.labor.pricedHours + wip.labor.unpricedHours,
+      }),
+    ]),
+  );
 
   const billedToDate = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
   const jobWip = calculateJobWip(
@@ -591,6 +645,30 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
             <WallSchedule jobId={job.id} types={wallTypeInputs} runs={wallRunViews} unpricedRunLabels={unpricedWallRuns} />
           </section>
 
+          <section className="mb-10" data-tour="job-bid-recap">
+            <h2 className="mb-1 text-lg font-semibold text-ink">Bid recap</h2>
+            <p className="mb-3 text-sm text-ink-body">
+              What the work costs to do, and what it is sold for. Markup is per cost type, so material and
+              subcontracted work need not carry the same rate as your own crew.
+              {bidRecapRow == null && bidDefaults != null
+                ? " These are your company defaults — saving them here keeps them on this job."
+                : ""}
+            </p>
+            <BidRecapPanel
+              jobId={job.id}
+              lines={bidRecapLines}
+              rates={bidRecapRates}
+              applied={
+                bidRecapRow?.appliedAt != null
+                  ? {
+                      at: formatInstant(bidRecapRow.appliedAt, timeZone, "numeric"),
+                      total: Number(bidRecapRow.appliedTotal ?? 0),
+                    }
+                  : null
+              }
+            />
+          </section>
+
           <section className="mb-10" data-tour="job-line-items">
             <h2 className="mb-3 text-lg font-semibold text-ink">Line items (estimate)</h2>
             <DraftLineItemsForm jobId={job.id} initialScope={job.scope ?? ""} />
@@ -691,7 +769,22 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                           className="w-16 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                         />
                       </label>
+                      <label className="flex items-center gap-1 text-xs text-ink-body">
+                        Rate
+                        <input
+                          name="productionRate"
+                          inputMode="decimal"
+                          defaultValue={item.productionRate?.toString() ?? ""}
+                          placeholder="units/hr"
+                          title="Units per hour — the productivity this line is estimated at. Hours = quantity ÷ rate unless Labor hrs is filled in (which overrides)."
+                          className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+                        />
+                      </label>
                       <LaborCostHint cost={estimatedLaborCostByLineItem.get(item.id) ?? null} />
+                      <ProductionBackCheckHint
+                        check={productivityByLineItem.get(item.id) ?? null}
+                        unit={item.unit}
+                      />
                       <select
                         name="craftClassificationId"
                         defaultValue={item.craftClassificationId ?? ""}
