@@ -24,6 +24,11 @@ import { usePalette } from "@/lib/use-palette";
  *
  * Renders nothing when there is nothing to say — a screen with a green
  * queue shows no strip at all.
+ *
+ * Every one of those sentences is a dictionary key now, and this component
+ * is why that matters more here than anywhere else: it draws on TOP of
+ * eleven screens, so one English word left in it is one English word on
+ * every screen the translation was done for.
  */
 export function SyncStatus({
   pending,

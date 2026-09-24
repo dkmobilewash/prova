@@ -7,6 +7,7 @@ import { GroupedRow } from "@/components/GroupedRow";
 import { Icon } from "@/components/Icon";
 import { Sheet } from "@/components/Sheet";
 import type { CurrentJob } from "@/lib/current-job";
+import { useT, type StringKey } from "@/lib/i18n";
 import type { IconName } from "@/lib/icon-glyphs";
 import { type Palette, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
@@ -18,14 +19,16 @@ import { usePalette } from "@/lib/use-palette";
  * Create tab had). The Photo row carries `?open=camera`, so the shutter
  * is two taps from anywhere in the app.
  */
-const THINGS: { icon: IconName; title: string; subtitle: string; path: string }[] = [
-  { icon: "photos", title: "Photo", subtitle: "Stamped with time and place", path: "photos" },
-  { icon: "report", title: "Field report", subtitle: "What got done today", path: "reports" },
-  { icon: "time", title: "Time", subtitle: "Hours for the crew", path: "time" },
-  { icon: "punch", title: "Punch item", subtitle: "Something that needs fixing", path: "punch-list" },
-  { icon: "safety", title: "Safety", subtitle: "Toolbox talk or an incident", path: "safety" },
-  { icon: "materials", title: "Material order", subtitle: "What to get on site", path: "materials" },
-  { icon: "ticket", title: "T&M ticket", subtitle: "Signed time and materials", path: "ticket" },
+// Keys rather than sentences: this table is module-level, so a literal
+// here would be frozen in whatever language the app started in.
+const THINGS: { icon: IconName; title: StringKey; subtitle: StringKey; path: string }[] = [
+  { icon: "photos", title: "capture.photo", subtitle: "capture.photo.sub", path: "photos" },
+  { icon: "report", title: "capture.report", subtitle: "capture.report.sub", path: "reports" },
+  { icon: "time", title: "capture.time", subtitle: "capture.time.sub", path: "time" },
+  { icon: "punch", title: "capture.punch", subtitle: "capture.punch.sub", path: "punch-list" },
+  { icon: "safety", title: "capture.safety", subtitle: "capture.safety.sub", path: "safety" },
+  { icon: "materials", title: "capture.materials", subtitle: "capture.materials.sub", path: "materials" },
+  { icon: "ticket", title: "capture.ticket", subtitle: "capture.ticket.sub", path: "ticket" },
 ];
 
 export function CaptureSheet({
@@ -38,6 +41,7 @@ export function CaptureSheet({
   job: CurrentJob | null;
 }) {
   const palette = usePalette();
+  const { t } = useT();
   const styles = useMemo(() => makeStyles(palette), [palette]);
 
   const open = (path: string) => {
@@ -48,13 +52,10 @@ export function CaptureSheet({
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} title="Capture">
+    <Sheet visible={visible} onClose={onClose} title={t("capture.title")}>
       {!job ? (
         <>
-          <Text style={styles.empty}>
-            Pick a job first — everything here gets filed against one, and guessing which is how a
-            photo ends up on the wrong site.
-          </Text>
+          <Text style={styles.empty}>{t("capture.pickFirst")}</Text>
           <Button
             fullWidth
             onPress={() => {
@@ -62,7 +63,7 @@ export function CaptureSheet({
               router.navigate("/(tabs)/jobs");
             }}
           >
-            Pick a job
+            {t("capture.pickJob")}
           </Button>
         </>
       ) : (
@@ -71,8 +72,8 @@ export function CaptureSheet({
             <GroupedRow
               key={thing.path}
               icon={<Icon name={thing.icon} />}
-              title={thing.title}
-              subtitle={thing.subtitle}
+              title={t(thing.title)}
+              subtitle={t(thing.subtitle)}
               divider={i > 0}
               onPress={() => open(thing.path)}
             />

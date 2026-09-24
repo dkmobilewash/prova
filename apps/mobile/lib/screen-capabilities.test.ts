@@ -85,7 +85,12 @@ describe("the phone's role shell against the server's own guards", () => {
     );
     const sheet = readFileSync(join(__dirname, "..", "components", "CaptureSheet.tsx"), "utf8");
     expect(sheet.length, "the capture sheet is missing").toBeGreaterThan(100);
-    expect(sheet, "the capture sheet lost the pick-a-job refusal").toContain("Pick a job first");
+    // The refusal is a KEY now, not a sentence — this asserted the English
+    // wording and went red when the sheet was translated, which is the
+    // assertion being wrong rather than the sheet. What matters is that
+    // the refusal is still rendered; how it reads is the dictionary's
+    // business, and `strings-census.test.ts` proves the key has both halves.
+    expect(sheet, "the capture sheet lost the pick-a-job refusal").toContain('t("capture.pickFirst")');
     // …and the old tab files are GONE, not just off the bar — a route that
     // still exists is a route a stale deep link can reach unguarded.
     for (const tab of ["create", "camera"]) {

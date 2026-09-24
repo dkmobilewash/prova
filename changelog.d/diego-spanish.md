@@ -45,10 +45,39 @@ every key matched its own definition and the check could never fail. It passed
 clean on a tree with twelve provable orphans. The dictionaries are excluded
 now and the exclusion is argued in the test rather than quietly filtered.
 
-The literal detector asserts its own SCOPE the same way: it is pointed at
-`sign-in.tsx`, which is deliberately untranslated, and required to find
+The literal detector asserts that it can still SEE the same way: it is pointed
+at `sign-in.tsx`, which is deliberately untranslated, and required to find
 something there. A detector that stops matching now fails loudly instead of
 reporting a clean sweep over sixteen screens.
+
+**And then it shipped the other half of that scar anyway, which is the part
+worth keeping.** The detector walked `app/` and nothing else. So
+`SyncStatus`, `JobContextChip`, `DateField`, `SignaturePad` and
+`NotYourJobFunction` — the banner across the top of every field screen, the
+chip under it, the date chips inside every sheet, and the words directly above
+the pad a crew member signs — sat in **English on top of sixteen screens the
+census was calling clean**. `CaptureSheet` and the ＋ button, the app's primary
+action, were English too and nobody had noticed at all.
+
+That is `theme-contrast.test.ts`'s failure exactly — *nothing is ever missing
+from a directory you do not walk* — reproduced in a census written by someone
+who had just read that entry. A size assertion cannot help: a file outside the
+walk is not a small set, it is not in the set.
+
+So the shared scope is DERIVED rather than listed. The census follows `@/`
+imports out of every translated screen, transitively, and anything under
+`components/` or `lib/` that a translated screen can reach is in scope, with
+exclusions that must each carry a reason. A component added to a field screen
+tomorrow is in scope the moment it is imported, with nobody remembering to
+add it anywhere.
+
+Proved by mutation, and the middle row is the world as it shipped:
+
+| | SyncStatus | census scope | result |
+| --- | --- | --- | --- |
+| M1 | English restored | derived from imports | RED, names the file |
+| M2 | English restored | old `app/`-only | **green — 17 passed** |
+| M3 | translated | derived from imports | 27 passed |
 
 **A real day-drift bug, found while translating and fixed here.** `todayKey()`
 was `now.toISOString().slice(0, 10)` — the UTC day — while Home printed

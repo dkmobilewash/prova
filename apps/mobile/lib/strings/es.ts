@@ -504,4 +504,23 @@ export const ES: Record<keyof typeof EN, string> = {
   "notYourJob.noun.tickets": "los tickets de T&M",
   "notYourJob.noun.schedule": "el programa de la cuadrilla",
   "notYourJob.noun.drawings": "los planos",
+
+  // capture
+  "capture.title": "Registrar",
+  "capture.pickFirst": "Primero escoge una obra — todo lo de aquí se archiva en una, y adivinar cuál es como una foto termina en la obra equivocada.",
+  "capture.pickJob": "Escoger una obra",
+  "capture.photo": "Foto",
+  "capture.photo.sub": "Marcada con la hora y el lugar",
+  "capture.report": "Reporte diario",
+  "capture.report.sub": "Qué se hizo hoy",
+  "capture.time": "Horas",
+  "capture.time.sub": "Horas de la cuadrilla",
+  "capture.punch": "Pendiente",
+  "capture.punch.sub": "Algo que hay que arreglar",
+  "capture.safety": "Seguridad",
+  "capture.safety.sub": "Plática de seguridad o un incidente",
+  "capture.materials": "Pedido de material",
+  "capture.materials.sub": "Qué traer a la obra",
+  "capture.ticket": "Ticket de T&M",
+  "capture.ticket.sub": "Tiempo y materiales firmados",
 };

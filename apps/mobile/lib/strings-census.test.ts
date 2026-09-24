@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EN } from "./strings/en";
@@ -116,6 +116,43 @@ const NOT_TRANSLATED: Record<string, string> = {
 const DETECTOR_CONTROL = "sign-in.tsx";
 
 /**
+ * WHAT A SCREEN DRAWS THAT IS NOT IN ITS OWN FILE — and the hole this
+ * census shipped with.
+ *
+ * The literal detector below used to walk `app/` and nothing else. So
+ * `SyncStatus`, `JobContextChip`, `DateField`, `SignaturePad` and
+ * `NotYourJobFunction` sat in English ON TOP of sixteen screens it was
+ * calling clean: the banner at the top of every field screen, the chip
+ * under it, the date chips inside every sheet, and the words directly
+ * above the pad a crew member signs. Every one of them renders on a
+ * screen this file had just passed.
+ *
+ * That is CLAUDE.md's `theme-contrast` scar exactly — *nothing is ever
+ * missing from a directory you do not walk* — reproduced in a census
+ * written after reading it. A size assertion cannot see it, because a
+ * file outside the walk is not a small set, it is not in the set.
+ *
+ * So the scope is DERIVED rather than listed: follow the `@/` imports
+ * out of every translated screen, transitively, and anything under
+ * `components/` or `lib/` that a translated screen can reach is in
+ * scope too. A component added to a field screen tomorrow is in scope
+ * the moment it is imported, with nobody remembering to add it here.
+ */
+const SHARED_EXCLUDED: Record<string, string> = {
+  "lib/screen-capabilities.ts":
+    "a table of keys, not of sentences — its values are StringKeys and its own test asserts they look like keys",
+  "lib/today.ts":
+    "returns translation keys and the numbers to fill them; it decides which sentence is true, never how it reads",
+  "lib/strings/en.ts": "the dictionary itself — it is supposed to be full of English",
+  "lib/strings/es.ts": "the other dictionary — same reason, and the pair is asserted key for key above",
+  "lib/i18n.ts": "the translation layer; its only literals are the two language codes",
+  "lib/local-today.ts":
+    "month abbreviations used to FORMAT a date, which is date formatting rather than dictionary work",
+  "lib/photo-stamp.ts":
+    "burned into the photo's pixels as a document for a GC, not drawn on screen — English on purpose",
+};
+
+/**
  * English that STAYS English on a screen that is otherwise translated,
  * with the reason. Every entry is a decision; anything not listed is a
  * bug, which is the point of keeping the list short and argued.
@@ -131,6 +168,38 @@ const ALLOWED_ENGLISH: Record<string, Record<string, string>> = {
       "the misconfigured-build screen, drawn before Clerk and before any crew member could be handed the phone; its body comes from lib/env.ts and is read by whoever built it",
   },
 };
+
+/** The `@/…` imports a file makes, as repo-relative paths. */
+function importsOf(file: string): string[] {
+  const source = readFileSync(file, "utf8");
+  const out: string[] = [];
+  for (const m of source.matchAll(/from\s+"@\/([^"]+)"/g)) {
+    for (const ext of [".ts", ".tsx"]) {
+      const candidate = join(root, m[1] + ext);
+      if (existsSync(candidate)) {
+        out.push(m[1] + ext);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** Everything a translated screen can reach, transitively. */
+function sharedFilesInScope(): string[] {
+  const seen = new Set<string>();
+  const queue = TRANSLATED.map((s) => join("app", s));
+  while (queue.length) {
+    const next = queue.shift()!;
+    if (seen.has(next)) continue;
+    seen.add(next);
+    for (const dep of importsOf(join(root, next))) queue.push(dep);
+  }
+  return [...seen]
+    .filter((f) => f.startsWith("components/") || f.startsWith("lib/"))
+    .filter((f) => !f.endsWith(".test.ts") && !f.endsWith(".test.tsx"))
+    .sort();
+}
 
 const placeholders = (value: string): string[] =>
   [...value.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
@@ -345,5 +414,38 @@ describe("no translated screen still draws English", () => {
       (s) => !(s in allowed),
     );
     expect(found, `untranslated text on a screen in scope: ${found.join(" | ")}`).toEqual([]);
+  });
+});
+
+/**
+ * The other half of the scope, and the one this file shipped without.
+ * See SHARED_EXCLUDED above for why it is derived from the import graph
+ * rather than listed by hand.
+ */
+describe("what those screens draw from components and lib", () => {
+  const shared = sharedFilesInScope();
+
+  it("reaches a real set of shared files, not an empty one", () => {
+    // If the import walk breaks, every case below passes with nothing to
+    // check — which is the failure this whole describe exists to end.
+    expect(shared.length, "the import walk found almost nothing").toBeGreaterThan(15);
+    expect(shared, "SyncStatus renders on every field screen").toContain("components/SyncStatus.tsx");
+  });
+
+  it("makes every exclusion say why", () => {
+    for (const [file, reason] of Object.entries(SHARED_EXCLUDED)) {
+      expect(reason.length, `${file} needs a real reason`).toBeGreaterThan(20);
+      expect(existsSync(join(root, file)), `${file} is excluded but does not exist`).toBe(true);
+    }
+  });
+
+  it("leaves no English on anything a translated screen renders", () => {
+    const offenders: string[] = [];
+    for (const file of shared) {
+      if (file in SHARED_EXCLUDED) continue;
+      const found = englishLiterals(readFileSync(join(root, file), "utf8"));
+      if (found.length) offenders.push(`${file}: ${found.join(" | ")}`);
+    }
+    expect(offenders, `English inside a shared file: ${offenders.join(" ;; ")}`).toEqual([]);
   });
 });

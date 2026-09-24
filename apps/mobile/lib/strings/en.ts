@@ -508,4 +508,23 @@ export const EN = {
   "notYourJob.noun.tickets": "T&M tickets",
   "notYourJob.noun.schedule": "The crew schedule",
   "notYourJob.noun.drawings": "Drawings",
+
+  // capture
+  "capture.title": "Capture",
+  "capture.pickFirst": "Pick a job first — everything here gets filed against one, and guessing which is how a photo ends up on the wrong site.",
+  "capture.pickJob": "Pick a job",
+  "capture.photo": "Photo",
+  "capture.photo.sub": "Stamped with time and place",
+  "capture.report": "Field report",
+  "capture.report.sub": "What got done today",
+  "capture.time": "Time",
+  "capture.time.sub": "Hours for the crew",
+  "capture.punch": "Punch item",
+  "capture.punch.sub": "Something that needs fixing",
+  "capture.safety": "Safety",
+  "capture.safety.sub": "Toolbox talk or an incident",
+  "capture.materials": "Material order",
+  "capture.materials.sub": "What to get on site",
+  "capture.ticket": "T&M ticket",
+  "capture.ticket.sub": "Signed time and materials",
 } as const;
