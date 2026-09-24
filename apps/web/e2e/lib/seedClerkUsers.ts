@@ -141,6 +141,10 @@ export async function seedClerkUsers(): Promise<Record<PersonaKey, { id: string;
         existing.data[0] ??
         (await clerk.users.createUser({
           emailAddress: [persona.email],
+          // Required by the striking-jaybird instance; a fictional test
+          // number that sends no SMS. See the note in personas.ts.
+          username: persona.username,
+          phoneNumber: [persona.phone],
           firstName: "E2E",
           lastName: persona.label,
           skipPasswordRequirement: true,

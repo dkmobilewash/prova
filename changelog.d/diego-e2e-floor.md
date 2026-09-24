@@ -112,5 +112,51 @@ should have gone red. It asserts the labelled form now.
 | drop the raw dump | RED |
 | let `safeJson` throw | RED |
 
-**Still open:** what `form_data_missing` is actually asking for. The next
-run prints `meta`, which should name it.
+## And the raw dump paid for itself on the very next run
+
+`meta` came back **empty** — `{}`. The answer was in `longMessage`, which
+the labelled section printed and which the raw dump made impossible to
+miss:
+
+```
+["username" "phone_number"] data doesn't match user requirements
+set for this instance
+```
+
+So the `striking-jaybird` instance requires a username and a phone number,
+and the suite was sending an email alone. Had the formatter still been
+choosing fields — and `meta` was the field I added precisely to answer
+this — the second round trip would have printed `meta: {}` and told us
+nothing. That is the argument for the dump, made by the run after the one
+that suggested it.
+
+**Fixed on the suite's side, not the instance's.** Each persona gains a
+username and a phone. The alternative — relaxing the requirement on
+`striking-jaybird` — was rejected because that instance is SHARED: it
+holds the original dev users, and loosening what it asks for so a test can
+pass changes what every other dev sign-up is asked for. Sending two more
+fields costs nothing and touches nobody.
+
+The numbers are Clerk's documented fictional range, `+1 (XXX) 555-0100`
+through `555-0199`, which send no SMS and verify with `424242` — the same
+bargain `+clerk_test` makes for email. `personas.test.ts` holds both
+invariants that are invisible at the point a seventh persona would be
+added: every identity field distinct, and every phone inside the test
+range. A real number there would text a stranger on every CI run.
+
+| mutation | result |
+| --- | --- |
+| two personas share a phone | RED |
+| two personas share a username | RED |
+| a real phone number slips in | RED |
+
+A duplicate would not fail where it was made — it fails inside
+`createUser` on whichever persona is seeded second, as the same opaque 422
+this whole PR started with.
+
+**One thing for Diego rather than for this PR:** development requires
+username and phone; nothing here establishes whether production
+(`cstream.ai`) does. If it does not, the two instances disagree about what
+a user needs, which is the kind of drift CLAUDE.md's Clerk table exists
+for. Flagging, not fixing — it needs somebody who can read both
+dashboards.
