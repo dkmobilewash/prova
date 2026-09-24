@@ -628,6 +628,15 @@ export const estimatingExclusions: Exclusion[] = [
   // in lib/estimating/bid-invitation.ts.
   { action: "priceCatalogEntryFromQuotes", reason: "Setting a catalog default from a supplier quote is a pricing decision made on /catalog, where the vendor, the price, the date and the source are all on screen; it is owner-only and moves a number every future bid reads." },
   { action: "updateBidInvitationStatus", reason: "A won/lost decision is made on the bids page where the bid is visible." },
+  // Alternates, unit prices and allowances. Not commands: each one is a
+  // figure off a GC's bid form whose KIND decides where it sits relative
+  // to the base bid, and a model reading "fifteen thousand for soffits"
+  // cannot tell an allowance carried inside the number from an alternate
+  // added outside it. Getting that wrong sends the bid out wrong by the
+  // amount, silently.
+  { action: "saveBidLine", reason: "Whether a figure is an allowance, an alternate or a unit price decides where it sits against the base bid, and a wrong kind sends the bid out wrong by that amount." },
+  { action: "setBidLineAccepted", reason: "What the GC took is read off their award letter, on the page where the alternate is visible." },
+  { action: "deleteBidLine", reason: "Deletes are never commands (T5)." },
   { action: "linkBidToJob", reason: "Which job a bid became is a judgement about two records the model cannot tell apart — names rarely match and one GC sends several invitations per building. A wrong link teaches the estimator from another job's costs, so a person picks it on /bids." },
   { action: "deleteBidInvitation", reason: "Deletes are never commands (T5)." },
   // The pre-bid pursuit list (lib/actions/bidPursuits.ts, BidPursuit). The

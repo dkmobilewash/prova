@@ -28,6 +28,10 @@ type Bid = {
   tradeScope: string | null;
   dueDate: Date | null;
   contact: { name: string };
+  /** The alternates/unit prices/allowances on the bid. Empty here: this
+   * file's subject is the won-value line, and `lib/bid-lines.test.ts` covers
+   * the totals against its own fixtures. */
+  lines: [];
 };
 
 function bid(over: Partial<Bid> & { id: string }): Bid {
@@ -39,6 +43,7 @@ function bid(over: Partial<Bid> & { id: string }): Bid {
     tradeScope: null,
     dueDate: null,
     contact: { name: "Acme GC" },
+    lines: [],
     ...over,
   };
 }

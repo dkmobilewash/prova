@@ -8,6 +8,7 @@ import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/cata
 import { ActionResult, actionFail, actionOk, InputError, runAction, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, ownerRefusal, tradeScopeFromForm } from "./shared";
 import { catalogActuals, catalogSourcedLine, repriceDecision } from "@/lib/catalog-actuals";
 import { quotePriceDecision } from "@/lib/catalog-quote-price";
+import { bidLineProblem } from "@/lib/bid-lines";
 import { todayInZone } from "@/lib/viewer-timezone";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
@@ -588,6 +589,142 @@ export async function importCatalogEntries(formData: FormData): Promise<ActionRe
   revalidatePath("/catalog");
   return actionOk;
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// WHAT A BID CARRIES BESIDES ITS NUMBER — alternates, unit prices, allowances.
+//
+// All three assert MANAGE_ESTIMATING, which is what `/bids` itself withholds
+// on. Every refusal is RETURNED: production redacts a thrown Server Action
+// message to a digest, and "an allowance cannot be negative" is exactly the
+// sentence somebody needs to see.
+// ───────────────────────────────────────────────────────────────────────────
+
+const ESTIMATING_ONLY =
+  "Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.";
+
+/** The kinds, as the form posts them. */
+const BID_LINE_KINDS = ["ALTERNATE", "UNIT_PRICE", "ALLOWANCE"] as const;
+
+/**
+ * Creates or updates one line on a bid.
+ *
+ * THE SHAPE RULES ARE `bidLineProblem`'s, not this file's, so the form and the
+ * write refuse the same things for the same reasons — a unit price with a
+ * total, an allowance that is negative, an alternate of zero. Re-run here
+ * because the screen may be minutes old and a refusal it showed must not
+ * become savable by posting the form again.
+ */
+export async function saveBidLine(bidInvitationId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(ESTIMATING_ONLY);
+  const { company } = context;
+
+  const bid = await prisma.bidInvitation.findFirst({
+    where: { id: bidInvitationId, companyId: company.id },
+    select: { id: true },
+  });
+  if (!bid) return actionFail("That bid is no longer on this company. Reload the page.");
+
+  return runAction(async () => {
+    const kind = enumFromForm(formData, "kind", BID_LINE_KINDS);
+    const label = String(formData.get("label") ?? "").trim();
+    const description = String(formData.get("description") ?? "").trim();
+
+    // A unit price holds a RATE and no total; the other two hold an amount
+    // and no rate. Reading only the fields the kind owns is what stops a
+    // stale hidden input from the other branch of the form arriving with it.
+    const amount = kind === "UNIT_PRICE" ? null : nullableDecimalFromForm(formData, "amount");
+    const unitPrice = kind === "UNIT_PRICE" ? nullableDecimalFromForm(formData, "unitPrice") : null;
+    const unit = kind === "UNIT_PRICE" ? String(formData.get("unit") ?? "").trim() || null : null;
+
+    const problem = bidLineProblem({
+      kind,
+      label,
+      amount: amount === null ? null : Number(amount),
+      unit,
+      unitPrice: unitPrice === null ? null : Number(unitPrice),
+      accepted: null,
+    });
+    if (problem) return actionFail(problem);
+
+    const bidLineId = String(formData.get("bidLineId") ?? "").trim();
+    const data = {
+      kind,
+      label,
+      description: description || null,
+      amount,
+      unit,
+      unitPrice,
+    };
+
+    if (bidLineId) {
+      // Tenancy is the `where`: an id from another company matches nothing,
+      // and the count is the refusal.
+      const updated = await prisma.bidLine.updateMany({
+        where: { id: bidLineId, companyId: company.id, bidInvitationId },
+        data,
+      });
+      if (updated.count === 0) return actionFail("That line is no longer on this bid. Reload the page.");
+    } else {
+      const last = await prisma.bidLine.findFirst({
+        where: { bidInvitationId },
+        orderBy: { sortOrder: "desc" },
+        select: { sortOrder: true },
+      });
+      await prisma.bidLine.create({
+        data: { ...data, companyId: company.id, bidInvitationId, sortOrder: (last?.sortOrder ?? 0) + 1 },
+      });
+    }
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+/**
+ * Records the GC's answer on an alternate.
+ *
+ * THREE STATES, NOT TWO. "Accepted", "rejected" and "they have not said" are
+ * different facts about a live negotiation, and an award total computed while
+ * alternates are outstanding is provisional — collapsing the third into
+ * "rejected" would make it look settled.
+ */
+export async function setBidLineAccepted(bidLineId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(ESTIMATING_ONLY);
+  const { company } = context;
+
+  const answer = String(formData.get("accepted") ?? "");
+  const accepted = answer === "yes" ? true : answer === "no" ? false : null;
+
+  const line = await prisma.bidLine.findFirst({
+    where: { id: bidLineId, companyId: company.id },
+    select: { kind: true },
+  });
+  if (!line) return actionFail("That line is no longer on this bid. Reload the page.");
+  if (line.kind !== "ALTERNATE") {
+    // Only an alternate is something a GC takes or leaves. A unit price is
+    // held either way, and an allowance is already inside the bid.
+    return actionFail("Only an alternate is accepted or declined — a unit price and an allowance are not.");
+  }
+
+  await prisma.bidLine.update({ where: { id: bidLineId }, data: { accepted } });
+  revalidatePath("/bids");
+  return actionOk;
+}
+
+export async function deleteBidLine(bidLineId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(ESTIMATING_ONLY);
+  const { company } = context;
+
+  const deleted = await prisma.bidLine.deleteMany({ where: { id: bidLineId, companyId: company.id } });
+  if (deleted.count === 0) return actionFail("That line is already gone. Reload the page.");
+
+  revalidatePath("/bids");
+  return actionOk;
+}
+
 
 /**
  * Links a won bid to the job it became — or unlinks it.

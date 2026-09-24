@@ -262,6 +262,21 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: byCompany,
   },
   {
+    key: "bidLines",
+    model: "bidLine",
+    label: "Alternates, unit prices and allowances on each bid",
+    note:
+      "What each bid carried besides its number. An ALLOWANCE sits INSIDE the base bid; an " +
+      "ALTERNATE sits outside it and only counts when accepted (its amount is signed — negative " +
+      "is a deduct); a UNIT_PRICE is a rate with no total at all. Summing the amount column " +
+      "across kinds gives a figure that means nothing.",
+    columns: [
+      "id", "bidInvitationId", "kind", "label", "description", "amount", "unit", "unitPrice",
+      "accepted", "sortOrder", "createdAt", "updatedAt",
+    ],
+    scope: byCompany,
+  },
+  {
     key: "bidRecaps",
     model: "jobBidRecap",
     label: "Bid recap per job",

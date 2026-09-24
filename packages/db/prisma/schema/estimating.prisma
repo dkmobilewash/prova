@@ -47,6 +47,10 @@ model BidInvitation {
   /// chased — see pursuits.prisma. The FK lives on BidPursuit.
   pursuit BidPursuit?
 
+  /// The alternates, unit prices and allowances this bid carries — see
+  /// bid-lines.prisma. A bid is rarely one number; these are the rest of it.
+  lines BidLine[]
+
   /// THE JOB THIS BID BECAME, when it was won and somebody linked it.
   ///
   /// Nullable and SET NULL, never required: most invitations never become a
