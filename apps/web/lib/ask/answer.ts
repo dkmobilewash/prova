@@ -13,7 +13,8 @@ import {
 } from "@prova/integrations";
 import type { Principal } from "@/lib/permissions";
 import { accessContext, refusalFor } from "./access";
-import { askAllowance, recordAskUsage, type AskUsageOutcome } from "./usage";
+import { askAllowance, PROVENANCE_OUTCOME, recordAskUsage, type AskUsageOutcome } from "./usage";
+import { checkNumberProvenance, describeUnaccounted } from "./provenance";
 import {
   claimAskAllowance,
   markAskAllowanceFailure,
@@ -45,6 +46,12 @@ import type { WebSuggestion } from "./webSuggestions";
 import { resolvePageJob } from "./page-context-query";
 import { PRIOR_TURNS_RULE, type AskTurn } from "./turns";
 import { runTool } from "./handlers";
+import {
+  CALCULATE_TOOL,
+  CALCULATE_TOOL_NAME,
+  calculate,
+  FigureLedger,
+} from "./calculator";
 import { recordProposal } from "./proposals";
 import { readingLabel } from "./toolLabels";
 import {
@@ -99,17 +106,92 @@ const MAX_ITEM_LINKS = 6;
  * because it has no way to express the request.
  */
 
+/**
+ * COMPOSITION: several tool results, one answer.
+ *
+ * WHAT WAS ACTUALLY IN THE WAY, because the answer turned out to be "not
+ * much", and a change that claims to have unblocked something it never
+ * touched is worse than no change at all. The loop has composed since it
+ * was written: `streamToolConversation` runs every tool_use block of a pass
+ * under one `Promise.all`, `toolsUsed`, `citations` and `links` are arrays
+ * accumulated across all of them, and `eval/top-questions.ts` has carried a
+ * `several` route — "it genuinely needs more than one tool in one answer" —
+ * since it was written. Nothing in code said one tool.
+ *
+ * What said it was this prompt, in two places and by omission in a third:
+ *
+ *   - WHICH TOOLS TO CALL permits a wide read and then illustrates it with
+ *     two COMPANY-WIDE questions only, so a question about one job read as
+ *     narrow by default;
+ *   - HOW TO ANSWER describes one subject with several instances ("one
+ *     short lead line, then one bullet each") and has no shape at all for
+ *     one subject with several AREAS, nor anything to say about an area
+ *     that came back clean;
+ *   - `job_overview`'s own description claims "how's Riverside looking" for
+ *     a single tool that holds no receivables — so the exact question this
+ *     change exists for routed to the one tool that cannot answer it.
+ *
+ * WHAT MAKES THIS SAFE TO ATTEMPT NOW is the number-provenance guard
+ * (`provenance.ts`, #462), whose own header says composition is "a later,
+ * separate change, and the only thing that makes it safe to attempt is that
+ * an untraceable figure cannot reach the person". A composed answer names
+ * more figures from more sources, which is the shape most likely to trip a
+ * guard tuned on single-tool answers — so the corpus next door now carries
+ * composed entries and `provenanceCorpus.test.ts` measures how many of them
+ * it would block. That measurement is what this change is judged on, not
+ * this text.
+ *
+ * NOT A RELAXATION OF THE ARITHMETIC RULE, and the section says so twice:
+ * two areas' figures stay two figures said side by side, and a combined one
+ * is the calculator's job or it is not said at all.
+ *
+ * THE FIGURES IN THE EXAMPLE ARE NOT A PROVENANCE SOURCE. The guard accepts
+ * this turn's tool results and the person's own question, and deliberately
+ * not the system prompt — so a model copying $148,200.00 out of the shape
+ * below would have its whole answer retracted. That is the right failure,
+ * and it is still a question the person paid for and did not get, which is
+ * why the line under the example tells it not to.
+ */
+export const COMPOSE_RULE = `COMPOSING ONE ANSWER OUT OF SEVERAL AREAS
+
+A question can be wide without being company-wide. "How's the Hilton doing?" is one job and four areas at once — what it is making, what the GC still owes on it, what is waiting on an answer, and what is left to finish. Answering one of those and calling it done answers a different question than the one asked.
+
+So read every area that could change what they do about the thing they asked about, IN ONE ROUND, and write ONE answer over the lot. The areas do not depend on each other and the person is waiting, so call their tools together rather than one at a time.
+
+Which areas: the ones the question puts at stake, never every tool that happens to take a job name. "How's it doing", "how are we doing on", "what's the story on", "should I be worried about" put the money at stake — what it is making AND what is owed on it, which are two different tools. "What's holding us up" and "what do I need to chase" put the field at stake. An area that cannot change what they do next is still not worth four seconds, exactly as above.
+
+THE SHAPE OF A COMPOSED ANSWER. One lead line that answers the question actually asked — the single thing they would want first, which on a job is almost always the money. Then one bullet per area, most urgent first, each naming its area, its figure and its state. Areas that are clean go TOGETHER on one closing line, never a bullet each — "RFIs, submittals and deliveries are clear." Nothing else: no heading, no summary, no offer to go deeper.
+
+    Making money, but Turner is slow paying.
+
+    • Margin — $148,200.00 forecast, 4.2% under the bid
+    • Owed — $86,500.00 out, $30,000.00 of it 42 days over
+    • RFIs — 3 open, 1 past its answer date
+    • Punch — 14 open, none overdue
+
+Those figures are the SHAPE of an answer, not this company's numbers. Never repeat one of them.
+
+A COMPOSED ANSWER IS STILL AN ANSWER AND NOT A REPORT. Every limit below holds: a bullet is still under 12 words, and six bullets is more than any question has needed. Past that you are listing the tools you called rather than answering.
+
+COMPOSING NEVER MAKES A FIGURE. Two areas' numbers stay two numbers, said side by side. If the question genuinely wants them as one — what one GC owes across two jobs, this job against that one — that is the calculate tool under its own rules above, and it is the only way a combined figure may ever be said. Never total two tool results in a sentence because they are now both in front of you.
+
+COMPOSING IS NOT A WAY AROUND A GAP. Reading four areas does not make a fifth one answerable. When part of what they asked is something this app does not hold, answer the parts it does hold and say the rest is not recorded, in one clause — never fill the hole with the nearest figure you happen to have read. An adjacent number is more tempting the more of them are on the table, not less, and a question this app cannot answer is refused with four tool results open exactly as it is with none.`;
+
 export const SYSTEM_PROMPT = `You are the assistant inside C Stream, an operating system for specialty-trade construction subcontractors — framing and drywall, plaster, EIFS, ceilings, fireproofing — who work under general contractors. The person asking is the subcontractor or someone in their office. They are usually on a phone, often on a job site, and they want an answer, not a report — or they want something done, and then they want it done and confirmed, not described.
 
 HOW YOU GET FACTS
 
 You have two kinds of tools. READ tools return facts from this company's own data. COMMANDS propose a change: a command resolves what the person named, shows them a card with exactly what will happen, and the person taps to confirm. Nothing is written until they tap. Every fact in your answer must come from a tool call in this conversation. You have no other knowledge of this company: not its jobs, its people, its money, or its schedule. If you did not read it from a tool result just now, you do not know it.
 
-Never do arithmetic. Not addition, not percentages, not differences, not "roughly". Every figure a tool hands you is already computed by the same code that renders the screens this person looks at, so a number you calculate yourself can disagree with their own dashboard — and then they have two answers and no way to tell which is right. If you want a number the tools do not return, say it is not available rather than deriving it.
+Never do arithmetic. Not addition, not percentages, not differences, not "roughly". Every figure a tool hands you is already computed by the same code that renders the screens this person looks at, so a number you calculate yourself can disagree with their own dashboard — and then they have two answers and no way to tell which is right.
+
+THE ONE EXCEPTION IS THE calculate TOOL, AND IT IS NOT A RELAXATION OF THAT RULE. You still do no arithmetic; calculate does it in code. You do not give it numbers — you give it the PATH of a figure inside a tool result you have already been handed this turn, such as receivables.rows[0].outstanding, and it refuses anything else. When the question needs two figures added, subtracted, averaged, counted, or one expressed as a percentage of another, call calculate and say the figure it gives back, exactly as it writes it. Never work it out yourself, and never check its answer against your own.
+
+Call it only for a SUBSET the app does not already total: two GCs out of five, this job against that one. If a tool already returns the total — company-wide AR, retainage held, total hours, any count — that figure wins, because it comes from the code that draws the screens. If calculate refuses, that refusal is the answer; say the figures separately rather than combining them yourself.
 
 Say the number the tool gave you, in the tool's own terms. If a tool reports \`daysOverdue: 42\`, the invoice is 42 days overdue. Do not convert it to weeks or months.
 
-A COUNT IS A NUMBER, and counting a list is arithmetic. Every tool result that contains rows also contains a \`count\`. When you say how many of something there are, that figure must be the \`count\` you were given — never the number of rows you can see, never the number of lines you are about to write, and never a subtotal you worked out. If you group several rows onto one line, the count still describes rows, not lines. If you want a count of some subset — how many are overdue, how many are unpaid — and no tool gave you that exact number, do not produce one: describe the subset without counting it, or say the number is not available.
+A COUNT IS A NUMBER, and counting a list is arithmetic. Every tool result that contains rows also contains a \`count\`. When you say how many of something there are, that figure must be the \`count\` you were given — never the number of rows you can see, never the number of lines you are about to write, and never a subtotal you worked out. If you group several rows onto one line, the count still describes rows, not lines. If you want a count of some subset — how many are overdue, how many are unpaid — and no tool gave you that exact number, do not produce one: call calculate with operation count over the paths of the rows you mean, or describe the subset without counting it.
 
 WHAT YOU MUST NOT CLAIM
 
@@ -170,6 +252,8 @@ Cast wide only when the question is wide. "What needs my attention today?"
 and "how are we doing?" genuinely span areas, and there you should read
 broadly. The test is whether an area could change the answer to the
 question actually asked.
+
+${COMPOSE_RULE}
 
 HOW TO ANSWER
 
@@ -260,6 +344,81 @@ export function forModel(data: unknown): unknown {
     note: `Showing the first ${MAX_ROWS_PER_TOOL} of ${count}. Say that the list is longer than what you are showing, and use count for how many there are.`,
   };
 }
+
+/**
+ * The exact string a read tool's result reaches the model as.
+ *
+ * Lifted out of the executor below so the provenance corpus can build the
+ * same BYTES rather than a lookalike. The number-provenance guard asks
+ * "could the model have read this figure from what it was given", and the
+ * answer depends on `forModel`'s row cap and on the summary being merged in
+ * — so a corpus that serialised its fixtures its own way would be grading
+ * the guard against a source the model never sees.
+ */
+export function toolResultContent(result: { data: unknown; summary?: Record<string, number> }): string {
+  const payload = forModel(result.data);
+  return JSON.stringify(
+    result.summary && typeof payload === "object" && payload !== null
+      ? { ...result.summary, ...payload }
+      : payload,
+  );
+}
+
+/**
+ * WHAT THE PERSON WILL ACTUALLY READ, assembled from the stream exactly as
+ * `components/AskPanel.tsx` assembles it.
+ *
+ * This exists because of the scope half of CLAUDE.md's census scar: a check
+ * can have the right pattern and be looking at the wrong text, and no size
+ * assertion sees that. The number-provenance guard is only worth anything if
+ * the string it checks is the string that reaches the screen — not the raw
+ * concatenation of every `text` delta, which includes the "let me check…"
+ * preamble that `reset` throws away.
+ *
+ * So the four rules are AskPanel's four rules, and
+ * `provenanceScope.test.ts` fails the build if that component stops
+ * following them:
+ *
+ *   - text before `answering` is PROVISIONAL and goes to the progress slot;
+ *   - `answering` clears the progress and makes what follows the answer;
+ *   - `reset` clears both, because what streamed was preamble;
+ *   - at `done`, an answer that never got `answering` — a refusal, a
+ *     clarifying question, anything that called no tool — is whatever is in
+ *     the progress slot.
+ */
+export type ShownAnswer = { provisional: boolean; progress: string; answer: string };
+
+export const NOTHING_SHOWN: ShownAnswer = { provisional: true, progress: "", answer: "" };
+
+export function showing(shown: ShownAnswer, event: { type: string; delta?: string }): ShownAnswer {
+  switch (event.type) {
+    case "answering":
+      return { ...shown, provisional: false, progress: "" };
+    case "reset":
+      return { ...shown, progress: "", answer: "" };
+    case "text":
+      return shown.provisional
+        ? { ...shown, progress: shown.progress + (event.delta ?? "") }
+        : { ...shown, answer: shown.answer + (event.delta ?? "") };
+    default:
+      return shown;
+  }
+}
+
+/** The text on screen once the stream has ended. */
+export function shownText(shown: ShownAnswer): string {
+  return (shown.provisional && shown.progress ? shown.progress : shown.answer).trim();
+}
+
+/** Said when the guard holds an answer back.
+ *
+ * IT DOES NOT REPEAT THE FIGURE, and that is the point rather than an
+ * oversight: the whole reason the answer is being withheld is that its
+ * numbers are not ones this app can vouch for, and putting one in the
+ * refusal would be showing it after all. The offending figure goes to the
+ * runtime log, where an engineer reads it and a GC does not. */
+export const PROVENANCE_REFUSAL =
+  "That answer had a number in it I couldn't trace back to your records, so I'm not showing it. Ask again, or open the page the figure would have come from.";
 
 /** Turns a failure from the conversation into something worth reading on a
  * phone. The underlying reasons are deliberately not shown verbatim — they
@@ -375,7 +534,11 @@ function invalid(question: string): string | null {
 function labelFor(names: string[]): string {
   const command = names.find(isCommandName);
   if (command) return `${commandNamed(command).verb}…`;
-  return readingLabel(names.filter((name): name is ToolName => TOOLS.some((tool) => tool.name === name)));
+  const reads = names.filter((name): name is ToolName => TOOLS.some((tool) => tool.name === name));
+  // A batch that is ONLY the calculator would otherwise fall through to
+  // "Reading your records…", which is a lie: it reads nothing.
+  if (reads.length === 0 && names.includes(CALCULATE_TOOL_NAME)) return "Working that out…";
+  return readingLabel(reads);
 }
 
 const toolNames = new Set<string>(TOOLS.map((tool) => tool.name));
@@ -508,8 +671,19 @@ export function offeredTools(principal: Principal): AskToolDefinition[] {
   return [
     ...toolsFor(principal).map(toAskToolDefinition),
     ...commandsFor(principal).map(toToolDefinition),
+    // Offered to everyone, and deliberately without a capability: it reads
+    // nothing. It can only combine figures this person has already been
+    // handed in this same turn, which the capability filter above has
+    // already decided they may see. A capability here would guard a door
+    // that opens onto a room the person is already standing in.
+    ...EXTRA_TOOLS,
   ];
 }
+
+/** Tools that are neither a database read nor a command. One so far. Kept
+ * as a list rather than a lone spread so the census in answer.test.ts can
+ * pin the registry's SIZE to something that cannot drift with it. */
+export const EXTRA_TOOLS: AskToolDefinition[] = [CALCULATE_TOOL];
 
 export async function* streamAnswer(
   ctx: CommandContext,
@@ -648,6 +822,23 @@ export async function* streamAnswer(
    * not against the first N. */
   const links: ItemLink[] = [];
   const toolsUsed: ToolName[] = [];
+  // Every number the model is handed this turn, addressable by path. Built
+  // from the CONTENT STRINGS the executor returns, so it holds exactly what
+  // the model could have read and nothing richer — see calculator.ts.
+  const ledger = new FigureLedger();
+  /** Every `content` string the model was handed this turn — the sources
+   * the number-provenance guard checks the answer against. The strings, not
+   * the objects: what the model could read is the JSON it was sent, after
+   * `forModel` capped the rows, and a guard checking a richer set than the
+   * model was given would pass figures the model could not have seen.
+   *
+   * Two collectors over one source, deliberately: the ledger answers "which
+   * figure does this PATH name", which is how the calculator refuses to add
+   * dollars to hours; the texts answer "was this NUMBER in front of the
+   * model at all", which is how the guard refuses an invented total. Neither
+   * can do the other's job, and both are fed from the same string so they
+   * cannot disagree about what the model saw. */
+  const toolTexts: string[] = [];
   // Set synchronously, before the first await in a command's branch, so a
   // batch of two commands running under Promise.all yields one proposal
   // and one refusal rather than two rows.
@@ -697,7 +888,42 @@ export async function* streamAnswer(
     webSearch: true,
     // ctx is closed over here and is not a parameter of any tool schema,
     // so there is no way for the model to ask about anyone else.
+    //
+    // Wrapped so every `content` the model is handed is also recorded for
+    // the number-provenance guard. Recording the outcome HERE rather than at
+    // each return inside is what makes the recorded set exhaustive by
+    // construction: a branch added later cannot forget to register itself,
+    // which is the shape of failure this repo keeps paying for.
     execute: async (name, rawInput, meta) => {
+      // First, because it is neither a read nor a command: no database, no
+      // company scope, nothing but this turn's own figures.
+      //
+      // Its result is recorded like any other tool's, and that is not
+      // incidental: the total it computes has to be traceable by the
+      // provenance guard, or the guard would retract the very answer this
+      // tool exists to make possible. The calculator is what makes a sum
+      // sayable; the ledger entry is what makes it provable.
+      if (name === CALCULATE_TOOL_NAME) {
+        const computed = { content: JSON.stringify(calculate(ledger, rawInput)) };
+        toolTexts.push(computed.content);
+        return computed;
+      }
+
+      const outcome = await runOne(name, rawInput, meta);
+      toolTexts.push(outcome.content);
+      return outcome;
+    },
+  });
+
+  /** One tool call. The body is unchanged from when this was the `execute`
+   * arrow itself; it is a named function only so the wrapper above can
+   * record what it returned. */
+  async function runOne(
+    name: string,
+    rawInput: unknown,
+    meta: AskToolCallMeta,
+  ): Promise<AskToolOutcome<AskHalt>> {
+    {
       if (isCommandName(name)) {
         const command = commandNamed(name);
         if (commandSeen) {
@@ -758,16 +984,18 @@ export async function* streamAnswer(
       if (result.unavailable) {
         return { content: JSON.stringify({ unavailable: result.unavailable }) };
       }
-      const payload = forModel(result.data);
-      return {
-        content: JSON.stringify(
-          result.summary && typeof payload === "object" && payload !== null
-            ? { ...result.summary, ...payload }
-            : payload,
-        ),
-      };
-    },
-  });
+      // `toolResultContent` is the same cap-then-merge this branch built
+      // inline before #462 lifted it out — byte for byte, which is why the
+      // ledger can be fed from it unchanged.
+      const content = toolResultContent(result);
+      // Recorded AFTER the cap and the summary merge, from the same string
+      // the model gets. A ledger built from `result.data` would resolve
+      // paths to rows the cap removed — figures the model never saw and
+      // therefore cannot have meant.
+      ledger.record(toolName, content);
+      return { content };
+    }
+  }
 
   // The loop reports what the question cost once, just before it ends;
   // the row is written with the outcome the terminal event names, and it
@@ -777,6 +1005,11 @@ export async function* streamAnswer(
     if (!usage) return;
     await recordAskUsage({ companyId: ctx.companyId, userId: ctx.userId, model: ASK_DEFAULT_MODEL, usage, outcome });
   };
+
+  // What is on screen, tracked the way the panel tracks it, so the guard
+  // below checks the string the person will read rather than every delta
+  // that crossed the wire.
+  let shown = NOTHING_SHOWN;
 
   // The claim above is MARKED, never released, when the question does not
   // produce an answer. Releasing would let anyone defeat the cap by making
@@ -806,6 +1039,7 @@ export async function* streamAnswer(
         case "text":
         case "reset":
         case "answering":
+          shown = showing(shown, event);
           yield event;
           break;
         case "tools":
@@ -823,7 +1057,83 @@ export async function* streamAnswer(
           await markFailed();
           yield { type: "error", error: messageFor(event.reason) };
           return;
-        case "done":
+        case "done": {
+          /* THE NUMBER-PROVENANCE GUARD. Every figure the answer says out
+           * loud must appear in a tool result of this turn or in the person's
+           * own question; lib/ask/provenance.ts is the rule and the reasoning.
+           *
+           * WHY IT IS CHECKED HERE AND NOT BEFORE THE TEXT STREAMS. It cannot
+           * be: the guard needs the whole answer, and the whole answer is not
+           * known until the model has finished writing it. Buffering the last
+           * pass instead would add its full streaming time — measured at
+           * 8-11s to the end of a multi-tool question — to every GOOD answer
+           * to spare a rare bad one a second on screen, and streaming is the
+           * reason this is a route handler rather than a Server Action at all.
+           *
+           * So the answer is RETRACTED rather than withheld, using the
+           * mechanism the loop already has for exactly this: an `error` event
+           * clears the answer in AskPanel (`setAnswer("")`), the same way
+           * `exhausted` and an API failure clear a half-written turn. `reset`
+           * goes first so the intent is explicit and any future client that
+           * handles one and not the other still ends up blank.
+           *
+           * What the person does NOT get: the figure as an answer, a citation
+           * link implying it was sourced, a line in their transcript, or a
+           * prior turn the next question could quote. `done` never fires, and
+           * every one of those hangs off `done` in the panel.
+           *
+           * What they DO briefly get, said plainly rather than left for
+           * somebody to find: the text is on screen while it streams. That is
+           * the cost of not buffering, it is the same window the "let me
+           * check…" preamble already occupies, and whether it is worth
+           * closing is Cyrus's call with the latency figures above.
+           *
+           * TWO KINDS OF ANSWER ARE NOT CHECKED AT ALL, because their real
+           * source is invisible to this process and every honest answer would
+           * be refused:
+           *   - a web-search answer. The search runs server-side inside the
+           *     model's own response and never reaches `execute`, so its
+           *     figures are in no tool text. The prompt already makes these
+           *     answers say where they came from and that they need checking.
+           *   - an answer about an ATTACHED FILE. The figures are in the
+           *     person's own document, which is a PDF or an image here, not
+           *     text this code can read.
+           * Both are named in the log line so the firing rate is read against
+           * the right denominator. */
+          const answerText = shownText(shown);
+          const searched = (usage?.webSearches ?? 0) > 0;
+          const guarded = !searched && !attachment;
+          if (guarded) {
+            const report = checkNumberProvenance(answerText, toolTexts, question);
+            if (!report.ok) {
+              // Ids, the question and the figures — the three things needed to
+              // work out whether the guard was right. Never the answer itself:
+              // the point of holding it back is that its numbers do not go in
+              // front of people, and a log line is read by people.
+              console.error("[ask] answer held back: a number was not traceable to a tool result", {
+                companyId: ctx.companyId,
+                userId: ctx.userId,
+                question,
+                unaccounted: describeUnaccounted(report),
+                figuresChecked: report.checked,
+                valuesOffered: report.offered,
+                toolResults: toolTexts.length,
+                toolsUsed,
+              });
+              await record(PROVENANCE_OUTCOME);
+              // A held-back answer is a question that produced no answer, so
+              // its allowance claim is MARKED here for the same reason the
+              // `error` arm marks one: the unit was genuinely spent (the model
+              // wrote the answer; this code declined to show it), releasing it
+              // would let anyone defeat the cap by provoking refusals, and the
+              // mark is what lets an owner see it on /settings/assistant and
+              // ask a person for a credit. allowance.ts's header argues it.
+              await markFailed();
+              yield { type: "reset" };
+              yield { type: "error", error: PROVENANCE_REFUSAL };
+              return;
+            }
+          }
           await record("answered");
           // Citations only where a tool actually ran. An answer built from
           // no data — a refusal to guess, a clarifying question — must not
@@ -839,6 +1149,7 @@ export async function* streamAnswer(
             toolsUsed,
           };
           return;
+        }
       }
     }
   } catch (err) {

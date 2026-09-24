@@ -192,19 +192,82 @@ describe("/ landing content renders signed out, with no auth call of its own", (
   /**
    * The hero's right half was EMPTY at desktop — the single most visible
    * thing wrong with the page this replaced, and the reason the founder
-   * called it empty. A panel now fills it. This asserts the panel is
+   * called it empty. A pay-application panel filled it first; since
+   * 2026-09-23 (Cyrus's call) THE ASK DEMO does, so the assistant
+   * animation is the first thing a visitor sees. This asserts the demo is
    * inside the hero <section> rather than merely somewhere on the page,
-   * because "it is on the page" is true of a panel that has drifted three
-   * sections down, and that is precisely the regression worth catching.
+   * because "it is on the page" is true of a scene that has drifted six
+   * sections down — which is exactly where it came from, and precisely the
+   * regression worth catching.
+   *
+   * The pay application is not gone from the page: it has a placement of
+   * its own under "Getting paid", asserted below. The hero's copy was its
+   * SECOND, and two drawings of one panel is not what the hero was for.
    */
-  it("the hero carries a rendered panel in its own section, not just somewhere on the page", () => {
+  it("the hero carries the Ask demo in its own section, not just somewhere on the page", () => {
     const heroStart = html.indexOf("<section");
     const heroEnd = html.indexOf("</section>", heroStart);
     expect(heroStart).toBeGreaterThan(-1);
     expect(heroEnd).toBeGreaterThan(heroStart);
     const hero = html.slice(heroStart, heroEnd);
     expect(hero).toContain("The job-site system for union specialty-trade subcontractors.");
-    expect(hero).toMatch(/data-landing-panel="pay-application"/);
+    expect(hero).toContain("data-landing-demo");
+    expect(hero.match(/data-ask-demo="figure"/g)?.length).toBe(1);
+    // The demo is the hero's only drawing now: no panel wrapper is left in it.
+    expect(hero).not.toContain("data-landing-panel");
+    // And the scene appears once on the whole page, in the hero.
+    expect(html.match(/data-ask-demo="figure"/g)?.length).toBe(1);
+    expect(html.indexOf('data-ask-demo="figure"')).toBeLessThan(
+      html.indexOf("Tell it what happened. Approve it with one tap."),
+    );
+  });
+
+  /**
+   * The cell around the demo, read off the markup. Every class here is a
+   * browser measurement made somewhere else — the SIZE of the reserve and
+   * the pixel counts live in the component's note and in the changelog,
+   * because nothing in this suite can see layout: happy-dom does no layout
+   * and returns zeros from getBoundingClientRect. What this file can do is
+   * insist the classes that carry those measurements are still on the cell.
+   *
+   *  - `order-first` / `lg:order-none`: the demo comes FIRST on a phone,
+   *    above the headline, while the <h1> stays first in the MARKUP so a
+   *    screen reader meets the headline before a pause button.
+   *  - `lg:flex lg:justify-end` and NO `justify-self`: `justify-self-end`
+   *    sizes a grid item to fit-content, and the demo's frames are not all
+   *    the same width, so the cell resized every frame and — pinned right —
+   *    spent all 170.1px of it on its left edge. That is #459, on this very
+   *    page, and the banned class is asserted as banned.
+   *  - a `min-h-[…px]` reserve: the demo's height swings 422px per loop at
+   *    `lg` and 522px at 375, and below `lg` it is alone in its row — so
+   *    without a reserve the headline and everything under it move by that
+   *    much while the scene plays. (At `lg` the words column beside it is
+   *    the taller of the two, so the `lg:` tier is insurance rather than
+   *    load-bearing; the component's note carries the margins.)
+   */
+  it("puts the demo first on a phone, pins it right at lg in a fixed-width cell, and reserves its height", () => {
+    const heroEnd = html.indexOf("</section>");
+    const hero = html.slice(0, heroEnd);
+    const cell = hero.match(/<div data-landing-demo="true" class="([^"]*)"/)?.[1] ?? "";
+    expect(cell, "no cell carries data-landing-demo").not.toBe("");
+    expect(cell).toContain("order-first");
+    expect(cell).toContain("lg:order-none");
+    expect(cell).toContain("lg:flex");
+    expect(cell).toContain("lg:justify-end");
+    expect(cell).not.toContain("justify-self");
+    expect(cell).toContain("lg:items-start");
+    expect(cell).toContain("min-w-0");
+    // A reserve at phone widths AND at lg — this page needs both, which is
+    // what differs from the assistant section the demo came from.
+    expect(cell).toMatch(/(^|\s)min-h-\[\d+px\]/);
+    expect(cell).toMatch(/(^|\s)lg:min-h-\[\d+px\]/);
+    // The headline is first in the markup and spans both columns at lg.
+    expect(hero.indexOf("<h1")).toBeLessThan(hero.indexOf("data-landing-demo"));
+    expect(hero).toMatch(/<h1 class="[^"]*lg:col-span-2/);
+    // Top-aligned, for the demo's own reason: a changing height centred
+    // against the words would open a hole that moves with every frame.
+    expect(hero).toMatch(/class="grid items-start[^"]*lg:grid-cols-/);
+    expect(hero).not.toMatch(/class="[^"]*\bitems-center\b[^"]*lg:grid-cols-/);
   });
 
   /**
@@ -323,7 +386,7 @@ describe("/ landing content renders signed out, with no auth call of its own", (
     expect(captions).toBe(placements);
   });
 
-  it("places every panel the page claims to place, at the five ranked sites", () => {
+  it("places every panel the page claims to place, at the four ranked sites", () => {
     // The handle is `data-landing-panel`, a wrapper THIS file's component
     // owns, not an attribute inside components/landing/ — a guard should
     // not assert on markup it does not control, or it breaks on someone
@@ -333,11 +396,23 @@ describe("/ landing content renders signed out, with no auth call of its own", (
     // its set has two failure modes and only one of them looks like a
     // failure: a selector matching NOTHING passes every assertion after it
     // (CLAUDE.md records this twice — the SQL-by-regex guard and the
-    // census with the wrong scope). Four components at five sites: the pay
-    // application appears in the hero and again under "Getting paid".
+    // census with the wrong scope).
+    //
+    // FOUR components at FOUR sites, one each. It was five until
+    // 2026-09-23: the pay application was drawn in the hero AND under
+    // "Getting paid", and the Ask demo took the hero's right half. The
+    // panel that lost a placement is the one that still has a section of
+    // its own, so nothing left the page — which is why this number came
+    // down rather than the set.
     const sites = html.match(/data-landing-panel="([a-z-]+)"/g) ?? [];
-    expect(sites.length, "no panel wrappers found at all — the selector matched nothing").toBe(5);
+    expect(sites.length, "no panel wrappers found at all — the selector matched nothing").toBe(4);
     expect(new Set(sites).size).toBe(4);
+    // The pay application is still drawn, under "Getting paid" and below
+    // the hero — the hero losing its copy must not read as the panel going.
+    expect(sites).toContain('data-landing-panel="pay-application"');
+    expect(html.indexOf('data-landing-panel="pay-application"')).toBeGreaterThan(
+      html.indexOf("</section>"),
+    );
   });
 
   /**

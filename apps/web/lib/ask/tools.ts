@@ -588,7 +588,7 @@ export const TOOLS: ToolDefinition[] = [
     // /prevailing-wage
     capability: "MANAGE_COMPLIANCE",
     description:
-      "The prevailing-wage determinations filed against each job, with the jurisdiction and whether the actual document is attached or linked. Answers 'do we have the determination for this job on file'. A determination row with NEITHER a file nor a source link is flagged: it is a determination in name only, and it cannot be produced in an audit. It does not know whether a job is public works, so it cannot tell you a determination is MISSING — only what has been filed.",
+      "The prevailing-wage determinations filed against each job, with the jurisdiction, whether the actual document is attached or linked, and each one's STANDING: in force on the job's bid-advertisement date, the wrong issue for that date, a predetermined increase now due past its expiration, or unchecked because the advertisement date or the document's issue date was never entered. Answers 'do we have the determination for this job on file' and 'is our determination still current'. The standing is derived from dates a person entered on the job's Compliance tab (the published DIR rule: the issue in force on the first advertisement for bids governs the job), never looked up, and no wage rate is known here. A determination row with NEITHER a file nor a source link is flagged: it is a determination in name only, and it cannot be produced in an audit. Whether a job is public works is only what somebody ENTERED (jobIsPublicWorks, null when nobody has), so it cannot tell you a determination is MISSING — only what has been filed and how it stands.",
     input_schema: jobFilter,
   },
   {
@@ -772,7 +772,7 @@ export const TOOLS: ToolDefinition[] = [
     // before reading it.
     capability: null,
     description:
-      "One job at a glance: its status, GC and scheduled dates; contract value, billed to date, cost to date and percent complete; and how many RFIs are open (and past their response date), punch items are open and change orders are pending or awaiting the GC. Answers 'how's Riverside looking' and 'give me the rundown on Maple'. Every figure comes from the same calculation as job_margin, open_rfis, open_punch_list and change_order_status — use those for the detail behind a count. Sections the person's access does not include are listed in `withheldFromYou` and must be described as withheld, never as zero. Needs one job: if several match, ask which.",
+      "One job at a glance: its status, GC and scheduled dates; contract value, billed to date, cost to date and percent complete; and how many RFIs are open (and past their response date), punch items are open and change orders are pending or awaiting the GC. Answers 'how's Riverside looking' and 'give me the rundown on Maple'. Every figure comes from the same calculation as job_margin, open_rfis, open_punch_list and change_order_status — use those for the detail behind a count. IT HOLDS NO RECEIVABLES AND NO RETAINAGE: what the GC still owes on this job, how overdue any of it is, and what is being held back are NOT in this result, and billedToDate is not one of them — it is what was invoiced, not what was paid. So 'how is this job doing' in the money sense is this tool AND receivables, read together; add retainage_held when they ask what the GC is sitting on. Sections the person's access does not include are listed in `withheldFromYou` and must be described as withheld, never as zero. Needs one job: if several match, ask which.",
     input_schema: oneJob,
   },
   {

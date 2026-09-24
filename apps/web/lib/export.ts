@@ -422,6 +422,16 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     ],
   },
   {
+    key: "plan-takeoff",
+    title: "Plan takeoff — traced geometry and the scales it was measured at",
+    detail:
+      "The uploaded drawing, the scale somebody calibrated each sheet to, and the shapes " +
+      "they traced on it. Deliberately not exported: these rows are coordinates on a PDF " +
+      "this file does not contain, so on their own they measure nothing. The quantities " +
+      "they produced are ordinary estimate line items and ARE in the line items dataset.",
+    models: ["TakeoffPlan", "TakeoffPlanPage", "TakeoffScaleCalibration", "TakeoffMeasurement"],
+  },
+  {
     key: "retainage-and-backcharges",
     title: "Retainage releases and backcharges",
     detail:
@@ -443,6 +453,10 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "CrewMember",
       "CraftClassification",
       "FringeRateSchedule",
+      // The employer burden percentage. It belongs with the pay rates rather
+      // than with compliance: it is half of what an hour costs, and without
+      // it the hours file cannot be repriced to the figure this app shows.
+      "EmployerBurdenRate",
       "PrevailingWageDetermination",
       "PrevailingWageRuleSet",
       "CompanyUnionAgreement",

@@ -17,19 +17,56 @@
 // figure and double-count against any manual labor cost somebody has already
 // typed in. This is computed at read time, every time.
 //
-// IT DOES NOT INVENT A COSTING RULE. The burden math is
+// IT DOES NOT INVENT A COSTING RULE. The wage math is
 // `calculateTimeEntryLaborCost` and the schedule lookup is
 // `findEffectiveFringeRateSchedule`, used exactly the way
-// lib/certified-payroll.ts uses them, so a dollar on the job page and a
-// dollar on a WH-347 come from the same arithmetic.
+// lib/certified-payroll.ts uses them, so a wage dollar on the job page and a
+// wage dollar on a WH-347 come from the same arithmetic.
+//
+// WHAT IT ADDS THAT A WH-347 MUST NOT HAVE. The EMPLOYER'S share -- FICA,
+// FUTA/SUTA, workers' comp -- as a percentage of base wages, at the
+// EmployerBurdenRate in force on each entry's own day (lib/employer-burden.ts).
+// That is job cost and it is not a wage: a certified payroll reports what the
+// worker was paid, so the burden is added HERE and never inside
+// `calculateTimeEntryLaborCost`. With no rate recorded it is zero and every
+// figure below is exactly what it was before this file learned the word.
 
 import {
+  calculateTimeEntryBaseWage,
   calculateTimeEntryLaborCost,
   findEffectiveFringeRateSchedule,
   type FringeRateScheduleInput,
   type TimeEntryPayType,
 } from "./labor-cost";
+import {
+  employerBurdenCents,
+  employerBurdenPercentOn,
+  type EmployerBurdenRateRecord,
+} from "./employer-burden";
 import { NO_LABOR_COST, type WipLaborCost } from "./wip";
+
+/**
+ * The company's recorded employer-burden rates, as every entry point here
+ * takes them.
+ *
+ * AN EMPTY ARRAY IS THE DEFAULT AND MEANS "ADD NOTHING". Every parameter
+ * below defaults to `NO_EMPLOYER_BURDEN`, so a caller that has not been
+ * taught about burden gets EXACTLY the arithmetic it got before this existed
+ * -- not an approximation of it, the same additions in the same order. That
+ * is deliberate and it is the most important property of this change: these
+ * figures have already been quoted to GCs, and a silent shift across every
+ * existing job would be far worse than the understatement being fixed.
+ *
+ * Because the default is silent, `employerBurdenCensus.test.ts` is what
+ * stops a job-cost surface quietly keeping it: a forgotten call site is a
+ * screen disagreeing with the screen beside it, which is the #287 shape.
+ */
+export type EmployerBurdenRates = readonly EmployerBurdenRateRecord[];
+
+/** No rate recorded. Named rather than written as `[]` at each call site so
+ * that a surface which genuinely has no company behind it -- the landing
+ * page's illustrative panel -- says so in words the census can read. */
+export const NO_EMPLOYER_BURDEN: EmployerBurdenRates = [];
 
 /**
  * PER DIEM AND TRAVEL PAY IN JOB COST -- THE FLIP.
@@ -83,11 +120,19 @@ export interface LaborCostTimeEntry {
 export function calculateBurdenedLaborCost(
   entries: readonly LaborCostTimeEntry[],
   schedulesByCraft: ReadonlyMap<string, FringeRateScheduleInput[]>,
+  burdenRates: EmployerBurdenRates = NO_EMPLOYER_BURDEN,
 ): WipLaborCost {
   let wageCost = 0;
   let allowanceCost = 0;
   let pricedHours = 0;
   let unpricedHours = 0;
+  // Base wages accumulated per percentage in force, so the burden is rounded
+  // ONCE per rate at the end rather than once per time entry. A hundred
+  // entries rounded individually is a hundred roundings, and the total then
+  // disagrees with what an accountant gets by multiplying the payroll total.
+  // Keyed by the percentage rather than by the rate row, so two rows that
+  // happen to carry the same figure cannot round apart.
+  const burdenBaseByPercent = new Map<number, number>();
 
   for (const entry of entries) {
     const schedules = entry.craftClassificationId
@@ -104,15 +149,47 @@ export function calculateBurdenedLaborCost(
     } else {
       wageCost += cost;
       pricedHours += entry.hours;
+
+      // The rate in force on THIS ENTRY'S day, not today's: hours worked in
+      // March stay costed at March's burden after April's is recorded.
+      const percent = employerBurdenPercentOn(burdenRates, entry.date);
+      if (percent !== null && percent !== 0) {
+        // BASE WAGE ONLY, never the fringes -- lib/employer-burden.ts says
+        // why, and says that it is a modelling choice for a CPA rather than
+        // a tax rule anybody verified. The base already carries the pay-type
+        // multiplier, so an overtime hour's burden follows its overtime
+        // dollars.
+        const base = calculateTimeEntryBaseWage(
+          { hours: entry.hours, payType: entry.payType, date: entry.date },
+          schedule,
+        );
+        if (base !== null) {
+          burdenBaseByPercent.set(percent, (burdenBaseByPercent.get(percent) ?? 0) + base);
+        }
+      }
     }
 
     allowanceCost += (entry.perDiemAmount ?? 0) + (entry.travelPayAmount ?? 0);
   }
 
+  let burdenCents = 0;
+  for (const [percent, base] of burdenBaseByPercent) {
+    burdenCents += employerBurdenCents(base, percent);
+  }
+  const burdenCost = burdenCents / 100;
+
+  // `wageCost + burdenCost` before the allowance, so that with no rate
+  // recorded burdenCost is exactly 0, this is exactly `wageCost`, and the
+  // total is the identical float sum this function returned before burden
+  // existed. Pinned by employer-burden.test.ts rather than left to the
+  // reader's confidence about IEEE 754.
+  const wageAndBurden = wageCost + burdenCost;
+
   return {
     wageCost,
+    burdenCost,
     allowanceCost,
-    total: LABOR_ALLOWANCES_IN_JOB_COST ? wageCost + allowanceCost : wageCost,
+    total: LABOR_ALLOWANCES_IN_JOB_COST ? wageAndBurden + allowanceCost : wageAndBurden,
     pricedHours,
     unpricedHours,
   };
@@ -192,11 +269,13 @@ export function lineItemCostToDate(
   costEntries: readonly CostEntryCostRow[],
   jobTimeEntries: readonly TimeEntryCostRow[],
   schedulesByCraft: ReadonlyMap<string, FringeRateScheduleInput[]>,
+  burdenRates: EmployerBurdenRates = NO_EMPLOYER_BURDEN,
 ): LineItemCostToDate {
   const manualCost = costEntries.reduce((sum, entry) => sum + num(entry.amount), 0);
   const labor = laborCostForRows(
     jobTimeEntries.filter((entry) => entry.lineItemId === lineItemId),
     schedulesByCraft,
+    burdenRates,
   );
   return { actualCostToDate: manualCost + labor.total, labor };
 }
@@ -218,9 +297,10 @@ export function lineItemCostToDate(
 export function laborCostForRows(
   rows: readonly TimeEntryCostRow[],
   schedulesByCraft: ReadonlyMap<string, FringeRateScheduleInput[]>,
+  burdenRates: EmployerBurdenRates = NO_EMPLOYER_BURDEN,
 ): WipLaborCost {
   if (rows.length === 0) return NO_LABOR_COST;
-  return calculateBurdenedLaborCost(rows.map(toPlainEntry), schedulesByCraft);
+  return calculateBurdenedLaborCost(rows.map(toPlainEntry), schedulesByCraft, burdenRates);
 }
 
 /**
@@ -240,10 +320,12 @@ export function laborCostForRows(
 export function unassignedLaborCost(
   jobTimeEntries: readonly TimeEntryCostRow[],
   schedulesByCraft: ReadonlyMap<string, FringeRateScheduleInput[]>,
+  burdenRates: EmployerBurdenRates = NO_EMPLOYER_BURDEN,
 ): WipLaborCost {
   if (jobTimeEntries.length === 0) return NO_LABOR_COST;
   return calculateBurdenedLaborCost(
     jobTimeEntries.filter((entry) => entry.lineItemId === null).map(toPlainEntry),
     schedulesByCraft,
+    burdenRates,
   );
 }

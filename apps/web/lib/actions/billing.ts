@@ -16,6 +16,7 @@ import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type 
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
+import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import { createInvoiceRecord } from "@/lib/billing/create-invoice";
 import { retainageWithheldFor } from "@/lib/billing/retainage-amount";
 import { issueInvoiceNumber } from "@/lib/billing/invoice-number";
@@ -978,6 +979,7 @@ export async function generateJobWipNarrative(
     select: TIME_ENTRY_COST_SELECT,
   });
   const fringeSchedulesByCraft = await loadFringeSchedulesByCraft(company.id);
+  const employerBurdenRates = await loadEmployerBurdenRates(company.id);
 
   const lineItemWip = lineItems.map((item) => ({
     item,
@@ -989,14 +991,20 @@ export async function generateJobWipNarrative(
         item.currentEstimatedUnitCost != null ? Number(item.currentEstimatedUnitCost) : null,
       estimatedCostToComplete:
         item.estimatedCostToComplete != null ? Number(item.estimatedCostToComplete) : null,
-      ...lineItemCostToDate(item.id, item.costEntries, timeEntries, fringeSchedulesByCraft),
+      ...lineItemCostToDate(
+        item.id,
+        item.costEntries,
+        timeEntries,
+        fringeSchedulesByCraft,
+        employerBurdenRates,
+      ),
     }),
   }));
   const billedToDate = invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
   const jobWip = calculateJobWip(
     lineItemWip.map((l) => l.wip),
     billedToDate,
-    unassignedLaborCost(timeEntries, fringeSchedulesByCraft),
+    unassignedLaborCost(timeEntries, fringeSchedulesByCraft, employerBurdenRates),
   );
 
   // The model's system prompt tells it every figure it receives is exact and

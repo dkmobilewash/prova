@@ -121,6 +121,24 @@ vi.mock("expo-notifications", () => ({
 
 vi.mock("expo-device", () => ({ isDevice: false }));
 
+/**
+ * `expo-constants`, mocked for the reason this config's header already
+ * gives: this suite cannot see native modules.
+ *
+ * `lib/push.ts` began importing it when #477's explicit `projectId`
+ * landed, and importing it for real drags in `expo-modules-core`, which
+ * reads `globalThis.expo.EventEmitter` at module scope — a global only
+ * the native runtime sets. Unmocked, `screens/push.test.tsx` failed to
+ * LOAD, so vitest reported a failed file and zero failed assertions,
+ * which reads nothing like a broken test.
+ *
+ * The project id is the one field the app reads, via `expoProjectId`,
+ * and its own parsing is tested for real in `lib/push-project-id.test.ts`.
+ */
+vi.mock("expo-constants", () => ({
+  default: { expoConfig: { extra: { eas: { projectId: "test-project-id" } } } },
+}));
+
 vi.mock("expo-sharing", () => ({ isAvailableAsync: async () => false, shareAsync: async () => {} }));
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: async () => ({ type: "dismiss" }) }));
 

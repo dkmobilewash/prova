@@ -1,0 +1,246 @@
+/// ON-SCREEN PLAN TAKEOFF — a traced sheet, a declared scale, and the geometry
+/// somebody drew. Never a quantity.
+///
+/// `lib/takeoff-recipes.ts` draws the line this file sits on: the capture layer
+/// emits PRIMITIVES and never materials. Everything here is the capture layer.
+/// Feet and square feet appear nowhere as a column; they are computed from
+/// these coordinates and a calibration, by `lib/takeoff-plan.ts`, on every read.
+///
+/// WHY NOTHING DERIVED IS STORED, said once for all four models. A stored
+/// length is a number that was true against a scale somebody may since have
+/// corrected, and `lib/takeoff.ts` names that exact hazard: "a measuring tool
+/// that is slightly wrong is more dangerous than no measuring tool, because a
+/// number that came off a screen gets trusted." A stored 128.4 cannot be
+/// checked against anything. A stored polyline plus a stored calibration line
+/// can be redrawn over the sheet and disagreed with.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// THE PAGE-WIDTH BOX — the coordinate contract every Float below is in
+/// ─────────────────────────────────────────────────────────────────────────
+///
+/// `page.getViewport({ scale: 1 })`, pdf.js having already applied the page's
+/// own `/Rotate`, gives a width and height in PDF points. Every coordinate
+/// stored here is the pointer offset divided by the RENDERED WIDTH, on BOTH
+/// axes. So `x` runs 0..1 and `y` runs 0..H/W. **`y` is NOT a fraction of the
+/// height.**
+///
+/// That asymmetry is the reason the server needs no PDF library: a distance is
+/// computable from these numbers ALONE, with nothing else to look up and
+/// nothing else to disagree with. Normalising each axis by its own extent —
+/// what `JobMediaAnnotation` does for photo marks — would distort Euclidean
+/// distance by the aspect ratio and need the page size stored beside every
+/// shape to undo.
+///
+/// `media-annotations.prisma` is the cautionary tale and it is worth reading
+/// before touching any of this: its comment named the wrong box for two years,
+/// a GC was shown an arrow pointing at the wrong part of a photo, and it could
+/// not be corrected by reinterpretation because no intrinsic size had been
+/// stored to convert the old rows with. A PDF page HAS an intrinsic size, so
+/// this box is nameable and checkable — which is why it is named here, in the
+/// pure module, and in a test that holds every surface to it.
+
+/// The PDF somebody is bidding off.
+///
+/// THIS IS NOT `DrawingSet`/`DrawingRevision` (`operations.prisma`) and must
+/// not become it. Those record what the architect issued and when it reached
+/// us — a paper trail, with the architect's own revision labels. This records
+/// what an estimator is measuring today, which is often a single sheet emailed
+/// with an invitation to bid. `NAV-IA-AUDIT.md` warns off building a drawings
+/// and markup module; this is a measuring tool that happens to need a drawing.
+model TakeoffPlan {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// THE ONLY `jobId` IN THIS FILE, deliberately. Everything below CASCADEs
+  /// from here, so one `takeoffPlan.deleteMany({ jobId })` reaches all of it —
+  /// which keeps three models out of the cleanup scripts entirely, the trick
+  /// `JobMediaAnnotation` documents. Only this model needs registering in
+  /// `HANDLED_MODELS` and the two `del()` orders.
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  /// Where the PDF lives, and the name the person picked. Checked on the way
+  /// in by `documentUrlProblem(url, "plan-takeoff", jobId, env)` — both halves,
+  /// our store and the right path prefix. Served to the browser through an
+  /// authenticated route rather than this URL directly, because a blob URL is
+  /// not proof of whose file it is (#195).
+  fileUrl  String
+  fileName String?
+
+  /// NO `pageCount` COLUMN. The page count is in the file; the server has no
+  /// PDF library to read it with, and the viewer knows it the moment the
+  /// document opens. A column here could only ever hold a client's claim,
+  /// gone stale.
+  uploadedByUserId String?
+  uploadedBy       User?   @relation("TakeoffPlanUploadedBy", fields: [uploadedByUserId], references: [id])
+
+  pages     TakeoffPlanPage[]
+  createdAt DateTime          @default(now())
+
+  @@index([jobId, createdAt])
+  @@index([companyId])
+}
+
+/// One sheet of that PDF, created the first time somebody calibrates it. A
+/// forty-page set where two sheets were measured has two rows.
+model TakeoffPlanPage {
+  id     String      @id @default(cuid())
+  planId String
+  plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  /// 1-based, the way the viewer and the title block both count.
+  pageNumber Int
+
+  /// What the estimator calls it — "A-101 First Floor". TYPED, never parsed
+  /// off the title block: reading a sheet number out of a drawing is OCR, and
+  /// a wrong one labels somebody's quantities with another floor's name.
+  label String?
+
+  /// THE PAGE BOX'S WIDTH IN PDF POINTS, as the browser reports it from
+  /// `getViewport({ scale: 1 }).width`.
+  ///
+  /// IT IS A LABEL INPUT AND NOTHING ELSE. No quantity depends on it: every
+  /// coordinate here is already normalised by the page width, so feet come out
+  /// of the coordinates and the calibration alone. This exists only so the
+  /// scale can be named in the form an estimator recognises ("1/4\" = 1'-0\""),
+  /// which needs paper inches and therefore needs points. A wrong value here
+  /// mislabels a scale; it cannot mis-measure a wall. Nullable, because a row
+  /// is perfectly usable without it.
+  pageWidthPt Float?
+
+  calibrations TakeoffScaleCalibration[]
+  measurements TakeoffMeasurement[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([planId, pageNumber])
+}
+
+/// HOW BIG THE SHEET IS — as an argument somebody can check, rather than a
+/// number they typed into a box.
+///
+/// APPEND-ONLY. Nothing here is ever updated or deleted while a measurement
+/// points at it. Recalibrating a sheet INSERTS a row; the newest row is the
+/// active one (derived from `createdAt`, not stored), and every measurement
+/// drawn before it keeps pointing at the old one. That is what makes "a
+/// recalibration must not silently rewrite past numbers" a property of the
+/// schema rather than a promise in a comment.
+model TakeoffScaleCalibration {
+  id     String          @id @default(cuid())
+  pageId String
+  page   TakeoffPlanPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  /// THE LINE SOMEBODY DREW ALONG A KNOWN DIMENSION, in page-width units.
+  /// Stored so the calibration can be REDRAWN OVER THE SHEET: a reviewer opens
+  /// the page and sees the grid span the scale came off, instead of an opaque
+  /// scalar they have to take on faith.
+  x1 Float
+  y1 Float
+  x2 Float
+  y2 Float
+
+  /// What the drawing says that line is, in decimal feet. `Decimal(12, 4)` so
+  /// an eighth of an inch (0.0104 ft) survives the column. Typed as `24'-6"`
+  /// and read by `lib/feet-inches.ts`, which hands anything without a foot or
+  /// inch mark straight to `parseNumericInput` — one number parser, extended,
+  /// never a second one.
+  declaredDistanceFeet Decimal @db.Decimal(12, 4)
+
+  /// NO `feetPerPageWidth` COLUMN. It is `declaredDistanceFeet / hypot(...)`
+  /// and it is computed on every read. Storing it would put a third number
+  /// beside two that already determine it, and on the day they disagree the
+  /// stored one wins silently.
+  ///
+  /// What the drawing says, in the estimator's own words — "24'-0\" column
+  /// grid, sheet A-101". Optional, and the one thing here that records WHY
+  /// this scale is the right one.
+  note String?
+
+  createdByUserId String?
+  createdBy       User?    @relation("TakeoffCalibrationBy", fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  measurements TakeoffMeasurement[]
+
+  @@index([pageId, createdAt])
+}
+
+/// THE THREE PRIMITIVES, and only the three — mirroring
+/// `lib/takeoff-recipes.ts` on purpose: the capture layer's whole vocabulary
+/// is linear, area, count.
+///
+/// THERE IS NO `WALL` MEMBER, and that is the point of the bridge. A wall run
+/// is a LINEAR measurement somebody elected to treat as a wall at posting
+/// time, by typing a height. The height is not on the plan, so it is not plan
+/// geometry, so it is not in this table.
+enum TakeoffMeasurementKind {
+  LINEAR
+  AREA
+  COUNT
+}
+
+/// One thing somebody traced.
+model TakeoffMeasurement {
+  id     String          @id @default(cuid())
+  pageId String
+  page   TakeoffPlanPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  /// THE SCALE THIS WAS DRAWN TO. Required, and the requirement IS the guard:
+  /// you cannot measure a sheet nobody has calibrated, because there is no row
+  /// to point at. Recalibrating leaves this alone, so a quantity that was on
+  /// screen last week is the same quantity today. Moving a measurement onto a
+  /// newer calibration is an explicit act that shows the before and after
+  /// figures first.
+  ///
+  /// CASCADE, and it is explicit because Prisma's default for a required
+  /// relation is RESTRICT — which would be a latent bug rather than a
+  /// safeguard. Deleting a page cascades to its calibrations AND its
+  /// measurements, and Postgres fires those constraint triggers in creation
+  /// order: the calibration cascade runs first, so a RESTRICT here would see
+  /// measurements that are about to be deleted and block the whole delete.
+  /// That would break `takeoffPlan.deleteMany({ jobId })` in both cleanup
+  /// scripts — the #227 shape, found by reading the generated SQL rather than
+  /// by a script failing halfway through somebody's database.
+  ///
+  /// Nothing is lost by cascading: this table is append-only, so the only way
+  /// a calibration is ever deleted is with the page it belongs to, and the
+  /// measurements on that page are going with it regardless.
+  calibrationId String
+  calibration   TakeoffScaleCalibration @relation(fields: [calibrationId], references: [id], onDelete: Cascade)
+
+  kind TakeoffMeasurementKind
+
+  /// WHERE IT WAS DRAWN, in page-width units (see the box at the top of this
+  /// file). Two parallel arrays rather than a JSON blob or a row per vertex.
+  ///
+  /// NOT a JSON blob: a blob is a second place shape-validity has to be
+  /// enforced. Typed arrays leave one invariant — `xs.length === ys.length` —
+  /// checked on the way in AND on the way out by `verticesProblem`, because a
+  /// row written by an older build is not evidence of anything.
+  ///
+  /// NOT a row per vertex: a polyline's points have no individual authorship
+  /// and nobody counts them, they are one shape with one author, and a traced
+  /// corridor is two hundred of them.
+  ///
+  /// LINEAR: >= 2 points, an open polyline. AREA: >= 3, a closed ring, refused
+  /// if its edges cross. COUNT: one point per thing counted.
+  xs Float[]
+  ys Float[]
+
+  /// What was measured. Required in practice for COUNT, where it IS the item
+  /// name the `fixture-count` recipe emits as the line label.
+  label String?
+
+  /// WHEN THIS WAS TURNED INTO LINE ITEMS, or null. An event, not derived
+  /// state — there is nothing to derive it from. Without it, posting the same
+  /// four runs twice silently doubles a bid and nothing on screen says so.
+  postedAt DateTime?
+
+  createdByUserId String?
+  createdBy       User?    @relation("TakeoffMeasurementBy", fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@index([pageId, createdAt])
+  @@index([calibrationId])
+}

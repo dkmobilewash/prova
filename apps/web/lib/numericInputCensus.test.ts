@@ -69,6 +69,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { listGitFiles } from "../test/git-files";
 import { decimalFromForm, InputError, nullableDecimalFromForm } from "./actions/shared";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -98,14 +99,15 @@ function sources(): Map<string, string> {
 
 /** The independent list: git's index, not this file's walk. */
 function sourcesByGit(): string[] {
-  return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "--", "apps", "packages"], {
-    cwd: repoRoot,
-    encoding: "utf8",
-    maxBuffer: 32 * 1024 * 1024,
-  })
-    .split("\n")
-    .filter((p) => p && SOURCE.test(p) && !p.includes("node_modules/"))
-    .sort();
+  // Through the shared helper because it DEDUPES: during an unresolved
+  // merge `git ls-files --cached` prints a conflicted path once per
+  // stage, and this list then stopped equalling the walk — the census
+  // going red about a merge rather than about the code. See
+  // test/git-files.ts, which builds a conflicted repository to prove it.
+  return listGitFiles(
+    ["--cached", "--others", "--exclude-standard", "--", "apps", "packages"],
+    repoRoot,
+  ).filter((p) => SOURCE.test(p) && !p.includes("node_modules/"));
 }
 
 /** Comments out, line count kept — so a paragraph quoting the old pattern
@@ -303,7 +305,6 @@ const ROSTER_ADDITIONS: Record<string, string> = {
   apprenticePeriod: "unionCompliance.ts reads it through setupText() first",
   lengthFt: "jobs.ts takeoff builds its own labelled reader",
   widthFt: "jobs.ts takeoff",
-  heightFt: "jobs.ts takeoff",
   spacingIn: "jobs.ts takeoff",
   wastePercent: "jobs.ts takeoff",
   openingWidth: "jobs.ts takeoff, read through getAll()",
@@ -576,6 +577,18 @@ const INPUT_EXCEPTIONS: Record<string, { reason: string }> = {
   },
   "apps/web/components/JobMediaAnnotator.tsx (unnamed)": {
     reason: "a photo annotation label — free text, and explicitly not a measurement",
+  },
+  "apps/web/components/TakeoffPlanViewer.tsx pageNumber": {
+    reason:
+      "A HIDDEN input, and a hidden input has no keyboard for inputMode to hint at. It carries " +
+      "which sheet of the PDF the viewer is showing — machine output, never typed. It is in the " +
+      "roster because the action reads it with numberFromForm, which is correct: it IS a number " +
+      "and it goes through the one parser like every other.",
+  },
+  "apps/web/components/TakeoffPlanViewer.tsx pageWidthPt": {
+    reason:
+      "The same, for the page box's width in PDF points, which pdf.js reports and nobody types. " +
+      "It is used only to NAME the paper scale back to the estimator; no quantity depends on it.",
   },
   "apps/web/components/TimeEntryFields.tsx hours": {
     reason:

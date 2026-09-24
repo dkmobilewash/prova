@@ -99,6 +99,9 @@ vi.mock("@prova/db", async (importOriginal) => ({
     fringeRateSchedule: {
       findMany: async () => [SCHEDULE],
     },
+    // No employer burden recorded, which is the default state and the one
+    // these expectations were written against — see lib/employer-burden.ts.
+    employerBurdenRate: { findMany: async () => [] },
   },
 }));
 

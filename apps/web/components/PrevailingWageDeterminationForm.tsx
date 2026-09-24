@@ -4,9 +4,11 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { uploadPrevailingWageDetermination } from "@/lib/actions";
 import { singleFileFrom, uploadDocumentFile } from "@/lib/document-upload-client";
+import { DeterminationFactsFields } from "@/components/DeterminationFactsFields";
 
 const field =
   "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
+const factsLabel = "flex flex-col gap-1 text-xs text-ink-body";
 
 /** Attaches a wage determination -- a document, or a link to one.
  *
@@ -99,6 +101,29 @@ export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
           <input name="sourceUrl" placeholder="https://sam.gov/..." className={`w-48 ${field}`} />
         </label>
         <input name="note" placeholder="Note (optional)" className={field} />
+      </div>
+
+      <p className="text-xs text-ink-muted">
+        A document or a link — either one is enough, but one of them is needed.
+      </p>
+
+      {/* What the document says about itself. Optional on attach — they can
+          be entered on the row afterwards — but this is the moment the
+          document is open in front of the person, so they are offered here.
+          The standing line the tab derives from them says "unchecked" until
+          the issue date is in, never a guess. */}
+      <DeterminationFactsFields fieldClassName={field} labelClassName={factsLabel} />
+      <p className="text-xs text-ink-muted">
+        Read the number, dates and the asterisk off the determination itself. Leave blank what it
+        doesn&rsquo;t say; you can add them on the row later. No rate is entered anywhere — the rate
+        stays on the document.
+      </p>
+
+      {/* The submit sits BELOW the document facts, not beside the
+          jurisdiction. It used to be the last control in the top row, which
+          on a phone put it above four fields nobody had scrolled to — and
+          those four fields are the entire point of this phase. */}
+      <div>
         <button
           type="submit"
           disabled={isPending}
@@ -107,10 +132,6 @@ export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
           {isPending ? "Attaching…" : "Attach"}
         </button>
       </div>
-
-      <p className="text-xs text-ink-muted">
-        A document or a link — either one is enough, but one of them is needed.
-      </p>
 
       {error && (
         <p role="alert" className="text-xs text-tag-rose-ink">

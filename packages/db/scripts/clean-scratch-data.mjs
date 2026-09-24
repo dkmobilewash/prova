@@ -258,6 +258,7 @@ async function main() {
     // per row and a token this script does not have; deleteJobMedia in
     // lib/actions/jobMedia.ts is the path that removes both.
     await del("jobMedia", () => prisma.jobMedia.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("takeoffPlan", () => prisma.takeoffPlan.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("punchListItem", () => prisma.punchListItem.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("rfi", () => prisma.rfi.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("rfiCounter", () => prisma.rfiCounter.deleteMany({ where: { jobId: { in: jobIds } } }));

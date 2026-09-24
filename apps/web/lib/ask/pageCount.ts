@@ -39,11 +39,17 @@ import { inflateSync } from "node:zlib";
  * `contentType` are claims, and this counts the bytes that were actually
  * fetched from the store.
  *
- * NOT WIRED TO COMPLIANCE EXTRACTION YET, said here rather than left to be
- * discovered. `uploadComplianceDocument` sends a whole document to the
- * model too, at $2.25-$4.50 a call by this repo's own audit, and it is
- * neither page-counted nor allowance-bound by this change. It is the next
- * caller to bring under the same ledger and it wants its own PR.
+ * WIRED TO COMPLIANCE EXTRACTION SINCE 2026-09-22, and this paragraph said
+ * the opposite for a day. It read "NOT WIRED TO COMPLIANCE EXTRACTION YET
+ * … it is the next caller to bring under the same ledger and it wants its
+ * own PR", which was true when written and is the kind of sentence that
+ * stops the next person looking. It got its own PR.
+ * `uploadComplianceDocument` counts its document here and claims the pages
+ * through lib/ask/documentSpend.ts, against the same `AskAllowancePeriod`
+ * row the Ask box claims against — one ledger, two surfaces. The one thing
+ * that path adds and this module does not know about is a ceiling on a
+ * SINGLE document, which is documentSpend.ts's and is derived from the
+ * allowance rather than typed out again.
  */
 
 export const ASK_PAGE_RULES = {

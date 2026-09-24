@@ -8,6 +8,7 @@ import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/cata
 import { ActionResult, actionFail, actionOk, InputError, runAction, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, ownerRefusal, tradeScopeFromForm } from "./shared";
 import { catalogActuals, catalogSourcedLine, repriceDecision } from "@/lib/catalog-actuals";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
+import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import { addCatalogLine } from "@/lib/estimating/catalog-line";
 import { createBidInvitationRecord } from "@/lib/estimating/bid-invitation";
 import { issueEstimateVersionNumber } from "@/lib/estimating/estimate-version";
@@ -352,7 +353,7 @@ export async function updateCatalogDefaultsFromActuals(
   const refusal = ownerRefusal(user, "Only the account owner can re-price the catalog.");
   if (refusal) return refusal;
 
-  const [entry, fringeSchedulesByCraft] = await Promise.all([
+  const [entry, fringeSchedulesByCraft, employerBurdenRates] = await Promise.all([
     prisma.lineItemCatalogEntry.findUnique({
       where: { id: entryId },
       include: {
@@ -377,6 +378,7 @@ export async function updateCatalogDefaultsFromActuals(
       },
     }),
     loadFringeSchedulesByCraft(company.id),
+    loadEmployerBurdenRates(company.id),
   ]);
   if (!entry || entry.companyId !== company.id) {
     // Returned rather than thrown like its siblings elsewhere: this
@@ -388,7 +390,7 @@ export async function updateCatalogDefaultsFromActuals(
   }
 
   const actuals = catalogActuals(
-    entry.jobLineItems.map((line) => catalogSourcedLine(line, fringeSchedulesByCraft)),
+    entry.jobLineItems.map((line) => catalogSourcedLine(line, fringeSchedulesByCraft, employerBurdenRates)),
     entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
   );
 
