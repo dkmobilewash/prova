@@ -588,3 +588,62 @@ export async function importCatalogEntries(formData: FormData): Promise<ActionRe
   revalidatePath("/catalog");
   return actionOk;
 }
+
+/**
+ * Links a won bid to the job it became — or unlinks it.
+ *
+ * WHY A PERSON DOES THIS AND NOT THE APP. Nothing in the data says which job a
+ * bid became: project names rarely match the GC's wording, dates rarely line
+ * up, and one GC can send three invitations for one building. A fuzzy match
+ * here would attach a bid amount to the wrong job's costs and then TEACH the
+ * estimator from it, which is worse than leaving the two unlinked. Same
+ * posture as `JobLineItem.sourceCatalogEntryId`, which the schema says is
+ * "deliberately NOT backfilled by fuzzy-matching descriptions".
+ *
+ * Only a WON bid can be linked. An invitation that was lost or declined did
+ * not become anything, and a link from one would put a competitor's job — or
+ * nothing at all — against our own costs.
+ */
+export async function linkBidToJob(bidInvitationId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const bid = await prisma.bidInvitation.findFirst({
+    where: { id: bidInvitationId, companyId: company.id },
+  });
+  if (!bid) return actionFail("That bid is no longer on this company. Reload the page.");
+  if (bid.status !== "WON") {
+    return actionFail("Only a bid marked Won can be linked to a job — mark it Won first.");
+  }
+
+  const jobId = String(formData.get("jobId") ?? "").trim();
+  if (!jobId) {
+    // Unlinking is the same control with nothing picked, so a mistaken link
+    // can be undone without a second button.
+    await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { wonJobId: null } });
+    revalidatePath("/bids");
+    return actionOk;
+  }
+
+  // Tenancy is the `where`: a job id from another company matches nothing.
+  const job = await prisma.job.findFirst({ where: { id: jobId, companyId: company.id }, select: { id: true } });
+  if (!job) return actionFail("That job isn't on this company. Reload the page.");
+
+  // `wonJobId` is unique, so a job already claimed by another bid would throw
+  // a constraint error production REDACTS. Say which bid has it instead.
+  const claimed = await prisma.bidInvitation.findFirst({
+    where: { wonJobId: jobId, companyId: company.id, NOT: { id: bidInvitationId } },
+    select: { projectName: true },
+  });
+  if (claimed) {
+    return actionFail(`That job is already linked to the bid "${claimed.projectName}". Unlink it there first.`);
+  }
+
+  await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { wonJobId: jobId } });
+  revalidatePath("/bids");
+  revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
+}

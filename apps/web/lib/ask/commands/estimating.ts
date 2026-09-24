@@ -628,6 +628,7 @@ export const estimatingExclusions: Exclusion[] = [
   // in lib/estimating/bid-invitation.ts.
   { action: "priceCatalogEntryFromQuotes", reason: "Setting a catalog default from a supplier quote is a pricing decision made on /catalog, where the vendor, the price, the date and the source are all on screen; it is owner-only and moves a number every future bid reads." },
   { action: "updateBidInvitationStatus", reason: "A won/lost decision is made on the bids page where the bid is visible." },
+  { action: "linkBidToJob", reason: "Which job a bid became is a judgement about two records the model cannot tell apart — names rarely match and one GC sends several invitations per building. A wrong link teaches the estimator from another job's costs, so a person picks it on /bids." },
   { action: "deleteBidInvitation", reason: "Deletes are never commands (T5)." },
   // The pre-bid pursuit list (lib/actions/bidPursuits.ts, BidPursuit). The
   // read side is the bid_pursuits tool. createBidPursuit and
