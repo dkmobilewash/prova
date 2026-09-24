@@ -93,6 +93,11 @@ const NOT_AN_HOURS_NUMBER: Record<string, string> = {
   "lib/ask/handlers.ts\t{Math.round((labor.pricedHours / hours) * 100)}":
     "A percentage, already integer-rounded by Math.round.",
 
+  "lib/labor-productivity.ts\t{quantity, actualHours}":
+    "Not a render at all — a destructure of this pure module's own input. " +
+    "labor-productivity.ts imports no React and returns numbers; the screen " +
+    "that shows them is ProductionBackCheckHint, which formats them there.",
+
   // -- already a string by the time it is rendered --
   "app/(app)/catalog/page.tsx\t{entry.defaultLaborHours.toString()}":
     "Prisma Decimal(5,2) stringified. A Decimal is exact — it never carries binary float drift, so there is nothing to round.",

@@ -11,7 +11,7 @@ import { PhaseCodeField } from "@/components/PhaseCodeField";
 import { SubmitButton } from "@/components/SubmitButton";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
-import { TRADE_SCOPE_OPTIONS, PriceBasisBadge, LaborCostHint } from "@/components/JobEstimateHelpers";
+import { TRADE_SCOPE_OPTIONS, PriceBasisBadge, LaborCostHint, ProductionBackCheckHint } from "@/components/JobEstimateHelpers";
 import {
   changeOrderValueDelta,
   pendingChangeOrderExposure,
@@ -40,6 +40,7 @@ import { serverToday } from "@/lib/serverToday";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { ActionForm } from "@/components/ActionForm";
 import { WallSchedule } from "@/components/WallSchedule";
+import { estimatedHours, productionBackCheck } from "@/lib/labor-productivity";
 import { openingsFromJson, scheduleLines, type WallComponentBasis, type WallTypeInput } from "@/lib/wall-assemblies";
 import { BidRecapPanel, type RecapLineView } from "@/components/BidRecapPanel";
 import type { CostCategoryValue, RecapRates } from "@/lib/bid-recap";
@@ -274,11 +275,22 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
     hourlyRate: burdenedHourlyRate(schedulesByCraft.get(craft.id) ?? [], laborRateDate),
   }));
 
+  const estimatedHoursByLineItem = new Map(
+    job.lineItems.map((item) => [
+      item.id,
+      estimatedHours({
+        quantity: Number(item.quantity),
+        laborHours: item.laborHours != null ? Number(item.laborHours) : null,
+        productionRate: item.productionRate != null ? Number(item.productionRate) : null,
+      }),
+    ]),
+  );
+
   const estimatedLaborCostByLineItem = new Map(
     job.lineItems.map((item) => [
       item.id,
       estimateBurdenedLaborCost(
-        item.laborHours != null ? Number(item.laborHours) : null,
+        estimatedHoursByLineItem.get(item.id) ?? null,
         item.craftClassificationId ? (schedulesByCraft.get(item.craftClassificationId) ?? []) : [],
         laborRateDate,
       ),
@@ -302,6 +314,17 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
       ),
     }),
   }));
+
+  const productivityByLineItem = new Map(
+    lineItemWip.map(({ item, wip }) => [
+      item.id,
+      productionBackCheck({
+        quantity: Number(item.quantity),
+        estimatedHours: estimatedHoursByLineItem.get(item.id) ?? null,
+        actualHours: wip.labor.pricedHours + wip.labor.unpricedHours,
+      }),
+    ]),
+  );
 
   const billedToDate = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
   const jobWip = calculateJobWip(
@@ -746,7 +769,22 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                           className="w-16 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                         />
                       </label>
+                      <label className="flex items-center gap-1 text-xs text-ink-body">
+                        Rate
+                        <input
+                          name="productionRate"
+                          inputMode="decimal"
+                          defaultValue={item.productionRate?.toString() ?? ""}
+                          placeholder="units/hr"
+                          title="Units per hour — the productivity this line is estimated at. Hours = quantity ÷ rate unless Labor hrs is filled in (which overrides)."
+                          className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+                        />
+                      </label>
                       <LaborCostHint cost={estimatedLaborCostByLineItem.get(item.id) ?? null} />
+                      <ProductionBackCheckHint
+                        check={productivityByLineItem.get(item.id) ?? null}
+                        unit={item.unit}
+                      />
                       <select
                         name="craftClassificationId"
                         defaultValue={item.craftClassificationId ?? ""}

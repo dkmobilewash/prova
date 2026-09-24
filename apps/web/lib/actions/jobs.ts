@@ -131,6 +131,7 @@ export async function addLineItem(jobId: string, formData: FormData): Promise<Ac
       nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
     const tradeScope = tradeScopeFromForm(formData);
     const laborHours = nullableDecimalFromForm(formData, "laborHours");
+    const productionRate = nullableDecimalFromForm(formData, "productionRate");
     const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
     const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
 
@@ -149,6 +150,7 @@ export async function addLineItem(jobId: string, formData: FormData): Promise<Ac
         currentEstimatedUnitCost,
         tradeScope,
         laborHours,
+        productionRate,
         craftClassificationId,
         phaseCodeId,
       },
@@ -208,6 +210,7 @@ export async function updateLineItem(
       nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost;
     const tradeScope = tradeScopeFromForm(formData);
     const laborHours = nullableDecimalFromForm(formData, "laborHours");
+    const productionRate = nullableDecimalFromForm(formData, "productionRate");
     const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
     const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
 
@@ -226,6 +229,7 @@ export async function updateLineItem(
         currentEstimatedUnitCost,
         tradeScope,
         laborHours,
+        productionRate,
         craftClassificationId,
         phaseCodeId,
       },
