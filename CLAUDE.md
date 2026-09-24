@@ -36,6 +36,27 @@ Vercel deployment and repo settings). Each drives their own agent.
   creating one invoice crashed every authenticated page. It does not
   replace the click-list; it is the floor under it. Read
   `apps/web/e2e/run.mjs`'s header before changing what it touches.
+
+  **CI runs it now — `ci.yml`'s `e2e-public` and `e2e` jobs — and half of it
+  is RED until two repository secrets exist.** `e2e-public` needs no
+  credentials and walks every page reachable without signing in, at 320, 375
+  and a 1280 control. `e2e` is the pilot journey and everything else behind
+  sign-in; it fails on its FIRST step, in seconds, naming
+  `E2E_CLERK_PUBLISHABLE_KEY` and `E2E_CLERK_SECRET_KEY` — the
+  `striking-jaybird` DEVELOPMENT instance's `pk_test_`/`sk_test_` keys, which
+  are Diego's to add. It fails rather than skips on purpose: a green check
+  for a suite that signed nobody in is the vacuous green this whole
+  directory exists to end. Until they are added, NOTHING behind sign-in is
+  checked in a browser by CI, whatever colour the run is; read the `e2e`
+  job's first step before believing otherwise.
+
+  Two things that entry should not be read as saying. It does NOT mean the
+  laptop keyring grew the `workflow` scope — it has not, and the Git-rules
+  bullet below stands; these jobs were pushed from a cloud container whose
+  token is a different token. And `pnpm test:e2e` still cannot run inside an
+  agent container at all: the Clerk FAPI host and `cdn.playwright.dev` are
+  both denied by the egress proxy, so there is no browser to drive. The CI
+  run on your own PR is where the journey is either proved or not.
 - Say plainly when something is your fault, what broke, and what changes.
 
 ## Coordination
@@ -276,7 +297,17 @@ scrollback gets broken by whoever didn't scroll far enough.
   `ChangeOrderCounter` (`jobs.prisma`), `BackchargeCounter`
   (`backcharges.prisma`), `CloseoutSubmissionCounter` (`closeout.prisma`),
   `InvoiceCounter` and `ContractDocumentVersionCounter`
-  (`billing.prisma`).
+  (`billing.prisma`), `EstimateVersionCounter` (`estimating.prisma`),
+  `Wh347PayrollCounter` (`payroll-register.prisma`).
+
+  The last two were added 2026-09-24 by reading the schema: this roll-call
+  named nine and the schema declared eleven. Nobody broke a rule — the
+  paragraph below says to add the counter here and let the test say how many
+  there are, and `counterCensus.test.ts` holds a FLOOR (`>= 9`) rather than
+  an equality, deliberately, so that adding a counter does not fail a build
+  over a number. That is the right trade and it has a cost: the floor cannot
+  notice this list falling behind the schema. Derive it rather than trust it —
+  `grep -c '^model .*Counter {' packages/db/prisma/schema/*.prisma`.
 
   **THE COUNT THAT USED TO BE IN THAT SENTENCE IS NOW A TEST, and the
   reason is that it rotted in a day.** This paragraph said EIGHT, with two

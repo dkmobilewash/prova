@@ -22,9 +22,13 @@ every page reachable WITHOUT signing in — the landing page, `/pilot`,
 privacy, terms, the QuickBooks disconnect page, the GC portal and the
 e-signature page — at 320, 375 and a 1280 control, against a throwaway
 Postgres and no credentials at all. `pnpm test:e2e` is unchanged.
-`.github/workflows/e2e.yml` runs the first on every PR and the second only
-when `E2E_CLERK_PUBLISHABLE_KEY`/`E2E_CLERK_SECRET_KEY` exist, failing with
-those names when they do not rather than skipping.
+`.github/workflows/ci.yml`'s `e2e-public` job runs the first on every PR and
+its `e2e` job runs the second, failing by name when
+`E2E_CLERK_PUBLISHABLE_KEY`/`E2E_CLERK_SECRET_KEY` do not exist rather than
+skipping. (This entry said `.github/workflows/e2e.yml` when it was written.
+That file was never pushed — its PR's workflow push was rejected — so the two
+jobs live in `ci.yml` instead. Corrected here rather than in `CHANGELOG.md`
+because this entry has not been collected yet.)
 
 **A wall worth writing down, because it looks like a broken app.**
 `clerkMiddleware()` runs on public pages too, and a DEVELOPMENT instance

@@ -14,7 +14,11 @@
  *     (e2e/playwright.public.config.ts. This mode reads no .env at all and
  *      forces a placeholder Clerk key over anything in the environment, so
  *      it cannot quietly start depending on a real instance. It is what
- *      .github/workflows/e2e.yml's `public` job runs, with no secrets.)
+ *      .github/workflows/ci.yml's `e2e-public` job runs, with no secrets.
+ *      That job named e2e.yml here for three days and no such workflow has
+ *      ever existed in this repository — two PRs had their workflow push
+ *      rejected for want of the `workflow` scope and left the job in their
+ *      PR bodies, so the file every reader was pointed at was never there.)
  *
  * What it does, in order, and why each step is where it is:
  *

@@ -28,7 +28,22 @@ export default defineConfig({
     environment: "node",
     // Web Storage where the runtime gives none — see vitest.setup.ts.
     setupFiles: ["./vitest.setup.ts"],
-    include: ["**/*.test.ts"],
+    // BOTH EXTENSIONS. `.tsx` was missing until 2026-09-24, and nothing was
+    // orphaned only because no `.test.tsx` existed in this app yet: a
+    // deliberately-failing `lib/ZZ_orphan_probe.test.tsx` was collected by
+    // nothing while `pnpm test` reported 454 files and 7202 tests green, and
+    // asking vitest to run that one file printed `No test files found` with
+    // the single-extension include under it.
+    //
+    // `.tsx` is the natural extension for a rendered component test and is the
+    // one `apps/mobile/screens` already uses for exactly that, so the first
+    // component test written here would have been invisible. It is the
+    // 161-orphaned-`.dbtest.ts` shape in CLAUDE.md, loaded and waiting.
+    //
+    // `lib/testRunnerCensus.test.ts` now derives every test file from `git
+    // ls-files` and every include glob from the configs the package scripts
+    // name, and fails when any file is collected by nothing.
+    include: ["**/*.test.ts", "**/*.test.tsx"],
     exclude: ["node_modules/**", ".next/**"],
     /* VITEST'S 5000ms DEFAULT IS TOO TIGHT FOR THIS SUITE, AND THE COST IS
        NOT A SLOW TEST — IT IS THAT "THE SUITE IS GREEN" STOPPED MEANING

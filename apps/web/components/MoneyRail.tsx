@@ -4,11 +4,26 @@ import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
 /**
  * The Money Rail — the nav-as-pipeline concept, rendered.
  *
+ * NOTHING RENDERS THIS FILE, AND THE SENTENCE THAT USED TO BE HERE IS WHY
+ * NOBODY NOTICED. It read: "Deliberately NOT wired into any layout or nav
+ * yet — the open nav PRs (#249) own those files, and this component waits
+ * for them to land." Those PRs landed. `Sidebar.tsx` renders the Money Rail
+ * itself (`STAGE_KEY_FOR_HEADING`, `figureMain`, `figureSub`,
+ * `StageFigure`), fed by `getMoneyRailStages` from `app/(app)/layout.tsx`,
+ * and `MoneyRail` is imported by no file in the repository — checked
+ * 2026-09-24: `git grep -w MoneyRail` returns this file's own declaration
+ * and nothing else.
+ *
+ * So this is a second, unreachable implementation of a shipped surface, and
+ * the header was telling the next reader it was pending. Edit the Money Rail
+ * in `Sidebar.tsx`; changing anything here changes nothing on screen. It is
+ * left in place rather than deleted in a guard audit — deleting a component
+ * days before a pilot is a product change, not a documentation fix — and is
+ * reported for removal.
+ *
  * PRESENTATIONAL ONLY. No data fetching, no Prisma, no auth: the caller
  * loads stages with getMoneyRailStages and hands them down, the same
- * split every dashboard panel uses. Deliberately NOT wired into any
- * layout or nav yet — the open nav PRs (#249) own those files, and this
- * component waits for them to land.
+ * split every dashboard panel uses.
  *
  * Colors are Tailwind builtins on purpose: bg-neutral-900 is #171717 and
  * text-yellow-400 is #facc15, exactly the charcoal-ground / yellow-accent
