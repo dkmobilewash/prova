@@ -22,8 +22,9 @@ import base from "./playwright.config";
  * it: `playwright.config.ts` is imported here unchanged, and everything
  * below is an override. The signed-in screens — the ones a foreman
  * actually uses — are still only reachable with a Clerk development
- * instance, and `.github/workflows/e2e.yml`'s second job fails loudly
- * saying so rather than skipping.
+ * instance, and `.github/workflows/ci.yml`'s `e2e` job fails loudly saying
+ * so rather than skipping. (This said `e2e.yml` until the jobs actually
+ * landed; no workflow by that name has ever existed here.)
  *
  * THE DEV-BROWSER COOKIE, AND WHY IT IS NOT AN AUTH BYPASS. Measured
  * 2026-09-21, because it looked like a wall: `clerkMiddleware()` runs on

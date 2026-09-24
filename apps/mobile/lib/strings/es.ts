@@ -197,6 +197,7 @@ export const ES: Record<keyof typeof EN, string> = {
   "nav.drawings": "Planos",
   "nav.schedule": "Programa",
   "nav.outbox": "Por enviar",
+  "nav.alerts": "Avisos",
 
   // The More tab. `{role}` arrives from the API already in English
   // (OWNER, FOREMAN…) and is left that way on purpose — it is what the
@@ -523,4 +524,12 @@ export const ES: Record<keyof typeof EN, string> = {
   "capture.materials.sub": "Qué traer a la obra",
   "capture.ticket": "Ticket de T&M",
   "capture.ticket.sub": "Tiempo y materiales firmados",
+
+  // alerts
+  "thing.alerts": "los avisos",
+  "alerts.empty.title": "Nada necesita atención",
+  "alerts.empty.body": "Los avisos aparecen aquí cuando algo necesita hacerse.",
+  "alerts.pastDue": "Vencido",
+  "alerts.comingUp": "Próximo",
+  "alerts.standing": "Permanente",
 };

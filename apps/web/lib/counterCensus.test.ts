@@ -444,3 +444,82 @@ describe("the numbered-table census, repo-wide — scope pinned to git", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * THE TRANSACTION QUESTION, ASKED WHERE THE ANSWER COULD ACTUALLY BE.
+ *
+ * The `never bumps a counter on the bare prisma client` test at the top of
+ * this file is the whole #224 guard, and it reads `sourceFiles(libDir)` —
+ * `apps/web/lib`. The census directly above this one already records why
+ * that is not enough, and then only widened the INSERT question:
+ *
+ *   > Two live files were outside that walk and happened to be CORRECT …
+ *   > the v1 API routes for material orders and incidents bump their
+ *   > counters inline, well outside `apps/web/lib`. A third route that
+ *   > forgot would have been just as invisible.
+ *
+ * A route that bumped on the bare client rather than on `tx` was ALSO
+ * invisible, and that is the #224 defect exactly rather than a variant of
+ * it: two concurrent POSTs read the same counter, the second collides on
+ * the unique index, and the message production shows is a digest. Proved by
+ * mutation on 2026-09-24 — `tx.safetyCaseCounter.upsert` changed to
+ * `prisma.safetyCaseCounter.upsert` in
+ * `app/api/v1/jobs/[id]/incidents/route.ts`, and all thirteen assertions
+ * above stayed green. That route is how the phone files an OSHA case.
+ *
+ * SCOPE IS `apps/`, TAKEN FROM THE GIT-DERIVED SET ABOVE rather than from a
+ * directory list here, so it cannot drift with this file. Everything under
+ * `apps/` is request-scoped runtime: a counter bump there is racing another
+ * request by definition and must be inside the insert's transaction.
+ *
+ * `packages/db/scripts/**` is NOT in scope and that is deliberate, not an
+ * exemption: `seed-demo.mjs` bumps `prisma.invoiceCounter` outside any
+ * transaction on purpose — it is a one-shot script reconciling counters to
+ * rows it has just written, with nothing to race, and the census above is
+ * what holds it to doing that at all. Scoping by "is this request-scoped"
+ * rather than listing a path keeps that a rule instead of a hole.
+ */
+describe("the transaction question, repo-wide — every request-scoped bump is in a transaction", () => {
+  const appSources = repoSources.filter((f) => f.path.startsWith("apps/"));
+
+  it("sees the counter bumps that live outside apps/web/lib", () => {
+    // SCOPE, pinned by naming members the set is known to contain rather
+    // than by counting it: a count of a set that lost a whole directory
+    // looks perfectly healthy, which is the mistake this block exists for.
+    const paths = appSources.map((f) => f.path);
+    for (const pinned of [
+      "apps/web/app/api/v1/jobs/[id]/incidents/route.ts",
+      "apps/web/app/api/v1/jobs/[id]/material-orders/route.ts",
+      "apps/web/lib/billing/invoice-number.ts",
+    ]) {
+      expect(paths, `${pinned} is not in scope — the walk has narrowed`).toContain(pinned);
+    }
+    // SIZE, from a literal the bump patterns cannot shrink with.
+    const literal = appSources.reduce(
+      (n, f) => n + (f.source.match(/\w*Counter\s*\.\s*(?:upsert|update|create)\s*\(/g) ?? []).length,
+      0,
+    );
+    const seen = appSources.reduce(
+      (n, f) =>
+        n +
+        [...f.source.matchAll(TX_BUMP)].length +
+        [...f.source.matchAll(CLIENT_BUMP)].length,
+      0,
+    );
+    expect(seen).toBe(literal);
+    expect(literal).toBeGreaterThanOrEqual(11);
+  });
+
+  it("never bumps a counter on the bare prisma client anywhere under apps/", () => {
+    const offenders = appSources.flatMap((f) =>
+      [...f.source.matchAll(CLIENT_BUMP)].map((m) => `${f.path}: prisma.${m[1]}.${m[2]}(`),
+    );
+    expect(
+      offenders,
+      `A counter incremented outside a transaction is not atomic with the insert it numbers, ` +
+        `which is the #224 defect exactly — two concurrent requests read the same number and ` +
+        `the second collides on the unique index, throwing a message production redacts. ` +
+        `Take the transaction client: ${offenders.join("; ")}`,
+    ).toEqual([]);
+  });
+});

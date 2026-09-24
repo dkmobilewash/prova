@@ -85,6 +85,7 @@ const TRANSLATED = [
   "(tabs)/jobs.tsx",
   "(tabs)/settings.tsx",
   "_layout.tsx",
+  "alerts.tsx",
   "drawings/[jobId].tsx",
   "handover.tsx",
   "materials/[jobId].tsx",

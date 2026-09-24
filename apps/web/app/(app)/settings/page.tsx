@@ -24,6 +24,7 @@ import { PhaseCodes } from "@/components/PhaseCodes";
 import { EmployerBurdenRates } from "@/components/EmployerBurdenRates";
 import { employerBurdenStanding } from "@/lib/employer-burden";
 import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
+import { BidDefaultsForm } from "@/components/BidDefaultsForm";
 import { CompanyProfileForm } from "@/components/CompanyProfileForm";
 import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
 import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsForm";
@@ -154,7 +155,7 @@ export default async function SettingsPage({
     );
   }
 
-  const [connection, locations, insurancePolicies, bonds, licences, accountMappings, rawSyncAttempts, classifications, phaseCodes, employerBurdenRates] = await Promise.all([
+  const [connection, locations, insurancePolicies, bonds, licences, accountMappings, rawSyncAttempts, classifications, phaseCodes, employerBurdenRates, bidDefaultsRow] = await Promise.all([
     prisma.quickBooksConnection.findUnique({
       where: { companyId: company.id },
       include: { connectedByUser: true },
@@ -197,7 +198,29 @@ export default async function SettingsPage({
     // The employer-burden percentages. Which one is IN FORCE is derived from
     // the dates below, never stored — see lib/employer-burden.ts.
     loadEmployerBurdenRates(company.id),
+    prisma.companyBidDefaults.findUnique({ where: { companyId: company.id } }),
   ]);
+
+  // Decimal columns crossing into a client component: strings, so the form
+  // shows exactly what is stored and no float rounding happens on the way.
+  const bidDefaults = bidDefaultsRow
+    ? Object.fromEntries(
+        (
+          [
+            "materialMarkupPercent",
+            "laborMarkupPercent",
+            "subcontractorMarkupPercent",
+            "otherMarkupPercent",
+            "escalationPercent",
+            "materialTaxPercent",
+            "overheadPercent",
+            "profitPercent",
+            "bondPercent",
+            "contingencyPercent",
+          ] as const
+        ).map((key) => [key, bidDefaultsRow[key]?.toString() ?? null]),
+      )
+    : null;
 
   // Picked field by field rather than spread: this crosses into a client
   // component, and the row also carries `isProvaOperator` and the timestamps,
@@ -615,6 +638,21 @@ export default async function SettingsPage({
           today={serverToday()}
           canManage={currentUser.role === "OWNER"}
         />
+      </section>
+
+      {/* The standing markup, beside the phase codes: both are the company's
+          own estimating vocabulary rather than compliance paperwork, and
+          neither prices anything by itself — a job's recap keeps its own copy,
+          so changing these never moves a bid already built. */}
+      <section id="bid-defaults" className="mb-10" data-tour="settings-bid-defaults">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Default markup</h2>
+        <p className="mb-4 text-sm text-ink-body">
+          What you normally add to the cost of the work: markup per kind of cost, then overhead,
+          profit, tax, bond and contingency. These pre-fill the{" "}
+          <span className="text-ink-label">Bid recap</span> on a new job — that job then keeps its
+          own rates, so changing these never moves a bid you have already built or sent.
+        </p>
+        <BidDefaultsForm defaults={bidDefaults} />
       </section>
 
       {/* Phase codes sit here, after the licences and before the insurance,

@@ -197,6 +197,7 @@ export const EN = {
   "nav.drawings": "Drawings",
   "nav.schedule": "Schedule",
   "nav.outbox": "Waiting to send",
+  "nav.alerts": "Alerts",
 
   // The More tab. In scope for a reason that is almost circular: it is
   // where the language switch lives, and making somebody read an English
@@ -527,4 +528,12 @@ export const EN = {
   "capture.materials.sub": "What to get on site",
   "capture.ticket": "T&M ticket",
   "capture.ticket.sub": "Signed time and materials",
+
+  // alerts
+  "thing.alerts": "the alerts",
+  "alerts.empty.title": "Nothing needs attention",
+  "alerts.empty.body": "Alerts appear here when something needs doing.",
+  "alerts.pastDue": "Past due",
+  "alerts.comingUp": "Coming up",
+  "alerts.standing": "Standing",
 } as const;

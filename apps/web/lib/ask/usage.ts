@@ -180,7 +180,15 @@ export type AskUsageFeature =
   /** The public-web lookup behind "start a bid" (lib/ask/commands/
    *  estimating.ts). Its own row, because web search is billed per search
    *  on top of tokens and would otherwise hide inside an Ask row. */
-  | "bid-research";
+  | "bid-research"
+  /** One lead-search pass (lib/ask/commands/leads.ts, bound in
+   *  lib/ask/leadFinder.ts): the public-web search for projects out to
+   *  bid. Its own row for the same reason as bid-research — web search
+   *  bills per search on top of tokens — and because the spec that built
+   *  it replaces its cost ESTIMATE with what these rows and the log line
+   *  below measure, before any scheduling decision is made. Not "ask", so
+   *  a pass never costs a person one of their hourly questions. */
+  | "lead-search";
 
 export type AskUsageRecord = {
   companyId: string;
@@ -304,6 +312,8 @@ const FEATURE_LABELS: Record<string, string> = {
   "wip-narrative": "WIP narrative",
   "compliance-extract": "Document extraction",
   "draft-estimate-lines": "Estimate drafting",
+  "bid-research": "Bid research (web)",
+  "lead-search": "Lead search (web)",
 };
 
 /** The last thirty days for the settings page, grouped by who asked.

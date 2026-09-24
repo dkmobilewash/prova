@@ -54,6 +54,7 @@ import {
 } from "./calculator";
 import { recordProposal } from "./proposals";
 import { readingLabel } from "./toolLabels";
+import { boundLeadFinder } from "./leadFinder";
 import {
   KNOWN_GAPS,
   toAskToolDefinition,
@@ -811,7 +812,9 @@ export async function* streamAnswer(
       })),
     };
   };
-  const loopCtx: CommandContext = { ...ctx, research };
+  // Lead search, the same shape: bound to this company for its own usage
+  // row (feature "lead-search"), supplied only by the loop.
+  const loopCtx: CommandContext = { ...ctx, research, leads: boundLeadFinder(ctx) };
 
   const citations: AskCitation[] = [];
   /* Per-record destinations, collected exactly as citations are and capped

@@ -2,31 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { ClerkProvider } from "@clerk/expo";
 import { Redirect, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import * as SecureStore from "expo-secure-store";
 import { StyleSheet, Text, View } from "react-native";
 import { apiBaseUrl, clerkPublishableKey, configProblem } from "@/lib/env";
 import { getHandover } from "@/lib/handover";
 import { loadLanguage, useT } from "@/lib/i18n";
+import { usePushTapRouter } from "@/lib/push";
+import { tokenCache } from "@/lib/token-cache";
 import { leadingFor, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import { useQueueDrain } from "@/lib/use-queue-drain";
-
-
-
-// Clerk stores the session token on-device; SecureStore (Keychain/Keystore)
-// is the recommended cache for it on native.
-const tokenCache = {
-  async getToken(key: string): Promise<string | null> {
-    try {
-      return await SecureStore.getItemAsync(key);
-    } catch {
-      return null;
-    }
-  },
-  async saveToken(key: string, value: string): Promise<void> {
-    await SecureStore.setItemAsync(key, value);
-  },
-};
 
 /**
  * A handover survives a relaunch, and this is where that is enforced.
@@ -84,6 +68,15 @@ function LanguageGate({ children }: { children: React.ReactNode }) {
  * only be used within the ClerkProvider component". */
 function DrainTimer() {
   useQueueDrain();
+  return null;
+}
+
+/** The one place a notification tap is answered. Mounted inside
+ * ClerkProvider and OUTSIDE the handover gate, so the listener stays
+ * alive while the phone is in a crew member's hands — and the swallow
+ * still works, which is the point. */
+function PushTapRouter() {
+  usePushTapRouter();
   return null;
 }
 
@@ -170,6 +163,9 @@ export default function RootLayout() {
           so the queue keeps going during a handover: a crew member's hours
           must not wait for the foreman to take the phone back. */}
       <DrainTimer />
+      {/* Mounted beside the drain and OUTSIDE both gates, so the listener
+          stays alive while the phone is in a crew member's hands. */}
+      <PushTapRouter />
       {/* The language is read before the handover is, so the handover
           screen itself speaks the right language — it is the one screen
           a crew member sees before anything else. */}
@@ -190,6 +186,7 @@ export default function RootLayout() {
             <Stack.Screen name="drawings/[jobId]" options={{ title: t("nav.drawings") }} />
             <Stack.Screen name="schedule/[jobId]" options={{ title: t("nav.schedule") }} />
             <Stack.Screen name="outbox" options={{ title: t("nav.outbox") }} />
+            <Stack.Screen name="alerts" options={{ title: t("nav.alerts") }} />
             {/* No header and no swipe-back: the way out of a handover is
                 handing the phone back, not an iOS gesture. */}
             <Stack.Screen name="handover" options={{ headerShown: false, gestureEnabled: false }} />

@@ -462,46 +462,55 @@ export function LandingPage() {
               than the phone. 320 CSS px is iPhone SE 1st gen and 5/5s, and —
               the bigger audience — any iPhone with Display Zoom on.
 
-              2.5rem is the largest floor that fits: at 40px the word needs
-              288px in 288px. 2.75rem still needs 300. Nothing at or above
-              444px changes, because 9vw passes 40px there and the clamp has
-              not been on its floor since — the measured desktop scale the
-              comment below defends is untouched, and 96px at the top end
-              still is. `e2e/specs/public-layout.public.spec.ts` asserts the
-              layout viewport equals the device at 320 and 375, so this
-              cannot come back unnoticed.
-
-              THAT SENTENCE IS NO LONGER TRUE AND THE PAGE STILL OVERFLOWS
-              AT 320. Measured 2026-09-23 in real Chromium against a
-              production build, BEFORE and AFTER the Ask demo moved into
-              this hero — identical on both sides, so it is not the demo's:
+              THE FIRST FIX PUT THE FLOOR AT 2.5rem ON A WRONG NUMBER, AND
+              THE PAGE WENT ON OVERFLOWING AT 320 FOR TWO DAYS. That pass
+              said "2.5rem is the largest floor that fits: at 40px the word
+              needs 288px in 288px", and the word does not: measured
+              2026-09-23 in real Chromium against a production build, its
+              min-content width at the 40px floor is 343.5px. 343.5 in a
+              288px box is 39px of sideways pan on a 320px screen, which is
+              what was actually shipped —
 
                 320 device   scrollWidth 359   innerWidth 320
                 360 device   scrollWidth 360   innerWidth 360
                 375 device   scrollWidth 375   innerWidth 375
 
-              Isolated the documented way rather than inferred: hiding this
-              <h1> takes scrollWidth from 359 to 320, and hiding the demo
-              figure changes nothing. The <h1>'s min-content width at the
-              40px floor is 343.5px, not the 288px this paragraph claims, so
-              the word needs 343.5 in a 288px box and the page scrolls
-              sideways by 39px on a 320px screen.
+              — and it was isolated the documented way rather than inferred:
+              hiding this <h1> takes 359 to 320, and hiding the Ask demo
+              figure beside it changes nothing. Identical before and after
+              that demo moved into this hero, so it is not the demo's.
 
-              NOT FIXED HERE — fixing it means touching the clamp, which is
-              the one thing the comment below refuses to trade for layout,
-              and it wants its own change with its own measurement. Recorded
-              because the old sentence is the one that stops the next person
-              looking. The e2e assertion quoted above is real and would
-              catch it (`expectFitsTheViewport` asserts scrollWidth <=
-              innerWidth at a 320 project), but ci.yml runs test, lint,
-              typecheck and build — not the public e2e suite — so nothing
-              automatic has been asking. */}
+              SO THE FLOOR IS 2rem, and the arithmetic is the measurement's
+              rather than another guess. One unbreakable word at a fixed
+              typeface scales linearly with font-size — the -0.02em tracking
+              is in em, so it scales too — which makes the largest floor that
+              fits 288px:  40px x 288/343.5 = 33.5px. 2rem (32px) gives
+              274.8px, 13px inside the box; 2.0625rem (33px) gives 283.4px
+              and leaves 4.6px for rounding, which is not enough to be worth
+              the two pixels of headline.
+
+              NOTHING AT OR ABOVE 356px CHANGES, and that is the whole cost
+              of it: the floor only applies while 9vw is under it, i.e. below
+              355.6px, so every device from 360 up renders exactly what it
+              rendered before — the measured desktop scale the comment below
+              defends is untouched, 96px at the top end included. What
+              changes is 320-355, where the headline goes from 40px to 32px
+              and the page stops panning sideways.
+
+              AND WHAT MADE THE TWO DAYS POSSIBLE IS NOW FIXED TOO. The
+              previous version of this comment ended "the e2e assertion would
+              catch it, but ci.yml runs test, lint, typecheck and build — not
+              the public e2e suite — so nothing automatic has been asking."
+              `ci.yml`'s `e2e-public` job asks now, on every PR, at 320 and
+              375 with a 1280 control, and it is the run that turned this
+              paragraph from a note into a red check. Do not lower that
+              assertion to keep a font size. */}
           {/* The clamp's upper end, the 1.03 leading and the -0.02em tracking
               are MEASURED specs carried forward from the scale pass and are
               not to be traded away for layout convenience. A `lg:` override
               was tried here and silently dropped the desktop headline from
               96px to 72px; the layout is sized to the type instead. */}
-          <h1 className="order-2 max-w-4xl text-[clamp(2.5rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink lg:order-none lg:col-span-2">
+          <h1 className="order-2 max-w-4xl text-[clamp(2rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink lg:order-none lg:col-span-2">
             The job-site system for union specialty-trade subcontractors.
           </h1>
           {/* THE WORDS. `items-start` on the grid above, NOT `items-center`,

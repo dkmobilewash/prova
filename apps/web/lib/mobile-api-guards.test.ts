@@ -27,6 +27,7 @@ const OPEN: Record<string, string> = {
   "jobs/[id]/apprentice-ratio/route.ts": "a ratio warning computed from the schedule, shown beside hours",
   "device-tokens/route.ts": "registering THIS device for push, which is about the phone, not the company",
   "me/route.ts": "who is holding the phone — the answer is what the rest of the guards are read from",
+  "alerts/route.ts": "the alert list — fourteen kinds behind eight capabilities, all filtered per principal and money-stripped server-side already",
 };
 
 /** Each exported handler in a route file, as [name, body].

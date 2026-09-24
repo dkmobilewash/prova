@@ -1,0 +1,132 @@
+// Wall types and the per-job wall schedule. Diego's lane (estimating).
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// Why this exists: every takeoff tool on the market measures a wall's
+// plan-view centerline and stops. The height and the TYPE of the wall are not
+// on the floor plan — they are in the partition schedule and the sections —
+// so "142 LF of wall" becomes studs, track, board and insulation only after
+// somebody joins it to a type and a height by hand. These three tables are
+// that join: a company's partition schedule (WallType + WallTypeComponent),
+// and each job's runs (WallRun), from which the estimate's lines are
+// generated. Anything that later measures walls — on-screen tracing, an AI
+// read of the plans — writes RUNS, never line items.
+
+/// What quantity of a wall a component is counted against.
+///
+/// Every value is computed from the run and the type by
+/// apps/web/lib/wall-assemblies.ts — nothing is stored per run.
+enum WallComponentBasis {
+  /// The run's length. Track is LINEAR_FT × 2 (top and bottom).
+  LINEAR_FT
+  /// Length × height of ONE face, openings deducted — insulation, sound batt.
+  FACE_SQFT
+  /// Face area × the type's boarded sides — board, tape, finish. Layers are
+  /// the factor, so two layers of ⅝″ each side is BOARDED_SQFT × 2.
+  BOARDED_SQFT
+  /// Studs at the type's spacing, including the one closing the run.
+  STUDS
+  /// A fixed count per run — end studs at a corner, a head-of-wall detail.
+  PER_RUN
+}
+
+/// One row of a company's partition schedule — "W2", as the architect's
+/// drawings label it. Company-scoped reference data, like LineItemCatalogEntry.
+model WallType {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// The tag as it appears on the drawings: "W2", "P-4A". Unique per company.
+  code String
+  name String
+
+  /// Used for a run that gives no height of its own. Nullable on purpose: a
+  /// type without a default and a run without a height produce NOTHING rather
+  /// than a guessed 10 feet.
+  defaultHeightFt Decimal? @db.Decimal(8, 2)
+  /// 1 or 2 boarded sides. A demising wall is 2; furring against masonry is 1.
+  sides           Int      @default(2)
+  studSpacingIn   Decimal  @default(16) @db.Decimal(6, 2)
+  notes           String?
+  sortOrder       Int      @default(0)
+
+  components WallTypeComponent[]
+  runs       WallRun[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, code])
+  @@index([companyId])
+}
+
+/// One material or labor item in a wall type's assembly.
+model WallTypeComponent {
+  id         String   @id @default(cuid())
+  wallTypeId String
+  wallType   WallType @relation(fields: [wallTypeId], references: [id], onDelete: Cascade)
+
+  description String
+  unit        String?
+  basis       WallComponentBasis
+  /// Multiplier on the basis: 2 for top-and-bottom track, the layer count for
+  /// board, 1/32 to turn square feet into 4x8 sheets.
+  factor       Decimal @default(1) @db.Decimal(12, 4)
+  wastePercent Decimal @default(0) @db.Decimal(5, 2)
+  /// Round the total up to a whole unit — sheets and studs are bought whole.
+  roundUp      Boolean @default(false)
+
+  /// Where the line's price comes from when it is created. A template link,
+  /// like JobLineItem.sourceCatalogEntryId: re-pricing the catalog never
+  /// reaches back into a line already on an estimate.
+  catalogEntryId String?
+  catalogEntry   LineItemCatalogEntry? @relation(fields: [catalogEntryId], references: [id], onDelete: SetNull)
+
+  /// Units per hour for this component's labor. Generated hours are
+  /// quantity ÷ this rate; null means the component carries no labor.
+  productionRate        Decimal?             @db.Decimal(10, 4)
+  craftClassificationId String?
+  craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id], onDelete: SetNull)
+
+  sortOrder Int @default(0)
+
+  /// Estimate lines generated from this component. SET NULL on delete, so
+  /// removing a component leaves the line standing as an ordinary line.
+  jobLineItems JobLineItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([wallTypeId])
+}
+
+/// One run of wall on a job: "Level 2 corridor, 142 LF, type W2, 10 ft".
+/// The estimate's wall lines are generated from the runs, so this is the
+/// record of what was measured — the thing a revision re-measures.
+model WallRun {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+  /// RESTRICT: a wall type with runs on any job cannot be deleted out from
+  /// under the estimate that was built from it.
+  wallTypeId String
+  wallType   WallType @relation(fields: [wallTypeId], references: [id])
+
+  label    String
+  lengthFt Decimal  @db.Decimal(10, 2)
+  /// Null means "the type's default height".
+  heightFt Decimal? @db.Decimal(8, 2)
+  /// [{ widthFt, heightFt }] — deducted per lib/takeoff.ts's threshold rule.
+  openings  Json @default("[]")
+  sortOrder Int  @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([jobId])
+  @@index([wallTypeId])
+}

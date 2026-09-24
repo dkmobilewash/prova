@@ -205,6 +205,32 @@ describe("usageSummary", () => {
   });
 });
 
+describe("a lead-search row", () => {
+  it("is written under its own feature — the rows the spec's cost table is replaced from — and is not an Ask row", async () => {
+    fake.prisma.askUsage.create.mockResolvedValue({});
+    await recordAskUsage({
+      companyId: "co-1", userId: "u-1", model: "claude-opus-5", usage: { ...totals, webSearches: 3 },
+      outcome: "answered", feature: "lead-search",
+    });
+    expect(fake.prisma.askUsage.create.mock.calls[0][0].data.feature).toBe("lead-search");
+    // askAllowance counts `feature: "ask"` (pinned above), so this row can
+    // never cost a person one of their hourly questions.
+    fake.prisma.askUsage.count.mockResolvedValue(0);
+    await askAllowance("co-1", "u-1", now);
+    for (const call of fake.prisma.askUsage.count.mock.calls) expect(call[0].where.feature).toBe("ask");
+  });
+
+  it("shows on the settings page under its own name", async () => {
+    fake.prisma.askUsage.groupBy.mockResolvedValue([
+      { userId: "u-1", feature: "lead-search", outcome: "answered", _count: { _all: 2 }, _sum: { inputTokens: 120_000, outputTokens: 6_000 } },
+    ]);
+    fake.prisma.user.findMany.mockResolvedValue([{ id: "u-1", name: "Dana", email: "d@x" }]);
+    const summary = await usageSummary("co-1", now);
+    expect(summary.byFeature).toEqual([{ feature: "lead-search", label: "Lead search (web)", calls: 2, tokens: 126_000 }]);
+    expect(summary.questions).toBe(0);
+  });
+});
+
 describe("the feature label", () => {
   /* Three callers in packages/integrations/src/anthropic.ts spent money with
      no usage row until 2026-09-14. They write rows now; this is the label

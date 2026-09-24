@@ -161,6 +161,7 @@ describe("who is offered what", () => {
       "add_bid_pursuit",
       "set_pursuit_stage",
       "add_contact",
+      "find_bid_leads",
     ]);
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_items");
     // Writing the crew schedule is MANAGE_FIELD, which an estimator lacks.
@@ -218,6 +219,9 @@ describe("who is offered what", () => {
       // Stricter than the open /contacts page, deliberately — see
       // commands/contacts.ts. The page itself is unchanged.
       add_contact: { action: "createContact", capability: "MANAGE_ESTIMATING", tier: "T1_DRAFT" },
+      // Lead search lands on the same action as add_bid_pursuit, on purpose:
+      // the tap writes BidPursuit rows and nothing else (commands/leads.ts).
+      find_bid_leads: { action: "createBidPursuit", capability: ROUTE_CAPABILITY["/pipeline"]!, tier: "T1_DRAFT" },
     };
     for (const [name, want] of Object.entries(pinned)) {
       const command = COMMANDS.find((c) => c.name === name)!;
