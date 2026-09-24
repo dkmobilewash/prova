@@ -30,6 +30,10 @@ type Bid = {
   contact: { name: string };
   /** Quotes received for levelling. Empty here -- see the vendor stub above. */
   quotes: [];
+  /** The alternates/unit prices/allowances on the bid. Empty here: this
+   * file's subject is the won-value line, and `lib/bid-lines.test.ts` covers
+   * the totals against its own fixtures. */
+  lines: [];
 };
 
 function bid(over: Partial<Bid> & { id: string }): Bid {
@@ -42,6 +46,7 @@ function bid(over: Partial<Bid> & { id: string }): Bid {
     dueDate: null,
     contact: { name: "Acme GC" },
     quotes: [],
+    lines: [],
     ...over,
   };
 }
@@ -71,14 +76,42 @@ vi.mock("@prova/db", () => ({
   // longer builds a Decimal at module scope, so this page's import graph can
   // be walked with Prisma mocked away. `moduleScopePrismaCensus.test.ts`
   // keeps it that way.
+  //
+  // main's version of this line stubbed a Decimal class — the per-branch
+  // workaround that three branches wrote independently before anybody looked
+  // at the cause. It is dead now rather than wrong, and keeping it would
+  // leave the root fix untested from here.
   Prisma: {},
 }));
 vi.mock("@/lib/authz", () => ({ requireCapability: vi.fn(async () => ({ allowed: true, context })) }));
+// The bid->job outcome queries are stubbed rather than mocked deeply: this
+// file's subject is the won-value line, and `lib/bid-outcome.test.ts` covers
+// the comparison arithmetic against its own fixtures. Returning EMPTY is the
+// honest stub -- no bid here is linked to a job -- and the test below asserts
+// that a won bid still offers the link, so the stub cannot hide the wiring.
+vi.mock("@/lib/bid-outcome-query", () => ({
+  loadBidOutcomes: vi.fn(async () => new Map()),
+  loadLinkableJobs: vi.fn(async () => []),
+}));
 
 async function render() {
   const { default: Page } = await import("@/app/(app)/bids/page");
   return renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
 }
+
+describe("a won bid offers the link to the job it became", () => {
+  it("shows the control on a WON bid and not on an open one", async () => {
+    bids = [
+      bid({ id: "1", status: "WON", bidAmount: 50_000 }),
+      bid({ id: "2", status: "INVITED", bidAmount: 10_000, projectName: "Still open" }),
+    ];
+    const html = await render();
+    // Anti-vacuity: both rows really are on the page.
+    expect(html).toContain("Still open");
+    // Exactly one link control -- the won bid's.
+    expect(html.split("Link to the job this became").length - 1).toBe(1);
+  });
+});
 
 describe("/bids total won value", () => {
   it("counts a WON bid with no amount in the unpriced tally, and reads the total as a floor", async () => {

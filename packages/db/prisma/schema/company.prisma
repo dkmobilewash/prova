@@ -112,6 +112,7 @@ model Company {
   jobMedia                  JobMedia[]
   takeoffPlans              TakeoffPlan[]
   bidQuotes                 BidQuote[]
+  bidLines                  BidLine[]
   jobMediaTags              JobMediaTag[]
   documentIntakes           DocumentIntake[]
   rfis                      Rfi[]
