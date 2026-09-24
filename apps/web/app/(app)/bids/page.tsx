@@ -7,6 +7,9 @@ import { money } from "@/lib/money";
 import { formatCalendarDate } from "@/lib/render-date";
 import { summariseWonValue, valueIsPartial } from "@/lib/bid-pipeline";
 import { BidLines, type BidLineRow } from "@/components/BidLines";
+import { BidJobLink } from "@/components/BidJobLink";
+import { bidRecord, settledSentence } from "@/lib/bid-outcome";
+import { loadBidOutcomes, loadLinkableJobs } from "@/lib/bid-outcome-query";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -48,6 +51,15 @@ export default async function BidsPage({
 
   const tradeFilter = trade && trade in TradeScope ? (trade as TradeScope) : undefined;
   const statusFilter = status && status in BidInvitationStatus ? (status as BidInvitationStatus) : undefined;
+
+  const [outcomesByBid, linkableJobs] = await Promise.all([
+    loadBidOutcomes(company.id),
+    loadLinkableJobs(company.id),
+  ]);
+  // How this company's finished bids have run against what the work cost.
+  // Derived here, never stored, and it counts only what has SETTLED — see
+  // `bidRecord`, which returns the excluded count so the sentence can say so.
+  const record = bidRecord([...outcomesByBid.values()].map((linked) => linked.outcome));
 
   const bids = await prisma.bidInvitation.findMany({
     where: {
@@ -155,6 +167,34 @@ export default async function BidsPage({
         </p>
       )}
 
+      {/* HOW THE BIDS HAVE ACTUALLY RUN. Only finished jobs count toward this:
+          a job three weeks in has spent a fifth of its cost and earned none of
+          its lessons, and averaging it in as "on budget" would make the figure
+          read better the more work is in progress. The excluded count is shown
+          rather than dropped, so the number can be judged. */}
+      {record.settled > 0 && (
+        <p className="mb-4 rounded-lg border border-line-card bg-surface-card p-3 text-sm text-ink-body">
+          Across {record.settled} finished {record.settled === 1 ? "job" : "jobs"} linked to a bid, the work came in{" "}
+          <span className="font-medium text-ink">
+            {Math.abs(record.averageVariance! * 100) < 0.05
+              ? "on the bid on average"
+              : `${Math.abs(record.averageVariance! * 100).toFixed(1)}% ${record.averageVariance! > 0 ? "over" : "under"} on average`}
+          </span>
+          {record.over > 0 || record.under > 0 ? (
+            <> — {record.over} over, {record.under} under.</>
+          ) : (
+            "."
+          )}
+          {record.notYet > 0 && (
+            <span className="text-ink-muted">
+              {" "}
+              {record.notYet} more {record.notYet === 1 ? "bid is" : "bids are"} linked to a job that has not
+              finished, and {record.notYet === 1 ? "is" : "are"} not counted here.
+            </span>
+          )}
+        </p>
+      )}
+
       {bids.length === 0 ? (
         isFiltered ? (
           <p className="text-ink-body">
@@ -236,6 +276,26 @@ export default async function BidsPage({
                   }),
                 )}
               />
+              {bid.status === "WON" && (
+                <BidJobLink
+                  bidInvitationId={bid.id}
+                  jobs={linkableJobs}
+                  linked={
+                    outcomesByBid.has(bid.id)
+                      ? {
+                          jobId: outcomesByBid.get(bid.id)!.jobId,
+                          jobName: outcomesByBid.get(bid.id)!.jobName,
+                          outcome: outcomesByBid.get(bid.id)!.outcome,
+                        }
+                      : null
+                  }
+                  sentence={
+                    outcomesByBid.has(bid.id)
+                      ? settledSentence(outcomesByBid.get(bid.id)!.outcome, money)
+                      : null
+                  }
+                />
+              )}
             </li>
           ))}
         </ul>

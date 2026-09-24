@@ -637,6 +637,7 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "saveBidLine", reason: "Whether a figure is an allowance, an alternate or a unit price decides where it sits against the base bid, and a wrong kind sends the bid out wrong by that amount." },
   { action: "setBidLineAccepted", reason: "What the GC took is read off their award letter, on the page where the alternate is visible." },
   { action: "deleteBidLine", reason: "Deletes are never commands (T5)." },
+  { action: "linkBidToJob", reason: "Which job a bid became is a judgement about two records the model cannot tell apart — names rarely match and one GC sends several invitations per building. A wrong link teaches the estimator from another job's costs, so a person picks it on /bids." },
   { action: "deleteBidInvitation", reason: "Deletes are never commands (T5)." },
   // The pre-bid pursuit list (lib/actions/bidPursuits.ts, BidPursuit). The
   // read side is the bid_pursuits tool. createBidPursuit and
