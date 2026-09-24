@@ -334,7 +334,16 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
   return (
     <div>
       <section className="mb-10">
-        <h2 className="mb-1 text-lg font-semibold text-ink">Job costing &amp; WIP</h2>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-lg font-semibold text-ink">Job costing &amp; WIP</h2>
+          {/* The GC-facing bid document built from these lines, with its
+              inclusions and exclusions. Its own route asserts
+              MANAGE_ESTIMATING; this tab only needs VIEW_JOB_COSTS, so a
+              member with one and not the other gets NoAccess there. */}
+          <Link href={`/jobs/${job.id}/proposal`} className="text-sm text-link hover:underline">
+            Proposal &amp; exclusions →
+          </Link>
+        </div>
         {/* WHAT THE LABOR IN THESE FIGURES IS MADE OF, SAID OUT LOUD AND
             DRIVEN BY THE DATA. This screen used to describe logged hours as
             "burdened", which to a contractor means fully loaded -- employer

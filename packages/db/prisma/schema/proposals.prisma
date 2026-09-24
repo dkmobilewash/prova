@@ -1,0 +1,54 @@
+// Bid proposals: the scope + price + exclusions document a sub sends a GC.
+// Diego's lane.
+//
+// Part of the multi-file Prisma schema in this folder.
+
+/// What a clause in a proposal IS. Exclusions are the spine of a sub's bid —
+/// the "not in our number" that defends it against a GC's scope sheet.
+/// Inclusions and clarifications say what IS in and what a number assumes;
+/// an alternate is an optional add the GC can accept or decline.
+enum ProposalClauseKind {
+  INCLUSION
+  EXCLUSION
+  CLARIFICATION
+  ALTERNATE
+}
+
+/// A reusable clause for bid proposals, company-scoped — the "standard set" a
+/// sub pulls into every bid. Editing this changes only future proposals that
+/// copy it; a clause already on a job's proposal is a snapshot and does not
+/// move.
+model ProposalClause {
+  id        String             @id @default(cuid())
+  companyId String
+  company   Company            @relation(fields: [companyId], references: [id])
+  kind      ProposalClauseKind
+  text      String
+  sortOrder Int                @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+/// One clause on a specific job's proposal. A SNAPSHOT of the text, copied
+/// from the library (or typed inline), so a proposal already sent to a GC
+/// never changes because the library did — the same rule as an invoice
+/// snapshotting its retainage, and the same reason CloseoutItem is per-job.
+model JobProposalClause {
+  id        String             @id @default(cuid())
+  companyId String
+  company   Company            @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job                @relation(fields: [jobId], references: [id])
+  kind      ProposalClauseKind
+  text      String
+  sortOrder Int                @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([jobId])
+}

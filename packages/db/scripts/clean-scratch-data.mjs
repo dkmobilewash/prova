@@ -271,6 +271,7 @@ async function main() {
     await del("drawingRevision", () => prisma.drawingRevision.deleteMany({ where: { set: { jobId: { in: jobIds } } } }));
     await del("drawingSet", () => prisma.drawingSet.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("closeoutItem", () => prisma.closeoutItem.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("jobProposalClause", () => prisma.jobProposalClause.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("warrantyServiceRequest", () => prisma.warrantyServiceRequest.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("warrantyPeriod", () => prisma.warrantyPeriod.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("toolboxTalk", () => prisma.toolboxTalk.deleteMany({ where: { jobId: { in: jobIds } } }));
