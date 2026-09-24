@@ -43,6 +43,11 @@ model BidInvitation {
   tradeScope TradeScope?
   bidAmount  Decimal?    @db.Decimal(12, 2)
 
+  /// The quotes this company collected from its own suppliers and subs for
+  /// this bid, for levelling — see bid-levelling.prisma. Distinct from
+  /// VendorPriceQuote, which is price history and carries no bid.
+  quotes BidQuote[]
+
   /// The pre-bid pursuit this invitation came out of, if one was being
   /// chased — see pursuits.prisma. The FK lives on BidPursuit.
   pursuit BidPursuit?

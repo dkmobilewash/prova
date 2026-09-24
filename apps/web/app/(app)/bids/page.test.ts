@@ -28,6 +28,8 @@ type Bid = {
   tradeScope: string | null;
   dueDate: Date | null;
   contact: { name: string };
+  /** Quotes received for levelling. Empty here -- see the vendor stub above. */
+  quotes: [];
   /** The alternates/unit prices/allowances on the bid. Empty here: this
    * file's subject is the won-value line, and `lib/bid-lines.test.ts` covers
    * the totals against its own fixtures. */
@@ -43,6 +45,7 @@ function bid(over: Partial<Bid> & { id: string }): Bid {
     tradeScope: null,
     dueDate: null,
     contact: { name: "Acme GC" },
+    quotes: [],
     lines: [],
     ...over,
   };
@@ -60,15 +63,25 @@ const context = {
 };
 
 vi.mock("@prova/db", () => ({
-  prisma: { bidInvitation: { findMany: vi.fn(async () => bids) } },
+  prisma: {
+    bidInvitation: { findMany: vi.fn(async () => bids) },
+    // The levelling panel's supplier picker. Empty is the honest stub: these
+    // fixtures carry no quotes, and `lib/bid-levelling.test.ts` covers the
+    // comparison against its own.
+    vendor: { findMany: vi.fn(async () => []) },
+  },
   BidInvitationStatus: {},
   TradeScope: {},
-  // `Prisma: {}` was enough until this page's import graph reached the
-  // actions barrel, which pulls in lib/change-order.ts -- and that builds a
-  // `new Prisma.Decimal(0)` at MODULE SCOPE, so an empty stub throws on
-  // import rather than in a test. Only the constructor is needed here;
-  // nothing in these tests does Decimal arithmetic.
-  Prisma: { Decimal: class { constructor(public value: unknown) {} } },
+  // Back to an empty stub, and that is the POINT: lib/change-order.ts no
+  // longer builds a Decimal at module scope, so this page's import graph can
+  // be walked with Prisma mocked away. `moduleScopePrismaCensus.test.ts`
+  // keeps it that way.
+  //
+  // main's version of this line stubbed a Decimal class — the per-branch
+  // workaround that three branches wrote independently before anybody looked
+  // at the cause. It is dead now rather than wrong, and keeping it would
+  // leave the root fix untested from here.
+  Prisma: {},
 }));
 vi.mock("@/lib/authz", () => ({ requireCapability: vi.fn(async () => ({ allowed: true, context })) }));
 // The bid->job outcome queries are stubbed rather than mocked deeply: this

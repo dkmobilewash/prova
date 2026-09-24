@@ -6,6 +6,8 @@ import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
 import { formatCalendarDate } from "@/lib/render-date";
 import { summariseWonValue, valueIsPartial } from "@/lib/bid-pipeline";
+import { BidLevelling, type BidQuoteRow } from "@/components/BidLevelling";
+import { viewerToday } from "@/lib/viewerToday";
 import { BidLines, type BidLineRow } from "@/components/BidLines";
 import { BidJobLink } from "@/components/BidJobLink";
 import { bidRecord, settledSentence } from "@/lib/bid-outcome";
@@ -39,6 +41,11 @@ function labelFor(options: readonly { value: string; label: string }[], value: s
   return options.find((o) => o.value === value)?.label ?? value;
 }
 
+/** A stored UTC midnight as the YYYY-MM-DD a date input round-trips, or null.
+ * Rendered in UTC, never in the viewer's zone — the app-wide rule, and here it
+ * is what stops a quote dated Tuesday reading as Monday in California. */
+const day = (value: Date | null) => (value === null ? null : value.toISOString().slice(0, 10));
+
 export default async function BidsPage({
   searchParams,
 }: {
@@ -52,7 +59,19 @@ export default async function BidsPage({
   const tradeFilter = trade && trade in TradeScope ? (trade as TradeScope) : undefined;
   const statusFilter = status && status in BidInvitationStatus ? (status as BidInvitationStatus) : undefined;
 
-  const [outcomesByBid, linkableJobs] = await Promise.all([
+  // The reader's calendar, not the server's. A request is OVERDUE or it is
+  // not, and that is exactly the case lib/serverToday.ts's own comment says
+  // it is not good enough for: "on anything where the exact day decides an
+  // outcome". Computed on the server from request data, so the markup
+  // matches on both sides and the localToday hydration trap does not apply.
+  const today = await viewerToday();
+
+  const [vendors, outcomesByBid, linkableJobs] = await Promise.all([
+    prisma.vendor.findMany({
+      where: { companyId: company.id },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
     loadBidOutcomes(company.id),
     loadLinkableJobs(company.id),
   ]);
@@ -68,7 +87,11 @@ export default async function BidsPage({
       status: statusFilter,
     },
     orderBy: { createdAt: "desc" },
-    include: { contact: true, lines: { orderBy: { sortOrder: "asc" } } },
+    include: {
+      contact: true,
+      quotes: { orderBy: [{ packageLabel: "asc" }, { amount: "asc" }] },
+      lines: { orderBy: { sortOrder: "asc" } },
+    },
   });
 
   // #79: a WON bid with no bidAmount used to be dropped from both the sum
@@ -273,6 +296,31 @@ export default async function BidsPage({
                     unit: line.unit,
                     unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
                     accepted: line.accepted,
+                  }),
+                )}
+              />
+              <BidLevelling
+                bidInvitationId={bid.id}
+                vendors={vendors}
+                today={today}
+                quotes={bid.quotes.map(
+                  (quote): BidQuoteRow => ({
+                    id: quote.id,
+                    packageLabel: quote.packageLabel,
+                    vendorId: quote.vendorId,
+                    vendorName: quote.vendorName,
+                    // NULL STAYS NULL. `Number(null)` is 0, which would post a
+                    // supplier who has not answered as a quote of nothing —
+                    // and nothing sorts cheapest.
+                    amount: quote.amount === null ? null : Number(quote.amount),
+                    // Rendered from the stored UTC midnight as YYYY-MM-DD, the
+                    // same string the date input round-trips.
+                    quotedOn: day(quote.quotedOn),
+                    requestedOn: day(quote.requestedOn),
+                    dueBy: day(quote.dueBy),
+                    declinedAt: day(quote.declinedAt),
+                    exclusions: quote.exclusions,
+                    notes: quote.notes,
                   }),
                 )}
               />

@@ -628,6 +628,13 @@ export const estimatingExclusions: Exclusion[] = [
   // in lib/estimating/bid-invitation.ts.
   { action: "priceCatalogEntryFromQuotes", reason: "Setting a catalog default from a supplier quote is a pricing decision made on /catalog, where the vendor, the price, the date and the source are all on screen; it is owner-only and moves a number every future bid reads." },
   { action: "updateBidInvitationStatus", reason: "A won/lost decision is made on the bids page where the bid is visible." },
+  // Levelling. Not commands: the figure is easy and the EXCLUSIONS are the
+  // point, and those are somebody's sentences off a PDF the model has not
+  // read. A quote transcribed without them reads as comparable when it is
+  // not, which is the one thing this feature exists to prevent.
+  { action: "saveBidQuote", reason: "The exclusions decide whether the cheapest quote is the best one, and they are read off the sub's own PDF — a transcribed amount without them reads as comparable when it is not." },
+  { action: "deleteBidQuote", reason: "Deletes are never commands (T5)." },
+  { action: "recordBidQuoteDecline", reason: "Whether a sub declined to bid is something they told you, not something the assistant can infer from a thread — and recording it wrongly means nobody chases a quote that was still coming." },
   // Alternates, unit prices and allowances. Not commands: each one is a
   // figure off a GC's bid form whose KIND decides where it sits relative
   // to the base bid, and a model reading "fifteen thousand for soffits"
