@@ -6,6 +6,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
 import { formatCalendarDate } from "@/lib/render-date";
 import { summariseWonValue, valueIsPartial } from "@/lib/bid-pipeline";
+import { BidLines, type BidLineRow } from "@/components/BidLines";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -55,7 +56,7 @@ export default async function BidsPage({
       status: statusFilter,
     },
     orderBy: { createdAt: "desc" },
-    include: { contact: true },
+    include: { contact: true, lines: { orderBy: { sortOrder: "asc" } } },
   });
 
   // #79: a WON bid with no bidAmount used to be dropped from both the sum
@@ -219,6 +220,22 @@ export default async function BidsPage({
                   <p className="text-sm font-medium text-ink">{money(Number(bid.bidAmount))}</p>
                 )}
               </Link>
+              <BidLines
+                bidInvitationId={bid.id}
+                base={bid.bidAmount === null ? null : Number(bid.bidAmount)}
+                lines={bid.lines.map(
+                  (line): BidLineRow => ({
+                    id: line.id,
+                    kind: line.kind,
+                    label: line.label,
+                    description: line.description,
+                    amount: line.amount === null ? null : Number(line.amount),
+                    unit: line.unit,
+                    unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
+                    accepted: line.accepted,
+                  }),
+                )}
+              />
             </li>
           ))}
         </ul>

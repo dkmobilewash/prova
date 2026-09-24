@@ -28,6 +28,10 @@ type Bid = {
   tradeScope: string | null;
   dueDate: Date | null;
   contact: { name: string };
+  /** The alternates/unit prices/allowances on the bid. Empty here: this
+   * file's subject is the won-value line, and `lib/bid-lines.test.ts` covers
+   * the totals against its own fixtures. */
+  lines: [];
 };
 
 function bid(over: Partial<Bid> & { id: string }): Bid {
@@ -39,6 +43,7 @@ function bid(over: Partial<Bid> & { id: string }): Bid {
     tradeScope: null,
     dueDate: null,
     contact: { name: "Acme GC" },
+    lines: [],
     ...over,
   };
 }
@@ -58,7 +63,12 @@ vi.mock("@prova/db", () => ({
   prisma: { bidInvitation: { findMany: vi.fn(async () => bids) } },
   BidInvitationStatus: {},
   TradeScope: {},
-  Prisma: {},
+  // `Prisma: {}` was enough until this page's import graph reached the
+  // actions barrel, which pulls in lib/change-order.ts -- and that builds a
+  // `new Prisma.Decimal(0)` at MODULE SCOPE, so an empty stub throws on
+  // import rather than in a test. Only the constructor is needed here;
+  // nothing in these tests does Decimal arithmetic.
+  Prisma: { Decimal: class { constructor(public value: unknown) {} } },
 }));
 vi.mock("@/lib/authz", () => ({ requireCapability: vi.fn(async () => ({ allowed: true, context })) }));
 

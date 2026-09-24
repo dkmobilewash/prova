@@ -1,0 +1,104 @@
+/// WHAT A BID CARRIES BESIDES ITS NUMBER — alternates, unit prices and
+/// allowances.
+///
+/// `BidInvitation.bidAmount` is one figure, and a GC's bid form almost never
+/// asks for one figure. It asks for a base bid, then a list of ALTERNATES it
+/// may or may not take, then UNIT PRICES it will hold you to when the scope
+/// changes, and sometimes an ALLOWANCE for work nobody has drawn yet. Before
+/// this file there was nowhere to put any of them, so they lived in the
+/// `notes` field or in the estimator's head, and the number on the bid could
+/// not be reconciled with the number on the GC's form.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// THE THREE KINDS SIT IN THREE DIFFERENT PLACES RELATIVE TO THE BASE BID,
+/// AND CONFUSING THEM PRODUCES A WRONG NUMBER ON A DOCUMENT A GC HAS SEEN.
+/// ─────────────────────────────────────────────────────────────────────────
+///
+///   ALLOWANCE  is INSIDE the base bid already. A $15,000 allowance for
+///              unspecified soffits is money the base bid contains. Adding it
+///              to the base is double-counting it, and the bid goes out
+///              $15,000 high.
+///
+///   ALTERNATE  is OUTSIDE the base bid. It changes the award only if the GC
+///              takes it, and it may be a DEDUCT — a negative amount — which
+///              is why the column is signed rather than paired with a
+///              direction flag that can disagree with it.
+///
+///   UNIT PRICE is not an amount at all. It is a RATE held for future change
+///              work ("$3.10 per additional SF of 5/8 board"), with no
+///              quantity attached, and summing it into anything is
+///              meaningless. It has no `amount` column so there is nothing
+///              for a careless `reduce` to pick up.
+///
+/// `lib/bid-lines.ts` is where those three rules are enforced, and its tests
+/// exist mainly to pin them: a bid total that quietly double-counts an
+/// allowance reads perfectly and is wrong by exactly the allowance.
+
+enum BidLineKind {
+  ALTERNATE
+  UNIT_PRICE
+  ALLOWANCE
+}
+
+/// One line on a bid that is not the base number.
+model BidLine {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// CASCADE, unlike most of this schema's RESTRICT children, and for
+  /// `JobMediaAnnotation`'s reason: an alternate is not a record that would
+  /// be silently lost with its parent, it is PART of the bid. Deleting a bid
+  /// invitation must not be blocked because somebody listed an alternate on
+  /// it, and an alternate pointing at a bid that no longer exists is not
+  /// evidence of anything.
+  ///
+  /// It also keeps this model out of the cleanup scripts: a BidInvitation is
+  /// company-scoped and carries no jobId, so nothing here reaches a job.
+  bidInvitationId String
+  bidInvitation   BidInvitation @relation(fields: [bidInvitationId], references: [id], onDelete: Cascade)
+
+  kind BidLineKind
+
+  /// What the GC's form calls it — "Alternate 1", "Unit Price A". Theirs,
+  /// not ours: when they ring up about alternate 3, the number they say has
+  /// to be findable here.
+  label String
+
+  /// What it covers, in the estimator's words.
+  description String?
+
+  /// ALTERNATE: the add or deduct, SIGNED — negative is a deduct. One column
+  /// rather than an amount plus a direction, because two columns can
+  /// disagree and a deduct stored as a positive with the flag lost is a bid
+  /// wrong by twice the alternate.
+  ///
+  /// ALLOWANCE: the sum carried, positive, and ALREADY INSIDE the base bid.
+  ///
+  /// UNIT_PRICE: NULL, always. A rate has no total, and a null here is what
+  /// stops one being invented.
+  amount Decimal? @db.Decimal(12, 2)
+
+  /// UNIT_PRICE only: what the rate is per, in the GC's own words ("SF of
+  /// 5/8 board", "LF of track"). Free text and never converted, the same
+  /// rule `VendorPriceQuote.unit` states — a rate per SF and a rate per MSF
+  /// are a thousand times apart and the factor is not ours to guess.
+  unit      String?
+  unitPrice Decimal? @db.Decimal(12, 4)
+
+  /// ALTERNATE only: did the GC take it?
+  ///
+  /// NULL means they have not said, which is the normal state of a bid that
+  /// has gone out — and it is deliberately not `false`. "Not accepted yet"
+  /// and "rejected" are different facts about a live negotiation, and
+  /// collapsing them would make the awarded total look settled while it is
+  /// still open.
+  accepted Boolean?
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([bidInvitationId, sortOrder])
+  @@index([companyId])
+}

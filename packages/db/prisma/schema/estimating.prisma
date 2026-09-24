@@ -40,6 +40,10 @@ model BidInvitation {
   /// chased — see pursuits.prisma. The FK lives on BidPursuit.
   pursuit BidPursuit?
 
+  /// The alternates, unit prices and allowances this bid carries — see
+  /// bid-lines.prisma. A bid is rarely one number; these are the rest of it.
+  lines BidLine[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
