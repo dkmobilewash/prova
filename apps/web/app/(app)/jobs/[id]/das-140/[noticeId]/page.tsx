@@ -153,7 +153,21 @@ export default async function Das140Page({
 
         {/* First thing on the page, like the WH-347's, because the
             alternative is somebody signing a notice with an empty box in it. */}
-        {form.blocking.length > 0 && (
+        {/* `completeExceptSignature` rather than a constant: everything a
+            person could have supplied IS here, and the one thing left is the
+            signature, which C Stream will never supply. Saying that in amber
+            beside a form that is genuinely finished is different from saying
+            "not ready to send" on every form forever, which is what a red box
+            counting the signature as a missing field amounted to. */}
+        {form.completeExceptSignature ? (
+          <div className="mt-4 rounded-lg border border-tag-amber-ink/40 bg-tag-amber/30 p-4">
+            <p className="text-sm font-semibold text-tag-amber-ink">
+              Every box C Stream can fill in is filled in. One thing is left, and it is not ours to
+              do.
+            </p>
+            <p className="mt-1 text-xs text-tag-amber-ink/90">{DAS_BLOCKING_REASON.signature}</p>
+          </div>
+        ) : (
           <div className="mt-4 rounded-lg border border-red-300 bg-tag-rose p-4">
             <p className="text-sm font-semibold text-tag-rose-ink">
               This is not ready to send. {form.blocking.length}{" "}
@@ -209,9 +223,10 @@ export default async function Das140Page({
             </Row>
             <div className="col-span-2">
               <Row label="Address">
-                {form.committee.address ?? (
-                  <Missing>{DAS_BLOCKING_REASON.committeeDelivery}</Missing>
-                )}
+                {/* `address` is null unless the whole postal address is
+                    there — a city on its own used to print here as though it
+                    were an address. `addressGap` names which part is missing. */}
+                {form.committee.address ?? <Missing>{form.committee.addressGap}</Missing>}
               </Row>
             </div>
             <Row label="Email">{form.committee.email ?? "—"}</Row>

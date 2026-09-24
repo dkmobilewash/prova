@@ -13,6 +13,7 @@ import {
   EMPTY_COMMITTEE,
   type CommitteeFieldValues,
 } from "@/components/ApprenticeshipCommitteeFields";
+import { committeeDeliverability } from "@/lib/das-forms";
 import type { CommitteeRow } from "@/lib/das-query";
 
 /**
@@ -70,11 +71,12 @@ function CommitteeRowCard({
     });
   }
 
-  const delivery = [
-    committee.addressLine1 ? "post" : null,
-    committee.email ? "email" : null,
-    committee.fax ? "fax" : null,
-  ].filter(Boolean);
+  // ONE function decides whether a committee can be sent to, and it is the
+  // same one lib/das-print.ts asks before it prints an address on the form.
+  // This line used to test `addressLine1` by itself while the print view
+  // tested the JOINED address — so a committee with only a city was
+  // undeliverable here and complete there, on the same row, at the same time.
+  const delivery = committeeDeliverability(committee);
   const approval = approvalLine(committee.approvedToTrainUs);
   const values: CommitteeFieldValues = { ...committee };
 
@@ -88,8 +90,8 @@ function CommitteeRowCard({
             {committee.programSponsorNumber !== null && ` · program ${committee.programSponsorNumber}`}
           </span>
           <span className="text-xs text-ink-muted">
-            {delivery.length > 0 ? (
-              `Receives notices by ${delivery.join(", ")}`
+            {delivery.deliverable ? (
+              `Receives notices by ${delivery.channels.join(", ")}`
             ) : (
               <span className="text-tag-rose-ink">
                 No address, email or fax — a notice to this committee cannot be sent yet
@@ -98,6 +100,12 @@ function CommitteeRowCard({
             {" · "}
             <span className={approval.tone}>{approval.text}</span>
           </span>
+          {/* Reachable by email or fax and STILL holding half an address: the
+              postal box on a printed DAS 140 cannot be filled from it, and the
+              print view says the same sentence in the same words. */}
+          {delivery.deliverable && delivery.postalOnFile !== null && (
+            <span className="text-xs text-tag-amber-ink">{delivery.addressGap}</span>
+          )}
           {committee.sourceUrl !== null && (
             <a
               href={committee.sourceUrl}

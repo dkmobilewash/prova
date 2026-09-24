@@ -97,7 +97,19 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
     publicWorks: job.publicWorks,
     contracted: job.status !== "ESTIMATE",
     crafts: craftHours,
-    committees: committees.map((c) => ({ id: c.id, craftName: c.craftName })),
+    // The LINK, the name and the approval state — all three. The link is what
+    // a craft is matched by (a committee's own craft wording routinely differs
+    // from the company's), the name is for the sentence on screen, and
+    // `approvedToTrainUs` is what decides how many notices an award owes, which
+    // is why a blank has to reach `dasProposals` rather than be dropped here.
+    committees: committees.map((c) => ({
+      id: c.id,
+      name: c.name,
+      craftName: c.craftName,
+      craftClassificationId: c.craftClassificationId,
+      unionLocalId: c.craftUnionLocalId,
+      approvedToTrainUs: c.approvedToTrainUs,
+    })),
     notices140,
     requests142,
     today,

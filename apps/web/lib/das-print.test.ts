@@ -90,9 +90,13 @@ function blockingExceptSignature(fields: readonly DasBlockingField[]) {
 describe("a complete DAS 140", () => {
   const form = buildDas140({ company, job, committee, notice });
 
-  it("still refuses to call itself sendable, because nothing signs it", () => {
+  it("is blocking on the signature and nothing else, because nothing here signs", () => {
     expect(form.blocking).toEqual(["signature"]);
-    expect(form.sendable).toBe(false);
+    // `completeExceptSignature` replaced a `sendable` that was a constant
+    // false — `signature` is pushed unconditionally, so `sendable` could never
+    // be true and nothing but its own test ever read it. This one says the
+    // thing a contractor asks: is there anything left for ME to fill in.
+    expect(form.completeExceptSignature).toBe(true);
   });
 
   it("prints what it was given, unchanged", () => {
@@ -145,6 +149,77 @@ describe("what a DAS 140 refuses to invent", () => {
       notice,
     });
     expect(blockingExceptSignature(form.blocking)).not.toContain("committeeDelivery");
+  });
+
+  it("A COMMITTEE WITH ONLY A CITY — the case that printed as complete", () => {
+    // THE DEFECT. `committeeDelivery` tested the JOINED address, and joining
+    // [null, null, "Fresno", null] returns "Fresno" — a non-null string, so the
+    // form reported a complete address, printed "Fresno" in the address box,
+    // and showed no red sentence at all. On a document the state receives, a
+    // box that looks filled in is worse than an empty one.
+    const form = buildDas140({
+      company,
+      job,
+      committee: {
+        ...committee,
+        addressLine1: null,
+        state: null,
+        postalCode: null,
+        email: null,
+        fax: null,
+      },
+      notice,
+    });
+    expect(form.committee.address).toBeNull();
+    expect(form.committee.channels).toEqual([]);
+    expect(blockingExceptSignature(form.blocking)).toContain("committeeDelivery");
+    // And the address box gets the specific sentence, naming what is missing
+    // and what IS on file — not a generic "no address".
+    expect(form.committee.addressGap).toContain("Fresno");
+    expect(form.committee.addressGap).toContain("street line");
+    expect(form.completeExceptSignature).toBe(false);
+  });
+
+  it("A COMMITTEE WITH ONLY A ZIP — the same defect from the other end", () => {
+    const form = buildDas140({
+      company,
+      job,
+      committee: {
+        ...committee,
+        addressLine1: null,
+        city: null,
+        state: null,
+        email: null,
+        fax: null,
+      },
+      notice,
+    });
+    expect(form.committee.address).toBeNull();
+    expect(blockingExceptSignature(form.blocking)).toContain("committeeDelivery");
+    expect(form.committee.addressGap).toContain("93706");
+    expect(form.committee.addressGap).toContain("city");
+  });
+
+  it("prints no partial address even when the committee IS reachable by email", () => {
+    // Reachable, so nothing is blocking — and the postal box still cannot be
+    // filled from "Fresno, CA 93706" with no street line. The page prints
+    // `addressGap` where the address would have gone.
+    const form = buildDas140({
+      company,
+      job,
+      committee: { ...committee, addressLine1: null, email: "dispatch@example.org" },
+      notice,
+    });
+    expect(blockingExceptSignature(form.blocking)).not.toContain("committeeDelivery");
+    expect(form.committee.address).toBeNull();
+    expect(form.committee.addressGap).toContain("street line");
+    expect(form.committee.channels).toEqual(["email"]);
+  });
+
+  it("names how the committee can actually be reached, on the block itself", () => {
+    const form = buildDas140({ company, job, committee, notice });
+    // A whole postal address and an email on the fixture: both, in that order.
+    expect(form.committee.channels).toEqual(["post", "email"]);
   });
 
   it("a program sponsor number it does not have — and does NOT block on one", () => {
@@ -275,7 +350,7 @@ describe("what a DAS 140 refuses to invent", () => {
       "signature",
     ]);
     expect(new Set(form.blocking).size).toBe(form.blocking.length);
-    expect(form.sendable).toBe(false);
+    expect(form.completeExceptSignature).toBe(false);
   });
 
   it("has a human sentence for every blocking field, not a label", () => {
@@ -330,6 +405,32 @@ describe("a DAS 142", () => {
       request,
     });
     expect(blockingExceptSignature(blind.blocking)).toContain("committeeDelivery");
+  });
+
+  it("refuses a city-only committee here too — this is the form with the penalty", () => {
+    // There is a documented penalty for sending a DAS 142 to the wrong
+    // committee, which is why the same rule has to hold on both forms and why
+    // it is one function rather than two copies.
+    const cityOnly = buildDas142({
+      company,
+      job,
+      committee: {
+        ...committee,
+        addressLine1: null,
+        state: null,
+        postalCode: null,
+        email: null,
+        fax: null,
+      },
+      request,
+    });
+    expect(cityOnly.committee.address).toBeNull();
+    expect(blockingExceptSignature(cityOnly.blocking)).toContain("committeeDelivery");
+    expect(cityOnly.completeExceptSignature).toBe(false);
+  });
+
+  it("is complete except the signature when everything else is there", () => {
+    expect(form.completeExceptSignature).toBe(true);
   });
 
   it("prints the count it was given and never derives one", () => {

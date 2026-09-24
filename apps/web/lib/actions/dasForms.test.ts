@@ -29,6 +29,7 @@ type Row = Record<string, unknown>;
 
 const store: {
   committee: Row | null;
+  craft: Row | null;
   job: Row | null;
   notice: Row | null;
   request: Row | null;
@@ -36,6 +37,7 @@ const store: {
   writes: { table: string; op: string; data?: Row }[];
 } = {
   committee: null,
+  craft: null,
   job: null,
   notice: null,
   request: null,
@@ -85,7 +87,7 @@ vi.mock("@prova/db", () => ({
   prisma: {
     job: writer("job", () => store.job),
     apprenticeshipCommittee: writer("apprenticeshipCommittee", () => store.committee),
-    craftClassification: { findFirst: async () => ({ id: "craft_1", companyId: "co_A" }) },
+    craftClassification: { findFirst: async () => store.craft },
     das140Notice: writer("das140Notice", () => store.notice),
     das142Request: writer("das142Request", () => store.request),
   },
@@ -126,6 +128,7 @@ const GOOD_142 = {
 
 beforeEach(() => {
   store.committee = { ...COMMITTEE };
+  store.craft = { id: "craft_1", companyId: "co_A" };
   store.job = { id: "job_1", companyId: "co_A" };
   store.notice = null;
   store.request = null;
@@ -492,6 +495,78 @@ describe("the committee directory", () => {
     expect(result).toEqual({ ok: true });
     expect(store.writes[0].data).toMatchObject({ name: "Renamed JATC" });
     expect(store.writes[0].data).not.toHaveProperty("craftName");
+  });
+
+  describe("the classification link on an edit", () => {
+    // THE DEFECT: the shared field set renders this select on the row edit as
+    // well as the add form, and the update never wrote the column. Changing the
+    // link reported success and changed nothing, and a link set by mistake
+    // could not be removed at all — which matters more than "advisory"
+    // suggests, because that link is what the job side joins a craft to a
+    // committee by.
+    const edit = (extra: Record<string, string>) =>
+      actions.updateApprenticeshipCommittee(
+        "cm_1",
+        form({ name: "Central Valley JATC", geographicArea: "Fresno county", ...extra }),
+      );
+
+    it("writes the link the form submitted", async () => {
+      const result = await edit({ craftClassificationId: "craft_1" });
+      expect(result).toEqual({ ok: true });
+      expect(store.writes[0].data).toMatchObject({ craftClassificationId: "craft_1" });
+    });
+
+    it("CLEARS it when Not linked is chosen — a wrong link has to be removable", async () => {
+      const result = await edit({ craftClassificationId: "" });
+      expect(result).toEqual({ ok: true });
+      expect(store.writes[0].data).toHaveProperty("craftClassificationId", null);
+    });
+
+    it("refuses a classification that is not this company's, and writes nothing", async () => {
+      store.craft = null;
+      const result = await edit({ craftClassificationId: "craft_someone_else" });
+      expect(result).toMatchObject({ ok: false, error: "That classification isn't one of yours." });
+      expect(store.writes).toEqual([]);
+    });
+
+    it("writes every other field the shared form submits, so none is silently dropped", async () => {
+      // The same omission in any other column would read as a save that did
+      // nothing. `craftName` is the one deliberate exclusion, and it has its
+      // own test above.
+      const result = await edit({
+        craftClassificationId: "craft_1",
+        programSponsorNumber: "CA-2001-123",
+        addressLine1: "500 Trade Center Dr",
+        addressLine2: "Suite 2",
+        city: "Fresno",
+        state: "CA",
+        postalCode: "93706",
+        email: "dispatch@example.org",
+        fax: "559-555-0199",
+        phone: "559-555-0100",
+        approvedToTrainUs: "yes",
+        sourceUrl: "https://www.dir.ca.gov/das/",
+        note: "phoned to confirm",
+      });
+      expect(result).toEqual({ ok: true });
+      expect(store.writes[0].data).toMatchObject({
+        name: "Central Valley JATC",
+        geographicArea: "Fresno county",
+        craftClassificationId: "craft_1",
+        programSponsorNumber: "CA-2001-123",
+        addressLine1: "500 Trade Center Dr",
+        addressLine2: "Suite 2",
+        city: "Fresno",
+        state: "CA",
+        postalCode: "93706",
+        email: "dispatch@example.org",
+        fax: "559-555-0199",
+        phone: "559-555-0100",
+        approvedToTrainUs: true,
+        sourceUrl: "https://www.dir.ca.gov/das/",
+        note: "phoned to confirm",
+      });
+    });
   });
 
   it("refuses to remove a committee that notices point at, and names the counts", async () => {

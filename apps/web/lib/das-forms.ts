@@ -454,6 +454,134 @@ export function das142Standing(
 }
 
 /* ------------------------------------------------------------------ *
+ * Can this committee be sent to at all
+ * ------------------------------------------------------------------ */
+
+/**
+ * THE ONE PLACE THAT DECIDES WHETHER A COMMITTEE CAN BE SENT TO.
+ *
+ * It exists because two screens answered that question differently and both
+ * were on `main` at once: lib/das-print.ts tested the JOINED address, which is
+ * non-null when only a city (or only a ZIP) is recorded, so a committee with no
+ * street line printed as having a complete address with no red sentence —
+ * while `ApprenticeshipCommitteePanel` tested `addressLine1` and called the
+ * same row undeliverable. On a document the state receives, the print view was
+ * the dangerous one: a box that LOOKS filled in is worse than an empty one,
+ * because nobody re-checks a filled box, and there is a documented penalty for
+ * sending a DAS 142 to the wrong committee.
+ *
+ * WHAT DELIVERABLE MEANS HERE, and the reason is written down because the
+ * next person will be tempted to loosen it:
+ *
+ *   - POST needs a STREET LINE, a CITY, and a state or a ZIP. A city on its
+ *     own is not an address you can post a form to; neither is a ZIP on its
+ *     own. Nothing is inferred from the rest — a ZIP does not supply a city
+ *     here even though the post office could look one up, because the point of
+ *     this table is that the contractor read the address off DIR's own lookup.
+ *   - EMAIL or FAX on its own IS enough, and that is not a concession: 8 CCR
+ *     230.1 names first class mail, fax and email, so a committee with an
+ *     email and no street address is perfectly reachable and must not be
+ *     reported as incomplete.
+ *   - A blank-but-present string (`" "`) counts as absent, because a space is
+ *     what a form field leaves behind.
+ *
+ * `addressGap` is the sentence for the address box. A committee reachable by
+ * email but holding half an address still gets one: the postal box on the form
+ * cannot be filled, and printing "Fresno" in it is the failure this function
+ * was written for.
+ */
+
+/** Exactly the nullable contact set on `ApprenticeshipCommittee`. Nothing
+ * here is derived or defaulted. */
+export interface CommitteeContact {
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  email: string | null;
+  fax: string | null;
+}
+
+/** The ways 8 CCR 230.1 names for getting one of these to a committee. */
+export type CommitteeChannel = "post" | "email" | "fax";
+
+export interface CommitteeDeliverability {
+  /** Every way this committee can actually be reached, in the order a screen
+   * lists them. Empty means it cannot be sent to at all. */
+  channels: readonly CommitteeChannel[];
+  /** `channels.length > 0`, named so a caller reads the question rather than
+   * the arithmetic. */
+  deliverable: boolean;
+  /** The address, joined for print — ONLY when it is complete enough to post.
+   * Null whenever it is not, whatever fragments are on file. */
+  postalAddress: string | null;
+  /** What IS on file when that is not enough to post, joined the same way.
+   * Null when nothing at all is recorded, so "half an address" and "no
+   * address" stay two different facts. */
+  postalOnFile: string | null;
+  /** One sentence for the address box on the form, or null when the postal
+   * address is complete. Names what is missing rather than that something is. */
+  addressGap: string | null;
+}
+
+/** A field that is null, empty or whitespace is absent. */
+function filled(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/** The address as it is printed — one line, in postal order. */
+function joinAddress(parts: readonly (string | null)[]): string | null {
+  const kept = parts.filter((p): p is string => p !== null);
+  return kept.length > 0 ? kept.join(", ") : null;
+}
+
+export function committeeDeliverability(contact: CommitteeContact): CommitteeDeliverability {
+  const line1 = filled(contact.addressLine1);
+  const line2 = filled(contact.addressLine2);
+  const city = filled(contact.city);
+  const state = filled(contact.state);
+  const postalCode = filled(contact.postalCode);
+  const email = filled(contact.email);
+  const fax = filled(contact.fax);
+
+  // State and ZIP read as one trailing element on an envelope.
+  const region =
+    state !== null && postalCode !== null ? `${state} ${postalCode}` : (state ?? postalCode);
+  const joined = joinAddress([line1, line2, city, region]);
+
+  const missing: string[] = [];
+  if (line1 === null) missing.push("street line");
+  if (city === null) missing.push("city");
+  if (region === null) missing.push("state or ZIP");
+  const postable = missing.length === 0;
+
+  const channels: CommitteeChannel[] = [];
+  if (postable) channels.push("post");
+  if (email !== null) channels.push("email");
+  if (fax !== null) channels.push("fax");
+
+  const addressGap = postable
+    ? null
+    : (joined === null
+        ? "No address is recorded for this committee."
+        : `Only “${joined}” is recorded — no ${missing.join(", no ")}.`) +
+      " A form cannot be posted to a part of an address, and a plausible-looking address on a" +
+      " state form is worse than an empty box. Look the committee up on DIR’s own list and record" +
+      " the whole address.";
+
+  return {
+    channels,
+    deliverable: channels.length > 0,
+    postalAddress: postable ? joined : null,
+    postalOnFile: postable ? null : joined,
+    addressGap,
+  };
+}
+
+/* ------------------------------------------------------------------ *
  * What a job owes — proposed, never created
  * ------------------------------------------------------------------ */
 
@@ -470,19 +598,92 @@ export function das142Standing(
  * So the app PROPOSES, in words, with the evidence it reasoned from, and a
  * person clicks. Same shape as the alert engine: raise it, name it, do not
  * act on somebody's behalf.
+ *
+ * ────────────────────────────────────────────────────────────────────────
+ * WHAT A CRAFT IS JOINED BY, AND WHY IT IS NOT THE NAME
+ * ────────────────────────────────────────────────────────────────────────
+ *
+ * A committee's `craftName` is the craft IN THE COMMITTEE'S WORDS
+ * ("Drywall/Lathers"), snapshotted onto every notice at creation because that
+ * is what the committee was told. A `CraftClassification.name` is the craft in
+ * the COMPANY'S words ("Drywall Finisher"). The schema says outright that
+ * those routinely differ, which is the entire reason
+ * `ApprenticeshipCommittee.craftClassificationId` exists — and for a week
+ * nothing used it. Matching the two names instead meant `DAS140_MISSING`
+ * never cleared, however many notices went out, and the proposal told the
+ * contractor to add a committee that was already in the directory.
+ *
+ * So the join is the LINK, on both sides:
+ *
+ *   craft on the job  ──union local of the linked classification──▶  committee
+ *   committee  ◀──committeeId──  notice
+ *
+ * A committee with no link cannot be matched to a craft, and is NOT matched by
+ * name as a fallback: a fallback here is the bug wearing a safety net. What it
+ * gets instead is a proposal saying the link is missing, which is a thing a
+ * person can fix in one click on /union-compliance.
+ *
+ * WHY THE UNION LOCAL AND NOT THE CLASSIFICATION ITSELF, which is the less
+ * obvious half and was measured against a real Postgres rather than reasoned
+ * about. `CraftClassification` is unique on `(unionLocalId, name)`, so a
+ * trade's journeyman tier and its apprentice tier are two SEPARATE
+ * classification rows — and `ApprenticeshipCommittee.craftClassificationId` is
+ * a single optional FK, so one committee row can be linked to exactly one of
+ * them. Matching on the classification exactly would therefore raise "no
+ * committee is linked to this craft" on the apprentice-tier row of every trade,
+ * forever: the contractor cannot link the same committee twice, because
+ * `createApprenticeshipCommittee` refuses a duplicate name/craft/area. That is
+ * the un-clearable-item failure this file was just corrected for, arriving from
+ * the other side.
+ *
+ * The union local is the only id this app holds for "the trade" — it is what
+ * `apprentice-ratio.ts` groups a ratio by, for the same reason. The cost is
+ * stated rather than hidden: a company running two genuinely different trades
+ * under ONE local gets one committee's link covering both, so a notice missing
+ * for the second trade is not proposed. That is a quieter engine, not a wrong
+ * claim — nothing here ever says a job owes nothing — and it is the trade this
+ * app can make honestly with the ids it has.
+ *
+ * ────────────────────────────────────────────────────────────────────────
+ * HOW MANY NOTICES AN AWARD OWES IS A QUESTION THIS FUNCTION DECLINES
+ * ────────────────────────────────────────────────────────────────────────
+ *
+ * 8 CCR 230(a), as the secondary sources read it, sends a contractor already
+ * approved to train to the APPROVING committee and one not approved to ALL
+ * applicable committees in the area. `approvedToTrainUs` is therefore
+ * load-bearing — and it is three-valued, because a null is nobody having
+ * recorded it.
+ *
+ * Two reasons this function does not turn that into a count. The blank is
+ * one: defaulting it either way produces a confident wrong number on a
+ * compliance screen. The bigger one is `das140-recipients` in
+ * `DAS_CITATIONS`, which is `verified: false` — whether one notice to a
+ * signatory's own JATC discharges the craft is exactly the question nobody has
+ * put to counsel yet. So `DAS140_MISSING` is raised as an OBSERVATION per
+ * committee ("no DAS 140 is recorded to this one"), never as "you owe this
+ * many", and when the directory cannot settle the count
+ * `DAS140_RECIPIENTS_UNKNOWN` says so out loud instead of guessing.
  */
 
 export type DasProposalKind =
-  /** Public works, contracted, a craft is on the job, no DAS 140 recorded
-   * for a committee covering that craft. */
+  /** Public works, contracted, a craft is on the job, and a committee linked
+   * to that craft has no DAS 140 recorded on this award. */
   | "DAS140_MISSING"
-  /** A DAS 140 exists but has never been marked sent. */
+  /** A DAS 140 exists but has never been marked sent. Raised from the notices
+   * themselves, so it appears in the ten days after execution — before
+   * anybody has logged an hour, which is most of that window. */
   | "DAS140_UNSENT"
+  /** More than one committee covers a craft and the directory does not say
+   * which of them this award has to notify. */
+  | "DAS140_RECIPIENTS_UNKNOWN"
   /** Journeyman hours are being logged on a craft and no apprentice hours
    * are, and no dispatch request is on file for that craft. */
   | "DAS142_NO_APPRENTICES"
   /** A DAS 142 exists, is unsent, and its latest send day has passed. */
-  | "DAS142_UNSENT_AND_LATE";
+  | "DAS142_UNSENT_AND_LATE"
+  /** Hours are logged that nobody has tagged to a craft. Not an obligation —
+   * an obligation cannot be worked out until they are tagged. */
+  | "HOURS_WITHOUT_CRAFT";
 
 export interface DasProposal {
   kind: DasProposalKind;
@@ -507,6 +708,12 @@ export interface DasObligationInput {
   /** Crafts with hours logged on this job, and how those hours split. Comes
    * from the same TimeEntry rows lib/apprentice-ratio.ts reads. */
   crafts: readonly {
+    /** The company's own classification these hours are tagged to, or NULL
+     * for the untagged pseudo-row. A null is not a craft: it owes nothing to
+     * anybody, because there is nobody it could be owed to. */
+    craftClassificationId: string | null;
+    /** That classification's union local — what a committee is matched on. */
+    unionLocalId: string | null;
     craftName: string;
     journeymanHours: number;
     apprenticeHours: number;
@@ -515,11 +722,26 @@ export interface DasObligationInput {
      * a half-configured company must not be told it is fine. */
     unclassifiedHours: number;
   }[];
-  /** Committees this company has recorded, with the craft each covers. */
-  committees: readonly { id: string; craftName: string }[];
-  notices140: readonly { id: string; craftName: string; sentOn: IsoDay | null }[];
+  /** Committees this company has recorded. `unionLocalId` — the local of the
+   * classification this committee is LINKED to — is the join; `craftName` is
+   * only ever used for wording. */
+  committees: readonly {
+    id: string;
+    name: string;
+    craftName: string;
+    craftClassificationId: string | null;
+    unionLocalId: string | null;
+    approvedToTrainUs: boolean | null;
+  }[];
+  notices140: readonly {
+    id: string;
+    committeeId: string;
+    craftName: string;
+    sentOn: IsoDay | null;
+  }[];
   requests142: readonly {
     id: string;
+    committeeId: string;
     craftName: string;
     neededFrom: IsoDay;
     requestedOn: IsoDay | null;
@@ -527,10 +749,12 @@ export interface DasObligationInput {
   today: IsoDay;
 }
 
-/** Case- and space-insensitive, because "Drywall/Lathers" and "drywall /
- * lathers" are one craft to everybody except a string comparison. */
-function craftKey(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, " ");
+/** The approval state as a clause, said out loud rather than folded into a
+ * count. All three values are sayable; the third one especially. */
+function approvalClause(approved: boolean | null): string {
+  if (approved === true) return "recorded as having approved you to train";
+  if (approved === false) return "recorded as not having approved you to train";
+  return "not recorded whether they approved you to train";
 }
 
 export function dasProposals(input: DasObligationInput): DasProposal[] {
@@ -542,55 +766,176 @@ export function dasProposals(input: DasObligationInput): DasProposal[] {
   if (!input.contracted) return [];
 
   const out: DasProposal[] = [];
-  const noticeByCraft = new Map(input.notices140.map((n) => [craftKey(n.craftName), n]));
-  const committeeCrafts = new Set(input.committees.map((c) => craftKey(c.craftName)));
-  const requestCrafts = new Set(input.requests142.map((r) => craftKey(r.craftName)));
+  const committeeById = new Map(input.committees.map((c) => [c.id, c]));
+  // Keyed on the COMMITTEE, not on the craft. Keyed on the craft, two
+  // committees covering one craft collapsed to one entry, so one notice
+  // suppressed the proposal for both of them.
+  const noticedCommittees = new Set(input.notices140.map((n) => n.committeeId));
+
+  /** Locals a request has already reached, via the committee it went to. */
+  const requestLocals = new Set(
+    input.requests142
+      .map((r) => committeeById.get(r.committeeId)?.unionLocalId ?? null)
+      .filter((id): id is string => id !== null),
+  );
+  const unlinkedRequests = input.requests142.filter(
+    (r) => (committeeById.get(r.committeeId)?.unionLocalId ?? null) === null,
+  ).length;
+
+  // Hours grouped by TRADE — the union local, per the header. One proposal per
+  // trade and committee rather than per classification: a trade's journeyman
+  // and apprentice tiers are separate classification rows, and raising the same
+  // committee twice for the same award is noise a person learns to scroll past.
+  type Trade = { craftNames: string[]; journeymanHours: number; apprenticeHours: number };
+  const byTrade = new Map<string, Trade>();
 
   for (const craft of input.crafts) {
-    const key = craftKey(craft.craftName);
-    const notice = noticeByCraft.get(key);
-
-    if (!notice) {
+    // THE UNTAGGED PSEUDO-ROW IS NOT A CRAFT. It cannot owe a notice to a
+    // committee, because no committee can be linked to "no craft tag" — which
+    // is why it used to produce "add the apprenticeship committee for this
+    // craft and area first" as an item nothing could ever clear. What it does
+    // produce is the fact underneath it, and tagging the hours clears that.
+    if (craft.craftClassificationId === null) {
+      const total = craft.journeymanHours + craft.apprenticeHours + craft.unclassifiedHours;
+      if (total <= 0) continue;
       out.push({
-        kind: "DAS140_MISSING",
+        kind: "HOURS_WITHOUT_CRAFT",
         craftName: craft.craftName,
         observed:
-          `Hours are logged on ${craft.craftName} and no DAS 140 is recorded for it on this job.` +
-          (committeeCrafts.has(key)
-            ? ""
-            : " No committee is recorded for this craft either, so there is nobody to send it to yet."),
-        suggestion: committeeCrafts.has(key)
-          ? "Record the DAS 140 you sent, or start one and send it."
-          : "Add the apprenticeship committee for this craft and area first — look it up on DIR — then start the notice.",
+          `${formatHours(total)} hours on this job are not tagged to any craft, so C Stream cannot ` +
+          `tell which crafts this award has to notify a committee about.`,
+        suggestion:
+          "Tag those hours to a craft on Hours. Until they are, they count towards no craft's " +
+          "notices — and there is no committee that trains for “no craft tag”, so nothing here " +
+          "can be sent on their account.",
         recordId: null,
       });
-    } else if (notice.sentOn === null) {
+      continue;
+    }
+
+    // A classification always has a local; the fallback key keeps a caller that
+    // somehow has one without it in its own group rather than silently merged.
+    const key = craft.unionLocalId ?? `craft:${craft.craftClassificationId}`;
+    const trade = byTrade.get(key) ?? { craftNames: [], journeymanHours: 0, apprenticeHours: 0 };
+    const hours = craft.journeymanHours + craft.apprenticeHours + craft.unclassifiedHours;
+    if (hours > 0 && !trade.craftNames.includes(craft.craftName)) trade.craftNames.push(craft.craftName);
+    trade.journeymanHours += craft.journeymanHours;
+    trade.apprenticeHours += craft.apprenticeHours;
+    byTrade.set(key, trade);
+  }
+
+  for (const [localId, trade] of byTrade) {
+    if (trade.craftNames.length === 0) continue;
+    const label = trade.craftNames.join(" and ");
+    const linked = input.committees.filter((c) => c.unionLocalId === localId);
+
+    if (linked.length === 0) {
       out.push({
-        kind: "DAS140_UNSENT",
-        craftName: craft.craftName,
-        observed: `A DAS 140 for ${craft.craftName} is recorded on this job and has never been marked sent.`,
-        suggestion: "Print it, send it to the committee, then record the date and how it went.",
-        recordId: notice.id,
+        kind: "DAS140_MISSING",
+        craftName: label,
+        observed:
+          `Hours are logged on ${label} and no committee in your directory is linked to that ` +
+          `trade, so C Stream cannot tell who a DAS 140 for it would go to.`,
+        suggestion:
+          input.committees.length === 0
+            ? "Look the committee up on DIR’s own list for this craft and area, record it on Union " +
+              "compliance, and link it to this classification — then start the notice."
+            : "If one of the committees you have already recorded covers this craft, open Union " +
+              "compliance and set its classification to this one: C Stream matches on that link, " +
+              "not on the wording, because a committee’s own craft name routinely differs from " +
+              "yours. If none of them covers it, look the committee up on DIR and add it.",
+        recordId: null,
       });
+    } else {
+      const withoutNotice = linked.filter((c) => !noticedCommittees.has(c.id));
+      for (const committee of withoutNotice) {
+        out.push({
+          kind: "DAS140_MISSING",
+          craftName: label,
+          observed:
+            `Hours are logged on ${label} and no DAS 140 is recorded on this job to ` +
+            `${committee.name}, which covers it — ${approvalClause(committee.approvedToTrainUs)}.`,
+          suggestion:
+            "If this award has to notify that committee, record the DAS 140 you sent it, or start " +
+            "one and send it.",
+          recordId: null,
+        });
+      }
+
+      // The count question, and the honest answer to it. Only worth raising
+      // while something is actually missing: if every linked committee has a
+      // notice, nothing turns on how many were owed.
+      if (
+        withoutNotice.length > 0 &&
+        linked.length > 1 &&
+        linked.some((c) => c.approvedToTrainUs === null)
+      ) {
+        const unrecorded = linked.filter((c) => c.approvedToTrainUs === null);
+        out.push({
+          kind: "DAS140_RECIPIENTS_UNKNOWN",
+          craftName: label,
+          observed:
+            `${linked.length} committees in your directory cover ${label}, and for ` +
+            `${unrecorded.map((c) => c.name).join(" and ")} it is not recorded whether they have ` +
+            `approved you to train. How many notices this award owes for this craft turns on that, ` +
+            `so C Stream is not going to tell you a number.`,
+          suggestion:
+            "Record, on Union compliance, whether each of those committees has approved you to " +
+            "train. Even then: whether one notice to your own committee covers the craft, or every " +
+            "committee in the area gets one, is on the list of rules C Stream has NOT confirmed " +
+            "against DIR — ask counsel before you rely on either reading.",
+          recordId: null,
+        });
+      }
     }
 
     // The DAS 142 side. Deliberately NOT a ratio verdict: this counts hours
     // and says what it counted. Applying 1:5 here would be this app asserting
     // a statutory ratio it has not verified (see `ratio-one-to-five`), and
     // lib/apprentice-ratio.ts already refuses to judge a day it cannot.
-    if (craft.journeymanHours > 0 && craft.apprenticeHours === 0 && !requestCrafts.has(key)) {
+    //
+    // Counted over the TRADE rather than the classification, for the reason
+    // the header gives: apprentice hours are logged against an apprentice-tier
+    // classification, which is a different row from the journeyman one, so a
+    // per-classification count reads zero apprentice hours on every journeyman
+    // craft — an item that fires on every public-works job forever.
+    if (trade.journeymanHours > 0 && trade.apprenticeHours === 0 && !requestLocals.has(localId)) {
       out.push({
         kind: "DAS142_NO_APPRENTICES",
-        craftName: craft.craftName,
+        craftName: label,
         observed:
-          `${formatHours(craft.journeymanHours)} journeyman hours and no apprentice hours are ` +
-          `logged on ${craft.craftName}, and no dispatch request is on file for it.`,
+          `${formatHours(trade.journeymanHours)} journeyman hours and no apprentice hours are ` +
+          `logged on ${label}, and no dispatch request is on file for it.`,
         suggestion:
           "If this craft is apprenticeable, a DAS 142 is how you ask for an apprentice — and a " +
-          "committee that cannot dispatch one is the record that says you asked.",
+          "committee that cannot dispatch one is the record that says you asked." +
+          (unlinkedRequests > 0
+            ? " If you have already asked: C Stream matches a request to a craft through the" +
+              " committee’s classification link, and " +
+              `${unlinkedRequests} of your requests is on a committee with no link.`
+            : ""),
         recordId: null,
       });
     }
+  }
+
+  // The notices' OWN loop, the shape the DAS 142 side already had. An unsent
+  // notice was previously only noticed from inside the crafts loop, so a
+  // notice recorded the day the contract was executed raised nothing at all
+  // until somebody logged an hour — and the ten days it has to go out in are
+  // usually over before anybody does.
+  for (const notice of input.notices140) {
+    if (notice.sentOn !== null) continue;
+    const committee = committeeById.get(notice.committeeId);
+    out.push({
+      kind: "DAS140_UNSENT",
+      craftName: notice.craftName,
+      observed:
+        `A DAS 140 for ${notice.craftName}${committee ? ` to ${committee.name}` : ""} is recorded ` +
+        `on this job and has never been marked sent.`,
+      suggestion: "Print it, send it to the committee, then record the date and how it went.",
+      recordId: notice.id,
+    });
   }
 
   for (const request of input.requests142) {

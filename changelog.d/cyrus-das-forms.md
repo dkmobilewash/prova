@@ -59,9 +59,9 @@ to print a licence number from the wrong state — a California public-works
 form wants the California licence, and an Arizona number in that box looks
 entirely filled in — and refuse to derive the contractor's estimate of
 journeyman and apprentice hours from the estimate's labor lines, which are
-priced work split by cost code and not by apprentice tier. Both `sendable`
-flags are false while anything is blocking, because the guidance on the DAS
-140 says "TBD", "N/A" or a blank invalidates the form outright.
+priced work split by cost code and not by apprentice tier. Neither form calls itself
+ready while anything is blocking, because the guidance on the DAS 140 says
+"TBD", "N/A" or a blank invalidates the form outright.
 
 **Proposed, never created.** `dasProposals` reads the job's own records —
 public works, contracted, which crafts have hours — and says in words what
@@ -121,3 +121,112 @@ capability gate, the craft snapshot, a committee edit rewriting it,
 approved-to-train defaulting to false, and `assertOwner` in place of
 `ownerRefusal` — and all seventeen went red with the message naming the
 defect, including `ownerRefusalCensus.test.ts` catching the last one.
+
+---
+
+**Six defects an adversarial review of this PR found, fixed on the same
+branch before it merged.** Each one is a test that fails with the defect put
+back, and each was mutation-tested rather than argued about.
+
+**The dangerous one first: two screens disagreed about whether a committee
+could be sent to, and the print view was the one that was wrong.** The
+printed form tested the JOINED address — and joining `[null, null, "Fresno",
+null]` returns `"Fresno"`, a perfectly non-null string. So a committee with
+no street line, no email and no fax printed on a DAS 140 as though its
+address were complete, with no red sentence anywhere, while the directory on
+`/union-compliance` called that same row undeliverable in the same session.
+A box that LOOKS filled in on a document the state receives is worse than an
+empty one — nobody re-checks a filled box, and there is a documented penalty
+for sending a 142 to the wrong committee. `committeeDeliverability` in
+`das-forms.ts` is now the ONE function that answers it, used by the print
+builder and by the directory, and it says what deliverable means: post needs
+a street line, a city and a state or a ZIP; email or fax alone is enough,
+because 8 CCR 230.1 names all three; a field holding only spaces is empty. A
+partial address is never printed in the address box — `addressGap` names
+what is missing and what IS on file, so "half an address" and "no address"
+stay two different sentences. A census walks every file in `apps/web` that
+mentions a committee and fails if any of them derives this from the raw
+fields again, and the census asserts its own scope contains the two files
+that disagreed, because a walk that finds nothing passes everything after
+it.
+
+**The proposals matched crafts by NAME while an ID for the join sat unused.**
+A committee's `craftName` is the craft in the committee's words
+("Drywall/Lathers"); a `CraftClassification.name` is the craft in the
+company's ("Drywall"). `das-forms.prisma` says outright that those routinely
+differ and adds `craftClassificationId` for exactly this — and nothing used
+it. So `DAS140_MISSING` never cleared however many notices went out, and the
+suggestion told the contractor to add a committee that was already in the
+directory. The join is the link now, on both sides — craft → committee →
+notice — and there is deliberately no name fallback, because a fallback here
+is the bug wearing a safety net. A committee with no link gets a proposal
+saying so, which is a thing one click fixes.
+
+**And a seventh thing the review did not see, which only a real database
+showed.** `CraftClassification` is unique on `(unionLocalId, name)`, so a
+trade's journeyman tier and its apprentice tier are two SEPARATE
+classification rows — and `ApprenticeshipCommittee.craftClassificationId` is
+a single FK, so one committee row links to exactly one of them. Matching a
+craft on the classification exactly would therefore have raised "no committee
+is linked to this craft" on the apprentice-tier row of every trade, forever:
+the directory refuses a duplicate committee, so there is nothing to click.
+Worse, the dispatch proposal counted apprentice hours per classification,
+where a journeyman row reads zero apprentice hours on every job by
+construction — a DAS 142 proposed on a craft that already has apprentices on
+it, permanently. So a craft is matched to a committee by the UNION LOCAL of
+the classification the committee is linked to, and the journeyman/apprentice
+hours are counted over that local. The local is the only id this app holds
+for "the trade", and it is what `apprentice-ratio.ts` already groups a ratio
+by. The cost is written down rather than hidden: a company running two
+genuinely different trades under ONE local gets one committee's link covering
+both, so a notice missing for the second trade is not proposed. A quieter
+engine, not a wrong claim — nothing here ever says a job owes nothing.
+`das-query.dbtest.ts` is new and covers that seam against a real Postgres:
+two locals' same-named classifications stay apart, the apprentice tier lands
+under its trade, and the untagged hours produce no committee proposal at all.
+
+**Several committees covering one craft collapsed into one.** The notices
+were keyed on the craft, so one notice suppressed the proposal for every
+committee on that craft, and of two notices only the last one written to the
+map was ever examined for "never sent". Keyed on the committee now.
+`approvedToTrainUs` — which the schema says decides how many notices an
+award owes — was never passed in at all; it is now, and what it produces is
+NOT a count. Whether one notice to a signatory's own JATC discharges the
+craft is `das140-recipients`, `verified: false`, a question nobody has put to
+counsel. So each committee with nothing on file gets an OBSERVATION naming
+it and its approval state, all three values said out loud, and when two
+committees cover a craft and one's approval is blank,
+`DAS140_RECIPIENTS_UNKNOWN` says the count cannot be worked out and why,
+rather than picking a branch.
+
+**A notice sitting unsent raised nothing until somebody logged an hour.**
+The 140 proposals were derived inside the loop over crafts that already had
+hours — and the ten days the notice has to go out in is usually over before
+anybody works. The notices are walked in their own loop now, the shape the
+142 side already had.
+
+**One untagged timesheet hour produced a permanent, un-clearable item.** The
+untagged-hours pseudo-row went into the engine as though it were a craft, so
+any job with an hour nobody had tagged showed "Add the apprenticeship
+committee for this craft and area first" forever — no committee can ever be
+linked to "no craft tag". It is recognised by its null classification rather
+than by its label, owes nothing to anybody, and the real fact underneath it
+survives as `HOURS_WITHOUT_CRAFT`: how many hours are untagged, and that
+tagging them clears it.
+
+**Changing a committee's classification on the row edit reported success and
+changed nothing.** The shared field set renders that select on the edit form
+and `updateApprenticeshipCommittee` never wrote the column, so a link set by
+mistake could not be removed either. Writable and clearable now, validated
+as one of this company's — and a test walks every other field the shared
+form submits, so the next omission of this shape fails instead of shipping.
+
+**And a field that could never be anything but `false` is gone.**
+`Das140Form.sendable` / `Das142Form.sendable` were `blocking.length === 0`
+while `signature` is pushed unconditionally and always will be: nothing here
+signs anything. That is CLAUDE.md's "written, documented, and never called"
+shape wearing a boolean, and the name read as permission to send. It is
+`completeExceptSignature` now — true when the only thing left is the
+signature — it VARIES, and both print pages branch on it: a form with a box
+still blank stays red, and one that is genuinely finished says so in amber
+and names the one thing C Stream will never do.

@@ -25,6 +25,11 @@ export type CommitteeRow = {
   craftName: string;
   craftClassificationId: string | null;
   craftClassificationLabel: string | null;
+  /** The union local of the classification this committee is linked to, or
+   * null when it is linked to none. It is what the job side matches a craft
+   * on — see `dasProposals` on why the local rather than the classification
+   * itself. Derived through the relation, never typed in. */
+  craftUnionLocalId: string | null;
   geographicArea: string;
   programSponsorNumber: string | null;
   addressLine1: string | null;
@@ -49,7 +54,7 @@ export async function loadApprenticeshipCommittees(companyId: string): Promise<C
     where: { companyId },
     orderBy: [{ craftName: "asc" }, { name: "asc" }],
     include: {
-      craftClassification: { select: { name: true } },
+      craftClassification: { select: { name: true, unionLocalId: true } },
       _count: { select: { das140Notices: true, das142Requests: true } },
     },
   });
@@ -59,6 +64,7 @@ export async function loadApprenticeshipCommittees(companyId: string): Promise<C
     craftName: row.craftName,
     craftClassificationId: row.craftClassificationId,
     craftClassificationLabel: row.craftClassification?.name ?? null,
+    craftUnionLocalId: row.craftClassification?.unionLocalId ?? null,
     geographicArea: row.geographicArea,
     programSponsorNumber: row.programSponsorNumber,
     addressLine1: row.addressLine1,
@@ -184,6 +190,16 @@ export async function loadFirstWorkerDay(jobId: string): Promise<IsoDay | null> 
 }
 
 export type JobCraftHours = {
+  /** The classification these hours are tagged to, or NULL for the untagged
+   * pseudo-row — which is how that row is recognised as not being a craft at
+   * all, rather than by matching its label. */
+  craftClassificationId: string | null;
+  /** That classification's union local. `(unionLocalId, name)` is unique on
+   * CraftClassification, so a trade's journeyman and apprentice tiers are two
+   * DIFFERENT classification rows, and the local is the only id this app holds
+   * for "the trade" — which is what `dasProposals` matches a committee on and
+   * what `apprentice-ratio.ts` already groups by. */
+  unionLocalId: string | null;
   craftName: string;
   journeymanHours: number;
   apprenticeHours: number;
@@ -209,28 +225,43 @@ export async function loadJobCraftHours(jobId: string): Promise<JobCraftHours[]>
     where: { jobId },
     select: {
       hours: true,
-      craftClassification: { select: { name: true, tier: true } },
+      craftClassification: { select: { id: true, name: true, tier: true, unionLocalId: true } },
     },
   });
 
+  // Grouped by classification ID rather than by name: the id is what the
+  // committee link joins on, and two classifications under different locals can
+  // share a name. Untagged hours group under one null key.
   const byCraft = new Map<string, JobCraftHours>();
   for (const entry of entries) {
+    const craftClassificationId = entry.craftClassification?.id ?? null;
+    const unionLocalId = entry.craftClassification?.unionLocalId ?? null;
     const craftName = entry.craftClassification?.name ?? UNTAGGED_CRAFT_LABEL;
     const tier = (entry.craftClassification?.tier ?? null) as CraftTier | null;
     const hours = Number(entry.hours);
+    const key = craftClassificationId ?? "";
     const row =
-      byCraft.get(craftName) ??
-      { craftName, journeymanHours: 0, apprenticeHours: 0, unclassifiedHours: 0 };
+      byCraft.get(key) ??
+      {
+        craftClassificationId,
+        unionLocalId,
+        craftName,
+        journeymanHours: 0,
+        apprenticeHours: 0,
+        unclassifiedHours: 0,
+      };
     if (tier === "JOURNEYMAN" || tier === "FOREMAN") row.journeymanHours += hours;
     else if (tier === "APPRENTICE") row.apprenticeHours += hours;
     else row.unclassifiedHours += hours;
-    byCraft.set(craftName, row);
+    byCraft.set(key, row);
   }
 
   // Rounded at the boundary so a proposal never reads "183.99999999 journeyman
   // hours" — the same hundredths rounding apprentice-ratio.ts uses.
   return [...byCraft.values()]
     .map((row) => ({
+      craftClassificationId: row.craftClassificationId,
+      unionLocalId: row.unionLocalId,
       craftName: row.craftName,
       journeymanHours: Math.round(row.journeymanHours * 100) / 100,
       apprenticeHours: Math.round(row.apprenticeHours * 100) / 100,

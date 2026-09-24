@@ -196,6 +196,25 @@ export async function updateApprenticeshipCommittee(
   const geographicArea = text(formData, "geographicArea");
   if (!geographicArea) return fail("Enter the committee's geographic area.");
 
+  // WRITABLE HERE, AND CLEARABLE. The shared field set renders this select on
+  // the row edit as well as the add form, and for a week this update dropped
+  // it: changing the classification reported success and changed nothing, and
+  // a link set by mistake could not be removed at all. An empty value is the
+  // select's own "Not linked" option, so it clears the link rather than being
+  // ignored — same tri-state honesty as `approvedToTrainUs` below.
+  //
+  // It matters more than an advisory field sounds: this link is what
+  // `dasProposals` joins a craft on the job to a committee by, so a wrong one
+  // suppresses a real DAS 140 proposal and a missing one raises a false "no
+  // committee is linked to this craft".
+  const craftClassificationId = text(formData, "craftClassificationId") || null;
+  if (craftClassificationId !== null) {
+    const craft = await prisma.craftClassification.findFirst({
+      where: { id: craftClassificationId, companyId: company.id },
+    });
+    if (!craft) return fail("That classification isn't one of yours.");
+  }
+
   // `craftName` is deliberately absent from this update. It is not identity
   // on the committee itself, but every notice snapshots it at creation, so
   // editing it here would make the directory and the sent notices disagree
@@ -205,6 +224,7 @@ export async function updateApprenticeshipCommittee(
     where: { id: committeeId },
     data: {
       name,
+      craftClassificationId,
       geographicArea,
       programSponsorNumber: text(formData, "programSponsorNumber") || null,
       addressLine1: text(formData, "addressLine1") || null,

@@ -8,7 +8,7 @@
  * signed by a person, with boxes this app can only sometimes fill — and its
  * answer is the one worth repeating: a field the app cannot source is carried
  * as a BLOCKING entry with a human sentence, the page prints that sentence in
- * red where the value would have gone, and the form is marked not sendable.
+ * red where the value would have gone, and the form says it is not ready.
  * "Writing TBD, N/A, unknown or leaving information blank will invalidate the
  * form" is what the secondary guidance says about a DAS 140; a form that
  * looks finished and is not is the expensive failure here, exactly as it is
@@ -43,6 +43,8 @@
 
 import { formatCalendarDay } from "./render-date";
 import {
+  committeeDeliverability,
+  type CommitteeChannel,
   DAS142_LEAD_TIME_CAVEATS,
   type IsoDay,
   latestSendDayIgnoringHolidays,
@@ -56,7 +58,7 @@ import {
  * A box the form has that this app cannot fill yet.
  *
  * Carried as data rather than rendered as a dash so a test can assert WHICH
- * box is missing, and so the page can refuse to present the form as sendable.
+ * box is missing, and so the page can refuse to present the form as ready.
  * Same reasoning as `Wh347BlockingField`, which its own comment gives: "a
  * blank cell on a government form is indistinguishable from a zero to
  * everyone except the person who filled it in."
@@ -165,7 +167,19 @@ export interface DasCommitteeBlock {
   name: string;
   craftName: string;
   geographicArea: string;
+  /** The postal address ONLY when it is complete enough to post — never a
+   * fragment of one. `committeeDeliverability` in lib/das-forms.ts is the one
+   * place that decides; this block does not re-derive it, and neither does the
+   * committee directory on /union-compliance. Two screens answering this
+   * question differently is the defect that made the rule a function. */
   address: string | null;
+  /** The sentence for the address box when `address` is null. Present even
+   * when the committee is reachable by email, because the postal box on the
+   * form still cannot be filled. */
+  addressGap: string | null;
+  /** Every way this committee can actually be reached. Empty is the only case
+   * that blocks the form. */
+  channels: readonly CommitteeChannel[];
   email: string | null;
   fax: string | null;
   programSponsorNumber: string | null;
@@ -220,16 +234,18 @@ function contractorBlock(company: DasCompanyInput): DasContractorBlock {
 }
 
 function committeeBlock(committee: DasCommitteeInput): DasCommitteeBlock {
+  // NOT joined here. `joinLines` returns a string for a committee whose only
+  // recorded field is a city, and this block used to hand that to the form as
+  // a complete address — a filled-looking box on a document the state
+  // receives, with no red sentence anywhere. One function decides now.
+  const delivery = committeeDeliverability(committee);
   return {
     name: committee.name,
     craftName: committee.craftName,
     geographicArea: committee.geographicArea,
-    address: joinLines([
-      committee.addressLine1,
-      committee.addressLine2,
-      committee.city,
-      joinLines([committee.state, committee.postalCode])?.replace(", ", " ") ?? null,
-    ]),
+    address: delivery.postalAddress,
+    addressGap: delivery.addressGap,
+    channels: delivery.channels,
     email: committee.email,
     fax: committee.fax,
     programSponsorNumber: committee.programSponsorNumber,
@@ -258,10 +274,9 @@ function sharedBlocking(
   // Any ONE of the three is enough to send it, which is why this is a single
   // field rather than three: 8 CCR 230.1 names first class mail, fax and
   // email, so a committee with an email and no street address is perfectly
-  // reachable and must not be reported as incomplete.
-  if (committee.address === null && committee.email === null && committee.fax === null) {
-    blocking.push("committeeDelivery");
-  }
+  // reachable and must not be reported as incomplete. `channels` is
+  // `committeeDeliverability`'s answer and nothing here second-guesses it.
+  if (committee.channels.length === 0) blocking.push("committeeDelivery");
   if (project.awardingBody === null) blocking.push("awardingBody");
   if (project.location === null) blocking.push("projectLocation");
   if (project.identifier === null) blocking.push("projectIdentifier");
@@ -346,9 +361,19 @@ export interface Das140Form {
   contractAmount: number | null;
   sentOn: string | null;
   blocking: DasBlockingField[];
-  /** False whenever anything is blocking. The page must not present the form
-   * as ready to send when this is false. */
-  sendable: boolean;
+  /** True when the ONLY thing still blocking is the signature — that is,
+   * everything a person could have supplied has been.
+   *
+   * It replaced a `sendable` that was a constant `false`, because `signature`
+   * is pushed unconditionally and always will be: nothing here signs
+   * anything. A field that cannot vary is read by nothing but its own test
+   * (CLAUDE.md's "written, documented, and never called"), and this one also
+   * read as permission to send. This one varies, means something a contractor
+   * asks out loud — "is there anything left for me to fill in before I print
+   * it?" — and both print pages branch on it. It is deliberately NOT called
+   * sendable: sending is a person signing and posting it.
+   */
+  completeExceptSignature: boolean;
 }
 
 export function buildDas140(input: Das140Input): Das140Form {
@@ -386,7 +411,7 @@ export function buildDas140(input: Das140Input): Das140Form {
     contractAmount: input.notice.contractAmount,
     sentOn: input.notice.sentOn === null ? null : formatCalendarDay(input.notice.sentOn),
     blocking: final,
-    sendable: final.length === 0,
+    completeExceptSignature: final.length === 1 && final[0] === "signature",
   };
 }
 
@@ -422,7 +447,9 @@ export interface Das142Form {
   latestSendDay: string;
   leadTimeCaveats: readonly string[];
   blocking: DasBlockingField[];
-  sendable: boolean;
+  /** Same meaning as on `Das140Form`, and the same reason it is not called
+   * sendable. */
+  completeExceptSignature: boolean;
 }
 
 export function buildDas142(input: Das142Input): Das142Form {
@@ -444,6 +471,6 @@ export function buildDas142(input: Das142Input): Das142Form {
     latestSendDay: formatCalendarDay(latestSendDayIgnoringHolidays(input.request.neededFrom)),
     leadTimeCaveats: DAS142_LEAD_TIME_CAVEATS,
     blocking: final,
-    sendable: final.length === 0,
+    completeExceptSignature: final.length === 1 && final[0] === "signature",
   };
 }
