@@ -77,6 +77,36 @@ both zeroed ("collects no tests"), an `errors` array ("a listing that failed
 is not a count of anything"), and a missing file. All four red with the
 message named.
 
+**AND IT WENT RED ON ITS FIRST RUN, on the founder's landing page.** 23 of
+the 24 public tests passed; the one failure is the landing page at 320 CSS
+px, where the LAYOUT VIEWPORT comes back 359 on a 320px screen — the whole
+page pans sideways on an iPhone SE, an iPhone 5/5s, and any iPhone with
+Display Zoom switched on.
+
+It is not a new bug and it is not the suite being fussy: `LandingPage.tsx`
+already carried the measurement, taken 2026-09-23 in real Chromium, and a
+paragraph saying it was NOT fixed and why — *"the e2e assertion would catch
+it, but ci.yml runs test, lint, typecheck and build — not the public e2e
+suite — so nothing automatic has been asking."* Something automatic asks
+now, and it asked in red on the first PR. That is the whole argument for
+this change in one example.
+
+**Fixed here, with that measurement's own arithmetic.** The first pass put
+the headline clamp floor at `2.5rem` on a wrong number — it said
+"subcontractors." needs 288px in a 288px box at 40px, and the real
+min-content width at 40px is 343.5px. One unbreakable word at a fixed
+typeface scales linearly with font-size (the -0.02em tracking is in em, so
+it scales too), so the largest floor that fits 288px is 40 x 288/343.5 =
+33.5px. The floor is `2rem` now: 274.8px, 13px inside the box. **Nothing at
+or above 356px changes** — the floor only binds while 9vw is under it, below
+355.6px — so every device from 360 up renders exactly what it rendered
+before, 96px desktop headline included. What changes is 320-355, where the
+headline goes from 40px to 32px and the page stops panning sideways.
+
+The proof is the same job that found it: `e2e-public` measures 320, 375 and
+1280 in real Chromium on every PR, and no unit test in this repo can see any
+of it, because happy-dom does no layout.
+
 **What is verified and what is not, precisely.** Typecheck, lint, 7,147 unit
 tests in 451 files and a full production build are green on this branch.
 `--list` collects 24 tests for the public config and 36 for the signed-in
