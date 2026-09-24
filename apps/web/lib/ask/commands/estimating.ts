@@ -634,6 +634,7 @@ export const estimatingExclusions: Exclusion[] = [
   // not, which is the one thing this feature exists to prevent.
   { action: "saveBidQuote", reason: "The exclusions decide whether the cheapest quote is the best one, and they are read off the sub's own PDF — a transcribed amount without them reads as comparable when it is not." },
   { action: "deleteBidQuote", reason: "Deletes are never commands (T5)." },
+  { action: "recordBidQuoteDecline", reason: "Whether a sub declined to bid is something they told you, not something the assistant can infer from a thread — and recording it wrongly means nobody chases a quote that was still coming." },
   { action: "deleteBidInvitation", reason: "Deletes are never commands (T5)." },
   // The pre-bid pursuit list (lib/actions/bidPursuits.ts, BidPursuit). The
   // read side is the bid_pursuits tool. createBidPursuit and

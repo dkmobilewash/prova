@@ -624,10 +624,6 @@ export async function saveBidQuote(bidInvitationId: string, formData: FormData):
       amount: amountValue === null ? null : Number(amountValue),
     });
     if (problem) return actionFail(problem);
-    // `bidQuoteProblem` has already refused a missing amount; this narrows it
-    // for the compiler rather than asserting past it, so the two cannot drift
-    // apart if that rule ever moves.
-    if (amountValue === null) return actionFail("A quote needs an amount.");
 
     // Entered, not stamped: a quote logged on Friday for a price given on
     // Tuesday is a Tuesday price, the rule every dated record here follows.
@@ -635,7 +631,17 @@ export async function saveBidQuote(bidInvitationId: string, formData: FormData):
     // fourth private copy of one (materialOrders, closeout and backcharges
     // each grew their own).
     const quotedOn = optionalDateFromString(formData.get("quotedOn"));
-    if (!quotedOn) return actionFail("Say what day the quote was given — the day they gave it, not today.");
+
+    // A PRICE AND THE DAY IT WAS GIVEN TRAVEL TOGETHER. Either both or
+    // neither: an amount with no date is a number nobody can age, and a date
+    // with no amount reads as an answer that never came. A row with neither is
+    // the legitimate third case — a request that is still out.
+    if (amountValue !== null && !quotedOn) {
+      return actionFail("Say what day the quote was given — the day they gave it, not today.");
+    }
+    if (amountValue === null && quotedOn) {
+      return actionFail("You've given a quote date with no amount. Enter what they quoted, or clear the date.");
+    }
 
     // Optional. A quote from somebody not yet in the vendor list is still a
     // quote — refusing it would make the comparison partial, which is worse
@@ -651,6 +657,17 @@ export async function saveBidQuote(bidInvitationId: string, formData: FormData):
       vendorId = vendor.id;
     }
 
+    // THE REQUEST HALF IS WRITTEN ONLY BY A FORM THAT CARRIES IT. The answer
+    // form has no `requestedOn`/`dueBy` field at all, and spreading them in as
+    // `null` regardless would erase the record of having asked at the exact
+    // moment the answer arrives — the one edit where losing it is invisible,
+    // because the row looks complete afterwards. `formData.has` distinguishes
+    // "the form left this blank" from "this form does not own this field";
+    // an omitted key is left alone by Prisma.
+    const requestFields: { requestedOn?: Date | null; dueBy?: Date | null } = {};
+    if (formData.has("requestedOn")) requestFields.requestedOn = optionalDateFromString(formData.get("requestedOn"));
+    if (formData.has("dueBy")) requestFields.dueBy = optionalDateFromString(formData.get("dueBy"));
+
     const data = {
       packageLabel,
       vendorName,
@@ -659,18 +676,55 @@ export async function saveBidQuote(bidInvitationId: string, formData: FormData):
       quotedOn,
       exclusions: exclusions || null,
       notes: notes || null,
+      ...requestFields,
     };
 
     const bidQuoteId = String(formData.get("bidQuoteId") ?? "").trim();
     if (bidQuoteId) {
       const updated = await prisma.bidQuote.updateMany({
         where: { id: bidQuoteId, companyId: company.id, bidInvitationId },
-        data,
+        // An amount arriving clears any decline: they said no and then priced
+        // it anyway, which happens, and the row should read as the answer it
+        // now is rather than carrying both.
+        data: amountValue === null ? data : { ...data, declinedAt: null },
       });
       if (updated.count === 0) return actionFail("That quote is no longer on this bid. Reload the page.");
     } else {
       await prisma.bidQuote.create({ data: { ...data, companyId: company.id, bidInvitationId } });
     }
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+/**
+ * They came back and said they are not bidding it.
+ *
+ * A DATE AND NOT A DELETE. "Gamma declined to bid this" is the answer to "why
+ * did we only get two prices", and next time it says who not to wait on —
+ * both of which are lost if the row goes. It is also a date rather than a
+ * boolean, for the reason every other evidence field here gives: when they
+ * declined is part of what happened.
+ *
+ * Passing no date CLEARS the decline, which is the un-decline path: a supplier
+ * who says no on Monday and prices it on Wednesday is not a new request.
+ */
+export async function recordBidQuoteDecline(bidQuoteId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  return runAction(async () => {
+    const declinedAt = optionalDateFromString(formData.get("declinedAt"));
+
+    const updated = await prisma.bidQuote.updateMany({
+      where: { id: bidQuoteId, companyId: company.id },
+      data: { declinedAt },
+    });
+    if (updated.count === 0) return actionFail("That quote is no longer on this bid. Reload the page.");
 
     revalidatePath("/bids");
     return actionOk;

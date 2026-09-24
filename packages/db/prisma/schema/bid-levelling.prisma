@@ -28,7 +28,14 @@
 /// the same breath whether the quotes carry the same exclusions. A comparison
 /// that cannot say that is a comparison worth less than none.
 
-/// One quote received against one scope package on one bid.
+/// One conversation with one supplier about one scope package on one bid —
+/// from the request out to the price back.
+///
+/// A ROW IS BOTH HALVES. It starts as a request (an amount of null, a
+/// `requestedOn`), and becomes a quote when they answer. A separate request
+/// table would split one exchange across two places and leave them to drift,
+/// and the question worth answering on bid day — "who have I not heard from?"
+/// — would be a join instead of a filter.
 model BidQuote {
   id        String  @id @default(cuid())
   companyId String
@@ -64,12 +71,44 @@ model BidQuote {
   vendor     Vendor? @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   vendorName String
 
-  amount Decimal @db.Decimal(12, 2)
+  /// WHAT THEY QUOTED, or NULL because they have not answered yet.
+  ///
+  /// Nullable so one row can hold the whole conversation: you asked Acme for
+  /// framing on Monday, Acme came back on Thursday with $82,000. A separate
+  /// "request" table would put the two halves in two places and leave them to
+  /// drift; the question an estimator actually asks on bid day — "am I still
+  /// waiting on anybody?" — is then a join rather than a filter.
+  ///
+  /// THE HAZARD THIS CREATES IS NAMED AND GUARDED. `levelPackage` sorts by
+  /// amount and calls the first row cheapest, and a null sorting to the front
+  /// would make an unanswered request the winning quote. So the levelling
+  /// module EXCLUDES anything without an amount from the comparison and
+  /// reports it separately as outstanding — the same posture `bid-outcome.ts`
+  /// takes toward unfinished jobs.
+  amount Decimal? @db.Decimal(12, 2)
 
   /// The day they gave it, ENTERED and not stamped — the rule every other
   /// dated record in this app follows. A quote logged on Friday for a price
-  /// given on Tuesday is a Tuesday price.
-  quotedOn DateTime
+  /// given on Tuesday is a Tuesday price. Null until they answer.
+  quotedOn DateTime?
+
+  /// WHEN WE ASKED, and when we need it back.
+  ///
+  /// `requestedOn` is null for a quote that simply arrived — a sub who prices
+  /// your job unasked is still a quote, and recording it as though you had
+  /// solicited it would make the outbound log a fiction. `dueBy` is what turns
+  /// the list into something useful on bid day: it is what makes a request
+  /// OVERDUE rather than merely outstanding.
+  requestedOn DateTime?
+  dueBy       DateTime?
+
+  /// They came back and said no. A fact worth keeping rather than deleting
+  /// the row: "Gamma declined to bid this" is the answer to "why did we only
+  /// get two prices", and next time it says who not to wait on.
+  ///
+  /// A DATE, not a boolean, for the reason every other evidence field here
+  /// gives: when they declined is part of what happened.
+  declinedAt DateTime?
 
   /// WHAT THIS QUOTE LEAVES OUT, one exclusion per line as the sub wrote it.
   ///

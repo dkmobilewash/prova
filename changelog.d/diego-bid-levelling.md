@@ -77,3 +77,66 @@ The census is narrow on purpose: constructing inside a function is fine, since
 the client exists by the time anything calls it. Only the module-scope `new` is
 refused, because that is the one that runs on import — and it breaks the 53
 test files that stub `Prisma` before a single test in them starts.
+
+**Third commit: the outbound half — who you asked, not just who answered.**
+
+A levelling table that only holds answers is a table that reads as finished
+when it is not. Two comparable quotes look like a settled buyout, and they are
+not settled while a third supplier has the drawings and has not replied. So a
+`BidQuote` is now the whole exchange rather than just its end: it starts as a
+REQUEST — `requestedOn`, `dueBy`, no amount — and becomes a quote when a price
+arrives.
+
+**One row and not two tables.** A separate "request" model would split one
+conversation across two places and leave them to drift, and the question an
+estimator actually asks on bid day — *am I still waiting on anybody?* — would be
+a join instead of a filter.
+
+**The nullable amount is this feature's own worst failure mode wearing a new
+hat, and it is named in three places rather than fixed quietly.** `levelPackage`
+sorts ascending and calls the first row cheapest. A null sorts to the FRONT of
+that sort — so a supplier who never replied would have been printed as the low
+bid, in bold, on the screen whose entire purpose is to stop a low number being
+read as the best one. `levelPackage` now filters to priced quotes before it
+sorts anything, every comparison takes an `AnsweredQuote` so an unanswered row
+cannot reach one by accident, and what was asked and not answered is reported
+separately under `outstanding` — visible on the screen, and not in the
+arithmetic. Mutation-tested: put the null back into the sort and four tests go
+red, including one named for exactly this.
+
+**`dueBy` is what makes a request OVERDUE rather than merely outstanding**, and
+that judgement uses the READER's calendar day via `viewerToday()`, not the
+server's. `serverToday.ts`'s own comment is the reason — *"on anything where the
+exact day decides an outcome, it is not good enough"* — and whether a quote is
+late is exactly that. A request with no `dueBy` is outstanding forever and never
+late, which is honest: nothing was promised, so nothing is overdue.
+
+**A decline is a date and never a delete.** *"Gamma declined to bid this"* is the
+answer to *"why did we only get two prices"*, and next time it says who not to
+wait on — both lost if the row goes. Un-declining is the same action with no
+date, because a sub who says no on Monday and prices it on Wednesday is not a
+new request.
+
+**The subtle one, and the reason `saveBidQuote` reads the form the way it
+does.** The answer form carries no `requestedOn`/`dueBy` field at all, and
+spreading those in as `null` regardless would erase the record of having asked
+at the exact moment the answer arrives — the one edit where losing it is
+invisible, because the row looks complete afterwards. `formData.has()`
+distinguishes *the form left this blank* from *this form does not own this
+field*, and an omitted key is left alone by Prisma.
+
+A price and the day it was given now travel together, both or neither: an amount
+with no date is a number nobody can age, a date with no amount reads as an answer
+that never came, and neither is the legitimate third case.
+
+**Deliberately not built: actually sending the request.** The app records that
+you asked. The asking is still an email, a phone call or the GC's own portal —
+and a "send" button that quietly did nothing of the sort would be worse than no
+button.
+
+The migration is additive (three nullable columns, two NOT NULLs relaxed) and is
+a SECOND migration rather than an edit to `20260924200000_add_bid_quotes` two
+commits earlier on this same branch. Editing an applied migration changes its
+checksum and fails the next deploy against any database that already has it, and
+nothing on this machine can reach a database to find out whether one does. Two
+directories is the cost of not needing to know.

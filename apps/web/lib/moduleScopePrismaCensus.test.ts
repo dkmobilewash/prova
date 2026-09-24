@@ -31,7 +31,6 @@ import { describe, expect, it } from "vitest";
  */
 
 const appDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const libDir = join(appDir, "lib");
 
 /** Git's list, not a hand-rolled walk — a directory this file does not walk
  * can never be missing anything, which is the scope scar CLAUDE.md records

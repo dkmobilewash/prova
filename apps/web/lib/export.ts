@@ -264,14 +264,18 @@ export const EXPORT_DATASETS: ExportDataset[] = [
   {
     key: "bidQuotes",
     model: "bidQuote",
-    label: "Quotes received for levelling, per bid",
+    label: "Quotes requested and received for levelling, per bid",
     note:
-      "What your own suppliers and subs quoted for each scope package on a bid. Distinct from the " +
-      "vendor price history: these belong to one bid and expire with it. Read the exclusions column " +
-      "before comparing the amounts -- a quote that leaves work out is cheaper and is not the same bid.",
+      "One row is the whole exchange with one supplier about one scope package: when you asked " +
+      "(requestedOn), when you needed it back (dueBy), and what came back (amount, quotedOn) or " +
+      "that they declined (declinedAt). Distinct from the vendor price history: these belong to " +
+      "one bid and expire with it. An empty amount means nobody has answered yet -- it is not a " +
+      "quote of zero, and sorting this file by amount would put those first. Read the exclusions " +
+      "column before comparing the amounts: a quote that leaves work out is cheaper and is not " +
+      "the same bid.",
     columns: [
       "id", "bidInvitationId", "packageLabel", "vendorId", "vendorName", "amount", "quotedOn",
-      "exclusions", "notes", "createdAt", "updatedAt",
+      "requestedOn", "dueBy", "declinedAt", "exclusions", "notes", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },

@@ -16,6 +16,15 @@
  * quote carries what the others do not. A comparison that cannot say that is
  * worth less than no comparison, because it reads as an answer.
  *
+ * THE OUTBOUND HALF. A row starts life as a REQUEST — somebody asked, nobody
+ * has answered — and becomes a quote when a price arrives. That gives this
+ * module a second way to be dangerous, and it is worse than the first: a null
+ * amount sorts to the FRONT of an ascending sort, so a supplier who never
+ * replied would be printed as the low bid. Every comparison here therefore
+ * takes `AnsweredQuote`, `levelPackage` filters to those before it sorts
+ * anything, and what was asked for and not answered is reported separately
+ * under `outstanding` — visible, and not in the arithmetic.
+ *
  * WHAT IS DELIBERATELY NOT HERE. No scoring, no weighting, no "adjusted"
  * price that adds an estimate of the excluded work back onto the low bid. That
  * number would be this app's guess at somebody else's scope, printed beside
@@ -29,11 +38,44 @@ export type LevelQuote = {
   id: string;
   packageLabel: string;
   vendorName: string;
-  amount: number;
-  quotedOn: string;
+  /** NULL until they answer. See `outstanding` below for why that cannot be
+   * allowed to reach the comparison. */
+  amount: number | null;
+  quotedOn: string | null;
   /** One per line, as the sub wrote it. Empty when they excluded nothing. */
   exclusions: string | null;
+  /** When we asked, when we need it back, and whether they said no. All null
+   * on a quote that simply arrived unasked. */
+  requestedOn?: string | null;
+  dueBy?: string | null;
+  declinedAt?: string | null;
 };
+
+/** A quote with a price on it. The type-level half of the guard below: every
+ * comparison in this file takes these, so an unanswered request cannot be
+ * passed to one by accident. */
+export type AnsweredQuote<T extends LevelQuote = LevelQuote> = T & { amount: number };
+
+export function isAnswered<T extends LevelQuote>(quote: T): quote is AnsweredQuote<T> {
+  return typeof quote.amount === "number" && Number.isFinite(quote.amount) && quote.declinedAt == null;
+}
+
+export type RequestState = "ANSWERED" | "DECLINED" | "OVERDUE" | "AWAITED";
+
+/**
+ * Where one request has got to, DERIVED and never stored.
+ *
+ * `today` is passed in rather than read from a clock, for the reason every
+ * other date-sensitive module here gives: a figure that changes depending on
+ * when the server happens to render it is a figure a test cannot hold still,
+ * and "overdue" is exactly that kind of figure.
+ */
+export function requestState(quote: LevelQuote, today: string): RequestState {
+  if (quote.declinedAt) return "DECLINED";
+  if (isAnswered(quote)) return "ANSWERED";
+  if (quote.dueBy && quote.dueBy < today) return "OVERDUE";
+  return "AWAITED";
+}
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
@@ -54,12 +96,19 @@ const keyOf = (line: string) => line.toLowerCase();
 
 export type LevelledPackage<T extends LevelQuote = LevelQuote> = {
   packageLabel: string;
-  /** Sorted cheapest first. Generic so a caller keeps its OWN row type —
-   * the levelling needs only these fields, and forcing callers to look their
-   * rows back up by id to render a note is how two lists drift apart. */
-  quotes: T[];
-  cheapest: T | null;
-  dearest: T | null;
+  /** Sorted cheapest first. ONLY the ones with a price — see `levelPackage`.
+   * Generic so a caller keeps its OWN row type: the levelling needs only
+   * these fields, and forcing callers to look their rows back up by id to
+   * render a note is how two lists drift apart. */
+  quotes: AnsweredQuote<T>[];
+  /** Asked, not answered, not declined. Reported rather than dropped: "who
+   * have I not heard from" is the question bid day actually turns on. */
+  outstanding: T[];
+  /** They said no. Kept because "Gamma declined" is the answer to "why only
+   * two prices", and next time it says who not to wait on. */
+  declined: T[];
+  cheapest: AnsweredQuote<T> | null;
+  dearest: AnsweredQuote<T> | null;
   /** Dearest minus cheapest. Null with fewer than two quotes — a spread needs
    * something to spread between. */
   spread: number | null;
@@ -74,7 +123,15 @@ export type LevelledPackage<T extends LevelQuote = LevelQuote> = {
 };
 
 export function levelPackage<T extends LevelQuote>(packageLabel: string, quotes: T[]): LevelledPackage<T> {
-  const sorted = [...quotes].sort((a, b) => a.amount - b.amount);
+  // ANYTHING WITHOUT A PRICE IS NOT IN THE COMPARISON. A null amount sorts to
+  // the front of an ascending sort, so an unanswered request would otherwise
+  // become the winning quote — the loudest possible version of this feature's
+  // own failure mode. Outstanding requests are reported separately instead,
+  // the same posture `bid-outcome.ts` takes toward unfinished jobs.
+  const answered = quotes.filter(isAnswered);
+  const outstanding = quotes.filter((quote) => !isAnswered(quote) && !quote.declinedAt);
+  const declined = quotes.filter((quote) => Boolean(quote.declinedAt));
+  const sorted = [...answered].sort((a, b) => a.amount - b.amount);
   const cheapest = sorted[0] ?? null;
   const dearest = sorted.length > 0 ? sorted[sorted.length - 1] : null;
 
@@ -82,6 +139,8 @@ export function levelPackage<T extends LevelQuote>(packageLabel: string, quotes:
     return {
       packageLabel,
       quotes: sorted,
+      outstanding,
+      declined,
       cheapest,
       dearest,
       spread: null,
@@ -89,7 +148,9 @@ export function levelPackage<T extends LevelQuote>(packageLabel: string, quotes:
       caution:
         sorted.length === 1
           ? "Only one quote on this package — there is nothing to compare it against yet."
-          : null,
+          : outstanding.length > 0
+            ? `No prices back yet on this package — ${outstanding.length} still outstanding.`
+            : null,
     };
   }
 
@@ -102,6 +163,8 @@ export function levelPackage<T extends LevelQuote>(packageLabel: string, quotes:
   return {
     packageLabel,
     quotes: sorted,
+    outstanding,
+    declined,
     cheapest,
     dearest,
     spread: round2((dearest?.amount ?? 0) - (cheapest?.amount ?? 0)),
@@ -117,7 +180,7 @@ export function levelPackage<T extends LevelQuote>(packageLabel: string, quotes:
  * estimator to go and read three PDFs. "excludes soffits and firestopping,
  * which Beta includes" tells them what to price.
  */
-function cautionFor(sorted: LevelQuote[], sets: Set<string>[]): string {
+function cautionFor(sorted: AnsweredQuote[], sets: Set<string>[]): string {
   const cheapest = sorted[0];
   const cheapestSet = sets[0];
   const others = sorted.slice(1);
@@ -190,11 +253,23 @@ export function bidQuoteProblem(quote: {
   if (!quote.vendorName.trim()) {
     return "A quote needs whoever gave it. You cannot ring up a price with nobody behind it.";
   }
-  if (quote.amount === null || !Number.isFinite(quote.amount)) {
-    return "A quote needs an amount.";
-  }
-  if (quote.amount <= 0) {
+  // An amount is optional NOW: a row may be a request that has not been
+  // answered yet. What is refused is a nonsense amount, not a missing one.
+  if (quote.amount !== null && (!Number.isFinite(quote.amount) || quote.amount <= 0)) {
     return "A quote of zero or less is not a quote.";
   }
   return null;
+}
+
+/** What a package still needs before its comparison means anything. Null when
+ * every request is in. */
+export function outstandingNote(group: LevelledPackage, today: string): string | null {
+  if (group.outstanding.length === 0) return null;
+  const overdue = group.outstanding.filter((quote) => requestState(quote, today) === "OVERDUE");
+  const names = group.outstanding.map((quote) => quote.vendorName);
+  const who = names.length <= 3 ? listOf(names) : `${names.length} suppliers`;
+  if (overdue.length > 0) {
+    return `Still waiting on ${who} — ${overdue.length} past the date you asked for. Any comparison here is incomplete.`;
+  }
+  return `Still waiting on ${who}. Any comparison here is incomplete.`;
 }
