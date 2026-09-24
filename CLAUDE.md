@@ -297,7 +297,17 @@ scrollback gets broken by whoever didn't scroll far enough.
   `ChangeOrderCounter` (`jobs.prisma`), `BackchargeCounter`
   (`backcharges.prisma`), `CloseoutSubmissionCounter` (`closeout.prisma`),
   `InvoiceCounter` and `ContractDocumentVersionCounter`
-  (`billing.prisma`).
+  (`billing.prisma`), `EstimateVersionCounter` (`estimating.prisma`),
+  `Wh347PayrollCounter` (`payroll-register.prisma`).
+
+  The last two were added 2026-09-24 by reading the schema: this roll-call
+  named nine and the schema declared eleven. Nobody broke a rule — the
+  paragraph below says to add the counter here and let the test say how many
+  there are, and `counterCensus.test.ts` holds a FLOOR (`>= 9`) rather than
+  an equality, deliberately, so that adding a counter does not fail a build
+  over a number. That is the right trade and it has a cost: the floor cannot
+  notice this list falling behind the schema. Derive it rather than trust it —
+  `grep -c '^model .*Counter {' packages/db/prisma/schema/*.prisma`.
 
   **THE COUNT THAT USED TO BE IN THAT SENTENCE IS NOW A TEST, and the
   reason is that it rotted in a day.** This paragraph said EIGHT, with two
