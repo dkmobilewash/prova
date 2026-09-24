@@ -272,19 +272,25 @@ jobs:
           echo "the public config collects $COUNT tests"
 
       - name: Public pages at 320, 375 and 1280
+        id: suite
         run: pnpm test:e2e:public
 
       # Never folded into the step above: `playwright test` exiting 0 is the
-      # claim, this is the check on it.
+      # claim, this is the check on it. It runs whether that step passed or
+      # failed — but NOT when it never ran, because a bare `always()` here
+      # reported `Cannot find module …/verdicts.mjs` on the first run of this
+      # workflow, on a job that had failed before checkout. A second red step
+      # saying the report is missing invites the reading that the suite ran
+      # and lost it.
       - name: Count the verdicts that came back
-        if: always()
+        if: always() && steps.suite.conclusion != 'skipped'
         run: |
           set -e
           node apps/web/e2e/verdicts.mjs \
             apps/web/playwright-report-public/results.json "$E2E_PUBLIC_COLLECTED"
 
       - name: Upload the public Playwright report
-        if: always()
+        if: always() && steps.suite.conclusion != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-public
@@ -443,17 +449,22 @@ jobs:
       # numbered 1…11 in the list-reporter output, so a failure names the step
       # rather than a file.
       - name: The pilot journey, in a real browser
+        id: journey
         run: pnpm test:e2e
 
+      # Same gate as `e2e-public`'s, and for the same measured reason: with a
+      # bare `always()` this step ran on a job that had stopped at the missing
+      # secrets and failed with `Cannot find module …/verdicts.mjs`, which
+      # reads like a lost report rather than a suite that never started.
       - name: Count the verdicts that came back
-        if: always()
+        if: always() && steps.journey.conclusion != 'skipped'
         run: |
           set -e
           node apps/web/e2e/verdicts.mjs \
             apps/web/playwright-report/results.json "$E2E_COLLECTED"
 
       - name: Upload the Playwright report
-        if: always()
+        if: always() && steps.journey.conclusion != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
