@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**138 items audited — 111 built / 22 partial / 4 missing / 1 descoped**
+**139 items audited — 112 built / 22 partial / 4 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -101,7 +101,7 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 111 |
+| Built | 112 |
 | Partial | 22 |
 | Missing | 4 |
 | Descoped | 1 |
@@ -144,7 +144,7 @@ closing "we track the GC but not who to actually call."*
 | Built | Interaction log per contact (calls, emails, site visits, notes, optional follow-up) | `ContactInteraction` (`crm.prisma`) — dated, entered not stamped; follow-up date and follow-up owner are separate from who logged the entry. Not an evidence record (no counter, no locked fields): any team member can log/edit/delete one, same access as bid invitations. A due/overdue follow-up now surfaces in `/alerts` too — see Sheet 26 |
 | Built | Individual people at an account (name, title, email/phone, who to actually call) | `ContactPerson` (`crm.prisma`), nested under `Contact`. No stored "last contact" — derived at read time from `ContactInteraction.contactPersonId` (optional, `SET NULL` on delete so removing a person never blocks on their call history). `deleteContact`'s guard extended again to count people as account history |
 
-## 03. Estimating & Bidding — 15 built · 0 partial · 0 missing
+## 03. Estimating & Bidding — 16 built · 0 partial · 0 missing
 
 *Updated from the original audit (was 2 built / 1 partial / 5 missing) — the
 catalog, bid tracking, historical bid database, labor hours, and estimate
@@ -167,6 +167,7 @@ versioning all shipped same-day.*
 | Built | Estimate-to-contract conversion (winning bid becomes the SOV) | `markJobContracted` — the same line items become the contract, by design |
 | Built | Bid proposal to the GC with structured inclusions, exclusions, clarifications and alternates | `/jobs/[id]/proposal` prints scope, the live schedule of values and the clauses grouped by kind — print-styled HTML and the browser's own Save as PDF, same as the G702/G703. Clauses are structured rows (`ProposalClauseKind`), not prose: a company library on `/proposals` (`ProposalClause`) and a per-job SNAPSHOT (`JobProposalClause`), so editing or deleting a library clause never changes a proposal already sent — pinned by `lib/actions/proposals.test.ts`. MANAGE_ESTIMATING throughout. Not yet: priced alternates (an alternate is text, not its own SOV line), a sent/locked state, or version history of a clause |
 | Built | Wall types and a per-job wall schedule — the run joined to its type and height | `WallType` + `WallTypeComponent` on `/wall-types` are the company's partition schedule; `WallRun` on each job's Estimate tab records every run by type, length, height and openings. `lib/wall-assemblies.ts` turns runs into lines (studs, track, board, insulation — reusing `lib/takeoff.ts`), summed per part across runs and rounded once, with hours from each part's crew rate. Every run write re-syncs the lines in the same transaction: same line ids, quantities move, a price the estimator typed is kept. Editing a wall type never changes an existing estimate until that job is refreshed. A run with no height anywhere adds nothing and says so. Two unpriced starter types. Locked after award. Not yet: AI reading the partition schedule, on-screen tracing, ceiling types |
+| Built | Bid recap: markup per cost type, overhead, profit, tax, bond, contingency | `JobBidRecap` per job (`CompanyBidDefaults` pre-fills it), computed by `lib/bid-recap.ts` in a documented order — markup per cost type, escalation, sales tax on material at what it sells for, overhead, then profit ON overhead, bond, contingency. Needed a cost type on the line, so `JobLineItem.costCategory` is new (nullable, no backfill); an uncategorised line is reported and marked up at nothing. **Applying** the recap spreads the bid into the line prices pro-rata, because `contractValue` is the one number every invoice and WIP figure reads — the panel shows what the spread really lands at (a unit price holds two decimals) and that applying twice compounds. Locked after award. Not yet: equipment as its own cost type (it sits under OTHER), and the GC-facing proposal printing the marked-up total |
 
 ## 04. Contracts & Subcontract Documents — 2 built · 1 partial · 0 missing
 

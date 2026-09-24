@@ -1,0 +1,235 @@
+"use client";
+
+import { useMemo, useState, useTransition, type FormEvent } from "react";
+import { applyBidRecap, saveBidRecap, setLineCostCategory } from "@/lib/actions";
+import { money } from "@/lib/money";
+import {
+  bidRecap,
+  COST_CATEGORY_LABELS,
+  COST_CATEGORY_VALUES,
+  spreadToLines,
+  spreadTotal,
+  type CostCategoryValue,
+  type RecapLine,
+  type RecapRates,
+} from "@/lib/bid-recap";
+
+/**
+ * The bid recap on the Estimate tab: what the work costs, what it is sold for,
+ * and the steps between.
+ *
+ * The preview runs the SAME pure `bidRecap` the server runs on apply, so the
+ * total on screen before applying is the total that gets written — a preview
+ * that disagrees with what it commits is worse than none (the rule
+ * `TakeoffForm` and `WallSchedule` already follow).
+ */
+
+const RATE_FIELDS: { key: keyof RecapRates; label: string; hint?: string }[] = [
+  { key: "materialMarkupPercent", label: "Material markup" },
+  { key: "laborMarkupPercent", label: "Labor markup" },
+  { key: "subcontractorMarkupPercent", label: "Subcontractor markup" },
+  { key: "otherMarkupPercent", label: "Other / equipment markup" },
+  { key: "escalationPercent", label: "Escalation", hint: "For work built later than it is priced." },
+  { key: "materialTaxPercent", label: "Sales tax on material", hint: "Charged on material only, at what it sells for." },
+  { key: "overheadPercent", label: "Overhead" },
+  { key: "profitPercent", label: "Profit", hint: "Taken on the total including overhead." },
+  { key: "bondPercent", label: "Bond premium" },
+  { key: "contingencyPercent", label: "Contingency" },
+];
+
+export type RecapLineView = RecapLine & { description: string };
+
+const field =
+  "w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
+
+export function BidRecapPanel({
+  jobId,
+  lines,
+  rates,
+  applied,
+}: {
+  jobId: string;
+  lines: RecapLineView[];
+  rates: RecapRates;
+  applied: { at: string; total: number } | null;
+}) {
+  const [draft, setDraft] = useState<Record<string, string>>(() =>
+    Object.fromEntries(RATE_FIELDS.map((f) => [f.key, rates[f.key] != null ? String(rates[f.key]) : ""])),
+  );
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [applyMessage, setApplyMessage] = useState<string | null>(null);
+  const [isSaving, startSave] = useTransition();
+  const [isApplying, startApply] = useTransition();
+
+  const preview = useMemo(() => {
+    const parsed: RecapRates = Object.fromEntries(
+      RATE_FIELDS.map((f) => {
+        const raw = draft[f.key]?.trim();
+        const value = raw ? Number(raw) : null;
+        return [f.key, value != null && Number.isFinite(value) ? value : null];
+      }),
+    );
+    const recap = bidRecap(lines, parsed);
+    const spread = spreadToLines(lines, recap.bidTotal);
+    return { recap, landsAt: spread.length > 0 ? spreadTotal(lines, spread) : recap.bidTotal };
+  }, [draft, lines]);
+
+  const { recap, landsAt } = preview;
+  const roundingGap = Math.round((landsAt - recap.bidTotal) * 100) / 100;
+
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    setSaveError(null);
+    startSave(async () => {
+      const result = await saveBidRecap(jobId, formData);
+      if (!result.ok) setSaveError(result.error);
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-4 rounded-lg border border-line-card bg-surface p-4">
+      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          {RATE_FIELDS.map((f) => (
+            <label key={f.key} className="flex flex-col gap-1 text-xs text-ink-label" title={f.hint}>
+              {f.label}
+              <span className="flex w-fit items-center gap-1">
+                <input
+                  name={f.key}
+                  value={draft[f.key] ?? ""}
+                  onChange={(e) => setDraft((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                  inputMode="decimal"
+                  placeholder="—"
+                  className={field}
+                />
+                <span className="text-ink-muted">%</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="submit"
+            disabled={isSaving}
+            className="rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50"
+          >
+            {isSaving ? "Saving…" : "Save rates"}
+          </button>
+          {saveError && <p className="text-sm text-tag-amber-ink">{saveError}</p>}
+        </div>
+      </form>
+
+      <table className="w-full text-sm">
+        <tbody>
+          <tr className="border-b border-line-row">
+            <td className="py-1 text-ink-label">Direct cost of the work</td>
+            <td className="py-1 text-right tabular-nums text-ink">{money(recap.direct.total)}</td>
+          </tr>
+          {recap.steps.map((step) => (
+            <tr key={step.key} className="border-b border-line-row">
+              <td className="py-1 text-ink-body">
+                {step.label}
+                {step.ratePercent != null && <span className="ml-1 text-ink-muted">{step.ratePercent}%</span>}
+              </td>
+              <td className="py-1 text-right tabular-nums text-ink-body">+{money(step.amount)}</td>
+            </tr>
+          ))}
+          <tr>
+            <td className="py-2 font-medium text-ink">Bid total</td>
+            <td className="py-2 text-right font-semibold tabular-nums text-ink">{money(recap.bidTotal)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {recap.direct.uncategorisedLineCount > 0 && (
+        <p className="text-sm text-tag-amber-ink">
+          {recap.direct.uncategorisedLineCount} line
+          {recap.direct.uncategorisedLineCount === 1 ? " has" : "s have"} no cost type
+          {recap.direct.uncategorised > 0 ? ` (${money(recap.direct.uncategorised)})` : ""} — marked up at nothing. Set
+          the type on each line below.
+        </p>
+      )}
+
+      <div className="flex flex-col gap-2 border-t border-line-row pt-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={isApplying || recap.addedTotal === 0}
+            title="Raises each line's unit price so the estimate's lines add up to the bid. Do this once the price is settled."
+            onClick={() =>
+              startApply(async () => {
+                setApplyMessage(null);
+                const result = await applyBidRecap(jobId);
+                setApplyMessage(
+                  result.ok
+                    ? `Applied to ${result.value.lineCount} line${result.value.lineCount === 1 ? "" : "s"} — they now total ${money(result.value.appliedTotal)}.`
+                    : result.error,
+                );
+              })
+            }
+            className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isApplying ? "Applying…" : "Apply to line prices"}
+          </button>
+          {roundingGap !== 0 && recap.addedTotal !== 0 && (
+            <p className="text-xs text-ink-muted">
+              Applying lands at {money(landsAt)} — {money(Math.abs(roundingGap))}{" "}
+              {roundingGap < 0 ? "under" : "over"} the bid, because a unit price holds two decimals.
+            </p>
+          )}
+        </div>
+        {applied && (
+          <p className="text-xs text-ink-muted">
+            Last applied {applied.at} at {money(applied.total)}. Applying again marks the current prices up a second
+            time, so do it once the rates are settled.
+          </p>
+        )}
+        {applyMessage && <p className="text-sm text-ink-body">{applyMessage}</p>}
+      </div>
+
+      <div className="border-t border-line-row pt-3">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Cost type per line</p>
+        <ul className="flex flex-col gap-1">
+          {lines.map((line) => (
+            <CostTypeRow key={line.id} jobId={jobId} line={line} />
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function CostTypeRow({ jobId, line }: { jobId: string; line: RecapLineView }) {
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-2 text-sm">
+      <span className="min-w-0 flex-1 truncate text-ink-body" title={line.description}>
+        {line.description}
+      </span>
+      <select
+        aria-label={`Cost type for ${line.description}`}
+        defaultValue={line.costCategory ?? ""}
+        disabled={isPending}
+        onChange={(event) => {
+          const next = event.target.value;
+          setError(null);
+          startTransition(async () => {
+            const result = await setLineCostCategory(jobId, line.id, next);
+            if (!result.ok) setError(result.error);
+          });
+        }}
+        className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
+      >
+        <option value="">No cost type</option>
+        {COST_CATEGORY_VALUES.map((value: CostCategoryValue) => (
+          <option key={value} value={value}>
+            {COST_CATEGORY_LABELS[value]}
+          </option>
+        ))}
+      </select>
+      {error && <span className="w-full text-right text-xs text-tag-amber-ink">{error}</span>}
+    </li>
+  );
+}

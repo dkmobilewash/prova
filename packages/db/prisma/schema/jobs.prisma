@@ -166,6 +166,7 @@ model Job {
   outboundMessages               OutboundMessage[]
   proposalClauses                JobProposalClause[]
   wallRuns                       WallRun[]
+  bidRecap                       JobBidRecap?
 
   @@index([companyId])
   @@index([contactId])
@@ -196,6 +197,21 @@ model JobLineItem {
   laborHours            Decimal?             @db.Decimal(8, 2)
   craftClassificationId String?
   craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+
+  /// What KIND of cost this line is — material, self-performed labor,
+  /// subcontracted work, or other. Nullable with NO backfill, for the same
+  /// reason phaseCodeId below is: inferring "material" from a description
+  /// string is exactly the guess this column replaces, and a line nobody has
+  /// typed must read as uncoded rather than be filed under whatever matched.
+  ///
+  /// It is what lets the bid recap mark material up at a different rate from
+  /// labor (see bid-recap.prisma). An uncategorised line is REPORTED by the
+  /// recap and marked up at nothing — never at some default.
+  ///
+  /// Equipment has no member of CostCategory today and sits under OTHER; the
+  /// enum is keyed on by the QuickBooks account mapping (billing.prisma), so
+  /// adding one is a change in another lane.
+  costCategory CostCategory?
 
   /// Units per hour — the estimator's productivity assumption ("this crew
   /// hangs 62.5 SF/hr"). When set, estimated hours = quantity / productionRate

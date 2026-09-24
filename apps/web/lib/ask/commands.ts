@@ -1,4 +1,4 @@
-import type { AskToolDefinition } from "@prova/integrations";
+import type { AskToolDefinition, FoundLead, LeadSearchInput } from "@prova/integrations";
 import type { WebSuggestion } from "./webSuggestions";
 import { can, type Capability, type Principal } from "@/lib/permissions";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
@@ -17,6 +17,7 @@ import { scheduleCommands } from "./commands/schedule";
 import { pursuitCommands } from "./commands/pursuits";
 import { crewScheduleCommands } from "./commands/crewSchedule";
 import { contactCommands, contactExclusions } from "./commands/contacts";
+import { leadCommands } from "./commands/leads";
 
 /**
  * The commands: what Ask can DO, as distinct from what it can answer.
@@ -69,7 +70,8 @@ export type CommandName =
   | "add_bid_pursuit"
   | "set_pursuit_stage"
   | "schedule_crew"
-  | "add_contact";
+  | "add_contact"
+  | "find_bid_leads";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
  * composer) has no member on purpose: it cannot be registered. T4 is an
@@ -100,11 +102,27 @@ export type BidResearcher = (input: {
   location: string;
 }) => Promise<{ ok: true; suggestions: WebSuggestion[] } | { ok: false }>;
 
+/** Lead search: projects out to bid that nobody told the company about.
+ * Takes ONLY the five trades as the enum, a city and a two-letter state,
+ * an optional size band, a public-works yes/no and an ISO day — the type
+ * is the boundary on what may leave (packages/integrations/src/leads.ts
+ * says why it is stronger than BidResearcher's two typed strings). A
+ * separate model call, never a tool in the loop, so the query cannot be
+ * composed from company data the loop has read. Supplied by the Ask loop,
+ * bound to the company for usage accounting (lib/ask/leadFinder.ts);
+ * absent everywhere else, which is how the confirm tap and every test that
+ * does not pass one run with no web access at all. */
+export type LeadFinderInput = Pick<LeadSearchInput, "trades" | "region" | "sizeBand" | "publicWorkOnly" | "bidsAfter">;
+export type LeadFinder = (
+  input: LeadFinderInput,
+) => Promise<{ ok: true; leads: FoundLead[] } | { ok: false; reason: "unavailable" | "api" | "invalid" }>;
+
 export type CommandContext = Actor & {
   /** The person's calendar date, resolved on the server by viewerToday().
    * The only "today" a command may use. */
   today: string;
   research?: BidResearcher;
+  leads?: LeadFinder;
   /** The three onboarding answers off the Company row — how this business
    * works, so the model's wording fits the contractor in front of it
    * (lib/ask/business-scope-context.ts). Comes from the SESSION's company,
@@ -248,6 +266,7 @@ export const COMMANDS: CommandDefinition[] = [
   ...pursuitCommands,
   ...crewScheduleCommands,
   ...contactCommands,
+  ...leadCommands,
 ];
 
 export const EXCLUSIONS: Exclusion[] = [
