@@ -129,3 +129,336 @@ jobs:
 
       - name: Database tests
         run: pnpm test:db
+
+  # ==========================================================================
+  # THE FLOOR UNDER EVERYTHING ELSE: a real browser walks the product.
+  #
+  # On 2026-09-21 all four checks in the `ci` job above were green, 5,800+
+  # unit tests were green, every census was green — and creating one invoice
+  # made every authenticated page in the product render an error boundary.
+  # A person found it by clicking, hours before real contractors were due to
+  # log in. `apps/web/e2e/` was written that night so a machine does the
+  # first pass of that clicking, and CLAUDE.md calls it "the floor under" the
+  # click-list.
+  #
+  # Nothing ran it. Not this workflow, not preflight.sh, not any package
+  # script that CI invokes. Three files on `main` — e2e/run.mjs's header,
+  # playwright.public.config.ts's header and changelog.d/cyrus-e2e-mobile-ci.md
+  # — already say ".github/workflows/e2e.yml" runs it, and that file has never
+  # existed in this repository: #430 and #446 both had their workflow push
+  # REJECTED for want of the `workflow` OAuth scope and left the job as a diff
+  # in the PR body. Two jobs below, in ci.yml rather than a new file, because
+  # a second workflow is a second place to look and this repo has now paid
+  # twice for a CI job that lived in a PR description.
+  #
+  # WHY TWO JOBS AND NOT A STEP IN `ci`. Same reason `dbtest` is its own job,
+  # stated in its comment above: these need infrastructure the fast checks
+  # deliberately do not (Postgres, a production build, a browser), and the
+  # four-minute signal must not queue behind a twenty-minute one. A step
+  # inside `ci` would reuse that job's build, which sounds like a saving and
+  # is not: `ci` builds with a placeholder Clerk key and a fake DATABASE_URL,
+  # and the E2E build has to inline the throwaway database's URL and the
+  # test instance's publishable key. Different build, so nothing to reuse.
+  #
+  # WHY NO `concurrency:` CANCELLING SUPERSEDED RUNS. It would cut runner
+  # minutes and it is deliberately not here: a cancelled run reads exactly
+  # like a run that never started, and CLAUDE.md's #59 scar is a whole
+  # section about an absent check being misread as a passing one. Paying for
+  # the extra minutes is cheaper than that.
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # Every page a person can reach WITHOUT signing in, at 320, 375 and a 1280
+  # control. No secrets of any kind, so this one runs on day one and on every
+  # PR: a throwaway Postgres is the only thing it needs.
+  #
+  # `pnpm test:e2e:public` is the same command a human runs (root package.json
+  # → apps/web/e2e/run.mjs --public). CI calls the runner rather than
+  # re-implementing its six steps in YAML, so the thing CI proves is the thing
+  # Cyrus can reproduce, and the runner's own guards — it refuses a `_live_`
+  # Clerk key, it asserts its database URL through `scratchProblem()`, it
+  # deletes DATABASE_URL/DIRECT_URL/BLOB_READ_WRITE_TOKEN/ANTHROPIC_API_KEY
+  # out of the environment it hands its children — apply here too.
+  # --------------------------------------------------------------------------
+  e2e-public:
+    runs-on: ubuntu-latest
+    # A hung journey must fail, not burn six hours of runner time on the
+    # default. Measured budget: install ~1m, build ~5m, 24 tests ~1m.
+    timeout-minutes: 30
+
+    services:
+      # Same shape as `dbtest` above, including the health check, because
+      # without it the job races the container and fails on connect.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: prova
+          POSTGRES_PASSWORD: prova
+          # The name is load-bearing, not decoration. `scratchProblem()` in
+          # packages/db/scripts/connection-target.mjs — run by the runner, by
+          # playwright.config.ts at load, and again in global setup — accepts
+          # only a loopback host and a database ending `_test`/`_dbtest`.
+          # There is deliberately no env-var escape hatch, so a database not
+          # named like this one cannot be driven by this suite at all.
+          POSTGRES_DB: prova_e2e_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U prova"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # E2E_DATABASE_URL is the runner's documented way to use a Postgres that
+      # already exists instead of booting its embedded one — through the same
+      # guard, so it still has to be loopback and still has to end in _test.
+      # DATABASE_URL/DIRECT_URL are the same string because the `--list` step
+      # below loads playwright.config.ts, which asserts both at config load.
+      E2E_DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      DIRECT_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      # The `ci` job's comment explains this one: Next's build-traces step
+      # OOMs on this app with Node's default old-space on a GitHub runner.
+      NODE_OPTIONS: --max-old-space-size=8192
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      # Cache the BROWSER, then still run `playwright install`. The download
+      # (~170 MB) is what the cache saves; the command itself is a fast no-op
+      # on a hit that also repairs a partial cache, and `--with-deps` runs the
+      # apt step either way because system libraries are not in this cache.
+      # Keyed on the lockfile, so a Playwright version bump can never be
+      # served a stale binary — the worst case is one extra download.
+      - name: Cache the Chromium build
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ runner.os }}-
+
+      - name: Install Chromium
+        run: pnpm --filter @prova/web exec playwright install --with-deps chromium
+
+      # HOW MANY TESTS THE CONFIG COLLECTS, from a source that cannot drift
+      # with the run: `--list`, against the same config, before it runs. An
+      # exit code cannot tell "everything passed" from "collected nothing",
+      # "skipped everything" or "testMatch resolved empty" — CLAUDE.md's
+      # "absence of a failure is not a pass". e2e/verdicts.mjs checks the
+      # returned verdicts against this number after the run.
+      - name: Count the tests the public config collects
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/collected-public.json
+        run: |
+          set -e
+          set -o pipefail
+          pnpm --filter @prova/web exec playwright test \
+            --config e2e/playwright.public.config.ts --list --reporter=json
+          COUNT="$(node apps/web/e2e/collected.mjs "$PLAYWRIGHT_JSON_OUTPUT_NAME")"
+          echo "E2E_PUBLIC_COLLECTED=$COUNT" >> "$GITHUB_ENV"
+          echo "the public config collects $COUNT tests"
+
+      - name: Public pages at 320, 375 and 1280
+        run: pnpm test:e2e:public
+
+      # Never folded into the step above: `playwright test` exiting 0 is the
+      # claim, this is the check on it.
+      - name: Count the verdicts that came back
+        if: always()
+        run: |
+          set -e
+          node apps/web/e2e/verdicts.mjs \
+            apps/web/playwright-report-public/results.json "$E2E_PUBLIC_COLLECTED"
+
+      - name: Upload the public Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-public
+          path: |
+            apps/web/playwright-report-public
+            apps/web/test-results-public
+          retention-days: 14
+          if-no-files-found: warn
+
+  # --------------------------------------------------------------------------
+  # THE PILOT JOURNEY, and every other signed-in screen: sign in → the welcome
+  # questions → dashboard → a first job with a GC → an estimate line → the
+  # executed subcontract → "Mark as contracted" → retainage 10% → THE FIRST
+  # INVOICE → every authenticated page again → all eight job tabs → dashboard
+  # and jobs list → every main-nav destination, failing on any page that shows
+  # an error boundary, throws in the browser, or renders nothing.
+  #
+  # Signing in needs a Clerk DEVELOPMENT instance, because there is no
+  # application-code auth bypass anywhere in this suite and there is not going
+  # to be one: every signed-in spec goes through @clerk/testing/playwright
+  # against real `+clerk_test` users, and middleware.ts, lib/auth.ts and the
+  # capability checks are untouched by it. So this job needs two repository
+  # secrets, named E2E_* deliberately rather than after any existing secret —
+  # the same discipline as DEMO_DATABASE_URL, so that two Clerk instances that
+  # look identical in the dashboard can never be confused:
+  #
+  #   E2E_CLERK_PUBLISHABLE_KEY   pk_test_… from striking-jaybird-….clerk.accounts.dev
+  #   E2E_CLERK_SECRET_KEY        sk_test_… from the same DEVELOPMENT instance
+  #
+  # NOT the Production instance (cstream.ai, `_live_` keys — refused here and
+  # twice more downstream), and NOT Cyrus's own Clerk app (smart-rattler-7073),
+  # which is a different application whose users are not these personas. See
+  # CLAUDE.md's three-Clerk-instances table.
+  #
+  # UNTIL THOSE EXIST THIS JOB IS RED, on its first step, in five seconds,
+  # naming both secrets. It does not skip and it is not continue-on-error: a
+  # green check for a suite that signed nobody in is precisely the vacuous
+  # green this whole directory exists to end, and `migrate.yml` already sets
+  # the house style of failing loudly on a missing secret rather than quietly
+  # doing nothing.
+  # --------------------------------------------------------------------------
+  e2e:
+    runs-on: ubuntu-latest
+    # 36 tests, one of them a 12-step serial journey that opens every nav
+    # destination. Local runs finish the spine in ~55s after a ~5m build;
+    # this leaves room for a cold cache and Playwright's one CI retry.
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: prova
+          POSTGRES_PASSWORD: prova
+          POSTGRES_DB: prova_e2e_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U prova"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      E2E_DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      DIRECT_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY }}
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: "/sign-in"
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: "/sign-up"
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL: "/dashboard"
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL: "/dashboard"
+      NODE_OPTIONS: --max-old-space-size=8192
+
+    steps:
+      # FIRST, before checkout, before install, before anything that costs a
+      # minute: the two secrets this job cannot work without. Five seconds to
+      # a named failure instead of eight minutes to a confusing one.
+      - name: Fail loudly if the Clerk test secrets are missing
+        run: |
+          set -e
+          missing=""
+          if [ -z "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" ]; then
+            missing="$missing E2E_CLERK_PUBLISHABLE_KEY"
+          fi
+          if [ -z "$CLERK_SECRET_KEY" ]; then
+            missing="$missing E2E_CLERK_SECRET_KEY"
+          fi
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing — the E2E journey signs real Clerk test users in and cannot run without them."
+            echo "Add them under Settings → Secrets and variables → Actions, from the"
+            echo "DEVELOPMENT Clerk instance (striking-jaybird-….clerk.accounts.dev):"
+            echo "  E2E_CLERK_PUBLISHABLE_KEY = its pk_test_… key"
+            echo "  E2E_CLERK_SECRET_KEY      = its sk_test_… key"
+            echo "NOT the Production instance (cstream.ai, pk_live_/sk_live_ — refused"
+            echo "by this job and twice more downstream), and NOT smart-rattler-7073,"
+            echo "which is a different Clerk application. See CLAUDE.md."
+            echo "This job FAILS rather than skipping on purpose: a green check for a"
+            echo "suite that signed nobody in would mean nothing."
+            exit 1
+          fi
+          case "$CLERK_SECRET_KEY" in
+            sk_live_*)
+              echo "::error::E2E_CLERK_SECRET_KEY is a PRODUCTION (sk_live_) key. This suite MINTS users; refusing."
+              exit 1
+              ;;
+          esac
+          case "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" in
+            pk_live_*)
+              echo "::error::E2E_CLERK_PUBLISHABLE_KEY is a PRODUCTION (pk_live_) key. Refusing."
+              exit 1
+              ;;
+          esac
+          echo "Clerk test keys present, and both are development (_test_) keys."
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Cache the Chromium build
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ runner.os }}-
+
+      - name: Install Chromium
+        run: pnpm --filter @prova/web exec playwright install --with-deps chromium
+
+      - name: Count the tests the signed-in config collects
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/collected.json
+        run: |
+          set -e
+          set -o pipefail
+          pnpm --filter @prova/web exec playwright test \
+            --config e2e/playwright.config.ts --list --reporter=json
+          COUNT="$(node apps/web/e2e/collected.mjs "$PLAYWRIGHT_JSON_OUTPUT_NAME")"
+          echo "E2E_COLLECTED=$COUNT" >> "$GITHUB_ENV"
+          echo "the signed-in config collects $COUNT tests"
+
+      # `pnpm test:e2e` — the same one command Cyrus runs. It applies every
+      # committed migration to the scratch database, builds the app the way
+      # production runs it, and drives Chromium. The journey's own steps are
+      # numbered 1…11 in the list-reporter output, so a failure names the step
+      # rather than a file.
+      - name: The pilot journey, in a real browser
+        run: pnpm test:e2e
+
+      - name: Count the verdicts that came back
+        if: always()
+        run: |
+          set -e
+          node apps/web/e2e/verdicts.mjs \
+            apps/web/playwright-report/results.json "$E2E_COLLECTED"
+
+      - name: Upload the Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 14
+          if-no-files-found: warn
