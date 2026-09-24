@@ -54,7 +54,17 @@ test("a failed contact save keeps what was typed", async ({ page }) => {
 
   await page.getByRole("button", { name: "Save contact" }).click();
 
-  await expect(page.getByText('"paymentTermsDays" must be a number')).toBeVisible();
+  // The IDEA, not the wording. This asserted `"paymentTermsDays" must be a
+  // number` — the sentence the app stopped saying on 2026-09-21, when one
+  // parser (lib/numeric-input.ts) took over and started naming the field as
+  // the screen labels it instead of reading back the form key. The spec kept
+  // asserting the old string and could only fail.
+  //
+  // The full sentence is pinned in `lib/actions/company.dbtest.ts`, which is
+  // the right place for it: a unit test can assert punctuation without being
+  // brittle about where a line wrapped. Here the question is only whether a
+  // refusal reached the screen at all, so match on the idea.
+  await expect(page.getByText(/Payment terms has to be a whole number/)).toBeVisible();
   await expect(nameInput).toHaveValue(typedName);
   await expect(page.locator('input[name="paymentTermsDays"]')).toHaveValue("abc");
 });
