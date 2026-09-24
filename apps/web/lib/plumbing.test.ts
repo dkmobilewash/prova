@@ -60,6 +60,41 @@ describe("workflows only run scripts that exist on this ref", () => {
     scriptInvocations(readFileSync(join(dir, f), "utf8")).map((i) => ({ workflow: f, ...i })),
   );
 
+  it("parses as many invocations as a dumber scanner finds", () => {
+    /* THE SIZE ASSERTION, AND IT WAS MISSING UNTIL 2026-09-24.
+     *
+     * `it.each(invocations)` generates ONE TEST PER INVOCATION, so a parser
+     * that finds nothing generates no tests and this describe passes with
+     * nothing in it — the 180-of-181 shape in CLAUDE.md, wearing
+     * `it.each`'s clothes instead of a loop's. Proved by mutation: with
+     * `scriptInvocations`' regex narrowed so it matched nothing, a workflow
+     * genuinely pointing at a deleted script went green and the file's test
+     * count dropped from 42 to 33 with no failure anywhere. The check above
+     * guards `files`, which was never the fragile half.
+     *
+     * The independent count knows nothing about `working-directory:` or
+     * about resolving a path: it counts the times the word `node` is
+     * followed by something ending `.mjs` on the same line, by a separate
+     * pattern, over the same text. Two derivations of the same number, so
+     * neither can shrink quietly.
+     */
+    const dumb = files.reduce((n, f) => {
+      const text = readFileSync(join(dir, f), "utf8");
+      return n + (text.match(/node[^\n]*?\.mjs/g) ?? []).length;
+    }, 0);
+    expect(
+      invocations.length,
+      "scriptInvocations() and a plain line scan disagree about how many `node …mjs` " +
+        "commands these workflows run. Fix the pattern — every invocation it misses is a " +
+        "test below that is never generated, and a describe that generates no tests passes.",
+    ).toBe(dumb);
+    expect(
+      invocations.length,
+      "no workflow appears to run any .mjs script at all, so every assertion below is " +
+        "about an empty set",
+    ).toBeGreaterThanOrEqual(5);
+  });
+
   it.each(invocations)("$workflow runs $script, which exists", ({ workflow, script, resolved }) => {
     expect(
       existsSync(resolved),
