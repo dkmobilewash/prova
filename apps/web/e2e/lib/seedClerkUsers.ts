@@ -39,7 +39,7 @@ import { PERSONAS, type PersonaKey } from "./personas";
  * coverage while matching nothing. Clerk's own `code` and `longMessage`
  * are printed instead, plus one pointer that is true whatever the code.
  */
-type ClerkErrorItem = { code: string; message?: string; longMessage?: string };
+type ClerkErrorItem = { code: string; message?: string; longMessage?: string; meta?: unknown };
 
 /**
  * Shape-checked rather than `instanceof`. The class is re-exported by
@@ -48,6 +48,16 @@ type ClerkErrorItem = { code: string; message?: string; longMessage?: string };
  * class and silently return false — putting us straight back to a bare
  * "Unprocessable Entity". A duck-typed check cannot fail that way.
  */
+/** Never let the diagnostic itself throw — a circular structure here
+ * would replace the error being reported with a different one. */
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "(unserialisable)";
+  }
+}
+
 function clerkErrorItems(error: unknown): ClerkErrorItem[] {
   const errors = (error as { errors?: unknown } | null | undefined)?.errors;
   if (!Array.isArray(errors)) return [];
@@ -64,7 +74,10 @@ export function describeClerkSeedFailure(
 
   const said = items.length
     ? items
-        .map((e) => `  - [${e.code}] ${e.message ?? ""}${e.longMessage ? `\n    ${e.longMessage}` : ""}`)
+        .map((e) => {
+          const meta = e.meta && Object.keys(e.meta as object).length ? `\n    meta: ${safeJson(e.meta)}` : "";
+          return `  - [${e.code}] ${e.message ?? ""}${e.longMessage ? `\n    ${e.longMessage}` : ""}${meta}`;
+        })
         .join("\n")
     : `  (no structured detail — raw: ${error instanceof Error ? error.message : String(error)})`;
 
@@ -81,10 +94,20 @@ export function describeClerkSeedFailure(
     "or in the app: this suite MINTS its six users, and every address carries",
     "Clerk's `+clerk_test` suffix (see personas.ts).",
     "",
-    "Look at Configure → Restrictions on THAT instance first — an allowlist,",
-    "a blocklist, or 'Block email subaddresses' each refuse an address the",
-    "Backend API would otherwise be entitled to create, and each reports as a",
-    "422. Name the instance before changing anything; there is more than one.",
+    "TWO FAMILIES produce a 422 here and the `code` above is what tells them",
+    "apart — do not reason from the status alone:",
+    "  · a required field this call does not send (legal consent, username,",
+    "    phone) — the instance wants it, `meta` usually names it;",
+    "  · a rule refusing the address (allowlist, blocklist, blocked email",
+    "    subaddresses) under Configure → Restrictions.",
+    "Name the instance before changing anything; there is more than one.",
+    "",
+    // Written after `[form_data_missing] missing data` arrived with no
+    // longMessage and no printed meta, because the first version of this
+    // function chose which fields to show — and the field it did not
+    // choose was the one that would have named the cause. Everything
+    // Clerk sent is dumped verbatim so that cannot happen twice.
+    `Raw, so nothing Clerk sent is lost to this formatter: ${safeJson(items)}`,
   ]
     .filter((line): line is string => line !== null)
     .join("\n");

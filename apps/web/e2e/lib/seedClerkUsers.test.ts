@@ -68,7 +68,60 @@ describe("describeClerkSeedFailure", () => {
     // MINTED against an instance; a 422 is that instance's policy.
     const text = describeClerkSeedFailure(clerkRefusal, persona);
     expect(text).toMatch(/Restrictions/);
-    expect(text).toMatch(/Block email subaddresses/);
+    // Matched per word rather than as a phrase: the message is hard-wrapped
+    // for a CI log, so asserting an exact phrase makes the test fail on a
+    // line break rather than on a missing idea.
+    expect(text).toMatch(/subaddresses/);
+    expect(text).toMatch(/allowlist/);
+  });
+
+  it("names both families of 422, because the first version named one", () => {
+    // The first run of this function in CI returned [form_data_missing],
+    // a MISSING FIELD — and the message told the reader to go look at
+    // Restrictions, which is the other family entirely. A pointer that is
+    // confidently wrong is worse than no pointer; it spends somebody's
+    // afternoon in the wrong dashboard page.
+    const text = describeClerkSeedFailure(clerkRefusal, persona);
+    expect(text).toMatch(/required field/i);
+    expect(text).toMatch(/refusing the address/i);
+  });
+
+  it("prints meta in the readable section, not only inside the raw dump", () => {
+    // The first version of this test asserted `toContain("username")` and
+    // was VACUOUS: the raw dump at the bottom carries the same string, so
+    // deleting the structured meta line entirely still passed. Caught by
+    // mutation M4, which went green when it should have gone red.
+    //
+    // A reader scans the labelled section; the raw dump is a single long
+    // JSON line they resort to. Both must carry it, and only the labelled
+    // form proves the labelled section does.
+    const withMeta = {
+      ...clerkRefusal,
+      errors: [{ code: "form_data_missing", message: "missing data", meta: { paramName: "username" } }],
+    };
+    const text = describeClerkSeedFailure(withMeta, persona);
+    expect(text).toContain('meta: {"paramName":"username"}');
+  });
+
+  it("dumps everything Clerk sent, so an unanticipated field cannot be lost", () => {
+    // The reason this exists: the first version chose which fields to
+    // print, and the field it did not choose was the one that named the
+    // cause. A formatter must not be able to hide its own input.
+    const exotic = {
+      ...clerkRefusal,
+      errors: [{ code: "form_data_missing", message: "missing data", somethingNew: "the field nobody expected" }],
+    };
+    const text = describeClerkSeedFailure(exotic, persona);
+    expect(text).toContain("the field nobody expected");
+  });
+
+  it("does not throw on a circular error object", () => {
+    // The diagnostic replacing the failure it is reporting would be the
+    // worst possible outcome here.
+    const circular: Record<string, unknown> = { status: 422, errors: [{ code: "x", message: "y" }] };
+    circular.self = circular;
+    (circular.errors as Record<string, unknown>[])[0].back = circular;
+    expect(() => describeClerkSeedFailure(circular, persona)).not.toThrow();
   });
 
   it("reads a duck-typed error, not an instanceof", () => {

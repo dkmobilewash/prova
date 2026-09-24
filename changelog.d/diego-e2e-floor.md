@@ -73,5 +73,44 @@ Nothing here changes what the suite tests. It changes what happens when the
 suite cannot start, which on 2026-09-24 was the difference between a
 diagnosis and a guess.
 
-**Still open:** the underlying 422 itself. This PR is what tells us which
-rule it is; the next `e2e` run reads it out.
+## It ran, and it caught the author choosing the wrong fields
+
+The first version shipped, CI ran it, and the answer came back:
+
+```
+Clerk said (HTTP 422):
+  - [form_data_missing] missing data
+  clerkTraceId: 26ebe7ad7766ee667df8fe5df9f576f7
+```
+
+**Which is a MISSING FIELD, not a restriction** — the other family entirely
+from the one the message confidently told the reader to go and look at.
+Two things were wrong, and both are the same mistake:
+
+- the pointer named Restrictions and nothing else, so it aimed an
+  afternoon at the wrong dashboard page. It now names both families and
+  says the `code` is what distinguishes them;
+- `meta` was **not printed**, and `meta` is where Clerk names the missing
+  parameter. The formatter had chosen which fields to show, and the field
+  it did not choose was the one that would have ended the investigation.
+
+So the formatter no longer chooses. It prints the labelled fields **and**
+dumps every error object verbatim, because the lesson of the round trip is
+that the useful field is the one you did not anticipate. `safeJson` makes
+that dump non-throwing — a diagnostic that replaces the error it is
+reporting is the worst available outcome.
+
+**And the second vacuous test of the day, in a test written to catch the
+first.** The new "prints meta" case asserted `toContain("username")` and
+passed with the structured meta line deleted entirely, because the raw
+dump at the bottom carries the same string. Mutation M4 went GREEN when it
+should have gone red. It asserts the labelled form now.
+
+| mutation | result |
+| --- | --- |
+| stop printing `meta` | RED *(green until the test was fixed)* |
+| drop the raw dump | RED |
+| let `safeJson` throw | RED |
+
+**Still open:** what `form_data_missing` is actually asking for. The next
+run prints `meta`, which should name it.
