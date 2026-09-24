@@ -41,6 +41,8 @@ import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from 
 import { ActionForm } from "@/components/ActionForm";
 import { WallSchedule } from "@/components/WallSchedule";
 import { openingsFromJson, scheduleLines, type WallComponentBasis, type WallTypeInput } from "@/lib/wall-assemblies";
+import { BidRecapPanel, type RecapLineView } from "@/components/BidRecapPanel";
+import type { CostCategoryValue, RecapRates } from "@/lib/bid-recap";
 import {
   addLineItem,
   addLineItemFromCatalog,
@@ -153,7 +155,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
 
   const isEstimateStage = job.status === "ESTIMATE";
 
-  const [catalogEntries, craftClassifications, phaseCodes, employerBurdenRates, wallTypes, wallRuns] =
+  const [catalogEntries, craftClassifications, phaseCodes, employerBurdenRates, wallTypes, wallRuns, bidRecapRow, bidDefaults] =
     await Promise.all([
     prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
     prisma.craftClassification.findMany({
@@ -190,6 +192,11 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
           orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         })
       : Promise.resolve([]),
+    // The bid recap, and the company's defaults which pre-fill a job that has
+    // no recap of its own yet — the Contact.defaultRetainagePercent pattern:
+    // a starting point, never a value enforced from elsewhere afterwards.
+    isEstimateStage ? prisma.jobBidRecap.findFirst({ where: { jobId: job.id, companyId: company.id } }) : Promise.resolve(null),
+    isEstimateStage ? prisma.companyBidDefaults.findUnique({ where: { companyId: company.id } }) : Promise.resolve(null),
   ]);
 
   const wallTypeInputs: WallTypeInput[] = wallTypes.map((type) => ({
@@ -221,6 +228,30 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
     wallRunViews.map((run) => ({ ...run, lengthFt: Number(run.lengthFt), heightFt: run.heightFt != null ? Number(run.heightFt) : null })),
     wallTypeInputs,
   ).unpricedRuns.map((run) => run.label);
+
+  const RECAP_RATE_KEYS = [
+    "materialMarkupPercent",
+    "laborMarkupPercent",
+    "subcontractorMarkupPercent",
+    "otherMarkupPercent",
+    "escalationPercent",
+    "materialTaxPercent",
+    "overheadPercent",
+    "profitPercent",
+    "bondPercent",
+    "contingencyPercent",
+  ] as const;
+  const recapSource = bidRecapRow ?? bidDefaults;
+  const bidRecapRates: RecapRates = Object.fromEntries(
+    RECAP_RATE_KEYS.map((key) => [key, recapSource?.[key] != null ? Number(recapSource[key]) : null]),
+  );
+  const bidRecapLines: RecapLineView[] = job.lineItems.map((item) => ({
+    id: item.id,
+    description: item.description,
+    quantity: Number(item.quantity),
+    unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
+    costCategory: (item.costCategory as CostCategoryValue | null) ?? null,
+  }));
 
   const laborRateDate = laborRateDateFor(job, new Date());
   const schedulesByCraft = new Map(
@@ -589,6 +620,30 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
           <section className="mb-10" data-tour="job-wall-schedule">
             <h2 className="mb-3 text-lg font-semibold text-ink">Wall schedule</h2>
             <WallSchedule jobId={job.id} types={wallTypeInputs} runs={wallRunViews} unpricedRunLabels={unpricedWallRuns} />
+          </section>
+
+          <section className="mb-10" data-tour="job-bid-recap">
+            <h2 className="mb-1 text-lg font-semibold text-ink">Bid recap</h2>
+            <p className="mb-3 text-sm text-ink-body">
+              What the work costs to do, and what it is sold for. Markup is per cost type, so material and
+              subcontracted work need not carry the same rate as your own crew.
+              {bidRecapRow == null && bidDefaults != null
+                ? " These are your company defaults — saving them here keeps them on this job."
+                : ""}
+            </p>
+            <BidRecapPanel
+              jobId={job.id}
+              lines={bidRecapLines}
+              rates={bidRecapRates}
+              applied={
+                bidRecapRow?.appliedAt != null
+                  ? {
+                      at: formatInstant(bidRecapRow.appliedAt, timeZone, "numeric"),
+                      total: Number(bidRecapRow.appliedTotal ?? 0),
+                    }
+                  : null
+              }
+            />
           </section>
 
           <section className="mb-10" data-tour="job-line-items">

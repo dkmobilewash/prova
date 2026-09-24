@@ -262,6 +262,30 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: byCompany,
   },
   {
+    key: "bidRecaps",
+    model: "jobBidRecap",
+    label: "Bid recap per job",
+    note: "The markup, overhead, profit, tax, bond and contingency rates each bid was built with — and when they were applied to the line prices.",
+    columns: [
+      "id", "jobId", "materialMarkupPercent", "laborMarkupPercent", "subcontractorMarkupPercent",
+      "otherMarkupPercent", "escalationPercent", "materialTaxPercent", "overheadPercent", "profitPercent",
+      "bondPercent", "contingencyPercent", "appliedAt", "appliedTotal", "createdAt", "updatedAt",
+    ],
+    scope: byCompany,
+  },
+  {
+    key: "bidDefaults",
+    model: "companyBidDefaults",
+    label: "Default markup rates",
+    note: "Your standing markup, overhead and profit rates, which pre-fill a new job's recap.",
+    columns: [
+      "id", "materialMarkupPercent", "laborMarkupPercent", "subcontractorMarkupPercent", "otherMarkupPercent",
+      "escalationPercent", "materialTaxPercent", "overheadPercent", "profitPercent", "bondPercent",
+      "contingencyPercent", "createdAt", "updatedAt",
+    ],
+    scope: byCompany,
+  },
+  {
     key: "rfis",
     model: "rfi",
     label: "RFIs",

@@ -144,6 +144,11 @@ export const HANDLED_MODELS = [
   // company-level WallType library is not: these scripts never delete a
   // company.
   "WallRun",
+  // A job's bid recap (bid-recap.prisma). Keyed on jobId, RESTRICT on Job, and
+  // deleting the job's line items does not reach it — the #227 shape, so it is
+  // here AND in both scripts' del() order. CompanyBidDefaults is not: these
+  // scripts never delete a company.
+  "JobBidRecap",
   // WH-347 payroll numbers for a job's weeks, and the per-job counter that
   // issues them (#227 shape: jobId-keyed RESTRICT children of Job that no
   // other delete reaches). The numbers are a sequence record, not signed

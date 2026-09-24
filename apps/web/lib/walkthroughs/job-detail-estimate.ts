@@ -17,6 +17,12 @@ export const jobDetailEstimateWalkthrough: Walkthrough = {
         "Add each run of wall by its type, length and height — the tag from the drawings, like W1. The studs, track and board are worked out and added to the lines below, and change when you change a run.",
     },
     {
+      anchor: "job-bid-recap",
+      title: "Turn the cost into a bid",
+      body:
+        "The lines below are what the work costs you; this is what you sell it for — markup by kind of cost, then overhead, profit, tax and bond. Set the cost type on each line so material and labour need not carry the same markup. Press Apply to line prices once the number is settled.",
+    },
+    {
       anchor: "job-line-items",
       title: "Price the job",
       body:
