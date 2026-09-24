@@ -1,5 +1,6 @@
 import { localToday } from "./local-today";
 import type {
+  AlertRow,
   CreateFieldReportInput,
   Craft,
   CrewMember,
@@ -85,6 +86,12 @@ export async function updateFieldReport(
 
 export async function listJobs(token: string): Promise<Job[]> {
   return request(`/api/v1/jobs`, { token });
+}
+
+/** The company alert list — the phone sends its own calendar day, the
+ * same convention as the schedule reads. */
+export async function listAlerts(token: string): Promise<AlertRow[]> {
+  return request(`/api/v1/alerts?today=${localToday()}`, { token });
 }
 
 export async function listToolboxTalks(jobId: string, token: string): Promise<ToolboxTalk[]> {
