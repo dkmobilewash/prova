@@ -36,6 +36,27 @@ Vercel deployment and repo settings). Each drives their own agent.
   creating one invoice crashed every authenticated page. It does not
   replace the click-list; it is the floor under it. Read
   `apps/web/e2e/run.mjs`'s header before changing what it touches.
+
+  **CI runs it now — `ci.yml`'s `e2e-public` and `e2e` jobs — and half of it
+  is RED until two repository secrets exist.** `e2e-public` needs no
+  credentials and walks every page reachable without signing in, at 320, 375
+  and a 1280 control. `e2e` is the pilot journey and everything else behind
+  sign-in; it fails on its FIRST step, in seconds, naming
+  `E2E_CLERK_PUBLISHABLE_KEY` and `E2E_CLERK_SECRET_KEY` — the
+  `striking-jaybird` DEVELOPMENT instance's `pk_test_`/`sk_test_` keys, which
+  are Diego's to add. It fails rather than skips on purpose: a green check
+  for a suite that signed nobody in is the vacuous green this whole
+  directory exists to end. Until they are added, NOTHING behind sign-in is
+  checked in a browser by CI, whatever colour the run is; read the `e2e`
+  job's first step before believing otherwise.
+
+  Two things that entry should not be read as saying. It does NOT mean the
+  laptop keyring grew the `workflow` scope — it has not, and the Git-rules
+  bullet below stands; these jobs were pushed from a cloud container whose
+  token is a different token. And `pnpm test:e2e` still cannot run inside an
+  agent container at all: the Clerk FAPI host and `cdn.playwright.dev` are
+  both denied by the egress proxy, so there is no browser to drive. The CI
+  run on your own PR is where the journey is either proved or not.
 - Say plainly when something is your fault, what broke, and what changes.
 
 ## Coordination
