@@ -112,6 +112,57 @@ should have gone red. It asserts the labelled form now.
 | drop the raw dump | RED |
 | let `safeJson` throw | RED |
 
+## A hydration mismatch on every authenticated page, for every Mac user
+
+Found while chasing the E2E hydration failures, and it is **not** what E2E
+was seeing — that distinction is the whole entry.
+
+`SearchLauncher` picked its shortcut hint during render:
+
+```tsx
+const shortcutLabel = isMac() ? "⌘K" : "Ctrl K";
+```
+
+The server and the browser are different machines. Vercel runs Linux, so
+the HTML says "Ctrl K"; a reader on a Mac, iPhone or iPad gets "⌘K" on the
+first client render. Two different text nodes in the same place on the
+first render is a React hydration mismatch — and this component is in the
+Topbar, which `app/(app)/layout.tsx` mounts on EVERY authenticated page.
+One error per page load, per Mac user, since `c538c3ad` (2026-09-20).
+
+**Why nothing caught it.** The `typeof navigator === "undefined"` guard
+reads like it handles the server, and that is exactly what made it look
+safe. It only stops the call from THROWING. Answering DIFFERENTLY on the
+server than in the browser is the entire defect, and a guard that
+confidently returns `false` is how it was produced.
+
+**And why E2E was blind to it, which is the part worth keeping.** CI is
+`ubuntu-latest` with a Linux Chromium, so both sides answer "Ctrl K" and
+agree. The suite that exists to catch hydration mismatches could not see
+this one, because the runner and the browser are the same platform. A
+Mac-only defect is invisible to a Linux-only harness — so the test for it
+is a unit test that RENDERS BOTH PLATFORMS, not another spec.
+
+`searchLauncherHydration.test.tsx` calls `renderToString` twice with
+nothing changing but the `navigator` the render can see, and requires the
+markup to be identical — which is the comparison hydration itself makes. A
+lint rule about `navigator` could be satisfied without that being true;
+this cannot.
+
+| mutation | result |
+| --- | --- |
+| restore the render-time `isMac()` | RED, 3 failed — names ⌘K against Ctrl K |
+
+It pins the Linux-browser case too, precisely because that case ALWAYS
+passed: a guard that only holds on the machine which never reproduces the
+defect is not a guard.
+
+**Still open, and explicitly not claimed as fixed by this:** the 15
+mismatches the E2E run reports on `main`. They cannot be this bug, for the
+reason above. Next step is to make production React name them — it reports
+`#418` with args `["HTML", ""]`, which names nothing — by running the
+suite once against `next dev`.
+
 ## And the raw dump paid for itself on the very next run
 
 `meta` came back **empty** — `{}`. The answer was in `longMessage`, which
