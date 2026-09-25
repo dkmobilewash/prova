@@ -1,0 +1,110 @@
+/// ESTIMATE TEMPLATES — the shape of a job you bid over and over, saved once.
+///
+/// A sub who bids tenant improvements bids the same twelve lines every time:
+/// track, studs, board, tape, corner bead, finish, clean. Today each one is
+/// added from the catalog ONE AT A TIME (`addLineItemFromCatalog` takes a
+/// single `catalogEntryId`), so the twelfth bid of the month is typed the same
+/// way as the first.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// THIS DOES NOT HOLD LINE-ITEM DATA. IT HOLDS POINTERS TO THE CATALOG.
+/// ─────────────────────────────────────────────────────────────────────────
+///
+/// ARCHITECTURE.md opens with the one non-negotiable rule in this codebase:
+/// "there is exactly one place line-item data lives… If you're about to add a
+/// table like `ContractLineItem`, `BudgetLineItem`, or `EstimateItem` — stop."
+/// An estimate template is exactly the shape that rule is aimed at, so it is
+/// worth saying precisely why this is not that table.
+///
+/// `JobLineItem` is a JOB's scope — the thing every view reads, the thing a
+/// contract, budget, invoice and cost entry all hang off. Nothing here is a
+/// job's anything. This is COMPANY REFERENCE DATA that GENERATES those rows,
+/// which the schema already does twice: `LineItemCatalogEntry` ("a catalog
+/// entry is a template for that call") and `WallTypeComponent` ("one material
+/// or labor item in a wall type's assembly"). This is the third, and it is
+/// modelled on the second deliberately — right down to `catalogEntryId` being
+/// nullable and SET NULL, so re-pricing the catalog never reaches back into a
+/// line already sitting on somebody's estimate.
+///
+/// WHAT IS DELIBERATELY NOT HERE: a back-link from a template item to the
+/// lines it generated.
+///
+/// `WallTypeComponent` HAS one (`jobLineItems JobLineItem[]`) and needs it,
+/// because a wall schedule RE-SYNCS: change the run length and
+/// `syncWallScheduleLines` finds its own lines and updates them in place. A
+/// template is not that. It is a STARTING POINT — once applied, those lines
+/// belong to the estimator, who will re-price them, split them, delete half of
+/// them and add three more. A back-link would invite a "refresh from template"
+/// button, and that button would silently overwrite exactly the work the
+/// estimator came here to do. Applying a template twice appends twice, and
+/// that is visible on the screen immediately rather than resolved by a rule
+/// nobody remembers.
+
+/// A named set of catalog lines, for a kind of job this company bids often.
+model EstimateTemplate {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// What the estimator calls it — "TI, metal stud + drywall", "Exterior
+  /// EIFS re-clad". Unique per company so two people cannot make two
+  /// "Standard TI" templates that quietly differ.
+  name String
+
+  /// Which trade this is for, so a framing template is not offered on an
+  /// EIFS bid. Optional: plenty of templates are general.
+  tradeScope TradeScope?
+
+  /// What it is for and when to reach for it, in the estimator's words.
+  description String?
+
+  items EstimateTemplateItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+/// One line a template will add to an estimate.
+///
+/// Scoped through its template rather than carrying its own `companyId`, the
+/// same call `WallTypeComponent` makes — one owner, reached one way.
+model EstimateTemplateItem {
+  id         String           @id @default(cuid())
+  templateId String
+  template   EstimateTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  /// What the line will say. Held here rather than read from the catalog at
+  /// apply time for one reason: a template item may point at no catalog entry
+  /// at all, and a template that cannot hold "Scaffold — by others" until
+  /// somebody catalogues it is a template nobody finishes writing.
+  description String
+  unit        String?
+
+  /// The quantity the line starts at, or NULL for "the takeoff decides".
+  ///
+  /// A null becomes `JobLineItem.quantity`'s own default of 1, NOT zero, and
+  /// the difference matters: a line of "1 SF" is obviously unfinished and
+  /// gets fixed, while a line of "0 SF" prices to nothing and makes a total
+  /// look complete. Being visibly wrong is the safe direction here.
+  defaultQuantity Decimal? @db.Decimal(12, 2)
+
+  /// Where the generated line's price comes from. A template link, exactly as
+  /// `WallTypeComponent.catalogEntryId` puts it: re-pricing the catalog never
+  /// reaches back into a line already on an estimate.
+  ///
+  /// Nullable and SET NULL, so deleting a catalog entry leaves the template
+  /// item standing as plain text rather than taking the template down with
+  /// it.
+  catalogEntryId String?
+  catalogEntry   LineItemCatalogEntry? @relation(fields: [catalogEntryId], references: [id], onDelete: SetNull)
+
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([templateId])
+}

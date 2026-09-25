@@ -210,6 +210,12 @@ model LineItemCatalogEntry {
   /// Wall-type components priced from this entry. A template link only.
   wallTypeComponents WallTypeComponent[]
 
+  /// Estimate-template items pointing at this entry — see
+  /// estimate-templates.prisma. A template link only, and SET NULL on
+  /// delete: removing a catalog entry leaves the template item standing as
+  /// plain text rather than taking the template down with it.
+  estimateTemplateItems EstimateTemplateItem[]
+
   /// What vendors have quoted for this item. Reference data for pricing,
   /// in the same family as this entry's own defaults. Cyrus, Sheet 19.
   ///

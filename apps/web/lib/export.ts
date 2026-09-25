@@ -243,6 +243,32 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: byCompany,
   },
   {
+    key: "estimateTemplates",
+    model: "estimateTemplate",
+    label: "Estimate templates",
+    note:
+      "The shape of a job this company bids often, saved once. Reference data that GENERATES " +
+      "estimate lines -- it is not a second copy of line-item data, and applying a template " +
+      "appends lines rather than linking to them, so nothing here tracks what it produced.",
+    columns: ["id", "name", "tradeScope", "description", "createdAt", "updatedAt"],
+    scope: byCompany,
+  },
+  {
+    key: "estimateTemplateItems",
+    model: "estimateTemplateItem",
+    label: "Estimate template lines",
+    note:
+      "What each template adds. An empty defaultQuantity means the takeoff decides, and the " +
+      "generated line starts at 1 rather than 0 -- a line of zero prices to nothing and makes a " +
+      "total look complete. catalogEntryId is a template link only: re-pricing the catalog never " +
+      "reaches back into a line already on an estimate.",
+    columns: [
+      "id", "templateId", "description", "unit", "defaultQuantity", "catalogEntryId",
+      "sortOrder", "createdAt", "updatedAt",
+    ],
+    scope: (companyId: string) => ({ template: { companyId } }),
+  },
+  {
     key: "wallTypeComponents",
     model: "wallTypeComponent",
     label: "Wall type parts",

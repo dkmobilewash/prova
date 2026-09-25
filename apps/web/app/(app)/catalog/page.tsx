@@ -14,6 +14,7 @@ import type { EmployerBurdenRates } from "@/lib/labor-job-cost";
 import { employerBurdenPercentOnDay, laborCostBasisLabel } from "@/lib/employer-burden";
 import { serverToday } from "@/lib/serverToday";
 import { CatalogImport } from "@/components/CatalogImport";
+import { EstimateTemplates, type TemplateRow } from "@/components/EstimateTemplates";
 import { CatalogEntryRow } from "@/components/CatalogEntryRow";
 import { TRADE_SCOPE_OPTIONS, tradeScopeLabel } from "@/lib/trade-scopes";
 import { money } from "@/lib/money";
@@ -273,7 +274,7 @@ export default async function CatalogPage() {
   // question about where the person reading it is standing.
   const today = todayInZone(await viewerTimeZone());
 
-  const [entries, craftClassifications, fringeSchedulesByCraft, employerBurdenRates] = await Promise.all([
+  const [entries, craftClassifications, fringeSchedulesByCraft, employerBurdenRates, estimateTemplates] = await Promise.all([
     prisma.lineItemCatalogEntry.findMany({
       where: { companyId: company.id },
       orderBy: { description: "asc" },
@@ -314,6 +315,16 @@ export default async function CatalogPage() {
     }),
     loadFringeSchedulesByCraft(company.id),
     loadEmployerBurdenRates(company.id),
+    prisma.estimateTemplate.findMany({
+      where: { companyId: company.id },
+      orderBy: { name: "asc" },
+      include: {
+        items: {
+          orderBy: { sortOrder: "asc" },
+          include: { catalogEntry: { select: { description: true } } },
+        },
+      },
+    }),
   ]);
 
   return (
@@ -324,6 +335,33 @@ export default async function CatalogPage() {
         (&quot;Save as catalog item&quot;), then pull it into a new estimate with &quot;Add from
         catalog&quot; on any ESTIMATE-stage job.
       </p>
+
+      {/* The template library sits above the catalog it points at: a
+          template is a set of pointers INTO these entries, so reading them
+          in that order is how the two relate. */}
+      <EstimateTemplates
+        templates={estimateTemplates.map(
+          (template): TemplateRow => ({
+            id: template.id,
+            name: template.name,
+            tradeScope: template.tradeScope,
+            description: template.description,
+            items: template.items.map((item) => ({
+              id: item.id,
+              description: item.description,
+              unit: item.unit,
+              defaultQuantity: item.defaultQuantity === null ? null : Number(item.defaultQuantity),
+              catalogEntryId: item.catalogEntryId,
+              catalogEntryDescription: item.catalogEntry?.description ?? null,
+            })),
+          }),
+        )}
+        catalogEntries={entries.map((entry) => ({
+          id: entry.id,
+          description: entry.description,
+          unit: entry.unit,
+        }))}
+      />
 
       <div className="mb-6" data-tour="catalog-import">
         <CatalogImport existingDescriptions={entries.map((entry) => entry.description)} canImport={isOwner} />
