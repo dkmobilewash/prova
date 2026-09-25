@@ -41,16 +41,73 @@ export async function seedClerkUsers(): Promise<Record<PersonaKey, { id: string;
   const result = {} as Record<PersonaKey, { id: string; email: string }>;
   for (const [key, persona] of Object.entries(PERSONAS) as [PersonaKey, (typeof PERSONAS)[PersonaKey]][]) {
     const existing = await clerk.users.getUserList({ emailAddress: [persona.email] });
-    const user =
-      existing.data[0] ??
-      (await clerk.users.createUser({
+    if (existing.data[0]) {
+      result[key] = { id: existing.data[0].id, email: persona.email };
+      continue;
+    }
+    try {
+      const user = await clerk.users.createUser({
         emailAddress: [persona.email],
         firstName: "E2E",
         lastName: persona.label,
+        // `skipPasswordChecks` is deliberately NOT sent. It means "accept this
+        // password without validating it", and there is no password here —
+        // `skipPasswordRequirement` is the whole point. Clerk's own docs scope
+        // it to migrating plaintext passwords in. It was passed alongside for
+        // a long time and nothing noticed, because this branch had not run for
+        // weeks: the six original personas already exist on the instance and
+        // are found by the read above, so `createUser` is only reached the day
+        // somebody adds a new one.
         skipPasswordRequirement: true,
-        skipPasswordChecks: true,
-      }));
-    result[key] = { id: user.id, email: persona.email };
+      });
+      result[key] = { id: user.id, email: persona.email };
+    } catch (error) {
+      throw new Error(clerkCreateFailure(key, persona.label, persona.email, error), { cause: error });
+    }
   }
   return result;
+}
+
+/**
+ * WHAT CLERK ACTUALLY SAID, AND WHICH PERSONA IT SAID IT ABOUT.
+ *
+ * `ClerkAPIResponseError`'s `message` is the bare HTTP reason — "Unprocessable
+ * Entity" — and the detail that would let anybody act on it is in `errors[]`,
+ * which never reaches the console. On 2026-09-25 that cost a whole CI run: the
+ * `e2e` job died in global setup, before a single spec, with nine words that
+ * named neither the persona nor the problem, and there is nothing in the log to
+ * read because the log is those nine words.
+ *
+ * This is the same shape as the rest of this suite: a failure has to say which
+ * thing failed and why, or the run has told you only that it is red. Every
+ * field Clerk returns is repeated — `code` is the machine-readable one worth
+ * searching their docs for, `longMessage` is usually the sentence a person
+ * needs, and `meta` carries the parameter name when it is a validation error.
+ */
+function clerkCreateFailure(key: string, label: string, email: string, error: unknown): string {
+  const lines = [
+    `e2e: Clerk refused to create the ${label} persona (PERSONAS.${key}, ${email}).`,
+  ];
+  const detail = error as { status?: number; clerkTraceId?: string; errors?: unknown };
+  if (detail?.status) lines.push(`  HTTP ${detail.status}`);
+  if (detail?.clerkTraceId) lines.push(`  Clerk trace id: ${detail.clerkTraceId}`);
+  if (Array.isArray(detail?.errors) && detail.errors.length > 0) {
+    for (const item of detail.errors as { code?: string; message?: string; longMessage?: string; meta?: unknown }[]) {
+      lines.push(`  - [${item.code ?? "no code"}] ${item.longMessage ?? item.message ?? "(no message)"}`);
+      if (item.meta && Object.keys(item.meta).length > 0) lines.push(`    meta: ${JSON.stringify(item.meta)}`);
+    }
+  } else {
+    // Said out loud rather than left blank: "Clerk returned no detail" is a
+    // different fact from "nobody printed the detail", and only one of them
+    // means there is nothing more to find.
+    lines.push(`  Clerk returned no errors[] to report. Raw message: ${
+      error instanceof Error ? error.message : String(error)
+    }`);
+  }
+  lines.push(
+    "  This is the DEVELOPMENT instance named by CLERK_SECRET_KEY. A development " +
+      "instance caps how many users it will hold, so a quota is one thing this can be; " +
+      "a rejected email or name is another. The code above says which.",
+  );
+  return lines.join("\n");
 }
