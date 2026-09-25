@@ -1,5 +1,6 @@
 import { cacheGet } from "./offline-cache";
 import { cacheKeys } from "./cache-keys";
+import { t } from "./i18n";
 import { backoffFor, MAX_ATTEMPTS, type PendingOp, type QueuedOp, type RefusedOp } from "./sync-queue";
 import type { Job } from "./types";
 
@@ -47,41 +48,55 @@ function day(iso: string | undefined): string {
   return date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 }
 
-/** Deliberately exhaustive: the `never` below is a compile error the day
- * somebody adds an op type and forgets this file. */
+/**
+ * Deliberately exhaustive: the `never` below is a compile error the day
+ * somebody adds an op type and forgets this file.
+ *
+ * WHAT IS TRANSLATED HERE AND WHAT IS NOT. The words this file supplies —
+ * "Daily report", "Punch item", "Photo" — are `outbox.op.*` keys, because
+ * a Spanish phone whose outbox is half English is the exact half-screen
+ * this layer exists to prevent. What comes off the op is NOT: the topic,
+ * the description, the caption, the signer's name, the job name, the pay
+ * type (an API enum) and the day (already rendered in the phone's own
+ * locale) are somebody's own words or the server's, and translating them
+ * would put a sentence in the outbox that is on no record anywhere.
+ */
 export function describeOp(op: PendingOp, names: Record<string, string> = {}): { title: string; detail: string } {
-  const job = (id: string) => names[id] ?? "this job";
+  const job = (id: string) => names[id] ?? t("outbox.op.thisJob");
   switch (op.type) {
     case "field-report:create":
-      return { title: "Daily report", detail: `${job(op.jobId)} · ${day(op.reportDate)}` };
+      return { title: t("outbox.op.dailyReport"), detail: `${job(op.jobId)} · ${day(op.reportDate)}` };
     case "field-report:update":
-      return { title: "Change to a daily report", detail: day(op.clientUpdatedAt) };
+      return { title: t("outbox.op.dailyReportChange"), detail: day(op.clientUpdatedAt) };
     case "time:create":
       return {
-        title: `${op.hours} hours`,
+        title: t("outbox.op.hours", { hours: op.hours }),
         detail: `${job(op.jobId)} · ${day(op.date)}${op.payType && op.payType !== "REGULAR" ? ` · ${op.payType.toLowerCase()}` : ""}`,
       };
     case "material:create":
-      return { title: op.description, detail: `Material order · ${job(op.jobId)}` };
+      return { title: op.description, detail: t("outbox.op.materialOrder", { job: job(op.jobId) }) };
     case "toolbox-talk:create":
-      return { title: op.topic, detail: `Toolbox talk · ${job(op.jobId)} · ${day(op.heldOn)}` };
+      return { title: op.topic, detail: t("outbox.op.toolboxTalk", { job: job(op.jobId), date: day(op.heldOn) }) };
     case "incident:create":
-      return { title: `Incident · ${op.employeeName}`, detail: `${job(op.jobId)} · ${day(op.occurredAt)}` };
+      return { title: t("outbox.op.incident", { name: op.employeeName }), detail: `${job(op.jobId)} · ${day(op.occurredAt)}` };
     case "punch-list:create":
-      return { title: op.description, detail: `Punch item · ${job(op.jobId)}${op.area ? ` · ${op.area}` : ""}` };
+      return {
+        title: op.description,
+        detail: `${t("outbox.op.punchItem", { job: job(op.jobId) })}${op.area ? ` · ${op.area}` : ""}`,
+      };
     case "punch-list:status":
       return {
-        title: op.status === "READY_FOR_REVIEW" ? "Punch item marked ready" : "Punch item reopened",
+        title: op.status === "READY_FOR_REVIEW" ? t("outbox.op.punchReady") : t("outbox.op.punchReopened"),
         detail: job(op.jobId),
       };
     case "ticket:create":
-      return { title: op.workDescription, detail: `T&M ticket · ${job(op.jobId)} · ${day(op.workDate)}` };
+      return { title: op.workDescription, detail: t("outbox.op.tmTicket", { job: job(op.jobId), date: day(op.workDate) }) };
     case "media:create":
-      return { title: op.caption?.trim() || "Photo", detail: `${job(op.jobId)} · ${day(op.capturedAt)}` };
+      return { title: op.caption?.trim() || t("outbox.op.photo"), detail: `${job(op.jobId)} · ${day(op.capturedAt)}` };
     case "delay:create":
-      return { title: "Delay", detail: `${job(op.jobId)} · ${day(op.date)}` };
+      return { title: t("outbox.op.delay"), detail: `${job(op.jobId)} · ${day(op.date)}` };
     case "signoff:create":
-      return { title: `Timesheet signed by ${op.signerName}`, detail: `${job(op.jobId)} · ${day(op.date)}` };
+      return { title: t("outbox.op.signoff", { name: op.signerName }), detail: `${job(op.jobId)} · ${day(op.date)}` };
     default: {
       const exhaustive: never = op;
       return exhaustive;
@@ -113,13 +128,29 @@ export function describeRefused(refused: RefusedOp, names: Record<string, string
  * signal, nothing wrong. A write the server has actually answered and
  * refused says so, with the server's own words, because "failed" tells a
  * foreman nothing he can act on.
+ *
+ * The keys it spends — `outbox.waitingForSignal`, `outbox.tried.one`,
+ * `outbox.tried.many`, `outbox.when.seconds`, `outbox.when.next` — were
+ * written FOR this function and then never called: five entries sitting in
+ * both dictionaries beside the English literals they were meant to
+ * replace. They are called now, and the wording is theirs rather than the
+ * literals', which is why the quotes around the server's words are
+ * typographic here.
  */
 export function statusOf(item: OutboxItem, now: Date = new Date()): string {
-  if (item.attempts === 0) return "Waiting for signal";
+  if (item.attempts === 0) return t("outbox.waitingForSignal");
   const remaining = item.nextTryAt ? Date.parse(item.nextTryAt) - now.getTime() : 0;
-  const when = remaining > 0 ? `in ${Math.max(1, Math.round(remaining / 1000))}s` : "next time there's signal";
-  const tries = item.attempts === 1 ? "once" : `${item.attempts} times`;
-  return `Tried ${tries} — the server said "${item.lastError ?? "no"}". Trying again ${when}.`;
+  const when =
+    remaining > 0
+      ? t("outbox.when.seconds", { seconds: Math.max(1, Math.round(remaining / 1000)) })
+      : t("outbox.when.next");
+  // A refusal with no message at all: the old fallback was the word "no",
+  // which reads as the server ANSWERING "no" rather than as nothing having
+  // come back. Saying so is the whole point of quoting it.
+  const error = item.lastError ?? t("outbox.noReason");
+  return item.attempts === 1
+    ? t("outbox.tried.one", { error, when })
+    : t("outbox.tried.many", { count: item.attempts, error, when });
 }
 
 /** How close a write is to being set aside, for the line that warns before

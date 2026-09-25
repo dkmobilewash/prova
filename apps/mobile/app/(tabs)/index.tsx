@@ -17,6 +17,7 @@ import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, oldestNote, withToken, type CachedRead } from "@/lib/cached-read";
 import { holds } from "@/lib/capabilities";
 import { tokenOrNull } from "@/lib/clerk-token";
+import { useT, type Language, type StringKey } from "@/lib/i18n";
 import { localToday, shortDay } from "@/lib/local-today";
 import { prefetchJob } from "@/lib/prefetch";
 import { pendingCount } from "@/lib/sync-queue";
@@ -28,32 +29,58 @@ import { useMe } from "@/lib/use-me";
 import { usePalette } from "@/lib/use-palette";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 
+/** Only the fallback below draws these now — see `longDate`. */
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-function greeting(now: Date): string {
+function greetingKey(now: Date): StringKey {
   const hour = now.getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
+  if (hour < 12) return "home.greeting.morning";
+  if (hour < 18) return "home.greeting.afternoon";
+  return "home.greeting.evening";
 }
 
-/** "Saturday, September 21" — the phone's calendar day, not UTC's. */
-function longDate(iso: string): string {
+/**
+ * "Saturday, September 21" — the phone's calendar day, not UTC's — and
+ * "sábado, 21 de septiembre" on a phone in Spanish.
+ *
+ * The date is still BUILT at UTC midnight and formatted with
+ * `timeZone: "UTC"`, which is the whole point of the `Date.UTC` above it:
+ * `localToday()` has already decided which calendar day this is, and a
+ * formatter left on the device's zone would be free to move it back a day.
+ * The two halves have to agree or the greeting block contradicts the rest
+ * of the screen.
+ *
+ * Wrapped because a runtime without full ICU throws on a locale it cannot
+ * load, and Home is the screen the app opens on — an English date is a
+ * blemish, a crash on launch is the app. `lib/i18n.ts` guards its own
+ * `Intl` call for the same reason.
+ */
+function longDate(iso: string, language: Language): string {
   const [y, m, d] = iso.split("-").map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
-  return `${WEEKDAYS[date.getUTCDay()]}, ${MONTHS[m - 1]} ${d}`;
+  try {
+    return new Intl.DateTimeFormat(language === "es" ? "es-MX" : "en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      timeZone: "UTC",
+    }).format(date);
+  } catch {
+    return `${WEEKDAYS[date.getUTCDay()]}, ${MONTHS[m - 1]} ${d}`;
+  }
 }
 
 /**
  * Home: what today looks like on the job this phone is on — now a daily
  * command centre rather than a menu wearing a heading. The greeting says
  * when we are; the Today group says what is true and what needs doing,
- * each line a claim derived from real rows in lib/today.ts (which is
- * untouched and tested); one quiet card carries the job itself.
+ * each line a claim derived from real rows in lib/today.ts (which is pure
+ * and tested, and hands this screen a translation key plus its numbers
+ * rather than a finished sentence); one quiet card carries the job itself.
  *
  * Nothing here is new server work: the four lists are the same ones the
  * sections already load, and the job card reads the jobs list this phone
@@ -69,6 +96,7 @@ export default function HomeScreen() {
   // from four empty lists the server refused to send.
   const { me } = useMe();
   const field = holds(me, "MANAGE_FIELD");
+  const { t, language } = useT();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const [lines, setLines] = useState<TodayLine[]>([]);
@@ -115,7 +143,7 @@ export default function HomeScreen() {
     if (stale) {
       setError(stale);
     } else if (sections.some((section) => section.from === "nothing")) {
-      setError("No connection, and this phone hasn't loaded this job yet");
+      setError(t("home.offline.nothing"));
     } else {
       setError(null);
       // While there IS signal, fill the cache for the sections Home does
@@ -127,7 +155,10 @@ export default function HomeScreen() {
         if (token) void prefetchJob(job.id, token, me);
       });
     }
-  }, [getToken, job, field, me]);
+    // `t` is the module-level function `useT` hands back, the same
+    // reference on every render — it is in the list to satisfy the lint
+    // rule, and it never re-creates this callback.
+  }, [getToken, job, field, me, t]);
 
   useFocusEffect(
     useCallback(() => {
@@ -135,7 +166,7 @@ export default function HomeScreen() {
     }, [load]),
   );
 
-  if (!isLoaded) return <Text style={styles.loading}>Loading…</Text>;
+  if (!isLoaded) return <Text style={styles.loading}>{t("common.loading")}</Text>;
   if (!isSignedIn) return <Redirect href="/sign-in" />;
 
   const today = todayKey();
@@ -162,10 +193,12 @@ export default function HomeScreen() {
         }
       >
         <Text style={styles.greeting}>
-          {greeting(new Date())}
+          {t(greetingKey(new Date()))}
+          {/* A person's name is never translated, and the comma before it
+              is punctuation both languages already agree on. */}
           {user?.firstName ? `, ${user.firstName}` : ""}
         </Text>
-        <Text style={styles.date}>{longDate(localToday())}</Text>
+        <Text style={styles.date}>{longDate(localToday(), language)}</Text>
 
         <View style={styles.chipRow}>
           <JobContextChip />
@@ -179,30 +212,24 @@ export default function HomeScreen() {
           </View>
         ) : !field ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>Today isn&apos;t your screen</Text>
-            <Text style={styles.emptyBody}>
-              Home is the day on a job — reports, photos, the punch list, hours — and field records
-              aren&apos;t part of your job function. The jobs themselves are still on the Jobs tab.
-            </Text>
+            <Text style={styles.emptyTitle}>{t("home.empty.notYours.title")}</Text>
+            <Text style={styles.emptyBody}>{t("home.empty.notYours.body")}</Text>
           </View>
         ) : !job ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>Pick a job to start the day</Text>
-            <Text style={styles.emptyBody}>
-              Once you&apos;re on a job, this page shows what&apos;s done and what isn&apos;t — and the
-              capture button works without asking which job every time.
-            </Text>
+            <Text style={styles.emptyTitle}>{t("home.empty.noJob.title")}</Text>
+            <Text style={styles.emptyBody}>{t("home.empty.noJob.body")}</Text>
           </View>
         ) : (
           <>
             <SyncStatus state={error} />
-            <SectionHeader>Today</SectionHeader>
+            <SectionHeader>{t("home.today")}</SectionHeader>
             <GroupedList>
               {lines.map((line, i) => (
                 <GroupedRow
                   key={line.key}
                   icon={toneIcon(line.tone, palette)}
-                  title={line.label}
+                  title={t(line.label, line.vars)}
                   divider={i > 0}
                   onPress={
                     line.section
@@ -239,7 +266,7 @@ export default function HomeScreen() {
                   <Pressable
                     onPress={() => router.push(`/photos/${job.id}`)}
                     accessibilityRole="button"
-                    accessibilityLabel="All of today's photos"
+                    accessibilityLabel={t("home.photos.all")}
                     style={styles.moreTile}
                   >
                     <Text style={styles.moreTileText}>+{todayPhotos.length - 4}</Text>
@@ -275,11 +302,12 @@ function toneIcon(tone: TodayLine["tone"], palette: Palette) {
 /** One photo of today, at the strip's size — a glance that opens the
  * gallery when tapped. */
 function Thumb({ uri, jobId }: { uri: string; jobId: string }) {
+  const { t } = useT();
   return (
     <Pressable
       onPress={() => router.push(`/photos/${jobId}`)}
       accessibilityRole="button"
-      accessibilityLabel="Open photos"
+      accessibilityLabel={t("home.photos.open")}
       style={thumbStyles.tile}
     >
       <Image source={{ uri }} style={thumbStyles.thumb} resizeMode="cover" />

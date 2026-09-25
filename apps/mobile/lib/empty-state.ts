@@ -1,3 +1,5 @@
+import { t, type StringKey } from "./i18n";
+
 /**
  * What a list says when it has nothing to show — and the distinction the
  * whole offline layer exists for.
@@ -13,22 +15,26 @@
  * had never loaded them and could not now.
  *
  * So the sentence is derived from the load, in one place, rather than
- * typed per screen. `offline-notes.test.ts` fails the build on a cached
+ * typed per screen — and it is a KEY per screen rather than a sentence,
+ * so the Spanish half of it cannot drift out of step (lib/i18n.ts). `offline-notes.test.ts` fails the build on a cached
  * list screen that writes its own.
  */
 export function emptyFor(
   loadedFrom: string | "nothing" | null,
-  /** The thing, named the way the screen names it: "the photos", "the
-   * day's hours". Reads as "Can't load the photos right now." */
-  thing: string,
-  whenEmpty: { title: string; description?: string },
+  /** The list, as it is named INSIDE the sentence: "the photos", "the
+   * hours". A key rather than a string, because the sentence it lands in
+   * is translated and half a translated sentence is worse than none. */
+  thing: StringKey,
+  whenEmpty: { title: StringKey; description?: StringKey },
 ): { emptyTitle: string; emptyDescription?: string } {
   if (loadedFrom === "nothing") {
     return {
-      emptyTitle: `Can't load ${thing} right now.`,
-      emptyDescription:
-        "No connection, and this phone hasn't loaded this before. Anything you add is kept and sent when you're back in range.",
+      emptyTitle: t("offline.cantLoad", { thing: t(thing) }),
+      emptyDescription: t("offline.cantLoad.body"),
     };
   }
-  return { emptyTitle: whenEmpty.title, emptyDescription: whenEmpty.description };
+  return {
+    emptyTitle: t(whenEmpty.title),
+    emptyDescription: whenEmpty.description ? t(whenEmpty.description) : undefined,
+  };
 }

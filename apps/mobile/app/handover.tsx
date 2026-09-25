@@ -11,6 +11,7 @@ import { SignaturePad } from "@/components/SignaturePad";
 import { type Palette, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import { endHandover, getHandover, pinAccepted, type Handover } from "@/lib/handover";
+import { useT } from "@/lib/i18n";
 import { uuid } from "@/lib/id";
 import { localToday } from "@/lib/local-today";
 import { enqueue } from "@/lib/sync-queue";
@@ -33,6 +34,7 @@ import { enqueue } from "@/lib/sync-queue";
  * new idea of who did what.
  */
 export default function HandoverScreen() {
+  const { t } = useT();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const [handover, setHandover] = useState<Handover | null>(null);
@@ -117,28 +119,25 @@ export default function HandoverScreen() {
       </SafeAreaView>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.intro}>
-          Put your own hours in. Only you and this job are on this screen — nothing else on the
-          phone is open while you have it.
-        </Text>
+        <Text style={styles.intro}>{t("handover.intro")}</Text>
 
         <GroupedList>
           <View style={styles.entry}>
             <Field
-              label="Hours worked today"
+              label={t("handover.field.hours")}
               value={hours}
               onChangeText={setHours}
               keyboardType="decimal-pad"
               placeholder="8"
             />
             <Field
-              label="Anything worth noting (optional)"
+              label={t("handover.field.note")}
               value={note}
               onChangeText={setNote}
-              placeholder="Hung rock, level 3"
+              placeholder={t("handover.field.noteHint")}
             />
             <Button fullWidth disabled={!canAdd} onPress={addHours}>
-              Add these hours
+              {t("handover.add")}
             </Button>
           </View>
         </GroupedList>
@@ -146,21 +145,19 @@ export default function HandoverScreen() {
         {saved.length > 0 ? (
           <GroupedList>
             <View style={styles.saved}>
-              <Text style={styles.savedTitle}>On this phone, waiting to send</Text>
+              <Text style={styles.savedTitle}>{t("handover.saved.title")}</Text>
               {saved.map((row, index) => (
                 <Text key={`${row.at}-${index}`} style={styles.savedRow}>
-                  {row.hours} hours · {handover.name}
+                  {t("handover.saved.row", { hours: row.hours, name: handover.name })}
                 </Text>
               ))}
-              <Text style={styles.savedNote}>
-                Kept on the phone and sent when there is signal. Nothing is lost if there is none.
-              </Text>
+              <Text style={styles.savedNote}>{t("handover.saved.note")}</Text>
             </View>
           </GroupedList>
         ) : null}
 
         <Button fullWidth variant="secondary" onPress={() => setShowSign(true)} disabled={saved.length === 0}>
-          Sign and finish
+          {t("handover.signFinish")}
         </Button>
 
         <Button
@@ -172,21 +169,20 @@ export default function HandoverScreen() {
             setShowBack(true);
           }}
         >
-          Hand the phone back
+          {t("handover.handBack")}
         </Button>
       </ScrollView>
 
       <Sheet
         visible={showSign}
         onClose={() => setShowSign(false)}
-        title={`${handover.name} — sign for today`}
-        primaryLabel="Sign and finish"
+        title={t("handover.sign.title", { name: handover.name })}
+        primaryLabel={t("handover.signFinish")}
         onPrimary={signAndFinish}
         primaryDisabled={!signaturePath}
       >
         <Text style={styles.signNote}>
-          Signing says these are your hours for {today} on {handover.jobName}. It goes to the office
-          with them.
+          {t("handover.sign.note", { date: today, job: handover.jobName })}
         </Text>
         <SignaturePad onChange={setSignaturePath} />
       </Sheet>
@@ -194,20 +190,18 @@ export default function HandoverScreen() {
       <Sheet
         visible={showBack}
         onClose={() => setShowBack(false)}
-        title="Hand the phone back"
-        primaryLabel="Hand it back"
+        title={t("handover.handBack")}
+        primaryLabel={t("handover.handBack.primary")}
         onPrimary={handBack}
       >
         <Text style={styles.signNote}>
-          {handover.pin
-            ? "The foreman set a PIN when they handed it over. Give the phone back to them to type it."
-            : "This ends your turn on the phone. Anything you have put in is kept and sent either way."}
+          {handover.pin ? t("handover.back.pinNote") : t("handover.back.note")}
         </Text>
         {handover.pin ? (
           <>
             <Icon name="keypad" size={22} color={palette.colors.inkMuted} />
             <Field
-              label="Foreman's PIN"
+              label={t("handover.pin.label")}
               value={pin}
               onChangeText={(text) => {
                 setPin(text);
@@ -216,7 +210,7 @@ export default function HandoverScreen() {
               keyboardType="number-pad"
               secureTextEntry
               maxLength={4}
-              error={pinWrong ? "That is not the PIN this phone was handed over with." : undefined}
+              error={pinWrong ? t("handover.pin.wrong") : undefined}
             />
           </>
         ) : null}

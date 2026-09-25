@@ -31,6 +31,7 @@ import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, requireToken, staleNote } from "@/lib/cached-read";
 import { tokenOrNull } from "@/lib/clerk-token";
 import { emptyFor } from "@/lib/empty-state";
+import { useT } from "@/lib/i18n";
 import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
@@ -69,6 +70,7 @@ type Shot = {
 
 export default function PhotosScreen() {
   const { me } = useMe();
+  const { t } = useT();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   // `punchListItemId` arrives when the punch list sent us here to
@@ -163,7 +165,7 @@ export default function PhotosScreen() {
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (!permission.granted) {
-        return { location: null, note: "Location is off for C Stream, so this photo has no place on it." };
+        return { location: null, note: t("photos.locationOff") };
       }
       const fix = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       return {
@@ -175,14 +177,14 @@ export default function PhotosScreen() {
         note: null,
       };
     } catch {
-      return { location: null, note: "Couldn't get a location fix, so this photo has no place on it." };
+      return { location: null, note: t("photos.locationFailed") };
     }
   };
 
   const afterPick = async (result: ImagePicker.ImagePickerResult, fallbackNow: Date) => {
     if (result.canceled) return;
     const asset = result.assets[0];
-    setBusy("Reading location…");
+    setBusy(t("photos.busy.location"));
     const { location, note } = await readLocation();
     setBusy(null);
     setShot({
@@ -202,7 +204,7 @@ export default function PhotosScreen() {
   const takePhoto = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      setError("The camera is off for C Stream. Turn it on in Settings to take site photos.");
+      setError(t("photos.cameraOff"));
       return;
     }
     const now = new Date();
@@ -234,10 +236,10 @@ export default function PhotosScreen() {
    * system will not clear it, and queues the upload. */
   const save = async () => {
     if (!shot || !jobId) return;
-    setBusy("Stamping…");
+    setBusy(t("photos.busy.stamping"));
     try {
       const capture = stampRef.current?.capture;
-      if (!capture) throw new Error("The stamp could not be drawn. Try the photo again.");
+      if (!capture) throw new Error(t("photos.stampFailed"));
       const stampedUri = await capture();
       const fileName = stampedFileName(shot.capturedAt);
       const kept = keepForUpload(stampedUri, fileName);
@@ -267,7 +269,7 @@ export default function PhotosScreen() {
       await sync();
     } catch (e) {
       setBusy(null);
-      setError(e instanceof Error ? e.message : "Could not save that photo");
+      setError(e instanceof Error ? e.message : t("photos.saveFailed"));
     }
   };
 
@@ -288,10 +290,9 @@ export default function PhotosScreen() {
   // an empty screen with no explanation.
   if (!holds(me, SCREEN_CAPABILITY["photos/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["photos/[jobId]"]} />;
 
-  const empty = emptyFor(offline, "the photos", {
-    title: "No photos yet",
-    description:
-      "Tap “Take photo”. Each one is stamped with the time and place it was taken, and goes up when there's signal.",
+  const empty = emptyFor(offline, "thing.photos", {
+    title: "photos.empty.title",
+    description: "photos.empty.body",
   });
 
   return (
@@ -322,7 +323,7 @@ export default function PhotosScreen() {
             <View style={styles.tile}>
               <Image source={{ uri: item.uri }} style={styles.tileImage} resizeMode="cover" />
               <View style={styles.tileBody}>
-                <Text style={styles.syncing}>Syncing…</Text>
+                <Text style={styles.syncing}>{t("common.syncing")}</Text>
                 <Text style={styles.meta}>{item.capturedAt.slice(0, 10)}</Text>
               </View>
             </View>
@@ -344,7 +345,7 @@ export default function PhotosScreen() {
                           longitude: item.media.capturedLongitude,
                           accuracyMeters: item.media.capturedAccuracyMeters,
                         })
-                      : "No location recorded",
+                      : t("photos.noLocation"),
                     item.media.capturedLatitude !== null ? formatAccuracy(item.media.capturedAccuracyMeters) : null,
                   ]
                     .filter(Boolean)
@@ -358,8 +359,8 @@ export default function PhotosScreen() {
                 {item.media.dailyFieldReportId || item.media.punchListItemId ? (
                   <Text style={styles.attached} numberOfLines={1}>
                     {[
-                      item.media.dailyFieldReportId ? "On the day's report" : null,
-                      item.media.punchListItemId ? "On a punch list item" : null,
+                      item.media.dailyFieldReportId ? t("photos.onReport") : null,
+                      item.media.punchListItemId ? t("photos.onPunchItem") : null,
                     ]
                       .filter(Boolean)
                       .join(" · ")}
@@ -376,11 +377,11 @@ export default function PhotosScreen() {
 
       <View style={[styles.footer, styles.footerRow]}>
         <Button variant="secondary" onPress={pickFromLibrary}>
-          Library
+          {t("photos.library")}
         </Button>
         <View style={styles.footerMain}>
           <Button fullWidth onPress={takePhoto}>
-            Take photo
+            {t("photos.take")}
           </Button>
         </View>
       </View>
@@ -422,8 +423,8 @@ export default function PhotosScreen() {
       <Sheet
         visible={shot !== null}
         onClose={() => setShot(null)}
-        title="Save photo"
-        primaryLabel="Save photo"
+        title={t("photos.sheet.title")}
+        primaryLabel={t("photos.sheet.save")}
         onPrimary={save}
         primaryDisabled={busy !== null}
       >
@@ -434,15 +435,20 @@ export default function PhotosScreen() {
             <Text style={shot.location ? styles.meta : styles.warn}>
               {shot.location
                 ? [formatCoordinate(shot.location), formatAccuracy(shot.location.accuracyMeters)].filter(Boolean).join("  ")
-                : (shot.locationNote ?? "No location recorded")}
+                : (shot.locationNote ?? t("photos.noLocation"))}
             </Text>
-            <Text style={styles.hint}>The time and place are burned into the photo when you save it.</Text>
+            <Text style={styles.hint}>{t("photos.stamped")}</Text>
 
-            <Field label="Caption" placeholder="Optional" value={caption} onChangeText={setCaption} />
+            <Field
+              label={t("photos.caption")}
+              placeholder={t("common.optional")}
+              value={caption}
+              onChangeText={setCaption}
+            />
 
             {tags.length > 0 ? (
               <>
-                <Text style={styles.label}>Tags</Text>
+                <Text style={styles.label}>{t("photos.tags")}</Text>
                 <View style={styles.chips}>
                   {tags.map((t) => (
                     <Chip key={t.id} label={t.name} selected={pickedTags.includes(t.id)} onPress={() => toggleTag(t.id)} />
@@ -451,10 +457,10 @@ export default function PhotosScreen() {
               </>
             ) : null}
 
-            <Text style={styles.label}>Attach to</Text>
+            <Text style={styles.label}>{t("photos.attachTo")}</Text>
             <View style={styles.chips}>
               <Chip
-                label={todaysReportId ? "Today's report" : "No report today"}
+                label={todaysReportId ? t("photos.todaysReport") : t("photos.noReportToday")}
                 selected={attachReport && todaysReportId !== null}
                 onPress={() => todaysReportId && setAttachReport((a) => !a)}
               />

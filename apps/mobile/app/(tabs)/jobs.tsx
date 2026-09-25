@@ -15,6 +15,7 @@ import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { setCurrentJob } from "@/lib/current-job";
 import { emptyFor } from "@/lib/empty-state";
+import { useT } from "@/lib/i18n";
 import { shortDay } from "@/lib/local-today";
 import { leadingFor, type Palette, space, typography } from "@/lib/theme";
 import type { Job } from "@/lib/types";
@@ -32,6 +33,7 @@ export default function JobsScreen() {
   const { isLoaded, isSignedIn } = useAuth();
   const { job: current } = useCurrentJob();
   const getToken = useStableGetToken();
+  const { t } = useT();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -65,12 +67,12 @@ export default function JobsScreen() {
     })();
   }, [isSignedIn, load]);
 
-  if (!isLoaded) return <Text style={styles.loading}>Loading…</Text>;
+  if (!isLoaded) return <Text style={styles.loading}>{t("common.loading")}</Text>;
   if (!isSignedIn) return <Redirect href="/sign-in" />;
 
-  const empty = emptyFor(offline, "the job list", {
-    title: "No jobs yet",
-    description: "Jobs appear here once they're created in the office.",
+  const empty = emptyFor(offline, "thing.jobs", {
+    title: "jobs.empty.title",
+    description: "jobs.empty.body",
   });
 
   return (
@@ -89,7 +91,7 @@ export default function JobsScreen() {
           />
         }
       >
-        <LargeTitle>Jobs</LargeTitle>
+        <LargeTitle>{t("nav.jobs")}</LargeTitle>
         <SyncStatus state={offline} />
         {!loaded ? (
           <View style={styles.skeletonGroup}>
@@ -114,7 +116,10 @@ export default function JobsScreen() {
                 <GroupedRow
                   key={item.id}
                   title={item.name}
-                  subtitle={[range, isCurrent ? "On this job" : null].filter(Boolean).join(" · ") || undefined}
+                  subtitle={
+                    [range, isCurrent ? t("jobs.onThisJob") : null].filter(Boolean).join(" · ") ||
+                    undefined
+                  }
                   trailing={
                     isCurrent ? (
                       <View style={styles.currentRow}>
