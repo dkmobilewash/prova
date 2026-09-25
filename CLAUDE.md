@@ -1362,6 +1362,160 @@ scrollback gets broken by whoever didn't scroll far enough.
   which is the only version that stays true when someone adds a `light`
   variant.
 
+- **A #418 HYDRATION MISMATCH "ON SEVENTEEN PAGES" IS ONE DEFECT IN THE
+  SIGNED-IN SHELL, FIRING ON ABOUT ONE PAGE LOAD IN THREE — AND IT IS NOT A
+  DATE.** 2026-09-25, from four instrumented CI runs (#501) and a local
+  production build that reproduces the mechanism without a browser (the fix
+  branch). Read the eliminations before doing any of this again; each one is
+  an afternoon.
+
+  **The list of URLs is not a list of broken pages.** The journey's step 11
+  prints every URL a mismatch fired on, and both `e2e/lib/health.ts` and the
+  assertion's own message used to call that "the shape of something in the
+  job-tab shell rendered from 'now'" and point at the Dates bullet above.
+  That sentence is why this stayed open for weeks: it is plausible, it is
+  wrong, and three separate investigations went looking at timezones. The
+  URLs differ almost completely between runs — 14 in one, 17 in the next,
+  with six in common — because the page is not the variable.
+
+  Measured instead of argued, all in one signed-in session against a
+  production build in CI:
+
+  | probe | result |
+  | --- | --- |
+  | 12 named pages, 3s dwell, MAIN persona | 0 mismatches |
+  | 38 nav destinations, no dwell | 6 pages |
+  | the same 38, 3s dwell, same session | 4 pages, one shared with the walk above |
+  | 4 pages × 10 reloads | **12 mismatches in 40 loads** |
+
+  So it is roughly one authenticated page load in three, and the per-page
+  rate varies (/safety 5 of 10, /settings 5 of 10, /backcharges 2 of 10,
+  /wall-types 0 of 10) rather than being a property of any page. A clean run
+  over a handful of pages proves nothing, which is how the first probe
+  produced a confident wrong answer.
+
+  **IT CANNOT BE A DATE, AND THE ERROR ITSELF SAYS SO.** React #418 carries
+  its kind as the first argument, and every occurrence in every run reads
+  `args[]=HTML`. From the installed react-dom 19.2.8,
+  `cjs/react-dom-client.development.js`, `throwOnHydrationMismatch`:
+  `"Hydration failed because the server rendered " + (fromText ? "text" :
+  "HTML")`. `fromText` is true ONLY for a text-node mismatch, so `HTML` is an
+  ELEMENT-level disagreement — a node one side has and the other does not.
+  A date, a currency, a locale format or a relative time is a TEXT mismatch
+  and produces the other word. On top of that, Playwright sets no
+  `timezoneId`, so in CI the server and the browser are both UTC and every
+  zone-derived value is identical on the two sides by construction. Check
+  the `args[]` before theorising: it halves the search space for free.
+
+  **TWO ELEMENT-LEVEL DIVERGENCES WERE FOUND IN THE SHELL, AND THE ORDER OF
+  THIS ENTRY IS THE ORDER THEY WERE BELIEVED IN, NOT THEIR SIZE.**
+
+  **One — a region's children arriving as a LAZY.** `<ShellRegion>`
+  (`components/ShellRegion.tsx`) is a client component and the `(app)` layout
+  is a server component, so `<ShellRegion region="sidebar"><Sidebar …/>
+  </ShellRegion>` made `<Sidebar>` an element that crosses the RSC boundary
+  as `children` — where React's PRODUCTION Flight serializer defers any
+  element it reaches once the current row passes 3,200 bytes, and the browser
+  turns the deferral back into a lazy. A lazy suspends, and `ShellRegion`
+  wraps its children in a `<Suspense>`. Same trap `components/Hint.tsx`
+  documents, same reason it cannot reproduce in `next dev`. **Fixed** by
+  pairing each region with its widget inside `components/AppChrome.tsx`, a
+  "use client" module, so the element is created by whoever renders it and
+  never travels through Flight. Verified from the Flight payload of a real
+  production build: the layout's row went from eleven `$L` deferrals to
+  seven, and every shell region is now inline plain data.
+
+  **Two — Clerk's `<UserButton>`.** It renders `clerk.loaded &&
+  <ClerkHostRenderer …/>` (`@clerk/clerk-react@5.61.9`,
+  `chunk-THNCS7QR.mjs:669`) and `loaded` is a mutable flag on a singleton,
+  read DURING render, false on the server always. So the server writes no
+  markup for it on any signed-in page; if Clerk's script wins the race
+  against hydration, the browser's FIRST render writes an element the
+  server's HTML does not have. Element-level, every authenticated page, a
+  race — the right shape on all three counts. **Fixed** by
+  `components/AfterMount.tsx`, which renders nothing until mount. That cannot
+  change what anybody sees, because the server already rendered nothing
+  there; it can only remove the disagreement.
+
+  **AND A THIRD THING THAT LOOKS EXACTLY LIKE THE BUG AND IS NOT — READ THIS
+  BEFORE BELIEVING A `B:`/`S:` PAIR.** Counted on four pages straight out of
+  the server's response, no instrumentation:
+
+  | page | `<template id="B:` | `<div hidden id="S:` | `<!--$?-->` pending | `<!--$-->` settled | bytes |
+  | --- | --- | --- | --- | --- | --- |
+  | /wall-types | 1 | 1 | 1 | 6 | 50,432 |
+  | /backcharges | 1 | 1 | 1 | 6 | 54,961 |
+  | /safety | 1 | 1 | 1 | 6 | 60,014 |
+  | /settings | 2 | 2 | 2 | 5 | 98,626 |
+
+  A MutationObserver installed before the page's first script caught the
+  sidebar and then the top bar being lifted out of those hidden divs into the
+  shell row, in the same millisecond as one of the #418s. #501 read that as
+  proof that a shell boundary had SUSPENDED. **It is not.** React streams a
+  boundary out of order when it is merely BIG, having never suspended at all:
+  `flushSegment` in react-dom-server checks
+  `isEligibleForOutlining(request, boundary) && flushedByteSize +
+  boundary.byteSize > request.progressiveChunkSize`, where eligible means
+  only `500 < byteSize` and `progressiveChunkSize` defaults to 12,800 (Next
+  sets it only for its own inserted-HTML sub-render, never for the page).
+  The sidebar's markup measures **13,442 bytes**, so that region is outlined
+  on EVERY authenticated page, deterministically — which is exactly why every
+  page in the table ships at least one pair.
+
+  Proved by building the shell at a public route on a local production build
+  and counting the markers before and after fix One: **3 pending boundaries
+  before, 3 after, byte-identical sidebar content both times**, while the
+  Flight payload changed completely. So the markers are not evidence of
+  suspension, they are not evidence about the mismatch, and a fix that
+  removes them is not available from app code — the only lever is the
+  boundary's own size, and the sidebar cannot be made small. Do not spend a
+  day on them.
+
+  **ELIMINATED, so nobody re-runs these.**
+    - `localToday()` in server-rendered markup: all eight hits in files
+      without `"use client"` are COMMENTS, including the only apparent
+      candidate — `components/DeterminationFactsFields.tsx`, whose comment
+      says `localToday()` "would be wrong on both counts and is not
+      imported". The #185 shape, one level deeper than it looks.
+    - the `prova_tz` cookie's first-visit fallback: `TimeZoneCookie` renders
+      `null` and does its work in an effect, `viewerTimeZone()` runs only on
+      the server, and CI is UTC on both sides regardless.
+    - invalid HTML nesting (a `<div>` in a `<p>`, a nested `<button>`, a
+      nested `<form>`, a `<tr>` with no `<tbody>`) — all of which the
+      browser's parser rewrites, producing a guaranteed non-text mismatch.
+      Scanned with the TypeScript AST across 345 files and 460 components,
+      resolving one level of component composition: zero findings, and the
+      scanner was mutation-tested against a fixture that has all five.
+    - the page's own imports: the failing and passing sets share every
+      module once the actions barrel is excluded.
+    - `packages/ui`: five files, none of which reads a clock, a window or a
+      storage API.
+    - the navigation cadence: 6 mismatches with no dwell against 4 with a
+      three-second dwell, same session. It is not an artefact of the suite
+      navigating fast.
+
+  **THE PUBLIC SUITE PROVES NOTHING ABOUT THIS.** `e2e-public` is green and
+  calls `expectHealthy` WITHOUT a monitor, so it never looks at `pageerror`
+  at all. Public pages were separately checked with a monitor, locally and
+  in real Chromium, at both cadences: clean — which is evidence, and it is
+  evidence the green check was not giving.
+
+  **How to re-run any of it.** The signed-in suite cannot run in an agent
+  container (Clerk's FAPI host and `cdn.playwright.dev` are both denied by
+  the egress proxy), so the browser instrument is CI's own `e2e` job on your
+  PR and step 11's list. What CAN be run locally, and is worth more than it
+  sounds, is the MARKER COUNT: build for production, mount the shell's shape
+  at a route outside `(app)` so no sign-in is needed, `next start`, and count
+  `<template id="B:` / `<div hidden id="S:` / `<!--$?-->` in the response.
+  That is what settled the third item above in twenty minutes. A local
+  Chromium exists at `/opt/pw-browsers` — but it cannot reach a loopback
+  server, because Playwright launches it with
+  `--proxy-bypass-list=<-loopback>` and the agent proxy refuses plain-HTTP
+  requests, so `page.goto("http://127.0.0.1:…")` returns the proxy's own 405
+  page. A run that looks green there has loaded nothing; check that the page
+  HYDRATED (a `__reactFiber$` key on a real element) before believing any
+  number from it.
+
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.
 - `CHANGELOG.md`: newest first; says why decisions were made and the

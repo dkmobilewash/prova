@@ -96,14 +96,43 @@ export class HealthMonitor {
    *
    * Why apart: the page recovers from one by re-rendering, so a person
    * sees nothing — but the server's HTML and the browser's first render
-   * disagreed, which is the defect CLAUDE.md's Dates bullet warns about,
-   * and it is worth failing the run over. Why last: it fired on
-   * /jobs/<id>/billing in one run, /jobs/<id>/retainage in the next, and
-   * on neither in a third — the shape of something in the job-tab shell
-   * rendered from "now". Failing step 6 or 7 over it skipped 7b-10, the
-   * steps that exist to catch an invoice crashing every page, and made the
-   * report about the wrong thing. So the run still goes red, naming every
-   * URL it happened on, after the spine has had its say.
+   * disagreed, and it is worth failing the run over. Why last: it fires on
+   * a different set of pages every run, so failing step 6 or 7 over it
+   * skipped 7b-10, the steps that exist to catch an invoice crashing every
+   * page, and made the report about the wrong thing. So the run still goes
+   * red, naming every URL it happened on, after the spine has had its say.
+   *
+   * WHAT THIS COMMENT SAID UNTIL 2026-09-25, AND WHY IT WAS EXPENSIVE. It
+   * read "the shape of something in the job-tab shell rendered from
+   * 'now'", and the assertion's own failure message still pointed at
+   * CLAUDE.md's Dates bullet. Both were wrong, and being wrong in a
+   * plausible direction is what kept this open: they sent three separate
+   * investigations at dates and timezones.
+   *
+   * It is not a date, and the error itself says so. React's #418 carries
+   * its kind as the first argument, and every occurrence in every run
+   * reads `args[]=HTML` — read out of the installed react-dom 19.2.8,
+   * `cjs/react-dom-client.development.js`, `throwOnHydrationMismatch`:
+   * "Hydration failed because the server rendered " + (fromText ? "text"
+   * : "HTML"). `fromText` is true ONLY for a text-node mismatch, so
+   * `HTML` means an ELEMENT-level disagreement — a node the server wrote
+   * and the browser did not, or the other way round. A date formatted
+   * differently is a text mismatch and cannot produce this message.
+   * Playwright also sets no `timezoneId`, so in CI the server and the
+   * browser are both UTC and every zone-derived value is identical on the
+   * two sides by construction.
+   *
+   * Nor is it the job-tab shell, or any page. See CLAUDE.md's entry for
+   * the measurement: ~one authenticated page load in three, on whichever
+   * pages happen to lose the race.
+   *
+   * WHAT THE SIGNED-IN SHELL DOES ABOUT IT, so a list here is read against
+   * the right history. Two things were fixed 2026-09-25: the shell's
+   * regions are paired with their widgets inside a client module
+   * (`components/AppChrome.tsx`), so a region's child can no longer arrive
+   * in the browser as a deferred lazy. If this list is non-empty again, the
+   * first question is which element the two sides disagree about rather
+   * than which page it says.
    */
   readonly hydrationMismatches: string[] = [];
   readonly consoleErrors: string[] = [];
