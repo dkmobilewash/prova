@@ -55,13 +55,40 @@
  * Clerk suppress delivery entirely — no real email is ever sent for these
  * accounts. See seedClerkUsers.ts for how each one is minted.
  */
+/**
+ * WHY THERE IS A USERNAME AND A PHONE HERE WHEN THE APP SIGNS IN BY EMAIL.
+ *
+ * The `striking-jaybird` DEVELOPMENT instance requires both as user
+ * attributes, and `createUser` with an email alone is refused:
+ *
+ *     [form_data_missing] missing data
+ *     ["username" "phone_number"] data doesn't match user requirements
+ *     set for this instance
+ *
+ * That is an instance SETTING, not something the suite can assert its way
+ * out of — and it is deliberately fixed here rather than by relaxing the
+ * setting, because that instance is shared: it holds the original dev
+ * users, and loosening a requirement on it to make a test pass changes
+ * what every other dev sign-up is asked for. Sending the two fields costs
+ * nothing and touches nobody.
+ *
+ * The phone numbers are Clerk's documented FICTIONAL test range — `+1
+ * (XXX) 555-0100` through `555-0199` — which send no SMS and verify with
+ * `424242`, the same bargain `+clerk_test` makes for email. They must be
+ * distinct from each other: two users cannot share a phone on one
+ * instance, and the collision would surface as this same opaque 422 on
+ * whichever persona happened to be seeded second.
+ *
+ * `personas.test.ts` holds both invariants, since neither is visible at
+ * the point where a new persona would be added.
+ */
 export const PERSONAS = {
-  empty: { email: "e2e-empty+clerk_test@example.com", label: "EMPTY" },
-  main: { email: "e2e-main+clerk_test@example.com", label: "MAIN" },
-  jobCreate: { email: "e2e-jobcreate+clerk_test@example.com", label: "JOB_CREATE" },
-  field: { email: "e2e-field+clerk_test@example.com", label: "FIELD" },
-  journey: { email: "e2e-journey+clerk_test@example.com", label: "JOURNEY" },
-  badInputs: { email: "e2e-badinputs+clerk_test@example.com", label: "BAD_INPUTS" },
+  empty: { email: "e2e-empty+clerk_test@example.com", label: "EMPTY", username: "e2e_empty", phone: "+15555550101" },
+  main: { email: "e2e-main+clerk_test@example.com", label: "MAIN", username: "e2e_main", phone: "+15555550102" },
+  jobCreate: { email: "e2e-jobcreate+clerk_test@example.com", label: "JOB_CREATE", username: "e2e_jobcreate", phone: "+15555550103" },
+  field: { email: "e2e-field+clerk_test@example.com", label: "FIELD", username: "e2e_field", phone: "+15555550104" },
+  journey: { email: "e2e-journey+clerk_test@example.com", label: "JOURNEY", username: "e2e_journey", phone: "+15555550105" },
+  badInputs: { email: "e2e-badinputs+clerk_test@example.com", label: "BAD_INPUTS", username: "e2e_badinputs", phone: "+15555550106" },
 } as const;
 
 export type PersonaKey = keyof typeof PERSONAS;

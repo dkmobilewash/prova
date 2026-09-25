@@ -34,6 +34,30 @@ type FlatEntry =
 const DEBOUNCE_MS = 150;
 const MIN_QUERY_LENGTH = 2;
 
+/**
+ * WHICH MODIFIER KEY TO NAME — and why this must never be read during
+ * render.
+ *
+ * The server and the browser are different machines. Vercel runs Linux,
+ * so `isMac()` is false there and the HTML says "Ctrl K"; a reader on a
+ * Mac, iPhone or iPad gets true and the first client render says "⌘K".
+ * Two different text nodes in the same place on the first render is a
+ * React HYDRATION MISMATCH, and this component sits in the Topbar, which
+ * `app/(app)/layout.tsx` mounts on EVERY authenticated page — so it was
+ * one error on every page load, for every Mac user, for as long as the
+ * global search box has existed (c538c3ad, 2026-09-20).
+ *
+ * The `typeof navigator === "undefined"` guard reads like it handles the
+ * server, and it is the reason this looked safe. It only stops the call
+ * from THROWING. Returning a different answer on the server than in the
+ * browser is the entire bug, and a guard that returns a confident `false`
+ * is exactly how it was produced.
+ *
+ * So the first render is the same on both sides — the server's answer —
+ * and the real one is swapped in by an effect, after hydration has
+ * already matched. A Mac user sees "Ctrl K" for one frame. That is the
+ * whole cost, and it buys a page that hydrates.
+ */
 function isMac(): boolean {
   if (typeof navigator === "undefined") return false;
   return /Mac|iPhone|iPad/.test(navigator.platform ?? navigator.userAgent ?? "");
@@ -63,6 +87,9 @@ export function SearchLauncher() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  // Starts at the SERVER's answer so the first client render matches the
+  // HTML byte for byte; the effect below corrects it after hydration.
+  const [mac, setMac] = useState(false);
   const holder = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const requestId = useRef(0);
@@ -130,6 +157,12 @@ export function SearchLauncher() {
       document.removeEventListener("mousedown", onDown);
     };
   }, [open]);
+
+  // After hydration has already matched, not during it. Empty deps: the
+  // machine someone is holding does not change mid-session.
+  useEffect(() => {
+    setMac(isMac());
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -202,7 +235,8 @@ export function SearchLauncher() {
     }
   }
 
-  const shortcutLabel = isMac() ? "⌘K" : "Ctrl K";
+  // Never `isMac()` inline here — see the note on that function.
+  const shortcutLabel = mac ? "⌘K" : "Ctrl K";
   const trimmedQuery = query.trim();
   const showEmpty =
     !loading && !error && trimmedQuery.length >= MIN_QUERY_LENGTH && pages.length === 0 && records.length === 0;
