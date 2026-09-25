@@ -264,3 +264,59 @@ here, and deliberately not asserted either way: an agent container cannot
 reach either dashboard. What IS established is that the app has no code
 that could satisfy that task on any instance. Worth ten seconds of
 somebody's attention before it is somebody's first impression.
+
+## The dev-server diagnostic ran, answered, and is switched back off
+
+`E2E_DEV_SERVER` was temporarily forced ON (`2a885f13`, "REVERT THIS LINE")
+so one CI run would print React's own hydration diff instead of a stripped
+`#418`. It worked. Run `36097089609` named the element:
+
+```
+<withClerk(UserButton)>
+  <UserButton …>
+    <ClerkHostRenderer …>
++     <div ref={{current:null}} data-clerk-component="UserButton">
+```
+
+A node the browser's first render has and the server's HTML does not — an
+ELEMENT-level mismatch, which is what `args[]=HTML` meant all along. Not a
+date, and not `SearchLauncher`.
+
+**The default is back to `=== "1"` and must stay opt-in.** Nothing in
+`ci.yml` sets the variable, so a `!== "0"` default silently turns the
+signed-in `e2e` job into a dev-server run — a suite whose entire premise is
+"the way production runs it", reporting on something else. Two further
+reasons from that same run, neither anticipated:
+
+- **it is slow and self-noising** — 12.7 minutes, its own 120s timeouts and
+  an `ERR_CONNECTION_RESET`, so 24 of 36 verdicts were red for reasons that
+  are the server, not the app;
+- **it inverts the crash/mismatch split.** `lib/health.ts` recognises a
+  hydration mismatch by matching `Minified React error #418`, which a dev
+  build never emits. So under `E2E_DEV_SERVER` every mismatch lands in
+  `crashes` instead and fails the step it happened on — exactly the
+  mid-spine failure step 11 was written to avoid. The flag changes what the
+  monitor MEANS, which is why it is a diagnostic and never a mode.
+
+`verdicts: collected 36, returned 36` on that run, which is the number worth
+keeping from it: whatever else was red, nothing was silently absent.
+
+## The Mac mismatch, measured rather than argued
+
+The section above says the `SearchLauncher` defect cannot be what E2E sees.
+That is now measured instead of reasoned, in real Chromium against a
+production React build, by rendering the component's real source on the
+server (no Mac) and hydrating it with `navigator.platform` overridden before
+the first script runs:
+
+| component | platform | React error |
+| --- | --- | --- |
+| before the fix | `MacIntel` | `#418 args=["text", ""]` |
+| before the fix | `iPhone` | `#418 args=["text", ""]` |
+| before the fix | `Linux x86_64` | none — **why CI was blind** |
+| after the fix | `MacIntel` / `iPhone` / `Linux` | none, label still ends up `⌘K` |
+
+`args[0]` is React's own name for the KIND: `throwOnHydrationMismatch` in
+`react-dom@19.2.8` writes `fromText ? "text" : "HTML"`. So the two defects
+are distinguishable from the error alone — this one is `text`, the shell's
+is `HTML` — and a run that reports `HTML` was never reporting this.

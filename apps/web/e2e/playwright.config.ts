@@ -54,13 +54,20 @@ const PORT = Number(process.env.E2E_PORT ?? 3100);
 /** Run the suite against `next dev` instead of `next start`, so React
  * reports hydration mismatches with a diff instead of a stripped error
  * code. Diagnostic only — see the note on `webServer.command`. */
-// TEMPORARY DIAGNOSTIC — REVERT THIS LINE. Forced on so one CI run prints
-// the hydration diff; CI does not set the variable and cannot be asked to
-// without editing ci.yml. The next commit on this branch puts it back to
-// `=== "1"`. If you are reading this on main, it escaped and should be
-// reverted immediately: a dev-server E2E run proves nothing about a
-// production build.
-const DEV_SERVER = process.env.E2E_DEV_SERVER !== "0";
+// OPT-IN ONLY, and it has to stay that way. 2a885f13 flipped this to
+// `!== "0"` for one diagnostic run — CI sets nothing, so that made the
+// signed-in `e2e` job run against `next dev`, which is the one thing this
+// config's own note below says proves nothing about a production build. The
+// diagnostic worked (run 36097089609 named the element: a client-only
+// `data-clerk-component="UserButton"` div), and the default is back.
+//
+// Two things that run also showed, both arguments against ever defaulting
+// this on: the dev server took 12.7 minutes and produced its own timeouts
+// and an ERR_CONNECTION_RESET, and `lib/health.ts` classifies a hydration
+// mismatch by matching "Minified React error #418" — which a dev build
+// never prints, so every mismatch is counted as a CRASH instead and fails
+// the step it happened on rather than step 11.
+const DEV_SERVER = process.env.E2E_DEV_SERVER === "1";
 
 // AT CONFIG LOAD, not only in global-setup.ts. Read out of the installed
 // runner (playwright@1.63.0 lib/runner/index.js, `createGlobalSetupTasks`):
