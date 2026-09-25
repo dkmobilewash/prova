@@ -383,7 +383,10 @@ test.describe("the estimating desk", () => {
     await page.reload();
     await expectHealthy(page, "job proposal after adding a clause from the library", { monitor });
     await expect(page.getByRole("heading", { name: "Exclusions" })).toBeVisible();
-    await expect(page.locator("main").getByText(CLAUSE_TEXT)).toBeVisible();
+    // `exact` because the builder's "From your library" picker is still on the
+    // page below the document, and its <option> reads "Exclusion — <the clause>"
+    // — the clause text a second time, inside a longer string.
+    await expect(page.locator("main").getByText(CLAUSE_TEXT, { exact: true })).toBeVisible();
   });
 
   test("10. the job's gross area, and the conceptual $/SF calculator (#500)", async () => {

@@ -194,6 +194,25 @@ record it as a test annotation and assert `monitor.crashes` — an uncaught
 exception, a page that actually fell over — instead. The comment at each site
 says to put the assertion back the day #501 lands, and it is one line.
 
+**WHERE IT LANDED: 59 of 63 passing, `takeoff-plan` and `bid-desk` green end to
+end, `estimating-spine` green with one last selector of the same family fixed
+(`main` holds the printed clause AND the picker's `<option>`, which reads
+"Exclusion — <the clause>"). The only remaining red is `journey.spec.ts` step
+11, the #501 shell hydration race — 21 mismatches across /jobs/new, the job
+tabs, /dashboard, /ask, /alerts, /messages, /schedule, /compliance,
+/union-compliance, /safety, /vendors/pricing and /settings — which is Diego's
+pending fix and was red on `main` before this branch existed.**
+
+Worth saying about the four runs it took: not one failure was a defect in the
+thirteen features. Two were the suite's own infrastructure (a Clerk instance
+that would not mint a persona, and nothing saying so), six were selectors
+matching a substring in two places, and one was a spec pressing a control before
+React had attached. The features themselves — the wall schedule deriving four
+lines from one run, the recap applying markup to a line price, a template
+appended, a measured 40 ft reaching the estimate unpriced, an unacknowledged
+addendum making a bid non-responsive, two quotes levelled with their exclusions
+— did what they say on the first run that could reach them.
+
 **What still has no coverage, stated rather than left to be assumed.** The
 `/api/takeoff/plan/[planId]` route is stubbed in the browser by the takeoff
 spec (the fake blob it would proxy does not exist in the suite), so its own
