@@ -1,4 +1,4 @@
-import { prisma } from "@prova/db";
+import { Prisma, prisma, type TradeScope } from "@prova/db";
 import { parseNumericInput } from "@/lib/numeric-input";
 import type { ActionResultWith } from "@/lib/actions/shared";
 import { NOT_ESTIMATE_STAGE } from "./draft-lines";
@@ -55,9 +55,41 @@ export async function addCatalogLine(
   const line = await prisma.jobLineItem.create({
     data: {
       jobId: job.id,
+      ...catalogLineFields(entry),
+      quantity,
+    },
+    select: { id: true },
+  });
+
+  return { ok: true, value: { lineItemId: line.id, description: entry.description, unit: entry.unit } };
+}
+
+/**
+ * THE FIELDS A LINE INHERITS FROM A CATALOG ENTRY, in one place.
+ *
+ * Extracted 2026-09-25 when estimate templates became a second writer of
+ * catalog-sourced lines. Two copies of this mapping would drift, and this
+ * file already carries the scar of exactly that: the comment a few lines
+ * above records a fix that survived inside the bug it fixed, because a
+ * sentence claiming two things agreed went stale instead of failing.
+ *
+ * `quantity` is deliberately NOT here. It is the one field the two callers
+ * genuinely disagree about — one parses a person's typed string, the other
+ * takes a template's default — and folding it in would hide that.
+ */
+export function catalogLineFields(entry: {
+  id: string;
+  description: string;
+  unit: string | null;
+  defaultUnitPrice: Prisma.Decimal | null;
+  defaultBudgetedUnitCost: Prisma.Decimal | null;
+  defaultLaborHours: Prisma.Decimal | null;
+  tradeScope: TradeScope | null;
+  craftClassificationId: string | null;
+}) {
+  return {
       description: entry.description,
       unit: entry.unit,
-      quantity,
       unitPrice: entry.defaultUnitPrice,
       budgetedUnitCost: entry.defaultBudgetedUnitCost,
       currentEstimatedUnitCost: entry.defaultBudgetedUnitCost,
@@ -84,10 +116,6 @@ export async function addCatalogLine(
       // how work priced from it actually costed. A reference, not a live
       // link: changing the entry's defaults never touches this row.
       sourceCatalogEntryId: entry.id,
-      priceBasis: "COMPANY_CATALOG",
-    },
-    select: { id: true },
-  });
-
-  return { ok: true, value: { lineItemId: line.id, description: entry.description, unit: entry.unit } };
+      priceBasis: "COMPANY_CATALOG" as const,
+  };
 }

@@ -243,6 +243,32 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: byCompany,
   },
   {
+    key: "estimateTemplates",
+    model: "estimateTemplate",
+    label: "Estimate templates",
+    note:
+      "The shape of a job this company bids often, saved once. Reference data that GENERATES " +
+      "estimate lines -- it is not a second copy of line-item data, and applying a template " +
+      "appends lines rather than linking to them, so nothing here tracks what it produced.",
+    columns: ["id", "name", "tradeScope", "description", "createdAt", "updatedAt"],
+    scope: byCompany,
+  },
+  {
+    key: "estimateTemplateItems",
+    model: "estimateTemplateItem",
+    label: "Estimate template lines",
+    note:
+      "What each template adds. An empty defaultQuantity means the takeoff decides, and the " +
+      "generated line starts at 1 rather than 0 -- a line of zero prices to nothing and makes a " +
+      "total look complete. catalogEntryId is a template link only: re-pricing the catalog never " +
+      "reaches back into a line already on an estimate.",
+    columns: [
+      "id", "templateId", "description", "unit", "defaultQuantity", "catalogEntryId",
+      "sortOrder", "createdAt", "updatedAt",
+    ],
+    scope: (companyId: string) => ({ template: { companyId } }),
+  },
+  {
     key: "wallTypeComponents",
     model: "wallTypeComponent",
     label: "Wall type parts",
@@ -259,6 +285,71 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Wall runs",
     note: "Each run of wall measured on a job — type, length, height, openings.",
     columns: ["id", "jobId", "wallTypeId", "label", "lengthFt", "heightFt", "openings", "sortOrder", "createdAt", "updatedAt"],
+    scope: byCompany,
+  },
+  {
+    key: "bidQuotes",
+    model: "bidQuote",
+    label: "Quotes requested and received for levelling, per bid",
+    note:
+      "One row is the whole exchange with one supplier about one scope package: when you asked " +
+      "(requestedOn), when you needed it back (dueBy), and what came back (amount, quotedOn) or " +
+      "that they declined (declinedAt). Distinct from the vendor price history: these belong to " +
+      "one bid and expire with it. An empty amount means nobody has answered yet -- it is not a " +
+      "quote of zero, and sorting this file by amount would put those first. Read the exclusions " +
+      "column before comparing the amounts: a quote that leaves work out is cheaper and is not " +
+      "the same bid.",
+    columns: [
+      "id", "bidInvitationId", "packageLabel", "vendorId", "vendorName", "amount", "quotedOn",
+      "requestedOn", "dueBy", "declinedAt", "exclusions", "notes", "createdAt", "updatedAt",
+    ],
+    scope: byCompany,
+  },
+  {
+    key: "bidAddenda",
+    model: "bidAddendum",
+    label: "Addenda issued on each bid, and whether acknowledged",
+    note:
+      "What the GC issued during the bid period and whether it was acknowledged. An empty " +
+      "acknowledgedOn means NOT acknowledged -- on a public bid that is the most common reason a " +
+      "low bid is rejected unread. affectsPricedScope is somebody's judgement that the addendum " +
+      "changed work already priced; it is not derived from anything and nothing re-prices " +
+      "automatically. reference is whatever the GC called it and is never parsed.",
+    columns: [
+      "id", "bidInvitationId", "reference", "issuedOn", "acknowledgedOn", "affectsPricedScope",
+      "impactNote", "notes", "createdAt", "updatedAt",
+    ],
+    scope: byCompany,
+  },
+  {
+    key: "bidRequirements",
+    model: "bidRequirement",
+    label: "ITB requirements per bid that only a person can confirm",
+    note:
+      "Bid bond, signed form, subcontractor list, insurance certificate and the like -- the items " +
+      "nothing in the data could verify, so somebody records them with a date. An empty " +
+      "satisfiedOn means outstanding. Deliberately NOT here: whether every alternate is priced or " +
+      "every addendum acknowledged. Those are computed from the bid lines and addenda on every " +
+      "read, so there is no stored flag that could disagree with them.",
+    columns: [
+      "id", "bidInvitationId", "kind", "label", "required", "satisfiedOn", "notes",
+      "createdAt", "updatedAt",
+    ],
+    scope: byCompany,
+  },
+  {
+    key: "bidLines",
+    model: "bidLine",
+    label: "Alternates, unit prices and allowances on each bid",
+    note:
+      "What each bid carried besides its number. An ALLOWANCE sits INSIDE the base bid; an " +
+      "ALTERNATE sits outside it and only counts when accepted (its amount is signed — negative " +
+      "is a deduct); a UNIT_PRICE is a rate with no total at all. Summing the amount column " +
+      "across kinds gives a figure that means nothing.",
+    columns: [
+      "id", "bidInvitationId", "kind", "label", "description", "amount", "unit", "unitPrice",
+      "accepted", "sortOrder", "createdAt", "updatedAt",
+    ],
     scope: byCompany,
   },
   {

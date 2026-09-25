@@ -1,0 +1,164 @@
+/// BID-FORM COMPLIANCE — the paperwork that decides whether anybody reads
+/// your number.
+///
+/// Every other estimating model in this folder makes the NUMBER better:
+/// `JobBidRecap` marks it up, `BidLine` splits it into the parts a GC's form
+/// asks for, `BidQuote` levels what your own subs quoted, `bid-outcome`
+/// compares it to what the work cost. None of them stops the bid being
+/// thrown in the bin before the number is read.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// A NON-RESPONSIVE BID LOSES ON PAPERWORK, NOT ON PRICE.
+/// ─────────────────────────────────────────────────────────────────────────
+///
+/// An Invitation to Bid carries requirements — acknowledge every addendum,
+/// price every alternate, provide the unit prices, attach the bond, sign the
+/// form. Miss one and the bid is rejected unread, however good the number
+/// was. That is a worse outcome than losing, because losing at least teaches
+/// you your price was high.
+///
+/// WHAT THE APP CAN CHECK AND WHAT IT CANNOT, which is the whole design.
+///
+/// Some of these the data already answers: an ALTERNATE with no amount is an
+/// unpriced alternate, a UNIT_PRICE with no rate is a missing rate, a
+/// `BidAddendum` with no `acknowledgedOn` is unacknowledged. Those are
+/// DERIVED on every read and there is deliberately no "satisfied" column for
+/// them — a stored flag would let somebody tick "all alternates priced",
+/// add an unpriced alternate, and keep the tick. That is the exact defect
+/// CLAUDE.md's "derived state is never stored" rule exists for, and a
+/// compliance checklist is the worst possible place to reintroduce it.
+///
+/// The rest nothing in the data could know — whether the bond was actually
+/// obtained, the form actually signed, the certificate actually attached. A
+/// person records those, with a date. `BidRequirement` holds only that kind.
+///
+/// And nothing here ever says READY. `lib/bid-responsiveness.ts` reports what
+/// is outstanding; it has no "compliant" verdict to hand out. Same posture as
+/// `bid-outcome.ts` toward an unfinished job and `bid-levelling.ts` toward a
+/// lowest it cannot vouch for: on a document that gets submitted once, a
+/// green tick earned by accident is worse than no tick at all.
+
+/// One addendum the GC issued during the bid period, and whether it has been
+/// acknowledged.
+///
+/// THE NUMBER IS THE GC'S, SO IT IS ENTERED TEXT AND NOT A COUNTER. Every
+/// `*Counter` model in this schema exists because WE issue a sequence and a
+/// reissued number on our own document is a real defect. An addendum number
+/// comes off somebody else's letterhead — it can be "3", "3R", "Addendum
+/// Three", or skip from 2 to 4 because the GC withdrew one. Deriving or
+/// validating it would be inventing a rule the issuer does not follow.
+model BidAddendum {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// CASCADE, the same call `BidLine` and `BidQuote` make and for the same
+  /// reason: an addendum received for a bid is part of THAT BID's working
+  /// out, not an independent record that should survive it. Deleting the
+  /// invitation must not be refused because three addenda were logged on it.
+  ///
+  /// Carries no `jobId`, so nothing here reaches a job and no cleanup script
+  /// needs to know about it.
+  bidInvitationId String
+  bidInvitation   BidInvitation @relation(fields: [bidInvitationId], references: [id], onDelete: Cascade)
+
+  /// What the GC called it, in their words — "Addendum 3", "ASI 2", "Bulletin
+  /// 4". Free text for the reason above.
+  reference String
+
+  /// The day the GC issued it, ENTERED and not stamped. An addendum logged on
+  /// Friday that was issued on Tuesday was issued on Tuesday, and the gap
+  /// between the two is how you find out you are hearing about changes late.
+  issuedOn DateTime?
+
+  /// NULL UNTIL ACKNOWLEDGED, and that null is the whole point of the model.
+  ///
+  /// A date rather than a boolean, for the reason every other evidence field
+  /// in this schema gives: WHEN you acknowledged it is part of what happened,
+  /// and on a bid that gets protested it is the fact in dispute.
+  acknowledgedOn DateTime?
+
+  /// Whether this addendum changed work we had already priced — a human
+  /// judgement, recorded because nothing in the data could infer it.
+  ///
+  /// NOT derived state: there is no other field this could disagree with. It
+  /// is the reason gap #8 (re-quantifying from a revision) has somewhere to
+  /// start, and on its own it is already worth the column — "Addendum 3
+  /// changed the soffit detail" is what stops a bid going out against
+  /// superseded quantities.
+  affectsPricedScope Boolean @default(false)
+
+  /// What it changed, in the estimator's own words. Free text on purpose:
+  /// this is read by a person deciding whether to re-price, never summed.
+  impactNote String?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([bidInvitationId])
+  @@index([companyId])
+}
+
+/// The kinds of requirement a person has to attest to.
+///
+/// DELIBERATELY MISSING FROM THIS ENUM: anything the app can check itself.
+/// There is no ALL_ALTERNATES_PRICED, no ADDENDA_ACKNOWLEDGED and no
+/// UNIT_PRICES_PROVIDED member, because a row of those kinds would carry a
+/// `satisfiedOn` that the underlying rows could contradict — see the header.
+/// Those are computed in `lib/bid-responsiveness.ts` from `BidLine` and
+/// `BidAddendum`, every time, and cannot be ticked.
+enum BidRequirementKind {
+  /// A bid bond or bid security at some percentage of the bid.
+  BID_BOND
+  /// The GC's own form, signed and dated by someone authorised.
+  SIGNED_BID_FORM
+  /// The list of your own subs/suppliers the GC requires with the bid.
+  SUBCONTRACTOR_LIST
+  /// Certificate of insurance at the limits the ITB names.
+  INSURANCE_CERTIFICATE
+  /// Prequalification, safety questionnaire, EMR letter.
+  PREQUALIFICATION
+  /// DBE/MBE/WBE participation forms on public work.
+  PARTICIPATION_FORMS
+  /// Anything this GC asks for that the list above does not cover.
+  OTHER
+}
+
+/// One thing this GC's bid form demands that only a person can confirm.
+model BidRequirement {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// CASCADE, for the reason given on `BidAddendum` above.
+  bidInvitationId String
+  bidInvitation   BidInvitation @relation(fields: [bidInvitationId], references: [id], onDelete: Cascade)
+
+  kind BidRequirementKind
+
+  /// As the ITB words it — "Bid bond, 10% of base bid, AIA A310". The enum
+  /// says what KIND of thing it is so the app can group and explain; this
+  /// says what this GC actually asked for, which is what somebody has to go
+  /// and satisfy.
+  label String
+
+  /// Some ITB items are optional or conditional ("bond required over
+  /// $50,000"). An optional item that is outstanding is worth showing and is
+  /// not a reason to call the bid non-responsive, so the two cannot be one
+  /// field.
+  required Boolean @default(true)
+
+  /// NULL UNTIL DONE. An entered date, not a boolean, and not `now()`: a bond
+  /// obtained on Monday and recorded on Wednesday was obtained on Monday.
+  satisfiedOn DateTime?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([bidInvitationId])
+  @@index([companyId])
+}

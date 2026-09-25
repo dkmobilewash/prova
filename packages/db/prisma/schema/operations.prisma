@@ -68,6 +68,8 @@ model Vendor {
 
   materialOrders MaterialOrder[]
   priceQuotes    VendorPriceQuote[]
+  /// Quotes given for a specific bid — see bid-levelling.prisma.
+  bidQuotes   BidQuote[]
 
   @@index([companyId])
 }

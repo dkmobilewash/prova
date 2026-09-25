@@ -2,6 +2,8 @@ import { test, expect } from "@playwright/test";
 import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { dataTour } from "../lib/dataTour";
+import { landOnDashboard } from "../lib/journey";
+import { HealthMonitor } from "../lib/health";
 
 /**
  * Dashboard on a brand-new, genuinely empty company (the EMPTY persona —
@@ -17,7 +19,19 @@ test.describe("dashboard, brand-new empty company", () => {
   });
 
   test("shows the Getting started card and its jobs-empty state", async ({ page }) => {
-    await page.goto("/dashboard");
+    // NOT a bare goto("/dashboard"). EMPTY is gated, on purpose:
+    // `seedDatabase.ts` deliberately leaves `businessScopeAskedAt` unset on
+    // this persona — "they are meant to be brand new, so they get the gate a
+    // real new customer gets" — and `/dashboard` is the ONE route that
+    // redirects (lib/onboarding-gate.ts). So this spec was asserting against
+    // /welcome and could only fail, which is why the sibling empty-state
+    // specs on the same persona (contacts, punch-lists, field-reports) pass:
+    // none of them goes to /dashboard.
+    //
+    // #447 Cause A called this and prescribed the fix — lift what the
+    // journey already does into the specs that need it, rather than each one
+    // re-learning the gate exists.
+    await landOnDashboard(page, new HealthMonitor(page));
 
     await expect(page.getByRole("heading", { name: "Getting started" })).toBeVisible();
     await expect(page.getByRole("progressbar", { name: "Getting started progress" })).toBeVisible();

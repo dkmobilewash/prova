@@ -4,12 +4,15 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
+import type { Benchmark } from "@/lib/conceptual-estimate";
+import { loadConceptualBenchmark } from "@/lib/conceptual-estimate-query";
 import {
   actionFail as fail,
   actionOk as ok,
   isUniqueConstraintError,
   ownerRefusal,
   type ActionResult,
+  type ActionResultWith,
 } from "./shared";
 import {
   BidPursuitInputError,
@@ -247,4 +250,50 @@ export async function deleteBidPursuit(id: string): Promise<ActionResult> {
 
   revalidatePath("/pipeline");
   return ok;
+}
+
+/**
+ * What this company's finished work ran at, per square foot — ON DEMAND.
+ *
+ * A READ, not a write, and deliberately an action rather than a page loader.
+ * `pipelineQueryCensus.test.ts` exists because saving on /pipeline re-renders
+ * the route from the root, so anything in that page's load path runs again on
+ * every save. This benchmark reads up to 200 finished jobs with their line
+ * items, cost entries, invoices and time entries — far too much to spend on
+ * every render for a calculator most people will never open.
+ *
+ * So it is fetched when somebody opens the calculator and not before. The
+ * census caught this: the first version of it was a fourth loader on that
+ * page.
+ *
+ * Returns the benchmark itself rather than a sentence. Its SHAPE is what
+ * makes a range un-printable when it does not exist — nulls, not zeros — and
+ * flattening it to a string here would throw that away.
+ */
+export async function conceptualBenchmark(): Promise<ActionResultWith<Benchmark>> {
+  const context = await requireCompanyContext();
+  // BOTH capabilities, and the guard census is why the first version had only
+  // one of them.
+  //
+  // MANAGE_ESTIMATING because this sits behind /pipeline, which withholds on
+  // it — an action looser than the page it lives on answers people who cannot
+  // open that page at all. AND VIEW_JOB_COSTS because the figures ARE job
+  // costs: somebody who can see the pipeline but not job money must not learn
+  // what finished work cost by way of a calculator.
+  //
+  // Checked before any prisma call, in that order, because the census asserts
+  // the page's own capability is what refuses first.
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return {
+      ok: false,
+      error: "Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.",
+    };
+  }
+  if (!can(context, "VIEW_JOB_COSTS")) {
+    return {
+      ok: false,
+      error: "Job costs aren't part of your job function. The account owner sets who sees what, on the Team page.",
+    };
+  }
+  return { ok: true, value: await loadConceptualBenchmark(context.company.id) };
 }
