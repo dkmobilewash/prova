@@ -675,6 +675,12 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "updateBidPursuit", reason: "Editing a pursuit is done on /pipeline, where the row being changed is visible." },
   { action: "linkBidPursuitToInvitation", reason: "Linking needs the right invitation picked from a list of similarly named projects, and it moves the stage to INVITED in the same write — done on /pipeline where both are visible." },
   { action: "deleteBidPursuit", reason: "Deletes are never commands (T5)." },
+  // The conceptual benchmark. A READ, and still not a command: a
+  // dollars-per-square-foot figure looks exactly like a measured one, and the
+  // whole design of lib/conceptual-estimate.ts is that it is never stated
+  // without its sample size and its "not an estimate, not a price" hedge
+  // attached. An assistant relaying it in prose would strip both.
+  { action: "conceptualBenchmark", reason: "A $/SF figure reads as a measured number. It is only safe beside its sample size and the sentence saying it is not an estimate — and prose relaying it would drop both." },
   { action: "createLineItemCatalogEntry", reason: "A catalog entry carries a typed default price, a number the model would be supplying." },
   { action: "deleteLineItemCatalogEntry", reason: "Deletes are never commands (T5)." },
   { action: "saveLineItemAsCatalogEntry", reason: "Promoting a line to the catalog is done from the line on the job page." },
