@@ -23,6 +23,14 @@ import { useEffect, useState, type ReactNode } from "react";
  * on both sides and is set in an effect, which runs after the first render
  * has already matched.
  *
+ * WHO HAS TO USE IT, AND WHAT CHECKS THAT. This file working is not the
+ * property that matters; the property is that no Clerk UI component is
+ * rendered without it. `components/afterMount.test.ts` asserts the first and
+ * cannot see the second — removing the wrapper in `Topbar.tsx` left every test
+ * in this app green. `components/clerkMountGate.test.ts` is the census that
+ * fails instead, and it names `/sign-in` and `/sign-up` as the two places a
+ * Clerk component is deliberately NOT gated.
+ *
  * WHAT IT IS NOT FOR. It is not a way to dodge a hydration mismatch in our
  * own components. Anything that renders real content this way appears a
  * frame late and is invisible to a reader with JavaScript off — see

@@ -1498,6 +1498,29 @@ scrollback gets broken by whoever didn't scroll far enough.
     - the navigation cadence: 6 mismatches with no dwell against 4 with a
       three-second dwell, same session. It is not an artefact of the suite
       navigating fast.
+    - **the crew tab's own components**, checked 2026-09-25 after step 11
+      named `/jobs/<id>/crew` as the last survivor. Five components are
+      unique to that tab — `TimeEntryRow`, `TimesheetSignoffs`,
+      `LogTimeEntryForm`, `DispatchSlipForm`, `SignatureImage` — and none of
+      them reads a clock, a window, a storage API or a mutable singleton in
+      render position, and none renders a nested `<form>` on a FIRST render:
+      the correction form and the reopen form are both behind state that
+      starts `false`. The two element-valued props the page hands across the
+      RSC boundary (`RowActions destructive={…}`, `ConfirmDelete hint={…}`)
+      can arrive as deferred lazies exactly as the shell's did, and a lazy
+      alone is harmless — it only becomes a mismatch inside a `<Suspense>`,
+      and `ShellRegion` is the only `<Suspense>` in this app.
+    - **hook initialisers that read the browser**, app-wide: every
+      `useState`/`useMemo`/`useSyncExternalStore` initialiser in every
+      `"use client"` file under `app/` and `components/` was read, and
+      exactly ONE touches a browser API — `useMedia` in
+      `components/WalkthroughTour.tsx`, `useState(() =>
+      window.matchMedia(query).matches)`. It is NOT a hydration hazard and
+      must not be "fixed": nothing server-renders it. `FullTour` returns
+      `null` until `stopId` leaves its literal `null`, and `HelpButton`
+      mounts it from a click — the "mounted by a user action" case
+      `components/localToday.ts` describes. Recorded because the scan reads
+      like a finding and is not one.
 
   **THE PUBLIC SUITE PROVES NOTHING ABOUT THIS.** `e2e-public` is green and
   calls `expectHealthy` WITHOUT a monitor, so it never looks at `pageerror`
@@ -1520,6 +1543,51 @@ scrollback gets broken by whoever didn't scroll far enough.
   page. A run that looks green there has loaded nothing; check that the page
   HYDRATED (a `__reactFiber$` key on a real element) before believing any
   number from it.
+
+  **"ONE PAGE" DOES NOT MEAN "SOMETHING ON THAT PAGE", AND #507's OWN BODY
+  SAYS IT DOES.** Added 2026-09-25, correcting that PR from its own numbers
+  rather than from an argument. It reads the final list — one entry,
+  `/jobs/<id>/crew` — as a different investigation, "something on the crew
+  tab, not the chrome around it", and tells the next person to start there.
+  The run before it, with only the region fix in, listed SIX pages and crew
+  was not among them. Both runs walk every job tab, so a defect that lives on
+  the crew tab would have been in both lists. It was in one.
+
+  So what is left is not a crew defect. It is a residual RACE at a low enough
+  rate to land on one page out of roughly forty page loads, and which page it
+  lands on carries no information — the same sentence this entry opens with,
+  applied to a list of length one. A list that short is the hardest one to
+  read correctly, because it looks like a location.
+
+  What follows for the next person: do not start by reading the crew tab (it
+  has been read — see the ELIMINATED list). Start by asking which mechanism
+  can still make the browser's FIRST render disagree about an ELEMENT, and
+  note that both mechanisms found so far were global and neither was visible
+  on every page it could fire on. And a step 11 that prints nothing on one
+  run is not proof either: the assertion is measuring a race, so one green
+  run is one sample. Two consecutive clean runs is the weakest claim worth
+  making, and `main` has never produced one.
+
+  **WHAT NOW GUARDS THE SECOND FIX.** `components/afterMount.test.ts` proves
+  the gate works and says nothing about anybody using it — delete the two
+  lines in `Topbar.tsx` that wrap `<UserButton>` and every test still passed.
+  `components/clerkMountGate.test.ts` closes that: every Clerk UI component
+  rendered anywhere Tailwind's `content` globs reach must sit inside
+  `<AfterMount>`, with `/sign-in` and `/sign-up` named as the two exemptions
+  (Clerk's card IS the page there, outside the signed-in shell, and
+  `e2e-public` walks both at three widths) and each exemption asserted to
+  still exist and still render a Clerk card. It counts the files it parsed
+  against a second expression that shares no regex with the first, derives
+  its roots from `content` rather than from its own directory, and reads
+  every structure with comments STRIPPED — which is not decoration here:
+  both `AfterMount.tsx` and `Topbar.tsx` print `<UserButton />` in their own
+  headers, so a raw-text census would find a render site that does not exist
+  and, with a commented `<AfterMount>` around a bare widget, would call it
+  gated. Mutation-tested five ways, each red naming the offender: gate
+  removed, gate present only in a comment, the import pattern drifted (fails
+  on the COUNT: "the sources contain 4 files and this census parsed 0"), a
+  new Clerk widget added, and a `content` glob pointed at a directory that
+  does not exist.
 
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.

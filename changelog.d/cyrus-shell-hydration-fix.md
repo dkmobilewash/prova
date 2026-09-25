@@ -76,7 +76,43 @@ Clerk gate as well it prints **one** — `/jobs/<id>/crew`. CI runs 36176373400
 and 36176953068, head SHAs matching the pushed commits, 36 of 37 specs passing
 in each.
 
-That last one is left open deliberately rather than declared fixed. Every
-symptom before it was on many pages at once, which is what made it the shell; a
-single page is something on that page, and the next person should start with the
-crew tab rather than re-reading this change.
+That last one is left open deliberately rather than declared fixed.
+
+**And the sentence that used to follow was wrong, so it is corrected here
+rather than shipped.** It read: every symptom before this was on many pages at
+once, which is what made it the shell; a single page is something on that page,
+so start with the crew tab. The run before — region fix only — listed SIX pages
+and crew was not one of them. Both runs walk every job tab, so a defect living
+on the crew tab would be in both lists. It is in one. What is left is a residual
+RACE at a rate low enough to land on one page in roughly forty loads, and which
+page it lands on carries no information — the same thing this change says about
+a list of seventeen, said about a list of one, where it is much harder to see.
+
+The crew tab has now been read anyway, so nobody re-reads it: its five unique
+components read no clock, window, storage or mutable singleton in render
+position and none nests a `<form>` on a first render, and the app-wide scan of
+`useState`/`useMemo`/`useSyncExternalStore` initialisers finds exactly one
+browser read in the whole codebase — `useMedia` in `WalkthroughTour.tsx` —
+which nothing server-renders. Both are in CLAUDE.md's ELIMINATED list with the
+evidence.
+
+**The guard the second fix did not have.** `components/afterMount.test.ts`
+proves the gate works and asserts nothing about anybody using it: delete the
+two lines in `Topbar.tsx` that wrap `<UserButton>` and every test in this app
+still passes while every signed-in page goes back to racing — the "written,
+documented, and never called" shape wearing a hydration fix.
+`components/clerkMountGate.test.ts` closes it. Every Clerk UI component
+rendered anywhere Tailwind's `content` globs reach must sit inside
+`<AfterMount>`; `/sign-in` and `/sign-up` are named exemptions, because there
+Clerk's card IS the page, it is outside the signed-in shell, and `e2e-public`
+walks both at 320, 375 and 1280 — and each exemption is asserted to still exist
+and still render a Clerk card, so an allowlist cannot outlive what it exempts.
+The census counts the files it parsed against a second expression sharing no
+regex with the first, derives its roots from `content` rather than its own
+directory, and strips comments before every structural read — which is
+load-bearing rather than tidy, since `AfterMount.tsx` and `Topbar.tsx` both
+print `<UserButton />` in their own headers. Mutation-tested five ways, each
+red naming the offender: gate removed, gate present only in a comment, the
+import pattern drifted (red on the COUNT — "the sources contain 4 files and
+this census parsed 0"), a new Clerk widget added, and a `content` glob pointed
+at a directory that does not exist.
