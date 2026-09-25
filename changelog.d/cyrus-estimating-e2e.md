@@ -83,6 +83,17 @@ specs now use it. The census's exclusion list covers `*.test.ts` and not
 `*.spec.ts`, which is why nobody had hit it before — the existing specs all
 went through the helper.
 
+**One race these specs had, fixed before CI ever read them.** A dozen
+assertions here read a value back after a reload, which is the right way to
+prove a write landed — but `click()` resolves when the button is pressed, not
+when the action answers, so `click(); await page.reload()` navigates out from
+under an in-flight `fetch` and races the write it is about to check. That check
+then fails, or worse passes, for a reason that has nothing to do with the
+feature. `settleAction` in `e2e/lib/journey.ts` arms a response wait first and
+returns when the server has answered; every read-back in these three specs goes
+through it, and it takes a callback because half of them are a `<select>`'s
+change rather than a press.
+
 **What still has no coverage, stated rather than left to be assumed.** The
 `/api/takeoff/plan/[planId]` route is stubbed in the browser by the takeoff
 spec (the fake blob it would proxy does not exist in the suite), so its own

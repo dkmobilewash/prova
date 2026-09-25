@@ -3,7 +3,7 @@ import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { dataTour } from "../lib/dataTour";
-import { finishWizard, jobTab, landOnDashboard, startJob, submitLineItem } from "../lib/journey";
+import { finishWizard, jobTab, landOnDashboard, settleAction, startJob, submitLineItem } from "../lib/journey";
 
 /**
  * THE ESTIMATING DESK, IN A REAL BROWSER, FOR THE FIRST TIME.
@@ -200,11 +200,15 @@ test.describe("the estimating desk", () => {
     // rather than marking them up at some default.
     await expect(recap.getByText(/have no cost type/)).toBeVisible();
 
-    await recap.getByRole("combobox", { name: `Cost type for ${LINE.description}` }).selectOption("MATERIAL");
+    // Each of these posts a Server Action. `settleAction` waits for the answer,
+    // so the reload below cannot race the write it is about to read back.
+    await settleAction(page, () =>
+      recap.getByRole("combobox", { name: `Cost type for ${LINE.description}` }).selectOption("MATERIAL"),
+    );
     await recap.locator('input[name="materialMarkupPercent"]').fill("10");
     await recap.locator('input[name="overheadPercent"]').fill("5");
     await recap.locator('input[name="profitPercent"]').fill("8");
-    await recap.getByRole("button", { name: "Save rates" }).click();
+    await settleAction(page, () => recap.getByRole("button", { name: "Save rates" }).click());
 
     await page.reload();
     await expectHealthy(page, "estimate tab after saving the recap rates", { monitor });
@@ -249,7 +253,7 @@ test.describe("the estimating desk", () => {
       .first();
     await row.locator('input[name="laborHours"]').fill("40");
     await row.locator('input[name="productionRate"]').fill("25");
-    await row.getByRole("button", { name: "Save" }).click();
+    await settleAction(page, () => row.getByRole("button", { name: "Save" }).click());
 
     await page.reload();
     await expectHealthy(page, "estimate tab after saving hours and a rate", { monitor });
@@ -290,7 +294,7 @@ test.describe("the estimating desk", () => {
     await itemForm.locator('input[name="description"]').fill(TEMPLATE_LINE);
     await itemForm.locator('input[name="unit"]').fill("LF");
     await itemForm.locator('input[name="defaultQuantity"]').fill("250");
-    await itemForm.getByRole("button", { name: "Add line", exact: true }).click();
+    await settleAction(page, () => itemForm.getByRole("button", { name: "Add line", exact: true }).click());
 
     await page.reload();
     await expectHealthy(page, "/catalog after putting a line on the template", { monitor });
@@ -315,7 +319,7 @@ test.describe("the estimating desk", () => {
     // The button counts what it is about to add, before it is pressed.
     const add = page.getByRole("button", { name: "Add 1 line" });
     await expect(add).toBeEnabled();
-    await add.click();
+    await settleAction(page, () => add.click());
 
     // The panel's own preview lists the description before anything is added,
     // so the proof is the ROW COUNT on the estimate, read after a reload.
@@ -336,7 +340,7 @@ test.describe("the estimating desk", () => {
     const library = page.locator("form").filter({ has: page.getByRole("button", { name: "Add clause" }) });
     await library.getByRole("combobox", { name: "Kind" }).selectOption("EXCLUSION");
     await library.locator('input[name="text"]').fill(CLAUSE_TEXT);
-    await library.getByRole("button", { name: "Add clause" }).click();
+    await settleAction(page, () => library.getByRole("button", { name: "Add clause" }).click());
 
     await page.reload();
     await expectHealthy(page, "/proposals after adding a clause", { monitor });
@@ -356,7 +360,7 @@ test.describe("the estimating desk", () => {
     ).toBeVisible();
     await expect(page.locator("tr").filter({ hasText: "Total bid" })).toContainText(/\$[\d,]+\.\d\d/);
 
-    await page.getByRole("button", { name: "Add from library" }).click();
+    await settleAction(page, () => page.getByRole("button", { name: "Add from library" }).click());
     await page.reload();
     await expectHealthy(page, "job proposal after adding a clause from the library", { monitor });
     await expect(page.getByRole("heading", { name: "Exclusions" })).toBeVisible();

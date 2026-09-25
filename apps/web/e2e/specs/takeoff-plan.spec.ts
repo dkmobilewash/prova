@@ -6,7 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { dataTour } from "../lib/dataTour";
-import { finishWizard, jobTab, landOnDashboard, startJob } from "../lib/journey";
+import { finishWizard, jobTab, landOnDashboard, settleAction, startJob } from "../lib/journey";
 
 /**
  * MEASURE A DRAWING ON SCREEN, AND WATCH THE QUANTITY REACH AN ESTIMATE LINE.
@@ -205,7 +205,9 @@ test.describe("on-screen plan takeoff", () => {
 
     const measurement = page.locator("form").filter({ has: page.getByRole("button", { name: /^Save \(/ }) });
     await measurement.locator('input[name="label"]').fill(MEASUREMENT_LABEL);
-    await measurement.getByRole("button", { name: `Save (${reading})` }).click();
+    // Waits for the action's answer, so the reload cannot race the write whose
+    // stored geometry is about to be read back.
+    await settleAction(page, () => measurement.getByRole("button", { name: `Save (${reading})` }).click());
 
     await page.reload();
     await expectHealthy(page, "takeoff tab after saving a measurement", { monitor });
@@ -230,7 +232,7 @@ test.describe("on-screen plan takeoff", () => {
     // The height is the one thing a drawing cannot carry.
     await post.locator('input[name="heightFt"]').fill("9");
 
-    await post.getByRole("button", { name: "Add 1 to the estimate" }).click();
+    await settleAction(page, () => post.getByRole("button", { name: "Add 1 to the estimate" }).click());
 
     await page.reload();
     await expectHealthy(page, "takeoff tab after adding to the estimate", { monitor });
@@ -273,7 +275,7 @@ test.describe("on-screen plan takeoff", () => {
     // ENTERED, not stamped: the date printed on the sheet is what later
     // revisions are compared against.
     await revision.locator('input[name="sheetIssuedOn"]').fill("2026-01-12");
-    await revision.getByRole("button", { name: "Save" }).click();
+    await settleAction(page, () => revision.getByRole("button", { name: "Save" }).click());
 
     await page.reload();
     await expectHealthy(page, "takeoff tab after dating the sheet", { monitor });

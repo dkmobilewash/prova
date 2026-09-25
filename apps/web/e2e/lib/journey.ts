@@ -274,3 +274,31 @@ export async function settleOutcome(
   }
   return "neither";
 }
+
+/**
+ * RUNS SOMETHING THAT POSTS A SERVER ACTION, AND WAITS FOR THE POST TO COME
+ * BACK BEFORE RETURNING.
+ *
+ * Why this earns a name. Reading a value back after a reload is the right way
+ * to prove a write landed — the retainage step of the journey does exactly
+ * that — but `click()` resolves the moment the button is pressed, not when the
+ * action answers, so `click(); await page.reload()` navigates out from under
+ * an in-flight `fetch` and races the write it is about to check. The check
+ * then fails, or worse passes, for a reason that has nothing to do with the
+ * feature. The estimating specs read a dozen values back that way, so the wait
+ * lives here rather than being remembered a dozen times.
+ *
+ * It takes a callback rather than a Locator because half of these are a
+ * `<select>`'s change and not a press, and because the response listener has
+ * to be armed BEFORE the interaction. The callback's own result is discarded —
+ * `selectOption` resolves to the values it picked — so the return type is
+ * deliberately `Promise<unknown>` rather than `Promise<void>`.
+ *
+ * What it does NOT promise: that React has finished re-rendering. It promises
+ * the server answered, which is the only thing a reload needs.
+ */
+export async function settleAction(page: Page, act: () => Promise<unknown>): Promise<void> {
+  const posted = page.waitForResponse((response) => response.request().method() === "POST");
+  await act();
+  await posted;
+}

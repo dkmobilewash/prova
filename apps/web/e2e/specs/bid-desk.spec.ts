@@ -2,7 +2,7 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
 import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
-import { finishWizard, landOnDashboard, startJob } from "../lib/journey";
+import { finishWizard, landOnDashboard, settleAction, startJob } from "../lib/journey";
 
 /**
  * /bids GREW FOUR WHOLE PANELS IN THREE DAYS AND NOBODY OPENED IT.
@@ -116,7 +116,10 @@ test.describe("the bid desk", () => {
     await lineForm().locator('input[name="label"]').fill("Alternate 1");
     await lineForm().locator('input[name="amount"]').fill("12400");
     await lineForm().locator('input[name="description"]').fill("Level 5 finish in the lobby");
-    await lineForm().getByRole("button", { name: "Add", exact: true }).click();
+    // `settleAction` waits for each action's answer — every reload below reads
+    // a figure back, and a reload that races the write is a check about
+    // nothing.
+    await settleAction(page, () => lineForm().getByRole("button", { name: "Add", exact: true }).click());
     await expect(bidRow().getByText("Alternate 1")).toBeVisible();
     await expectHealthy(page, "/bids after adding an alternate", { monitor });
 
@@ -127,7 +130,7 @@ test.describe("the bid desk", () => {
     await lineForm().locator('input[name="label"]').fill("Extra board");
     await lineForm().locator('input[name="unitPrice"]').fill("3.10");
     await lineForm().locator('input[name="unit"]').fill("SF of 5/8 board");
-    await lineForm().getByRole("button", { name: "Add", exact: true }).click();
+    await settleAction(page, () => lineForm().getByRole("button", { name: "Add", exact: true }).click());
     await expect(bidRow().getByText("Extra board")).toBeVisible();
 
     // An ALLOWANCE is carried INSIDE the base, so it is never added to it.
@@ -135,7 +138,7 @@ test.describe("the bid desk", () => {
     await lineForm().locator('select[name="kind"]').selectOption("ALLOWANCE");
     await lineForm().locator('input[name="label"]').fill("Patch and repair allowance");
     await lineForm().locator('input[name="amount"]').fill("15000");
-    await lineForm().getByRole("button", { name: "Add", exact: true }).click();
+    await settleAction(page, () => lineForm().getByRole("button", { name: "Add", exact: true }).click());
 
     await page.reload();
     await expectHealthy(page, "/bids with three bid lines", { monitor });
@@ -152,7 +155,7 @@ test.describe("the bid desk", () => {
     // "they declined".
     const accepted = row.locator("form").filter({ has: page.locator('select[name="accepted"]') }).first();
     await accepted.locator('select[name="accepted"]').selectOption("yes");
-    await accepted.getByRole("button", { name: "Save" }).click();
+    await settleAction(page, () => accepted.getByRole("button", { name: "Save" }).click());
 
     await page.reload();
     await expectHealthy(page, "/bids after the GC takes the alternate", { monitor });
@@ -170,7 +173,7 @@ test.describe("the bid desk", () => {
     await addendum.locator('input[name="issuedOn"]').fill("2026-10-20");
     await addendum.locator('input[name="affectsPricedScope"]').check();
     await addendum.locator('input[name="impactNote"]').fill("soffit detail at grid C");
-    await addendum.getByRole("button", { name: "Log addendum" }).click();
+    await settleAction(page, () => addendum.getByRole("button", { name: "Log addendum" }).click());
 
     await page.reload();
     await expectHealthy(page, "/bids with an unacknowledged addendum", { monitor });
@@ -190,7 +193,7 @@ test.describe("the bid desk", () => {
     // not filled in.
     await expect(row).toContainText("Addendum 3 changed work you had already priced — soffit detail at grid C");
 
-    await row.getByRole("button", { name: "Acknowledge" }).click();
+    await settleAction(page, () => row.getByRole("button", { name: "Acknowledge" }).click());
     await page.reload();
     await expectHealthy(page, "/bids after acknowledging the addendum", { monitor });
     await expect(bidRow().getByText("not acknowledged")).toHaveCount(0);
@@ -207,7 +210,7 @@ test.describe("the bid desk", () => {
     const requirement = bidRow().locator("form").filter({ has: page.locator('input[name="satisfiedOn"]') });
     await requirement.locator('select[name="kind"]').selectOption("BID_BOND");
     await requirement.locator('input[name="label"]').fill("Bid bond, 10% of base bid");
-    await requirement.getByRole("button", { name: "Add requirement" }).click();
+    await settleAction(page, () => requirement.getByRole("button", { name: "Add requirement" }).click());
 
     await page.reload();
     await expectHealthy(page, "/bids with an outstanding requirement", { monitor });
@@ -216,7 +219,7 @@ test.describe("the bid desk", () => {
     await expect(bidRow()).toContainText("Bid bond, 10% of base bid — not recorded as done.");
     await expect(bidRow()).toContainText("1 thing would make this bid non-responsive.");
 
-    await bidRow().getByRole("button", { name: "Mark done" }).click();
+    await settleAction(page, () => bidRow().getByRole("button", { name: "Mark done" }).click());
     await page.reload();
     await expectHealthy(page, "/bids after the bond is recorded", { monitor });
     await expect(bidRow()).toContainText(/done \d{4}-\d{2}-\d{2}/);
@@ -234,7 +237,7 @@ test.describe("the bid desk", () => {
     await quoteForm().locator('input[name="amount"]').fill("79000");
     await quoteForm().locator('input[name="quotedOn"]').fill("2026-10-18");
     await quoteForm().locator('textarea[name="exclusions"]').fill("Soffits");
-    await quoteForm().getByRole("button", { name: "Add quote" }).click();
+    await settleAction(page, () => quoteForm().getByRole("button", { name: "Add quote" }).click());
     await expect(bidRow().getByText(CHEAPEST)).toBeVisible();
 
     // The dearer one, which excludes nothing.
@@ -243,7 +246,7 @@ test.describe("the bid desk", () => {
     await quoteForm().locator('input[name="vendorName"]').fill(DEAREST);
     await quoteForm().locator('input[name="amount"]').fill("82000");
     await quoteForm().locator('input[name="quotedOn"]').fill("2026-10-19");
-    await quoteForm().getByRole("button", { name: "Add quote" }).click();
+    await settleAction(page, () => quoteForm().getByRole("button", { name: "Add quote" }).click());
 
     await page.reload();
     await expectHealthy(page, "/bids with two quotes on one package", { monitor });
@@ -279,7 +282,7 @@ test.describe("the bid desk", () => {
       .filter({ has: page.locator('select[name="status"]') })
       .first();
     await statusForm.locator('select[name="status"]').selectOption("WON");
-    await statusForm.getByRole("button", { name: "Update" }).click();
+    await settleAction(page, () => statusForm.getByRole("button", { name: "Update" }).click());
 
     await page.goto("/bids");
     await expectHealthy(page, "/bids with a won bid", { monitor });
@@ -294,7 +297,7 @@ test.describe("the bid desk", () => {
     const jobValue = await jobPicker.locator("option", { hasText: JOB_NAME }).first().getAttribute("value");
     expect(jobValue, "the job should be offered to link").toBeTruthy();
     await jobPicker.selectOption(jobValue!);
-    await bidRow().getByRole("button", { name: "Link", exact: true }).click();
+    await settleAction(page, () => bidRow().getByRole("button", { name: "Link", exact: true }).click());
 
     await page.reload();
     await expectHealthy(page, "/bids with the bid linked to its job", { monitor });
