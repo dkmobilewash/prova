@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { StyleSheet, Text, View } from "react-native";
 import { apiBaseUrl, clerkPublishableKey, configProblem } from "@/lib/env";
 import { getHandover } from "@/lib/handover";
+import { loadLanguage, useT } from "@/lib/i18n";
 import { usePushTapRouter } from "@/lib/push";
 import { tokenCache } from "@/lib/token-cache";
 import { leadingFor, space, typography } from "@/lib/theme";
@@ -32,6 +33,30 @@ function HandoverGate({ children }: { children: React.ReactNode }) {
 
   if (inHandover === null) return null;
   if (inHandover) return <Redirect href="/handover" />;
+  return <>{children}</>;
+}
+
+/**
+ * The saved language choice, read before the first frame is drawn.
+ *
+ * `lib/i18n.ts` already starts on the PHONE's language, synchronously,
+ * so for almost everybody this gate changes nothing — it is over before
+ * anything would have painted. It exists for the person whose choice
+ * differs from their phone: rendering first and correcting afterwards
+ * flashes English at a Spanish reader on every single launch, which is
+ * the kind of detail that tells somebody the app was not built for them.
+ *
+ * `loadLanguage` cannot throw (see its comment), which is what makes
+ * holding the frame on it safe.
+ */
+function LanguageGate({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    void loadLanguage().then(() => setReady(true));
+  }, []);
+
+  if (!ready) return null;
   return <>{children}</>;
 }
 
@@ -84,6 +109,7 @@ const styles = StyleSheet.create({
 
 export default function RootLayout() {
   const palette = usePalette();
+  const { t, language } = useT();
 
   // Checked before anything else draws: a misconfigured build should say
   // what it is missing rather than impersonate a phone with no signal.
@@ -112,9 +138,17 @@ export default function RootLayout() {
       // iOS labels Back with the PREVIOUS screen's title, which was fine when
       // there was one tab to come from and misleading now: a photo screen
       // opened from Home offered "Jobs". "Back" is true from all three tabs.
-      headerBackTitle: "Back",
+      headerBackTitle: t("nav.back"),
     }),
-    [palette],
+    // `language` is here BECAUSE the rule cannot see it. `t` is a module
+    // function with a stable identity, so a memo keyed on `t` alone never
+    // recomputes and the header keeps whatever language it was first
+    // rendered in — English, for anyone who switches. What actually
+    // changes is `language`, which the memo does not name because it
+    // reads it THROUGH `t`. eslint is right that nothing in the body
+    // mentions it and wrong about what that means.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [palette, t, language],
   );
 
   if (problem) return <ConfigProblem message={problem} />;
@@ -129,29 +163,36 @@ export default function RootLayout() {
           so the queue keeps going during a handover: a crew member's hours
           must not wait for the foreman to take the phone back. */}
       <DrainTimer />
+      {/* Mounted beside the drain and OUTSIDE both gates, so the listener
+          stays alive while the phone is in a crew member's hands. */}
       <PushTapRouter />
-      <HandoverGate>
-        <Stack screenOptions={screenOptions}>
-          {/* The title is never shown — the tabs draw their own headers. */}
-          <Stack.Screen name="(tabs)" options={{ headerShown: false, title: "Home" }} />
-          <Stack.Screen name="sign-in" options={{ title: "Sign in" }} />
-          <Stack.Screen name="job/[jobId]" options={{ title: "Job" }} />
-          <Stack.Screen name="reports/[jobId]" options={{ title: "Field reports" }} />
-          <Stack.Screen name="photos/[jobId]" options={{ title: "Photos" }} />
-          <Stack.Screen name="safety/[jobId]" options={{ title: "Safety" }} />
-          <Stack.Screen name="time/[jobId]" options={{ title: "Time" }} />
-          <Stack.Screen name="materials/[jobId]" options={{ title: "Materials" }} />
-          <Stack.Screen name="punch-list/[jobId]" options={{ title: "Punch list" }} />
-          <Stack.Screen name="ticket/[jobId]" options={{ title: "T&M ticket" }} />
-          <Stack.Screen name="drawings/[jobId]" options={{ title: "Drawings" }} />
-          <Stack.Screen name="schedule/[jobId]" options={{ title: "Schedule" }} />
-          <Stack.Screen name="outbox" options={{ title: "Waiting to send" }} />
-          <Stack.Screen name="alerts" options={{ title: "Alerts" }} />
-          {/* No header and no swipe-back: the way out of a handover is
-              handing the phone back, not an iOS gesture. */}
-          <Stack.Screen name="handover" options={{ headerShown: false, gestureEnabled: false }} />
-        </Stack>
-      </HandoverGate>
+      {/* The language is read before the handover is, so the handover
+          screen itself speaks the right language — it is the one screen
+          a crew member sees before anything else. */}
+      <LanguageGate>
+        <HandoverGate>
+          <Stack screenOptions={screenOptions}>
+            {/* The title is never shown — the tabs draw their own headers. */}
+            <Stack.Screen name="(tabs)" options={{ headerShown: false, title: "Home" }} />
+            <Stack.Screen name="sign-in" options={{ title: "Sign in" }} />
+            <Stack.Screen name="job/[jobId]" options={{ title: t("nav.job") }} />
+            <Stack.Screen name="reports/[jobId]" options={{ title: t("nav.reports") }} />
+            <Stack.Screen name="photos/[jobId]" options={{ title: t("nav.photos") }} />
+            <Stack.Screen name="safety/[jobId]" options={{ title: t("nav.safety") }} />
+            <Stack.Screen name="time/[jobId]" options={{ title: t("nav.time") }} />
+            <Stack.Screen name="materials/[jobId]" options={{ title: t("nav.materials") }} />
+            <Stack.Screen name="punch-list/[jobId]" options={{ title: t("nav.punch") }} />
+            <Stack.Screen name="ticket/[jobId]" options={{ title: t("nav.ticket") }} />
+            <Stack.Screen name="drawings/[jobId]" options={{ title: t("nav.drawings") }} />
+            <Stack.Screen name="schedule/[jobId]" options={{ title: t("nav.schedule") }} />
+            <Stack.Screen name="outbox" options={{ title: t("nav.outbox") }} />
+            <Stack.Screen name="alerts" options={{ title: t("nav.alerts") }} />
+            {/* No header and no swipe-back: the way out of a handover is
+                handing the phone back, not an iOS gesture. */}
+            <Stack.Screen name="handover" options={{ headerShown: false, gestureEnabled: false }} />
+          </Stack>
+        </HandoverGate>
+      </LanguageGate>
     </ClerkProvider>
   );
 }

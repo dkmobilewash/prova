@@ -1,3 +1,4 @@
+import type { StringKey } from "./i18n";
 import type { Capability } from "./types";
 
 /**
@@ -43,17 +44,29 @@ export const SCREEN_ROUTE: Record<GuardedScreen, string> = {
   "drawings/[jobId]": "jobs/[id]/drawings/route.ts",
 };
 
-/** What each guarded screen is called in the sentence that explains why it
- * is not there. Plural and lowercase: "Field reports aren't part of your
- * job function." */
-export const SCREEN_NOUN: Record<GuardedScreen, string> = {
-  "reports/[jobId]": "Field reports",
-  "photos/[jobId]": "Site photos",
-  "punch-list/[jobId]": "Punch lists",
-  "time/[jobId]": "Time records",
-  "materials/[jobId]": "Material orders",
-  "safety/[jobId]": "Safety records",
-  "ticket/[jobId]": "T&M tickets",
-  "schedule/[jobId]": "The crew schedule",
-  "drawings/[jobId]": "Drawings",
+/**
+ * What each guarded screen is called in the sentence that explains why it
+ * is not there: "Field reports aren't part of your job function."
+ *
+ * A KEY rather than the noun itself, for the same reason `emptyFor` takes
+ * one (lib/empty-state.ts): the sentence around it is translated, and a
+ * Spanish refusal naming an English screen is half a sentence. The type is
+ * what proves each one exists — `StringKey` is `keyof typeof EN`, so a
+ * noun that is not in the dictionary fails the build here rather than
+ * rendering its own key to somebody who cannot read the screen anyway.
+ *
+ * Imported as a TYPE so this module stays pure: nothing here calls `t`,
+ * and `NotYourJobFunction` — which re-renders on a language change —
+ * translates the noun at the point it draws it.
+ */
+export const SCREEN_NOUN: Record<GuardedScreen, StringKey> = {
+  "reports/[jobId]": "notYourJob.noun.reports",
+  "photos/[jobId]": "notYourJob.noun.photos",
+  "punch-list/[jobId]": "notYourJob.noun.punch",
+  "time/[jobId]": "notYourJob.noun.time",
+  "materials/[jobId]": "notYourJob.noun.materials",
+  "safety/[jobId]": "notYourJob.noun.safety",
+  "ticket/[jobId]": "notYourJob.noun.tickets",
+  "schedule/[jobId]": "notYourJob.noun.schedule",
+  "drawings/[jobId]": "notYourJob.noun.drawings",
 };

@@ -11,6 +11,13 @@ import { join } from "node:path";
  * hold must be describable, and the last test below is the census that
  * makes sure none is missing — a blank line in an outbox is the same
  * class of lie as an empty list with no note.
+ *
+ * THE ENGLISH BELOW IS THE DICTIONARY'S, NOT THIS FILE'S. `outbox.ts`
+ * spends `outbox.op.*` and `outbox.tried.*` keys now, so these strings are
+ * what `lib/strings/en.ts` says and the Spanish half is checked key for key
+ * by strings-census.test.ts. Asserting the sentence rather than the key is
+ * deliberate: a key wired to the wrong entry type-checks perfectly, and the
+ * only thing that catches it is reading the sentence a foreman gets.
  */
 
 const store = new Map<string, string>();
@@ -59,6 +66,21 @@ describe("what a queued write is called", () => {
     expect(describeOp(op, NAMES).detail).toContain("ZZQB-TEST");
     expect(describeOp(op, {}).detail).toContain("this job");
   });
+
+  it("leaves the words that are somebody's own alone", () => {
+    // The half of the sentence that must NEVER be translated: the topic a
+    // foreman typed and the name a person signed under are records, and a
+    // Spanish phone showing a translated version of either would be
+    // showing something that is on no record anywhere.
+    expect(
+      describeOp({ type: "toolbox-talk:create", jobId: "job_1", clientOperationId: "o", topic: "Fall protection", heldOn: "2026-09-18" }, NAMES)
+        .title,
+    ).toBe("Fall protection");
+    expect(
+      describeOp({ type: "signoff:create", jobId: "job_1", clientOperationId: "o", date: "2026-09-18", signerName: "Ana Reyes", signaturePath: "M0 0L0 0" }, NAMES)
+        .title,
+    ).toContain("Ana Reyes");
+  });
 });
 
 describe("what the outbox says is happening to it", () => {
@@ -85,6 +107,16 @@ describe("what the outbox says is happening to it", () => {
     expect(said).toContain("Tried 2 times");
     expect(said).toContain("Something went wrong");
     expect(said).toContain("in 30s");
+  });
+
+  it("does not put the word 'no' in the server's mouth when nothing came back", () => {
+    // The old fallback was literally `lastError ?? "no"`, which rendered as
+    // `the server said "no"` — a refusal the server never gave, on the one
+    // line a foreman is supposed to act on. A missing message now says it
+    // is missing.
+    const said = statusOf(item({ attempts: 1 }));
+    expect(said).toContain("no reason given");
+    expect(said, "still quoting the server as answering 'no'").not.toMatch(/said\s*[“"]no[”"]/);
   });
 
   it("counts down to being set aside, before it happens rather than after", () => {

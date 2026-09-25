@@ -9,6 +9,7 @@ import { Icon } from "@/components/Icon";
 import { LargeTitle } from "@/components/LargeTitle";
 import { SectionHeader } from "@/components/SectionHeader";
 import { clearCurrentJob } from "@/lib/current-job";
+import { type LanguageChoice, setLanguage, useT } from "@/lib/i18n";
 import { pendingCount, listRefused } from "@/lib/sync-queue";
 import {
   ensureReminderPermission,
@@ -30,6 +31,7 @@ export default function SettingsScreen() {
   const { user } = useUser();
   const { job } = useCurrentJob();
   const { me } = useMe();
+  const { t, choice } = useT();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const [waiting, setWaiting] = useState(0);
@@ -50,9 +52,9 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView edges={["top"]} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
-        <LargeTitle>More</LargeTitle>
+        <LargeTitle>{t("settings.title")}</LargeTitle>
 
-        <SectionHeader>Account</SectionHeader>
+        <SectionHeader>{t("settings.account")}</SectionHeader>
         <GroupedList>
           <GroupedRow
             icon={<Icon name="person" />}
@@ -60,10 +62,12 @@ export default function SettingsScreen() {
             subtitle={
               me
                 ? me.role === "OWNER"
-                  ? "Account owner — everything on this phone is yours to see"
+                  ? t("settings.account.owner")
                   : me.jobFunction
-                    ? `${me.jobFunction.replace(/_/g, " ").toLowerCase()} — the account owner sets what that includes, on the Team page`
-                    : "Full access to this company's records"
+                    ? t("settings.account.role", {
+                        role: me.jobFunction.replace(/_/g, " ").toLowerCase(),
+                      })
+                    : t("settings.account.full")
                 : undefined
             }
             chevron={false}
@@ -72,17 +76,19 @@ export default function SettingsScreen() {
 
         {/* The outbox. A count on one screen was the whole of it before,
             and a count cannot be acted on — see app/outbox.tsx. */}
-        <SectionHeader>Waiting to send</SectionHeader>
+        <SectionHeader>{t("nav.outbox")}</SectionHeader>
         <GroupedList>
           <GroupedRow
             icon={<Icon name="outbox" />}
-            title="Waiting to send"
+            title={t("nav.outbox")}
             subtitle={
               waiting === 0 && needsAttention === 0
-                ? "Everything has reached the office"
+                ? t("settings.outbox.clear")
                 : [
-                    waiting > 0 ? `${waiting} waiting` : null,
-                    needsAttention > 0 ? `${needsAttention} need attention` : null,
+                    waiting > 0 ? t("settings.outbox.waiting", { count: waiting }) : null,
+                    needsAttention > 0
+                      ? t("settings.outbox.attention", { count: needsAttention })
+                      : null,
                   ]
                     .filter(Boolean)
                     .join(" · ")
@@ -98,10 +104,10 @@ export default function SettingsScreen() {
 
         {/* The end-of-day reminder. Local to this phone — it has to work
             on the day it matters, which is the day there was no signal. */}
-        <SectionHeader>Unsent work reminder</SectionHeader>
+        <SectionHeader>{t("settings.reminder")}</SectionHeader>
         <GroupedList>
           <View style={styles.reminder}>
-            <Text style={styles.label}>Remind me about unsent work</Text>
+            <Text style={styles.label}>{t("settings.reminder.label")}</Text>
             <View style={styles.choices}>
               {REMINDER_CHOICES.map((choice) => (
                 <Pressable
@@ -119,31 +125,68 @@ export default function SettingsScreen() {
                   style={[styles.choice, hour === choice && styles.choiceOn]}
                 >
                   <Text style={hour === choice ? styles.choiceOnText : styles.choiceText}>
-                    {formatHour(choice)}
+                    {/* The hours are digits and read the same either way;
+                        only "Off" is a word, so only "Off" is a key. */}
+                    {choice === null ? t("settings.reminder.off") : formatHour(choice)}
                   </Text>
                 </Pressable>
               ))}
             </View>
             <Text style={styles.label}>
-              {blocked
-                ? "Notifications are off for Prova in iOS Settings, so this cannot show. Everything still waits safely on the phone."
-                : "Only if something is still unsent at that time. Nothing is sent to anyone else."}
+              {blocked ? t("settings.reminder.blocked") : t("settings.reminder.note")}
             </Text>
           </View>
         </GroupedList>
 
-        <SectionHeader>Job</SectionHeader>
+        {/* The language. Last of the settings and first in importance for
+            the person this exists for — and the reason this whole screen
+            is translated rather than left in English: finding "Idioma"
+            on an English screen is the problem, not the fix.
+
+            The two language names are NEVER translated. "Español" reads
+            as Español in an English app, which is how every OS does it:
+            somebody who cannot read the current language still has to be
+            able to find their own. */}
+        <SectionHeader>{t("settings.language")}</SectionHeader>
+        <GroupedList>
+          <View style={styles.reminder}>
+            <View style={styles.choices}>
+              {(["auto", "en", "es"] as const).map((pick: LanguageChoice) => (
+                <Pressable
+                  key={pick}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: choice === pick }}
+                  onPress={() => {
+                    void setLanguage(pick);
+                  }}
+                  style={[styles.choice, choice === pick && styles.choiceOn]}
+                >
+                  <Text style={choice === pick ? styles.choiceOnText : styles.choiceText}>
+                    {pick === "auto"
+                      ? t("settings.language.auto")
+                      : pick === "en"
+                        ? "English"
+                        : "Español"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.label}>{t("settings.language.note")}</Text>
+          </View>
+        </GroupedList>
+
+        <SectionHeader>{t("settings.job")}</SectionHeader>
         <GroupedList>
           {job ? (
             <GroupedRow
               icon={<Icon name="jobs" />}
-              title={`Leave ${job.name}`}
+              title={t("settings.leave", { job: job.name })}
               onPress={() => clearCurrentJob()}
             />
           ) : null}
           <GroupedRow
             icon={<Icon name="logOut" />}
-            title="Sign out"
+            title={t("settings.signOut")}
             divider={!!job}
             onPress={() => signOut()}
           />

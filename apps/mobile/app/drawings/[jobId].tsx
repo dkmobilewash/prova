@@ -8,6 +8,7 @@ import { JobContextChip } from "@/components/JobContextChip";
 import { List } from "@/components/List";
 import { SyncStatus } from "@/components/SyncStatus";
 import { emptyFor } from "@/lib/empty-state";
+import { useT } from "@/lib/i18n";
 import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
@@ -68,6 +69,7 @@ async function openHeldFile(uri: string): Promise<boolean> {
 
 export default function DrawingsScreen() {
   const { me } = useMe();
+  const { t } = useT();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
@@ -128,8 +130,11 @@ export default function DrawingsScreen() {
             {/* The one line that matters on a wall. */}
             {set.currentNotReceived ? (
               <Text style={styles.warn}>
-                Current revision hasn&apos;t reached site — the crew is on{" "}
-                {set.revisions.find((r) => r.id === set.latestReceivedRevisionId)?.label ?? "nothing yet"}
+                {t("drawings.notOnSite", {
+                  label:
+                    set.revisions.find((r) => r.id === set.latestReceivedRevisionId)?.label ??
+                    t("drawings.nothingYet"),
+                })}
               </Text>
             ) : null}
 
@@ -143,14 +148,16 @@ export default function DrawingsScreen() {
                   <View style={styles.revisionHead}>
                     <Text style={[styles.label, isCurrent && styles.labelCurrent]}>
                       {revision.label}
-                      {isCurrent ? " · current" : ""}
+                      {isCurrent ? ` · ${t("drawings.current")}` : ""}
                     </Text>
-                    {localUri ? <Text style={styles.held}>On this phone</Text> : null}
+                    {localUri ? <Text style={styles.held}>{t("drawings.onThisPhone")}</Text> : null}
                   </View>
 
                   <Text style={styles.meta}>
-                    Issued {revision.issuedOn.slice(0, 10)}
-                    {revision.receivedOn ? ` · received ${revision.receivedOn.slice(0, 10)}` : " · not received"}
+                    {t("drawings.issued", { date: revision.issuedOn.slice(0, 10) })}
+                    {revision.receivedOn
+                      ? ` · ${t("drawings.received", { date: revision.receivedOn.slice(0, 10) })}`
+                      : ` · ${t("drawings.notReceived")}`}
                   </Text>
                   {revision.description ? <Text style={styles.meta}>{revision.description}</Text> : null}
 
@@ -168,14 +175,14 @@ export default function DrawingsScreen() {
                           } catch {
                             setError(
                               localUri
-                                ? "This build can't open a saved drawing yet — it opens online until the app is rebuilt."
-                                : "Couldn't open that drawing.",
+                                ? t("drawings.cantOpenSaved")
+                                : t("drawings.cantOpen"),
                             );
                           }
                         }}
                       >
                         <Icon name="chevron" size={16} color={palette.colors.link} />
-                        <Text style={styles.actionLabel}>Open</Text>
+                        <Text style={styles.actionLabel}>{t("drawings.open")}</Text>
                       </Pressable>
 
                       <Pressable
@@ -194,7 +201,7 @@ export default function DrawingsScreen() {
                             await keepForOffline(revision.id, revision.fileName, revision.fileUrl!);
                             setHeldAt(Date.now());
                           } catch {
-                            setError("Couldn't download that drawing — try again in range.");
+                            setError(t("drawings.cantDownload"));
                           } finally {
                             setBusy(null);
                           }
@@ -206,25 +213,29 @@ export default function DrawingsScreen() {
                           color={busy === revision.id ? palette.colors.inkMuted : palette.colors.link}
                         />
                         <Text style={styles.actionLabel}>
-                          {busy === revision.id ? "Saving…" : localUri ? "Remove from phone" : "Keep on phone"}
+                          {busy === revision.id
+                            ? t("drawings.saving")
+                            : localUri
+                              ? t("drawings.removeFromPhone")
+                              : t("drawings.keepOnPhone")}
                         </Text>
                       </Pressable>
                     </View>
                   ) : (
-                    <Text style={styles.meta}>No file recorded for this revision</Text>
+                    <Text style={styles.meta}>{t("drawings.noFile")}</Text>
                   )}
                 </View>
               );
             })}
           </Card>
         )}
-        {...emptyFor(offline, "the drawings", {
-          title: "No drawing sets on this job.",
-          description: "Sets and revisions are recorded on the web, off the transmittal.",
+        {...emptyFor(offline, "thing.drawings", {
+          title: "drawings.empty.title",
+          description: "drawings.empty.body",
         })}
       />
 
-      {held > 0 ? <Text style={styles.footer}>{formatBytes(held)} of drawings kept on this phone</Text> : null}
+      {held > 0 ? <Text style={styles.footer}>{t("drawings.kept", { size: formatBytes(held) })}</Text> : null}
     </View>
   );
 }

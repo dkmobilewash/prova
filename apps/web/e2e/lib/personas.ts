@@ -107,6 +107,33 @@
  * not called for them — so they are declared for consistency and for the day
  * one of them has to be recreated on a fresh instance.
  */
+/**
+ * WHY THERE IS A USERNAME AND A PHONE HERE WHEN THE APP SIGNS IN BY EMAIL.
+ *
+ * The `striking-jaybird` DEVELOPMENT instance requires both as user
+ * attributes, and `createUser` with an email alone is refused:
+ *
+ *     [form_data_missing] missing data
+ *     ["username" "phone_number"] data doesn't match user requirements
+ *     set for this instance
+ *
+ * That is an instance SETTING, not something the suite can assert its way
+ * out of — and it is deliberately fixed here rather than by relaxing the
+ * setting, because that instance is shared: it holds the original dev
+ * users, and loosening a requirement on it to make a test pass changes
+ * what every other dev sign-up is asked for. Sending the two fields costs
+ * nothing and touches nobody.
+ *
+ * The phone numbers are Clerk's documented FICTIONAL test range — `+1
+ * (XXX) 555-0100` through `555-0199` — which send no SMS and verify with
+ * `424242`, the same bargain `+clerk_test` makes for email. They must be
+ * distinct from each other: two users cannot share a phone on one
+ * instance, and the collision would surface as this same opaque 422 on
+ * whichever persona happened to be seeded second.
+ *
+ * `personas.test.ts` holds both invariants, since neither is visible at
+ * the point where a new persona would be added.
+ */
 export const PERSONAS = {
   empty: {
     email: "e2e-empty+clerk_test@example.com",

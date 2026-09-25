@@ -1,4 +1,5 @@
 import { tokenOrNull } from "./clerk-token";
+import { t } from "./i18n";
 import { cacheAge, cacheGet, cacheSet } from "./offline-cache";
 
 /**
@@ -90,7 +91,7 @@ export async function cachedRead<T>(key: string, read: () => Promise<T>): Promis
       from: "cache",
       value: cached.rows,
       at: cached.at,
-      note: `Showing what this phone last loaded, ${cacheAge(cached.at)} — no connection`,
+      note: t("offline.stale", { age: cacheAge(cached.at) }),
     };
   }
 }

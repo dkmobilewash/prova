@@ -6,6 +6,7 @@ import { JobContextChip } from "@/components/JobContextChip";
 import { List } from "@/components/List";
 import { SyncStatus } from "@/components/SyncStatus";
 import { emptyFor } from "@/lib/empty-state";
+import { useT } from "@/lib/i18n";
 import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
@@ -34,6 +35,7 @@ import type { ScheduleRow } from "@/lib/types";
  */
 export default function ScheduleScreen() {
   const { me } = useMe();
+  const { t } = useT();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
@@ -88,8 +90,8 @@ export default function ScheduleScreen() {
         renderItem={({ item: day }) => (
           <Card style={styles.card}>
             <Text style={styles.date}>
-              {day.date === today ? "Today" : day.date}
-              {day.date < today ? " · past" : ""}
+              {day.date === today ? t("schedule.today") : day.date}
+              {day.date < today ? ` · ${t("schedule.past")}` : ""}
             </Text>
             {day.people.map((person) => (
               <View key={person.id} style={styles.person}>
@@ -97,14 +99,14 @@ export default function ScheduleScreen() {
                 {person.craftLabel ? <Text style={styles.craft}>{person.craftLabel}</Text> : null}
                 {/* Null is a future day, where "no hours" would be an
                     accusation rather than a fact. */}
-                {person.hoursLogged === false ? <Text style={styles.missing}>No hours logged</Text> : null}
+                {person.hoursLogged === false ? <Text style={styles.missing}>{t("schedule.noHours")}</Text> : null}
               </View>
             ))}
           </Card>
         )}
-        {...emptyFor(offline, "the schedule", {
-          title: "Nobody is scheduled on this job.",
-          description: "Days are planned on the web, under Deployment.",
+        {...emptyFor(offline, "thing.schedule", {
+          title: "schedule.empty.title",
+          description: "schedule.empty.body",
         })}
       />
     </View>
