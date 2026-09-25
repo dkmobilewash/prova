@@ -67,3 +67,16 @@ controls still prove a throwing widget cannot take the page down.
 
 `components/afterMount.test.ts` asserts the mount gate renders nothing on the
 server and its children afterwards, each half with a control.
+
+**What the number did, and it is not zero.** Step 11 of the pilot journey prints
+every URL a mismatch fired on, and on `main` it prints fourteen to nineteen, a
+different list each run. With the region fix alone it printed **six**
+(/dashboard, /messages, /proposals, /submittals and two job tabs); with the
+Clerk gate as well it prints **one** — `/jobs/<id>/crew`. CI runs 36176373400
+and 36176953068, head SHAs matching the pushed commits, 36 of 37 specs passing
+in each.
+
+That last one is left open deliberately rather than declared fixed. Every
+symptom before it was on many pages at once, which is what made it the shell; a
+single page is something on that page, and the next person should start with the
+crew tab rather than re-reading this change.

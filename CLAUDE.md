@@ -1408,7 +1408,12 @@ scrollback gets broken by whoever didn't scroll far enough.
   the `args[]` before theorising: it halves the search space for free.
 
   **TWO ELEMENT-LEVEL DIVERGENCES WERE FOUND IN THE SHELL, AND THE ORDER OF
-  THIS ENTRY IS THE ORDER THEY WERE BELIEVED IN, NOT THEIR SIZE.**
+  THIS ENTRY IS THE ORDER THEY WERE BELIEVED IN, NOT THEIR SIZE.** Both are
+  fixed and the count is NOT yet zero — step 11 went 14-19 on `main`, to SIX
+  with the first fix, to ONE with both (CI runs 36176373400 and 36176953068).
+  The survivor is `/jobs/<id>/crew`, and the shape of that is the lesson: every
+  symptom that was the SHELL showed up on many pages at once, so one page means
+  one page. Do not read the remaining entry as more of this.
 
   **One — a region's children arriving as a LAZY.** `<ShellRegion>`
   (`components/ShellRegion.tsx`) is a client component and the `(app)` layout
