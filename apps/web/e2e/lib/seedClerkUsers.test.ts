@@ -49,12 +49,65 @@ describe("describeClerkSeedFailure", () => {
   it("prints the code and longMessage that toString() throws away", () => {
     const text = describeClerkSeedFailure(clerkRefusal, persona);
 
-    // The two facts that decide what you do next, neither of which was
-    // in the log that made this function necessary.
-    expect(text).toContain("form_identifier_not_allowed_access");
-    expect(text).toContain("You are not allowed to access this application.");
+    // ASSERTED IN THE LABELLED FORM, not as bare substrings, and that is the
+    // whole difference between this test and the vacuous one it replaces.
+    // `toContain("form_identifier_not_allowed_access")` passed with the
+    // ENTIRE labelled line replaced by "(an error)", because the raw dump at
+    // the bottom carries every one of these strings — exactly the trap the
+    // meta case below already records, left standing on the assertion this
+    // PR leads with. Mutations: dropping `[${code}]` from the labelled line,
+    // and dropping `longMessage` from it, were both GREEN before this.
+    expect(text).toContain("  - [form_identifier_not_allowed_access] Access denied");
+    expect(text).toContain("\n    You are not allowed to access this application.");
+
+    // These two are not in the raw dump at all — `status` and `clerkTraceId`
+    // live on the error, not in `errors[]` — so they were never vacuous.
     expect(text).toContain("HTTP 422");
     expect(text).toContain("trace_abc123");
+  });
+
+  it("reports an error item that has no code at all, instead of dropping it", () => {
+    // The formatter used to KEEP only items with a string `code`, so an item
+    // without one vanished from the readable section AND from the raw dump,
+    // and the message degraded to "(no structured detail)" with "Raw: []".
+    // Clerk does send `code` today; nothing here should depend on that.
+    const text = describeClerkSeedFailure(
+      { status: 422, errors: [{ message: "a refusal with no code field" }] },
+      persona,
+    );
+    expect(text).toContain("[no code] a refusal with no code field");
+    expect(text).not.toContain("no structured detail");
+  });
+
+  it("does not print an empty meta line for the shape Clerk actually sends", () => {
+    // A real `@clerk/shared` ClerkAPIError builds `meta` as a seven-key
+    // object of undefineds when Clerk sent no metadata, so a key count is
+    // always truthy and every error printed "meta: {}". Read out of
+    // `@clerk/shared@3.47.8` dist/runtime/error-*.mjs, `ClerkAPIError`'s
+    // constructor, which sets all seven unconditionally.
+    const text = describeClerkSeedFailure(
+      {
+        status: 422,
+        errors: [
+          {
+            code: "form_data_missing",
+            message: "missing data",
+            meta: {
+              paramName: undefined,
+              sessionId: undefined,
+              emailAddresses: undefined,
+              identifiers: undefined,
+              zxcvbn: undefined,
+              plan: undefined,
+              isPlanUpgradePossible: undefined,
+            },
+          },
+        ],
+      },
+      persona,
+    );
+    expect(text).not.toContain("meta: {}");
+    expect(text).toContain("[form_data_missing] missing data");
   });
 
   it("names which persona could not be created", () => {

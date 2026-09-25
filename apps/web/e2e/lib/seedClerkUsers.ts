@@ -39,7 +39,7 @@ import { PERSONAS, type PersonaKey } from "./personas";
  * coverage while matching nothing. Clerk's own `code` and `longMessage`
  * are printed instead, plus one pointer that is true whatever the code.
  */
-type ClerkErrorItem = { code: string; message?: string; longMessage?: string; meta?: unknown };
+type ClerkErrorItem = { code?: string; message?: string; longMessage?: string; meta?: unknown };
 
 /**
  * Shape-checked rather than `instanceof`. The class is re-exported by
@@ -58,10 +58,19 @@ function safeJson(value: unknown): string {
   }
 }
 
+/**
+ * KEPT ON BEING AN OBJECT, NOT ON HAVING A `code`. The first version
+ * required `typeof code === "string"`, so an error item Clerk sent WITHOUT
+ * one was dropped from the readable section AND from the raw dump — the
+ * whole message degraded to "(no structured detail — raw: [object Object])"
+ * with "Raw: []". That is this function's own defect one level down: a
+ * formatter that can hide its own input. Clerk does send `code` today; the
+ * point is that nothing here depends on it doing so.
+ */
 function clerkErrorItems(error: unknown): ClerkErrorItem[] {
   const errors = (error as { errors?: unknown } | null | undefined)?.errors;
   if (!Array.isArray(errors)) return [];
-  return errors.filter((e): e is ClerkErrorItem => typeof (e as ClerkErrorItem)?.code === "string");
+  return errors.filter((e): e is ClerkErrorItem => typeof e === "object" && e !== null);
 }
 
 export function describeClerkSeedFailure(
@@ -75,11 +84,21 @@ export function describeClerkSeedFailure(
   const said = items.length
     ? items
         .map((e) => {
-          const meta = e.meta && Object.keys(e.meta as object).length ? `\n    meta: ${safeJson(e.meta)}` : "";
-          return `  - [${e.code}] ${e.message ?? ""}${e.longMessage ? `\n    ${e.longMessage}` : ""}${meta}`;
+          // SERIALISED, not key-counted. A real `@clerk/shared` ClerkAPIError
+          // builds `meta` as a SEVEN-KEY object whose values are all
+          // `undefined` when Clerk sent no metadata (paramName, sessionId,
+          // emailAddresses, identifiers, zxcvbn, plan,
+          // isPlanUpgradePossible — set unconditionally in its constructor,
+          // read out of @clerk/shared@3.47.8). So `Object.keys(meta).length`
+          // is 7 for every error and this line printed `meta: {}` every
+          // time. JSON.stringify drops the undefineds, so the serialised
+          // form is the honest test of whether there is anything to read.
+          const metaJson = e.meta === undefined || e.meta === null ? "" : safeJson(e.meta);
+          const meta = metaJson && metaJson !== "{}" ? `\n    meta: ${metaJson}` : "";
+          return `  - [${e.code ?? "no code"}] ${e.message ?? ""}${e.longMessage ? `\n    ${e.longMessage}` : ""}${meta}`;
         })
         .join("\n")
-    : `  (no structured detail — raw: ${error instanceof Error ? error.message : String(error)})`;
+    : `  (no structured detail — raw: ${error instanceof Error ? error.message : safeJson(error)})`;
 
   return [
     `e2e: Clerk refused to create the test user ${persona.email} (${persona.label}).`,
@@ -107,7 +126,12 @@ export function describeClerkSeedFailure(
     // function chose which fields to show — and the field it did not
     // choose was the one that would have named the cause. Everything
     // Clerk sent is dumped verbatim so that cannot happen twice.
-    `Raw, so nothing Clerk sent is lost to this formatter: ${safeJson(items)}`,
+    // The ORIGINAL `errors` value, not the filtered list: a filter is a
+    // choice about what matters, which is the mistake this line exists to
+    // undo.
+    `Raw, so nothing Clerk sent is lost to this formatter: ${safeJson(
+      (error as { errors?: unknown } | null | undefined)?.errors ?? items,
+    )}`,
   ]
     .filter((line): line is string => line !== null)
     .join("\n");
