@@ -213,6 +213,19 @@ appended, a measured 40 ft reaching the estimate unpriced, an unacknowledged
 addendum making a bid non-responsive, two quotes levelled with their exclusions
 — did what they say on the first run that could reach them.
 
+**AND A SMALL ACCESSIBILITY FINDING THAT FELL OUT OF THE LAST SELECTOR, for
+Diego rather than fixed here.** `ConceptualEstimateHelper` is rendered INSIDE
+the "Estimated value of our scope" `<label>` (`BidPursuitList.tsx`), so that
+field's accessible name is its own text plus everything the calculator renders —
+including "Gross area of the building (SF)" and the "Not saved — this is a
+calculator" prose. Two textboxes answer to that name by substring, which is how
+the spec found it. The consequence for a person using a screen reader is that
+announcing the pursuit's value field reads the whole calculator as its label.
+The comment above the helper already says "BESIDE the field, never inside it";
+making it a sibling of the label rather than a child would satisfy both that
+sentence and the screen reader. It is Diego's markup and his call, so the spec
+asks for the name exactly and says why.
+
 **What still has no coverage, stated rather than left to be assumed.** The
 `/api/takeoff/plan/[planId]` route is stubbed in the browser by the takeoff
 spec (the fake blob it would proxy does not exist in the suite), so its own

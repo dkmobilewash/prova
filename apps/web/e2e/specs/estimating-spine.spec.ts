@@ -415,7 +415,21 @@ test.describe("the estimating desk", () => {
     await expect(page.getByText("Not saved — this is a calculator, not part of the pursuit.")).toBeVisible();
     await expect(page.getByText("Enter the building's gross area to see what similar work has run at.")).toBeVisible();
 
-    await page.getByRole("textbox", { name: "Gross area of the building (SF)" }).fill("40000");
+    // `exact`, and the reason is worth knowing rather than just working around.
+    // `ConceptualEstimateHelper` is rendered INSIDE the "Estimated value of our
+    // scope" `<label>` (BidPursuitList.tsx), so that field's accessible name is
+    // its own text PLUS everything the calculator renders — including "Gross
+    // area of the building (SF)". Two textboxes therefore answer to this name by
+    // substring. Only one answers to it exactly.
+    //
+    // The a11y consequence is real and is reported rather than fixed here: a
+    // screen reader announcing the pursuit's value field reads the whole
+    // calculator as its label. Moving the helper to a sibling of the label —
+    // the comment above it already says "BESIDE the field, never inside it" —
+    // would fix both. That is Diego's markup and his call.
+    await page
+      .getByRole("textbox", { name: "Gross area of the building (SF)", exact: true })
+      .fill("40000");
     // This company has finished nothing, so the honest answer is the reason
     // and NOT a range. A $/SF figure here would be the invented number
     // lib/conceptual-estimate.ts is written to refuse.
