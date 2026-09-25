@@ -72,6 +72,33 @@ model TakeoffPlan {
   /// PDF library to read it with, and the viewer knows it the moment the
   /// document opens. A column here could only ever hold a client's claim,
   /// gone stale.
+  /// WHICH ISSUE OF THE DRAWINGS THIS IS, off the title block — "Rev 2",
+  /// "ASI-12", "Bulletin 5" — and the date printed beside it.
+  ///
+  /// TEXT AND A DATE, NOT A FOREIGN KEY TO `DrawingRevision`, and that is the
+  /// whole design of `lib/takeoff-currency.ts`. This model's own header says
+  /// it "must not become" `DrawingSet`/`DrawingRevision`: those record what
+  /// the architect issued and when it reached us, a paper trail for the job,
+  /// while this is a single sheet somebody was emailed with an invitation to
+  /// bid. Joining them would collapse a boundary set on purpose, and would
+  /// also be wrong in practice — the sheet you measure at bid time is
+  /// routinely not in any drawing set the job has, because the job does not
+  /// exist yet.
+  ///
+  /// So currency is worked out by COMPARING DATES AND LABELS, never by
+  /// following a relation. `DrawingRevision` already refuses a counter for
+  /// the same reason this does: "'Rev 3', 'ASI-12', 'Bulletin 5' are the
+  /// ARCHITECT'S labels, printed on a title block we don't control."
+  ///
+  /// `sheetIssuedOn` is the date ON THE SHEET, entered — not when the file was
+  /// uploaded, which `createdAt` already holds and which says nothing about
+  /// how old the paper is. NULL is the honest common case and is treated as
+  /// UNKNOWABLE rather than as current: a plan whose issue date nobody
+  /// recorded cannot be shown to be superseded, and cannot be shown to be
+  /// current either.
+  revisionLabel String?
+  sheetIssuedOn DateTime?
+
   uploadedByUserId String?
   uploadedBy       User?   @relation("TakeoffPlanUploadedBy", fields: [uploadedByUserId], references: [id])
 
