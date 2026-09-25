@@ -645,6 +645,17 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "setBidLineAccepted", reason: "What the GC took is read off their award letter, on the page where the alternate is visible." },
   { action: "deleteBidLine", reason: "Deletes are never commands (T5)." },
   { action: "linkBidToJob", reason: "Which job a bid became is a judgement about two records the model cannot tell apart — names rarely match and one GC sends several invitations per building. A wrong link teaches the estimator from another job's costs, so a person picks it on /bids." },
+  // Bid-form compliance. Not commands, and this is the clearest case on the
+  // whole list: acknowledging an addendum is a LEGAL ASSERTION on a document
+  // the GC will hold you to, and the model has not read the addendum. A
+  // wrongly-ticked acknowledgement makes a bid look responsive when it is
+  // not, which is the exact failure the feature exists to prevent.
+  { action: "saveBidAddendum", reason: "What the GC issued and when is read off their letter, and whether it changed work you already priced is an estimator's judgement about drawings the assistant has not seen." },
+  { action: "acknowledgeBidAddendum", reason: "Acknowledging an addendum is an assertion on a bid document the GC holds you to. A wrong tick makes a bid look responsive when it is not — the failure this feature exists to prevent." },
+  { action: "deleteBidAddendum", reason: "Deletes are never commands (T5)." },
+  { action: "saveBidRequirement", reason: "These are the ITB items nothing in the data can verify, transcribed from the GC's own form; a misread requirement is one nobody goes and satisfies." },
+  { action: "satisfyBidRequirement", reason: "Recording the bond as obtained or the form as signed is a person vouching for something off-screen. The assistant cannot see whether it happened." },
+  { action: "deleteBidRequirement", reason: "Deletes are never commands (T5)." },
   { action: "deleteBidInvitation", reason: "Deletes are never commands (T5)." },
   // The pre-bid pursuit list (lib/actions/bidPursuits.ts, BidPursuit). The
   // read side is the bid_pursuits tool. createBidPursuit and

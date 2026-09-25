@@ -9,6 +9,7 @@ import { summariseWonValue, valueIsPartial } from "@/lib/bid-pipeline";
 import { BidLevelling, type BidQuoteRow } from "@/components/BidLevelling";
 import { viewerToday } from "@/lib/viewerToday";
 import { BidLines, type BidLineRow } from "@/components/BidLines";
+import { BidCompliance, type AddendumRow, type RequirementRow } from "@/components/BidCompliance";
 import { BidJobLink } from "@/components/BidJobLink";
 import { bidRecord, settledSentence } from "@/lib/bid-outcome";
 import { loadBidOutcomes, loadLinkableJobs } from "@/lib/bid-outcome-query";
@@ -91,6 +92,10 @@ export default async function BidsPage({
       contact: true,
       quotes: { orderBy: [{ packageLabel: "asc" }, { amount: "asc" }] },
       lines: { orderBy: { sortOrder: "asc" } },
+      // Addenda oldest first: they are read as a sequence, and the one you
+      // have not acknowledged is usually the newest.
+      addenda: { orderBy: [{ issuedOn: "asc" }, { createdAt: "asc" }] },
+      requirements: { orderBy: { createdAt: "asc" } },
     },
   });
 
@@ -296,6 +301,44 @@ export default async function BidsPage({
                     unit: line.unit,
                     unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
                     accepted: line.accepted,
+                  }),
+                )}
+              />
+              <BidCompliance
+                bidInvitationId={bid.id}
+                today={today}
+                // The SAME rows BidLines renders, so the derived checks and
+                // the list a person is looking at cannot disagree about what
+                // is priced. Mapped twice rather than shared because the two
+                // components want different shapes; the source is one query.
+                lines={bid.lines.map((line) => ({
+                  id: line.id,
+                  kind: line.kind,
+                  label: line.label,
+                  amount: line.amount === null ? null : Number(line.amount),
+                  unit: line.unit,
+                  unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
+                  accepted: line.accepted,
+                }))}
+                addenda={bid.addenda.map(
+                  (row): AddendumRow => ({
+                    id: row.id,
+                    reference: row.reference,
+                    issuedOn: day(row.issuedOn),
+                    acknowledgedOn: day(row.acknowledgedOn),
+                    affectsPricedScope: row.affectsPricedScope,
+                    impactNote: row.impactNote,
+                    notes: row.notes,
+                  }),
+                )}
+                requirements={bid.requirements.map(
+                  (row): RequirementRow => ({
+                    id: row.id,
+                    kind: row.kind,
+                    label: row.label,
+                    required: row.required,
+                    satisfiedOn: day(row.satisfiedOn),
+                    notes: row.notes,
                   }),
                 )}
               />

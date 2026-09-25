@@ -280,6 +280,38 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: byCompany,
   },
   {
+    key: "bidAddenda",
+    model: "bidAddendum",
+    label: "Addenda issued on each bid, and whether acknowledged",
+    note:
+      "What the GC issued during the bid period and whether it was acknowledged. An empty " +
+      "acknowledgedOn means NOT acknowledged -- on a public bid that is the most common reason a " +
+      "low bid is rejected unread. affectsPricedScope is somebody's judgement that the addendum " +
+      "changed work already priced; it is not derived from anything and nothing re-prices " +
+      "automatically. reference is whatever the GC called it and is never parsed.",
+    columns: [
+      "id", "bidInvitationId", "reference", "issuedOn", "acknowledgedOn", "affectsPricedScope",
+      "impactNote", "notes", "createdAt", "updatedAt",
+    ],
+    scope: byCompany,
+  },
+  {
+    key: "bidRequirements",
+    model: "bidRequirement",
+    label: "ITB requirements per bid that only a person can confirm",
+    note:
+      "Bid bond, signed form, subcontractor list, insurance certificate and the like -- the items " +
+      "nothing in the data could verify, so somebody records them with a date. An empty " +
+      "satisfiedOn means outstanding. Deliberately NOT here: whether every alternate is priced or " +
+      "every addendum acknowledged. Those are computed from the bid lines and addenda on every " +
+      "read, so there is no stored flag that could disagree with them.",
+    columns: [
+      "id", "bidInvitationId", "kind", "label", "required", "satisfiedOn", "notes",
+      "createdAt", "updatedAt",
+    ],
+    scope: byCompany,
+  },
+  {
     key: "bidLines",
     model: "bidLine",
     label: "Alternates, unit prices and allowances on each bid",

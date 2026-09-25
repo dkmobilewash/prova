@@ -9,6 +9,7 @@ import { ActionResult, actionFail, actionOk, InputError, runAction, BID_INVITATI
 import { catalogActuals, catalogSourcedLine, repriceDecision } from "@/lib/catalog-actuals";
 import { quotePriceDecision } from "@/lib/catalog-quote-price";
 import { bidQuoteProblem } from "@/lib/bid-levelling";
+import { addendumProblem, requirementProblem } from "@/lib/bid-responsiveness";
 import { optionalDateFromString } from "@/lib/bid-pursuits";
 import { bidLineProblem } from "@/lib/bid-lines";
 import { todayInZone } from "@/lib/viewer-timezone";
@@ -938,5 +939,205 @@ export async function linkBidToJob(bidInvitationId: string, formData: FormData):
   await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { wonJobId: jobId } });
   revalidatePath("/bids");
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
+}
+
+/** The requirement kinds, as the form posts them. Deliberately carries no
+ * member for anything the app can check itself — see bid-compliance.prisma. */
+const BID_REQUIREMENT_KINDS = [
+  "BID_BOND",
+  "SIGNED_BID_FORM",
+  "SUBCONTRACTOR_LIST",
+  "INSURANCE_CERTIFICATE",
+  "PREQUALIFICATION",
+  "PARTICIPATION_FORMS",
+  "OTHER",
+] as const;
+
+// ───────────────────────────────────────────────────────────────────────────
+// BID-FORM COMPLIANCE — the paperwork that decides whether anybody reads the
+// number. Addenda the GC issued, and the ITB items only a person can confirm.
+// MANAGE_ESTIMATING, the same capability `/bids` withholds on.
+//
+// There is deliberately no action here that marks the bid "compliant". What
+// is outstanding is DERIVED on every read by lib/bid-responsiveness.ts, from
+// these rows and from BidLine — so there is no flag to set, and nothing that
+// could disagree with the data underneath it.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Creates or updates one addendum the GC issued on this bid. */
+export async function saveBidAddendum(bidInvitationId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const bid = await prisma.bidInvitation.findFirst({
+    where: { id: bidInvitationId, companyId: company.id },
+    select: { id: true },
+  });
+  if (!bid) return actionFail("That bid is no longer on this company. Reload the page.");
+
+  return runAction(async () => {
+    const reference = String(formData.get("reference") ?? "").trim();
+    const impactNote = String(formData.get("impactNote") ?? "").trim();
+    const notes = String(formData.get("notes") ?? "").trim();
+
+    const problem = addendumProblem({ reference });
+    if (problem) return actionFail(problem);
+
+    // Both entered, never stamped. The gap between them is how somebody finds
+    // out they are hearing about changes late, and stamping either would
+    // erase exactly that.
+    const issuedOn = optionalDateFromString(formData.get("issuedOn"));
+    const acknowledgedOn = optionalDateFromString(formData.get("acknowledgedOn"));
+
+    const data = {
+      reference,
+      issuedOn,
+      acknowledgedOn,
+      affectsPricedScope: formData.get("affectsPricedScope") === "on",
+      impactNote: impactNote || null,
+      notes: notes || null,
+    };
+
+    const addendumId = String(formData.get("addendumId") ?? "").trim();
+    if (addendumId) {
+      const updated = await prisma.bidAddendum.updateMany({
+        where: { id: addendumId, companyId: company.id, bidInvitationId },
+        data,
+      });
+      if (updated.count === 0) return actionFail("That addendum is no longer on this bid. Reload the page.");
+    } else {
+      await prisma.bidAddendum.create({ data: { ...data, companyId: company.id, bidInvitationId } });
+    }
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+/**
+ * Records that an addendum has been acknowledged — or takes it back.
+ *
+ * Passing no date CLEARS it, which is the un-acknowledge path. Worth having
+ * rather than forcing a delete: an addendum ticked by mistake is a bid that
+ * looks responsive and is not, and deleting the row would lose the fact that
+ * the GC issued it at all.
+ */
+export async function acknowledgeBidAddendum(addendumId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  return runAction(async () => {
+    const acknowledgedOn = optionalDateFromString(formData.get("acknowledgedOn"));
+    const updated = await prisma.bidAddendum.updateMany({
+      where: { id: addendumId, companyId: company.id },
+      data: { acknowledgedOn },
+    });
+    if (updated.count === 0) return actionFail("That addendum is no longer on this bid. Reload the page.");
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+export async function deleteBidAddendum(addendumId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const deleted = await prisma.bidAddendum.deleteMany({ where: { id: addendumId, companyId: company.id } });
+  if (deleted.count === 0) return actionFail("That addendum is already gone. Reload the page.");
+
+  revalidatePath("/bids");
+  return actionOk;
+}
+
+/** Creates or updates one ITB requirement only a person can confirm. */
+export async function saveBidRequirement(bidInvitationId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const bid = await prisma.bidInvitation.findFirst({
+    where: { id: bidInvitationId, companyId: company.id },
+    select: { id: true },
+  });
+  if (!bid) return actionFail("That bid is no longer on this company. Reload the page.");
+
+  return runAction(async () => {
+    const label = String(formData.get("label") ?? "").trim();
+    const notes = String(formData.get("notes") ?? "").trim();
+
+    const problem = requirementProblem({ label });
+    if (problem) return actionFail(problem);
+
+    const kind = enumFromForm(formData, "kind", BID_REQUIREMENT_KINDS);
+
+    const data = {
+      kind,
+      label,
+      required: formData.get("required") !== "off",
+      satisfiedOn: optionalDateFromString(formData.get("satisfiedOn")),
+      notes: notes || null,
+    };
+
+    const requirementId = String(formData.get("requirementId") ?? "").trim();
+    if (requirementId) {
+      const updated = await prisma.bidRequirement.updateMany({
+        where: { id: requirementId, companyId: company.id, bidInvitationId },
+        data,
+      });
+      if (updated.count === 0) return actionFail("That requirement is no longer on this bid. Reload the page.");
+    } else {
+      await prisma.bidRequirement.create({ data: { ...data, companyId: company.id, bidInvitationId } });
+    }
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+/** Records an ITB item as done — or takes it back, by passing no date. */
+export async function satisfyBidRequirement(requirementId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  return runAction(async () => {
+    const satisfiedOn = optionalDateFromString(formData.get("satisfiedOn"));
+    const updated = await prisma.bidRequirement.updateMany({
+      where: { id: requirementId, companyId: company.id },
+      data: { satisfiedOn },
+    });
+    if (updated.count === 0) return actionFail("That requirement is no longer on this bid. Reload the page.");
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+export async function deleteBidRequirement(requirementId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const deleted = await prisma.bidRequirement.deleteMany({ where: { id: requirementId, companyId: company.id } });
+  if (deleted.count === 0) return actionFail("That requirement is already gone. Reload the page.");
+
+  revalidatePath("/bids");
   return actionOk;
 }
