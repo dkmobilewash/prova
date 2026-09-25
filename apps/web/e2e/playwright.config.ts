@@ -54,7 +54,13 @@ const PORT = Number(process.env.E2E_PORT ?? 3100);
 /** Run the suite against `next dev` instead of `next start`, so React
  * reports hydration mismatches with a diff instead of a stripped error
  * code. Diagnostic only — see the note on `webServer.command`. */
-const DEV_SERVER = process.env.E2E_DEV_SERVER === "1";
+// TEMPORARY DIAGNOSTIC — REVERT THIS LINE. Forced on so one CI run prints
+// the hydration diff; CI does not set the variable and cannot be asked to
+// without editing ci.yml. The next commit on this branch puts it back to
+// `=== "1"`. If you are reading this on main, it escaped and should be
+// reverted immediately: a dev-server E2E run proves nothing about a
+// production build.
+const DEV_SERVER = process.env.E2E_DEV_SERVER !== "0";
 
 // AT CONFIG LOAD, not only in global-setup.ts. Read out of the installed
 // runner (playwright@1.63.0 lib/runner/index.js, `createGlobalSetupTasks`):
