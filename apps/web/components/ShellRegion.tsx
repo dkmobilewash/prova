@@ -41,8 +41,33 @@ import { Component, Suspense, type ErrorInfo, type ReactNode } from "react";
  * client retries it, the retry throws on the client, and THIS class catches
  * it. Without the Suspense a throw during SSR would escape to `app/error.tsx`
  * and the page would be gone again. The fallback is `null` on purpose: every
- * region's data is awaited by the layout before it renders, so nothing here
- * ever actually suspends and no loading state is ever shown.
+ * region's DATA is awaited by the layout before it renders, so no loading
+ * state is ever shown.
+ *
+ * THE LAST CLAUSE OF THAT SENTENCE USED TO READ "nothing here ever actually
+ * suspends", AND IT IS FALSE — corrected 2026-09-25, from a browser rather
+ * than from reasoning. A boundary here does suspend, and when it does React
+ * streams it OUT OF ORDER: the fallback goes inline behind a
+ * `<template id="B:n">`, the real markup is streamed into a
+ * `<div hidden id="S:n">` at the end of the body, and an inline script moves
+ * it into place. A MutationObserver attached before the page's first script
+ * caught exactly that — the sidebar and then the top bar being relocated out
+ * of their hidden holders — in the same millisecond as a React #418
+ * hydration mismatch, which is the defect the pilot journey's step 11 has
+ * been reporting on a different set of pages every run.
+ *
+ * Awaiting the data is not enough, because the DATA is not the only thing
+ * that can suspend. `children` here is an element serialized from a SERVER
+ * layout, and React's production Flight serializer defers any element it
+ * reaches once the current row passes 3,200 bytes, writing `$L<id>` in its
+ * place; the browser turns that back into a LAZY, and a lazy suspends. That
+ * threshold does not exist in the development build, which is why no amount
+ * of `next dev` shows any of this — the same trap, from the other side, that
+ * `components/Hint.tsx` documents at length.
+ *
+ * The Suspense still has to stay: `shellRegion.test.ts`'s second control is
+ * the proof that removing it puts the 2026-09-21 outage back. See CLAUDE.md's
+ * #418 entry for the measurement and for the direction that keeps both.
  *
  * NO DOM OF ITS OWN. The shell is a `flex h-screen` row whose children are
  * the sidebar and the content column; a wrapper element would become a flex
