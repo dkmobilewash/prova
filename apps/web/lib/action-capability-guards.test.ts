@@ -1495,6 +1495,14 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // owner) — the same door as CompanyCam's, reachable only from
   // /settings/integrations.
   bluebeam: () => import("./actions/bluebeam"),
+  // The apprenticeship committee directory's three: reachable only from
+  // /union-compliance, which demands MANAGE_COMPLIANCE, so all three assert
+  // it before the owner check and before anything is read. The DAS 140 /
+  // DAS 142 actions in the same module are reached from the job's Compliance
+  // tab, which withholds no single capability, so the walk does not derive a
+  // requirement for them — they assert MANAGE_COMPLIANCE anyway, which is
+  // strictly more than this file can ask of them.
+  dasForms: () => import("./actions/dasForms"),
   // The three money modules behind the job tabs, added when this walk
   // learned to read a soft gate (issue #383). Every action here is
   // reachable ONLY from `/jobs/[id]/estimate`, `/billing`, `/retainage`

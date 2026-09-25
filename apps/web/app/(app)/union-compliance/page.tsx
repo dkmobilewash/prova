@@ -19,6 +19,8 @@ import { ApprenticeshipForm } from "@/components/ApprenticeshipForm";
 import { ApprenticeshipPanel } from "@/components/ApprenticeshipPanel";
 import { WorkerCraftsPanel } from "@/components/WorkerCraftsPanel";
 import { viewerToday } from "@/lib/viewerToday";
+import { ApprenticeshipCommitteePanel } from "@/components/ApprenticeshipCommitteePanel";
+import { loadApprenticeshipCommittees } from "@/lib/das-query";
 
 const STATUS_TONE: Record<string, string> = {
   WITHIN: "text-tag-green-ink",
@@ -57,7 +59,8 @@ export default async function UnionCompliancePage({
     : today.slice(0, 7);
   const { start, end } = monthBounds(month);
 
-  const [setup, remittance, ratioReviews, apprenticeships, team, workerCrafts] = await Promise.all([
+  const [setup, remittance, ratioReviews, apprenticeships, team, workerCrafts, committees] =
+    await Promise.all([
     loadUnionSetup(company.id),
     loadRemittance(company.id, month),
     loadRatioReviews(company.id, month),
@@ -67,6 +70,10 @@ export default async function UnionCompliancePage({
     loadApprenticeships(company.id, today),
     loadTeamForApprenticeship(company.id),
     loadWorkerCrafts(company.id),
+    // The committee directory the DAS 140 / DAS 142 sections on every job
+    // address their notices from. Company-level, because the same committee
+    // receives a notice for every award in its area.
+    loadApprenticeshipCommittees(company.id),
   ]);
 
   const crafts = setup.flatMap((local) => local.crafts);
@@ -359,6 +366,23 @@ export default async function UnionCompliancePage({
           />
         </div>
         <ApprenticeshipPanel rows={apprenticeships} canDelete={currentUser.role === "OWNER"} />
+      </section>
+
+      {/* ------------------------------------------ DAS committees --- */}
+      <section className="mb-10" data-tour="uc-committees">
+        <h2 className="mb-1 text-sm font-semibold text-ink-label">Apprenticeship committees</h2>
+        <p className="mb-3 text-xs text-ink-muted">
+          Who the DAS 140 and DAS 142 notices on a California public works job are sent to — one
+          committee per craft, per geographic area. C Stream holds no directory of them and will not
+          invent one: look yours up on DIR&rsquo;s own list, record it once here, and every job can
+          address its notices from it. The notices themselves live on each job&rsquo;s Compliance tab,
+          where the deadline is.
+        </p>
+        <ApprenticeshipCommitteePanel
+          committees={committees}
+          crafts={crafts.map((c) => ({ id: c.id, label: c.name }))}
+          canDelete={currentUser.role === "OWNER"}
+        />
       </section>
 
       {/* ------------------------------------------ who works as what --- */}

@@ -404,6 +404,7 @@ model CraftClassification {
   timeEntries               TimeEntry[]
   dispatchSlips             DispatchSlip[]
   apprenticeshipEnrollments ApprenticeshipEnrollment[]
+  apprenticeshipCommittees  ApprenticeshipCommittee[]
   crewScheduleDays          CrewScheduleDay[]
   workerCrafts              WorkerCraft[]
 
