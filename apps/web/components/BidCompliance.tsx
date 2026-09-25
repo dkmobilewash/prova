@@ -76,9 +76,26 @@ export function BidCompliance({
     });
   };
 
-  const stamp = (id: string, action: typeof acknowledgeBidAddendum, date: string) => {
+  /**
+   * One-tap date stamp, for both "acknowledge" and "mark done".
+   *
+   * The field name is PASSED rather than inferred from which action was
+   * handed in. The first version compared `action === acknowledgeBidAddendum`
+   * to pick between `acknowledgedOn` and `satisfiedOn`, which works and is the
+   * wrong shape twice over: a Server Action is a reference across a bundler
+   * boundary, so identity is not something to build behaviour on, and a third
+   * caller would silently get the `satisfiedOn` branch by falling off the end
+   * of a two-way guess. An empty `date` clears the field, which is the
+   * un-acknowledge and not-done-after-all path.
+   */
+  const stamp = (
+    id: string,
+    action: (id: string, formData: FormData) => Promise<{ ok: boolean; error?: string }>,
+    field: "acknowledgedOn" | "satisfiedOn",
+    date: string,
+  ) => {
     const formData = new FormData();
-    formData.set(action === acknowledgeBidAddendum ? "acknowledgedOn" : "satisfiedOn", date);
+    formData.set(field, date);
     run(() => action(id, formData));
   };
 
@@ -190,7 +207,7 @@ export function BidCompliance({
                     <button
                       type="button"
                       disabled={isPending}
-                      onClick={() => stamp(row.id, acknowledgeBidAddendum, row.acknowledgedOn ? "" : today)}
+                      onClick={() => stamp(row.id, acknowledgeBidAddendum, "acknowledgedOn", row.acknowledgedOn ? "" : today)}
                       className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-60"
                     >
                       {row.acknowledgedOn ? "Un-acknowledge" : "Acknowledge"}
@@ -258,7 +275,7 @@ export function BidCompliance({
                     <button
                       type="button"
                       disabled={isPending}
-                      onClick={() => stamp(row.id, satisfyBidRequirement, row.satisfiedOn ? "" : today)}
+                      onClick={() => stamp(row.id, satisfyBidRequirement, "satisfiedOn", row.satisfiedOn ? "" : today)}
                       className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-60"
                     >
                       {row.satisfiedOn ? "Not done after all" : "Mark done"}
