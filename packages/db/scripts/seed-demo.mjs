@@ -22,6 +22,25 @@ import { describe } from "./connection-target.mjs";
  * yard. /equipment and /deployment both derive location and utilisation
  * from `EquipmentAssignment`, and the seed writes those rows now.
  *
+ * THE SAME GAP WAS TRUE OF EVERY UNION-COMPLIANCE SCREEN UNTIL 2026-09-25,
+ * and it was the widest one left. This script wrote no union local, no craft
+ * classification, no fringe rate schedule, no crew member and no payroll
+ * register row — so the apprentice ratio, the monthly fringe remittance, the
+ * certified-payroll review, the WH-347 itself and the wage-determination
+ * standing line ALL rendered empty states on a dataset whose whole purpose
+ * is that nothing renders empty. Those are the features that are hardest to
+ * argue for in the abstract and most convincing with real hours behind them,
+ * which is the worst possible set to demo blank.
+ *
+ * One condition in there is deliberately INCOMPLETE rather than tidy: a
+ * craft with no tier recorded and no rate schedule, carrying real hours. It
+ * is not an oversight and it must not be "fixed". It is the only way to
+ * reach the two answers this product gives that its competitors do not —
+ * a day's apprentice ratio that reads "no honest verdict exists" instead of
+ * quietly certifying itself compliant, and a remittance total that NAMES the
+ * hours it refused to price instead of valuing them at zero. See the
+ * `ceilingUnclassified` craft below.
+ *
  * SAFETY. This writes a lot of rows, so it refuses to run unless you name
  * the database you mean. It prints the host first and compares it against
  * SEED_EXPECT_HOST; a mismatch stops before a single write. The same
@@ -99,6 +118,43 @@ const iso = (d) => d.toISOString().slice(0, 10);
  */
 const raise = (existing, highest) => Math.max(existing ?? 0, highest);
 
+/**
+ * The prevailing-wage determination that was in force on a given day.
+ *
+ * DERIVED, not written as a literal, and the reason is that every other
+ * date in this file moves with the run. DIR issues general determinations
+ * twice a year — 22 February and 22 August — and each takes effect TEN DAYS
+ * later; lib/determination-standing.ts judges a determination by whether the
+ * job's bid-advertisement date falls inside that window. Hardcode an issue
+ * date beside a bid date computed from TODAY and the pairing is correct for
+ * about five months and then silently reads "Not the determination in force
+ * on your bid-advertisement date" — a red warning on a demo screen, about
+ * nothing.
+ *
+ * So this answers the question the standing line asks: the latest scheduled
+ * issue whose effective date had already arrived. Returns a UTC-midnight
+ * Date, like every other date this file writes.
+ */
+const dirIssueInForceOn = (date) => {
+  const EFFECTIVE_LAG_DAYS = 10;
+  const year = date.getUTCFullYear();
+  let answer = null;
+  for (const y of [year - 1, year]) {
+    for (const [month, dayOfMonth] of [
+      [2, 22],
+      [8, 22],
+    ]) {
+      const issued = new Date(Date.UTC(y, month - 1, dayOfMonth));
+      const effective = new Date(issued.getTime() + EFFECTIVE_LAG_DAYS * 86_400_000);
+      if (effective <= date) answer = issued;
+    }
+  }
+  // Unreachable: the previous February's issue is always in force by any
+  // date in `year`. Thrown rather than returned as something plausible.
+  if (!answer) throw new Error(`no DIR issue was in force on ${date.toISOString()}`);
+  return answer;
+};
+
 async function main() {
   const company = process.env.SEED_COMPANY_ID
     ? await prisma.company.findUnique({ where: { id: process.env.SEED_COMPANY_ID } })
@@ -133,6 +189,12 @@ async function main() {
     vendor: await prisma.vendor.count({ where: { companyId: company.id, name: { contains: MARK } } }),
     equipment: await prisma.equipment.count({ where: { companyId: company.id, name: { contains: MARK } } }),
     prevailingWageRuleSet: await prisma.prevailingWageRuleSet.count({ where: { companyId: company.id, name: { contains: MARK } } }),
+    // Per FAMILY, like every other line here, and these two are their own
+    // families rather than children of a job: a run that died after the
+    // crafts and before the hours leaves a local with no time entries, and
+    // scoping the check to jobs would report that as a clean removal.
+    unionLocal: await prisma.unionLocal.count({ where: { companyId: company.id, jurisdictionName: { contains: MARK } } }),
+    crewMember: await prisma.crewMember.count({ where: { companyId: company.id, note: { contains: MARK } } }),
     lineItemCatalogEntry: await prisma.lineItemCatalogEntry.count({ where: { companyId: company.id, description: { contains: MARK } } }),
     vendorPriceQuote: await prisma.vendorPriceQuote.count({ where: { companyId: company.id, description: { contains: MARK } } }),
     bidInvitation: await prisma.bidInvitation.count({ where: { companyId: company.id, projectName: { contains: MARK } } }),
@@ -224,6 +286,17 @@ async function main() {
       startDate: day(-52),
       endDate: day(38),
       retainagePercent: "5",
+      // The four ENTERED public-works facts the Compliance tab asks for.
+      // `bidAdvertisedOn` is the load-bearing one and it is not decoration:
+      // lib/determination-standing.ts picks the determination in force from
+      // THIS date, so without it every determination on this job reads
+      // "Unchecked — the job's bid-advertisement date hasn't been entered"
+      // and the whole standing line demonstrates nothing. The determination
+      // below derives its own issue date from this one; see `dirIssueInForceOn`.
+      siteCounty: "Multnomah County, Oregon",
+      publicWorks: true,
+      bidAdvertisedOn: day(-120),
+      awardingBody: "Riverside Health District",
     },
   });
   const northgate = await prisma.job.create({
@@ -367,51 +440,95 @@ async function main() {
   // One invoice paid in full, one part-paid and overdue. The second is the
   // interesting one: it drives AR ageing, the GC payment-reliability read,
   // and the retainage held figure.
+  //
+  // EVERY FIGURE HERE IS THE ONE THE APP ITSELF WOULD HAVE WRITTEN, and
+  // until 2026-09-25 none of them was. `submitPayApplication`
+  // (lib/actions/billing.ts) sets `amount` to
+  // SUM(thisPeriodBilled + materialsStoredValue) across the rows and then
+  // `retainageWithheld` to `retainageWithheldFor(amount, retainagePercent)`
+  // — one formula, lib/billing/retainage-amount.ts. The seeded pair were
+  // hand-written numbers that satisfied neither: invoice 1 said $86,450.00
+  // against line items summing $94,650.00, and $4,550.00 of retainage
+  // against 5% of either figure.
+  //
+  // That is not untidiness, it is a contradiction a contractor reads off
+  // the screen. The G702 foots to its own continuation sheet, so it printed
+  // "CURRENT PAYMENT DUE $90,100.00" while the billing tab beside it said
+  // the invoice was $86,450.00 and PAID IN FULL, with a payment row for
+  // exactly that. A demo dataset whose certificate disagrees with its own
+  // invoice is worse than an empty screen — the numbers are read aloud and
+  // somebody adds them up.
+  //
+  // So the amounts are DERIVED from the breakdown below rather than typed
+  // beside it, and the retainage from the amount: change a line and both
+  // follow. `pct()` is the same half-up rule retainage-amount.ts applies,
+  // narrowed to the two-decimal inputs this file writes — not a second
+  // formula for the app to disagree with, since nothing here is read by the
+  // app; it is how the seed computes what the app would have stored.
+  const sumBilled = (rows) => rows.reduce((total, r) => total + r.billed + r.stored, 0);
+  const pct = (amount, percent) => (Math.round(amount * percent) / 100).toFixed(2);
+
+  const inv1Rows = [
+    { line: 0, billed: 52000, stored: 0 },
+    { line: 1, billed: 34450, stored: 8200 },
+  ];
+  const inv1Amount = sumBilled(inv1Rows);
   const inv1 = await prisma.invoice.create({
     data: {
       jobId: riverside.id,
       number: 1,
       description: `Pay application 1 ${MARK}`,
-      amount: "86450",
+      amount: inv1Amount.toFixed(2),
       issuedAt: day(-38),
       dueAt: day(-8),
       status: "PAID",
-      retainageWithheld: "4550",
+      retainageWithheld: pct(inv1Amount, 5),
     },
   });
   await prisma.payment.create({
-    data: { invoiceId: inv1.id, amount: "86450", method: "ACH", receivedAt: day(-11) },
+    data: { invoiceId: inv1.id, amount: inv1Amount.toFixed(2), method: "ACH", receivedAt: day(-11) },
   });
   // Billed per SOV line, which is what makes it a pay application rather
   // than a lump sum — without these the G702/G703 report renders nothing.
-  await prisma.invoiceLineItem.createMany({
-    data: [
-      { invoiceId: inv1.id, lineItemId: riversideLines[0].id, thisPeriodBilled: "52000", materialsStoredValue: "0" },
-      { invoiceId: inv1.id, lineItemId: riversideLines[1].id, thisPeriodBilled: "34450", materialsStoredValue: "8200" },
-    ],
-  });
+  const invoiceLines = (invoiceId, rows) =>
+    prisma.invoiceLineItem.createMany({
+      data: rows.map((r) => ({
+        invoiceId,
+        lineItemId: riversideLines[r.line].id,
+        thisPeriodBilled: r.billed.toFixed(2),
+        materialsStoredValue: r.stored.toFixed(2),
+      })),
+    });
+  await invoiceLines(inv1.id, inv1Rows);
 
+  // The negative on the drywall line is the documented way to move value
+  // OUT of stored material once it is installed — see the note on
+  // InvoiceLineItem.materialsStoredValue. It is why `amount` here is less
+  // than the hours billed this period, and it is deliberately kept: the
+  // running "materials stored to date" figure on the G703 is the thing
+  // pay-application-query.ts had to be fixed to carry across periods, and
+  // a demo with a single period cannot show it at all.
+  const inv2Rows = [
+    { line: 1, billed: 48300, stored: -4000 },
+    { line: 3, billed: 14000, stored: 0 },
+  ];
+  const inv2Amount = sumBilled(inv2Rows);
   const inv2 = await prisma.invoice.create({
     data: {
       jobId: riverside.id,
       number: 2,
       description: `Pay application 2 ${MARK}`,
-      amount: "62300",
+      amount: inv2Amount.toFixed(2),
       issuedAt: day(-24),
       dueAt: day(-9),
       status: "PARTIALLY_PAID",
-      retainageWithheld: "3279",
+      retainageWithheld: pct(inv2Amount, 5),
     },
   });
   await prisma.payment.create({
     data: { invoiceId: inv2.id, amount: "30000", method: "Check", receivedAt: day(-4) },
   });
-  await prisma.invoiceLineItem.createMany({
-    data: [
-      { invoiceId: inv2.id, lineItemId: riversideLines[1].id, thisPeriodBilled: "48300", materialsStoredValue: "-4000" },
-      { invoiceId: inv2.id, lineItemId: riversideLines[3].id, thisPeriodBilled: "14000", materialsStoredValue: "0" },
-    ],
-  });
+  await invoiceLines(inv2.id, inv2Rows);
 
   // THE COUNTER THOSE NUMBERS CAME FROM. Without this the demo dataset
   // shipped invoices #1, #1 and #2 and no InvoiceCounter row at all, and
@@ -495,8 +612,13 @@ async function main() {
     { t: "CERTIFICATE_OF_INSURANCE", p: "Western Mutual — General Liability", e: -6 },
     { t: "CERTIFICATE_OF_INSURANCE", p: "Cascade Surety — Workers Comp", e: 19 },
     { t: "LIEN_WAIVER", p: "Brackett Construction — conditional progress", e: null },
-    { t: "CERTIFIED_PAYROLL", p: "Week ending " + iso(day(-7)), e: null },
   ];
+  // CERTIFIED_PAYROLL and UNION_FRINGE_BENEFIT_FILING are deliberately NOT
+  // in that list. Both are period documents, and the period they have to
+  // name is derived from the filing week the labour section below anchors —
+  // a hand-picked offset here would print a week ending on a date with no
+  // hours in it, which reads as a bug on the one screen whose whole subject
+  // is which week a filing covers.
   for (const d of docs) {
     await prisma.complianceDocument.create({
       data: {
@@ -787,21 +909,673 @@ async function main() {
     ],
   });
 
-  // -------------------------------------------------------------- time entries
-  if (user) {
-    for (let i = 1; i <= 8; i += 1) {
-      await prisma.timeEntry.create({
+  // ------------------------------------- union local, crafts and fringe rates
+  //
+  // WHY THIS SECTION EXISTS. Five screens in this product are about union
+  // compliance — the apprentice ratio, the monthly fringe remittance, the
+  // certified-payroll review, the WH-347 itself, and the craft/rate setup
+  // behind them — and until now the seed wrote not one row any of them
+  // reads. Every one demoed as an empty state. That is the exact failure
+  // this file's own docstring names: derived state with nothing to derive
+  // from, on the features that are hardest to argue for in the abstract and
+  // most convincing with real hours behind them.
+  //
+  // FIND-OR-CREATE, never a blind create, for the same reason as the
+  // prevailing-wage rule sets below: `@@unique([companyId,
+  // parentInternational, localNumber])` on UnionLocal and
+  // `@@unique([unionLocalId, name])` on CraftClassification both turn a
+  // `--force` run into a half-finished seed, and FringeRateSchedule carries
+  // a gist EXCLUDE constraint on overlapping ranges that no upsert can see.
+  const ensureUnionLocal = async (data) => {
+    const prior = await prisma.unionLocal.findFirst({
+      where: {
+        companyId: data.companyId,
+        parentInternational: data.parentInternational,
+        localNumber: data.localNumber,
+      },
+    });
+    return prior ?? prisma.unionLocal.create({ data });
+  };
+
+  // TAGGED ON `jurisdictionName`, which is the field undo() finds it by —
+  // and every craft, rate schedule and ratio rule under it is scoped by
+  // unionLocalId rather than carrying its own tag. Same rule as a demo
+  // contact's bid invitations: children are scoped by their parent, so a
+  // craft name stays clean on a WH-347 that a person might print.
+  const local = await ensureUnionLocal({
+    companyId: company.id,
+    parentInternational: "United Brotherhood of Carpenters",
+    localNumber: "2154",
+    jurisdictionName: `Portland & SW Washington ${MARK}`,
+    tradeJurisdiction: "Interior systems — metal framing, drywall, acoustical ceilings",
+  });
+
+  // The agreement is not optional decoration. The WH-347 page reads its
+  // craft classifications through
+  // `unionLocal.companyAgreements.some({ companyId })` — so with no
+  // agreement row the rate schedules are invisible to it, column 6 has
+  // nothing to derive from, and the form blocks on every worker's rate of
+  // pay while the rates sit in the database. loadUnionSetup drives off the
+  // agreement too, so the whole setup section renders empty without it.
+  const agreement = await prisma.companyUnionAgreement.findFirst({
+    where: { companyId: company.id, unionLocalId: local.id },
+  });
+  if (!agreement) {
+    await prisma.companyUnionAgreement.create({
+      data: {
+        companyId: company.id,
+        unionLocalId: local.id,
+        effectiveFrom: day(-730),
+        effectiveTo: null,
+      },
+    });
+  }
+
+  // 1 apprentice per 3 journeymen. `programStandardReference` records which
+  // CONVENTION the standard is written in — hours or headcount — because
+  // lib/apprentice-ratio.ts measures hours and says so, and a reader of a
+  // flagged day is entitled to know which one their own program uses.
+  const priorRatio = await prisma.apprenticeRatioRule.findFirst({
+    where: { companyId: company.id, unionLocalId: local.id },
+  });
+  if (!priorRatio) {
+    await prisma.apprenticeRatioRule.create({
+      data: {
+        companyId: company.id,
+        unionLocalId: local.id,
+        apprenticeCount: 1,
+        journeymenCount: 3,
+        programStandardReference: "NW Carpenters JATC standards §7.3 — measured in hours worked",
+      },
+    });
+  }
+
+  // A TRADE'S JOURNEYMAN TIER AND ITS APPRENTICE TIER ARE TWO SEPARATE
+  // ROWS. CraftClassification is unique on (unionLocalId, name) and carries
+  // ONE `tier`, so "Interior Systems Carpenter" cannot be both — the ratio
+  // counts hours by the tier on the row the hour was logged against, and a
+  // single row would make every hour on the trade count as one side of a
+  // ratio whose other side then never exists.
+  //
+  // `apprenticePeriod` is set only on the apprentice rows, which is what
+  // the schema says it means: the wage STEP, identified here and priced by
+  // the FringeRateSchedule attached to that same row.
+  //
+  // THE LAST ROW IS THE IMPORTANT ONE AND IT IS DELIBERATELY INCOMPLETE.
+  // `Acoustical Ceiling Installer` has NO tier and NO rate schedule — the
+  // shape of a craft somebody added when the ceiling scope came in and
+  // never finished setting up. It is not a decoration and it is not a bug:
+  // it is the genuine data condition behind the two honest answers this
+  // product gives and its competitors do not. Hours on it make the day's
+  // apprentice ratio read INCOMPLETE ("no honest verdict exists") instead
+  // of quietly counting as journeyman hours and certifying the day
+  // compliant, and they make the fringe remittance NAME them as hours it
+  // refused to price instead of valuing them at zero. Remove it and both
+  // screens lose the only thing on them that cannot be faked.
+  const craftRows = [
+    { key: "foreman", name: "Interior Systems Carpenter — Foreman", tier: "FOREMAN", period: null },
+    { key: "carpenterJourneyman", name: "Interior Systems Carpenter — Journeyman", tier: "JOURNEYMAN", period: null },
+    { key: "carpenterApprentice", name: "Interior Systems Carpenter — Apprentice, Period 3", tier: "APPRENTICE", period: 3 },
+    { key: "finisherJourneyman", name: "Drywall Finisher — Journeyman", tier: "JOURNEYMAN", period: null },
+    { key: "finisherApprentice", name: "Drywall Finisher — Apprentice, Period 2", tier: "APPRENTICE", period: 2 },
+    { key: "ceilingUnclassified", name: "Acoustical Ceiling Installer", tier: null, period: null },
+  ];
+  const craft = {};
+  for (const row of craftRows) {
+    const prior = await prisma.craftClassification.findFirst({
+      where: { unionLocalId: local.id, name: row.name },
+    });
+    craft[row.key] =
+      prior ??
+      (await prisma.craftClassification.create({
         data: {
-          jobId: riverside.id,
-          lineItemId: riversideLines[1].id,
-          employeeUserId: user.id,
-          date: day(-i),
-          hours: i % 5 === 0 ? "10" : "8",
-          payType: i % 5 === 0 ? "OVERTIME" : "STRAIGHT",
+          companyId: company.id,
+          unionLocalId: local.id,
+          name: row.name,
+          tier: row.tier,
+          apprenticePeriod: row.period,
+        },
+      }));
+  }
+
+  // Effective-dated, two adjacent HALF-OPEN windows per priced craft:
+  // [-1095, -548) then [-548, ∞). The pair is the point rather than
+  // padding — FringeRateSchedule's own comment says a flat rate field
+  // "would quietly corrupt historical job costing the first time a rate
+  // changed mid-project", and a demo with one window cannot show that the
+  // rate applied to an hour is the rate in force ON ITS DATE. Every hour
+  // this seed writes falls in the current window; the prior one exists so
+  // the setup screen shows the history and so the claim is demonstrable.
+  //
+  // The ranges are adjacent and never overlapping because the database
+  // enforces it with a gist EXCLUDE constraint (see
+  // 20260824171704_add_union_affiliation) — an overlap kills the whole
+  // seed, which is the #180 shape.
+  //
+  // The four components are separate columns because a remittance is four
+  // funds and four cheques; a single blended "fringe" figure would have to
+  // be taken apart again by hand, which is the re-entry this product
+  // exists to remove.
+  const rateRows = [
+    // [craft, baseWage, pension, vacation, healthWelfare, training]
+    ["foreman", 52.3, 9.1, 3.25, 10.4, 1.05],
+    ["carpenterJourneyman", 46.85, 9.1, 3.25, 10.4, 1.05],
+    // An apprentice's BASE is the step percentage of journeyman scale;
+    // health & welfare and training are paid at the full rate, and pension
+    // at a reduced one. That asymmetry is ordinary in a CBA and it is the
+    // reason the four columns are not a single number.
+    ["carpenterApprentice", 30.45, 4.55, 3.25, 10.4, 1.05],
+    ["finisherJourneyman", 44.2, 8.65, 3.1, 10.4, 0.95],
+    ["finisherApprentice", 24.3, 3.6, 3.1, 10.4, 0.95],
+    // `ceilingUnclassified` is absent on purpose. See above.
+  ];
+  const ensureRate = async (craftClassificationId, effectiveFrom, effectiveTo, rates) => {
+    const prior = await prisma.fringeRateSchedule.findFirst({
+      where: { craftClassificationId, effectiveFrom },
+    });
+    if (prior) return prior;
+    return prisma.fringeRateSchedule.create({
+      data: {
+        companyId: company.id,
+        craftClassificationId,
+        baseWage: rates[0].toFixed(2),
+        pensionRate: rates[1].toFixed(2),
+        vacationRate: rates[2].toFixed(2),
+        healthWelfareRate: rates[3].toFixed(2),
+        trainingRate: rates[4].toFixed(2),
+        effectiveFrom,
+        effectiveTo,
+      },
+    });
+  };
+  for (const [key, ...rates] of rateRows) {
+    // The superseded window, 3.5% lower across every component — one
+    // annual CBA step, which is what it is meant to look like.
+    await ensureRate(
+      craft[key].id,
+      day(-1095),
+      day(-548),
+      rates.map((r) => Math.round(r * 0.965 * 100) / 100),
+    );
+    await ensureRate(craft[key].id, day(-548), null, rates);
+  }
+
+  // -------------------------------------------------------------------- crew
+  //
+  // CrewMember, not User, and that is the whole reason the model exists:
+  // TimeEntry used to require a Clerk account, so a framing sub with a
+  // 25-hand crew needed 25 sign-ups before it could record one hour. See
+  // crew.prisma. A demo that logs every hour against the owner's own login
+  // shows none of that and cannot show a WH-347 at all — column 1 wants a
+  // worker's identifying number, which a User row has nowhere to put.
+  //
+  // `identifyingNumberLast4` is FOUR DIGITS, CHECKed in the migration, and
+  // is the only SSN-derived value anywhere in this schema. `employeeNumber`
+  // is the other form WH-347 column 1 accepts, and one crew member here
+  // carries only that — a company that uses badge numbers never supplies an
+  // SSN digit to this app, and the form has to print correctly for them too.
+  //
+  // Addresses are recorded because Davis-Bacon's basic-records rule
+  // (29 CFR 5.5(a)(3)) requires the contractor to KEEP them, separately
+  // from what the weekly form prints.
+  //
+  // Tagged on `note`, which undo() finds them by. NOT on the legal name:
+  // the name is what a filed payroll asserts to a federal agency and it is
+  // locked after creation by trigger, so "[demo]" in it would be
+  // unremovable and would print on the form.
+  const crewRows = [
+    // [key, first, middle, last, last4, employeeNumber, craft key, hiredOn]
+    ["hector", "Hector", "M", "Ramirez", "4182", "C-101", "foreman", -1460],
+    ["tino", "Tino", null, "Alvarez", "7735", "C-104", "carpenterJourneyman", -980],
+    ["marcus", "Marcus", "A", "Boye", "2019", "C-108", "carpenterJourneyman", -610],
+    ["dorian", "Dorian", null, "Pike", "9043", "C-117", "carpenterApprentice", -240],
+    ["adaeze", "Adaeze", null, "Nwosu", "5561", "C-112", "finisherJourneyman", -845],
+    // No SSN last-4 on record, only the company's own badge number. Column 1
+    // prints the badge, and the form does not block on this worker.
+    ["ruben", "Ruben", "J", "Salazar", null, "C-121", "finisherApprentice", -150],
+  ];
+  const crew = {};
+  for (const [key, first, middle, last, last4, employeeNumber, craftKey, hiredOn] of crewRows) {
+    const prior = await prisma.crewMember.findFirst({
+      where: { companyId: company.id, employeeNumber },
+    });
+    crew[key] =
+      prior ??
+      (await prisma.crewMember.create({
+        data: {
+          companyId: company.id,
+          legalFirstName: first,
+          legalMiddleName: middle,
+          legalLastName: last,
+          identifyingNumberLast4: last4,
+          employeeNumber,
+          addressLine1: "1140 SE Ankeny St",
+          city: "Portland",
+          state: "OR",
+          zip: "97214",
+          phone: "(503) 555-0173",
+          hiredOn: day(hiredOn),
+          note: MARK,
+        },
+      }));
+    // Which crafts this person can be logged under — it drives the phone's
+    // craft picker and nothing else. Not a certification and not enforced
+    // when an hour is saved; see WorkerCraft in labor.prisma.
+    const priorWorkerCraft = await prisma.workerCraft.findFirst({
+      where: { craftClassificationId: craft[craftKey].id, crewMemberId: crew[key].id },
+    });
+    if (!priorWorkerCraft) {
+      await prisma.workerCraft.create({
+        data: {
+          companyId: company.id,
+          craftClassificationId: craft[craftKey].id,
+          crewMemberId: crew[key].id,
         },
       });
     }
   }
+
+  // --------------------------------------------- the hours, and their week
+  //
+  // TWO WEEKS OF CRAFT-TAGGED HOURS, anchored to a Sunday rather than to
+  // "n days ago", because three separate screens cut this data on a week
+  // boundary and they do not all use the same one.
+  //
+  // `sundayOf(day(-7))` is a Sunday whose entire Sun–Saturday week is in
+  // the past, WHATEVER weekday the seed happens to be run on — that is the
+  // property being bought, and a hand-picked offset does not have it. The
+  // certified-payroll page (lib/certified-payroll-week.ts) opens on the week
+  // of a job's LATEST logged hours, so putting nothing after that week's
+  // Friday is what makes the WH-347 open on a FULL Monday-to-Friday week
+  // instead of on a two-day stub. A seed dated from today alone lands on
+  // whatever fragment of the current week has elapsed.
+  //
+  // Certified payroll counts a SUNDAY-start week; the prevailing-wage
+  // overtime review counts a MONDAY-start one; the fringe remittance and
+  // the apprentice ratio count a calendar MONTH. Weekday-only hours inside
+  // a Sunday-anchored week are consistent under all three.
+  const sundayOf = (date) => {
+    const d = new Date(date);
+    d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+    return d;
+  };
+  const plusDays = (date, n) => new Date(date.getTime() + n * 86_400_000);
+  const filingWeekStart = sundayOf(day(-7));
+  const priorWeekStart = plusDays(filingWeekStart, -7);
+  // Monday = +1 … Friday = +5.
+  const weekday = (weekStart, n) => plusDays(weekStart, n);
+
+  // [crew key | "owner", craft key, hours, payType, SOV line, perDiem]
+  //
+  // The ratio verdicts each day is built to produce, which is the point of
+  // the spread — a month where every day reads the same proves nothing:
+  //
+  //   filing Mon/Tue/Thu   WITHIN          32 journeyman hours, 8 apprentice
+  //                                        against an allowance of 10.67
+  //   filing Wed           OVER            a second apprentice put on with no
+  //                                        extra journeyman: 16 against 10.67
+  //   filing Fri           WITHIN          overtime on two journeymen, which
+  //                                        raises the allowance to 12
+  //   prior Mon/Tue        WITHIN          24 journeyman, 8 apprentice, exactly
+  //                                        at the allowance and not over it
+  //   prior Wed            INCOMPLETE      16 hours on the untiered ceiling
+  //                                        craft — "can't be judged"
+  //   prior Thu            WITHIN
+  //   prior Fri            NOT_APPLICABLE  no apprentice on site, so the rule
+  //                                        has nothing to bind
+  //
+  // The owner's own hours are in the PRIOR week only, deliberately. A
+  // working owner is ordinary in this trade and the User path has to stay
+  // exercised — but a User row has no identifying number for WH-347 column
+  // 1, so their presence would block a line on the form. Keeping them out
+  // of the filing week leaves that week printable end to end and still
+  // demonstrates the block on the week before it.
+  const laborDays = [
+    // ---- the prior week
+    [priorWeekStart, 1, [
+      ["hector", "foreman", 8, "STRAIGHT", 0, null],
+      ["tino", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["marcus", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["dorian", "carpenterApprentice", 8, "STRAIGHT", 0, null],
+    ]],
+    [priorWeekStart, 2, [
+      ["hector", "foreman", 8, "STRAIGHT", 0, null],
+      ["tino", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["marcus", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["dorian", "carpenterApprentice", 8, "STRAIGHT", 0, null],
+    ]],
+    // THE DAY THAT CANNOT BE JUDGED. Two journeymen moved onto the ceiling
+    // scope, logged against a craft with no tier recorded and no rate
+    // schedule behind it. Nothing about this is a special case in the
+    // code — the ratio refuses the day because 16 hours cannot be placed on
+    // either side of it, and the remittance refuses to price them for the
+    // separate reason that no schedule is effective for that craft.
+    [priorWeekStart, 3, [
+      ["hector", "foreman", 8, "STRAIGHT", 0, null],
+      ["tino", "ceilingUnclassified", 8, "STRAIGHT", 2, null],
+      ["marcus", "ceilingUnclassified", 8, "STRAIGHT", 2, null],
+      ["dorian", "carpenterApprentice", 8, "STRAIGHT", 0, null],
+    ]],
+    [priorWeekStart, 4, [
+      ["hector", "foreman", 8, "STRAIGHT", 0, null],
+      ["tino", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["marcus", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["adaeze", "finisherJourneyman", 8, "STRAIGHT", 1, null],
+      ["ruben", "finisherApprentice", 8, "STRAIGHT", 1, null],
+    ]],
+    [priorWeekStart, 5, [
+      ["hector", "foreman", 8, "STRAIGHT", 0, null],
+      ["tino", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["adaeze", "finisherJourneyman", 8, "STRAIGHT", 1, null],
+      ["owner", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+    ]],
+    // ---- the filing week: what the WH-347 prints
+    [filingWeekStart, 1, [
+      ["hector", "foreman", 8, "STRAIGHT", 0, 55],
+      ["tino", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["marcus", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["adaeze", "finisherJourneyman", 8, "STRAIGHT", 1, null],
+      ["dorian", "carpenterApprentice", 8, "STRAIGHT", 0, null],
+    ]],
+    [filingWeekStart, 2, [
+      ["hector", "foreman", 8, "STRAIGHT", 0, null],
+      ["tino", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["marcus", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["adaeze", "finisherJourneyman", 8, "STRAIGHT", 1, null],
+      ["dorian", "carpenterApprentice", 8, "STRAIGHT", 0, null],
+    ]],
+    // OVER. The second apprentice came on and no journeyman came with him.
+    [filingWeekStart, 3, [
+      ["hector", "foreman", 8, "STRAIGHT", 0, null],
+      ["tino", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["marcus", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["adaeze", "finisherJourneyman", 8, "STRAIGHT", 1, null],
+      ["dorian", "carpenterApprentice", 8, "STRAIGHT", 0, null],
+      ["ruben", "finisherApprentice", 8, "STRAIGHT", 1, null],
+    ]],
+    [filingWeekStart, 4, [
+      ["hector", "foreman", 8, "STRAIGHT", 0, null],
+      ["tino", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["marcus", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["adaeze", "finisherJourneyman", 8, "STRAIGHT", 1, null],
+      ["dorian", "carpenterApprentice", 8, "STRAIGHT", 0, null],
+    ]],
+    // Overtime, which matters twice on these screens. WH-347 column 7 pays
+    // it at time and a half on the BASE wage; the fringe remittance pays the
+    // same flat per-hour fringe as any other hour (the Davis-Bacon
+    // convention lib/labor-cost.ts follows). A demo with no overtime in it
+    // cannot show that those two rules differ, and getting the second one
+    // wrong overstates every remittance in a month.
+    [filingWeekStart, 5, [
+      ["hector", "foreman", 8, "STRAIGHT", 0, null],
+      ["hector", "foreman", 2, "OVERTIME", 0, null],
+      ["tino", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["tino", "carpenterJourneyman", 2, "OVERTIME", 0, null],
+      ["marcus", "carpenterJourneyman", 8, "STRAIGHT", 0, null],
+      ["adaeze", "finisherJourneyman", 8, "STRAIGHT", 1, null],
+      ["dorian", "carpenterApprentice", 8, "STRAIGHT", 0, null],
+    ]],
+  ];
+
+  // A mixed day is TWO ROWS, not one row at a blended rate — 8 straight
+  // plus 2 overtime above. TimeEntry's own comment says why: a blended-rate
+  // row needs a multiplier nothing stores, and certified payroll has to
+  // print the two separately anyway.
+  let laborHours = 0;
+  let laborRows = 0;
+  for (const [weekStart, dayOffset, entries] of laborDays) {
+    for (const [who, craftKey, hours, payType, line, perDiem] of entries) {
+      const isOwner = who === "owner";
+      if (isOwner && !user) continue;
+      await prisma.timeEntry.create({
+        data: {
+          jobId: riverside.id,
+          lineItemId: riversideLines[line].id,
+          // Exactly one of these two, never both and never neither — a XOR
+          // CHECK constraint in the migration enforces it.
+          employeeUserId: isOwner ? user.id : null,
+          crewMemberId: isOwner ? null : crew[who].id,
+          craftClassificationId: craft[craftKey].id,
+          date: weekday(weekStart, dayOffset),
+          hours: hours.toFixed(2),
+          payType,
+          perDiemAmount: perDiem === null ? null : perDiem.toFixed(2),
+        },
+      });
+      laborHours += hours;
+      laborRows += 1;
+    }
+  }
+
+  // Next week's plan, so the apprentice ratio can be read BEFORE the hours
+  // exist rather than after. CrewScheduleDay is a headcount, not hours —
+  // `loadJobDayRatio` feeds it as one per person — which is all a schedule
+  // can honestly say. Two apprentices against two journeymen on the Tuesday
+  // is a breach the foreman can still fix, which is the entire value of
+  // planning it.
+  const plannedDays = [
+    [1, [["hector", "foreman"], ["tino", "carpenterJourneyman"], ["marcus", "carpenterJourneyman"], ["dorian", "carpenterApprentice"]]],
+    [2, [["tino", "carpenterJourneyman"], ["dorian", "carpenterApprentice"], ["ruben", "finisherApprentice"], ["adaeze", "finisherJourneyman"]]],
+  ];
+  const nextWeekStart = plusDays(sundayOf(day(0)), 7);
+  for (const [dayOffset, people] of plannedDays) {
+    for (const [who, craftKey] of people) {
+      await prisma.crewScheduleDay.create({
+        data: {
+          companyId: company.id,
+          jobId: riverside.id,
+          workDate: weekday(nextWeekStart, dayOffset),
+          crewMemberId: crew[who].id,
+          craftClassificationId: craft[craftKey].id,
+        },
+      });
+    }
+  }
+
+  // ------------------------------------------- the WH-347's other two halves
+  //
+  // WH-347 columns 8 and 9 are the week's deductions and net pay, and this
+  // product does not compute them — it never will, and payroll-register
+  // .prisma says so. They are IMPORTED from the register the contractor's
+  // payroll system already prints. So the demo has to carry a register for
+  // exactly this week, or the form blocks both columns with "Import this
+  // week's register under Settings → Import" and a viewer cannot tell a
+  // missing import from a broken one.
+  //
+  // MATCHED ON THE PERIOD EXACTLY. The page reads only
+  // `periodStart: weekStart, periodEnd: weekEnding`; a register that merely
+  // OVERLAPS the week is somebody else's paycheck and buildWh347 blocks the
+  // worker rather than guessing at a partial week.
+  //
+  // MONEY IS CENTS, in integers, always — the register is what the
+  // deductions on a signed federal form get copied from, and a float that
+  // renders as 1147.9999999 is not that document.
+  const filingWeekEnd = plusDays(filingWeekStart, 6);
+
+  // GROSS IS DERIVED FROM THE HOURS, NOT TYPED BESIDE THEM, and this is the
+  // figure most worth deriving in the whole file. WH-347 column 7 is THIS
+  // PROJECT's gross and column 8/9 are the WHOLE paycheck, so the two are
+  // allowed to differ — which means a typo in a hand-written register figure
+  // is not a contradiction the form can catch. It just prints, and the first
+  // draft of this seed printed one worker whose weekly deductions exceeded
+  // his gross earnings because his hand-written register assumed a full week
+  // and he had one day on the job.
+  //
+  // So the register is computed at the same base wages and the same
+  // time-and-a-half the form itself applies, over the same filing week. That
+  // is a statement about this crew: they worked THIS JOB and nothing else
+  // that week, so columns 7 and 8/9 are about the same money and a viewer
+  // comparing them gets the same number. It is the simplest thing to explain
+  // out loud, and it is true of the data rather than asserted over it.
+  const CASH_MULTIPLIER = { STRAIGHT: 1, OVERTIME: 1.5, DOUBLE_TIME: 2, SHIFT_DIFFERENTIAL: 1 };
+  const baseWageOf = Object.fromEntries(rateRows.map(([key, baseWage]) => [key, baseWage]));
+  const weekGross = {};
+  const weekHours = {};
+  for (const [weekStart, , entries] of laborDays) {
+    if (weekStart !== filingWeekStart) continue;
+    for (const [who, craftKey, hours, payType] of entries) {
+      const base = baseWageOf[craftKey];
+      // The untiered craft has no rate, so it contributes no gross — the
+      // same refusal the form and the remittance make, for the same reason.
+      if (who === "owner" || base === undefined) continue;
+      weekGross[who] = (weekGross[who] ?? 0) + hours * base * CASH_MULTIPLIER[payType];
+      weekHours[who] = (weekHours[who] ?? 0) + hours;
+    }
+  }
+
+  // Withholding rates a payroll system would have applied. Round numbers on
+  // purpose: this app computes no withholding and never will
+  // (payroll-register.prisma), so these are stand-ins for what Gusto or ADP
+  // printed, not a calculation anybody should read as one. `other` is the
+  // dues check-off, which is why it is a flat rate rather than a percentage.
+  const WITHHOLDING = { fica: 0.0765, federal: 0.12, state: 0.068 };
+  const cents = (dollars) => Math.round(dollars * 100);
+  for (const [who, gross] of Object.entries(weekGross)) {
+    const fica = Math.round(gross * WITHHOLDING.fica * 100) / 100;
+    const federal = Math.round(gross * WITHHOLDING.federal * 100) / 100;
+    const state = Math.round(gross * WITHHOLDING.state * 100) / 100;
+    const other = 24.0;
+    const deductions = cents(fica) + cents(federal) + cents(state) + cents(other);
+    await prisma.payrollRegisterEntry.upsert({
+      where: {
+        crewMemberId_periodStart_periodEnd: {
+          crewMemberId: crew[who].id,
+          periodStart: filingWeekStart,
+          periodEnd: filingWeekEnd,
+        },
+      },
+      create: {
+        companyId: company.id,
+        crewMemberId: crew[who].id,
+        periodStart: filingWeekStart,
+        periodEnd: filingWeekEnd,
+        payDate: plusDays(filingWeekEnd, 5),
+        // The register's OWN hours column, kept because payroll-register
+        // .prisma says the app's TimeEntry hours stay authoritative and this
+        // is here so an office manager can see the two sources disagree.
+        // They agree here, which is the state worth demoing: the interesting
+        // screen is the one where they do not, and that is a real import's
+        // job to produce, not a seed's.
+        hours: weekHours[who].toFixed(2),
+        grossCents: cents(gross),
+        deductionsCents: deductions,
+        netCents: cents(gross) - deductions,
+        deductionsDetail: {
+          ficaCents: cents(fica),
+          federalTaxCents: cents(federal),
+          stateTaxCents: cents(state),
+          otherCents: cents(other),
+        },
+        source: "generic",
+      },
+      update: {},
+    });
+  }
+
+  // The form's "Payroll No.", sequential PER PROJECT so the DOL can see
+  // that no week is missing from the run. It comes from a counter row,
+  // bumped in the same transaction as the insert — never max(n)+1 off the
+  // surviving rows, the same rule as every other sequence in this file.
+  // Without it the header blocks on "Issue this week's with the button
+  // above the form", which is a fine thing for a real user to be told and a
+  // poor thing to open a demo on.
+  //
+  // TWO weeks get a number, in order, because a single number cannot show
+  // a sequence. Written out longhand against `prisma.wh347PayrollCounter`
+  // for the reason the invoice counter above is: the guard that polices
+  // this file is a source scan, and a dynamic accessor is invisible to it.
+  for (const weekStart of [priorWeekStart, filingWeekStart]) {
+    const prior = await prisma.wh347PayrollNumber.findUnique({
+      where: { jobId_weekStart: { jobId: riverside.id, weekStart } },
+      select: { id: true },
+    });
+    if (prior) continue;
+    await prisma.$transaction(async (tx) => {
+      const counter = await tx.wh347PayrollCounter.upsert({
+        where: { jobId: riverside.id },
+        create: { jobId: riverside.id, lastNumber: 1 },
+        update: { lastNumber: { increment: 1 } },
+        select: { lastNumber: true },
+      });
+      await tx.wh347PayrollNumber.create({
+        data: { jobId: riverside.id, weekStart, number: counter.lastNumber },
+      });
+    });
+  }
+
+  // The two PERIOD documents, now that the periods exist.
+  //
+  // The certified payroll names the filing week it was filed for. The fringe
+  // filing names LAST month, on purpose and not for want of a current one:
+  // `periodIsFiled` derives "is this month's remittance on record" by
+  // looking for a document whose period COVERS the month, so a filing for
+  // the current month would open /union-compliance on "A filing covering
+  // this whole month is on record" — nothing to do, and no evidence the
+  // derivation works. One month back gives both answers on one screen: this
+  // month outstanding, last month closed, and the reader can step back and
+  // see it flip.
+  //
+  // Attached to the job rather than left company-level (`jobId` is nullable)
+  // for one reason and it is about cleanup, not accuracy: `undo()` finds
+  // compliance documents by `jobId`, and ComplianceDocument is in
+  // `NEVER_DELETE` in scratch-scope.mjs because it is evidence — so a
+  // company-level demo row would survive both scripts forever. Nothing reads
+  // the jobId here (`loadRemittance` filters on company and type only), so
+  // the derivation is unaffected.
+  const lastMonthStart = new Date(
+    Date.UTC(filingWeekStart.getUTCFullYear(), filingWeekStart.getUTCMonth() - 1, 1),
+  );
+  const lastMonthEnd = new Date(
+    Date.UTC(filingWeekStart.getUTCFullYear(), filingWeekStart.getUTCMonth(), 0),
+  );
+  const periodDocs = [
+    {
+      type: "CERTIFIED_PAYROLL",
+      partyName: `Oregon BOLI — WH-38, week ending ${iso(filingWeekEnd)} ${MARK}`,
+      periodStart: filingWeekStart,
+      periodEnd: filingWeekEnd,
+      amount: null,
+    },
+    {
+      type: "UNION_FRINGE_BENEFIT_FILING",
+      partyName: `Carpenters Trust of Western Washington — ${iso(lastMonthStart).slice(0, 7)} ${MARK}`,
+      periodStart: lastMonthStart,
+      periodEnd: lastMonthEnd,
+      amount: "18420.75",
+    },
+  ];
+  for (const d of periodDocs) {
+    const prior = await prisma.complianceDocument.findFirst({
+      where: { companyId: company.id, type: d.type, periodStart: d.periodStart, periodEnd: d.periodEnd },
+    });
+    if (prior) continue;
+    await prisma.complianceDocument.create({
+      data: {
+        companyId: company.id,
+        jobId: riverside.id,
+        type: d.type,
+        partyName: d.partyName,
+        status: "RECEIVED",
+        periodStart: d.periodStart,
+        periodEnd: d.periodEnd,
+        amount: d.amount,
+      },
+    });
+  }
+
+  console.log(
+    `seed: union labor     ${laborRows} time entries, ${laborHours} hours, ` +
+      `${crewRows.length} crew, ${craftRows.length} crafts (1 untiered on purpose)`,
+  );
+  console.log(
+    `seed: filing week     ${iso(filingWeekStart)} – ${iso(filingWeekEnd)} ` +
+      `(the week /jobs/<id>/certified-payroll opens on)`,
+  );
+  console.log(
+    `seed: hours month(s)  ${iso(weekday(priorWeekStart, 1)).slice(0, 7)} – ` +
+      `${iso(weekday(filingWeekStart, 5)).slice(0, 7)} ` +
+      `(/union-compliance opens on the CURRENT month — step back if the hours are in the previous one)`,
+  );
 
   // ------------------------------------------------------- catalog + pricing
   // Both exist so the estimating story has something to show: a catalog
@@ -1226,6 +2000,25 @@ async function main() {
   });
   // Attaches the current Oregon rules to the job that has time entries, so
   // /prevailing-wage has a week to review rather than an empty selector.
+  //
+  // THE THREE DATE FIELDS ARE WHAT MAKE THE STANDING LINE SAY ANYTHING.
+  // `determinationStanding` is derived on every read from what a person
+  // ENTERED off the document, and with any of them null it returns
+  // `unchecked` — "this determination's issue date hasn't been entered" —
+  // which is the honest answer and a dead screen. Every one of them is on
+  // the row now, and the job carries the `bidAdvertisedOn` the rule is
+  // judged against (see the job above).
+  //
+  // The combination is chosen to exercise the published rule rather than
+  // its easy case. `issuedOn` is derived from the advertisement date so the
+  // pairing survives the calendar (see `dirIssueInForceOn`); the expiration
+  // has PASSED and carries a SINGLE asterisk, which is the DIR rule that the
+  // determination in force on the advertisement date holds for the life of
+  // the project. So the line reads, in full and in the affirmative: "In
+  // force on <date>, when the job was advertised. Its expiration <date> has
+  // passed with a single asterisk (*), so it holds for the life of the
+  // project." That sentence is three entered dates and a published rule, and
+  // nothing in the database stores it.
   await prisma.prevailingWageDetermination.create({
     data: {
       jobId: riverside.id,
@@ -1234,6 +2027,10 @@ async function main() {
       fileName: "boli-determination-riverside.pdf",
       sourceUrl: "https://www.oregon.gov/boli/example/rates",
       note: `Public works — BOLI rates apply. ${MARK}`,
+      determinationRef: "PWD-2026-1 / Region 2 — Interior Systems",
+      issuedOn: dirIssueInForceOn(day(-120)),
+      expiresOn: day(-30),
+      expirationMarker: "SINGLE",
       uploadedByUserId: user?.id ?? null,
     },
   });
@@ -1399,7 +2196,7 @@ async function main() {
     }
   }
 
-  console.log("seed: change orders, submittals, punch list, closeout, talks, orders, drawings, time, catalog, pricing, RFIs, safety, bids, interactions, equipment, prevailing wage, backcharges, closeout submissions and messages written");
+  console.log("seed: change orders, submittals, punch list, closeout, talks, orders, drawings, union local, crafts, fringe rates, crew, craft-tagged hours, payroll register, WH-347 numbers, catalog, pricing, RFIs, safety, bids, interactions, equipment, prevailing wage, backcharges, closeout submissions and messages written");
   return { company, user, gc, gc2, gc3, riverside, northgate, lakeshore, riversideLines, oregonPrior, oregonCurrent };
 }
 
@@ -1422,6 +2219,28 @@ async function undo(companyId) {
     select: { id: true },
   });
   const contactIds = contacts.map((c) => c.id);
+
+  // Same rule again for the union-compliance set: the LOCAL carries the tag
+  // and everything under it is scoped by its id, so a craft classification
+  // keeps a clean name on a WH-347 somebody might print. Crew members carry
+  // the tag in `note` — never in the legal name, which is what a filed
+  // payroll asserts to a federal agency and which a database trigger locks
+  // after creation, so "[demo]" in it could never be taken back out.
+  const locals = await prisma.unionLocal.findMany({
+    where: { companyId, jurisdictionName: { contains: MARK } },
+    select: { id: true },
+  });
+  const localIds = locals.map((l) => l.id);
+  const crafts = await prisma.craftClassification.findMany({
+    where: { unionLocalId: { in: localIds } },
+    select: { id: true },
+  });
+  const craftIds = crafts.map((c) => c.id);
+  const crewMembers = await prisma.crewMember.findMany({
+    where: { companyId, note: { contains: MARK } },
+    select: { id: true },
+  });
+  const crewMemberIds = crewMembers.map((c) => c.id);
 
   const counts = {};
   const failed = [];
@@ -1703,6 +2522,59 @@ async function undo(companyId) {
   await del("prevailingWageRuleSet", () =>
     prisma.prevailingWageRuleSet.deleteMany({ where: { companyId, name: { contains: MARK } } }),
   );
+
+  // ------------------------------------------------ the union-compliance set
+  //
+  // COMPANY-LEVEL, so it sits here rather than in the job-scoped section, and
+  // ordered by the foreign keys in the migrations rather than by memory.
+  // Every RESTRICT below was read out of
+  // 20260824171704_add_union_affiliation and its successors:
+  //
+  //   PayrollRegisterEntry.crewMemberId  -> CrewMember           RESTRICT
+  //   CrewScheduleDay.crewMemberId       -> CrewMember           RESTRICT
+  //   DispatchSlip.crewMemberId          -> CrewMember           RESTRICT
+  //   TimeEntry.crewMemberId             -> CrewMember           RESTRICT
+  //   FringeRateSchedule.craftClass…     -> CraftClassification  RESTRICT
+  //   ApprenticeRatioRule.unionLocalId   -> UnionLocal           RESTRICT
+  //   CompanyUnionAgreement.unionLocalId -> UnionLocal           RESTRICT
+  //   CraftClassification.unionLocalId   -> UnionLocal           RESTRICT
+  //
+  // Three of the four CrewMember blockers are job-scoped and already gone
+  // above (hours, planned days, dispatch slips). The PAYROLL REGISTER is the
+  // one that is not: it hangs off the crew member and carries NO jobId, by
+  // design — a paycheck covers everything the person worked that period, not
+  // one job — so deleting the jobs does not reach it and it would refuse the
+  // crew-member delete on its own. That is exactly the #227 shape, arriving
+  // through a company-scoped table instead of a per-job counter.
+  //
+  // WorkerCraft CASCADEs from both its parents, so it would go either way;
+  // it is deleted explicitly so the count is reported against the run that
+  // made it rather than disappearing into a cascade. Everything else that
+  // points at a craft classification — JobLineItem, LineItemCatalogEntry,
+  // WallTypeComponent, DispatchSlip, CrewScheduleDay, TimeEntry,
+  // ApprenticeshipEnrollment — is ON DELETE SET NULL and cannot block.
+  await del("payrollRegisterEntry", () =>
+    prisma.payrollRegisterEntry.deleteMany({ where: { crewMemberId: { in: crewMemberIds } } }),
+  );
+  await del("workerCraft", () =>
+    prisma.workerCraft.deleteMany({
+      where: { OR: [{ crewMemberId: { in: crewMemberIds } }, { craftClassificationId: { in: craftIds } }] },
+    }),
+  );
+  await del("crewMember", () => prisma.crewMember.deleteMany({ where: { id: { in: crewMemberIds } } }));
+  await del("fringeRateSchedule", () =>
+    prisma.fringeRateSchedule.deleteMany({ where: { craftClassificationId: { in: craftIds } } }),
+  );
+  await del("apprenticeRatioRule", () =>
+    prisma.apprenticeRatioRule.deleteMany({ where: { unionLocalId: { in: localIds } } }),
+  );
+  await del("companyUnionAgreement", () =>
+    prisma.companyUnionAgreement.deleteMany({ where: { unionLocalId: { in: localIds } } }),
+  );
+  await del("craftClassification", () =>
+    prisma.craftClassification.deleteMany({ where: { id: { in: craftIds } } }),
+  );
+  await del("unionLocal", () => prisma.unionLocal.deleteMany({ where: { id: { in: localIds } } }));
   await del("lineItemCatalogEntry", () =>
     prisma.lineItemCatalogEntry.deleteMany({ where: { companyId, description: { contains: MARK } } }),
   );

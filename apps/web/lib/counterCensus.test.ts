@@ -356,6 +356,14 @@ const MUST_SEE: Record<string, string[]> = {
     "rfi",
     "safetyIncident",
     "submittal",
+    // Added 2026-09-25 with the demo seed's certified-payroll data. This
+    // census failed on it exactly as its own comment above promises, which
+    // is the one entry in this list that has earned its place by catching
+    // something rather than by being written down at the same time as the
+    // code: the WH-347 payroll number is issued out of
+    // `Wh347PayrollCounter`, bumped inside the insert's own `$transaction`,
+    // and the test went red until it was named here.
+    "wh347PayrollNumber",
   ],
 };
 
