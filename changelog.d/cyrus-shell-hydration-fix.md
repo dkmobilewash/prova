@@ -133,3 +133,52 @@ gate removed, gate present only in a comment, the import pattern drifted (red
 on the COUNT — "the sources contain 4 files and this census parsed 0"), a new
 Clerk widget added, a `content` glob pointed at a directory that does not
 exist, and `<UserButton>` reached through a namespace import.
+
+## The outlined-boundary hypothesis was the best one left, and it is refuted
+
+With Clerk's `<UserButton>` gated, the surviving explanation for step 11 was the
+sidebar region's own `<Suspense>`: React outlines it on every authenticated page
+(13,442 bytes against a 12,800 `progressiveChunkSize`), so there is a window
+between the bootstrap script and that region's `$RC` in which the boundary is
+`<!--$?-->`. Measured in the served document the window is real and 13.3 KB
+wide — bundle scripts at byte 510, bootstrap at 32,322, the sidebar's `$RC` at
+45,671.
+
+The consequence is what is false. Driven in real Chromium against the real
+production bundles:
+
+| arm | hydrated | rail rendered | #418 | other |
+| --- | --- | --- | --- | --- |
+| the document exactly as served | 40/40 | 40/40 | **0** | none |
+| every `$RC(...)` replaced by `void 0` | 12/12 | 12/12 | **0** | **#419, every load** |
+
+React answers a pending boundary with **#419** — "the server could not finish
+this Suspense boundary… switched to client rendering" — and does the switch: it
+rendered the rail itself on every load and cleared the markers. `health.ts`
+matches `#(418|423|425)`, so a #419 is a CRASH in this suite's terms, and
+`expectHealthy` asserts `monitor.crashes` is empty after every navigation. That
+assertion has never failed. The mechanism is not just wrong about the number; it
+has never occurred in the journey.
+
+**How it was driven, because `next start` + `page.goto` cannot work in an agent
+container.** Chromium there cannot reach loopback — every navigation is
+`ERR_TUNNEL_CONNECTION_FAILED`, and Playwright re-forces it with
+`--proxy-bypass-list=<-loopback>` even against `no_proxy`. The way that works
+needs no network: capture the document once with `curl --noproxy '*'`, then
+fulfil it and every `/_next/**` asset from disk with `page.route()`.
+
+**Two harness failures are recorded, because each gave a confident wrong answer
+first and each was caught only by its own control.** Hand-writing the boundary
+HTML mismatched in all four arms including the completed control. Truncating the
+document before the first hidden content div gave `hydratedLoads: 0`, because the
+cut takes the tail of the Flight payload with it. A control that fails is an
+instruction to fix the harness, not a result.
+
+**Where this leaves it.** The shell alone, replayed from one captured document,
+is clean over 40 loads with hydration and the rail both proved present — p≈0.04
+against the journey's own rate, so evidence rather than proof, and bounded:
+replaying one document removes every bit of server-side stream-timing variance.
+Read with the page lists (`/dashboard`, `/pipeline`, `/material-orders`,
+`/messages`, `/proposals`, `/submittals`, two job tabs) the weight has moved off
+the chrome and onto the page bodies' own client components. Step 11 stays a hard
+assertion and stays red until somebody gets there.

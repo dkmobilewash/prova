@@ -1583,6 +1583,74 @@ scrollback gets broken by whoever didn't scroll far enough.
   run is one sample. Two consecutive clean runs is the weakest claim worth
   making, and `main` has never produced one.
 
+  **THE OUTLINED-BOUNDARY HYPOTHESIS IS REFUTED, AND THE ERROR NUMBER IS THE
+  WHOLE ARGUMENT.** Added 2026-09-25. The best surviving explanation was: the
+  sidebar region's `<Suspense>` is outlined deterministically (13,442 bytes
+  against React's 12,800 `progressiveChunkSize`), so between the bootstrap
+  script and that region's own `$RC` the boundary is `<!--$?-->`, and
+  hydration arriving in that window throws #418. Measured in the live
+  document, the window is real and large:
+
+  | in the served HTML | byte |
+  | --- | --- |
+  | the async bundle `<script>` tags, in `<head>` | 510-2,096 |
+  | `<!--$?--><template id="B:n">` x4 | 2,262-32,209 |
+  | the bootstrap `webpack-…js` script | 32,322 |
+  | `<div hidden id="S:1">` — the sidebar's real markup | 32,412 |
+  | **`$RC("B:1","S:1")`** | **45,671** |
+
+  So hydration CAN begin 13.3 KB of HTML before the sidebar's boundary is
+  completed. That much is true. What is false is the consequence:
+
+  | arm (40 and 12 loads, real Chromium, real production bundles) | hydrated | sidebar rendered | #418 | other |
+  | --- | --- | --- | --- | --- |
+  | the document exactly as served | 40/40 | 40/40 | **0** | none |
+  | every `$RC(...)` call replaced by `void 0` | 12/12 | 12/12 | **0** | **#419 on every load** |
+
+  **React answers a pending boundary with #419, not #418** — "The server
+  could not finish this Suspense boundary… Switched to client rendering",
+  which is its DESIGNED path: it client-rendered the rail itself, every
+  load, and cleared the pending markers. And `e2e/lib/health.ts` matches
+  `#(418|423|425)`, so a #419 is classified as a CRASH, not a mismatch. Had
+  this ever fired in the pilot journey it would have failed the step it
+  happened on, because `expectHealthy` asserts `monitor.crashes` is empty at
+  every navigation — and `crashes` has been empty in every run. So the
+  mechanism is not merely wrong about the error number, it is absent from
+  the journey.
+
+  **The method is the reusable part, because `next start` + `page.goto`
+  CANNOT be used from an agent container.** Chromium there cannot reach
+  loopback: with the proxy env set every navigation is
+  `ERR_TUNNEL_CONNECTION_FAILED`, and Playwright's own
+  `--proxy-bypass-list=<-loopback>` re-forces it even when `no_proxy` says
+  otherwise (`coreBundle.js`, `_innerDefaultArgs`). Two ways round it were
+  tried and failed; the one that works needs no network at all: capture the
+  document once with `curl --noproxy '*'`, then serve it and every
+  `/_next/**` asset to a real Chromium through `page.route(...).fulfill()`
+  from disk. Real bundles, real inline scripts, zero sockets.
+
+  Two harness failures are recorded because each one produced a confident
+  wrong number first, and each was caught only by its own control. Writing
+  the boundary HTML BY HAND mismatched in all four arms including the
+  completed control — the container markup simply did not match the tree.
+  TRUNCATING the document before the first `<div hidden id="S:`> left
+  `hydratedLoads: 0`, because the cut removes the tail of the Flight payload
+  too, so nothing hydrates and the arm is about something else. **A control
+  that fails is the instruction to fix the harness, not a result to read.**
+
+  **What this leaves.** The shell alone, replayed from one captured document
+  with no Clerk script and no real page body, is clean over 40 loads with
+  hydration and the rail both proved present. At the journey's own rate
+  (3 in ~40 page loads) 0/40 is p≈0.04, so this is evidence rather than
+  proof, and it is bounded in one specific way: replaying ONE document
+  removes all server-side stream-timing variance, so a race that lives in
+  how the server interleaves chunks would not show here. Taken with the
+  page lists — `/dashboard`, `/pipeline`, `/material-orders`, `/messages`,
+  `/proposals`, `/submittals`, two job tabs — the weight has moved OFF the
+  chrome and onto something the probe lacks: the page bodies' own client
+  components. Whoever goes next should suspect those rather than the shell,
+  and should NOT re-run the marker count or the boundary arms.
+
   **AND THE ONE INSTRUMENT NOBODY HAS POINTED AT IT YET.** `console errors
   captured (0)` on the run above is not a bug in the reporting — production
   React puts #418 on `pageerror` and prints nothing to the console, so that
