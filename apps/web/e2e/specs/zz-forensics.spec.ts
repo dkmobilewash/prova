@@ -103,6 +103,29 @@ test("FORENSICS: the rate, and the first node React deleted", async ({ page }) =
   console.log(`FORENSICS rate: ${hits} mismatches in ${loads} loads`);
   console.log(`FORENSICS where: ${JSON.stringify(where)}`);
 
+  // THE CORRELATION, and the reason this round asks for it: round 3's
+  // mutation log caught React's own out-of-order streaming machinery being
+  // dismantled in the same millisecond as the #418 — a <div hidden id="S:0">
+  // and a <template id="B:0"> removed, the SIDEBAR moved out of the hidden
+  // holder into the shell, then the same pair for the TOPBAR, then the
+  // <!--$--> marker rewritten. That is what React emits when a <Suspense>
+  // boundary SUSPENDS during SSR: the fallback goes inline behind a
+  // <template>, the real markup is streamed into a hidden div at the end of
+  // the body, and an inline script relocates it. The (app) shell has six of
+  // those boundaries, one per <ShellRegion>.
+  //
+  // So the prediction is checkable from the server's HTML alone, with no
+  // browser and no code change: the pages that mismatch are the pages whose
+  // HTML carries those markers, and the page that never mismatched
+  // (/wall-types, 0 of 10) does not. Counted per page, next to the rate.
+  for (const route of ROUTES) {
+    const html = await (await page.request.get(route)).text();
+    const count = (needle: string) => (html.match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) ?? []).length;
+    console.log(
+      `FORENSICS streamed ${route}: template-B=${count('<template id="B:')} hidden-S=${count('<div hidden id="S:')} pending=${count("<!--$?-->")} settled=${count("<!--$-->")} bytes=${html.length}`,
+    );
+  }
+
   const dumps = await page.evaluate(() => {
     const out: unknown[] = [];
     for (let i = 0; i < sessionStorage.length; i++) {
