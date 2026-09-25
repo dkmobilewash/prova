@@ -1638,6 +1638,36 @@ scrollback gets broken by whoever didn't scroll far enough.
   too, so nothing hydrates and the arm is about something else. **A control
   that fails is the instruction to fix the harness, not a result to read.**
 
+  **AND THE SECOND CANDIDATE WENT THE SAME WAY: A FLIGHT-DEFERRED ELEMENT PROP
+  IS NOT A MISMATCH EITHER.** Same harness, a probe page where a SERVER
+  component hands element props to a CLIENT component forty times over — the
+  exact shape the crew tab uses for `RowActions destructive={…}` and
+  `ConfirmDelete hint={…}`.
+
+  The arm's own positive control is the thing worth copying: the served
+  document was checked for `$L` references before any conclusion, because
+  without a deferral the arm is about nothing. **92 of them**, and all forty
+  slot elements present in the server HTML — so the production serializer
+  really did defer, at the documented 3,200-byte threshold. Driven 20 times:
+  20/20 hydrated, 20/20 slots rendered, **0 × #418**.
+
+  So a lazy arriving in place of an element prop renders, and does not
+  disagree. That matches the code — a lazy can only mismatch by SUSPENDING
+  inside a `<Suspense>`, and `ShellRegion` is the only one in this app, so a
+  page body has no boundary for it to suspend into.
+
+  **The bound on that one is real and is the reason it is an elimination
+  rather than a proof.** `route.fulfill()` serves the whole document at once,
+  so the deferred rows are always present by the time the lazy is read — the
+  one case where it does NOT suspend. The obvious fix, dropping the later
+  `self.__next_f.push` chunks to starve it, was tried and its control failed
+  (`hydratedLoads: 0`): removing Flight chunks removes the tree, not just the
+  deferred rows, so nothing hydrates and the arm measures something else.
+  **Three failed arms in this investigation, every one caught by its own
+  control and none by inspection.** A suspending lazy therefore remains
+  untested, and testing it needs a server that can dribble the stream — which
+  is a harness nobody has built.
+
   **What this leaves.** The shell alone, replayed from one captured document
   with no Clerk script and no real page body, is clean over 40 loads with
   hydration and the rail both proved present. At the journey's own rate

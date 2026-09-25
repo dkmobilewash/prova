@@ -182,3 +182,25 @@ Read with the page lists (`/dashboard`, `/pipeline`, `/material-orders`,
 `/messages`, `/proposals`, `/submittals`, two job tabs) the weight has moved off
 the chrome and onto the page bodies' own client components. Step 11 stays a hard
 assertion and stays red until somebody gets there.
+
+## The second candidate died the same way: a deferred element prop is not a mismatch
+
+Same harness, a probe page where a server component hands element props to a
+client component forty times — the shape the crew tab uses for `RowActions
+destructive={…}` and `ConfirmDelete hint={…}`. The arm checked its own premise
+first: **92 `$L` references** in the served Flight payload and all forty slot
+elements in the HTML, so the production serializer really did defer at the
+3,200-byte threshold. Then 20 loads: 20/20 hydrated, 20/20 slots rendered,
+**0 × #418**.
+
+A lazy in place of an element prop renders and does not disagree — which matches
+the code, since a lazy can only mismatch by SUSPENDING inside a `<Suspense>` and
+`ShellRegion` is the only one in the app.
+
+Its bound, which is why this is an elimination and not a proof: `route.fulfill()`
+delivers the whole document at once, so the deferred rows have always arrived by
+the time the lazy is read, and that is the one case where it does not suspend.
+Starving it by dropping the later `self.__next_f.push` chunks was tried and its
+control failed (`hydratedLoads: 0`) — dropping Flight chunks drops the tree.
+Three failed arms across this investigation, each caught by its own control and
+none by reading it. A genuinely suspending lazy is still untested.
