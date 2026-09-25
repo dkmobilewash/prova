@@ -86,7 +86,28 @@ export function QuickBooksMapping({ mappings }: { mappings: MappingRow[] }) {
                 </p>
               ) : (
                 <form
-                  action={(formData) => save(purpose.value, formData)}
+                  // `onSubmit`, NOT the `action` prop, and the difference is
+                  // the whole of issue #311. React 19 runs
+                  // `requestFormReset` UNCONDITIONALLY before a form's
+                  // `action` — so `saveQuickBooksAccountMapping` returning
+                  // `{ ok: false, error }` put the account picker back to
+                  // "— Choose an account —" and then printed the reason
+                  // above a control that no longer held the choice it was
+                  // complaining about. On an accounts list fetched from
+                  // Intuit, redoing that choice means finding the right row
+                  // in a long select again.
+                  //
+                  // Nothing resets here at all, which is correct for a
+                  // picker rather than a shortcut: the saved state IS the
+                  // chosen option, so on success the person's choice is
+                  // what should still be on screen.
+                  //
+                  // FormData is read SYNCHRONOUSLY — `event.currentTarget`
+                  // is null by the time the transition's callback runs.
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    save(purpose.value, new FormData(event.currentTarget));
+                  }}
                   className="flex flex-wrap items-center gap-2"
                 >
                   <input type="hidden" name="purpose" value={purpose.value} />
