@@ -126,6 +126,39 @@ without validating it" and there is no password — `skipPasswordRequirement` is
 the point. It had been passed since this file was written, for the same reason
 nothing else here was noticed: the call was unreachable.
 
+**WHAT THE FIRST REAL RUN SAID, and it is the reason to read this entry
+carefully: 42 of these passed, and every one of the five failures was a
+SELECTOR, not a feature.** Three were mine, all the same mistake — Playwright's
+`getByRole`/`getByText` match by SUBSTRING unless told otherwise, and this app
+puts the same words in two places on purpose:
+
+  - `/wall-types`' page title is "Wall types" and its empty state's heading is
+    "No wall types yet", which contains it;
+  - the takeoff tab's h2 is "Takeoff" and the job's own h1 is its NAME, which in
+    this spec's fixture contains the word;
+  - `ConfirmDelete`'s describe text is a hidden tooltip in the same row, and it
+    quotes the thing back — "Removes ZZ-E2E Acme Framing's quote from this
+    comparison" — so the vendor's name is on the page twice.
+
+In every case the write had LANDED and the row was on screen; the spec refused
+to look at it. `exact: true` throughout, and the comment at each site says which
+of the three it was, because the next person writing a spec against these
+screens will hit the same thing.
+
+One more of mine was a genuine misreading of a screen rather than a selector:
+the proposal clause LIBRARY renders a clause as an editable input's value, not
+as page text — it is an edit-in-place row — so the read-back now asks the input
+for its value. The job's proposal is where the clause prints as prose.
+
+**And one failure that is NOT this branch's and is fixed anyway, because it is a
+broken test rather than a product judgement.** `dashboard-empty.spec.ts` asserts
+that each Getting-started step links to its page, and asserted it as "this
+step's only link has this href". #413 (21 Sep) put a SECOND link inside the same
+`<li data-step>` — the "Ask C Stream" prompt pointing at `/ask` — so the locator
+resolved to two elements and Playwright refused, four days before anybody ran
+it. Nothing about the dashboard is wrong: the step does link where it says. It
+asks "a link with this href is in this step" now.
+
 **What still has no coverage, stated rather than left to be assumed.** The
 `/api/takeoff/plan/[planId]` route is stubbed in the browser by the takeoff
 spec (the fake blob it would proxy does not exist in the suite), so its own

@@ -119,8 +119,11 @@ test.describe("on-screen plan takeoff", () => {
     await jobTab(page, "Takeoff").click();
     await page.waitForURL(new RegExp(`/jobs/${jobId}/takeoff$`));
     await expectHealthy(page, "takeoff tab, nothing uploaded", { monitor });
-    await expect(page.getByRole("heading", { name: "Takeoff" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "No drawing on this job yet" })).toBeVisible();
+    // `exact`, because the job's own h1 is its NAME and this job's name
+    // contains the word — `getByRole` matches by substring unless told not to,
+    // and two matches is a strict-mode violation rather than a pass.
+    await expect(page.getByRole("heading", { name: "Takeoff", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "No drawing on this job yet", exact: true })).toBeVisible();
     // The banner has nothing to say yet: no plan, so no plan can be stale.
     await expect(page.getByText(/came off drawings that have since been superseded/)).toHaveCount(0);
     await expect(page.getByText(/no issue date/)).toHaveCount(0);

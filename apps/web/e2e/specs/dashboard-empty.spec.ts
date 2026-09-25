@@ -60,7 +60,20 @@ test.describe("dashboard, brand-new empty company", () => {
       // Optional steps (import, quickbooks) may be filtered out for this
       // viewer; only assert the href on steps actually present.
       if ((await item.count()) === 0) continue;
-      await expect(item.locator("a")).toHaveAttribute("href", step.href);
+      // THE STEP LINKS TO ITS OWN PAGE — asserted as "a link with this href is
+      // in this step", not as "this step's only link has this href".
+      //
+      // It was the second form, and #413 (21 Sep) broke it four days before
+      // anybody ran it: `GettingStartedCard` renders a SECOND link inside the
+      // same `<li data-step>`, the "Ask C Stream" prompt pointing at /ask. So
+      // `item.locator("a")` resolved to two elements and Playwright refused the
+      // assertion — a strict-mode violation, which reads as a failing step and
+      // is really an ambiguous selector. Nothing about the product is wrong
+      // here; the step does link where it says.
+      await expect(
+        item.locator(`a[href="${step.href}"]`),
+        `the "${step.id}" step should offer a link to ${step.href}`,
+      ).toHaveCount(1);
 
       await page.goto(step.href);
       // A page that crashed renders the app's own error boundary rather

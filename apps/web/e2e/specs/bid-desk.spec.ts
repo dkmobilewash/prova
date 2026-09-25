@@ -70,7 +70,7 @@ test.describe("the bid desk", () => {
 
     await page.goto("/bids");
     await expectHealthy(page, "/bids, empty", { monitor });
-    await expect(page.getByRole("heading", { name: "Bid history" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Bid history", exact: true })).toBeVisible();
     // Two states, two sentences: "no bids match this filter" on a brand-new
     // account would be a dead end for a filter nobody set.
     await expect(page.getByText("No bids logged yet")).toBeVisible();
@@ -120,7 +120,7 @@ test.describe("the bid desk", () => {
     // a figure back, and a reload that races the write is a check about
     // nothing.
     await settleAction(page, () => lineForm().getByRole("button", { name: "Add", exact: true }).click());
-    await expect(bidRow().getByText("Alternate 1")).toBeVisible();
+    await expect(bidRow().getByText("Alternate 1", { exact: true })).toBeVisible();
     await expectHealthy(page, "/bids after adding an alternate", { monitor });
 
     // A UNIT PRICE holds a rate, and the form asks for a rate rather than an
@@ -131,7 +131,7 @@ test.describe("the bid desk", () => {
     await lineForm().locator('input[name="unitPrice"]').fill("3.10");
     await lineForm().locator('input[name="unit"]').fill("SF of 5/8 board");
     await settleAction(page, () => lineForm().getByRole("button", { name: "Add", exact: true }).click());
-    await expect(bidRow().getByText("Extra board")).toBeVisible();
+    await expect(bidRow().getByText("Extra board", { exact: true })).toBeVisible();
 
     // An ALLOWANCE is carried INSIDE the base, so it is never added to it.
     await bidRow().getByRole("button", { name: "Add another" }).click();
@@ -238,7 +238,10 @@ test.describe("the bid desk", () => {
     await quoteForm().locator('input[name="quotedOn"]').fill("2026-10-18");
     await quoteForm().locator('textarea[name="exclusions"]').fill("Soffits");
     await settleAction(page, () => quoteForm().getByRole("button", { name: "Add quote" }).click());
-    await expect(bidRow().getByText(CHEAPEST)).toBeVisible();
+    // `exact` because `ConfirmDelete`'s describe — a hidden tooltip in the same
+    // row — reads "Removes ZZ-E2E Acme Framing's quote from this comparison",
+    // so a substring match finds the vendor's name twice.
+    await expect(bidRow().getByText(CHEAPEST, { exact: true })).toBeVisible();
 
     // The dearer one, which excludes nothing.
     await bidRow().getByRole("button", { name: "Log another quote" }).click();

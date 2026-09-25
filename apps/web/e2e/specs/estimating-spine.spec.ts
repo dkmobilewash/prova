@@ -135,8 +135,11 @@ test.describe("the estimating desk", () => {
   test("3. wall types: the starter partition schedule (#467)", async () => {
     await page.goto("/wall-types");
     await expectHealthy(page, "/wall-types", { monitor });
-    await expect(page.getByRole("heading", { name: "Wall types" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "No wall types yet" })).toBeVisible();
+    // `exact` because the empty state's own heading, "No wall types yet",
+    // CONTAINS the page title — and `getByRole` matches by substring unless
+    // told otherwise, which is a strict-mode violation rather than a pass.
+    await expect(page.getByRole("heading", { name: "Wall types", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "No wall types yet", exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: "Start from two common wall types" }).click();
     // The action returns what it added and the button's own message says so.
@@ -283,7 +286,9 @@ test.describe("the estimating desk", () => {
     await templateForm.locator('input[name="name"]').fill(TEMPLATE_NAME);
     await templateForm.getByRole("button", { name: "Create template" }).click();
 
-    await expect(page.getByText(TEMPLATE_NAME)).toBeVisible();
+    // `exact` because `ConfirmDelete`'s describe text — rendered as a hidden
+    // tooltip in the same row — quotes the template's name back.
+    await expect(page.getByText(TEMPLATE_NAME, { exact: true })).toBeVisible();
     // A template with no lines on it says so, because it would add nothing.
     await expect(page.getByText(/No lines on it yet/)).toBeVisible();
     await expectHealthy(page, "/catalog after creating a template", { monitor });
@@ -299,6 +304,7 @@ test.describe("the estimating desk", () => {
     await page.reload();
     await expectHealthy(page, "/catalog after putting a line on the template", { monitor });
     const templateRow = page.locator("li").filter({ hasText: TEMPLATE_NAME }).first();
+    await expect(templateRow.getByText(TEMPLATE_NAME, { exact: true })).toBeVisible();
     await expect(templateRow).toBeVisible();
     await expect(templateRow.getByText("1 line", { exact: true })).toBeVisible();
   });
@@ -334,8 +340,8 @@ test.describe("the estimating desk", () => {
   test("9. the proposal clause library and the job's proposal (#460)", async () => {
     await page.goto("/proposals");
     await expectHealthy(page, "/proposals", { monitor });
-    await expect(page.getByRole("heading", { name: "Proposal clauses" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "No clauses yet" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Proposal clauses", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "No clauses yet", exact: true })).toBeVisible();
 
     const library = page.locator("form").filter({ has: page.getByRole("button", { name: "Add clause" }) });
     await library.getByRole("combobox", { name: "Kind" }).selectOption("EXCLUSION");
@@ -344,7 +350,13 @@ test.describe("the estimating desk", () => {
 
     await page.reload();
     await expectHealthy(page, "/proposals after adding a clause", { monitor });
-    await expect(page.locator(dataTour("proposals-list")).getByText(CLAUSE_TEXT)).toBeVisible();
+    // The library row is an edit-in-place form, so the clause is an input's
+    // VALUE and not page text. Read it the way it is rendered — the job's
+    // proposal below is where it prints as prose.
+    await expect(
+      page.locator(dataTour("proposals-list")).getByLabel("Clause text"),
+      "the clause is stored, not held in the form that added it",
+    ).toHaveValue(CLAUSE_TEXT);
 
     await page.goto(`/jobs/${jobId}/proposal`);
     await expectHealthy(page, "job proposal", { monitor });
@@ -374,7 +386,7 @@ test.describe("the estimating desk", () => {
     const details = page.locator("form").filter({ has: page.getByRole("button", { name: "Save details" }) });
     await details.locator('input[name="grossAreaSqFt"]').fill("40000");
     await details.getByRole("button", { name: "Save details" }).click();
-    await expect(page.getByText("Saved.")).toBeVisible();
+    await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
 
     await page.reload();
     await expectHealthy(page, "job overview after saving the gross area", { monitor });
