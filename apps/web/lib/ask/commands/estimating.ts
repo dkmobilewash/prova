@@ -617,6 +617,11 @@ export const estimatingExclusions: Exclusion[] = [
   // points at, and a model transcribing them would be inventing the one
   // number this whole feature exists to make checkable.
   { action: "recordTakeoffPlan", reason: "A plan is uploaded from the browser under a one-shot token; there is no file for a command to attach." },
+  // Which revision a sheet is. Not a command: the label and date are printed
+  // on a title block the assistant has not seen, and a WRONG date is worse
+  // than none — it makes every plan read as current forever, which is the one
+  // failure the currency check exists to prevent.
+  { action: "recordTakeoffPlanRevision", reason: "The revision label and date are read off a title block the assistant cannot see, and a wrong date makes superseded quantities read as current forever." },
   { action: "deleteTakeoffPlan", reason: "Deletes are never commands (T5)." },
   { action: "saveTakeoffCalibration", reason: "A scale is set by dragging along a dimension on the drawing; a model has not seen the drawing." },
   { action: "saveTakeoffMeasurement", reason: "The measurement IS the traced geometry, which only the viewer produces." },

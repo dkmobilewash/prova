@@ -29,6 +29,7 @@ import {
   runAction,
   type ActionResult,
 } from "./shared";
+import { optionalDateFromString } from "@/lib/bid-pursuits";
 
 /**
  * The Estimate tab's refusal, in the house voice. The estimate tab and the
@@ -642,4 +643,49 @@ function takeoffArgsFromForm(recipeId: string, formData: FormData): RecipeArgs {
     return { wastePercent: optional("wastePercent", { min: 0 }) };
   }
   return {};
+}
+
+/**
+ * Records WHICH issue of the drawings a plan was measured against.
+ *
+ * Separate from `recordTakeoffPlan` on purpose: the label and date are read
+ * off the title block once the sheet is open in the viewer, which is after
+ * the upload has already happened. Asking for them at upload time would mean
+ * asking before anybody can see them.
+ *
+ * Blanking either field is allowed and puts the plan back to UNKNOWABLE —
+ * which is honest. Somebody who realises they recorded the wrong revision
+ * should be able to say so, and a plan asserted to be current on a wrong date
+ * is worse than one that admits it does not know.
+ */
+export async function recordTakeoffPlanRevision(jobId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableDirectly(job);
+
+  return runAction(async () => {
+    const planId = String(formData.get("planId") ?? "").trim();
+    if (!planId) return actionFail("Which drawing? Reload the page.");
+
+    const revisionLabel = String(formData.get("revisionLabel") ?? "").trim();
+
+    // ENTERED, not stamped, and this one matters more than most: the whole
+    // feature compares this date against what has been issued since, so a
+    // stamped "today" would make every plan permanently current.
+    const sheetIssuedOn = optionalDateFromString(formData.get("sheetIssuedOn"));
+
+    const updated = await prisma.takeoffPlan.updateMany({
+      where: { id: planId, jobId, companyId: company.id },
+      data: {
+        revisionLabel: revisionLabel || null,
+        sheetIssuedOn,
+      },
+    });
+    if (updated.count === 0) return actionFail("That drawing is no longer on this job. Reload the page.");
+
+    revalidatePath(`/jobs/${jobId}/takeoff`);
+    return actionOk;
+  });
 }
