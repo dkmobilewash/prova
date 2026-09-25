@@ -130,9 +130,12 @@ export class HealthMonitor {
    * the right history. Two things were fixed 2026-09-25: the shell's
    * regions are paired with their widgets inside a client module
    * (`components/AppChrome.tsx`), so a region's child can no longer arrive
-   * in the browser as a deferred lazy. If this list is non-empty again, the
-   * first question is which element the two sides disagree about rather
-   * than which page it says.
+   * in the browser as a deferred lazy; and Clerk's `<UserButton>`, which
+   * renders markup only when `clerk.loaded` — a flag it reads during render
+   * and one that is false on the server ALWAYS — now waits for mount
+   * (`components/AfterMount.tsx`). If this list is non-empty again, it is
+   * something NEW, and the first question is which element the two sides
+   * disagree about rather than which page it says.
    */
   readonly hydrationMismatches: string[] = [];
   readonly consoleErrors: string[] = [];

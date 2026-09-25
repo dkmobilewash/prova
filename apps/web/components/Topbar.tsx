@@ -6,6 +6,7 @@ import { MobileNav } from "@/components/MobileNav";
 import { SearchLauncher } from "@/components/SearchLauncher";
 import { AskLauncher } from "@/components/AskLauncher";
 import { HelpButton } from "@/components/HelpButton";
+import { AfterMount } from "@/components/AfterMount";
 import type { HelpChannel } from "@/lib/help-request";
 import type { Principal } from "@/lib/permissions";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
@@ -106,7 +107,18 @@ export function Topbar({
             </span>
           )}
         </Link>
-        <UserButton />
+        {/* GATED UNTIL MOUNT, and the reason is measured rather than
+            stylistic: Clerk's UserButton renders `clerk.loaded &&
+            <ClerkHostRenderer/>`, and `loaded` is FALSE on the server
+            always — so the server writes nothing here, on every signed-in
+            page. If Clerk's script wins the race against hydration, the
+            browser's first render writes the button where the server's HTML
+            has none, which is an element-level React #418. The server
+            already renders nothing, so this changes nothing anybody sees.
+            See components/AfterMount.tsx. */}
+        <AfterMount>
+          <UserButton />
+        </AfterMount>
       </div>
     </div>
   );
