@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { t } from "./i18n";
 
 /**
  * The last list this phone successfully loaded, kept so a screen with no
@@ -45,11 +46,11 @@ export async function cacheSet<T>(key: string, rows: T): Promise<void> {
  * to-the-second answer invites trusting it more precisely than it deserves. */
 export function cacheAge(at: string, now: Date = new Date()): string {
   const minutes = Math.floor((now.getTime() - new Date(at).getTime()) / 60000);
-  if (!Number.isFinite(minutes) || minutes < 0) return "earlier";
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} min ago`;
+  if (!Number.isFinite(minutes) || minutes < 0) return t("age.earlier");
+  if (minutes < 1) return t("age.justNow");
+  if (minutes < 60) return t("age.minutes", { count: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return hours === 1 ? "an hour ago" : `${hours} hours ago`;
+  if (hours < 24) return hours === 1 ? t("age.hour") : t("age.hours", { count: hours });
   const days = Math.floor(hours / 24);
-  return days === 1 ? "yesterday" : `${days} days ago`;
+  return days === 1 ? t("age.yesterday") : t("age.days", { count: days });
 }

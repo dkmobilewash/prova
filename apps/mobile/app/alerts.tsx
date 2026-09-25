@@ -10,6 +10,7 @@ import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { emptyFor } from "@/lib/empty-state";
+import { useT, type StringKey } from "@/lib/i18n";
 import { leadingFor, type Palette, radius, space, typography } from "@/lib/theme";
 import type { AlertRow } from "@/lib/types";
 import { usePalette } from "@/lib/use-palette";
@@ -33,15 +34,16 @@ import { useStableGetToken } from "@/lib/use-stable-get-token";
  */
 function severityStyles(palette: Palette) {
   return {
-    OVERDUE: { label: "Past due", bg: palette.colors.tagRose, ink: palette.colors.tagRoseInk },
-    DUE_SOON: { label: "Coming up", bg: palette.colors.tagAmber, ink: palette.colors.tagAmberInk },
-    STANDING: { label: "Standing", bg: palette.colors.tagSlate, ink: palette.colors.tagSlateInk },
-  } satisfies Record<AlertRow["severity"], { label: string; bg: string; ink: string }>;
+    OVERDUE: { label: "alerts.pastDue", bg: palette.colors.tagRose, ink: palette.colors.tagRoseInk },
+    DUE_SOON: { label: "alerts.comingUp", bg: palette.colors.tagAmber, ink: palette.colors.tagAmberInk },
+    STANDING: { label: "alerts.standing", bg: palette.colors.tagSlate, ink: palette.colors.tagSlateInk },
+  } satisfies Record<AlertRow["severity"], { label: StringKey; bg: string; ink: string }>;
 }
 
 export default function AlertsScreen() {
   const { isLoaded, isSignedIn } = useAuth();
   const getToken = useStableGetToken();
+  const { t } = useT();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const severity = useMemo(() => severityStyles(palette), [palette]);
@@ -78,12 +80,12 @@ export default function AlertsScreen() {
     })();
   }, [isSignedIn, load]);
 
-  if (!isLoaded) return <Text style={styles.loading}>Loading…</Text>;
+  if (!isLoaded) return <Text style={styles.loading}>{t("common.loading")}</Text>;
   if (!isSignedIn) return <Redirect href="/sign-in" />;
 
-  const empty = emptyFor(offline, "the alerts", {
-    title: "Nothing needs attention",
-    description: "Alerts appear here when something needs doing.",
+  const empty = emptyFor(offline, "thing.alerts", {
+    title: "alerts.empty.title",
+    description: "alerts.empty.body",
   });
 
   return (
@@ -127,7 +129,7 @@ export default function AlertsScreen() {
                 subtitle={item.detail}
                 trailing={
                   <View style={[styles.tag, { backgroundColor: tone.bg }]}>
-                    <Text style={[styles.tagLabel, { color: tone.ink }]}>{tone.label}</Text>
+                    <Text style={[styles.tagLabel, { color: tone.ink }]}>{t(tone.label)}</Text>
                   </View>
                 }
                 divider={i > 0}

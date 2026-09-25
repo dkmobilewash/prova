@@ -2,6 +2,7 @@ import { useMemo, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { GroupedList } from "@/components/GroupedList";
 import { Icon } from "@/components/Icon";
+import { useT } from "@/lib/i18n";
 import { describeOp } from "@/lib/outbox";
 import type { RefusedOp } from "@/lib/sync-queue";
 import { type Palette, space, typography } from "@/lib/theme";
@@ -23,6 +24,11 @@ import { usePalette } from "@/lib/use-palette";
  *
  * Renders nothing when there is nothing to say — a screen with a green
  * queue shows no strip at all.
+ *
+ * Every one of those sentences is a dictionary key now, and this component
+ * is why that matters more here than anywhere else: it draws on TOP of
+ * eleven screens, so one English word left in it is one English word on
+ * every screen the translation was done for.
  */
 export function SyncStatus({
   pending,
@@ -55,23 +61,24 @@ export function SyncStatus({
 }) {
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
+  const { t } = useT();
 
   const rows: ReactNode[] = [];
   if (pending && pending > 0) {
     rows.push(
       <Row key="pending" icon="cloudDone" palette={palette}>
-        <Text style={styles.line}>Pending sync: {pending}</Text>
+        <Text style={styles.line}>{t("common.pendingSync", { count: pending })}</Text>
       </Row>,
     );
   }
   if (state) {
     rows.push(
       <Row key="offline" icon="cloudOffline" palette={palette}>
+        {/* `state` is already a sentence in the reader's language — it is
+            the note `cachedRead` built out of `offline.stale`. Only the
+            "nothing" case is this component's own words. */}
         {state === "nothing" ? (
-          <Text style={styles.body}>
-            Can&apos;t load this right now, and this phone hasn&apos;t loaded it before. Anything you
-            add is kept and sent when you&apos;re back in range.
-          </Text>
+          <Text style={styles.body}>{t("offline.nothing")}</Text>
         ) : (
           <Text style={styles.stale}>{state}</Text>
         )}
@@ -87,8 +94,8 @@ export function SyncStatus({
             {refusedTitle
               ? refusedTitle(refused.length)
               : refused.length === 1
-                ? "1 item wasn't saved"
-                : `${refused.length} items weren't saved`}
+                ? t("common.notSavedItems.one")
+                : t("common.notSavedItems.many", { count: refused.length })}
           </Text>
         </View>
         {refused.slice(-maxRefused).map((r, i) => (
@@ -99,12 +106,12 @@ export function SyncStatus({
         <View style={styles.actions}>
           {onRetry ? (
             <Pressable onPress={onRetry} style={styles.dismiss}>
-              <Text style={styles.dismissLabel}>Try again</Text>
+              <Text style={styles.dismissLabel}>{t("common.tryAgain")}</Text>
             </Pressable>
           ) : null}
           {onDismiss ? (
             <Pressable onPress={onDismiss} style={styles.dismiss}>
-              <Text style={styles.dismissLabel}>{dismissLabel ?? "Throw away"}</Text>
+              <Text style={styles.dismissLabel}>{dismissLabel ?? t("common.throwAway")}</Text>
             </Pressable>
           ) : null}
         </View>

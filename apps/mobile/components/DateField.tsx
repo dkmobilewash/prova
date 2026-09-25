@@ -2,9 +2,20 @@ import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Chip } from "@/components/Chip";
 import { Icon } from "@/components/Icon";
+import { useT } from "@/lib/i18n";
 import { type Palette, hitTarget, radius, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 
+/**
+ * NOT translated, and deliberately: these render a DATE, which is the one
+ * class of string the translation layer leaves alone (`lib/i18n.ts`, and
+ * the same reason `describeOp` hands `toLocaleDateString` the device's own
+ * locale). `dayLabel` is also exported and read by other screens, so its
+ * output is a format rather than a sentence. Translating the calendar is a
+ * date-formatting job — month and weekday names in the right order for the
+ * language — not a dictionary one, and doing half of it here would put a
+ * Spanish month inside an English-shaped label.
+ */
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -66,6 +77,7 @@ export function DateField({
 }) {
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const selected = parse(value);
   const limit = allowFuture ? null : parse(max);
@@ -97,10 +109,10 @@ export function DateField({
     <View style={styles.wrap}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.chips}>
-        <Chip label="Today" selected={value === max} onPress={() => pick(max)} />
-        <Chip label="Yesterday" selected={value === yesterday} onPress={() => pick(yesterday)} />
+        <Chip label={t("time.day.today")} selected={value === max} onPress={() => pick(max)} />
+        <Chip label={t("date.yesterday")} selected={value === yesterday} onPress={() => pick(yesterday)} />
         <Chip
-          label={value === max || value === yesterday || !selected ? "Other day…" : dayLabel(value)}
+          label={value === max || value === yesterday || !selected ? t("date.otherDay") : dayLabel(value)}
           selected={open || (!!selected && value !== max && value !== yesterday)}
           onPress={() => {
             if (selected) setMonth({ y: selected.y, m: selected.m });
@@ -116,7 +128,7 @@ export function DateField({
             <Pressable
               onPress={() => shift(-1)}
               style={styles.arrow}
-              accessibilityLabel="Previous month"
+              accessibilityLabel={t("date.previousMonth")}
             >
               <Icon name="chevronBack" size={20} color={palette.colors.link} />
             </Pressable>
@@ -127,7 +139,7 @@ export function DateField({
               onPress={() => shift(1)}
               disabled={atLimitMonth}
               style={[styles.arrow, atLimitMonth && styles.disabled]}
-              accessibilityLabel="Next month"
+              accessibilityLabel={t("date.nextMonth")}
             >
               <Icon name="chevron" size={20} color={palette.colors.link} />
             </Pressable>

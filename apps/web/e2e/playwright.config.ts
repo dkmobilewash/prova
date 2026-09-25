@@ -51,6 +51,24 @@ const webRoot = path.resolve(__dirname, "..");
  */
 const PORT = Number(process.env.E2E_PORT ?? 3100);
 
+/** Run the suite against `next dev` instead of `next start`, so React
+ * reports hydration mismatches with a diff instead of a stripped error
+ * code. Diagnostic only — see the note on `webServer.command`. */
+// OPT-IN ONLY, and it has to stay that way. 2a885f13 flipped this to
+// `!== "0"` for one diagnostic run — CI sets nothing, so that made the
+// signed-in `e2e` job run against `next dev`, which is the one thing this
+// config's own note below says proves nothing about a production build. The
+// diagnostic worked (run 36097089609 named the element: a client-only
+// `data-clerk-component="UserButton"` div), and the default is back.
+//
+// Two things that run also showed, both arguments against ever defaulting
+// this on: the dev server took 12.7 minutes and produced its own timeouts
+// and an ERR_CONNECTION_RESET, and `lib/health.ts` classifies a hydration
+// mismatch by matching "Minified React error #418" — which a dev build
+// never prints, so every mismatch is counted as a CRASH instead and fails
+// the step it happened on rather than step 11.
+const DEV_SERVER = process.env.E2E_DEV_SERVER === "1";
+
 // AT CONFIG LOAD, not only in global-setup.ts. Read out of the installed
 // runner (playwright@1.63.0 lib/runner/index.js, `createGlobalSetupTasks`):
 // the task order is remove-output-dirs -> PLUGIN SETUP -> global setup,
@@ -96,8 +114,13 @@ export default defineConfig({
     ["json", { outputFile: path.join(webRoot, "playwright-report/results.json") }],
     ["list"],
   ],
-  timeout: 30_000,
-  expect: { timeout: 10_000 },
+  // A dev server compiles each route on first hit, which does not fit the
+  // production timeouts — and the journey is serial, so one slow first load
+  // times out step 1 and SKIPS the step that prints the hydration diff,
+  // which is the only reason the dev run exists. The looser numbers apply
+  // only under E2E_DEV_SERVER.
+  timeout: DEV_SERVER ? 120_000 : 30_000,
+  expect: { timeout: DEV_SERVER ? 30_000 : 10_000 },
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: "retain-on-failure",
@@ -139,7 +162,23 @@ export default defineConfig({
     // server's HMR client and slower first compile are their own source
     // of noise in a suite whose entire premise is "the unit suite already
     // covers logic, this covers what a browser renders."
-    command: `pnpm --filter @prova/web exec next start -p ${PORT}`,
+    //
+    // E2E_DEV_SERVER=1 IS THE ONE REASON TO BREAK THAT, AND IT IS A
+    // DIAGNOSTIC, NEVER A MODE TO SHIP IN. Production React strips its own
+    // error arguments: a hydration mismatch arrives as #418 with args
+    // ["HTML", ""], which names the page and never the element. A dev
+    // server's React prints the actual diff and a component stack, so a
+    // mismatch that would otherwise cost a day of reading the shell's
+    // imports (2026-09-24 — four wrong hypotheses before anyone thought to
+    // do this) costs one run. journey.spec.ts step 11 prints the console
+    // output for exactly this.
+    //
+    // Everything the comment above warns about is still true while it is
+    // on: expect slower first loads and HMR noise, and do not read a
+    // pass/fail verdict off a dev run.
+    command: DEV_SERVER
+      ? `pnpm --filter @prova/web exec next dev -p ${PORT}`
+      : `pnpm --filter @prova/web exec next start -p ${PORT}`,
     cwd: repoRoot,
     url: `http://localhost:${PORT}/pilot`,
     // Never reuse a server the runner (e2e/run.mjs) did not start: a

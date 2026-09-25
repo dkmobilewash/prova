@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
+import { useT } from "@/lib/i18n";
 import { type Palette, radius, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 
@@ -43,6 +44,7 @@ export function strokesToPath(strokes: Point[][]): string | null {
 export function SignaturePad({ onChange }: { onChange: (path: string | null) => void }) {
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
+  const { t } = useT();
   const [strokes, setStrokes] = useState<Point[][]>([]);
   const [drawing, setDrawing] = useState(false);
 
@@ -90,7 +92,7 @@ export function SignaturePad({ onChange }: { onChange: (path: string | null) => 
             the first stroke starts in the wrong place. */}
         {strokes.length === 0 ? (
           <Text pointerEvents="none" style={styles.placeholder}>
-            Sign here
+            {t("signature.here")}
           </Text>
         ) : null}
         {strokes.flatMap((stroke, si) =>
@@ -130,7 +132,7 @@ export function SignaturePad({ onChange }: { onChange: (path: string | null) => 
         )}
       </View>
       <Pressable onPress={clear} style={styles.clear}>
-        <Text style={styles.clearLabel}>Clear</Text>
+        <Text style={styles.clearLabel}>{t("signature.clear")}</Text>
       </Pressable>
     </View>
   );
