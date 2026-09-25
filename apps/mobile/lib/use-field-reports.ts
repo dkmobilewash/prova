@@ -133,9 +133,26 @@ export function useFieldReports(jobId: string) {
     async (reportId: string, fields: FieldReportFields): Promise<SaveResult> => {
       const clientId = await getClientId();
       const clientUpdatedAt = new Date().toISOString();
-      const before = reports.find((r) => r.id === reportId);
+      /**
+       * The row as it was, captured INSIDE the optimistic update rather than
+       * from `reports`.
+       *
+       * Reading `reports.find(...)` was wrong twice. It is the array from the
+       * render this callback was built in, and it was read AFTER
+       * `await getClientId()` — so a refresh landing in that window made the
+       * rollback restore a row the server had already replaced. And when the
+       * id was not in that stale snapshot, `if (before)` skipped the rollback
+       * entirely: an error on screen with the edit still sitting under it,
+       * looking saved. The updater below sees the CURRENT array, by
+       * definition, and cannot miss a row that is really there.
+       */
+      let before: FieldReportRow | undefined;
       setReports((prev) =>
-        prev.map((r) => (r.id === reportId ? { ...r, ...fields, clientUpdatedAt } : r)),
+        prev.map((r) => {
+          if (r.id !== reportId) return r;
+          before = r;
+          return { ...r, ...fields, clientUpdatedAt };
+        }),
       );
       const saved = await saveQueued({
         type: "field-report:update",
@@ -146,8 +163,11 @@ export function useFieldReports(jobId: string) {
       });
       if (!saved.ok) {
         // Put the row back as it was: the edit above is on screen and
-        // nowhere else.
-        if (before) setReports((prev) => prev.map((r) => (r.id === reportId ? before : r)));
+        // nowhere else. `before` is set by the updater above whenever the row
+        // existed; if it did not exist there is no edit on screen to undo.
+        setReports((prev) =>
+          prev.map((r) => (r.id === reportId && before ? before : r)),
+        );
         setError(saved.error);
         return saved;
       }
@@ -155,7 +175,7 @@ export function useFieldReports(jobId: string) {
       await sync();
       return saved;
     },
-    [reports, sync],
+    [sync],
   );
 
   // `setError` is returned because the reports SCREEN queues its own

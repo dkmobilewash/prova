@@ -137,13 +137,33 @@ export default function PunchListScreen() {
       return;
     }
     const next: PunchItemStatus = current === "OPEN" ? "READY_FOR_REVIEW" : "OPEN";
+    // What `local` held for this item BEFORE the optimistic flip — `undefined`
+    // when nothing of this phone's was in flight for it. Read here, in the
+    // same render that fired the tap and before any await, so it agrees with
+    // the `current` computed above.
+    const previous = local[item.id];
     setError(null);
     setLocal((existing) => ({ ...existing, [item.id]: next }));
     const saved = await saveQueued({ type: "punch-list:status", jobId, itemId: item.id, status: next });
     if (!saved.ok) {
-      // Put the row back the way it was: the optimistic flip above is now
-      // a claim about a change nothing recorded.
-      setLocal((existing) => ({ ...existing, [item.id]: current }));
+      // PUT THE ENTRY BACK AS IT WAS, key and all. Writing `current` into it
+      // restored the right status and left the KEY behind, and the key is
+      // what `queued` reads (`local[item.id] !== undefined`) to draw
+      // "· Syncing…" — so the row went on claiming a change was on its way
+      // to the office, directly beside the line saying nothing was sent.
+      // Measured in Chromium: "Open · L3" before the tap, "Open · Syncing… ·
+      // L3" after it, with an empty queue.
+      //
+      // Deleting the key unconditionally would be the other half of the same
+      // mistake: a tap that IS still in flight from before would stop being
+      // drawn. So the previous entry is restored exactly, including its
+      // absence.
+      setLocal((existing) => {
+        const rolledBack = { ...existing };
+        if (previous === undefined) delete rolledBack[item.id];
+        else rolledBack[item.id] = previous;
+        return rolledBack;
+      });
       setError(saved.error);
       return;
     }

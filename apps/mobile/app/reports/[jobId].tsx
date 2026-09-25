@@ -134,11 +134,16 @@ export default function ReportsScreen() {
       weather: conditions.trim() || null,
       delays: null,
     };
+    // QUEUED BEFORE THE FORM IS CLEARED — see lib/save-queued.ts. `create`
+    // returns the `{ ok }` result for exactly this, and the old order threw
+    // it away: the sheet closed and the day's work-performed text went with
+    // it, on the record of what happened on a job.
+    const saved = await create(fields);
+    if (!saved.ok) return;
     setWorkPerformed("");
     setOtherTrades("");
     setConditions("");
     setShowReport(false);
-    await create(fields);
     await loadDelays();
   };
 
@@ -182,17 +187,6 @@ export default function ReportsScreen() {
       gcNotifiedWho: told ? toldWho.trim() || undefined : undefined,
       gcNotifiedAt: told ? new Date().toISOString() : undefined,
     };
-    setCause(null);
-    setParty(null);
-    setPartyName("");
-    setWhat("");
-    setFrom("");
-    setTo("");
-    setWorkers("");
-    setHoursLost("");
-    setTold(null);
-    setToldWho("");
-    setShowDelay(false);
     const causeKey = CAUSES.find(([v]) => v === op.cause)?.[1];
     const causeText = causeKey ? t(causeKey) : op.cause;
     const partyKey = PARTIES.find(([v]) => v === op.responsibleParty)?.[1];
@@ -219,9 +213,16 @@ export default function ReportsScreen() {
         changeOrderId: null,
       },
     ]);
-    // Queued BEFORE the form is cleared and the optimistic row goes up —
-    // see lib/save-queued.ts. A delay that never reached the queue must
-    // not sit on this screen looking logged.
+    // Queued BEFORE the form is cleared — see lib/save-queued.ts. This
+    // comment used to sit above a function that cleared eleven fields and
+    // closed the sheet first, and said it did not; a comment stating the
+    // opposite of its code is worse than no comment, because it is what the
+    // next reader checks instead of the code.
+    //
+    // The optimistic row DOES still go up first, on purpose: it is what
+    // makes the delay appear without waiting on the write. It is taken back
+    // off below if the write did not land, because a delay that never
+    // reached the queue must not sit on this screen looking logged.
     const saved = await saveQueued(op);
     if (!saved.ok) {
       setOptimisticDelays((rows) => rows.filter((r) => r.clientOperationId !== op.clientOperationId));
@@ -229,6 +230,17 @@ export default function ReportsScreen() {
       return;
     }
     setError(null);
+    setCause(null);
+    setParty(null);
+    setPartyName("");
+    setWhat("");
+    setFrom("");
+    setTo("");
+    setWorkers("");
+    setHoursLost("");
+    setTold(null);
+    setToldWho("");
+    setShowDelay(false);
     await sync();
   };
 

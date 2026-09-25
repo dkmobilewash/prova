@@ -73,6 +73,7 @@ const root = join(__dirname, "..");
 function listFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
+    if (NOT_SOURCE.has(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) out.push(...listFiles(full));
     else out.push(full);
@@ -80,9 +81,35 @@ function listFiles(dir: string): string[] {
   return out;
 }
 
-const sources = [...listFiles(join(root, "app")), ...listFiles(join(root, "components")), ...listFiles(join(root, "lib"))]
+/** Directories that hold no app source. Everything else under
+ * `apps/mobile` is walked.
+ *
+ * THE ROOTS ARE DERIVED, and they used to be the three literals
+ * `app`, `components`, `lib`. A file outside the walk is not a small set,
+ * it is not in the set (CLAUDE.md, the theme-contrast scar), and a bare
+ * `enqueue` dropped into a new `hooks/` directory was green here — proved
+ * by mutation before this was changed. */
+const NOT_SOURCE = new Set(["node_modules", "assets", "android", "ios", ".expo", ".turbo", ".maestro"]);
+
+function sourceRoots(): string[] {
+  return readdirSync(root)
+    .filter((entry) => !NOT_SOURCE.has(entry))
+    .filter((entry) => statSync(join(root, entry)).isDirectory())
+    .filter((entry) => listFiles(join(root, entry)).some((f) => f.endsWith(".ts") || f.endsWith(".tsx")))
+    .sort();
+}
+
+const sources = sourceRoots()
+  .flatMap((dir) => listFiles(join(root, dir)))
   .filter((f) => f.endsWith(".ts") || f.endsWith(".tsx"))
   .filter((f) => !f.endsWith(".test.ts") && !f.endsWith(".test.tsx"));
+
+/** Comments are prose and are not code. Both forms, including one trailing
+ * a statement — this file used to strip only whole-line `//`, and the
+ * error-rendering case below stripped nothing at all. */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}
 
 /** The queue's own module defines and re-exports it; the helper is the
  * one thing allowed to call it. Anything else is the bug this file is
@@ -154,7 +181,7 @@ describe("no screen queues a write without watching it", () => {
     for (const file of sources) {
       const rel = file.slice(root.length + 1);
       if (MAY_CALL_ENQUEUE.includes(rel)) continue;
-      const text = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+      const text = stripComments(readFileSync(file, "utf8"));
       if (/\benqueue\s*\(/.test(text)) offenders.push(rel);
     }
     expect(
@@ -176,7 +203,9 @@ describe("a screen that can set an error must draw one", () => {
   const screens = sources.filter((f) => f.endsWith(".tsx") && f.includes(join(root, "app")));
 
   it("finds screens that hold an error state at all", () => {
-    const holders = screens.filter((f) => /const \[\w*[Ee]rror, set\w*[Ee]rror\]/.test(readFileSync(f, "utf8")));
+    const holders = screens.filter((f) =>
+      /const \[\w*[Ee]rror, set\w*[Ee]rror\]/.test(stripComments(readFileSync(f, "utf8"))),
+    );
     // Vacuity guard: if this stops matching, every case below is empty.
     expect(holders.length, "no screen appears to hold an error state — the pattern has stopped matching").toBeGreaterThan(5);
   });
@@ -184,7 +213,14 @@ describe("a screen that can set an error must draw one", () => {
   it("renders every error state it declares", () => {
     const offenders: string[] = [];
     for (const file of screens) {
-      const text = readFileSync(file, "utf8");
+      // COMMENTS STRIPPED FIRST, and this is the hole this case shipped
+      // with. `drawn` below looks for `{name}` in the source, and a JSX
+      // comment reading `{/* rendered above as {saveError} */}` satisfied
+      // it — so deleting the line that actually draws the error left this
+      // green. Proved by mutation: the exact bug #490 says this case caught
+      // it committing, hidden by one comment. Same shape as #185, and the
+      // third time in this repo.
+      const text = stripComments(readFileSync(file, "utf8"));
       for (const m of text.matchAll(/const \[(\w*[Ee]rror), set\w*[Ee]rror\]/g)) {
         const name = m[1];
         // Rendered means the value reaches JSX: `{name ? <Text…{name}` or

@@ -126,3 +126,94 @@ whole mobile suite stayed green; `tsc` is what found the first one.
 | --- | --- | --- |
 | `saveFailedMessage()` returns an English literal | yes, diff shown | `strings-census` **green, 28 passed** |
 | same mutation | yes | `queued-writes` **RED**, names the Spanish it expected |
+
+---
+
+**The ordering was applied at ten call sites and missed at four, and this
+finishes it.** The four were found by loading the screens in a real browser —
+nothing in this directory could see them, which is the second half of this
+entry.
+
+| where | what a failed write cost |
+| --- | --- |
+| `time` `closeInterval` | **the whole shift.** It returned `true` unconditionally, so `onClockOut` went on to `clearSession()` and erased `clockStartedAt`. Measured on a 4h 0m clock: queue empty, session gone, screen reading "Not on the clock" beside a line telling you to write it down — with nothing left to write down. |
+| `time` `submit` | the crew's rows, the note and the date, and the sheet |
+| `reports` `submitReport` | the daily field report's text; it threw away the `{ ok }` `create` returns for exactly this |
+| `reports` `submitDelay` | the delay's eleven fields — under a comment claiming it did not clear them |
+
+`saveEntry` returns its result now instead of `void`, which is what lets both
+of its callers see a failure at all. `closeInterval` keeps the clock RUNNING
+on a failed write, the same way it already refused the zero-hours case.
+`submit` queues first and, if a row fails, keeps that row and every row after
+it while dropping the ones already on the queue — offering those again is how
+one crew member gets paid twice.
+
+**AND THE ONE UNDERNEATH IT, WHICH WAS NEVER ABOUT ORDERING.** `saveEntry`
+called `setSaveError(null)` on success, inside a loop that runs once per crew
+member. So crew member 1 failing and crew member 2 succeeding **wiped the
+message**: one worker's hours missing, one op on the queue, nothing on screen
+and the sheet already closed. Driven in a real browser with two crew members
+and the first write failing, before and after:
+
+| | queue writes attempted | ops queued | error on screen | sheet |
+| --- | --- | --- | --- | --- |
+| before | 2 | **1** | **no** | closed |
+| after | 1 | 0 | yes | open |
+
+`saveEntry` no longer clears; its callers clear once, before they start.
+
+**Two rollbacks were wrong, and both were wrong in the same direction —
+they restored a VALUE and not the STATE.** The punch toggle wrote the old
+status back into `local`, leaving the KEY there, and `queued` is
+`local[item.id] !== undefined` — so the row went on reading "Open · Syncing…"
+for a write that never happened, next to the line saying nothing was sent.
+It restores the previous ENTRY now, including its absence; deleting the key
+unconditionally would have been the other half of the same mistake, hiding a
+tap that really was still in flight. And `useFieldReports`' `update` read
+`before` from a closure-captured `reports` AFTER an await, and skipped the
+rollback entirely when the row was not in that stale snapshot — leaving an
+error on screen with the edit still under it, looking saved. It captures the
+row inside the optimistic updater now, which sees the current array by
+definition.
+
+## The guard that would have caught all of it
+
+`lib/write-ordering.test.ts`. Neither existing guard checked ORDERING, which
+is the whole point of this PR: restoring the original bug at a fixed site
+left all 311 mobile tests green. This one takes every function that awaits a
+queued write and fails the build if anything that clears what a person typed,
+or closes the sheet they typed it into, runs before that await. It derives
+which calls ARE queued writes — `saveQueued`, local wrappers returning
+`SaveResult`, and the two writers `useFieldReports` declares — rather than
+being handed a list.
+
+Same three house rules as every deriving check here, each mutation-proved:
+
+| mutation | applied? | result |
+| --- | --- | --- |
+| `time` `submit` back to the old order | yes, diff shown | RED, names the file, the function and all four clears |
+| `reports` `submitReport` back to the old order | yes | RED, names it |
+| a clear added to `safety` `submitTalk`, a correct site | yes | RED, names it |
+| the same, hidden behind a comment quoting `await saveQueued(` | yes | **RED** — comments are stripped first |
+| a clear-before-write in a new `hooks/` directory | yes | **RED** — the roots are derived from the filesystem |
+| the write-call derivation renamed so it matches nothing | yes | **RED** — "the pattern has stopped matching", 3 against a floor of 10 |
+
+**And the two holes in the existing guards, closed with the mutations that
+found them.** Both were live, both proved before and after:
+
+| | before | after |
+| --- | --- | --- |
+| delete the line drawing `saveError`, leave a JSX comment `{/* rendered above as {saveError} */}` | **green** | **RED** |
+| a screen types its own empty state under a comment `// TODO: route this through emptyFor(…)` | **green** | **RED** |
+| a bare `enqueue` in `apps/mobile/hooks/` | **green** | **RED** |
+
+The first two are #185's shape — a comment quoting the pattern satisfying it
+— found inside two guards written after reading about it, which is now three
+times in this repository. Both files strip comments before matching. The
+third is the theme-contrast scar: `queued-writes.test.ts` walked three
+hardcoded directory names, and nothing is ever missing from a directory you
+do not walk. Its roots are derived now. `offline-notes.test.ts` keeps `app/`
+on purpose and says why — expo-router defines a route BY being a file there,
+so that root is the definition of the set rather than a guess at it.
+
+mobile: 252 + 65 tests, typecheck and lint clean.

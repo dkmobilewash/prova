@@ -41,6 +41,21 @@ function listFiles(dir: string): string[] {
   return out;
 }
 
+/** Comments are prose and are not code. This file matched on RAW source
+ * with `includes(...)`, so a screen that merely MENTIONED `emptyFor(` in a
+ * comment — `// TODO: route this through emptyFor(loadedFrom, …)` — counted
+ * as calling it, and typing its own empty state underneath went green.
+ * Proved by mutation before this was added; the #185 shape, again. */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}
+
+const code = (file: string): string => stripComments(readFileSync(file, "utf8"));
+
+/** Screens are what `app/` holds — expo-router defines a route BY being a
+ * file under it, so this root is the definition of the set rather than a
+ * hardcoded guess at it, unlike the roots `queued-writes.test.ts` had to
+ * start deriving. */
 const screens = listFiles(join(root, "app")).filter((f) => f.endsWith(".tsx"));
 
 /**
@@ -91,7 +106,7 @@ describe("emptyFor says which of the two sentences is true", () => {
 });
 
 describe("no cached list screen writes its own empty state", () => {
-  const cached = screens.filter((f) => readFileSync(f, "utf8").includes("cachedRead("));
+  const cached = screens.filter((f) => code(f).includes("cachedRead("));
 
   it("finds the cached list screens at all", () => {
     // Vacuity guard: if `cachedRead` is ever renamed, this file would
@@ -114,7 +129,7 @@ describe("no cached list screen writes its own empty state", () => {
     for (const file of cached) {
       const rel = file.slice(join(root, "app").length + 1);
       if (rel in NO_EMPTY_STATE) continue;
-      if (!readFileSync(file, "utf8").includes("emptyFor(")) offenders.push(rel);
+      if (!code(file).includes("emptyFor(")) offenders.push(rel);
     }
     expect(
       offenders,
