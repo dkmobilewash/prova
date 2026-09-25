@@ -8,6 +8,12 @@ import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/cata
 import { ActionResult, actionFail, actionOk, InputError, runAction, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, ownerRefusal, tradeScopeFromForm } from "./shared";
 import { catalogActuals, catalogSourcedLine, repriceDecision } from "@/lib/catalog-actuals";
 import { quotePriceDecision } from "@/lib/catalog-quote-price";
+import { bidQuoteProblem } from "@/lib/bid-levelling";
+import { addendumProblem, requirementProblem } from "@/lib/bid-responsiveness";
+import { templateItemProblem, templateProblem } from "@/lib/estimate-templates";
+import { applyEstimateTemplate } from "@/lib/estimating/apply-template";
+import { optionalDateFromString } from "@/lib/bid-pursuits";
+import { bidLineProblem } from "@/lib/bid-lines";
 import { todayInZone } from "@/lib/viewer-timezone";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
@@ -587,4 +593,742 @@ export async function importCatalogEntries(formData: FormData): Promise<ActionRe
 
   revalidatePath("/catalog");
   return actionOk;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// LEVELLING — the quotes a sub collects from its OWN suppliers and subs for
+// one bid. Not `VendorPriceQuote`, which is price history and carries no bid.
+// MANAGE_ESTIMATING, the same capability `/bids` withholds on.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Creates or updates one quote received against a bid's scope package. */
+export async function saveBidQuote(bidInvitationId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const bid = await prisma.bidInvitation.findFirst({
+    where: { id: bidInvitationId, companyId: company.id },
+    select: { id: true },
+  });
+  if (!bid) return actionFail("That bid is no longer on this company. Reload the page.");
+
+  return runAction(async () => {
+    const packageLabel = String(formData.get("packageLabel") ?? "").trim();
+    const vendorName = String(formData.get("vendorName") ?? "").trim();
+    const amountValue = nullableDecimalFromForm(formData, "amount");
+    const exclusions = String(formData.get("exclusions") ?? "").trim();
+    const notes = String(formData.get("notes") ?? "").trim();
+
+    const problem = bidQuoteProblem({
+      packageLabel,
+      vendorName,
+      amount: amountValue === null ? null : Number(amountValue),
+    });
+    if (problem) return actionFail(problem);
+
+    // Entered, not stamped: a quote logged on Friday for a price given on
+    // Tuesday is a Tuesday price, the rule every dated record here follows.
+    // Read through the shared YYYY-MM-DD -> UTC-midnight parser rather than a
+    // fourth private copy of one (materialOrders, closeout and backcharges
+    // each grew their own).
+    const quotedOn = optionalDateFromString(formData.get("quotedOn"));
+
+    // A PRICE AND THE DAY IT WAS GIVEN TRAVEL TOGETHER. Either both or
+    // neither: an amount with no date is a number nobody can age, and a date
+    // with no amount reads as an answer that never came. A row with neither is
+    // the legitimate third case — a request that is still out.
+    if (amountValue !== null && !quotedOn) {
+      return actionFail("Say what day the quote was given — the day they gave it, not today.");
+    }
+    if (amountValue === null && quotedOn) {
+      return actionFail("You've given a quote date with no amount. Enter what they quoted, or clear the date.");
+    }
+
+    // Optional. A quote from somebody not yet in the vendor list is still a
+    // quote — refusing it would make the comparison partial, which is worse
+    // than none because nobody would know it was partial.
+    const vendorIdRaw = String(formData.get("vendorId") ?? "").trim();
+    let vendorId: string | null = null;
+    if (vendorIdRaw) {
+      const vendor = await prisma.vendor.findFirst({
+        where: { id: vendorIdRaw, companyId: company.id },
+        select: { id: true },
+      });
+      if (!vendor) return actionFail("That supplier isn't on this company. Reload the page.");
+      vendorId = vendor.id;
+    }
+
+    // THE REQUEST HALF IS WRITTEN ONLY BY A FORM THAT CARRIES IT. The answer
+    // form has no `requestedOn`/`dueBy` field at all, and spreading them in as
+    // `null` regardless would erase the record of having asked at the exact
+    // moment the answer arrives — the one edit where losing it is invisible,
+    // because the row looks complete afterwards. `formData.has` distinguishes
+    // "the form left this blank" from "this form does not own this field";
+    // an omitted key is left alone by Prisma.
+    const requestFields: { requestedOn?: Date | null; dueBy?: Date | null } = {};
+    if (formData.has("requestedOn")) requestFields.requestedOn = optionalDateFromString(formData.get("requestedOn"));
+    if (formData.has("dueBy")) requestFields.dueBy = optionalDateFromString(formData.get("dueBy"));
+
+    const data = {
+      packageLabel,
+      vendorName,
+      vendorId,
+      amount: amountValue,
+      quotedOn,
+      exclusions: exclusions || null,
+      notes: notes || null,
+      ...requestFields,
+    };
+
+    const bidQuoteId = String(formData.get("bidQuoteId") ?? "").trim();
+    if (bidQuoteId) {
+      const updated = await prisma.bidQuote.updateMany({
+        where: { id: bidQuoteId, companyId: company.id, bidInvitationId },
+        // An amount arriving clears any decline: they said no and then priced
+        // it anyway, which happens, and the row should read as the answer it
+        // now is rather than carrying both.
+        data: amountValue === null ? data : { ...data, declinedAt: null },
+      });
+      if (updated.count === 0) return actionFail("That quote is no longer on this bid. Reload the page.");
+    } else {
+      await prisma.bidQuote.create({ data: { ...data, companyId: company.id, bidInvitationId } });
+    }
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+/**
+ * They came back and said they are not bidding it.
+ *
+ * A DATE AND NOT A DELETE. "Gamma declined to bid this" is the answer to "why
+ * did we only get two prices", and next time it says who not to wait on —
+ * both of which are lost if the row goes. It is also a date rather than a
+ * boolean, for the reason every other evidence field here gives: when they
+ * declined is part of what happened.
+ *
+ * Passing no date CLEARS the decline, which is the un-decline path: a supplier
+ * who says no on Monday and prices it on Wednesday is not a new request.
+ */
+export async function recordBidQuoteDecline(bidQuoteId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  return runAction(async () => {
+    const declinedAt = optionalDateFromString(formData.get("declinedAt"));
+
+    const updated = await prisma.bidQuote.updateMany({
+      where: { id: bidQuoteId, companyId: company.id },
+      data: { declinedAt },
+    });
+    if (updated.count === 0) return actionFail("That quote is no longer on this bid. Reload the page.");
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+export async function deleteBidQuote(bidQuoteId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const deleted = await prisma.bidQuote.deleteMany({ where: { id: bidQuoteId, companyId: company.id } });
+  if (deleted.count === 0) return actionFail("That quote is already gone. Reload the page.");
+
+  revalidatePath("/bids");
+  return actionOk;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// WHAT A BID CARRIES BESIDES ITS NUMBER — alternates, unit prices, allowances.
+//
+// All three assert MANAGE_ESTIMATING, which is what `/bids` itself withholds
+// on. Every refusal is RETURNED: production redacts a thrown Server Action
+// message to a digest, and "an allowance cannot be negative" is exactly the
+// sentence somebody needs to see.
+// ───────────────────────────────────────────────────────────────────────────
+
+const ESTIMATING_ONLY =
+  "Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.";
+
+/** The kinds, as the form posts them. */
+const BID_LINE_KINDS = ["ALTERNATE", "UNIT_PRICE", "ALLOWANCE"] as const;
+
+/**
+ * Creates or updates one line on a bid.
+ *
+ * THE SHAPE RULES ARE `bidLineProblem`'s, not this file's, so the form and the
+ * write refuse the same things for the same reasons — a unit price with a
+ * total, an allowance that is negative, an alternate of zero. Re-run here
+ * because the screen may be minutes old and a refusal it showed must not
+ * become savable by posting the form again.
+ */
+export async function saveBidLine(bidInvitationId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(ESTIMATING_ONLY);
+  const { company } = context;
+
+  const bid = await prisma.bidInvitation.findFirst({
+    where: { id: bidInvitationId, companyId: company.id },
+    select: { id: true },
+  });
+  if (!bid) return actionFail("That bid is no longer on this company. Reload the page.");
+
+  return runAction(async () => {
+    const kind = enumFromForm(formData, "kind", BID_LINE_KINDS);
+    const label = String(formData.get("label") ?? "").trim();
+    const description = String(formData.get("description") ?? "").trim();
+
+    // A unit price holds a RATE and no total; the other two hold an amount
+    // and no rate. Reading only the fields the kind owns is what stops a
+    // stale hidden input from the other branch of the form arriving with it.
+    const amount = kind === "UNIT_PRICE" ? null : nullableDecimalFromForm(formData, "amount");
+    const unitPrice = kind === "UNIT_PRICE" ? nullableDecimalFromForm(formData, "unitPrice") : null;
+    const unit = kind === "UNIT_PRICE" ? String(formData.get("unit") ?? "").trim() || null : null;
+
+    const problem = bidLineProblem({
+      kind,
+      label,
+      amount: amount === null ? null : Number(amount),
+      unit,
+      unitPrice: unitPrice === null ? null : Number(unitPrice),
+      accepted: null,
+    });
+    if (problem) return actionFail(problem);
+
+    const bidLineId = String(formData.get("bidLineId") ?? "").trim();
+    const data = {
+      kind,
+      label,
+      description: description || null,
+      amount,
+      unit,
+      unitPrice,
+    };
+
+    if (bidLineId) {
+      // Tenancy is the `where`: an id from another company matches nothing,
+      // and the count is the refusal.
+      const updated = await prisma.bidLine.updateMany({
+        where: { id: bidLineId, companyId: company.id, bidInvitationId },
+        data,
+      });
+      if (updated.count === 0) return actionFail("That line is no longer on this bid. Reload the page.");
+    } else {
+      const last = await prisma.bidLine.findFirst({
+        where: { bidInvitationId },
+        orderBy: { sortOrder: "desc" },
+        select: { sortOrder: true },
+      });
+      await prisma.bidLine.create({
+        data: { ...data, companyId: company.id, bidInvitationId, sortOrder: (last?.sortOrder ?? 0) + 1 },
+      });
+    }
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+/**
+ * Records the GC's answer on an alternate.
+ *
+ * THREE STATES, NOT TWO. "Accepted", "rejected" and "they have not said" are
+ * different facts about a live negotiation, and an award total computed while
+ * alternates are outstanding is provisional — collapsing the third into
+ * "rejected" would make it look settled.
+ */
+export async function setBidLineAccepted(bidLineId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(ESTIMATING_ONLY);
+  const { company } = context;
+
+  const answer = String(formData.get("accepted") ?? "");
+  const accepted = answer === "yes" ? true : answer === "no" ? false : null;
+
+  const line = await prisma.bidLine.findFirst({
+    where: { id: bidLineId, companyId: company.id },
+    select: { kind: true },
+  });
+  if (!line) return actionFail("That line is no longer on this bid. Reload the page.");
+  if (line.kind !== "ALTERNATE") {
+    // Only an alternate is something a GC takes or leaves. A unit price is
+    // held either way, and an allowance is already inside the bid.
+    return actionFail("Only an alternate is accepted or declined — a unit price and an allowance are not.");
+  }
+
+  await prisma.bidLine.update({ where: { id: bidLineId }, data: { accepted } });
+  revalidatePath("/bids");
+  return actionOk;
+}
+
+export async function deleteBidLine(bidLineId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(ESTIMATING_ONLY);
+  const { company } = context;
+
+  const deleted = await prisma.bidLine.deleteMany({ where: { id: bidLineId, companyId: company.id } });
+  if (deleted.count === 0) return actionFail("That line is already gone. Reload the page.");
+
+  revalidatePath("/bids");
+  return actionOk;
+}
+
+
+/**
+ * Links a won bid to the job it became — or unlinks it.
+ *
+ * WHY A PERSON DOES THIS AND NOT THE APP. Nothing in the data says which job a
+ * bid became: project names rarely match the GC's wording, dates rarely line
+ * up, and one GC can send three invitations for one building. A fuzzy match
+ * here would attach a bid amount to the wrong job's costs and then TEACH the
+ * estimator from it, which is worse than leaving the two unlinked. Same
+ * posture as `JobLineItem.sourceCatalogEntryId`, which the schema says is
+ * "deliberately NOT backfilled by fuzzy-matching descriptions".
+ *
+ * Only a WON bid can be linked. An invitation that was lost or declined did
+ * not become anything, and a link from one would put a competitor's job — or
+ * nothing at all — against our own costs.
+ */
+export async function linkBidToJob(bidInvitationId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const bid = await prisma.bidInvitation.findFirst({
+    where: { id: bidInvitationId, companyId: company.id },
+  });
+  if (!bid) return actionFail("That bid is no longer on this company. Reload the page.");
+  if (bid.status !== "WON") {
+    return actionFail("Only a bid marked Won can be linked to a job — mark it Won first.");
+  }
+
+  const jobId = String(formData.get("jobId") ?? "").trim();
+  if (!jobId) {
+    // Unlinking is the same control with nothing picked, so a mistaken link
+    // can be undone without a second button.
+    await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { wonJobId: null } });
+    revalidatePath("/bids");
+    return actionOk;
+  }
+
+  // Tenancy is the `where`: a job id from another company matches nothing.
+  const job = await prisma.job.findFirst({ where: { id: jobId, companyId: company.id }, select: { id: true } });
+  if (!job) return actionFail("That job isn't on this company. Reload the page.");
+
+  // `wonJobId` is unique, so a job already claimed by another bid would throw
+  // a constraint error production REDACTS. Say which bid has it instead.
+  const claimed = await prisma.bidInvitation.findFirst({
+    where: { wonJobId: jobId, companyId: company.id, NOT: { id: bidInvitationId } },
+    select: { projectName: true },
+  });
+  if (claimed) {
+    return actionFail(`That job is already linked to the bid "${claimed.projectName}". Unlink it there first.`);
+  }
+
+  await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { wonJobId: jobId } });
+  revalidatePath("/bids");
+  revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
+}
+
+/** The requirement kinds, as the form posts them. Deliberately carries no
+ * member for anything the app can check itself — see bid-compliance.prisma. */
+const BID_REQUIREMENT_KINDS = [
+  "BID_BOND",
+  "SIGNED_BID_FORM",
+  "SUBCONTRACTOR_LIST",
+  "INSURANCE_CERTIFICATE",
+  "PREQUALIFICATION",
+  "PARTICIPATION_FORMS",
+  "OTHER",
+] as const;
+
+// ───────────────────────────────────────────────────────────────────────────
+// BID-FORM COMPLIANCE — the paperwork that decides whether anybody reads the
+// number. Addenda the GC issued, and the ITB items only a person can confirm.
+// MANAGE_ESTIMATING, the same capability `/bids` withholds on.
+//
+// There is deliberately no action here that marks the bid "compliant". What
+// is outstanding is DERIVED on every read by lib/bid-responsiveness.ts, from
+// these rows and from BidLine — so there is no flag to set, and nothing that
+// could disagree with the data underneath it.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Creates or updates one addendum the GC issued on this bid. */
+export async function saveBidAddendum(bidInvitationId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const bid = await prisma.bidInvitation.findFirst({
+    where: { id: bidInvitationId, companyId: company.id },
+    select: { id: true },
+  });
+  if (!bid) return actionFail("That bid is no longer on this company. Reload the page.");
+
+  return runAction(async () => {
+    const reference = String(formData.get("reference") ?? "").trim();
+    const impactNote = String(formData.get("impactNote") ?? "").trim();
+    const notes = String(formData.get("notes") ?? "").trim();
+
+    const problem = addendumProblem({ reference });
+    if (problem) return actionFail(problem);
+
+    // Both entered, never stamped. The gap between them is how somebody finds
+    // out they are hearing about changes late, and stamping either would
+    // erase exactly that.
+    const issuedOn = optionalDateFromString(formData.get("issuedOn"));
+    const acknowledgedOn = optionalDateFromString(formData.get("acknowledgedOn"));
+
+    const data = {
+      reference,
+      issuedOn,
+      acknowledgedOn,
+      affectsPricedScope: formData.get("affectsPricedScope") === "on",
+      impactNote: impactNote || null,
+      notes: notes || null,
+    };
+
+    const addendumId = String(formData.get("addendumId") ?? "").trim();
+    if (addendumId) {
+      const updated = await prisma.bidAddendum.updateMany({
+        where: { id: addendumId, companyId: company.id, bidInvitationId },
+        data,
+      });
+      if (updated.count === 0) return actionFail("That addendum is no longer on this bid. Reload the page.");
+    } else {
+      await prisma.bidAddendum.create({ data: { ...data, companyId: company.id, bidInvitationId } });
+    }
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+/**
+ * Records that an addendum has been acknowledged — or takes it back.
+ *
+ * Passing no date CLEARS it, which is the un-acknowledge path. Worth having
+ * rather than forcing a delete: an addendum ticked by mistake is a bid that
+ * looks responsive and is not, and deleting the row would lose the fact that
+ * the GC issued it at all.
+ */
+export async function acknowledgeBidAddendum(addendumId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  return runAction(async () => {
+    const acknowledgedOn = optionalDateFromString(formData.get("acknowledgedOn"));
+    const updated = await prisma.bidAddendum.updateMany({
+      where: { id: addendumId, companyId: company.id },
+      data: { acknowledgedOn },
+    });
+    if (updated.count === 0) return actionFail("That addendum is no longer on this bid. Reload the page.");
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+export async function deleteBidAddendum(addendumId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const deleted = await prisma.bidAddendum.deleteMany({ where: { id: addendumId, companyId: company.id } });
+  if (deleted.count === 0) return actionFail("That addendum is already gone. Reload the page.");
+
+  revalidatePath("/bids");
+  return actionOk;
+}
+
+/** Creates or updates one ITB requirement only a person can confirm. */
+export async function saveBidRequirement(bidInvitationId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const bid = await prisma.bidInvitation.findFirst({
+    where: { id: bidInvitationId, companyId: company.id },
+    select: { id: true },
+  });
+  if (!bid) return actionFail("That bid is no longer on this company. Reload the page.");
+
+  return runAction(async () => {
+    const label = String(formData.get("label") ?? "").trim();
+    const notes = String(formData.get("notes") ?? "").trim();
+
+    const problem = requirementProblem({ label });
+    if (problem) return actionFail(problem);
+
+    const kind = enumFromForm(formData, "kind", BID_REQUIREMENT_KINDS);
+
+    const data = {
+      kind,
+      label,
+      required: formData.get("required") !== "off",
+      satisfiedOn: optionalDateFromString(formData.get("satisfiedOn")),
+      notes: notes || null,
+    };
+
+    const requirementId = String(formData.get("requirementId") ?? "").trim();
+    if (requirementId) {
+      const updated = await prisma.bidRequirement.updateMany({
+        where: { id: requirementId, companyId: company.id, bidInvitationId },
+        data,
+      });
+      if (updated.count === 0) return actionFail("That requirement is no longer on this bid. Reload the page.");
+    } else {
+      await prisma.bidRequirement.create({ data: { ...data, companyId: company.id, bidInvitationId } });
+    }
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+/** Records an ITB item as done — or takes it back, by passing no date. */
+export async function satisfyBidRequirement(requirementId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  return runAction(async () => {
+    const satisfiedOn = optionalDateFromString(formData.get("satisfiedOn"));
+    const updated = await prisma.bidRequirement.updateMany({
+      where: { id: requirementId, companyId: company.id },
+      data: { satisfiedOn },
+    });
+    if (updated.count === 0) return actionFail("That requirement is no longer on this bid. Reload the page.");
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+export async function deleteBidRequirement(requirementId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const deleted = await prisma.bidRequirement.deleteMany({ where: { id: requirementId, companyId: company.id } });
+  if (deleted.count === 0) return actionFail("That requirement is already gone. Reload the page.");
+
+  revalidatePath("/bids");
+  return actionOk;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// ESTIMATE TEMPLATES — the shape of a job this company bids over and over.
+//
+// Company reference data that GENERATES JobLineItem rows, the same job the
+// catalog and wall types already do. NOT a second home for line-item data —
+// see estimate-templates.prisma for why that distinction is load-bearing.
+//
+// MANAGE_ESTIMATING throughout, the capability /catalog and /bids withhold on.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Creates or renames one template. */
+export async function saveEstimateTemplate(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  return runAction(async () => {
+    const name = String(formData.get("name") ?? "").trim();
+    const description = String(formData.get("description") ?? "").trim();
+
+    const problem = templateProblem({ name });
+    if (problem) return actionFail(problem);
+
+    const tradeScope = tradeScopeFromForm(formData);
+
+    const data = { name, description: description || null, tradeScope };
+    const templateId = String(formData.get("templateId") ?? "").trim();
+
+    // The unique is ([companyId, name]) so two people cannot make two
+    // "Standard TI" templates that quietly differ. Caught here as a sentence
+    // rather than as a redacted Prisma error.
+    const clash = await prisma.estimateTemplate.findFirst({
+      where: { companyId: company.id, name, ...(templateId ? { NOT: { id: templateId } } : {}) },
+      select: { id: true },
+    });
+    if (clash) return actionFail(`There is already a template called “${name}”. Give this one a different name.`);
+
+    if (templateId) {
+      const updated = await prisma.estimateTemplate.updateMany({
+        where: { id: templateId, companyId: company.id },
+        data,
+      });
+      if (updated.count === 0) return actionFail("That template is already gone. Reload the page.");
+    } else {
+      await prisma.estimateTemplate.create({ data: { ...data, companyId: company.id } });
+    }
+
+    revalidatePath("/catalog");
+    return actionOk;
+  });
+}
+
+export async function deleteEstimateTemplate(templateId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const refusal = ownerRefusal(context, "Only the account owner can delete an estimate template.");
+  if (refusal) return refusal;
+
+  const deleted = await prisma.estimateTemplate.deleteMany({ where: { id: templateId, companyId: company.id } });
+  if (deleted.count === 0) return actionFail("That template is already gone. Reload the page.");
+
+  revalidatePath("/catalog");
+  return actionOk;
+}
+
+/** Creates or updates one line on a template. */
+export async function saveEstimateTemplateItem(templateId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const template = await prisma.estimateTemplate.findFirst({
+    where: { id: templateId, companyId: company.id },
+    select: { id: true },
+  });
+  if (!template) return actionFail("That template is no longer on this company. Reload the page.");
+
+  return runAction(async () => {
+    const description = String(formData.get("description") ?? "").trim();
+    const unit = String(formData.get("unit") ?? "").trim();
+    const quantityValue = nullableDecimalFromForm(formData, "defaultQuantity");
+
+    const problem = templateItemProblem({
+      description,
+      defaultQuantity: quantityValue === null ? null : Number(quantityValue),
+    });
+    if (problem) return actionFail(problem);
+
+    // Optional. A template line that nothing in the catalog prices is still
+    // worth having — "Scaffold, by others" belongs on the list long before
+    // anybody catalogues it.
+    const catalogEntryIdRaw = String(formData.get("catalogEntryId") ?? "").trim();
+    let catalogEntryId: string | null = null;
+    if (catalogEntryIdRaw) {
+      const entry = await prisma.lineItemCatalogEntry.findFirst({
+        where: { id: catalogEntryIdRaw, companyId: company.id },
+        select: { id: true },
+      });
+      if (!entry) return actionFail("That catalog entry isn't on this company. Reload the page.");
+      catalogEntryId = entry.id;
+    }
+
+    const data = {
+      description,
+      unit: unit || null,
+      defaultQuantity: quantityValue,
+      catalogEntryId,
+    };
+
+    const itemId = String(formData.get("itemId") ?? "").trim();
+    if (itemId) {
+      const updated = await prisma.estimateTemplateItem.updateMany({
+        where: { id: itemId, templateId },
+        data,
+      });
+      if (updated.count === 0) return actionFail("That line is no longer on this template. Reload the page.");
+    } else {
+      // Appended at the end. `sortOrder` is a count rather than max+1 because
+      // it orders a display and is not an identity — nothing is reissued and
+      // nothing refers to it, so the counter rule does not apply here.
+      const count = await prisma.estimateTemplateItem.count({ where: { templateId } });
+      await prisma.estimateTemplateItem.create({ data: { ...data, templateId, sortOrder: count } });
+    }
+
+    revalidatePath("/catalog");
+    return actionOk;
+  });
+}
+
+export async function deleteEstimateTemplateItem(itemId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const deleted = await prisma.estimateTemplateItem.deleteMany({
+    where: { id: itemId, template: { companyId: company.id } },
+  });
+  if (deleted.count === 0) return actionFail("That line is already gone. Reload the page.");
+
+  revalidatePath("/catalog");
+  return actionOk;
+}
+
+/**
+ * Applies a template to a job's estimate.
+ *
+ * Returns how many lines were added and which the estimate already carried,
+ * so the screen can say both. It does NOT refuse on a collision — see
+ * lib/estimate-templates.ts: a second floor's worth of the same lines is
+ * legitimate, and guessing which case this is would be wrong half the time.
+ */
+export async function applyTemplateToEstimate(jobId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  // VIEW_JOB_COSTS, NOT MANAGE_ESTIMATING — and the difference is not
+  // cosmetic. This action lives on the job's estimate tab, which withholds on
+  // VIEW_JOB_COSTS, and its sibling `addLineItemFromCatalog` on the very same
+  // screen asks for exactly that. Asking for more here would hand an
+  // ACCOUNTING member a page they can open and a button that refuses them.
+  //
+  // `action-capability-guards.test.ts` caught this by EXECUTING the action
+  // against such a principal; it was written as MANAGE_ESTIMATING because
+  // every other action in this section is, and every other action in this
+  // section lives on /catalog or /bids.
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
+
+  return runAction(async () => {
+    const templateId = String(formData.get("templateId") ?? "").trim();
+    if (!templateId) return actionFail("Pick a template to apply.");
+
+    const result = await applyEstimateTemplate(company.id, { jobId, templateId });
+    if (!result.ok) return actionFail(result.error);
+
+    revalidatePath(`/jobs/${jobId}`);
+    revalidatePath(`/jobs/${jobId}/estimate`);
+    return actionOk;
+  });
 }

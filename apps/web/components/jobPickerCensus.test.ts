@@ -49,6 +49,10 @@ const appDir = fileURLToPath(new URL("..", import.meta.url));
  */
 const LABELLED_PICKERS: Record<string, number> = {
   // ---- form selects: what a record gets filed against
+  // Which job a won bid became, so its cost can be put beside what it was
+  // bid at. Picking the wrong one teaches the estimator from another
+  // job's costs, which is worse than leaving the two unlinked.
+  "components/BidJobLink.tsx": 1,
   "components/BackchargeFields.tsx": 1,
   "components/CloseoutJobCard.tsx": 1,
   "components/ComplianceUploadForm.tsx": 1,
@@ -210,7 +214,12 @@ describe("the job-picker census", () => {
     // independently (a mechanical merge would have kept "29" and been
     // wrong), so /settings/integrations now calls the helper FOUR times,
     // one per card, and the number here is the sum of both additions.
-    expect(expected).toEqual(30);
+    //
+    // 30 -> 31 on 2026-09-24: BidJobLink's "which job did this bid become"
+    // picker. It is the one picker in the app whose wrong answer is not a
+    // misfiled record but a WRONG LESSON — the bid is judged against another
+    // job's costs, and the estimator is taught from it.
+    expect(expected).toEqual(31);
     expect(actual).toEqual(expected);
   });
 

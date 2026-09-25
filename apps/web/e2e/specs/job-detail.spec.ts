@@ -58,6 +58,7 @@ test("job detail: every tab renders its sections, in the rail's order, no crash"
   await expect(rail).toHaveText([
     "Overview",
     "Estimate",
+    "Takeoff",
     "Crew & time",
     "Compliance",
     "Billing",
@@ -73,6 +74,11 @@ test("job detail: every tab renders its sections, in the rail's order, no crash"
       headings: ["Job costing & WIP", "Change orders"],
       absent: ["Line items (estimate)"],
     },
+    // #476 added this tab and nothing updated the two lists below it, so the
+    // rail assertion failed on an extra entry that was supposed to be there.
+    // Walking it as well as naming it is the point: a tab in the rail that
+    // nobody opens is exactly the shape this spec exists to catch.
+    { label: "Takeoff", path: `${jobPath}/takeoff`, headings: ["Takeoff"] },
     { label: "Crew & time", path: `${jobPath}/crew`, headings: ["Field time entries"] },
     { label: "Compliance", path: `${jobPath}/compliance`, headings: ["Prevailing wage determination"] },
     { label: "Billing", path: `${jobPath}/billing`, headings: ["Invoices", "Pay applications"] },

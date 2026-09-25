@@ -331,6 +331,11 @@ async function main() {
     await del("wh347PayrollNumber", () => prisma.wh347PayrollNumber.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("wh347PayrollCounter", () => prisma.wh347PayrollCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("dispatchSlip", () => prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // DAS 140 / DAS 142 notices: jobId-keyed RESTRICT children of Job that
+    // nothing else's delete reaches (#227 shape). The app refuses to delete a
+    // SENT one; this script is an operator tool and does not go through it.
+    await del("das140Notice", () => prisma.das140Notice.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("das142Request", () => prisma.das142Request.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("prevailingWageDetermination", () => prisma.prevailingWageDetermination.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("jobAssignment", () => prisma.jobAssignment.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("jobLineItem", () => prisma.jobLineItem.deleteMany({ where: { jobId: { in: jobIds } } }));
