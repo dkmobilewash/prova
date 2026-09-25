@@ -42,6 +42,48 @@ merged PR nobody re-reads. Mutation-tested by re-adding one while the file
 was still correct: both that check and the census's own stale-exception check
 fire.
 
+**AND THE HALF THE CENSUS CANNOT SEE: DOES EACH FORM STILL SAVE?** The census
+proves the forbidden prop is gone. It executes nothing, so it proves nothing
+about the replacement — and rewiring three real forms onto a hand-rolled
+`onSubmit` has three silent failure modes, every one of which leaves this
+whole repo green and the form quietly not saving: the FormData read after an
+`await` (by then `event.currentTarget` is null), the call left outside the
+`useTransition` (so the button stops disabling and #19's duplicate-record
+guard is gone), and a missed `preventDefault()` (a full native POST that
+looks like a save). What these three forms had before was `jobDetailsForm
+.test.ts`, which reads the rendered controls without ever submitting;
+`companyPointer.test.ts`, which reads `CompanyProfileForm.tsx` as a STRING;
+and for `QuickBooksMapping.tsx`, nothing at all. No e2e spec touches any of
+the three screens.
+
+So each form now has a behavioural suite that mounts the real component,
+types into it, FIRES A REAL SUBMIT and asserts four things: the action ran
+exactly once, the FormData it received carries what was TYPED rather than the
+defaults, a refusal leaves every typed value on screen with the reason beside
+it, and `defaultPrevented` is true. Plus the pending button, because that is
+where #19 lives. `quickBooksMapping.test.ts` is the one worth reading: that
+form does not exist on screen until a chart of accounts comes back from
+Intuit, which is why it shipped untested and why Cyrus cannot easily click
+it, and its account NAME is written into a hidden input by the select's own
+`onChange` — so a FormData read at the wrong moment loses both halves of the
+mapping at once.
+
+Seven mutations, each confirmed present in the file by `grep` before its
+result was read, each red, each restored: `preventDefault()` removed (×3),
+the FormData read moved after an `await` (×3), and the call taken out of the
+transition (×1, on the job form, so the pending assertion is not vacuous).
+
+**One assertion was DROPPED rather than written, and the reason is measured.**
+Whether the hidden QuickBooks account-name field survives a refusal cannot be
+answered here: happy-dom does not implement the HTML dirty-value flag, so
+assigning `defaultValue` overwrites a live `value` it should have left alone,
+and React assigns `node.defaultValue` on every re-render. In here the field
+reads empty after the refusal re-render; in a real browser, where setting
+`.value` marks the control dirty, it should still hold the name. That "should"
+is on the click-list, not in the suite — and the environment's behaviour is
+itself asserted at the bottom of that file, so if happy-dom ever gains the
+dirty flag the note goes red instead of quietly rotting.
+
 **Also in this branch, and no code with it: seven other issues assigned to
 Diego were triaged against the current code rather than against what they
 said when filed.** Five had been fixed under them and their issues never
