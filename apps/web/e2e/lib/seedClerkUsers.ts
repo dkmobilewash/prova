@@ -48,6 +48,13 @@ export async function seedClerkUsers(): Promise<Record<PersonaKey, { id: string;
     try {
       const user = await clerk.users.createUser({
         emailAddress: [persona.email],
+        // REQUIRED BY THE DEVELOPMENT INSTANCE, not decoration. Without them
+        // this call answers 422 `form_data_missing` naming exactly these two,
+        // so the suite cannot grow a persona at all — see personas.ts, which
+        // records what that cost and why the phone is in Clerk's own reserved
+        // test range.
+        username: persona.username,
+        phoneNumber: [persona.phone],
         firstName: "E2E",
         lastName: persona.label,
         // `skipPasswordChecks` is deliberately NOT sent. It means "accept this

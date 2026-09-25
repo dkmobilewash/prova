@@ -94,6 +94,38 @@ returns when the server has answered; every read-back in these three specs goes
 through it, and it takes a callback because half of them are a `<select>`'s
 change rather than a press.
 
+**AND THE THING THAT ACTUALLY STOPPED THIS BRANCH: THE E2E SUITE COULD NOT
+GROW A PERSONA AT ALL.** Adding three was the first time
+`clerk.users.createUser` had been reached in weeks — the six existing personas
+are found by the read above it, so the create path only runs the day somebody
+adds one — and the `striking-jaybird` DEVELOPMENT instance answered `422`. The
+whole log was nine words: *"ClerkAPIResponseError: Unprocessable Entity"*. It
+named neither the persona nor the problem, Playwright collected 62 tests and
+returned 0 verdicts, and there was nothing else to read.
+
+So the failure was made to say everything: which persona by its `PERSONAS` key,
+Clerk's `code`, its `longMessage`, its `meta` and its trace id — and "Clerk
+returned no errors[] to report" out loud when there is none, because that is a
+different fact from nobody having printed it. One CI run later it answered:
+
+    HTTP 422  [form_data_missing]
+    ["phone_number" "username"] data doesn't match user requirements set
+    for this instance
+
+Not a quota — the instance requires a username and a phone number, and has for
+longer than anybody knew. Every persona carries both now, the phones inside
+Clerk's own reserved `+1 555 555 01xx` test block for the same reason the emails
+carry `+clerk_test`: nothing in that range can reach a handset. `personas.test.ts`
+pins the three identifiers Clerk rejects a duplicate of, by NAME rather than as
+a count, because a collision would arrive as one more bare 422 in global setup
+with no test to attribute it to. Three mutations, all caught: a duplicate phone,
+a phone outside the reserved block, a blank username.
+
+`skipPasswordChecks: true` went at the same time. It means "accept this password
+without validating it" and there is no password — `skipPasswordRequirement` is
+the point. It had been passed since this file was written, for the same reason
+nothing else here was noticed: the call was unreachable.
+
 **What still has no coverage, stated rather than left to be assumed.** The
 `/api/takeoff/plan/[planId]` route is stubbed in the browser by the takeoff
 spec (the fake blob it would proxy does not exist in the suite), so its own
