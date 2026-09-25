@@ -888,3 +888,194 @@ describe("the roster's reader names still exist", () => {
     expect(missing, "a reader in the roster pattern no longer exists under that name").toEqual([]);
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * 6. An hours box must not look like it is already filled in.
+ * ------------------------------------------------------------------ */
+
+/**
+ * ISSUE #305. `components/TimeEntryFields.tsx` shipped `placeholder="8"` on
+ * a `required` Hours box, and a placeholder that is a plausible number of
+ * hours sits in the same box, at nearly the same weight, as a real entry.
+ * It reads as ALREADY FILLED IN.
+ *
+ * What that cost: an automated click-through set the date, pressed Log
+ * time, and reported a silent payroll failure. Nothing had saved — the
+ * browser's native `required` bubble had refused the submit, and that
+ * bubble is transient, unstyled, invisible to a screenshot and invisible to
+ * browser automation. The agent read the placeholder as a value, which is
+ * the defect in one sentence.
+ *
+ * WHY THIS IS A RULE AND NOT A ONE-LINE EDIT. `TimeEntryFields` was the
+ * ONLY offender: the app's other twelve hours boxes already say `hrs`,
+ * `hours`, `blank`, `optional` or nothing at all. A convention that already
+ * holds everywhere and is written down nowhere is a convention the
+ * thirteenth field breaks, and this one lands on a WH-347.
+ *
+ * AND THE FIX THAT MUST NOT BE MADE, guarded here rather than remembered:
+ * defaulting the VALUE to 8. A form that pre-fills eight hours logs eight
+ * hours for anybody who forgets to change it, and that figure goes onto a
+ * certified payroll report carrying a criminal certification. An empty
+ * required field is correct; only the placeholder was lying. So a literal
+ * numeric `defaultValue` on an hours box fails too — the tempting fix is
+ * strictly worse than the bug.
+ *
+ * SCOPE AND SIZE, as everywhere else in this file: the set comes from
+ * `sources()` (repo root, checked against git above) and `inputTags()`
+ * (comments stripped, its own accounting asserted above), and the derived
+ * set is counted against a floor AND against named anchors. A floor alone
+ * cannot see the pattern quietly stopping at one field, which is the whole
+ * set this rule started from.
+ *
+ * WHAT IT CANNOT SEE, stated rather than discovered later: it reads a
+ * LITERAL `name`, so an hours box rendered with `name={…}` is invisible to
+ * it, and it says nothing about the other 15 bare-numeric placeholders in
+ * the app. Those are deliberately out: `placeholder="0.00"` on a money box
+ * is a FORMAT hint and appears five times, and `0.87` on an X-mod rate is
+ * an example of a shape nobody knows off-hand. Whether those read as values
+ * is a copy decision, not a defect, and #241/#453 are where that decision
+ * belongs.
+ */
+describe("an hours box does not read as already filled in", () => {
+  /**
+   * `defaultValue={8}` -> `defaultValue="8"`, and nothing else.
+   *
+   * FOUND BY MUTATION, not by design — the first version of the pre-fill
+   * rule below was GREEN against a real `defaultValue={8}`. The shared
+   * `inputTags` walk COLLAPSES every braced expression to `{}` so an
+   * arrow function's `>` cannot end a tag early, which means a hard-coded
+   * figure and `{defaults?.hours ?? ""}` are the same four characters by
+   * the time the rule sees them.
+   *
+   * Rewriting a bare numeric literal into a quoted one is what puts it
+   * back in view, and it is done to the SOURCE rather than by giving this
+   * rule a second tag parser: two walks over the same JSX drift, and then
+   * agree for the wrong reason. Only `[0-9.]` between the braces is
+   * touched, so no expression can be rewritten by accident.
+   */
+  function literalBracesAsStrings(source: string): string {
+    return source.replace(/\bdefaultValue=\{\s*([0-9][0-9.]*)\s*\}/g, 'defaultValue="$1"');
+  }
+
+  /** Every `<input>` whose literal name is an hours figure. */
+  function hoursInputs(): { site: string; attrs: string }[] {
+    const found: { site: string; attrs: string }[] = [];
+    for (const [path, source] of sources()) {
+      if (/\.(test|dbtest)\.tsx?$/.test(path)) continue;
+      for (const attrs of inputTags(literalBracesAsStrings(source))) {
+        const { name, literal } = nameOfInput(attrs);
+        if (!literal || !/hours?$/i.test(name)) continue;
+        found.push({ site: `${path} ${name}`, attrs });
+      }
+    }
+    return found;
+  }
+
+  /** `placeholder="8"`, `"0.00"`, `"62.5"`, `"40,000"` — a bare figure. */
+  const BARE_FIGURE = /^\s*[0-9][0-9.,]*\s*$/;
+
+  it("finds the hours boxes it is judging", () => {
+    // 13 when written. A floor, so adding a field is not a build break —
+    // and named anchors beside it, because a floor cannot notice the
+    // pattern shrinking to one match while still clearing the floor.
+    const sites = hoursInputs().map((h) => h.site);
+    expect(sites.length, "the hours scan matched almost nothing").toBeGreaterThanOrEqual(10);
+    for (const anchor of [
+      "apps/web/components/TimeEntryFields.tsx hours",
+      "apps/web/components/RuleSetFields.tsx dailyOvertimeAfterHours",
+      "apps/web/components/LaborHoursField.tsx laborHours",
+    ]) {
+      expect(sites, `${anchor} stopped reading as an hours box`).toContain(anchor);
+    }
+  });
+
+  it("has no hours box whose placeholder is a bare figure", () => {
+    const offenders = hoursInputs()
+      .filter((h) => {
+        const placeholder = /\bplaceholder="([^"]*)"/.exec(h.attrs)?.[1];
+        return placeholder !== undefined && BARE_FIGURE.test(placeholder);
+      })
+      .map((h) => h.site);
+
+    expect(
+      offenders,
+      offenders.length === 0
+        ? ""
+        : [
+            "",
+            "An hours box's placeholder is a number, so the box reads as",
+            "already filled in (issue #305). A `required` field that looks",
+            "filled in fails with only the browser's native bubble, which is",
+            "transient and invisible to a screenshot — one click-through",
+            "reported this as a silent payroll failure.",
+            "",
+            "Say what the box wants, not a specimen of it: `hrs` or `hours`,",
+            "which is what every other hours box in this app already says.",
+            "",
+            "Do NOT fix it with defaultValue instead. See the next test.",
+            "",
+          ].join("\n"),
+    ).toEqual([]);
+  });
+
+  it("has no hours box pre-filled with a literal figure", () => {
+    const offenders = hoursInputs()
+      .filter((h) => {
+        // An EXPRESSION reads a saved row and is correct — a correction
+        // form has to show the hours it is correcting, and by this point
+        // `inputTags` has collapsed it to `{}`. Only a figure survives as
+        // a quoted literal, via `literalBracesAsStrings` above, and only a
+        // figure is a guess made on somebody's behalf.
+        const value = /\bdefaultValue="([^"]*)"/.exec(h.attrs)?.[1];
+        return value !== undefined && BARE_FIGURE.test(value);
+      })
+      .map((h) => h.site);
+
+    expect(
+      offenders,
+      offenders.length === 0
+        ? ""
+        : [
+            "",
+            "An hours box is pre-filled with a figure nobody typed. A form",
+            "that pre-fills eight hours logs eight hours for anybody who",
+            "forgets to change it, and that figure goes onto a WH-347",
+            "carrying a criminal certification.",
+            "",
+            "An empty required field is the right behaviour. Fix the",
+            "PLACEHOLDER so the box does not look filled in.",
+            "",
+          ].join("\n"),
+    ).toEqual([]);
+  });
+
+  it("finds a real offender in a fixture, both ways round", () => {
+    // The scanner, run over text, so a green suite is not the only evidence
+    // this rule can fire. Same shape as the type=number fixture above.
+    const bad = `<input name="hours" placeholder="8" required className="w-20" />`;
+    const good = `<input name="hours" placeholder="hrs" required className="w-20" />`;
+    const placeholderOf = (src: string) =>
+      /\bplaceholder="([^"]*)"/.exec(inputTags(src)[0] ?? "")?.[1];
+    expect(BARE_FIGURE.test(placeholderOf(bad) ?? "")).toBe(true);
+    expect(BARE_FIGURE.test(placeholderOf(good) ?? "")).toBe(false);
+    // A decimal and a thousands comma are figures too.
+    expect(BARE_FIGURE.test("7.5")).toBe(true);
+    expect(BARE_FIGURE.test("40,000")).toBe(true);
+    // And the #185 shape: a comment quoting the defect must not trip it.
+    expect(inputTags(`// <input name="hours" placeholder="8" />\nconst x = 1;`)).toEqual([]);
+  });
+
+  it("sees a hard-coded defaultValue through the brace collapse, and an expression not at all", () => {
+    // THE CONTROL FOR THE MUTATION THAT CAUGHT THIS. Without
+    // `literalBracesAsStrings` both of these read `defaultValue={}` and the
+    // pre-fill rule is vacuous — green against the exact fix issue #305
+    // says must never be made.
+    const valueOf = (src: string) =>
+      /\bdefaultValue="([^"]*)"/.exec(inputTags(literalBracesAsStrings(src))[0] ?? "")?.[1];
+    expect(valueOf(`<input name="hours" defaultValue={8} />`)).toBe("8");
+    expect(valueOf(`<input name="hours" defaultValue={7.5} />`)).toBe("7.5");
+    expect(valueOf(`<input name="hours" defaultValue={defaults?.hours ?? ""} />`)).toBeUndefined();
+    // The rewrite must not reach an expression that merely starts with a digit.
+    expect(literalBracesAsStrings(`defaultValue={8 * hours}`)).toBe("defaultValue={8 * hours}");
+  });
+});

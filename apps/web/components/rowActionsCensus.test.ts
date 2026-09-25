@@ -378,14 +378,15 @@ describe("the armed-delete census", () => {
  * queue of checks that were green about a question nobody asked:
  *
  *   - a CLIENT component calling a destructive action from `onClick` or
- *     `onSubmit` rather than through a form action. That shape exists in this
- *     app today (`ChangeOrders.tsx`: remove-a-proposal and discard-a-draft),
- *     and it is deliberately out of this rule's reach rather than
- *     silently missed: including it would need an exception list of six
- *     actions whose bodies delete something incidentally (`restoreAlert`,
- *     `sendOutboundEmail`, the two QuickBooks pushes…), and an exception list
- *     that long is how a rule gets repealed one reasonable case at a time.
- *     Those two are a reported gap, not a covered one;
+ *     `onSubmit` rather than through a form action. It is deliberately out of
+ *     THIS rule's reach rather than silently missed: including it would need
+ *     an exception list of six actions whose bodies delete something
+ *     incidentally (`restoreAlert`, `sendOutboundEmail`, the two QuickBooks
+ *     pushes…), and an exception list that long is how a rule gets repealed
+ *     one reasonable case at a time. The callback rule further down covers
+ *     that shape instead, by requiring the action to ALSO be named as a
+ *     removal — and its exception list is empty as of #258, which is where
+ *     `ChangeOrders.tsx`'s two one-click destructives used to be named;
  *   - an action reached through a variable this file's alias pass cannot
  *     follow (it follows one hop: `const deleteXWithId = (id) =>
  *     deleteX.bind(null, jobId, id)`);
@@ -803,15 +804,23 @@ describe("the destructive-form census", () => {
 
   /**
    * Files allowed to call a removal with no confirm in them, each with the
-   * reason. One entry, and it is a REPORTED GAP rather than an accepted one.
+   * reason.
+   *
+   * EMPTY, and the one entry it held is worth recording rather than
+   * deleting silently. `components/ChangeOrders.tsx` sat here from the
+   * eleven-confirms pass: two real one-click destructives
+   * (remove-a-proposal, discard-a-draft) reached from `onClick`/`onSubmit`,
+   * left alone because change orders were the other lane and filed as issue
+   * #258 instead. It was listed here rather than tolerated silently
+   * precisely so the rule stayed armed for everybody else while it waited,
+   * and that is what made the wait safe.
+   *
+   * #258 is fixed now — both controls are `<ConfirmDelete>` inside a
+   * `<RowActions>` — so the entry is gone and this file covers the app with
+   * no exception at all. The map stays because the next reported gap wants
+   * a named, argued line here rather than a silent allowance.
    */
-  const CALLBACK_EXCEPTIONS: Record<string, string> = {
-    "components/ChangeOrders.tsx":
-      "two real one-click destructives (remove-a-proposal, discard-a-draft) reached from " +
-      "onClick/onSubmit. Change orders are the other lane (WORK-SPLIT.md), so this is a " +
-      "GitHub issue for Diego rather than a drive-by edit in a 2000-line file — listed here " +
-      "so the rule stays armed for everybody else in the meantime.",
-  };
+  const CALLBACK_EXCEPTIONS: Record<string, string> = {};
 
   it("keeps a confirm in every component that calls a removal from a callback", () => {
     const offenders = tsxFiles(appDir)
