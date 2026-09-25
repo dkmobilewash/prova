@@ -246,7 +246,23 @@ test.describe("the pilot contractor's journey", () => {
     // It still fails the run; it just fails it after the spine has spoken.
     expect(
       monitor.hydrationMismatches,
-      "the server's HTML and the browser's first render disagreed on these pages — a real defect, likely something rendered from \"now\" (CLAUDE.md, Dates)",
+      [
+        'the server\'s HTML and the browser\'s first render disagreed on these pages — a real defect, likely something rendered from "now" (CLAUDE.md, Dates)',
+        "",
+        // WHY THE CONSOLE IS PRINTED HERE. Production React reports #418
+        // with its args already stripped — literally ["HTML", ""] — so the
+        // list above can say WHERE a mismatch happened and never WHAT
+        // differed. On 2026-09-24 that cost a day of reading the shell's 85
+        // transitive imports and four wrong hypotheses, because the only
+        // tool left was reading code.
+        //
+        // React's own console output does name it, with a diff and a
+        // component stack — but only when the server is `next dev`. Set
+        // E2E_DEV_SERVER=1 (see e2e/playwright.config.ts) and re-run, and
+        // the answer is in the lines below rather than in another day.
+        `console errors captured (${monitor.consoleErrors.length}) — the diff is here when E2E_DEV_SERVER=1:`,
+        ...monitor.consoleErrors.map((message) => `  - ${message}`),
+      ].join("\n"),
     ).toEqual([]);
     expect(monitor.crashes).toEqual([]);
   });
