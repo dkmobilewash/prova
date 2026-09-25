@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { emptyFor } from "./empty-state";
+import { EN } from "./strings/en";
 
 /**
  * The guard `lib/empty-state.ts` has cited since it was written, and
@@ -54,12 +55,22 @@ const NO_EMPTY_STATE: Record<string, string> = {
     "a hub of links to the per-job screens; it has no list of its own that could be empty or unloaded",
 };
 
+/**
+ * `emptyFor` takes KEYS, not sentences — #489 changed it the same week
+ * this file was written, and the merge of the two was textually clean and
+ * type-broken: `emptyFor(null, "the photos", …)` compiled against the old
+ * signature and nothing in either suite runs tsc. So the sentences are
+ * read out of the dictionary here rather than restated, which also means
+ * a reworded English string cannot fail this file for the wrong reason.
+ */
 describe("emptyFor says which of the two sentences is true", () => {
   it("distinguishes an empty list from one it could not load", () => {
-    const loaded = emptyFor(null, "the photos", { title: "No photos yet" });
-    const unloaded = emptyFor("nothing", "the photos", { title: "No photos yet" });
-    expect(loaded.emptyTitle).toBe("No photos yet");
-    expect(unloaded.emptyTitle).toBe("Can't load the photos right now.");
+    const loaded = emptyFor(null, "thing.photos", { title: "photos.empty.title" });
+    const unloaded = emptyFor("nothing", "thing.photos", { title: "photos.empty.title" });
+    expect(loaded.emptyTitle).toBe(EN["photos.empty.title"]);
+    expect(unloaded.emptyTitle).toBe(
+      EN["offline.cantLoad"].replace("{thing}", EN["thing.photos"]),
+    );
     // The one that matters: the unloaded case must NEVER render the
     // screen's own claim, because that claim is about data it never saw.
     expect(unloaded.emptyTitle).not.toBe(loaded.emptyTitle);
@@ -67,15 +78,15 @@ describe("emptyFor says which of the two sentences is true", () => {
 
   it("says what happens to anything added while it cannot load", () => {
     // Somebody standing in a basement needs to know the write is kept.
-    const unloaded = emptyFor("nothing", "the punch list", { title: "Nothing outstanding" });
+    const unloaded = emptyFor("nothing", "thing.punchList", { title: "punch.empty.title" });
     expect(unloaded.emptyDescription).toMatch(/kept and sent/);
   });
 
   it("passes a stale load through as a real empty state, not an error", () => {
     // `loadedFrom` is a note like "2 hours ago" — the list DID load, from
     // the cache, so an empty one is genuinely empty.
-    const stale = emptyFor("2 hours ago", "the photos", { title: "No photos yet" });
-    expect(stale.emptyTitle).toBe("No photos yet");
+    const stale = emptyFor("2 hours ago", "thing.photos", { title: "photos.empty.title" });
+    expect(stale.emptyTitle).toBe(EN["photos.empty.title"]);
   });
 });
 

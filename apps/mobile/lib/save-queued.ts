@@ -1,3 +1,4 @@
+import { t, type StringKey } from "./i18n";
 import { enqueue, type PendingOp } from "./sync-queue";
 
 /**
@@ -38,11 +39,30 @@ import { enqueue, type PendingOp } from "./sync-queue";
  * only fires when the phone could not write to its own storage, and
  * telling somebody to "check your connection" would send them outside to
  * fix the wrong thing.
+ *
+ * IT IS A KEY RATHER THAN A SENTENCE, for the reason lib/empty-state.ts
+ * gives at the same seam: every screen that draws this is in the
+ * translated set (`TRANSLATED` in strings-census.test.ts), so an English
+ * literal here would put one English sentence on an otherwise Spanish
+ * screen — and the person it reads as a bug to is the one who cannot
+ * report it. `t` is callable outside a component, which is how `emptyFor`
+ * does it; this is not a hook and must not become one.
+ *
+ * strings-census.test.ts CANNOT see this string: its literal detector
+ * reads text elements and text props, and this is a bare value in lib/.
+ * queued-writes.test.ts asserts the Spanish instead, which a hard-coded
+ * English sentence cannot satisfy.
  */
 export type SaveResult = { ok: true } | { ok: false; error: string };
 
-export const SAVE_FAILED =
-  "This phone couldn't save that. Nothing was sent, so write it down before you leave the screen.";
+/** The key, so the dead-key census can see it and the Spanish cannot
+ * drift. `saveFailedMessage()` is the sentence — it depends on the
+ * language in force, so it must not be frozen into a module-level const. */
+export const SAVE_FAILED_KEY = "save.failed" satisfies StringKey;
+
+export function saveFailedMessage(): string {
+  return t(SAVE_FAILED_KEY);
+}
 
 export async function saveQueued(op: PendingOp): Promise<SaveResult> {
   try {
@@ -52,6 +72,6 @@ export async function saveQueued(op: PendingOp): Promise<SaveResult> {
     // The thrown value is not shown. It is an AsyncStorage/native error
     // whose text means nothing to somebody holding a phone, and the one
     // useful instruction — write it down — does not depend on which.
-    return { ok: false, error: SAVE_FAILED };
+    return { ok: false, error: saveFailedMessage() };
   }
 }

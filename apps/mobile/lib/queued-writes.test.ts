@@ -1,6 +1,9 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { __setLanguageForRender } from "./i18n";
+import { EN } from "./strings/en";
+import { ES } from "./strings/es";
 
 /**
  * A QUEUED WRITE MUST BE WATCHED, AND WHAT IT PROMISED ON SCREEN MUST BE
@@ -63,7 +66,7 @@ vi.mock("./photo-store", () => ({
 }));
 vi.mock("./api", () => ({}));
 
-const { saveQueued, SAVE_FAILED } = await import("./save-queued");
+const { saveQueued, saveFailedMessage } = await import("./save-queued");
 
 const root = join(__dirname, "..");
 
@@ -110,10 +113,30 @@ describe("saveQueued answers instead of throwing", () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result).toEqual({ ok: false, error: SAVE_FAILED });
+    expect(result).toEqual({ ok: false, error: saveFailedMessage() });
     // The native message is not shown: it means nothing to somebody
     // holding a phone, and the useful instruction does not depend on it.
-    expect(SAVE_FAILED).not.toContain("SQLITE");
+    expect(saveFailedMessage()).not.toContain("SQLITE");
+    // And it is the DICTIONARY's sentence, not an English literal in the
+    // helper: every screen that draws it is in the translated set, so one
+    // English sentence here lands on an otherwise Spanish screen.
+    //
+    // THE SPANISH HALF IS THE CHECK THAT BITES. strings-census.test.ts
+    // cannot see this string at all — its literal detector reads text
+    // elements and text props, and this is a bare const in lib/, so a
+    // hard-coded English sentence here passes the whole census. Asserting
+    // the ENGLISH value would not help either; a literal identical to the
+    // dictionary entry satisfies it. Asking for Spanish does not.
+    expect(saveFailedMessage()).toBe(EN["save.failed"]);
+    __setLanguageForRender("es");
+    try {
+      expect(saveFailedMessage(), "the failure message is not going through the dictionary").toBe(
+        ES["save.failed"],
+      );
+      expect(saveFailedMessage()).not.toBe(EN["save.failed"]);
+    } finally {
+      __setLanguageForRender("en");
+    }
   });
 });
 

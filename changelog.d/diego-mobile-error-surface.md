@@ -91,3 +91,38 @@ half-translated screens and five shared components sitting in English. A
 citation is not a check, and in this directory it has twice been read as one.
 
 mobile: 208 + 65 tests, typecheck and lint clean.
+
+---
+
+**Caught up to `main` after #489 and #493, and two things fell out of the
+merge that no conflict marker showed.** Git merged every hunk cleanly and the
+whole mobile suite stayed green; `tsc` is what found the first one.
+
+1. **`emptyFor` takes KEYS now, not sentences.** #489 changed its signature
+   the same week `offline-notes.test.ts` was written against the old one, so
+   `emptyFor(null, "the photos", { title: "No photos yet" })` merged clean and
+   did not compile. Neither vitest config runs `tsc`, so 311 green tests said
+   nothing about it. The unit cases read their expected sentences out of
+   `EN` now rather than restating them, which also stops a reworded English
+   string failing that file for the wrong reason.
+
+2. **The failure message goes through the dictionary.** Every screen that
+   draws it is in #489's `TRANSLATED` set, so an English literal here would
+   have put one English sentence on an otherwise Spanish screen — the exact
+   "half a translated screen is worse than none" case that census exists for.
+   `save-queued.ts` holds the KEY (`save.failed`) and calls `t` at the point
+   of failure, the way `lib/empty-state.ts` already does; it is not a hook and
+   must not become one.
+
+   **`strings-census.test.ts` cannot see this string, and that is worth
+   recording rather than assuming.** Its literal detector reads text elements
+   and text props; this is a bare value in `lib/`, so a hard-coded English
+   sentence there passes all 28 of its cases. Verified by mutation, not
+   argued. `queued-writes.test.ts` asserts the SPANISH instead — asserting the
+   English would not help, since a literal identical to the dictionary entry
+   satisfies it.
+
+| mutation | applied? | result |
+| --- | --- | --- |
+| `saveFailedMessage()` returns an English literal | yes, diff shown | `strings-census` **green, 28 passed** |
+| same mutation | yes | `queued-writes` **RED**, names the Spanish it expected |
