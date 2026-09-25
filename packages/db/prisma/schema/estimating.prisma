@@ -56,6 +56,13 @@ model BidInvitation {
   /// bid-lines.prisma. A bid is rarely one number; these are the rest of it.
   lines BidLine[]
 
+  /// The paperwork that decides whether anybody reads the number — see
+  /// bid-compliance.prisma. Addenda the GC issued and whether each has been
+  /// acknowledged, plus the ITB items only a person can confirm. A bid that
+  /// misses one of these is rejected unread, however good the price was.
+  addenda      BidAddendum[]
+  requirements BidRequirement[]
+
   /// THE JOB THIS BID BECAME, when it was won and somebody linked it.
   ///
   /// Nullable and SET NULL, never required: most invitations never become a

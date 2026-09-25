@@ -34,6 +34,12 @@ type Bid = {
    * file's subject is the won-value line, and `lib/bid-lines.test.ts` covers
    * the totals against its own fixtures. */
   lines: [];
+  /** The addenda and ITB items behind the responsiveness panel. Empty here:
+   * this file's subject is the won-value line, and
+   * `lib/bid-responsiveness.test.ts` covers the checks against its own
+   * fixtures. */
+  addenda: [];
+  requirements: [];
 };
 
 function bid(over: Partial<Bid> & { id: string }): Bid {
@@ -47,6 +53,8 @@ function bid(over: Partial<Bid> & { id: string }): Bid {
     contact: { name: "Acme GC" },
     quotes: [],
     lines: [],
+    addenda: [],
+    requirements: [],
     ...over,
   };
 }
