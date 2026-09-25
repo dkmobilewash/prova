@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { useT, type StringKey } from "@/lib/i18n";
 import { type Palette, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 
@@ -13,17 +14,19 @@ import { usePalette } from "@/lib/use-palette";
  * product's own words and says who can change it, which is the same
  * wording the server sends with its 403 and the web uses on a withheld
  * section.
+ *
+ * `what` is a `StringKey`, not a noun: it comes from `SCREEN_NOUN` and is
+ * translated HERE, inside the component that re-renders when the language
+ * changes, rather than in the pure table it lives in.
  */
-export function NotYourJobFunction({ what }: { what: string }) {
+export function NotYourJobFunction({ what }: { what: StringKey }) {
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
+  const { t } = useT();
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>{what} aren&apos;t part of your job function.</Text>
-      <Text style={styles.body}>
-        The account owner sets who sees what, on the Team page. Nothing is missing from this phone —
-        it is not yours to see.
-      </Text>
+      <Text style={styles.title}>{t("notYourJob.title", { what: t(what) })}</Text>
+      <Text style={styles.body}>{t("notYourJob.body")}</Text>
     </View>
   );
 }

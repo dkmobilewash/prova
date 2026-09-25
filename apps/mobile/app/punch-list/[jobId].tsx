@@ -15,6 +15,7 @@ import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
 import { useMe } from "@/lib/use-me";
+import { useT, type StringKey } from "@/lib/i18n";
 import { leadingFor, type Palette, radius, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
@@ -29,13 +30,14 @@ import type { PunchItemStatus, PunchListItem } from "@/lib/types";
 /** What each state is called here. The same words as the web row, because
  * the foreman marking it ready and the PM verifying it are talking about
  * the same item on the phone. */
-const STATUS_LABEL: Record<PunchItemStatus, string> = {
-  OPEN: "Open",
-  READY_FOR_REVIEW: "Ready for review",
-  VERIFIED: "Verified",
+const STATUS_LABEL: Record<PunchItemStatus, StringKey> = {
+  OPEN: "punch.status.open",
+  READY_FOR_REVIEW: "punch.status.ready",
+  VERIFIED: "punch.status.verified",
 };
 
 export default function PunchListScreen() {
+  const { t } = useT();
   const { me } = useMe();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
@@ -131,7 +133,7 @@ export default function PunchListScreen() {
     // reason, and asking for one on this screen would be a keyboard in a
     // stairwell — the web row does it.
     if (current === "VERIFIED") {
-      setError("Verified items are reopened on the web, with a reason.");
+      setError(t("punch.verifiedOnWeb"));
       return;
     }
     const next: PunchItemStatus = current === "OPEN" ? "READY_FOR_REVIEW" : "OPEN";
@@ -154,9 +156,9 @@ export default function PunchListScreen() {
   // an empty screen with no explanation.
   if (!holds(me, SCREEN_CAPABILITY["punch-list/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["punch-list/[jobId]"]} />;
 
-  const empty = emptyFor(loadedFrom, "the punch list", {
-    title: "Nothing outstanding on this job.",
-    description: "Tap “Add item” to log what still needs fixing.",
+  const empty = emptyFor(loadedFrom, "thing.punchList", {
+    title: "punch.empty.title",
+    description: "punch.empty.body",
   });
 
   return (
@@ -171,9 +173,9 @@ export default function PunchListScreen() {
         refused={refused}
         onDismiss={dismissRefused}
         onRetry={retrySetAside}
-        refusedTitle={(n) => (n === 1 ? "1 change wasn't saved" : `${n} changes weren't saved`)}
+        refusedTitle={(n) => (n === 1 ? t("common.notSaved.one") : t("common.notSaved.many", { count: n }))}
         refusedLine={(r) => r.error}
-        dismissLabel="Dismiss"
+        dismissLabel={t("common.dismiss")}
         maxRefused={3}
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -203,16 +205,19 @@ export default function PunchListScreen() {
                   }
                   title={item.description}
                   titleStyle={status === "VERIFIED" ? styles.descriptionDone : undefined}
-                  subtitle={[STATUS_LABEL[status] + (queued ? " · syncing…" : ""), item.area]
+                  subtitle={[t(STATUS_LABEL[status]) + (queued ? ` · ${t("common.syncing")}` : ""), item.area]
                     .filter(Boolean)
                     .join(" · ") || undefined}
-                  detail={[item.assignedName, item.dueOn ? `due ${item.dueOn.slice(0, 10)}` : null]
+                  detail={[
+                    item.assignedName,
+                    item.dueOn ? t("punch.due", { date: item.dueOn.slice(0, 10) }) : null,
+                  ]
                     .filter(Boolean)
                     .join(" · ") || undefined}
                   divider={i > 0}
                   onPress={() => toggle(item)}
                   accessibilityLabel={
-                    status === "OPEN" ? "Mark as ready for review" : "Mark as still open"
+                    status === "OPEN" ? t("punch.markReady") : t("punch.markOpen")
                   }
                 >
                   {/* Asked for, not required — a crew with no signal still
@@ -223,7 +228,7 @@ export default function PunchListScreen() {
                       onPress={() => router.push(`/photos/${jobId}?punchListItemId=${item.id}`)}
                       accessibilityRole="button"
                     >
-                      <Text style={styles.photoPrompt}>No photo of the fix — add one</Text>
+                      <Text style={styles.photoPrompt}>{t("punch.noPhoto")}</Text>
                     </Pressable>
                   ) : null}
                 </GroupedRow>
@@ -235,20 +240,20 @@ export default function PunchListScreen() {
 
       <View style={styles.footer}>
         <Button fullWidth onPress={() => setShowForm(true)}>
-          Add item
+          {t("punch.add")}
         </Button>
       </View>
 
       <Sheet
         visible={showForm}
         onClose={() => setShowForm(false)}
-        title="Add punch list item"
-        primaryLabel="Save item"
+        title={t("punch.sheet.title")}
+        primaryLabel={t("punch.sheet.save")}
         onPrimary={submit}
       >
         <Field
-          label="What needs fixing"
-          placeholder="e.g. Ceiling grid out of level"
+          label={t("punch.field.what")}
+          placeholder={t("punch.field.whatHint")}
           value={description}
           onChangeText={setDescription}
           multiline
@@ -256,8 +261,8 @@ export default function PunchListScreen() {
         {/* Typed here because here is where it is known: standing in front
             of it. At a desk an hour later it is a guess. */}
         <Field
-          label="Where (optional)"
-          placeholder="e.g. Level 3 corridor"
+          label={t("punch.field.where")}
+          placeholder={t("punch.field.whereHint")}
           value={area}
           onChangeText={setArea}
         />

@@ -4,6 +4,7 @@ import { CaptureSheet } from "@/components/CaptureSheet";
 import { FloatingCaptureButton } from "@/components/FloatingCaptureButton";
 import { Icon } from "@/components/Icon";
 import { holds } from "@/lib/capabilities";
+import { useT } from "@/lib/i18n";
 import { useCurrentJob } from "@/lib/use-current-job";
 import { useMe } from "@/lib/use-me";
 import { usePushRegistration } from "@/lib/use-push-registration";
@@ -34,6 +35,7 @@ export default function TabsLayout() {
   usePushRegistration();
 
   const palette = usePalette();
+  const { t } = useT();
   const { me } = useMe();
   const { job } = useCurrentJob();
   const field = holds(me, "MANAGE_FIELD");
@@ -71,7 +73,7 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="index"
           options={{
-            title: "Home",
+            title: t("nav.home"),
             // Home draws its own greeting block inside the safe area — a
             // static header above "Good morning" is chrome between the
             // person and the day.
@@ -82,7 +84,7 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="jobs"
           options={{
-            title: "Jobs",
+            title: t("nav.jobs"),
             // Jobs draws its own large title inside the safe area.
             headerShown: false,
             tabBarIcon: ({ color, focused }) => <Icon name="jobs" color={color} filled={focused} size={24} />,
@@ -91,7 +93,7 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="settings"
           options={{
-            title: "More",
+            title: t("settings.title"),
             // More draws its own large title inside the safe area.
             headerShown: false,
             tabBarIcon: ({ color, focused }) => <Icon name="more" color={color} filled={focused} size={24} />,

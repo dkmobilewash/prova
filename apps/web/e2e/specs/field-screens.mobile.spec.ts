@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { dataTour } from "../lib/dataTour";
-import { expectHealthy } from "../lib/health";
+import { HealthMonitor, expectHealthy } from "../lib/health";
 import { expectFitsTheViewport } from "../lib/viewport";
 
 /**
@@ -11,18 +11,22 @@ import { expectFitsTheViewport } from "../lib/viewport";
  * matters for them. An office uses `/estimating` at a desk; nobody stands
  * on a deck filling in a punch list on a 27-inch monitor.
  *
- * **NEVER EXECUTED BY ITS AUTHOR, and that is stated here rather than left
- * to be discovered.** Both pages are behind `auth.protect()`, so running
- * them needs the `striking-jaybird` DEVELOPMENT Clerk instance's keys,
- * which the session that wrote this file did not have and correctly could
- * not obtain. What it does have behind it is not nothing: every locator
- * below is lifted verbatim from `specs/field-reports.spec.ts` and
- * `specs/punch-lists.spec.ts`, which walk the same two pages on the same
- * persona at desktop width, and the only assertion added is the width one.
- * So the navigation is as proven as those are; the width is the open
- * question, and it is open in the honest direction — this may well go RED
- * the first time it runs, and a red here is a finding about the product,
- * not about the spec.
+ * **IT HAS NOW RUN, AND WHAT IT FOUND WAS NEITHER PAGE.** This header used
+ * to say the file had never been executed by its author — no
+ * `striking-jaybird` keys — and that the width assertion was the open
+ * question. The keys arrived, both tests went red on every run for days,
+ * and the red was in the line NOBODY had doubted: `expectHealthy` asked for
+ * the desktop rail's `navigation "Main"` landmark, and below Tailwind's
+ * `md` that rail is `display: none` by design. Neither page was at fault
+ * and neither was the width check, which never got to run. The shell check
+ * is width-aware now (lib/health.ts, `expectShellNavigation`) and requires
+ * the phone shell's own navigation at this width instead — proved by
+ * `specs/shell-nav.mobile.spec.ts`, which opens it.
+ *
+ * Kept in the header because the prediction it made was half right in a way
+ * worth remembering: "a red here is a finding about the product, not about
+ * the spec" was the honest posture, and it was still wrong. A first run can
+ * be red about the instrument.
  *
  * This is the same discipline `specs/known-bad-inputs.spec.ts` states in
  * its own header ("as of this file's first commit these cases FAIL on
@@ -34,6 +38,10 @@ import { expectFitsTheViewport } from "../lib/viewport";
  */
 
 test("daily field reports are usable at 375px", async ({ page }) => {
+  // Attached before the first navigation: `expectHealthy` only fails on an
+  // uncaught exception when it is handed a monitor, and a health check with
+  // no monitor never looks at what the browser threw at all.
+  const monitor = new HealthMonitor(page);
   await signInAs(page, PERSONAS.empty.email);
   await page.goto("/field-reports");
 
@@ -43,11 +51,12 @@ test("daily field reports are usable at 375px", async ({ page }) => {
 
   // Rendered, and rendered without a boundary, BEFORE the width is read:
   // a page that crashed has no horizontal overflow either.
-  await expectHealthy(page, "/field-reports at 375px");
+  await expectHealthy(page, "/field-reports at 375px", { monitor });
   await expectFitsTheViewport(page, "/field-reports");
 });
 
 test("punch lists are usable at 375px", async ({ page }) => {
+  const monitor = new HealthMonitor(page);
   await signInAs(page, PERSONAS.empty.email);
   await page.goto("/punch-lists");
 
@@ -60,6 +69,6 @@ test("punch lists are usable at 375px", async ({ page }) => {
   // inconvenience — there is no window to widen.
   await expect(empty.getByRole("link", { name: "Create a job" })).toBeVisible();
 
-  await expectHealthy(page, "/punch-lists at 375px");
+  await expectHealthy(page, "/punch-lists at 375px", { monitor });
   await expectFitsTheViewport(page, "/punch-lists");
 });

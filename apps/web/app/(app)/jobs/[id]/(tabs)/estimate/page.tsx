@@ -9,6 +9,8 @@ import { costCategoryLabel } from "@/components/costCategoryLabels";
 import { LaborHoursField } from "@/components/LaborHoursField";
 import { PhaseCodeField } from "@/components/PhaseCodeField";
 import { SubmitButton } from "@/components/SubmitButton";
+import { ApplyEstimateTemplate } from "@/components/ApplyEstimateTemplate";
+import { dominantTradeScope } from "@/lib/estimate-templates";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
 import { TRADE_SCOPE_OPTIONS, PriceBasisBadge, LaborCostHint, ProductionBackCheckHint } from "@/components/JobEstimateHelpers";
@@ -156,7 +158,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
 
   const isEstimateStage = job.status === "ESTIMATE";
 
-  const [catalogEntries, craftClassifications, phaseCodes, employerBurdenRates, wallTypes, wallRuns, bidRecapRow, bidDefaults] =
+  const [catalogEntries, craftClassifications, phaseCodes, employerBurdenRates, wallTypes, wallRuns, bidRecapRow, bidDefaults, estimateTemplates] =
     await Promise.all([
     prisma.lineItemCatalogEntry.findMany({ where: { companyId: company.id }, orderBy: { description: "asc" } }),
     prisma.craftClassification.findMany({
@@ -198,6 +200,17 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
     // a starting point, never a value enforced from elsewhere afterwards.
     isEstimateStage ? prisma.jobBidRecap.findFirst({ where: { jobId: job.id, companyId: company.id } }) : Promise.resolve(null),
     isEstimateStage ? prisma.companyBidDefaults.findUnique({ where: { companyId: company.id } }) : Promise.resolve(null),
+    // Only at estimate stage: applying a template writes JobLineItem rows,
+    // and `applyEstimateTemplate` refuses anything past ESTIMATE anyway.
+    // Not fetching them at all is what keeps the control off the page
+    // rather than showing one that would be refused.
+    isEstimateStage
+      ? prisma.estimateTemplate.findMany({
+          where: { companyId: company.id },
+          orderBy: { name: "asc" },
+          include: { items: { orderBy: { sortOrder: "asc" } } },
+        })
+      : Promise.resolve([]),
   ]);
 
   const wallTypeInputs: WallTypeInput[] = wallTypes.map((type) => ({
@@ -920,6 +933,36 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                 Add line item
               </SubmitButton>
             </ActionForm>
+
+            {/* START FROM A TEMPLATE — above "Add from catalog" because it
+                is the bulk path and the catalog picker is the one-at-a-time
+                one. The collision warning lives inside it, on screen before
+                the press: applying a template APPENDS, so applying one twice
+                doubles the estimate. */}
+            {estimateTemplates.length > 0 && (
+              <div className="mt-4">
+                <ApplyEstimateTemplate
+                  jobId={job.id}
+                  jobTradeScope={dominantTradeScope(job.lineItems)}
+                  templates={estimateTemplates.map((template) => ({
+                    id: template.id,
+                    name: template.name,
+                    tradeScope: template.tradeScope,
+                    items: template.items.map((item) => ({
+                      id: item.id,
+                      description: item.description,
+                      unit: item.unit,
+                      defaultQuantity: item.defaultQuantity === null ? null : Number(item.defaultQuantity),
+                      catalogEntryId: item.catalogEntryId,
+                    })),
+                  }))}
+                  existingLines={job.lineItems.map((item) => ({
+                    description: item.description,
+                    isDeleted: item.isDeleted,
+                  }))}
+                />
+              </div>
+            )}
 
             {catalogEntries.length > 0 && (
               <ActionForm action={addLineItemFromCatalogWithId} className="mt-4 flex flex-wrap items-end gap-3">

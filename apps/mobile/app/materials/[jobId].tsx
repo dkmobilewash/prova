@@ -14,6 +14,7 @@ import { SyncStatus } from "@/components/SyncStatus";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { emptyFor } from "@/lib/empty-state";
+import { useT } from "@/lib/i18n";
 import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
@@ -28,6 +29,7 @@ import { useSync } from "@/lib/use-sync";
 import type { MaterialOrder, Vendor } from "@/lib/types";
 
 export default function MaterialsScreen() {
+  const { t } = useT();
   const { me } = useMe();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
@@ -129,34 +131,45 @@ export default function MaterialsScreen() {
             </View>
             <Text style={styles.description}>{item.description}</Text>
             <Text style={styles.meta}>
-              Ordered {item.orderedOn}
-              {item.promisedFor ? ` · due ${item.promisedFor}` : ""}
+              {t("materials.ordered", { date: item.orderedOn })}
+              {item.promisedFor ? ` · ${t("materials.due", { date: item.promisedFor })}` : ""}
             </Text>
           </Card>
         )}
-        {...emptyFor(offline, "the material orders", {
-          title: "Nothing on order",
-          description: "Tap “Add order” to log a material delivery.",
+        {...emptyFor(offline, "thing.materials", {
+          title: "materials.empty.title",
+          description: "materials.empty.body",
         })}
       />
 
       <View style={styles.footer}>
         <Button fullWidth onPress={() => setShowForm(true)}>
-          Add order
+          {t("materials.add")}
         </Button>
       </View>
 
       <Sheet
         visible={showForm}
         onClose={() => setShowForm(false)}
-        title="Add material order"
-        primaryLabel="Save order"
+        title={t("materials.sheet.title")}
+        primaryLabel={t("materials.sheet.save")}
         onPrimary={submit}
       >
-        <Field label="What was ordered" placeholder="e.g. 2x4 lumber" value={description} onChangeText={setDescription} />
-        <DateField label="Date ordered" value={orderedOn} onChange={setOrderedOn} max={localToday()} />
-        <DateField label="Promised for" value={promisedFor} onChange={setPromisedFor} max={localToday()} allowFuture />
-        <Text style={styles.vendorLabel}>Vendor</Text>
+        <Field
+          label={t("materials.field.what")}
+          placeholder={t("materials.field.whatHint")}
+          value={description}
+          onChangeText={setDescription}
+        />
+        <DateField label={t("materials.field.orderedOn")} value={orderedOn} onChange={setOrderedOn} max={localToday()} />
+        <DateField
+          label={t("materials.field.promisedFor")}
+          value={promisedFor}
+          onChange={setPromisedFor}
+          max={localToday()}
+          allowFuture
+        />
+        <Text style={styles.vendorLabel}>{t("materials.field.vendor")}</Text>
         <View style={styles.chips}>
           {vendors.map((v) => (
             <Chip key={v.id} label={v.name} selected={vendorId === v.id} onPress={() => setVendorId(v.id)} />

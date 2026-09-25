@@ -14,6 +14,7 @@ import { SyncStatus } from "@/components/SyncStatus";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { emptyFor } from "@/lib/empty-state";
+import { useT } from "@/lib/i18n";
 import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
@@ -35,6 +36,7 @@ function localToday(): string {
 }
 
 export default function TicketScreen() {
+  const { t } = useT();
   const { me } = useMe();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
@@ -124,54 +126,59 @@ export default function TicketScreen() {
             <View style={styles.head}>
               <Text style={styles.date}>{item.workDate}</Text>
               <Text style={styles.signer}>
-                Signed: {item.signerName}
-                {item.hasSignature === false ? " (typed)" : ""}
+                {t("tickets.signed", { name: item.signerName })}
+                {item.hasSignature === false ? ` ${t("tickets.typed")}` : ""}
               </Text>
             </View>
             <Text style={styles.description}>{item.workDescription}</Text>
             {item.snapshot ? (
               <Text style={styles.summary}>
-                {item.snapshot.labor.length} labour entr{item.snapshot.labor.length === 1 ? "y" : "ies"} ·{" "}
-                {item.snapshot.materials.length} material{item.snapshot.materials.length === 1 ? "" : "s"}
+                {item.snapshot.labor.length === 1
+                  ? t("tickets.snapshot.labor.one")
+                  : t("tickets.snapshot.labor.many", { count: item.snapshot.labor.length })}
+                {" · "}
+                {item.snapshot.materials.length === 1
+                  ? t("tickets.snapshot.materials.one")
+                  : t("tickets.snapshot.materials.many", { count: item.snapshot.materials.length })}
               </Text>
             ) : null}
           </Card>
         )}
-        {...emptyFor(offline, "the T&M tickets", {
-          title: "No T&M tickets",
-          description: "Tap “New ticket” to document and sign the day's extra work.",
+        {...emptyFor(offline, "thing.tickets", {
+          title: "tickets.empty.title",
+          description: "tickets.empty.body",
         })}
       />
 
       <View style={styles.footer}>
         <Button fullWidth onPress={() => setShowForm(true)}>
-          New ticket
+          {t("tickets.new")}
         </Button>
       </View>
 
       <Sheet
         visible={showForm}
         onClose={() => setShowForm(false)}
-        title="New T&M ticket"
-        primaryLabel="Sign & save"
+        title={t("tickets.sheet.title")}
+        primaryLabel={t("tickets.sheet.save")}
         onPrimary={submit}
         primaryDisabled={!canSubmit}
       >
-        <DateField label="Date" value={workDate} onChange={setWorkDate} max={localToday()} />
+        <DateField label={t("common.date")} value={workDate} onChange={setWorkDate} max={localToday()} />
         <Field
-          label="What was done"
-          placeholder="Describe the extra work"
+          label={t("tickets.field.what")}
+          placeholder={t("tickets.field.whatHint")}
           value={workDescription}
           onChangeText={setWorkDescription}
           multiline
         />
         <Field
-          label="Client's name"
-          placeholder="Printed under their signature"
+          label={t("tickets.field.signer")}
+          placeholder={t("tickets.field.signerHint")}
           value={signerName}
           onChangeText={setSignerName}
         />
-        <Text style={styles.label}>Client&rsquo;s signature</Text>
+        <Text style={styles.label}>{t("tickets.field.signature")}</Text>
         <SignaturePad key={showForm ? "open" : "closed"} onChange={setSignaturePath} />
       </Sheet>
     </View>

@@ -3,6 +3,7 @@ import { StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/components/Icon";
 import { PressableScale } from "@/components/PressableScale";
+import { useT } from "@/lib/i18n";
 import { type Palette, radius, shadow, space } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 
@@ -18,6 +19,7 @@ import { usePalette } from "@/lib/use-palette";
  */
 export function FloatingCaptureButton({ onPress }: { onPress: () => void }) {
   const palette = usePalette();
+  const { t } = useT();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(palette), [palette]);
 
@@ -25,7 +27,7 @@ export function FloatingCaptureButton({ onPress }: { onPress: () => void }) {
     <PressableScale
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel="Capture"
+      accessibilityLabel={t("capture.title")}
       style={[styles.button, { bottom: 49 + insets.bottom + space.md }]}
     >
       <Icon name="plus" size={26} color={palette.colors.brandInk} />

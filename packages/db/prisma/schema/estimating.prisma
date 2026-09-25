@@ -14,9 +14,16 @@ enum BidInvitationStatus {
 /// A GC inviting this company to bid on a project — tracked from
 /// invitation through outcome, independent of Job: most invitations are
 /// declined or lost and never become one. When a bid is won, the PM
-/// creates the Job normally through the existing estimate flow; linking
-/// a won BidInvitation forward to its Job is a future refinement, not
-/// built here.
+/// creates the Job normally through the existing estimate flow.
+///
+/// LINKING A WON BID FORWARD TO ITS JOB WAS "a future refinement, not built
+/// here" UNTIL 2026-09-24, and the sentence was load-bearing in the wrong
+/// direction: without the link there was no way to put what a job was BID at
+/// beside what it actually COST, so the one number an estimator most needs to
+/// learn from could not be computed at all. Every feedback loop the app had
+/// was narrower — `catalog-actuals.ts` per catalog entry, `phase-code-rollup`
+/// per phase code, `bid-pipeline` win/loss only. `wonJobId` below is that
+/// link, and `lib/bid-outcome.ts` is the comparison it makes possible.
 model BidInvitation {
   id        String  @id @default(cuid())
   companyId String
@@ -36,9 +43,46 @@ model BidInvitation {
   tradeScope TradeScope?
   bidAmount  Decimal?    @db.Decimal(12, 2)
 
+  /// The quotes this company collected from its own suppliers and subs for
+  /// this bid, for levelling — see bid-levelling.prisma. Distinct from
+  /// VendorPriceQuote, which is price history and carries no bid.
+  quotes BidQuote[]
+
   /// The pre-bid pursuit this invitation came out of, if one was being
   /// chased — see pursuits.prisma. The FK lives on BidPursuit.
   pursuit BidPursuit?
+
+  /// The alternates, unit prices and allowances this bid carries — see
+  /// bid-lines.prisma. A bid is rarely one number; these are the rest of it.
+  lines BidLine[]
+
+  /// The paperwork that decides whether anybody reads the number — see
+  /// bid-compliance.prisma. Addenda the GC issued and whether each has been
+  /// acknowledged, plus the ITB items only a person can confirm. A bid that
+  /// misses one of these is rejected unread, however good the price was.
+  addenda      BidAddendum[]
+  requirements BidRequirement[]
+
+  /// THE JOB THIS BID BECAME, when it was won and somebody linked it.
+  ///
+  /// Nullable and SET NULL, never required: most invitations never become a
+  /// job at all, a won bid may be linked days after the job is created, and a
+  /// job deleted in cleanup must not take the bid record with it — the bid is
+  /// the history of what was quoted, and it stays true whatever happens to
+  /// the job afterwards.
+  ///
+  /// UNIQUE, because two bids claiming the same job would make "what was this
+  /// job bid at" a question with two answers. Re-bidding a project that was
+  /// lost and re-tendered is a second BidInvitation; the link moves.
+  ///
+  /// NOT set automatically, and that is the design rather than a gap. Nothing
+  /// in the data says which job a bid became — the names rarely match, the
+  /// dates rarely line up, and a fuzzy match here would attach a bid amount
+  /// to the wrong job's costs and then teach the estimator from it. A person
+  /// picks it, the same posture `JobLineItem.sourceCatalogEntryId` takes
+  /// ("deliberately NOT backfilled by fuzzy-matching descriptions").
+  wonJobId String? @unique
+  wonJob   Job?    @relation("BidInvitationWonJob", fields: [wonJobId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -165,6 +209,12 @@ model LineItemCatalogEntry {
 
   /// Wall-type components priced from this entry. A template link only.
   wallTypeComponents WallTypeComponent[]
+
+  /// Estimate-template items pointing at this entry — see
+  /// estimate-templates.prisma. A template link only, and SET NULL on
+  /// delete: removing a catalog entry leaves the template item standing as
+  /// plain text rather than taking the template down with it.
+  estimateTemplateItems EstimateTemplateItem[]
 
   /// What vendors have quoted for this item. Reference data for pricing,
   /// in the same family as this entry's own defaults. Cyrus, Sheet 19.

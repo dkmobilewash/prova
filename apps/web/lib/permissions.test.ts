@@ -258,6 +258,20 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // the same reason — a different one here would be an inconsistency,
   // not a tightening.
   "/jobs/[id]/certified-payroll/wh-347": "MANAGE_COMPLIANCE",
+  // The two California apprenticeship notices, printed from the job's
+  // Compliance tab. MANAGE_COMPLIANCE for the same reason the WH-347 above
+  // takes it: these are the documents that go to a state-recognized
+  // apprenticeship committee, and the committee directory they are addressed
+  // from sits on /union-compliance, which ROUTE_CAPABILITY already gates on
+  // MANAGE_COMPLIANCE. A different capability here would be an inconsistency
+  // rather than a tightening.
+  //
+  // HERE AND NOT IN ROUTE_CAPABILITY, per this table's own header: the nav
+  // links neither, and a key with `[id]` in it can never match a real URL —
+  // putting one in the map that FILTERS the nav would teach `canReach` to
+  // answer "open" for a guarded page.
+  "/jobs/[id]/das-140/[noticeId]": "MANAGE_COMPLIANCE",
+  "/jobs/[id]/das-142/[requestId]": "MANAGE_COMPLIANCE",
   // The fringe remittance as the document that goes to each hall, printed
   // from the same month as /union-compliance and showing strictly less
   // than it does. Same capability for the same reason as the pair above —

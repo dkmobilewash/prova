@@ -41,6 +41,7 @@ function submitted(isEstimate: boolean) {
         isEstimate,
         canRemove: false,
         siteAddress: null,
+        grossAreaSqFt: null,
         siteStatus: "none",
       }),
     );

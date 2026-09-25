@@ -51,15 +51,29 @@ function guardModels(): string[] {
   return [...guardBlock().text.matchAll(/prisma\.(\w+)\.count\(/g)].map((m) => m[1]);
 }
 
-// The nine tagged families the seed leaves behind. A partial run or a
-// partially failed --undo can leave any one of them without the others,
-// which is why the guard counts each rather than one representative.
+// The tagged families the seed leaves behind, IN THE ORDER THE GUARD COUNTS
+// THEM. A partial run or a partially failed --undo can leave any one of them
+// without the others, which is why the guard counts each rather than one
+// representative.
+//
+// Deliberately not introduced by a number any more. This comment said "the
+// nine tagged families" and the seed grew a tenth and eleventh
+// (`unionLocal`, `crewMember`, with the certified-payroll demo data on
+// 2026-09-25) — a count in prose beside a list that IS the count is the
+// rot CLAUDE.md deletes numbers for elsewhere. The list is the claim; the
+// test below is what enforces it.
 const EXPECTED_GUARD_MODELS = [
   "contact",
   "job",
   "vendor",
   "equipment",
   "prevailingWageRuleSet",
+  // The union-compliance set. `unionLocal` carries the tag for the local and
+  // everything beneath it (agreement, crafts, rate schedules, ratio rule) is
+  // scoped by its id; `crewMember` carries it in `note`, never in the legal
+  // name a filed payroll asserts.
+  "unionLocal",
+  "crewMember",
   "lineItemCatalogEntry",
   "vendorPriceQuote",
   "bidInvitation",
@@ -107,7 +121,10 @@ describe("the seed refuses to run twice", () => {
     if (undoStart === -1) throw new Error("seed-demo.mjs no longer has undo()");
     const undoSource = source.slice(undoStart);
     const occurrences = undoSource.split("contains: MARK").length - 1;
-    expect(occurrences).toBeGreaterThanOrEqual(9);
+    // A FLOOR, raised as families are added — it exists so a pattern that
+    // stops matching goes red instead of passing over an empty set, and a
+    // floor left below reality stops doing that job.
+    expect(occurrences).toBeGreaterThanOrEqual(EXPECTED_GUARD_MODELS.length);
 
     const attributed: string[] = [];
     let cursor = 0;

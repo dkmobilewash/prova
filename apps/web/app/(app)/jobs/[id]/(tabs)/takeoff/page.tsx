@@ -5,6 +5,9 @@ import { NoAccess } from "@/components/NoAccess";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { TakeoffMeasurementList } from "@/components/TakeoffMeasurementList";
 import { TakeoffPlanUploader } from "@/components/TakeoffPlanUploader";
+import { TakeoffCurrencyBanner } from "@/components/TakeoffCurrencyBanner";
+import { TakeoffPlanRevisionForm } from "@/components/TakeoffPlanRevisionForm";
+import { loadTakeoffCurrency } from "@/lib/takeoff-currency-query";
 import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
 import { deleteTakeoffPlan } from "@/lib/actions";
 import { requireCapability } from "@/lib/authz";
@@ -38,6 +41,12 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   if (!allowed) return <NoAccess capability="VIEW_JOB_COSTS" />;
   const { company, job } = await requireJobGivenContext(id, context);
 
+  // Whether what was measured came off current drawings. Loaded beside the
+  // plan rather than after it: the answer belongs above the measurements, and
+  // a second round-trip to decide whether to show a banner is a round-trip
+  // spent deciding.
+  const currency = await loadTakeoffCurrency(company.id, job.id);
+
   const plan = await prisma.takeoffPlan.findFirst({
     where: { jobId: job.id, companyId: company.id },
     orderBy: { createdAt: "desc" },
@@ -61,6 +70,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
     return (
       <section className="flex flex-col gap-4">
         <Header jobId={job.id} />
+        <TakeoffCurrencyBanner jobId={job.id} currency={currency} />
         <div className="rounded-lg border border-line-card bg-surface-card p-4">
           <h3 className="text-sm font-semibold text-ink-label">No drawing on this job yet</h3>
           <p className="mt-1 max-w-prose text-sm text-ink-body">
@@ -116,6 +126,10 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   return (
     <section className="flex flex-col gap-4">
       <Header jobId={job.id} />
+      {/* ABOVE the measurements, for the reason the levelling caution sits
+          above the quotes: it decides whether the numbers below mean
+          anything. */}
+      <TakeoffCurrencyBanner jobId={job.id} currency={currency} />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-ink-body">
@@ -127,6 +141,16 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
             </span>
           )}
         </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Which issue this is. Beside the file name because that is where
+              somebody looks to identify the sheet, and its button says when
+              the date is MISSING — the state the currency check cannot judge. */}
+          <TakeoffPlanRevisionForm
+            jobId={job.id}
+            planId={plan.id}
+            revisionLabel={plan.revisionLabel}
+            sheetIssuedOn={plan.sheetIssuedOn === null ? null : plan.sheetIssuedOn.toISOString().slice(0, 10)}
+          />
         {isEstimateStage && (
           <ConfirmDeleteButton
             label="Delete plan"
@@ -137,6 +161,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
             }}
           />
         )}
+        </div>
       </div>
 
       {!isEstimateStage && <NotEstimating />}
