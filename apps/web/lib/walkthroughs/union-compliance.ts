@@ -30,6 +30,12 @@ export const unionComplianceWalkthrough: Walkthrough = {
         "Press Register an apprenticeship to record an apprentice's sponsor, program number and classroom hours. Their on-the-job hours come from the timesheets.",
     },
     {
+      anchor: "uc-committees",
+      title: "Apprenticeship committees",
+      body:
+        "Who a DAS 140 or DAS 142 gets sent to, on a California public works job. Look each committee up on DIR's own list and record it once here — C Stream will not invent an address for you. The notices themselves live on each job's Compliance tab.",
+    },
+    {
       anchor: "uc-worker-crafts",
       title: "Who works as what",
       body:

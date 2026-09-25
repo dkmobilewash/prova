@@ -156,6 +156,23 @@ export const HANDLED_MODELS = [
   // their scratch job the way the other per-job counters do.
   "Wh347PayrollNumber",
   "Wh347PayrollCounter",
+  // The two California apprenticeship notices (das-forms.prisma). Required
+  // `jobId`, so RESTRICT on Job, and nothing else's delete reaches them — the
+  // #227 shape, which is why they are here AND in both scripts' del() order.
+  //
+  // DELIBERATELY NOT IN `NEVER_DELETE`, and the distinction is worth stating
+  // because a sent notice IS correspondence and this repo's rule is that
+  // correspondence never deletes. That rule is enforced where a person can
+  // reach it: `deleteDas140Notice` and `deleteDas142Request` refuse outright
+  // once `sentOn`/`requestedOn` is set, owner included. An operator running
+  // this script by hand against a scratch job is a different contract from a
+  // button in the app — and the alternative, listing them as never-delete,
+  // would make a scratch job that once had a DAS draft on it permanently
+  // undeletable by the normal route. The company-level
+  // `ApprenticeshipCommittee` is not here: it carries no jobId and these
+  // scripts never delete a company.
+  "Das140Notice",
+  "Das142Request",
   // `DocumentIntake` does NOT block a Job delete: its `jobId` is optional,
   // so Postgres holds ON DELETE SET NULL and the delete would succeed
   // without this entry. It is in this list anyway, and the distinction is

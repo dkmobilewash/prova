@@ -6,6 +6,13 @@ import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
 import { formatCalendarDate } from "@/lib/render-date";
 import { summariseWonValue, valueIsPartial } from "@/lib/bid-pipeline";
+import { BidLevelling, type BidQuoteRow } from "@/components/BidLevelling";
+import { viewerToday } from "@/lib/viewerToday";
+import { BidLines, type BidLineRow } from "@/components/BidLines";
+import { BidCompliance, type AddendumRow, type RequirementRow } from "@/components/BidCompliance";
+import { BidJobLink } from "@/components/BidJobLink";
+import { bidRecord, settledSentence } from "@/lib/bid-outcome";
+import { loadBidOutcomes, loadLinkableJobs } from "@/lib/bid-outcome-query";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -35,6 +42,11 @@ function labelFor(options: readonly { value: string; label: string }[], value: s
   return options.find((o) => o.value === value)?.label ?? value;
 }
 
+/** A stored UTC midnight as the YYYY-MM-DD a date input round-trips, or null.
+ * Rendered in UTC, never in the viewer's zone — the app-wide rule, and here it
+ * is what stops a quote dated Tuesday reading as Monday in California. */
+const day = (value: Date | null) => (value === null ? null : value.toISOString().slice(0, 10));
+
 export default async function BidsPage({
   searchParams,
 }: {
@@ -48,6 +60,27 @@ export default async function BidsPage({
   const tradeFilter = trade && trade in TradeScope ? (trade as TradeScope) : undefined;
   const statusFilter = status && status in BidInvitationStatus ? (status as BidInvitationStatus) : undefined;
 
+  // The reader's calendar, not the server's. A request is OVERDUE or it is
+  // not, and that is exactly the case lib/serverToday.ts's own comment says
+  // it is not good enough for: "on anything where the exact day decides an
+  // outcome". Computed on the server from request data, so the markup
+  // matches on both sides and the localToday hydration trap does not apply.
+  const today = await viewerToday();
+
+  const [vendors, outcomesByBid, linkableJobs] = await Promise.all([
+    prisma.vendor.findMany({
+      where: { companyId: company.id },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    loadBidOutcomes(company.id),
+    loadLinkableJobs(company.id),
+  ]);
+  // How this company's finished bids have run against what the work cost.
+  // Derived here, never stored, and it counts only what has SETTLED — see
+  // `bidRecord`, which returns the excluded count so the sentence can say so.
+  const record = bidRecord([...outcomesByBid.values()].map((linked) => linked.outcome));
+
   const bids = await prisma.bidInvitation.findMany({
     where: {
       companyId: company.id,
@@ -55,7 +88,15 @@ export default async function BidsPage({
       status: statusFilter,
     },
     orderBy: { createdAt: "desc" },
-    include: { contact: true },
+    include: {
+      contact: true,
+      quotes: { orderBy: [{ packageLabel: "asc" }, { amount: "asc" }] },
+      lines: { orderBy: { sortOrder: "asc" } },
+      // Addenda oldest first: they are read as a sequence, and the one you
+      // have not acknowledged is usually the newest.
+      addenda: { orderBy: [{ issuedOn: "asc" }, { createdAt: "asc" }] },
+      requirements: { orderBy: { createdAt: "asc" } },
+    },
   });
 
   // #79: a WON bid with no bidAmount used to be dropped from both the sum
@@ -154,6 +195,34 @@ export default async function BidsPage({
         </p>
       )}
 
+      {/* HOW THE BIDS HAVE ACTUALLY RUN. Only finished jobs count toward this:
+          a job three weeks in has spent a fifth of its cost and earned none of
+          its lessons, and averaging it in as "on budget" would make the figure
+          read better the more work is in progress. The excluded count is shown
+          rather than dropped, so the number can be judged. */}
+      {record.settled > 0 && (
+        <p className="mb-4 rounded-lg border border-line-card bg-surface-card p-3 text-sm text-ink-body">
+          Across {record.settled} finished {record.settled === 1 ? "job" : "jobs"} linked to a bid, the work came in{" "}
+          <span className="font-medium text-ink">
+            {Math.abs(record.averageVariance! * 100) < 0.05
+              ? "on the bid on average"
+              : `${Math.abs(record.averageVariance! * 100).toFixed(1)}% ${record.averageVariance! > 0 ? "over" : "under"} on average`}
+          </span>
+          {record.over > 0 || record.under > 0 ? (
+            <> — {record.over} over, {record.under} under.</>
+          ) : (
+            "."
+          )}
+          {record.notYet > 0 && (
+            <span className="text-ink-muted">
+              {" "}
+              {record.notYet} more {record.notYet === 1 ? "bid is" : "bids are"} linked to a job that has not
+              finished, and {record.notYet === 1 ? "is" : "are"} not counted here.
+            </span>
+          )}
+        </p>
+      )}
+
       {bids.length === 0 ? (
         isFiltered ? (
           <p className="text-ink-body">
@@ -219,6 +288,105 @@ export default async function BidsPage({
                   <p className="text-sm font-medium text-ink">{money(Number(bid.bidAmount))}</p>
                 )}
               </Link>
+              <BidLines
+                bidInvitationId={bid.id}
+                base={bid.bidAmount === null ? null : Number(bid.bidAmount)}
+                lines={bid.lines.map(
+                  (line): BidLineRow => ({
+                    id: line.id,
+                    kind: line.kind,
+                    label: line.label,
+                    description: line.description,
+                    amount: line.amount === null ? null : Number(line.amount),
+                    unit: line.unit,
+                    unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
+                    accepted: line.accepted,
+                  }),
+                )}
+              />
+              <BidCompliance
+                bidInvitationId={bid.id}
+                today={today}
+                // The SAME rows BidLines renders, so the derived checks and
+                // the list a person is looking at cannot disagree about what
+                // is priced. Mapped twice rather than shared because the two
+                // components want different shapes; the source is one query.
+                lines={bid.lines.map((line) => ({
+                  id: line.id,
+                  kind: line.kind,
+                  label: line.label,
+                  amount: line.amount === null ? null : Number(line.amount),
+                  unit: line.unit,
+                  unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
+                  accepted: line.accepted,
+                }))}
+                addenda={bid.addenda.map(
+                  (row): AddendumRow => ({
+                    id: row.id,
+                    reference: row.reference,
+                    issuedOn: day(row.issuedOn),
+                    acknowledgedOn: day(row.acknowledgedOn),
+                    affectsPricedScope: row.affectsPricedScope,
+                    impactNote: row.impactNote,
+                    notes: row.notes,
+                  }),
+                )}
+                requirements={bid.requirements.map(
+                  (row): RequirementRow => ({
+                    id: row.id,
+                    kind: row.kind,
+                    label: row.label,
+                    required: row.required,
+                    satisfiedOn: day(row.satisfiedOn),
+                    notes: row.notes,
+                  }),
+                )}
+              />
+              <BidLevelling
+                bidInvitationId={bid.id}
+                vendors={vendors}
+                today={today}
+                quotes={bid.quotes.map(
+                  (quote): BidQuoteRow => ({
+                    id: quote.id,
+                    packageLabel: quote.packageLabel,
+                    vendorId: quote.vendorId,
+                    vendorName: quote.vendorName,
+                    // NULL STAYS NULL. `Number(null)` is 0, which would post a
+                    // supplier who has not answered as a quote of nothing —
+                    // and nothing sorts cheapest.
+                    amount: quote.amount === null ? null : Number(quote.amount),
+                    // Rendered from the stored UTC midnight as YYYY-MM-DD, the
+                    // same string the date input round-trips.
+                    quotedOn: day(quote.quotedOn),
+                    requestedOn: day(quote.requestedOn),
+                    dueBy: day(quote.dueBy),
+                    declinedAt: day(quote.declinedAt),
+                    exclusions: quote.exclusions,
+                    notes: quote.notes,
+                  }),
+                )}
+              />
+              {bid.status === "WON" && (
+                <BidJobLink
+                  bidInvitationId={bid.id}
+                  jobs={linkableJobs}
+                  linked={
+                    outcomesByBid.has(bid.id)
+                      ? {
+                          jobId: outcomesByBid.get(bid.id)!.jobId,
+                          jobName: outcomesByBid.get(bid.id)!.jobName,
+                          outcome: outcomesByBid.get(bid.id)!.outcome,
+                        }
+                      : null
+                  }
+                  sentence={
+                    outcomesByBid.has(bid.id)
+                      ? settledSentence(outcomesByBid.get(bid.id)!.outcome, money)
+                      : null
+                  }
+                />
+              )}
             </li>
           ))}
         </ul>

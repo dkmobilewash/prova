@@ -617,6 +617,11 @@ export const estimatingExclusions: Exclusion[] = [
   // points at, and a model transcribing them would be inventing the one
   // number this whole feature exists to make checkable.
   { action: "recordTakeoffPlan", reason: "A plan is uploaded from the browser under a one-shot token; there is no file for a command to attach." },
+  // Which revision a sheet is. Not a command: the label and date are printed
+  // on a title block the assistant has not seen, and a WRONG date is worse
+  // than none — it makes every plan read as current forever, which is the one
+  // failure the currency check exists to prevent.
+  { action: "recordTakeoffPlanRevision", reason: "The revision label and date are read off a title block the assistant cannot see, and a wrong date makes superseded quantities read as current forever." },
   { action: "deleteTakeoffPlan", reason: "Deletes are never commands (T5)." },
   { action: "saveTakeoffCalibration", reason: "A scale is set by dragging along a dimension on the drawing; a model has not seen the drawing." },
   { action: "saveTakeoffMeasurement", reason: "The measurement IS the traced geometry, which only the viewer produces." },
@@ -628,6 +633,44 @@ export const estimatingExclusions: Exclusion[] = [
   // in lib/estimating/bid-invitation.ts.
   { action: "priceCatalogEntryFromQuotes", reason: "Setting a catalog default from a supplier quote is a pricing decision made on /catalog, where the vendor, the price, the date and the source are all on screen; it is owner-only and moves a number every future bid reads." },
   { action: "updateBidInvitationStatus", reason: "A won/lost decision is made on the bids page where the bid is visible." },
+  // Levelling. Not commands: the figure is easy and the EXCLUSIONS are the
+  // point, and those are somebody's sentences off a PDF the model has not
+  // read. A quote transcribed without them reads as comparable when it is
+  // not, which is the one thing this feature exists to prevent.
+  { action: "saveBidQuote", reason: "The exclusions decide whether the cheapest quote is the best one, and they are read off the sub's own PDF — a transcribed amount without them reads as comparable when it is not." },
+  { action: "deleteBidQuote", reason: "Deletes are never commands (T5)." },
+  { action: "recordBidQuoteDecline", reason: "Whether a sub declined to bid is something they told you, not something the assistant can infer from a thread — and recording it wrongly means nobody chases a quote that was still coming." },
+  // Alternates, unit prices and allowances. Not commands: each one is a
+  // figure off a GC's bid form whose KIND decides where it sits relative
+  // to the base bid, and a model reading "fifteen thousand for soffits"
+  // cannot tell an allowance carried inside the number from an alternate
+  // added outside it. Getting that wrong sends the bid out wrong by the
+  // amount, silently.
+  { action: "saveBidLine", reason: "Whether a figure is an allowance, an alternate or a unit price decides where it sits against the base bid, and a wrong kind sends the bid out wrong by that amount." },
+  { action: "setBidLineAccepted", reason: "What the GC took is read off their award letter, on the page where the alternate is visible." },
+  { action: "deleteBidLine", reason: "Deletes are never commands (T5)." },
+  { action: "linkBidToJob", reason: "Which job a bid became is a judgement about two records the model cannot tell apart — names rarely match and one GC sends several invitations per building. A wrong link teaches the estimator from another job's costs, so a person picks it on /bids." },
+  // Bid-form compliance. Not commands, and this is the clearest case on the
+  // whole list: acknowledging an addendum is a LEGAL ASSERTION on a document
+  // the GC will hold you to, and the model has not read the addendum. A
+  // wrongly-ticked acknowledgement makes a bid look responsive when it is
+  // not, which is the exact failure the feature exists to prevent.
+  { action: "saveBidAddendum", reason: "What the GC issued and when is read off their letter, and whether it changed work you already priced is an estimator's judgement about drawings the assistant has not seen." },
+  { action: "acknowledgeBidAddendum", reason: "Acknowledging an addendum is an assertion on a bid document the GC holds you to. A wrong tick makes a bid look responsive when it is not — the failure this feature exists to prevent." },
+  { action: "deleteBidAddendum", reason: "Deletes are never commands (T5)." },
+  { action: "saveBidRequirement", reason: "These are the ITB items nothing in the data can verify, transcribed from the GC's own form; a misread requirement is one nobody goes and satisfies." },
+  { action: "satisfyBidRequirement", reason: "Recording the bond as obtained or the form as signed is a person vouching for something off-screen. The assistant cannot see whether it happened." },
+  { action: "deleteBidRequirement", reason: "Deletes are never commands (T5)." },
+  // Estimate templates. Not commands: a template is COMPANY REFERENCE DATA
+  // that every future bid is built from, so a wrong line in one is a wrong
+  // line in every estimate made after it — and applying one APPENDS, so an
+  // assistant that applied the wrong template, or applied one twice, would
+  // double an estimate silently.
+  { action: "saveEstimateTemplate", reason: "A template is reference data every future bid inherits; naming and scoping it is a decision made once, on the page where the whole library is visible." },
+  { action: "deleteEstimateTemplate", reason: "Deletes are never commands (T5)." },
+  { action: "saveEstimateTemplateItem", reason: "A wrong line here is a wrong line in every estimate built from this template afterwards, and the default quantity decides what the line starts at." },
+  { action: "deleteEstimateTemplateItem", reason: "Deletes are never commands (T5)." },
+  { action: "applyTemplateToEstimate", reason: "Applying a template APPENDS lines rather than syncing them, so applying the wrong one — or the right one twice — doubles an estimate. The collision warning is meant to be read by a person before the press." },
   { action: "deleteBidInvitation", reason: "Deletes are never commands (T5)." },
   // The pre-bid pursuit list (lib/actions/bidPursuits.ts, BidPursuit). The
   // read side is the bid_pursuits tool. createBidPursuit and
@@ -637,6 +680,12 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "updateBidPursuit", reason: "Editing a pursuit is done on /pipeline, where the row being changed is visible." },
   { action: "linkBidPursuitToInvitation", reason: "Linking needs the right invitation picked from a list of similarly named projects, and it moves the stage to INVITED in the same write — done on /pipeline where both are visible." },
   { action: "deleteBidPursuit", reason: "Deletes are never commands (T5)." },
+  // The conceptual benchmark. A READ, and still not a command: a
+  // dollars-per-square-foot figure looks exactly like a measured one, and the
+  // whole design of lib/conceptual-estimate.ts is that it is never stated
+  // without its sample size and its "not an estimate, not a price" hedge
+  // attached. An assistant relaying it in prose would strip both.
+  { action: "conceptualBenchmark", reason: "A $/SF figure reads as a measured number. It is only safe beside its sample size and the sentence saying it is not an estimate — and prose relaying it would drop both." },
   { action: "createLineItemCatalogEntry", reason: "A catalog entry carries a typed default price, a number the model would be supplying." },
   { action: "deleteLineItemCatalogEntry", reason: "Deletes are never commands (T5)." },
   { action: "saveLineItemAsCatalogEntry", reason: "Promoting a line to the catalog is done from the line on the job page." },

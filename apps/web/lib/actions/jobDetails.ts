@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { can } from "@/lib/permissions";
+import { parseNumericInput } from "@/lib/numeric-input";
 import {
   actionFail as fail,
   actionOk as ok,
@@ -91,7 +92,26 @@ export async function updateJobDetails(jobId: string, formData: FormData): Promi
     };
   }
 
-  await prisma.job.update({ where: { id: jobId }, data: { name, scope, contactId, ...site } });
+  // THE BUILDING'S GROSS AREA — a conceptual-estimating parameter, not a
+  // takeoff quantity. Written only when the form CARRIES the field, the same
+  // `formData.has` guard the site address uses above: a form that does not own
+  // a field must not clear it by omission.
+  let area = {};
+  if (formData.has("grossAreaSqFt")) {
+    const raw = String(formData.get("grossAreaSqFt") ?? "").trim();
+    if (raw === "") {
+      area = { grossAreaSqFt: null };
+    } else {
+      const parsed = parseNumericInput(raw, { label: "Gross area", min: 0 });
+      if (!parsed.ok) return fail(parsed.error);
+      // Zero is not an area. Stored as null rather than 0 so it simply does
+      // not contribute to the benchmark — a job recorded as zero square feet
+      // would divide into an infinite rate.
+      area = { grossAreaSqFt: Number(parsed.value) === 0 ? null : parsed.value };
+    }
+  }
+
+  await prisma.job.update({ where: { id: jobId }, data: { name, scope, contactId, ...site, ...area } });
 
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/jobs");

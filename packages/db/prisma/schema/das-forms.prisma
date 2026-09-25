@@ -1,0 +1,333 @@
+// DAS 140 and DAS 142 — the two California apprenticeship notices, kept as
+// TWO TABLES because they are two documents.
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// WHAT THEY ARE, because the names give nothing away and the difference is
+// the whole design:
+//
+//   DAS 140 — "Public Works Contract Award Information". A contractor that
+//   has been awarded a public works contract NOTIFIES the apprenticeship
+//   committee for each apprenticeable craft it will employ. One per award,
+//   per craft, per committee. It is not a request for anybody.
+//
+//   DAS 142 — "Request for Dispatch of an Apprentice". A written REQUEST to
+//   a committee to send an apprentice, for a stated craft, on a stated
+//   date. It happens as often as the crew changes, and it has an answer: the
+//   committee dispatches somebody, or it does not.
+//
+// WHY NOT ONE TABLE WITH A `type` FLAG. It was considered and rejected on
+// four separate grounds, each of which would have had to be papered over
+// with a nullable column and a branch:
+//
+//   1. IDENTITY. A 140 is unique on (job, committee, craft) — sending a
+//      second one for the same craft is a correction, not a second notice.
+//      A 142 is unique on (job, committee, craft, DATE NEEDED), because
+//      asking again next month is an entirely separate request. One table
+//      cannot hold both unique keys.
+//   2. DEADLINE. The 140's clock starts at contract execution and runs
+//      FORWARD (ten days). The 142's runs BACKWARD from the date an
+//      apprentice is needed (72 hours, excluding weekends), which is not
+//      even the same kind of arithmetic. See lib/das-forms.ts.
+//   3. FIELDS. The 140 carries the three compliance-election boxes and the
+//      contractor's estimate of journeyman and apprentice hours. The 142
+//      carries a COUNT of apprentices and the date they are wanted. Neither
+//      set means anything on the other form.
+//   4. OUTCOME. A 142 has one — dispatched, unable to dispatch, no reply —
+//      and that outcome is the contractor's defence when no apprentice ever
+//      turned up. A 140 has no outcome at all.
+//
+// A flag would make every one of those a runtime branch on a column, and
+// CLAUDE.md's rule about blurring two documents' rules into one is exactly
+// what that produces.
+//
+// WHAT NONE OF THIS INVENTS, and it is the point of the whole area:
+//
+//   There is NO committee registry in this app and none is planned. DIR
+//   publishes one; scraping or hand-copying it here would put a street
+//   address on a document the state receives, sourced from a table nobody
+//   maintains. So a committee is a row the CONTRACTOR fills in once, from
+//   DIR's own lookup, and reuses — `ApprenticeshipCommittee` below. Every
+//   contact field on it is nullable, and the printed form shows a blank with
+//   a sentence rather than a guess. Same call PrevailingWageDetermination
+//   made about wage rates and LicenseClassificationReference made about
+//   Nevada licensing.
+//
+//   NO DEADLINE IS TREATED AS EXACT. The 72-hour rule excludes holidays and
+//   is enforced to the hour; this app holds neither a California holiday
+//   calendar nor a time of day (dates are UTC midnight). lib/das-forms.ts
+//   therefore computes a LATEST SEND DATE that ignores holidays, and says
+//   so on every screen that shows it. A deadline this app guessed, printed
+//   and was wrong about is worse than no deadline.
+//
+// EVIDENCE RECORDS, both of them. Once `sentOn` / `requestedOn` is set the
+// row is correspondence that reached a state-recognized committee: the
+// action layer refuses to delete it and refuses to edit what was sent. See
+// lib/actions/dasForms.ts, where that rule lives, and CLAUDE.md on evidence
+// records. Every date here is ENTERED — none is stamped from a click.
+//
+// NEITHER MODEL HAS A SEQUENCE NUMBER, deliberately. WH-347 has one because
+// the federal form has a "Payroll No." box; DAS 140 and DAS 142 have no such
+// box, and minting "DAS-140-0007" would print a number on a state form that
+// the state never asked for. See lib/das-forms.ts's header.
+//
+// The two models ARE in `HANDLED_MODELS` and in both cleanup scripts'
+// `del()` order, because a required `jobId` is a RESTRICT child of `Job` and
+// a scratch job carrying one could otherwise never be deleted (#227's
+// shape). They are NOT in `NEVER_DELETE`: the never-delete rule is enforced
+// where a person can reach it, in the action, and an operator running
+// `clean-scratch-data.mjs` by hand is a different contract from a button in
+// the app.
+
+/// Which of the DAS 140's three boxes the contractor ticked.
+///
+/// The names are the app's, the meanings are the form's, and the mapping is
+/// UNVERIFIED against a primary DIR page — see lib/das-forms.ts's citation
+/// table and FEATURE-AUDIT.md. Nothing here is defaulted: an election the
+/// app picked would be the app making a declaration to the state.
+enum DasComplianceElection {
+  /// Box 1 — already approved to train by this committee (signatory).
+  APPROVED_TO_TRAIN
+  /// Box 2 — will comply with this committee's standards for this project.
+  WILL_COMPLY_WITH_STANDARDS
+  /// Box 3 — will be governed by the California Apprenticeship Council's
+  /// regulations instead.
+  CAC_REGULATIONS
+}
+
+/// How the notice actually left the building. 8 CCR 230.1 names first class
+/// mail, fax and email for a dispatch request; HAND_DELIVERED is here
+/// because contractors do it and a record that cannot describe what
+/// happened is a record that gets left blank.
+enum DasTransmissionMethod {
+  FIRST_CLASS_MAIL
+  FAX
+  EMAIL
+  HAND_DELIVERED
+}
+
+/// What the committee did about a DAS 142. Null on the row means NO
+/// RESPONSE HAS BEEN RECORDED, which is a different claim from
+/// NO_RESPONSE — that one means somebody checked and nothing came back.
+enum Das142DispatchOutcome {
+  DISPATCHED
+  UNABLE_TO_DISPATCH
+  NO_RESPONSE
+}
+
+/// An apprenticeship committee, as this company has recorded it.
+///
+/// NOT a registry. DIR publishes the authoritative list of committees by
+/// craft and area; this table is the handful the company actually works
+/// with, typed in once from that lookup and reused on every notice. Every
+/// contact field is nullable and blank prints as a blank.
+///
+/// Company-scoped rather than job-scoped for the obvious reason and one
+/// less obvious one: the same committee receives a DAS 140 for every award
+/// in its area, so a per-job copy would be the same address retyped per job
+/// and free to differ between them.
+model ApprenticeshipCommittee {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// What the committee calls itself, as written on DIR's lookup.
+  name String
+
+  /// The craft or trade this committee trains for, in the COMMITTEE's words
+  /// ("Drywall/Lathers"), which is routinely not what a CBA classification
+  /// is called. Free text for the same reason
+  /// CompanyLicense.classificationCode is: a fixed list would be wrong for
+  /// the next one.
+  craftName String
+
+  /// Optional link to one of this company's own classifications, so the job
+  /// side can suggest committees for a craft that is on the job. Nullable
+  /// and advisory — the craft PRINTED on a notice is the snapshot on the
+  /// notice itself, never read back through here.
+  craftClassificationId String?
+  craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+
+  /// The committee's geographic area of operation, as DIR states it. 8 CCR
+  /// 230 keys the obligation on whether that area includes the site of the
+  /// public work, so this is the field somebody reads when deciding which
+  /// committees a job's notices go to. Free text: it is a sentence about
+  /// counties, not a polygon, and a geocoder would be guessing.
+  geographicArea String
+
+  /// The state program number, when the company has it. NULL MEANS NOT
+  /// RECORDED and prints as a blank the contractor fills. Whether either
+  /// form actually requires it is UNVERIFIED against a primary DIR page.
+  programSponsorNumber String?
+
+  /// Where the notice is sent. All nullable, none derived, none defaulted.
+  /// A form with a wrong address on it is worse than one with none: the
+  /// deadline is met by DELIVERY, and a plausible address that is not the
+  /// committee's silently fails the requirement. There is a documented
+  /// penalty for sending a DAS 142 to the wrong committee.
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  email        String?
+  fax          String?
+  phone        String?
+
+  /// Whether THIS committee has approved the company to train apprentices.
+  ///
+  /// Load-bearing rather than descriptive, and null is a real third value.
+  /// 8 CCR 230(a) sends a contractor already approved to train to the
+  /// APPROVING committee only, and one not approved to ALL applicable
+  /// committees in the area. So this decides how many DAS 140s an award
+  /// owes — and a null must therefore read as "nobody has recorded it" and
+  /// make lib/das-forms.ts decline to answer, rather than defaulting to
+  /// either branch and producing a confident wrong count.
+  approvedToTrainUs Boolean?
+
+  /// Where the company read all of this. The honesty of the table: a
+  /// committee address with no citation is somebody's memory of a phone
+  /// call.
+  sourceUrl String?
+  note      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  das140Notices Das140Notice[]
+  das142Requests Das142Request[]
+
+  @@index([companyId])
+  @@index([craftClassificationId])
+}
+
+/// One DAS 140 — this award, this craft, this committee.
+///
+/// Unique on (job, committee, craft) because a second notice for the same
+/// three things is a correction to the first, not a second notification.
+model Das140Notice {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  committeeId String
+  committee   ApprenticeshipCommittee @relation(fields: [committeeId], references: [id])
+
+  /// The craft as it was NOTIFIED, snapshotted from the committee at
+  /// creation and never read back through the relation. Editing the
+  /// committee row later must not rewrite what a committee was already
+  /// told — that is the evidence-record rule, and a join would break it
+  /// silently.
+  craftName String
+
+  /// Which of the three boxes. Required: the form has no fourth state and
+  /// the app has no business choosing.
+  election DasComplianceElection
+
+  /// The date of execution of the prime contract or subcontract. ENTERED
+  /// from the document, UTC midnight, never stamped — and the start of the
+  /// ten-day clock, which is why it is required rather than nullable.
+  contractExecutedOn DateTime
+
+  /// The contractor's own estimates, as the form asks for them. NULL MEANS
+  /// NOT ENTERED and prints as a blank.
+  ///
+  /// Deliberately NOT derived from the estimate's labor lines, even though
+  /// this app holds them. The form asks what the contractor expects to
+  /// employ on this craft; an estimate is priced work, split by cost code
+  /// and not by apprentice tier, and turning one into the other would be
+  /// the app making a projection in the contractor's name on a document
+  /// the state keeps.
+  estimatedJourneymanHours Decimal? @db.Decimal(9, 2)
+  estimatedApprenticeHours Decimal? @db.Decimal(9, 2)
+
+  /// Expected dates for this craft's work. Nullable; nothing defaults them
+  /// from Job.startDate, because the job's dates are the whole job and this
+  /// is one trade on it.
+  estimatedStartOn      DateTime?
+  estimatedCompletionOn DateTime?
+
+  /// The subcontract amount, when the contractor chooses to state it.
+  contractAmount Decimal? @db.Decimal(12, 2)
+
+  /// The awarding body's own project number, as printed on the call for
+  /// bids. Free text; nothing derives it. The job carries `awardingBody`
+  /// already and that is read directly rather than copied here.
+  projectIdentifier String?
+
+  /// When the notice was actually sent. NULL = NOT SENT. Entered, not
+  /// stamped: a notice posted on Friday and recorded on Monday was sent on
+  /// Friday, and the ten-day test is about the first date.
+  sentOn     DateTime?
+  sentMethod DasTransmissionMethod?
+
+  /// Where the proof of transmission lives — "fax confirmation in the job
+  /// folder", a certified-mail number. Free text on purpose: the proof is a
+  /// piece of paper somewhere, and pretending to store it would be worse
+  /// than pointing at it.
+  proofNote String?
+
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([jobId, committeeId, craftName])
+  @@index([jobId])
+  @@index([committeeId])
+}
+
+/// One DAS 142 — a written request for an apprentice, for a craft, for a
+/// date.
+///
+/// Unique on (job, committee, craft, date needed): asking the same
+/// committee for the same craft on a different date is a separate request
+/// with its own 72-hour test and its own answer.
+model Das142Request {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  committeeId String
+  committee   ApprenticeshipCommittee @relation(fields: [committeeId], references: [id])
+
+  /// Snapshotted at creation, same reason as on Das140Notice.
+  craftName String
+
+  /// How many apprentices are wanted. Required and entered: the count is a
+  /// staffing decision, and deriving one from a ratio shortfall would have
+  /// the app ask a committee for people the contractor did not ask for.
+  apprenticesRequested Int
+
+  /// The date the apprentice is needed ON SITE. ENTERED, UTC midnight, and
+  /// the anchor the 72-hour lead time counts BACK from.
+  neededFrom DateTime
+  /// Through this date, when the request covers a run of days. Nullable.
+  neededTo DateTime?
+
+  /// When the WRITTEN request was actually sent. NULL = NOT SENT YET, which
+  /// is the state a request sits in while somebody is still deciding. The
+  /// lead-time test compares this against `neededFrom` and nothing else.
+  requestedOn DateTime?
+  sentMethod  DasTransmissionMethod?
+
+  projectIdentifier String?
+  proofNote         String?
+
+  /// What came back. `respondedOn` null and `outcome` null is "nothing
+  /// recorded"; `outcome = NO_RESPONSE` is "somebody checked and nothing
+  /// came back", which is the version that defends a contractor who ran
+  /// short. Two different facts, two different columns.
+  respondedOn DateTime?
+  outcome     Das142DispatchOutcome?
+  outcomeNote String?
+
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([jobId, committeeId, craftName, neededFrom])
+  @@index([jobId])
+  @@index([committeeId])
+}

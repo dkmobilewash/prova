@@ -160,6 +160,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
               isEstimate={job.status === "ESTIMATE"}
               canRemove={currentUser.role === "OWNER"}
               siteAddress={job.siteAddress ?? job.projectLocation}
+              grossAreaSqFt={job.grossAreaSqFt === null ? null : String(job.grossAreaSqFt)}
               siteStatus={job.siteAddress === null ? "none" : job.siteLatitude !== null ? "found" : "notFound"}
             />
             <JobBidDetails

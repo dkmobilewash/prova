@@ -21,6 +21,7 @@ import {
 } from "@/lib/bid-pursuits";
 import type { PursuitRow } from "@/lib/bid-pursuits-query";
 import { money } from "@/lib/money";
+import { ConceptualEstimateHelper } from "@/components/ConceptualEstimateHelper";
 import {
   applyPursuitChanges,
   draftPursuit,
@@ -163,6 +164,13 @@ function BidPursuitFields({ pursuit, minBidDate }: { pursuit?: PursuitRow; minBi
           placeholder="250,000"
           className={inputClass}
         />
+        {/* BESIDE the field, never inside it. The helper fills in nothing —
+            see ConceptualEstimateHelper for why a button that wrote into
+            this field would make the pipeline total part guess and part
+            quote, with nothing saying which rows were which. */}
+        <span className="mt-1 block">
+          <ConceptualEstimateHelper />
+        </span>
       </label>
       <label className="block text-sm sm:col-span-2">
         <span className="text-ink-label">Note (optional)</span>

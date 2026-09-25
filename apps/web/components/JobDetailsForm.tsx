@@ -28,6 +28,7 @@ export function JobDetailsForm({
   isEstimate,
   canRemove,
   siteAddress,
+  grossAreaSqFt,
   siteStatus,
 }: {
   jobId: string;
@@ -41,6 +42,7 @@ export function JobDetailsForm({
   canRemove: boolean;
   /** Prefilled from the bid's free-text location when none is saved yet. */
   siteAddress: string | null;
+  grossAreaSqFt: string | null;
   /** "none" = nothing saved yet; "found" / "notFound" = whether the saved
    *  address was found on a map — weather needs coordinates. */
   siteStatus: "none" | "found" | "notFound";
@@ -117,6 +119,24 @@ export function JobDetailsForm({
             : siteStatus === "notFound"
               ? "Couldn't find this address on a map, so daily reports can't fill in the weather. Try a street address or \"City, ST\"."
               : "Save where the work is and daily reports fill in the weather automatically."}
+        </p>
+
+        <label className={label}>
+          Gross area (SF)
+          <input
+            name="grossAreaSqFt"
+            inputMode="decimal"
+            defaultValue={grossAreaSqFt ?? ""}
+            placeholder="40000"
+            className={input}
+          />
+        </label>
+        {/* Said here because the field is easy to misread as a takeoff
+            quantity, which it is not. */}
+        <p className="-mt-1 text-xs text-ink-muted">
+          The building&apos;s area, not a takeoff quantity. Once a job is finished it feeds the
+          order-of-magnitude range shown on new pursuits — so a job left blank simply does not
+          count toward it.
         </p>
 
         <label className={label}>
