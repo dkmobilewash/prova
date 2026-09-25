@@ -58,6 +58,27 @@ model Job {
   /// said when starting the bid, and the only thing that reads it is the job
   /// page and the web research the Ask box runs on a new bid.
   projectLocation String?
+
+  /// THE BUILDING'S GROSS AREA, and this is NOT a takeoff quantity.
+  ///
+  /// Every other square-foot figure in this schema is per-line-item — a
+  /// `JobLineItem.unit` of "SF", a `WallComponentBasis` of `FACE_SQFT`, a
+  /// `TakeoffMeasurementKind` of `AREA`. This is the only project-level one,
+  /// and confusing it with those would be expensive in both directions: it is
+  /// not how much board you hang, and multiplying it by a unit price would
+  /// produce a number that means nothing.
+  ///
+  /// What it IS for: CONCEPTUAL estimating, before there are drawings to
+  /// measure. "A 40,000 SF office TI" is what somebody knows when they hear
+  /// about a job, and `lib/conceptual-estimate.ts` turns this plus the
+  /// company's own finished work into a dollars-per-square-foot range — never
+  /// a single figure, and never written into an estimate by the app.
+  ///
+  /// Nullable and expected to stay null on most jobs. A job with no area
+  /// recorded simply does not contribute to the benchmark, which is the
+  /// honest behaviour: the alternative is guessing an area and polluting
+  /// every future conceptual estimate with the guess.
+  grossAreaSqFt Decimal? @db.Decimal(12, 2)
   /// Where the work physically is — the street address a daily report's
   /// weather is looked up for. Entered on the job page. `siteLatitude`,
   /// `siteLongitude` and `siteTimeZone` are what that address resolved to
