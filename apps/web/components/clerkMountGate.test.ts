@@ -44,12 +44,28 @@
  *   is #185's shape: a comment quoting the pattern disarms the guard.
  *
  * THE TWO EXEMPT FILES ARE NAMED, NOT PATTERN-MATCHED, and the exemption is
- * itself asserted rather than trusted: `/sign-in` and `/sign-up` are where
- * Clerk's card IS the page, they sit outside the signed-in shell, and CI's
- * `e2e-public` job walks both at 320, 375 and 1280 and is green — so there is
- * no mismatch there to remove, and gating them would replace the card with a
- * blank frame for a frame. Each exempt file must still exist AND still render
- * a Clerk component, so an exemption cannot outlive the thing it exempts.
+ * itself asserted rather than trusted. `/sign-in` and `/sign-up` are where
+ * Clerk's card IS the page: gating them renders the app's front door blank for
+ * a frame, and Clerk gives those two components a `fallback` prop and
+ * `renderWhileLoading: true` precisely so that the waiting state is something
+ * it draws rather than something we withhold. Each exempt file must still
+ * exist AND still render a Clerk component, so an exemption cannot outlive the
+ * thing it exempts.
+ *
+ * WHAT THE EXEMPTION IS NOT RESTING ON, because the wrong reason was written
+ * here first and it is the exact error this file exists to prevent. It is NOT
+ * "`e2e-public` walks both pages and is green". That job calls `expectHealthy`
+ * WITHOUT a monitor, so it never reads `pageerror` and cannot see a hydration
+ * mismatch on any page — CLAUDE.md says so in the same entry this census comes
+ * from. A green suite that looks at nothing is the vacuous green, and citing
+ * it as evidence inside a guard would have been that mistake one level down.
+ *
+ * What IS true: `SignIn` and `SignUp` carry the same `clerk.loaded &&` branch
+ * as `UserButton` (`chunk-THNCS7QR.mjs:556` and `:577`), so the race exists
+ * there in principle; and the pilot journey's monitor is attached BEFORE
+ * `signInAs`, so a #418 on `/sign-in` would be captured and named — and no run
+ * has ever named it. That is weak evidence rather than none, and it is stated
+ * as weak.
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -76,8 +92,9 @@ function stripComments(source: string): string {
 const NOT_A_RENDERED_WIDGET = new Set(["ClerkProvider"]);
 
 /**
- * Where Clerk's own card is the page. See this file's header for why these
- * two are exempt and why the exemption is asserted below rather than assumed.
+ * Where Clerk's own card is the page. See this file's header for why these two
+ * are exempt, what that exemption does NOT rest on, and why it is asserted
+ * below rather than assumed.
  */
 const CARD_IS_THE_PAGE = [
   "app/sign-in/[[...sign-in]]/page.tsx",
@@ -118,19 +135,29 @@ const roots = globs.map((glob) => {
 /** One `{ file, names, stripped }` per file importing Clerk's browser
  * package. `@clerk/nextjs/server` is deliberately not matched: `auth()`,
  * `currentUser()` and `clerkClient()` render nothing. */
-type ClerkSite = { file: string; names: string[]; stripped: string };
+type ClerkSite = { file: string; names: string[]; statements: number; stripped: string };
+
+/** Every `from "@clerk/nextjs"` (or `clerk-react`) in a file, however the
+ * import is spelled. Counted as well as parsed, because a DEFAULT or NAMESPACE
+ * import carries no brace list and would parse to no names at all — the
+ * "empty question" failure the size check below exists to catch. */
+const CLERK_IMPORT = /from\s*["']@clerk\/(?:nextjs|clerk-react)["']/g;
+const CLERK_NAMED_IMPORT = /import\s*\{([^}]*)\}\s*from\s*["']@clerk\/(?:nextjs|clerk-react)["']/g;
 
 function clerkSites(): ClerkSite[] {
   const found: ClerkSite[] = [];
   for (const full of roots.flatMap((root) => sources(root))) {
     const stripped = stripComments(readFileSync(full, "utf8"));
-    const importMatch = /import\s*\{([^}]*)\}\s*from\s*["']@clerk\/(?:nextjs|clerk-react)["']/.exec(stripped);
-    if (!importMatch) continue;
-    const names = importMatch[1]
-      .split(",")
+    const statements = [...stripped.matchAll(CLERK_IMPORT)].length;
+    if (statements === 0) continue;
+    /* ALL of them, not the first: a file is free to import a provider on one
+       line and a widget on the next, and taking only `exec()`'s first match
+       would silently drop the second. */
+    const names = [...stripped.matchAll(CLERK_NAMED_IMPORT)]
+      .flatMap((match) => match[1].split(","))
       .map((part) => part.trim().split(/\s+as\s+/).pop()!.trim())
       .filter((name) => name.length > 0 && !NOT_A_RENDERED_WIDGET.has(name));
-    found.push({ file: full.slice(appDir.length + 1), names, stripped });
+    found.push({ file: full.slice(appDir.length + 1), names, statements, stripped });
   }
   return found;
 }
@@ -184,6 +211,19 @@ describe("Clerk's UI components are mounted behind the browser gate", () => {
         `census parsed ${sites.length} — the import pattern has drifted`,
     ).toBe(byPlainText.length);
     expect(sites.length, "no file imports Clerk at all, so this census is about nothing").toBeGreaterThan(0);
+
+    /* AND EVERY IMPORT STATEMENT YIELDED NAMES. A default or namespace import
+       (`import Clerk from …`) has no brace list, so it would contribute a
+       statement and zero names — a widget this census cannot see. The one
+       legitimate zero is a file whose only Clerk import is the provider. */
+    for (const site of sites) {
+      const providerOnly = /import\s*\{[^}]*\bClerkProvider\b[^}]*\}/.test(site.stripped) && site.names.length === 0;
+      expect(
+        site.names.length > 0 || providerOnly,
+        `${site.file} imports Clerk in ${site.statements} statement(s) and this census read no ` +
+          `component name out of them — a default or namespace import it cannot see into`,
+      ).toBe(true);
+    }
   });
 
   it("names every Clerk widget it found, so a new one cannot arrive unnoticed", () => {

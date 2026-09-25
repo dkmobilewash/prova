@@ -88,6 +88,13 @@ RACE at a rate low enough to land on one page in roughly forty loads, and which
 page it lands on carries no information — the same thing this change says about
 a list of seventeen, said about a list of one, where it is much harder to see.
 
+**Settled by the next run rather than by that argument.** CI 36194376856, head
+`062bcd7f` (this branch merged with `main`, so #493 is in): step 11 printed
+THREE entries — `/dashboard`, `/pipeline`, `/material-orders` — and none of
+them was the crew tab. `verdicts: collected 63, returned 63`, 62 of 63 specs
+passing, step 11 the only failure. Three runs, three disjoint lists, only
+`/dashboard` recurring. The list is the dice, not a location.
+
 The crew tab has now been read anyway, so nobody re-reads it: its five unique
 components read no clock, window, storage or mutable singleton in render
 position and none nests a `<form>` on a first render, and the app-wide scan of
@@ -103,16 +110,26 @@ still passes while every signed-in page goes back to racing — the "written,
 documented, and never called" shape wearing a hydration fix.
 `components/clerkMountGate.test.ts` closes it. Every Clerk UI component
 rendered anywhere Tailwind's `content` globs reach must sit inside
-`<AfterMount>`; `/sign-in` and `/sign-up` are named exemptions, because there
-Clerk's card IS the page, it is outside the signed-in shell, and `e2e-public`
-walks both at 320, 375 and 1280 — and each exemption is asserted to still exist
-and still render a Clerk card, so an allowlist cannot outlive what it exempts.
+`<AfterMount>`; `/sign-in` and `/sign-up` are named exemptions, each asserted
+to still exist and still render a Clerk card so an allowlist cannot outlive
+what it exempts. The reason for the exemption is NOT that `e2e-public` walks
+both pages and is green — that job calls `expectHealthy` without a monitor and
+so never reads `pageerror` at all, and citing it would have put a vacuous green
+inside a guard written to end vacuous greens. It is that gating those two
+blanks the app's front door for a frame, and Clerk hands `SignIn`/`SignUp` a
+`fallback` prop with `renderWhileLoading: true` so the waiting state is
+something it draws. `SignIn` and `SignUp` do carry the same `clerk.loaded &&`
+branch as `UserButton`, so that race exists there in principle; the only
+evidence against it is that the journey's monitor is attached before
+`signInAs` and no run has named `/sign-in`, which is weak and is said to be.
 The census counts the files it parsed against a second expression sharing no
 regex with the first, derives its roots from `content` rather than its own
 directory, and strips comments before every structural read — which is
 load-bearing rather than tidy, since `AfterMount.tsx` and `Topbar.tsx` both
-print `<UserButton />` in their own headers. Mutation-tested five ways, each
-red naming the offender: gate removed, gate present only in a comment, the
-import pattern drifted (red on the COUNT — "the sources contain 4 files and
-this census parsed 0"), a new Clerk widget added, and a `content` glob pointed
-at a directory that does not exist.
+print `<UserButton />` in their own headers. It also requires every Clerk import statement
+to yield a component name, so a default or namespace import fails instead of
+parsing to nothing. Mutation-tested six ways, each red naming the offender:
+gate removed, gate present only in a comment, the import pattern drifted (red
+on the COUNT — "the sources contain 4 files and this census parsed 0"), a new
+Clerk widget added, a `content` glob pointed at a directory that does not
+exist, and `<UserButton>` reached through a namespace import.

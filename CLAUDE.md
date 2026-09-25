@@ -1559,8 +1559,23 @@ scrollback gets broken by whoever didn't scroll far enough.
   applied to a list of length one. A list that short is the hardest one to
   read correctly, because it looks like a location.
 
+  **AND THE NEXT RUN SETTLED IT BY MEASUREMENT RATHER THAN BY THIS ARGUMENT.**
+  CI run 36194376856, head `062bcd7f`, the merge of this branch with `main`
+  (so #493's SearchLauncher fix is in too): step 11 printed THREE entries and
+  not one of them was the crew tab —
+
+      on http://localhost:3100/dashboard        Minified React error #418; args[]=HTML&args[]=
+      on http://localhost:3100/pipeline         Minified React error #418; args[]=HTML&args[]=
+      on http://localhost:3100/material-orders  Minified React error #418; args[]=HTML&args[]=
+
+  `verdicts: collected 63, returned 63`, 62 of 63 specs passing, step 11 the
+  only failure, and `console errors captured (0)`. Three runs, three disjoint
+  lists (six pages, then `crew`, then these three) with only `/dashboard`
+  recurring. The list is the race's dice, not a location, at every length.
+
   What follows for the next person: do not start by reading the crew tab (it
-  has been read — see the ELIMINATED list). Start by asking which mechanism
+  has been read — see the ELIMINATED list), and do not start by reading
+  `/pipeline` or `/material-orders` either. Start by asking which mechanism
   can still make the browser's FIRST render disagree about an ELEMENT, and
   note that both mechanisms found so far were global and neither was visible
   on every page it could fire on. And a step 11 that prints nothing on one
@@ -1568,26 +1583,59 @@ scrollback gets broken by whoever didn't scroll far enough.
   run is one sample. Two consecutive clean runs is the weakest claim worth
   making, and `main` has never produced one.
 
+  **AND THE ONE INSTRUMENT NOBODY HAS POINTED AT IT YET.** `console errors
+  captured (0)` on the run above is not a bug in the reporting — production
+  React puts #418 on `pageerror` and prints nothing to the console, so that
+  line will read zero on every production run and can never name the element.
+  `E2E_DEV_SERVER=1` (`e2e/playwright.config.ts`, from #495) runs the journey
+  against `next dev`, where React prints the diff and the component stack. It
+  is the only way left to learn WHICH element the two sides disagree about,
+  and it cannot be run from an agent container (Clerk's FAPI host is denied by
+  the egress proxy). It needs a run on a machine that can sign in — CI with
+  that variable set, or a laptop. Note the one thing dev mode changes that
+  matters here: the 3,200-byte Flight deferral does not exist in the
+  development build, so a mismatch that survives into `next dev` is NOT that
+  mechanism, and one that vanishes there probably is.
+
   **WHAT NOW GUARDS THE SECOND FIX.** `components/afterMount.test.ts` proves
   the gate works and says nothing about anybody using it — delete the two
   lines in `Topbar.tsx` that wrap `<UserButton>` and every test still passed.
   `components/clerkMountGate.test.ts` closes that: every Clerk UI component
   rendered anywhere Tailwind's `content` globs reach must sit inside
   `<AfterMount>`, with `/sign-in` and `/sign-up` named as the two exemptions
-  (Clerk's card IS the page there, outside the signed-in shell, and
-  `e2e-public` walks both at three widths) and each exemption asserted to
-  still exist and still render a Clerk card. It counts the files it parsed
-  against a second expression that shares no regex with the first, derives
-  its roots from `content` rather than from its own directory, and reads
-  every structure with comments STRIPPED — which is not decoration here:
+  and each asserted to still exist and still render a Clerk card.
+
+  **The reason for those two exemptions is worth reading, because the WRONG
+  reason was written first and it was this file's own worst habit.** It said
+  `e2e-public` walks both pages and is green. That job calls `expectHealthy`
+  WITHOUT a monitor — the paragraph above says so — so it never reads
+  `pageerror` and cannot see a hydration mismatch anywhere. Citing it would
+  have put a vacuous green inside a guard written to end vacuous greens. The
+  actual reasons: gating those two renders the app's front door blank for a
+  frame, and Clerk hands `SignIn`/`SignUp` a `fallback` prop with
+  `renderWhileLoading: true` so the waiting state is something IT draws.
+
+  And the open half, recorded rather than closed: `SignIn` and `SignUp` carry
+  the same `clerk.loaded &&` branch as `UserButton`
+  (`chunk-THNCS7QR.mjs:556` and `:577`), so the race exists on those two
+  pages in principle. The only evidence against it is that the journey's
+  monitor is attached BEFORE `signInAs` and no run has ever named `/sign-in`.
+  That is weak, and it is the honest state of it.
+
+  **How the census keeps itself honest.** It counts the files it parsed
+  against a second expression that shares no regex with the first, requires
+  every Clerk import statement to yield a component name (so a default or
+  namespace import fails instead of parsing to nothing), derives its roots
+  from `content` rather than from its own directory, and reads every
+  structure with comments STRIPPED — which is not decoration here:
   both `AfterMount.tsx` and `Topbar.tsx` print `<UserButton />` in their own
   headers, so a raw-text census would find a render site that does not exist
   and, with a commented `<AfterMount>` around a bare widget, would call it
-  gated. Mutation-tested five ways, each red naming the offender: gate
+  gated. Mutation-tested six ways, each red naming the offender: gate
   removed, gate present only in a comment, the import pattern drifted (fails
   on the COUNT: "the sources contain 4 files and this census parsed 0"), a
-  new Clerk widget added, and a `content` glob pointed at a directory that
-  does not exist.
+  new Clerk widget added, a `content` glob pointed at a directory that does
+  not exist, and `<UserButton>` reached through a namespace import.
 
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.
