@@ -44,6 +44,26 @@
  *                 tab, every nav destination. That file is serial by
  *                 design (step 7 needs steps 3-6 to have happened), so it
  *                 gets a company nothing else reads or writes.
+ *   ESTIMATING — its own empty company, for specs/estimating-spine.spec.ts:
+ *                 the estimating desk Diego built between 22 and 24 Sep and
+ *                 nobody had clicked — wall types and a job's wall schedule,
+ *                 the bid recap, an estimate template applied, the labor
+ *                 production rate, the proposal document and the conceptual
+ *                 $/SF calculator. Serial, like the journey, because every
+ *                 one of those screens needs an ESTIMATE-stage job with
+ *                 lines on it, and building one per case would spend five
+ *                 minutes proving the wizard works six more times.
+ *   TAKEOFF    — its own empty company, for specs/takeoff-plan.spec.ts: the
+ *                 on-screen plan takeoff and the currency banner. Kept off
+ *                 ESTIMATING because posting a measured quantity ADDS
+ *                 estimate lines, and the template and recap cases count
+ *                 the lines on their job.
+ *   BID_DESK   — its own empty company, for specs/bid-desk.spec.ts: the four
+ *                 things /bids grew in three days — alternates/unit
+ *                 prices/allowances, levelling two quotes, bid-form
+ *                 compliance, and a won bid linked to its job. One company,
+ *                 one GC, one bid, because every one of those panels hangs
+ *                 off a bid invitation row.
  *   BAD_INPUTS — its own empty company, for specs/known-bad-inputs.spec.ts:
  *                 the inputs that took the product down on 2026-09-21
  *                 (`2,800`, `12,500`, `0.10`), each driven as its own
@@ -62,6 +82,9 @@ export const PERSONAS = {
   field: { email: "e2e-field+clerk_test@example.com", label: "FIELD" },
   journey: { email: "e2e-journey+clerk_test@example.com", label: "JOURNEY" },
   badInputs: { email: "e2e-badinputs+clerk_test@example.com", label: "BAD_INPUTS" },
+  estimating: { email: "e2e-estimating+clerk_test@example.com", label: "ESTIMATING" },
+  takeoff: { email: "e2e-takeoff+clerk_test@example.com", label: "TAKEOFF" },
+  bidDesk: { email: "e2e-biddesk+clerk_test@example.com", label: "BID_DESK" },
 } as const;
 
 export type PersonaKey = keyof typeof PERSONAS;
