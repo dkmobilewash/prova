@@ -128,7 +128,17 @@ export function MobileNav({
                 figures are what force every heading to stay on screen at
                 once, and the drawer carries no figures, so one group at a
                 time is the right answer on a 360px screen. */}
-            <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
+            {/* `aria-label="Main"` for the same reason the desktop rail
+                carries it (Sidebar.tsx): this IS the app's main navigation
+                below md, and it was the only landmark in the shell with no
+                name. A screen reader on a phone announced an anonymous
+                "navigation" — and since the rail is display:none at this
+                width, there was no named navigation landmark anywhere on a
+                signed-in phone page. The two are never in the tree at once
+                (the rail's spacer is `hidden md:block`, this drawer's
+                wrapper is `md:hidden`), so one name across both shapes is
+                right rather than ambiguous. */}
+            <nav aria-label="Main" className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
               {groups.map((group) => {
                 const isOpen = accordion.open === group.heading;
                 const holdsPage = accordion.active === group.heading;
