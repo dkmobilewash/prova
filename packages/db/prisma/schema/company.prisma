@@ -114,6 +114,7 @@ model Company {
   bidQuotes                 BidQuote[]
   bidLines                  BidLine[]
   bidAddenda                BidAddendum[]
+  estimateTemplates         EstimateTemplate[]
   bidRequirements           BidRequirement[]
   jobMediaTags              JobMediaTag[]
   documentIntakes           DocumentIntake[]

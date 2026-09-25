@@ -10,6 +10,8 @@ import { catalogActuals, catalogSourcedLine, repriceDecision } from "@/lib/catal
 import { quotePriceDecision } from "@/lib/catalog-quote-price";
 import { bidQuoteProblem } from "@/lib/bid-levelling";
 import { addendumProblem, requirementProblem } from "@/lib/bid-responsiveness";
+import { templateItemProblem, templateProblem } from "@/lib/estimate-templates";
+import { applyEstimateTemplate } from "@/lib/estimating/apply-template";
 import { optionalDateFromString } from "@/lib/bid-pursuits";
 import { bidLineProblem } from "@/lib/bid-lines";
 import { todayInZone } from "@/lib/viewer-timezone";
@@ -1140,4 +1142,193 @@ export async function deleteBidRequirement(requirementId: string): Promise<Actio
 
   revalidatePath("/bids");
   return actionOk;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// ESTIMATE TEMPLATES — the shape of a job this company bids over and over.
+//
+// Company reference data that GENERATES JobLineItem rows, the same job the
+// catalog and wall types already do. NOT a second home for line-item data —
+// see estimate-templates.prisma for why that distinction is load-bearing.
+//
+// MANAGE_ESTIMATING throughout, the capability /catalog and /bids withhold on.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Creates or renames one template. */
+export async function saveEstimateTemplate(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  return runAction(async () => {
+    const name = String(formData.get("name") ?? "").trim();
+    const description = String(formData.get("description") ?? "").trim();
+
+    const problem = templateProblem({ name });
+    if (problem) return actionFail(problem);
+
+    const tradeScope = tradeScopeFromForm(formData);
+
+    const data = { name, description: description || null, tradeScope };
+    const templateId = String(formData.get("templateId") ?? "").trim();
+
+    // The unique is ([companyId, name]) so two people cannot make two
+    // "Standard TI" templates that quietly differ. Caught here as a sentence
+    // rather than as a redacted Prisma error.
+    const clash = await prisma.estimateTemplate.findFirst({
+      where: { companyId: company.id, name, ...(templateId ? { NOT: { id: templateId } } : {}) },
+      select: { id: true },
+    });
+    if (clash) return actionFail(`There is already a template called “${name}”. Give this one a different name.`);
+
+    if (templateId) {
+      const updated = await prisma.estimateTemplate.updateMany({
+        where: { id: templateId, companyId: company.id },
+        data,
+      });
+      if (updated.count === 0) return actionFail("That template is already gone. Reload the page.");
+    } else {
+      await prisma.estimateTemplate.create({ data: { ...data, companyId: company.id } });
+    }
+
+    revalidatePath("/catalog");
+    return actionOk;
+  });
+}
+
+export async function deleteEstimateTemplate(templateId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const refusal = ownerRefusal(context, "Only the account owner can delete an estimate template.");
+  if (refusal) return refusal;
+
+  const deleted = await prisma.estimateTemplate.deleteMany({ where: { id: templateId, companyId: company.id } });
+  if (deleted.count === 0) return actionFail("That template is already gone. Reload the page.");
+
+  revalidatePath("/catalog");
+  return actionOk;
+}
+
+/** Creates or updates one line on a template. */
+export async function saveEstimateTemplateItem(templateId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const template = await prisma.estimateTemplate.findFirst({
+    where: { id: templateId, companyId: company.id },
+    select: { id: true },
+  });
+  if (!template) return actionFail("That template is no longer on this company. Reload the page.");
+
+  return runAction(async () => {
+    const description = String(formData.get("description") ?? "").trim();
+    const unit = String(formData.get("unit") ?? "").trim();
+    const quantityValue = nullableDecimalFromForm(formData, "defaultQuantity");
+
+    const problem = templateItemProblem({
+      description,
+      defaultQuantity: quantityValue === null ? null : Number(quantityValue),
+    });
+    if (problem) return actionFail(problem);
+
+    // Optional. A template line that nothing in the catalog prices is still
+    // worth having — "Scaffold, by others" belongs on the list long before
+    // anybody catalogues it.
+    const catalogEntryIdRaw = String(formData.get("catalogEntryId") ?? "").trim();
+    let catalogEntryId: string | null = null;
+    if (catalogEntryIdRaw) {
+      const entry = await prisma.lineItemCatalogEntry.findFirst({
+        where: { id: catalogEntryIdRaw, companyId: company.id },
+        select: { id: true },
+      });
+      if (!entry) return actionFail("That catalog entry isn't on this company. Reload the page.");
+      catalogEntryId = entry.id;
+    }
+
+    const data = {
+      description,
+      unit: unit || null,
+      defaultQuantity: quantityValue,
+      catalogEntryId,
+    };
+
+    const itemId = String(formData.get("itemId") ?? "").trim();
+    if (itemId) {
+      const updated = await prisma.estimateTemplateItem.updateMany({
+        where: { id: itemId, templateId },
+        data,
+      });
+      if (updated.count === 0) return actionFail("That line is no longer on this template. Reload the page.");
+    } else {
+      // Appended at the end. `sortOrder` is a count rather than max+1 because
+      // it orders a display and is not an identity — nothing is reissued and
+      // nothing refers to it, so the counter rule does not apply here.
+      const count = await prisma.estimateTemplateItem.count({ where: { templateId } });
+      await prisma.estimateTemplateItem.create({ data: { ...data, templateId, sortOrder: count } });
+    }
+
+    revalidatePath("/catalog");
+    return actionOk;
+  });
+}
+
+export async function deleteEstimateTemplateItem(itemId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  const deleted = await prisma.estimateTemplateItem.deleteMany({
+    where: { id: itemId, template: { companyId: company.id } },
+  });
+  if (deleted.count === 0) return actionFail("That line is already gone. Reload the page.");
+
+  revalidatePath("/catalog");
+  return actionOk;
+}
+
+/**
+ * Applies a template to a job's estimate.
+ *
+ * Returns how many lines were added and which the estimate already carried,
+ * so the screen can say both. It does NOT refuse on a collision — see
+ * lib/estimate-templates.ts: a second floor's worth of the same lines is
+ * legitimate, and guessing which case this is would be wrong half the time.
+ */
+export async function applyTemplateToEstimate(jobId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  // VIEW_JOB_COSTS, NOT MANAGE_ESTIMATING — and the difference is not
+  // cosmetic. This action lives on the job's estimate tab, which withholds on
+  // VIEW_JOB_COSTS, and its sibling `addLineItemFromCatalog` on the very same
+  // screen asks for exactly that. Asking for more here would hand an
+  // ACCOUNTING member a page they can open and a button that refuses them.
+  //
+  // `action-capability-guards.test.ts` caught this by EXECUTING the action
+  // against such a principal; it was written as MANAGE_ESTIMATING because
+  // every other action in this section is, and every other action in this
+  // section lives on /catalog or /bids.
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
+
+  return runAction(async () => {
+    const templateId = String(formData.get("templateId") ?? "").trim();
+    if (!templateId) return actionFail("Pick a template to apply.");
+
+    const result = await applyEstimateTemplate(company.id, { jobId, templateId });
+    if (!result.ok) return actionFail(result.error);
+
+    revalidatePath(`/jobs/${jobId}`);
+    revalidatePath(`/jobs/${jobId}/estimate`);
+    return actionOk;
+  });
 }

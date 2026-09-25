@@ -656,6 +656,16 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "saveBidRequirement", reason: "These are the ITB items nothing in the data can verify, transcribed from the GC's own form; a misread requirement is one nobody goes and satisfies." },
   { action: "satisfyBidRequirement", reason: "Recording the bond as obtained or the form as signed is a person vouching for something off-screen. The assistant cannot see whether it happened." },
   { action: "deleteBidRequirement", reason: "Deletes are never commands (T5)." },
+  // Estimate templates. Not commands: a template is COMPANY REFERENCE DATA
+  // that every future bid is built from, so a wrong line in one is a wrong
+  // line in every estimate made after it — and applying one APPENDS, so an
+  // assistant that applied the wrong template, or applied one twice, would
+  // double an estimate silently.
+  { action: "saveEstimateTemplate", reason: "A template is reference data every future bid inherits; naming and scoping it is a decision made once, on the page where the whole library is visible." },
+  { action: "deleteEstimateTemplate", reason: "Deletes are never commands (T5)." },
+  { action: "saveEstimateTemplateItem", reason: "A wrong line here is a wrong line in every estimate built from this template afterwards, and the default quantity decides what the line starts at." },
+  { action: "deleteEstimateTemplateItem", reason: "Deletes are never commands (T5)." },
+  { action: "applyTemplateToEstimate", reason: "Applying a template APPENDS lines rather than syncing them, so applying the wrong one — or the right one twice — doubles an estimate. The collision warning is meant to be read by a person before the press." },
   { action: "deleteBidInvitation", reason: "Deletes are never commands (T5)." },
   // The pre-bid pursuit list (lib/actions/bidPursuits.ts, BidPursuit). The
   // read side is the bid_pursuits tool. createBidPursuit and
