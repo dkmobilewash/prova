@@ -69,7 +69,24 @@ export function CompanyProfileForm({
   }
 
   return (
-    <form action={handleSubmit} className="flex flex-col gap-4 rounded-lg border border-line-card bg-surface p-4">
+    /* `onSubmit`, NOT `action={handleSubmit}` — issue #311. React 19 calls
+       `requestFormReset` unconditionally BEFORE a form's `action` runs, so
+       point 2 of this file's own header was only half true: the refusal did
+       come back as data and was rendered, and by then every field it was
+       about had snapped back to its placeholder. The EIN, the licence
+       numbers and the HQ address a person had just typed were gone, under a
+       sentence telling them one of them was wrong. Nothing resets on either
+       branch — this is an edit form, and on success what is on screen IS
+       the saved record. */
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        // Read SYNCHRONOUSLY: `event.currentTarget` is null once the
+        // transition inside `handleSubmit` runs.
+        handleSubmit(new FormData(event.currentTarget));
+      }}
+      className="flex flex-col gap-4 rounded-lg border border-line-card bg-surface p-4"
+    >
       {gaps.length > 0 && (
         <div className="rounded-md border border-amber-900 bg-amber-950/40 p-3">
           <p className="text-xs font-semibold text-amber-300">

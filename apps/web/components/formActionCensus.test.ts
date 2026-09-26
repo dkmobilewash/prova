@@ -36,7 +36,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -49,24 +49,21 @@ const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
  * a second one added to the same file later.
  */
 const KNOWN_EXCEPTIONS: Record<string, { sites: number; reason: string }> = {
-  "apps/web/components/QuickBooksMapping.tsx": {
-    sites: 1,
-    reason:
-      "BUG, Diego's integrations lane — GitHub issue #311. A refused mapping save resets the " +
-      "account picker. Remove this line when #311 is fixed.",
-  },
-  "apps/web/components/JobDetailsForm.tsx": {
-    sites: 1,
-    reason:
-      "BUG, same shape, found by this census; mostly Diego's file, so reported on #311 " +
-      "rather than edited here. A refused save of the job details puts every edit back.",
-  },
-  "apps/web/components/CompanyProfileForm.tsx": {
-    sites: 1,
-    reason:
-      "BUG, same shape, found by this census; Diego's file, so reported on #311 rather than " +
-      "edited here. A refused save of the company profile puts every edit back.",
-  },
+  /* THE THREE #311 ENTRIES ARE GONE, AND THEIR ABSENCE IS NOW ASSERTED
+     rather than merely true — see "the three #311 files carry no exception"
+     at the bottom of this file.
+
+     `QuickBooksMapping.tsx`, `JobDetailsForm.tsx` and
+     `CompanyProfileForm.tsx` each sat here as a KNOWN BUG pointing at issue
+     #311, because all three were in Diego's lane. They were converted to
+     `onSubmit` + `preventDefault` on 2026-09-25 while triaging his unowned
+     issues, so the exceptions are paid off rather than reworded — the same
+     treatment `CatalogImport.tsx` got below.
+
+     Removing an exception is what re-arms this census over the file, and
+     that is the test for the fix: put `action={…}` back on any of the three
+     and the offender list above goes red naming it. Verified by doing
+     exactly that on all three before this line was written. */
   "apps/web/components/RowActions.tsx": {
     sites: 1,
     reason:
@@ -234,8 +231,40 @@ describe("no client form submits through `action`", () => {
     expect(stale, "KNOWN_EXCEPTIONS no longer matches the code — update or remove the line").toEqual([]);
   });
 
-  it("keeps #311 on the list until it is fixed", () => {
-    expect(KNOWN_EXCEPTIONS["apps/web/components/QuickBooksMapping.tsx"]?.reason).toContain("#311");
+  /**
+   * THE INVERSE OF THE TEST THAT USED TO BE HERE, and the swap is the point.
+   *
+   * This read `expect(KNOWN_EXCEPTIONS["…/QuickBooksMapping.tsx"]?.reason)
+   * .toContain("#311")` — it held the exception in place so nobody could
+   * quietly drop the line and leave the bug. Now that the three files are
+   * fixed, that assertion would be the thing keeping a stale free pass
+   * alive, so it is replaced by one that fails if any of them comes BACK.
+   *
+   * Without this, re-adding an exception for one of the three is a two-line
+   * change that makes the census green over a re-broken form, and the only
+   * record that it was ever fixed is a merged PR nobody re-reads.
+   *
+   * These paths are named as a literal on purpose: they are three specific
+   * files a specific issue was about, not a derived set, so there is no set
+   * whose size could silently shrink here.
+   */
+  it("the three #311 files carry no exception, so the census is armed over them", () => {
+    const fixedByIssue311 = [
+      "apps/web/components/QuickBooksMapping.tsx",
+      "apps/web/components/JobDetailsForm.tsx",
+      "apps/web/components/CompanyProfileForm.tsx",
+    ];
+    // The paths must still exist, or this passes by naming nothing — the
+    // "empty question" failure mode this file's header is built around.
+    const missing = fixedByIssue311.filter((path) => !existsSync(join(repoRoot, path)));
+    expect(missing, `renamed or deleted, so this assertion covers nothing: ${missing.join(", ")}`).toEqual([]);
+
+    const regressed = fixedByIssue311.filter((path) => path in KNOWN_EXCEPTIONS);
+    expect(
+      regressed,
+      "#311 fixed these by converting them to onSubmit. An exception here is a free pass for " +
+        `the bug coming back: ${regressed.join(", ")}`,
+    ).toEqual([]);
   });
 });
 

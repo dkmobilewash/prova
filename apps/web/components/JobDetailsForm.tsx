@@ -72,7 +72,24 @@ export function JobDetailsForm({
 
   return (
     <div className="rounded-lg border border-line-card bg-surface p-4">
-      <form action={save} className="flex flex-col gap-3">
+      {/* `onSubmit`, NOT `action={save}` — issue #311. React 19 calls
+          `requestFormReset` unconditionally BEFORE running a form's
+          `action`, so every refusal `updateJobDetails` returns arrived over
+          fields that had already snapped back: a corrected job name, a
+          re-typed site address and a rewritten scope all went, and the
+          sentence explaining why was printed next to the old values. This
+          is an edit form, so nothing is reset on either branch — on success
+          what the person typed IS the saved record, and `router.refresh()`
+          brings the rest of the page level with it. */}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          // Read SYNCHRONOUSLY: `event.currentTarget` is null by the time
+          // the transition inside `save` runs.
+          save(new FormData(event.currentTarget));
+        }}
+        className="flex flex-col gap-3"
+      >
         <label className={label}>
           Job name
           <input name="name" defaultValue={name} className={input} />
