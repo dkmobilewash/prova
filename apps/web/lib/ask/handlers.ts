@@ -5249,7 +5249,7 @@ async function bidRecapTool(companyId: string, input: Input): Promise<ToolResult
         bidRecap: true,
         lineItems: {
           where: { isDeleted: false },
-          select: { id: true, quantity: true, unitPrice: true, costCategory: true },
+          select: { id: true, quantity: true, budgetedUnitCost: true, unitPrice: true, costCategory: true },
         },
       },
       orderBy: { name: "asc" },
@@ -5275,6 +5275,12 @@ async function bidRecapTool(companyId: string, input: Input): Promise<ToolResult
           job.lineItems.map((item) => ({
             id: item.id,
             quantity: Number(item.quantity),
+            // #512, Diego's lane, announced in #prova-build before the push.
+            // The recap marks up COST; `unitPrice` is the sale price. Passing
+            // only the price made this tool report a bid marked up from the
+            // figure that already carried the margin. `RecapLine.unitCost` is
+            // required precisely so this call site could not be missed.
+            unitCost: item.budgetedUnitCost != null ? Number(item.budgetedUnitCost) : null,
             unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
             costCategory: (item.costCategory as CostCategoryValue | null) ?? null,
           })),

@@ -169,11 +169,14 @@ export async function applyBidRecap(jobId: string): Promise<ActionResultWith<App
 
       const rows = await tx.jobLineItem.findMany({
         where: { jobId, isDeleted: false },
-        select: { id: true, quantity: true, unitPrice: true, costCategory: true },
+        select: { id: true, quantity: true, budgetedUnitCost: true, unitPrice: true, costCategory: true },
       });
       const lines: RecapLine[] = rows.map((row) => ({
         id: row.id,
         quantity: Number(row.quantity),
+        // #512. The bid is built from cost; `unitPrice` is what Apply WRITES,
+        // which is why both are read here and only one is marked up.
+        unitCost: row.budgetedUnitCost != null ? Number(row.budgetedUnitCost) : null,
         unitPrice: row.unitPrice != null ? Number(row.unitPrice) : null,
         costCategory: (row.costCategory as CostCategoryValue | null) ?? null,
       }));

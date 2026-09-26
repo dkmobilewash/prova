@@ -100,6 +100,16 @@ export interface LineItemInput {
   quantity: string;
   unit?: string;
   unitPrice?: string;
+  /**
+   * What the work costs per unit — `JobLineItem.budgetedUnitCost`.
+   *
+   * Added with the wizard's own "Your cost" box in #512 (Diego's lane,
+   * announced in #prova-build). The bid recap marks up COST, so a journey that
+   * fills only a price builds a job the recap reads as $0 direct cost — which is
+   * correct behaviour and useless as a fixture for anything downstream of the
+   * recap.
+   */
+  budgetedUnitCost?: string;
 }
 
 /** The "Add a line" form on step 2 (components/BidWizardLineItems.tsx). */
@@ -116,6 +126,9 @@ export async function submitLineItem(page: Page, line: LineItemInput): Promise<v
   await form.locator('input[name="quantity"]').fill(line.quantity);
   if (line.unit !== undefined) await form.locator('input[name="unit"]').fill(line.unit);
   if (line.unitPrice !== undefined) await form.locator('input[name="unitPrice"]').fill(line.unitPrice);
+  if (line.budgetedUnitCost !== undefined) {
+    await form.locator('input[name="budgetedUnitCost"]').fill(line.budgetedUnitCost);
+  }
   await form.getByRole("button", { name: "Add line" }).click();
 }
 

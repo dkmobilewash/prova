@@ -1,12 +1,31 @@
 /**
  * The bid recap: direct cost in, the number a GC is asked to pay out.
  *
- * A job's line items are its DIRECT cost — what the work costs to do. A bid is
- * that plus markup on each kind of cost, plus escalation, sales tax on the
- * material, overhead, profit, the bond premium and contingency. Every
+ * A bid is direct cost plus markup on each kind of cost, plus escalation, sales
+ * tax on the material, overhead, profit, the bond premium and contingency. Every
  * estimating product in the market has this layer; this app had none of it, so
  * the total on the estimate screen was a number somebody had to mark up in
  * their head.
+ *
+ * THE DIRECT COST IS `budgetedUnitCost`, AND THIS FILE SAID `unitPrice` FOR
+ * THREE WEEKS. Issue #512. The sentence here used to read "a job's line items
+ * are its DIRECT cost — what the work costs to do", and `lineExtended` was
+ * `quantity × unitPrice`. But `jobs.prisma` calls that column the
+ * "client-facing SALE PRICE" whose null means "$0 REVENUE", and nine other
+ * surfaces read it that way — `wip.ts`'s `contractValue`, pay applications,
+ * retainage, change-order value, the proposal, the e-sign documents and the GC
+ * portal. One file read it as cost; nine read it as revenue.
+ *
+ * So a catalog line carrying `defaultUnitPrice 2.85` and
+ * `defaultBudgetedUnitCost 1.90` was marked up FROM 2.85 — around $3.97/SF on
+ * work that costs $1.90, a second margin stacked on the one the price already
+ * carried. Every catalog-sourced, wall-schedule and AI-drafted line was affected,
+ * because those writers fill `unitPrice` from the catalog's PRICE.
+ *
+ * Fixed by making the column mean one thing: `unitPrice` is the sale price, and
+ * the cost this file marks up is `budgetedUnitCost`. `RecapLine.unitCost` is a
+ * REQUIRED property for that reason — it makes a caller that still passes only a
+ * price a typecheck failure rather than a silently wrong bid.
  *
  * Pure and argument-taking, like lib/takeoff.ts and lib/wip.ts. No database, no
  * rounding surprises hidden in a query: the arithmetic a bid rests on can be
@@ -18,10 +37,24 @@
  * bid carries no overhead" rather than implying somebody typed a zero.
  *
  * AN UNCATEGORISED LINE IS NEVER MARKED UP. A line with no cost type is
- * reported in `uncategorised` and carried into the bid at its direct price. The
+ * reported in `uncategorised` and carried into the bid at its direct cost. The
  * alternative — quietly marking it up at some default — is how a bid grows a
  * number nobody chose. Same rule as `unpricedLaborHours` in lib/wip.ts: the
  * thing that cannot be computed is named on screen instead of invented.
+ *
+ * A LINE WITH A PRICE AND NO COST IS THE SAME RULE, ONE STEP FURTHER, and it is
+ * the case #512 turned from theoretical into common. It is counted in
+ * `pricedWithNoCost`, left out of the cost base, and marked up at nothing —
+ * never filled in from `unitPrice`, which would be the old double-markup
+ * preserved for exactly the lines most likely to hit it. There is a real
+ * population: the bid wizard's add-a-line form collects no cost at all, an
+ * AI-drafted line falls back to the model's price with no cost, and a
+ * QuickBooks service item routinely carries a sales price and none.
+ *
+ * So a job whose lines carry prices and no costs reads as $0 direct cost, with
+ * every such line named on screen. That is the honest answer — you cannot mark
+ * up a cost nobody recorded — and it is deliberately not softened by a
+ * backfill, which would write a 0%-margin cost figure nobody typed.
  */
 
 export type CostCategoryValue = "LABOR" | "MATERIAL" | "SUBCONTRACTOR" | "OTHER";
@@ -46,8 +79,32 @@ export const COST_CATEGORY_LABELS: Record<CostCategoryValue, string> = {
 export type RecapLine = {
   id: string;
   quantity: number;
-  /** Null on a cost-only line (general conditions, overhead, contingency),
-   * which contributes $0 — the same rule `contractValue` uses. */
+  /**
+   * `JobLineItem.budgetedUnitCost` — the DIRECT COST per unit, and the only
+   * figure this module marks up.
+   *
+   * REQUIRED, not optional, and that is the point (#512). An optional field
+   * would let a caller keep passing a price alone and get a plausible, wrong
+   * bid; a required one makes every such call site a typecheck failure. Four
+   * call sites had to be found, one of them in another lane, and nothing but
+   * the type would have found them all.
+   *
+   * Null is a real state, not an omission: no cost was recorded. A line with a
+   * price and a null cost lands in `pricedWithNoCost` and is marked up at
+   * nothing.
+   */
+  unitCost: number | null;
+  /**
+   * `JobLineItem.unitPrice` — the CLIENT-FACING SALE PRICE, as `jobs.prisma`
+   * says. Never marked up and never part of the cost base. It is here for two
+   * jobs only: reporting a line that carries a price but no cost, and telling
+   * `spreadToLines` which lines are billable at all.
+   *
+   * Null on a cost-only line (general conditions, overhead, contingency) —
+   * $0 revenue, the same rule `contractValue` uses. Such a line DOES carry
+   * direct cost into the bid and receives no share of the spread back, because
+   * general conditions are recovered through the billable lines.
+   */
   unitPrice: number | null;
   costCategory: CostCategoryValue | null;
 };
@@ -71,10 +128,38 @@ export type DirectCost = {
   /** Lines carrying no cost type, and their total. Marked up at nothing. */
   uncategorised: number;
   uncategorisedLineCount: number;
+  /**
+   * Lines carrying a sale price but NO recorded cost, and what those prices
+   * come to. Not in `total`, not marked up, and counted so the screen can name
+   * them — the same shape as `uncategorised` above and for the same reason.
+   *
+   * This is a PRICE total, not a cost one. It is the only figure in `DirectCost`
+   * that is, and it is labelled on screen as such: its job is to say "there is
+   * $X of scope here that this bid's cost base does not include", which is the
+   * one sentence that stops those lines vanishing quietly.
+   */
+  pricedWithNoCost: number;
+  pricedWithNoCostLineCount: number;
   total: number;
 };
 
-export function lineExtended(line: RecapLine): number {
+/**
+ * The line's direct cost. `quantity × unitCost`, and 0 when no cost is
+ * recorded.
+ *
+ * NAMED `extendedCost` RATHER THAN `lineExtended` ON PURPOSE. The old name said
+ * only "extended" and was read as cost by this file and as price by nine
+ * others, which is #512 in one identifier. Two functions with the units in
+ * their names cannot be confused the same way. Free to rename — nothing outside
+ * this file ever imported it.
+ */
+export function extendedCost(line: RecapLine): number {
+  return line.unitCost == null ? 0 : line.quantity * line.unitCost;
+}
+
+/** The line's sale value. `quantity × unitPrice`, and 0 when unpriced. Never
+ * marked up; used for reporting and for what the spread really lands at. */
+export function extendedPrice(line: RecapLine): number {
   return line.unitPrice == null ? 0 : line.quantity * line.unitPrice;
 }
 
@@ -82,9 +167,22 @@ export function directCostByCategory(lines: readonly RecapLine[]): DirectCost {
   const byCategory: Record<CostCategoryValue, number> = { MATERIAL: 0, LABOR: 0, SUBCONTRACTOR: 0, OTHER: 0 };
   let uncategorised = 0;
   let uncategorisedLineCount = 0;
+  let pricedWithNoCost = 0;
+  let pricedWithNoCostLineCount = 0;
 
   for (const line of lines) {
-    const extended = lineExtended(line);
+    const extended = extendedCost(line);
+
+    // A price with no cost, counted and then left out of every bucket below.
+    // Checked FIRST and reported independently of the cost type: such a line is
+    // missing the figure this whole module marks up, and saying "it has no cost
+    // type" about it would name the smaller of its two problems.
+    if (line.unitCost == null && line.unitPrice != null) {
+      pricedWithNoCostLineCount += 1;
+      pricedWithNoCost += extendedPrice(line);
+      continue;
+    }
+
     if (line.costCategory == null) {
       // Counted even at $0 extended: a cost-only line with no type is still a
       // line nobody has coded, and the screen offers to code it.
@@ -95,8 +193,18 @@ export function directCostByCategory(lines: readonly RecapLine[]): DirectCost {
     byCategory[line.costCategory] += extended;
   }
 
+  // `pricedWithNoCost` is deliberately NOT in this sum. It is a price total, and
+  // adding it would put revenue into the cost base — the exact confusion #512
+  // is about, reintroduced one line below the fix.
   const total = uncategorised + Object.values(byCategory).reduce((sum, value) => sum + value, 0);
-  return { byCategory, uncategorised, uncategorisedLineCount, total };
+  return {
+    byCategory,
+    uncategorised,
+    uncategorisedLineCount,
+    pricedWithNoCost,
+    pricedWithNoCostLineCount,
+    total,
+  };
 }
 
 /** One row of the recap as it prints: what it is, the rate it used, and the
@@ -239,19 +347,30 @@ export type SpreadLine = {
  * bid, and giving it one would make a general-conditions line look sold.
  */
 export function spreadToLines(lines: readonly RecapLine[], bidTotal: number): SpreadLine[] {
-  const priced = lines.filter((line) => line.unitPrice != null && line.quantity > 0 && lineExtended(line) > 0);
-  const directTotal = priced.reduce((sum, line) => sum + lineExtended(line), 0);
+  // A recipient must be BILLABLE (it carries a price, so raising that price is
+  // meaningful) and must carry COST (so it has a share of the bid to receive).
+  //
+  // Both halves matter and they exclude different lines. A cost-only general
+  // conditions line has cost and no price: it belongs in the cost base and gets
+  // no share back, because general conditions are recovered through the billable
+  // lines. A price-with-no-cost line is the reverse, and excluding it is what
+  // stops the destructive case — with no cost share it would receive $0, and
+  // writing that back as its unit price would WIPE a price somebody set.
+  const priced = lines.filter(
+    (line) => line.unitPrice != null && line.quantity > 0 && extendedCost(line) > 0,
+  );
+  const directTotal = priced.reduce((sum, line) => sum + extendedCost(line), 0);
   if (priced.length === 0 || directTotal <= 0) return [];
 
   const targetCents = Math.round(bidTotal * 100);
   const shares = priced.map((line) => {
-    const exact = (lineExtended(line) / directTotal) * targetCents;
+    const exact = (extendedCost(line) / directTotal) * targetCents;
     return { line, floor: Math.floor(exact), remainder: exact - Math.floor(exact) };
   });
 
   let assigned = shares.reduce((sum, share) => sum + share.floor, 0);
   // Largest remainder first, so the cents go where they are most owed.
-  const order = [...shares].sort((a, b) => b.remainder - a.remainder || lineExtended(b.line) - lineExtended(a.line));
+  const order = [...shares].sort((a, b) => b.remainder - a.remainder || extendedCost(b.line) - extendedCost(a.line));
   let index = 0;
   while (assigned < targetCents && order.length > 0) {
     order[index % order.length].floor += 1;
@@ -275,7 +394,18 @@ export function spreadTotal(lines: readonly RecapLine[], spread: readonly Spread
   return round2(
     lines.reduce((sum, line) => {
       const next = byId.get(line.id);
-      if (!next) return sum + lineExtended(line);
+      // A line the spread did not pay keeps the price it already had, so what it
+      // contributes is its PRICE. This read `lineExtended` before #512, which
+      // then meant quantity × unitPrice and was accidentally right; under the
+      // corrected meaning the same call would have returned that line's COST and
+      // quietly understated what Apply produces.
+      //
+      // It matters most on exactly the job that needs it: a price-with-no-cost
+      // line is not in the spread, so this is where its price is accounted for.
+      // That makes the gap between the bid and the real line total visible
+      // through the figure the panel already shows whenever the two differ — no
+      // second warning to build and no third number to keep in step.
+      if (!next) return sum + extendedPrice(line);
       return sum + Number(next.unitPrice) * line.quantity;
     }, 0),
   );

@@ -263,6 +263,10 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
     id: item.id,
     description: item.description,
     quantity: Number(item.quantity),
+    // #512: the recap marks up COST. `budgetedUnitCost`, not
+    // `currentEstimatedUnitCost` — the latter is the PM's live re-forecast and
+    // would make a recap re-opened later show a cost it was not built from.
+    unitCost: item.budgetedUnitCost != null ? Number(item.budgetedUnitCost) : null,
     unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
     costCategory: (item.costCategory as CostCategoryValue | null) ?? null,
   }));
@@ -661,8 +665,9 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
           <section className="mb-10" data-tour="job-bid-recap">
             <h2 className="mb-1 text-lg font-semibold text-ink">Bid recap</h2>
             <p className="mb-3 text-sm text-ink-body">
-              What the work costs to do, and what it is sold for. Markup is per cost type, so material and
-              subcontracted work need not carry the same rate as your own crew.
+              Built from each line&apos;s <span className="text-ink-label">budgeted cost</span>, not its price — markup
+              is per cost type, so material and subcontracted work need not carry the same rate as your own crew. A line
+              with no cost recorded is named below and marked up at nothing.
               {bidRecapRow == null && bidDefaults != null
                 ? " These are your company defaults — saving them here keeps them on this job."
                 : ""}

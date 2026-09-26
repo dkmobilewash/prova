@@ -20,7 +20,7 @@ export const jobDetailEstimateWalkthrough: Walkthrough = {
       anchor: "job-bid-recap",
       title: "Turn the cost into a bid",
       body:
-        "The lines below are what the work costs you; this is what you sell it for — markup by kind of cost, then overhead, profit, tax and bond. Set the cost type on each line so material and labour need not carry the same markup. Press Apply to line prices once the number is settled.",
+        "This marks up each line's budgeted COST — not its price — into what you sell it for: markup by cost type, then overhead, profit, tax and bond. Give every line a cost and a cost type; one missing either is named here and marked up at nothing. Press Apply once the number is settled.",
     },
     {
       anchor: "job-line-items",

@@ -105,9 +105,13 @@ beforeEach(() => {
       { id: "job_other", companyId: "co_2", status: "ESTIMATE" },
     ],
     jobLineItem: [
-      { id: "board", jobId: "job_1", quantity: "1000", unitPrice: "2", costCategory: "MATERIAL", isDeleted: false },
-      { id: "hang", jobId: "job_1", quantity: "100", unitPrice: "10", costCategory: "LABOR", isDeleted: false },
-      { id: "theirs", jobId: "job_other", quantity: "1", unitPrice: "5", costCategory: null, isDeleted: false },
+      // #512: `budgetedUnitCost` is the figure the recap marks up; `unitPrice` is
+      // what applying WRITES. Both are set here at the numbers this file's totals
+      // were always derived from, so every hand-worked figure below is unchanged
+      // — the arithmetic was never wrong, only the column it read.
+      { id: "board", jobId: "job_1", quantity: "1000", budgetedUnitCost: "2", unitPrice: "2", costCategory: "MATERIAL", isDeleted: false },
+      { id: "hang", jobId: "job_1", quantity: "100", budgetedUnitCost: "10", unitPrice: "10", costCategory: "LABOR", isDeleted: false },
+      { id: "theirs", jobId: "job_other", quantity: "1", budgetedUnitCost: "5", unitPrice: "5", costCategory: null, isDeleted: false },
     ],
     jobBidRecap: [],
     companyBidDefaults: [],
@@ -155,13 +159,37 @@ describe("applying the recap to the line prices", () => {
     expect(db.jobBidRecap[0].appliedTotal).toBe("3992.00");
   });
 
-  it("COMPOUNDS if applied twice — the reason the screen warns before the second press", async () => {
+  /**
+   * THIS TEST USED TO ASSERT THE OPPOSITE, AND #512 IS WHY IT CHANGED.
+   *
+   * It was called "COMPOUNDS if applied twice — the reason the screen warns
+   * before the second press", and it was correct: applying marked up each
+   * line's `unitPrice`, and the next apply read `unitPrice` back as the direct
+   * cost and marked up the already-marked-up figure. Nothing prevented it —
+   * `applyBidRecap` never reads `appliedAt`, so the only brake was a sentence on
+   * screen asking the estimator not to press again.
+   *
+   * Applying is IDEMPOTENT now, and not by adding a guard: the cost base is
+   * `budgetedUnitCost`, and applying writes `unitPrice`. The input to the
+   * calculation is no longer the output of the last one, so pressing twice
+   * cannot compound. Measured, not argued — this asserted `toBeGreaterThan` and
+   * came back 2.66 against 2.66.
+   *
+   * That is a real safety improvement nobody asked for and it is worth naming as
+   * a consequence rather than a feature, because the screen's warning about the
+   * second press became a false statement the moment it was true and had to be
+   * rewritten (`BidRecapPanel.tsx`).
+   */
+  it("is IDEMPOTENT if applied twice — the cost base does not move when prices do", async () => {
     const { saveBidRecap, applyBidRecap } = await actions();
     await saveBidRecap("job_1", form(RATES));
     await applyBidRecap("job_1");
     const first = priceOf("board");
-    await applyBidRecap("job_1");
-    expect(priceOf("board")).toBeGreaterThan(first);
+    const secondResult = await applyBidRecap("job_1");
+    expect(secondResult.ok).toBe(true);
+    expect(priceOf("board")).toBe(first);
+    // And the recorded total is the same event, not a bigger one.
+    expect(priceOf("hang")).toBe(13.32);
   });
 
   it("refuses when no rates are set yet", async () => {

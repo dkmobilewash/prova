@@ -54,9 +54,23 @@ test.describe("the estimating desk", () => {
 
   const JOB_NAME = "ZZ-E2E Estimating — Building D level 2 drywall";
   const GC_NAME = "ZZ-E2E Estimating GC";
-  /** 1,000 SF at $2.00 — the only priced line, so the recap's direct cost is
-   * this and nothing else. */
-  const LINE = { description: "ZZ-E2E 5/8in Type X, hung and finished", quantity: "1000", unit: "SF", unitPrice: "2.00" };
+  /**
+   * 1,000 SF at $2.00 of COST — the only line carrying a cost, so the recap's
+   * direct cost is this and nothing else.
+   *
+   * `budgetedUnitCost` added for #512 (Diego's lane, announced in #prova-build):
+   * the recap marks up cost, not the sale price, so a line with only a
+   * `unitPrice` now contributes $0 and this test's `DIRECT_COST` would have read
+   * $0.00. The price is kept at the same figure so every assertion below is
+   * unchanged — and because Apply needs a priced line to write to.
+   */
+  const LINE = {
+    description: "ZZ-E2E 5/8in Type X, hung and finished",
+    quantity: "1000",
+    unit: "SF",
+    budgetedUnitCost: "2.00",
+    unitPrice: "2.00",
+  };
   const DIRECT_COST = "$2,000.00";
   const RUN_LABEL = "ZZ-E2E Level 2 corridor";
   const TEMPLATE_NAME = "ZZ-E2E TI, metal stud + drywall";
