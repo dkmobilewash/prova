@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { StyleSheet, Text, View } from "react-native";
 import { apiBaseUrl, clerkPublishableKey, configProblem } from "@/lib/env";
 import { getHandover } from "@/lib/handover";
+import { loadAppearance } from "@/lib/appearance";
 import { loadLanguage, useT } from "@/lib/i18n";
 import { usePushTapRouter } from "@/lib/push";
 import { tokenCache } from "@/lib/token-cache";
@@ -53,7 +54,10 @@ function LanguageGate({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    void loadLanguage().then(() => setReady(true));
+    // Both are read before the first frame, for the same reason: a phone
+    // set to outdoor that flashes the dark theme on every launch is the
+    // same failure as one that flashes English at a Spanish reader.
+    void Promise.all([loadLanguage(), loadAppearance()]).then(() => setReady(true));
   }, []);
 
   if (!ready) return null;

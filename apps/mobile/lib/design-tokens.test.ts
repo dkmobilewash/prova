@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { space } from "./theme";
 
 /**
  * The shape-and-source half of the token system — what theme-contrast is
@@ -87,6 +88,44 @@ describe("shapes and sources stay tokenised", () => {
       }
     }
     expect(offenders, `off-scale gaps: ${offenders.join(", ")}`).toEqual([]);
+  });
+
+  /**
+   * 3b. PADDING AND MARGIN COME FROM THE SCALE TOO.
+   *
+   * The gap rule above has been here since the tokens were written and
+   * it only ever read `gap:` — so `padding`/`margin` drifted freely
+   * underneath it: **91 bare numbers** across 20 files when this was
+   * added on 2026-09-26, including four values (3, 10, 14, 88) that each
+   * appeared in several files and were nobody's decision anywhere.
+   *
+   * Those four are named in `space` now rather than snapped to the grid,
+   * because snapping them would have redrawn every field, chip and badge
+   * in the app — a visual change wearing a token change's clothes.
+   *
+   * ALLOWED IS DERIVED FROM `space` ITSELF, never restated: a scale this
+   * test kept its own copy of would be a second opinion about the grid,
+   * which is the thing the grid exists to prevent.
+   */
+  it("keeps every padding and margin on the scale", () => {
+    const allowed = new Set<number>([0, ...Object.values(space)]);
+    const offenders: string[] = [];
+    let seen = 0;
+    for (const file of files) {
+      const text = readFileSync(file, "utf8");
+      for (const match of text.matchAll(/(padding|margin)(?:Horizontal|Vertical|Top|Bottom|Left|Right|Start|End)?:\s*(\d+)/g)) {
+        seen += 1;
+        if (!allowed.has(Number(match[2]))) {
+          offenders.push(`${file.slice(root.length + 1)}: ${match[0]}`);
+        }
+      }
+    }
+    // The size half of the rule (CLAUDE.md): a pattern that stops
+    // matching passes this file in silence. Zero is a real and common
+    // value, so the literals it finds are mostly `0` — what matters is
+    // that it is still finding them.
+    expect(seen, "the padding/margin scan matched nothing at all").toBeGreaterThan(15);
+    expect(offenders, `off-scale spacing: ${offenders.join(", ")}`).toEqual([]);
   });
 
   /**

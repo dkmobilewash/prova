@@ -152,7 +152,7 @@ function makeStyles(p: Palette) {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: p.colors.canvas },
     loading: { color: p.colors.ink, fontSize: typography.size.md, padding: space.md },
-    content: { paddingHorizontal: space.md, paddingBottom: 88 },
+    content: { paddingHorizontal: space.md, paddingBottom: space.scrollBottom },
     skeletonGroup: { gap: space.sm, marginTop: space.sm },
     currentRow: { flexDirection: "row", alignItems: "center", gap: space.xs },
     empty: { gap: space.xs, paddingTop: space.xl, alignItems: "center" },

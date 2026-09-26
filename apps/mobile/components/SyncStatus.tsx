@@ -166,7 +166,7 @@ function makeStyles(p: Palette) {
       fontWeight: typography.weight.bold,
     },
     actions: { flexDirection: "row", justifyContent: "flex-end", gap: space.xs, marginTop: space.xxs },
-    dismiss: { paddingVertical: 4, paddingHorizontal: 8 },
+    dismiss: { paddingVertical: space.xxs, paddingHorizontal: space.xs },
     dismissLabel: {
       color: p.colors.link,
       fontSize: typography.size.sm,

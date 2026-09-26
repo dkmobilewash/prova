@@ -119,7 +119,7 @@ function makeStyles(p: Palette) {
     chipWrap: { padding: space.md, paddingBottom: 0 },
     card: { gap: 8 },
     date: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-    person: { borderTopWidth: 1, borderTopColor: p.colors.lineRow, paddingTop: 8, gap: 2 },
+    person: { borderTopWidth: 1, borderTopColor: p.colors.lineRow, paddingTop: space.xs, gap: 2 },
     name: { color: p.colors.inkBody, fontSize: typography.size.md },
     craft: { color: p.colors.inkMuted, fontSize: typography.size.sm },
     missing: {

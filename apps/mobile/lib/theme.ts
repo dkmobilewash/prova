@@ -128,6 +128,71 @@ export const palettes = {
       tagBrandSoftInk: "#facc15",
     },
   },
+
+  /**
+   * OUTDOOR — direct sun, and chosen by hand rather than sensed.
+   *
+   * A phone in a gloved hand on a roof at 2pm is not the same surface as
+   * the same phone in a trailer, and auto-switching gets it wrong in both
+   * directions: an ambient-light sensor cannot tell bright sun from a
+   * bright office, and a theme that flips while somebody is mid-entry is
+   * worse than one they picked. So this is a Settings choice
+   * (system / light / dark / outdoor), per Diego 2026-09-26.
+   *
+   * Every ink here clears 7:1 and most clear 12:1 — `inkMuted` stops
+   * being muted, which is the point rather than an oversight: in sun
+   * there is no such thing as secondary text, only text you can read and
+   * text you cannot. Borders go to 3:1 (the non-text floor) so a card
+   * edge survives glare. The brand fill is unchanged, because yellow at
+   * full chroma is the one thing sunlight does not wash out.
+   */
+  outdoor: {
+    colors: {
+      canvas: "#ffffff",
+      surface: "#ffffff",
+      rail: "#f2f2f2",
+      railHover: "#e0e0e0",
+
+      lineCard: "#6b6b6b", // 4.8:1 on white — a border that survives glare
+      lineRow: "#8a8a8a", // 3.1:1, the non-text floor
+
+      ink: "#000000", // 21:1
+      inkLabel: "#141414", // 18.9:1
+      inkBody: "#262626", // 14.4:1
+      inkMuted: "#3d3d3d", // 9.7:1 — see the note above
+
+      brand: "#facc15",
+      brandInk: "#171717",
+
+      link: "#7a3d00", // 8.1:1 on white
+      linkHover: "#5c2e00",
+
+      // Status bars darkened to clear 3:1 as fills on white.
+      barRose: "#c01a10",
+      barAmber: "#8a5200",
+      barGreen: "#0a6b3d",
+      barBlue: "#1d4ed8",
+      barIndigo: "#4338ca",
+      barViolet: "#6d28d9",
+      barTeal: "#0f766e",
+
+      // Tag pairs: pale grounds, near-black inks. Every ink clears 7:1 on
+      // its own ground.
+      tagRose: "#ffe0e0",
+      tagRoseInk: "#8a0000",
+      tagAmber: "#fff0cc",
+      tagAmberInk: "#6b3f00",
+      tagGreen: "#d9f5e3",
+      tagGreenInk: "#0a5c2e",
+      tagBlue: "#facc15",
+      tagBlueInk: "#2b1500",
+      tagSlate: "#e8e8e8",
+      tagSlateInk: "#262626",
+
+      tagBrandSoft: "#fff4b8",
+      tagBrandSoftInk: "#5c3600",
+    },
+  },
 } as const;
 
 /** Every colour token name — the vocabulary both palettes must share. */
@@ -173,6 +238,7 @@ export const typography = {
  * forever. */
 export const space = {
   one: 1,
+  two: 2,
   xxs: 4,
   six: 6,
   xs: 8,
@@ -181,6 +247,30 @@ export const space = {
   lg: 20,
   xl: 24,
   xxl: 32,
+
+  /**
+   * THE FOUR BELOW ARE OFF THE 4-PT GRID ON PURPOSE, and naming them is
+   * the point: each was already in the code as a bare number in several
+   * files, which is exactly the "spacing nobody can name" the grid rule
+   * exists to stop. Snapping them to the grid instead would redraw every
+   * field, chip and badge in the app — a visual change wearing a token
+   * change's clothes, which is not what a token PR is for.
+   */
+
+  /** Vertical inset inside a CONTROL — a field, a grouped row, a tile.
+   * 10 is what puts 17pt text in the middle of a 48pt row without the
+   * row growing when the text does. */
+  control: 10,
+  /** Horizontal inset inside a control. Apple's own text fields sit at
+   * 14, which is why a chip beside one at 16 reads as misaligned. */
+  controlX: 14,
+  /** The vertical inset of a status badge or count pill — small because
+   * the pill is sized by its 13pt text, not by a thumb. */
+  badge: 3,
+  /** The bottom inset on a scrolling tab screen: clears the tab bar and
+   * the floating capture button so the last row is reachable rather than
+   * parked under them. */
+  scrollBottom: 88,
 } as const;
 
 /** Corner radii, by the shape they belong to rather than a number. */
@@ -211,10 +301,28 @@ export const shadow = {
   },
 } as const;
 
-/** Minimum touch target in points. Apple's own floor is 44pt; the field app
- * keeps it as a floor, not an aim — a foreman's glove is bigger than a
- * fingertip. Primary actions run taller than this (see Button). */
-export const hitTarget = 44;
+/**
+ * Minimum touch target in points.
+ *
+ * 48, not Apple's 44, and the difference is deliberate rather than a
+ * rounding: **our users are in gloves**, and Android's own floor is 48dp.
+ * 44 is the smallest target a bare fingertip can hit reliably on a phone
+ * held still — which is not the posture this app is used in. Raised from
+ * 44 by Diego on 2026-09-26.
+ *
+ * `touch-targets.test.ts` fails the build on a pressable component that
+ * declares less, with a named debt list for the two that have not been
+ * migrated yet.
+ */
+export const hitTarget = 48;
+
+/**
+ * Primary actions — the one button a screen exists for: Save, Clock in,
+ * Sign and finish. Taller than the floor because it is found by thumb
+ * while walking, and because a 56pt target is still comfortably inside
+ * the bottom third of every phone this app runs on.
+ */
+export const hitTargetPrimary = 56;
 
 /**
  * A line height in POINTS, which is the only thing React Native's
@@ -236,4 +344,68 @@ export function leadingFor(
   ratio: number = typography.leading.normal,
 ): number {
   return Math.round(size * ratio);
+}
+
+/**
+ * What a STATE looks like, named by the thing it is a state of.
+ *
+ * `StatusBadge` used to hold its own private map of job and integration
+ * states; invoice and change-order states had no tokens at all, so the
+ * next screen that needed "Overdue" would have invented one. Naming them
+ * here is what stops three screens disagreeing about whether an overdue
+ * invoice is rose or amber.
+ *
+ * Each entry is a TAG PAIR — a ground and the ink that must sit on it —
+ * because that is the only way the meaning survives a palette change:
+ * `theme-contrast.test.ts` holds every pair to its floor in all three
+ * palettes, so a state cannot be readable in dark and illegible in sun.
+ *
+ * The mapping is a judgement and worth arguing with:
+ *   slate  = nothing is owed by anyone yet (draft, estimate)
+ *   blue   = live and agreed (the brand fill, the web's "In progress")
+ *   amber  = waiting on somebody, and time is passing (sent, submitted)
+ *   green  = settled (paid, approved, complete, signed)
+ *   rose   = wrong, and somebody has to act (overdue, rejected, error)
+ */
+export type StatusPair = { bg: ColorKey; ink: ColorKey };
+
+export const statusTokens = {
+  job: {
+    ESTIMATE: { bg: "tagSlate", ink: "tagSlateInk" },
+    CONTRACTED: { bg: "tagBlue", ink: "tagBlueInk" },
+    IN_PROGRESS: { bg: "tagAmber", ink: "tagAmberInk" },
+    COMPLETE: { bg: "tagGreen", ink: "tagGreenInk" },
+  },
+  invoice: {
+    DRAFT: { bg: "tagSlate", ink: "tagSlateInk" },
+    SENT: { bg: "tagAmber", ink: "tagAmberInk" },
+    PARTIAL: { bg: "tagBrandSoft", ink: "tagBrandSoftInk" },
+    PAID: { bg: "tagGreen", ink: "tagGreenInk" },
+    /** The one state on this phone that is about money going wrong. */
+    OVERDUE: { bg: "tagRose", ink: "tagRoseInk" },
+  },
+  changeOrder: {
+    DRAFT: { bg: "tagSlate", ink: "tagSlateInk" },
+    SUBMITTED: { bg: "tagAmber", ink: "tagAmberInk" },
+    APPROVED: { bg: "tagGreen", ink: "tagGreenInk" },
+    REJECTED: { bg: "tagRose", ink: "tagRoseInk" },
+  },
+  /** Not a domain object, but it wears the same chip. */
+  integration: {
+    CONNECTED: { bg: "tagGreen", ink: "tagGreenInk" },
+    NOT_CONNECTED: { bg: "tagSlate", ink: "tagSlateInk" },
+    NEEDS_REAUTH: { bg: "tagAmber", ink: "tagAmberInk" },
+    ERROR: { bg: "tagRose", ink: "tagRoseInk" },
+    SIGNED: { bg: "tagGreen", ink: "tagGreenInk" },
+  },
+} as const satisfies Record<string, Record<string, StatusPair>>;
+
+export type StatusDomain = keyof typeof statusTokens;
+
+/** The pair for a state, or the neutral one — an unknown status is shown
+ * as "nothing is owed by anyone yet" rather than crashing or, worse,
+ * borrowing a colour that means something. */
+export function statusPair(domain: StatusDomain, status: string): StatusPair {
+  const pairs = statusTokens[domain] as Record<string, StatusPair | undefined>;
+  return pairs[status] ?? { bg: "tagSlate", ink: "tagSlateInk" };
 }

@@ -13,11 +13,17 @@ import { palettes, radius, shadow, space, typography } from "./theme";
  * mode-independent by design, since a 4-pt grid and a 44pt target do not
  * change with the wallpaper.
  */
-describe("the two palettes are one vocabulary", () => {
-  it("defines the identical colour keys in light and dark", () => {
+describe("the palettes are one vocabulary", () => {
+  it("defines the identical colour keys in every palette", () => {
+    // Derived rather than named: `outdoor` joined light and dark on
+    // 2026-09-26 and this test compared exactly two palettes, so the new
+    // one's vocabulary was checked by nothing.
+    const modes = Object.keys(palettes) as (keyof typeof palettes)[];
+    expect(modes.length).toBeGreaterThanOrEqual(3);
     const light = Object.keys(palettes.light.colors).sort();
-    const dark = Object.keys(palettes.dark.colors).sort();
-    expect(dark).toEqual(light);
+    for (const mode of modes) {
+      expect(Object.keys(palettes[mode].colors).sort(), `${mode} drifted`).toEqual(light);
+    }
   });
 
   it("keeps the static tokens mode-independent", () => {
@@ -39,7 +45,9 @@ describe("the two palettes are one vocabulary", () => {
   it("keeps the brand fill identical across palettes", () => {
     // `brand` is the product identity; if the two modes ever disagree on
     // which yellow the founder approved, that is a bug, not a choice.
-    expect(palettes.light.colors.brand).toBe(palettes.dark.colors.brand);
-    expect(palettes.light.colors.brandInk).toBe(palettes.dark.colors.brandInk);
+    for (const mode of Object.keys(palettes) as (keyof typeof palettes)[]) {
+      expect(palettes[mode].colors.brand, `${mode} brand`).toBe(palettes.light.colors.brand);
+      expect(palettes[mode].colors.brandInk, `${mode} brandInk`).toBe(palettes.light.colors.brandInk);
+    }
   });
 });

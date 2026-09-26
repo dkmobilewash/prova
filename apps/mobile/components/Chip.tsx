@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { StyleSheet, Text } from "react-native";
 import { PressableScale } from "@/components/PressableScale";
-import { type Palette, hitTarget, radius, typography } from "@/lib/theme";
+import { type Palette, hitTarget, radius, typography, space } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 
 /** A single-select chip — pay type, vendor, classification. Selected = the
@@ -34,7 +34,7 @@ function makeStyles(p: Palette) {
   return StyleSheet.create({
     chip: {
       minHeight: hitTarget,
-      paddingHorizontal: 14,
+      paddingHorizontal: space.controlX,
       justifyContent: "center",
       borderRadius: radius.pill,
       borderWidth: 1,

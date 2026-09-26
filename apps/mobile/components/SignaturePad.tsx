@@ -172,7 +172,7 @@ function makeStyles(p: Palette) {
     },
     // Left, not right: the app-wide floating Tools button sits over the
     // bottom-right of a sheet and covered a right-aligned Clear.
-    clear: { alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 4 },
+    clear: { alignSelf: "flex-start", paddingHorizontal: space.xs, paddingVertical: space.xxs },
     clearLabel: { color: p.colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
   });
 }

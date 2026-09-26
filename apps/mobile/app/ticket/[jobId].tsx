@@ -193,9 +193,9 @@ function makeStyles(p: Palette) {
     head: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
     date: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
     signer: { color: p.colors.inkMuted, fontSize: typography.size.sm },
-    description: { color: p.colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
+    description: { color: p.colors.inkBody, fontSize: typography.size.md, marginTop: space.xxs },
     label: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
-    summary: { color: p.colors.inkMuted, fontSize: typography.size.sm, marginTop: 4 },
+    summary: { color: p.colors.inkMuted, fontSize: typography.size.sm, marginTop: space.xxs },
     footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
   });
 }
