@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**148 items audited — 126 built / 17 partial / 4 missing / 1 descoped**
+**148 items audited — 127 built / 16 partial / 4 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -101,8 +101,8 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 126 |
-| Partial | 17 |
+| Built | 127 |
+| Partial | 16 |
 | Missing | 4 |
 | Descoped | 1 |
 
@@ -196,14 +196,14 @@ subcontract agreement storage and versioning shipped same-day.*
 | Built | Schedule of values (SOV) as the job's line-item structure | this is exactly what `JobLineItem` is, by design |
 | Built | Job status lifecycle: bid → awarded → active → substantially complete → closed/warranty | every stage exists, and two of them are deliberately NOT `JobStatus` values: bid/awarded/active are the enum, substantial completion is `Job.substantialCompletionDate` (whose own schema comment says "a plain field, not a JobStatus stage"), closeout is `CloseoutSubmission` with its own status chain, warranty is `WarrantyPeriod`. Adding `SUBSTANTIALLY_COMPLETE` beside a date that could disagree with it is what "derived state is never stored" forbids. What was actually missing was that nothing DERIVED the stage for a reader — `lib/job-lifecycle.ts` now does, furthest-stage-wins, today as a parameter, and the job header shows it with the evidence behind it whenever it says more than the status pill |
 
-## 06. Job Costing & Cost Coding — 4 built · 1 partial · 0 missing
+## 06. Job Costing & Cost Coding — 5 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | `budgetedUnitCost` and `currentEstimatedUnitCost` on `JobLineItem` | frozen baseline vs. live PM forecast, exactly as specified |
 | Built | `estimatedCostToComplete` (derivable, PM-overridable) | mechanical by default, overridable per line — see `lib/wip.ts` |
 | Built | Line-item FK on `CostEntry` so cost rolls up to a specific SOV line | `CostEntry.lineItemId` |
-| Partial | Cost categorization: labor, material, equipment, sub/other, by trade tag | `CostCategory` has LABOR/MATERIAL/SUBCONTRACTOR/OTHER plus a `tradeScope` tag — no distinct EQUIPMENT bucket |
+| Built | Cost categorization: labor, material, equipment, sub/other, by trade tag | `CostCategory` gained EQUIPMENT on 2026-09-26, with `equipmentMarkupPercent` on `JobBidRecap` and `CompanyBidDefaults`, and the Estimate tab's combined "Other / equipment markup" field split in two — lifts, scaffold and boom lifts were being priced at the Other rate. `tradeScope` is the trade tag, unchanged. **The split is one-directional and permanent**: nothing records which existing OTHER rows were equipment, so no backfill is possible and equipment reads complete going forward and understated for earlier work — `EQUIPMENT_SPLIT_NOTE` says so on screen whenever an equipment or other figure is present. The expensive part was not the value: the enum had EIGHT hand-written copies, and adding a fifth member produced a **NaN bid total** (`byCategory["EQUIPMENT"]` undefined, `undefined + 2500`), proved with a probe before anything changed. `lib/cost-category.ts` is the one list now, `asCostCategory` replaces the casts at every database boundary, and three lists that could be incomplete are total `Record`s that do not compile until every member is wired. Nine mutation checks, each red and naming its offender |
 | Built | Job cost roll-up dashboard: budget vs. actual vs. forecast, per line item and per job | per-job on `/jobs/[id]`, and company-wide on `/wip` — every contracted job as a row, nineteen columns, with a totals line. The arithmetic (`wipScheduleTable`, `wipScheduleTotals`, `loadWipSchedule`) already existed and was already tested; until now the only thing that rendered it was the CSV download on `/cash-flow`, so the gap was a screen rather than a calculation |
 
 ## 07. Labor & Time Tracking — 7 built · 1 partial · 0 missing
