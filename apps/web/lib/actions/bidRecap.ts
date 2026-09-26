@@ -17,6 +17,7 @@ import {
   actionFail,
   actionOk,
   InputError,
+  nullableDecimalFromForm,
   nullablePercentFromForm,
   runAction,
   type ActionResult,
@@ -135,6 +136,66 @@ export async function setLineCostCategory(jobId: string, lineItemId: string, cat
 
   revalidateJob(jobId);
   return actionOk;
+}
+
+/**
+ * Sets ONE line's budgeted cost, from the recap itself.
+ *
+ * WHY THIS EXISTS. #512 made the recap mark up `budgetedUnitCost`, and a line
+ * with no cost is reported and marked up at nothing. On a job built through the
+ * bid wizard — which collected only prices until #512 — that is every line, so
+ * the recap reads $0 and names them all. Correct, and a dead end: the warning
+ * told an estimator what was wrong and left him to go and find each line on
+ * another part of the page.
+ *
+ * This is the way out, and CLAUDE.md asks for one by name ("real empty states
+ * with a way out"). The cost goes in beside the cost type, in the row that is
+ * already there for the other thing a line can be missing.
+ *
+ * DELIBERATELY NOT A "COPY PRICES INTO COSTS" BUTTON, which is the fix that
+ * first suggests itself and is the original bug wearing a nicer coat: cost =
+ * price is a 0% margin nobody typed, and the recap would then mark up the sale
+ * price exactly as it did before #512. One number at a time, each one the
+ * estimator's own.
+ *
+ * Shaped like `setLineCostCategory` above — same gates, same per-line
+ * `updateMany` scoped by `jobId`, same refusal when the line has moved on — with
+ * one difference: it is wrapped in `runAction`, so a parse failure comes back as
+ * a sentence. `nullableDecimalFromForm`'s bounds are the reason that matters;
+ * `InputError` is what a person can fix.
+ */
+export async function setLineBudgetedCost(jobId: string, lineItemId: string, cost: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const companyId = context.company.id;
+  const gate = await estimateJob(jobId, companyId);
+  if (!gate.ok) return actionFail(gate.error);
+
+  return runAction(async () => {
+    const form = new FormData();
+    form.set("budgetedUnitCost", cost);
+    // Blank clears it, which is a real intent: "I do not know what this costs"
+    // has to stay expressible, or the only way out of a wrong number is a
+    // worse one. A cleared cost puts the line straight back into the warning.
+    const next = nullableDecimalFromForm(form, "budgetedUnitCost", {
+      label: "Budgeted cost",
+      min: 0,
+    });
+
+    const updated = await prisma.jobLineItem.updateMany({
+      where: { id: lineItemId, jobId, isDeleted: false },
+      // `currentEstimatedUnitCost` is deliberately NOT touched. It is the PM's
+      // live forecast and it diverges from the budget on purpose once a job
+      // runs; re-deriving it here would overwrite a forecast from a screen that
+      // is about the bid. `addLineItem` seeds them equal at creation and
+      // `updateLineItemForecast` is what moves the forecast afterwards.
+      data: { budgetedUnitCost: next },
+    });
+    if (updated.count === 0) throw new InputError("That line is no longer on the estimate.");
+
+    revalidateJob(jobId);
+    return actionOk;
+  });
 }
 
 /* ------------------------------------------------------------- the spread */

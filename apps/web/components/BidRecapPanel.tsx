@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition, type FormEvent } from "react";
-import { applyBidRecap, saveBidRecap, setLineCostCategory } from "@/lib/actions";
+import { applyBidRecap, saveBidRecap, setLineBudgetedCost, setLineCostCategory } from "@/lib/actions";
 import { money } from "@/lib/money";
 import {
   bidRecap,
@@ -228,7 +228,7 @@ export function BidRecapPanel({
       </div>
 
       <div className="border-t border-line-row pt-3">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Cost type per line</p>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Cost and cost type per line</p>
         <ul className="flex flex-col gap-1">
           {lines.map((line) => (
             <CostTypeRow key={line.id} jobId={jobId} line={line} />
@@ -247,6 +247,43 @@ function CostTypeRow({ jobId, line }: { jobId: string; line: RecapLineView }) {
       <span className="min-w-0 flex-1 truncate text-ink-body" title={line.description}>
         {line.description}
       </span>
+      {/* THE WAY OUT OF THE WARNING ABOVE — #512.
+          A line with no cost is reported and marked up at nothing, and on a
+          wizard-built job that is every line. Naming the problem and leaving the
+          fix on another part of the page is the dead-end empty state CLAUDE.md
+          asks us not to ship, so the cost is editable here, beside the cost
+          type, in the row that already exists for the other thing a line can be
+          missing.
+
+          `onBlur`, not `onChange`: a keystroke-per-write would fire an action
+          for "1", "19", "190". It saves when the box is left or Enter is
+          pressed, and `defaultValue` rather than `value` keeps the field the
+          user's own while they type. */}
+      <label className="flex items-center gap-1 text-xs text-ink-muted">
+        Cost
+        <input
+          aria-label={`Budgeted cost for ${line.description}`}
+          type="text"
+          inputMode="decimal"
+          defaultValue={line.unitCost != null ? String(line.unitCost) : ""}
+          placeholder="per unit"
+          disabled={isPending}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+          onBlur={(event) => {
+            const next = event.target.value.trim();
+            const before = line.unitCost != null ? String(line.unitCost) : "";
+            if (next === before) return;
+            setError(null);
+            startTransition(async () => {
+              const result = await setLineBudgetedCost(jobId, line.id, next);
+              if (!result.ok) setError(result.error);
+            });
+          }}
+          className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-right text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+        />
+      </label>
       <select
         aria-label={`Cost type for ${line.description}`}
         defaultValue={line.costCategory ?? ""}

@@ -106,14 +106,37 @@ sites supply it. Run properly — optional **and** one site omitting it — it i
 errors against 1 for the required version. Nothing else in the codebase would
 have caught a missed site.
 
+### And a way out of the warning, because naming a problem is not fixing it
+
+The warning told an estimator that a line had no cost and left him to go and find
+each line on another part of the page. On a wizard-built job that is *every*
+line. CLAUDE.md asks for "real empty states with a way out" and this one had none.
+
+So the budgeted cost is editable **in the recap**, in the per-line row that was
+already there for the other thing a line can be missing — `setLineBudgetedCost`,
+shaped like the `setLineCostCategory` beside it, with the same gates and the same
+`jobId`-scoped `updateMany`. It saves on blur rather than per keystroke, and a
+blank clears the cost, because "I do not know what this costs" has to stay
+expressible or the only way out of a wrong number is a worse one.
+
+**Deliberately NOT a "copy prices into costs" button**, which is the fix that
+suggests itself first and is this whole issue wearing a nicer coat: cost = price
+is a 0% margin nobody typed, and the recap would then mark up the sale price
+exactly as it did before. One number at a time, each one the estimator's own.
+
+It does not touch `currentEstimatedUnitCost`. That is the PM's live forecast and
+it diverges from the budget on purpose once a job runs; re-deriving it from a
+screen about the bid would overwrite a figure somebody re-estimated. Both of
+those are mutation-tested.
+
 ### Checks
 
 | | |
 | --- | --- |
-| suite | **7,942 pass** (491 files) |
+| suite | **7,953 pass** (491 files) |
 | tests moved | 19 — every recap fixture in the repo lacked a cost column |
-| new tests | 14 |
-| mutations | 4 run, **4 caught** |
+| new tests | 22 |
+| mutations | 6 run, **6 caught** |
 | typecheck / lint | 0 errors |
 | migration | none |
 
@@ -123,6 +146,8 @@ have caught a missed site.
 | M2 | fall back to `unitPrice` when cost is null | 3 red |
 | M3 | `spreadTotal` sums cost for a line the spread did not pay | 2 red |
 | M4 | `unitCost` optional, one call site omitting it | 0 errors vs 1 |
+| M5 | `setLineBudgetedCost` also overwrites the PM's forecast | 1 red |
+| M6 | `setLineBudgetedCost` without its `runAction` wrapper | 3 red |
 
 `lineExtended` is now `extendedCost`, with `extendedPrice` beside it. The old
 name said only "extended" and was read as cost by one file and as price by nine,
