@@ -41,8 +41,42 @@ import { Component, Suspense, type ErrorInfo, type ReactNode } from "react";
  * client retries it, the retry throws on the client, and THIS class catches
  * it. Without the Suspense a throw during SSR would escape to `app/error.tsx`
  * and the page would be gone again. The fallback is `null` on purpose: every
- * region's data is awaited by the layout before it renders, so nothing here
- * ever actually suspends and no loading state is ever shown.
+ * region's DATA is awaited by the layout before it renders, so no loading
+ * state is ever shown.
+ *
+ * THAT SENTENCE USED TO END "so nothing here ever actually suspends", AND IT
+ * WAS FALSE. Corrected 2026-09-25 (PR #501 found it; the branch that fixed
+ * the shell measured why). Awaiting the data is not enough, because the data
+ * is not the only thing that can suspend. `children` is whatever the layout
+ * hands this client component, and if the layout is a SERVER component the
+ * child is an element that has to cross the RSC boundary — where React's
+ * production Flight serializer defers any element it reaches once the current
+ * row has passed 3,200 bytes, writing `$L<id>` in its place. The browser
+ * turns that back into a LAZY, and a lazy suspends. That is the trap
+ * `components/Hint.tsx` documents from the other side, and it is why none of
+ * it reproduces in `next dev`, where the threshold does not exist.
+ *
+ * SO NOTHING MAY PAIR A REGION WITH A SERVER-CREATED ELEMENT. Every region is
+ * paired with its widget inside `components/AppChrome.tsx`, a "use client"
+ * module, so the element is created by whoever renders it and never travels
+ * through Flight at all. `shellRegion.test.ts` fails the build if
+ * `app/(app)/layout.tsx` writes a `<ShellRegion>` itself.
+ *
+ * AND A SEPARATE FACT ABOUT THIS BOUNDARY, MEASURED THE SAME DAY, BECAUSE IT
+ * LOOKS LIKE THE SAME BUG AND IS NOT. A `<Suspense>` boundary whose rendered
+ * markup is bigger than React's `progressiveChunkSize` (12,800 bytes by
+ * default; Next does not expose it) is streamed OUT OF ORDER EVEN WHEN IT
+ * NEVER SUSPENDED — `flushSegment` in react-dom-server checks
+ * `isEligibleForOutlining(request, boundary) && flushedByteSize +
+ * boundary.byteSize > request.progressiveChunkSize`, where eligible means
+ * merely `500 < byteSize`. The sidebar's markup measures 13,442 bytes, so
+ * this region is outlined on EVERY authenticated page, deterministically:
+ * fallback inline behind a `<template id="B:n">`, real markup into a
+ * `<div hidden id="S:n">` at the end of the body, an inline `$RC` script to
+ * move it. That is what a MutationObserver sees, and it is NOT a suspension
+ * and NOT fixable by anything above — the only lever is the boundary's own
+ * size. Do not read a `B:`/`S:` pair in the shell as proof that something
+ * suspended.
  *
  * NO DOM OF ITS OWN. The shell is a `flex h-screen` row whose children are
  * the sidebar and the content column; a wrapper element would become a flex

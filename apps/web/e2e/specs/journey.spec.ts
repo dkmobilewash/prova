@@ -240,14 +240,20 @@ test.describe("the pilot contractor's journey", () => {
   test("11. the browser threw nothing, anywhere along the way", async () => {
     // Real crashes already failed the step they happened on. This is the
     // hydration-mismatch half — see HealthMonitor.hydrationMismatches for
-    // why it is asserted here, at the end, rather than mid-spine: it fired
-    // on /jobs/<id>/billing in one run and /jobs/<id>/retainage in the
-    // next, and aborting the journey there hid the steps that matter most.
-    // It still fails the run; it just fails it after the spine has spoken.
+    // why it is asserted here, at the end, rather than mid-spine: it fires
+    // on a different set of pages every run, and aborting the journey at
+    // the first one hid the steps that matter most. It still fails the run;
+    // it just fails it after the spine has spoken.
+    //
+    // The URLs below are NOT a list of broken pages, and reading them as
+    // one cost three investigations. It is one defect in the signed-in
+    // shell that fires on about one page load in three, so the list is
+    // whichever pages lost the race this time. CLAUDE.md's entry has the
+    // measurement and the mechanism.
     expect(
       monitor.hydrationMismatches,
       [
-        'the server\'s HTML and the browser\'s first render disagreed on these pages — a real defect, likely something rendered from "now" (CLAUDE.md, Dates)',
+        "the server's HTML and the browser's first render disagreed on these pages — one defect in the signed-in shell, not a fault in the pages it names (CLAUDE.md, the #418 entry under Traps)",
         "",
         // WHY THE CONSOLE IS PRINTED HERE. Production React reports #418
         // with its args already stripped — literally ["HTML", ""] — so the
