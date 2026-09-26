@@ -6,9 +6,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  *   1. Applying the recap writes the BID into the line prices — computed on
  *      the server from the job's own lines and its own stored rates, never
  *      from anything the request said.
- *   2. Applying twice COMPOUNDS, because the second run marks up prices that
- *      already carry the markup. That is a real hazard, so it is pinned here
- *      and the screen says so before the button is pressed.
+ *   2. Applying twice is IDEMPOTENT. Until #512 it COMPOUNDED — the second run
+ *      read the marked-up `unitPrice` back as the direct cost — and this line
+ *      described that as "a real hazard, pinned here, and the screen says so".
+ *      The bid is built from `budgetedUnitCost` now and applying writes
+ *      `unitPrice`, so the input is no longer the output of the last run. The
+ *      hazard is gone rather than guarded, and the screen's warning changed with
+ *      it.
  *   3. After award the recap is locked — the contract is the price now.
  *   4. A rate outside 0-100 comes back as a sentence, not a throw: the
  *      0.10-meaning-ten-percent scar.
@@ -105,9 +109,13 @@ beforeEach(() => {
       { id: "job_other", companyId: "co_2", status: "ESTIMATE" },
     ],
     jobLineItem: [
-      { id: "board", jobId: "job_1", quantity: "1000", unitPrice: "2", costCategory: "MATERIAL", isDeleted: false },
-      { id: "hang", jobId: "job_1", quantity: "100", unitPrice: "10", costCategory: "LABOR", isDeleted: false },
-      { id: "theirs", jobId: "job_other", quantity: "1", unitPrice: "5", costCategory: null, isDeleted: false },
+      // #512: `budgetedUnitCost` is the figure the recap marks up; `unitPrice` is
+      // what applying WRITES. Both are set here at the numbers this file's totals
+      // were always derived from, so every hand-worked figure below is unchanged
+      // — the arithmetic was never wrong, only the column it read.
+      { id: "board", jobId: "job_1", quantity: "1000", budgetedUnitCost: "2", unitPrice: "2", costCategory: "MATERIAL", isDeleted: false },
+      { id: "hang", jobId: "job_1", quantity: "100", budgetedUnitCost: "10", unitPrice: "10", costCategory: "LABOR", isDeleted: false },
+      { id: "theirs", jobId: "job_other", quantity: "1", budgetedUnitCost: "5", unitPrice: "5", costCategory: null, isDeleted: false },
     ],
     jobBidRecap: [],
     companyBidDefaults: [],
@@ -155,13 +163,37 @@ describe("applying the recap to the line prices", () => {
     expect(db.jobBidRecap[0].appliedTotal).toBe("3992.00");
   });
 
-  it("COMPOUNDS if applied twice — the reason the screen warns before the second press", async () => {
+  /**
+   * THIS TEST USED TO ASSERT THE OPPOSITE, AND #512 IS WHY IT CHANGED.
+   *
+   * It was called "COMPOUNDS if applied twice — the reason the screen warns
+   * before the second press", and it was correct: applying marked up each
+   * line's `unitPrice`, and the next apply read `unitPrice` back as the direct
+   * cost and marked up the already-marked-up figure. Nothing prevented it —
+   * `applyBidRecap` never reads `appliedAt`, so the only brake was a sentence on
+   * screen asking the estimator not to press again.
+   *
+   * Applying is IDEMPOTENT now, and not by adding a guard: the cost base is
+   * `budgetedUnitCost`, and applying writes `unitPrice`. The input to the
+   * calculation is no longer the output of the last one, so pressing twice
+   * cannot compound. Measured, not argued — this asserted `toBeGreaterThan` and
+   * came back 2.66 against 2.66.
+   *
+   * That is a real safety improvement nobody asked for and it is worth naming as
+   * a consequence rather than a feature, because the screen's warning about the
+   * second press became a false statement the moment it was true and had to be
+   * rewritten (`BidRecapPanel.tsx`).
+   */
+  it("is IDEMPOTENT if applied twice — the cost base does not move when prices do", async () => {
     const { saveBidRecap, applyBidRecap } = await actions();
     await saveBidRecap("job_1", form(RATES));
     await applyBidRecap("job_1");
     const first = priceOf("board");
-    await applyBidRecap("job_1");
-    expect(priceOf("board")).toBeGreaterThan(first);
+    const secondResult = await applyBidRecap("job_1");
+    expect(secondResult.ok).toBe(true);
+    expect(priceOf("board")).toBe(first);
+    // And the recorded total is the same event, not a bigger one.
+    expect(priceOf("hang")).toBe(13.32);
   });
 
   it("refuses when no rates are set yet", async () => {
@@ -243,5 +275,86 @@ describe("company scoping and capabilities", () => {
     const { saveCompanyBidDefaults } = await actions();
     expect(await saveCompanyBidDefaults(form({ overheadPercent: "8", profitPercent: "6" }))).toEqual({ ok: true });
     expect(db.companyBidDefaults[0]).toMatchObject({ companyId: "co_1", overheadPercent: "8", profitPercent: "6" });
+  });
+});
+
+/**
+ * setLineBudgetedCost — the way out of #512's warning.
+ *
+ * A line with no cost is reported and marked up at nothing, and on a job built
+ * through the bid wizard that is every line. The warning named the problem and
+ * left the fix elsewhere on the page; this is the box beside the cost type.
+ *
+ * What these pin is mostly what it must NOT do: not touch the forecast, not
+ * reach another job's line, not turn a mistyped figure into a thrown digest, and
+ * not refuse a blank.
+ */
+describe("setting one line's budgeted cost from the recap", () => {
+  const costOf = (id: string) => {
+    const row = db.jobLineItem.find((line) => line.id === id) as Record<string, unknown> | undefined;
+    return row?.budgetedUnitCost ?? null;
+  };
+  const forecastOf = (id: string) => {
+    const row = db.jobLineItem.find((line) => line.id === id) as Record<string, unknown> | undefined;
+    return row?.currentEstimatedUnitCost ?? null;
+  };
+
+  it("writes the cost the estimator typed", async () => {
+    const { setLineBudgetedCost } = await actions();
+    const result = await setLineBudgetedCost("job_1", "board", "1.90");
+    expect(result).toEqual({ ok: true });
+    expect(costOf("board")).toBe("1.9");
+  });
+
+  it("takes a figure with a thousands comma, like every other box in the app", async () => {
+    const { setLineBudgetedCost } = await actions();
+    expect((await setLineBudgetedCost("job_1", "board", "1,250.50")).ok).toBe(true);
+    expect(costOf("board")).toBe("1250.5");
+  });
+
+  it("clears the cost on a blank, which puts the line back into the warning", async () => {
+    // "I do not know what this costs" has to stay expressible, or the only way
+    // out of a wrong number is a worse one.
+    const { setLineBudgetedCost } = await actions();
+    expect((await setLineBudgetedCost("job_1", "board", "")).ok).toBe(true);
+    expect(costOf("board")).toBeNull();
+  });
+
+  it("does NOT touch the PM's forecast", async () => {
+    // `currentEstimatedUnitCost` diverges from the budget on purpose once a job
+    // runs. This screen is about the bid, and re-deriving the forecast from it
+    // would overwrite a number somebody re-estimated deliberately.
+    const { setLineBudgetedCost } = await actions();
+    const before = forecastOf("board");
+    await setLineBudgetedCost("job_1", "board", "7.77");
+    expect(forecastOf("board")).toBe(before);
+  });
+
+  it("returns a readable refusal for a figure it cannot read, rather than throwing one", async () => {
+    // Thrown Server Action messages are redacted in production, so this would
+    // reach the estimator as a dead box. `runAction` is what makes it a sentence.
+    const { setLineBudgetedCost } = await actions();
+    const result = await setLineBudgetedCost("job_1", "board", "about two dollars");
+    expect(result.ok).toBe(false);
+    expect(result.ok ? "" : result.error).toContain("Budgeted cost");
+    expect(costOf("board")).toBe("2");
+  });
+
+  it("refuses a negative cost", async () => {
+    const { setLineBudgetedCost } = await actions();
+    expect((await setLineBudgetedCost("job_1", "board", "-5")).ok).toBe(false);
+  });
+
+  it("cannot reach a line on another company's job", async () => {
+    const { setLineBudgetedCost } = await actions();
+    const result = await setLineBudgetedCost("job_1", "theirs", "9.99");
+    expect(result.ok).toBe(false);
+    expect(costOf("theirs")).toBe("5");
+  });
+
+  it("refuses once the job is no longer at estimate stage", async () => {
+    const { setLineBudgetedCost } = await actions();
+    const result = await setLineBudgetedCost("job_done", "board", "1.90");
+    expect(result.ok).toBe(false);
   });
 });

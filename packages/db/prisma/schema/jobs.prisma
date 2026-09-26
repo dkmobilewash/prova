@@ -265,12 +265,35 @@ model JobLineItem {
   /// contingency) has no client-facing sale price. Contract value /
   /// invoicing totals treat a null unitPrice as $0 revenue — the line still
   /// carries quantity and cost fields, it just isn't billed directly.
+  ///
+  /// THIS COMMENT IS NOW THE ONLY READING, AND FOR THREE WEEKS IT WAS ONE OF
+  /// TWO. `lib/bid-recap.ts` declared "a job's line items are its DIRECT cost"
+  /// and marked this column up, while nine other surfaces — contract value,
+  /// WIP, pay applications, retainage, change-order value, the proposal, the
+  /// e-sign documents and the GC portal — read it as revenue, exactly as
+  /// written above. A catalog line carrying a price of 2.85 and a cost of 1.90
+  /// was therefore marked up FROM 2.85, a second margin on top of the one the
+  /// price already held. Fixed in #512: the recap reads `budgetedUnitCost`
+  /// below. Nothing about this column's meaning changed — it simply stopped
+  /// having a second one.
   unitPrice Decimal? @db.Decimal(12, 2)
   sortOrder Int      @default(0)
 
   /// The estimated unit cost at the time this line was priced (estimate
   /// approval). Set once, stays put as the historical baseline for WIP
   /// reporting — never silently overwritten by later re-forecasting.
+  ///
+  /// AND SINCE #512 IT IS WHAT THE BID RECAP MARKS UP. `budgetedUnitCost`
+  /// rather than `currentEstimatedUnitCost` below, deliberately: they are equal
+  /// at creation and the recap only runs while the job is at ESTIMATE, but this
+  /// one cannot move afterwards — so a recap re-opened later shows the cost it
+  /// was built from rather than a figure a PM re-forecast in the meantime.
+  ///
+  /// NULL IS A REAL STATE HERE AND IS NOT ZERO: no cost was recorded. A line
+  /// with a price and a null cost is reported on the recap as carrying a price
+  /// but no cost, kept out of the cost base, and marked up at nothing. It is
+  /// never filled in from `unitPrice`, which would be the double markup #512
+  /// removed. No backfill was ever run for the same reason.
   budgetedUnitCost Decimal? @db.Decimal(12, 2)
 
   /// The PM's current forecast of unit cost, re-estimated as the job

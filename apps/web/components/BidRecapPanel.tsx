@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition, type FormEvent } from "react";
-import { applyBidRecap, saveBidRecap, setLineCostCategory } from "@/lib/actions";
+import { applyBidRecap, saveBidRecap, setLineBudgetedCost, setLineCostCategory } from "@/lib/actions";
 import { money } from "@/lib/money";
 import {
   bidRecap,
@@ -123,6 +123,9 @@ export function BidRecapPanel({
       <table className="w-full text-sm">
         <tbody>
           <tr className="border-b border-line-row">
+            {/* True by design since #512 rather than by accident: this is the
+                sum of quantity × budgetedUnitCost, the cost of doing the work.
+                Before #512 the same words sat over a sum of SALE PRICES. */}
             <td className="py-1 text-ink-label">Direct cost of the work</td>
             <td className="py-1 text-right tabular-nums text-ink">{money(recap.direct.total)}</td>
           </tr>
@@ -141,6 +144,27 @@ export function BidRecapPanel({
           </tr>
         </tbody>
       </table>
+
+      {/* #512. Rendered BEFORE the no-cost-type warning because it is the more
+          fundamental one: a line with no cost is missing the figure this whole
+          panel marks up, and on a job built through the bid wizard — which
+          collects no cost at all — it is every line, so the direct cost above
+          reads $0. Saying "no cost type" first would name the smaller problem.
+
+          Never filled in from the sale price. That fallback is the double-markup
+          this change removes, kept alive for exactly the lines most likely to
+          hit it. */}
+      {recap.direct.pricedWithNoCostLineCount > 0 && (
+        <p className="text-sm text-tag-amber-ink">
+          {recap.direct.pricedWithNoCostLineCount} line
+          {recap.direct.pricedWithNoCostLineCount === 1 ? " carries" : "s carry"} a price but no cost
+          {recap.direct.pricedWithNoCost > 0 ? ` (${money(recap.direct.pricedWithNoCost)} of price)` : ""} — not in the
+          direct cost above, and not marked up.
+          {recap.direct.total === 0
+            ? " This bid has no cost base at all: set a budgeted cost on each line below, or the bid is $0."
+            : " Applying will leave those prices unchanged."}
+        </p>
+      )}
 
       {recap.direct.uncategorisedLineCount > 0 && (
         <p className="text-sm text-tag-amber-ink">
@@ -179,17 +203,32 @@ export function BidRecapPanel({
             </p>
           )}
         </div>
+        {/* THIS SENTENCE SAID THE OPPOSITE AND HAD TO CHANGE — #512.
+            It read "Applying again marks the current prices up a second time",
+            which was true and was the ONLY brake on it: `applyBidRecap` never
+            checks `appliedAt`.
+
+            It cannot compound any more. The bid is built from
+            `budgetedUnitCost` and applying writes `unitPrice`, so the input to
+            the calculation is no longer the output of the last one — pressing
+            twice writes the same prices. Pinned by an action test that used to
+            assert the compounding.
+
+            Left as a statement of what it DOES rather than deleted: an
+            estimator who was told once that a second press doubles the markup
+            needs to be told it no longer does, or the old warning survives in
+            the only place that matters. */}
         {applied && (
           <p className="text-xs text-ink-muted">
-            Last applied {applied.at} at {money(applied.total)}. Applying again marks the current prices up a second
-            time, so do it once the rates are settled.
+            Last applied {applied.at} at {money(applied.total)}. Applying again writes the same prices — it is the
+            marked-up cost, not a markup on the current price — so a second press is safe.
           </p>
         )}
         {applyMessage && <p className="text-sm text-ink-body">{applyMessage}</p>}
       </div>
 
       <div className="border-t border-line-row pt-3">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Cost type per line</p>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Cost and cost type per line</p>
         <ul className="flex flex-col gap-1">
           {lines.map((line) => (
             <CostTypeRow key={line.id} jobId={jobId} line={line} />
@@ -208,6 +247,43 @@ function CostTypeRow({ jobId, line }: { jobId: string; line: RecapLineView }) {
       <span className="min-w-0 flex-1 truncate text-ink-body" title={line.description}>
         {line.description}
       </span>
+      {/* THE WAY OUT OF THE WARNING ABOVE — #512.
+          A line with no cost is reported and marked up at nothing, and on a
+          wizard-built job that is every line. Naming the problem and leaving the
+          fix on another part of the page is the dead-end empty state CLAUDE.md
+          asks us not to ship, so the cost is editable here, beside the cost
+          type, in the row that already exists for the other thing a line can be
+          missing.
+
+          `onBlur`, not `onChange`: a keystroke-per-write would fire an action
+          for "1", "19", "190". It saves when the box is left or Enter is
+          pressed, and `defaultValue` rather than `value` keeps the field the
+          user's own while they type. */}
+      <label className="flex items-center gap-1 text-xs text-ink-muted">
+        Cost
+        <input
+          aria-label={`Budgeted cost for ${line.description}`}
+          type="text"
+          inputMode="decimal"
+          defaultValue={line.unitCost != null ? String(line.unitCost) : ""}
+          placeholder="per unit"
+          disabled={isPending}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+          onBlur={(event) => {
+            const next = event.target.value.trim();
+            const before = line.unitCost != null ? String(line.unitCost) : "";
+            if (next === before) return;
+            setError(null);
+            startTransition(async () => {
+              const result = await setLineBudgetedCost(jobId, line.id, next);
+              if (!result.ok) setError(result.error);
+            });
+          }}
+          className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-right text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+        />
+      </label>
       <select
         aria-label={`Cost type for ${line.description}`}
         defaultValue={line.costCategory ?? ""}

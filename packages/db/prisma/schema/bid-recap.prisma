@@ -3,13 +3,28 @@
 //
 // Part of the multi-file Prisma schema in this folder.
 //
-// WHY THIS EXISTS. Until now a job's "contract value" was the bare sum of
-// quantity × unitPrice. That is the DIRECT cost of the work and it is not a
-// bid: it carries no markup on the material, no overhead, no profit, no sales
-// tax, no bond premium, no contingency. Every estimating product in the market
-// has this layer (OST calls them Section Markups) and this one had nothing —
-// so the number on the estimate screen was one an estimator had to mark up in
-// their head, or in a spreadsheet beside it.
+// WHY THIS EXISTS. A job's "contract value" is the bare sum of
+// quantity × unitPrice, and that is not a bid: it carries no markup on the
+// material, no overhead, no profit, no sales tax, no bond premium, no
+// contingency. Every estimating product in the market has this layer (OST calls
+// them Section Markups) and this one had nothing — so the number on the estimate
+// screen was one an estimator had to mark up in their head, or in a spreadsheet
+// beside it.
+//
+// CORRECTED #512: the sentence above used to continue "That is the DIRECT cost
+// of the work", and it is not. `quantity × unitPrice` is REVENUE — `jobs.prisma`
+// calls that column the client-facing sale price, and WIP, invoicing, retainage,
+// change orders, the proposal and the GC portal all read it that way. This file
+// asserting otherwise is how the recap came to mark up a number that already
+// carried the margin: a catalog line at a price of 2.85 and a cost of 1.90 was
+// marked up from 2.85. The direct cost this recap works from is
+// `JobLineItem.budgetedUnitCost`.
+//
+// One consequence worth recording, because it removed a footgun rather than
+// adding a guard: applying the recap is now IDEMPOTENT. It computes from cost
+// and writes prices, so the input is no longer the output of the last run.
+// Before #512 a second press compounded, and nothing but a sentence on screen
+// stopped it — `applyBidRecap` has never read `appliedAt`.
 //
 // WHY THE PERCENTAGES ARE STORED AND THE MONEY IS NOT. Every figure the recap
 // produces is derived at read time by apps/web/lib/bid-recap.ts from these

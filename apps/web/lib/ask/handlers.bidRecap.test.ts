@@ -45,7 +45,7 @@ type Job = {
   name: string;
   status: string;
   bidRecap: Record<string, unknown> | null;
-  lineItems: { id: string; quantity: string; unitPrice: string | null; costCategory: string | null }[];
+  lineItems: { id: string; quantity: string; budgetedUnitCost: string | null; unitPrice: string | null; costCategory: string | null }[];
 };
 
 const RIVERSIDE: Job = {
@@ -70,12 +70,13 @@ const RIVERSIDE: Job = {
     appliedTotal: "14793.46",
   },
   lineItems: [
-    { id: "li-1", quantity: "100.00", unitPrice: "20.00", costCategory: "MATERIAL" },
-    { id: "li-2", quantity: "50.00", unitPrice: "60.00", costCategory: "LABOR" },
-    { id: "li-3", quantity: "1.00", unitPrice: "5000.00", costCategory: "SUBCONTRACTOR" },
-    // No cost type: carried into the bid at its direct price, marked up at
-    // nothing, and named.
-    { id: "li-4", quantity: "1.00", unitPrice: "1000.00", costCategory: null },
+    { id: "li-1", quantity: "100.00", budgetedUnitCost: "20.00", unitPrice: "20.00", costCategory: "MATERIAL" },
+    { id: "li-2", quantity: "50.00", budgetedUnitCost: "60.00", unitPrice: "60.00", costCategory: "LABOR" },
+    { id: "li-3", quantity: "1.00", budgetedUnitCost: "5000.00", unitPrice: "5000.00", costCategory: "SUBCONTRACTOR" },
+    // No cost type: carried into the bid at its direct COST, marked up at
+    // nothing, and named. ("price" until #512, when the recap stopped reading
+    // the sale price as the cost.)
+    { id: "li-4", quantity: "1.00", budgetedUnitCost: "1000.00", unitPrice: "1000.00", costCategory: null },
   ],
 };
 
@@ -86,7 +87,7 @@ const MAPLE: Job = {
   name: "Maple Street Lofts",
   status: "ESTIMATE",
   bidRecap: null,
-  lineItems: [{ id: "li-m", quantity: "10.00", unitPrice: "100.00", costCategory: "MATERIAL" }],
+  lineItems: [{ id: "li-m", quantity: "10.00", budgetedUnitCost: "100.00", unitPrice: "100.00", costCategory: "MATERIAL" }],
 };
 
 /** Estimate stage, nothing priced. Nothing to mark up. */
@@ -106,7 +107,7 @@ const CEDAR: Job = {
   name: "Cedar Park",
   status: "CONTRACTED",
   bidRecap: { overheadPercent: "99.00" },
-  lineItems: [{ id: "li-c", quantity: "1.00", unitPrice: "999999.00", costCategory: "MATERIAL" }],
+  lineItems: [{ id: "li-c", quantity: "1.00", budgetedUnitCost: "999999.00", unitPrice: "999999.00", costCategory: "MATERIAL" }],
 };
 
 const OTHERS: Job = {
@@ -115,7 +116,7 @@ const OTHERS: Job = {
   name: "SOMEONE ELSE'S ESTIMATE",
   status: "ESTIMATE",
   bidRecap: null,
-  lineItems: [{ id: "li-x", quantity: "1.00", unitPrice: "1.00", costCategory: "MATERIAL" }],
+  lineItems: [{ id: "li-x", quantity: "1.00", budgetedUnitCost: "1.00", unitPrice: "1.00", costCategory: "MATERIAL" }],
 };
 
 const JOBS = [RIVERSIDE, MAPLE, EMPTY, CEDAR, OTHERS];

@@ -168,6 +168,30 @@ function ManualAddForm({ jobId }: { jobId: string }) {
             className={`${field} w-28`}
           />
         </label>
+        {/* ADDED #512, and this form's absence of it was the reason that issue
+            was riskier than it looked. The bid recap marks up
+            `budgetedUnitCost`, and this — the first-job onboarding path — posted
+            a price and no cost, so every line a new contractor entered here was
+            invisible to the recap's cost base and his whole bid computed as $0.
+
+            `addLineItem` has always read this field (lib/actions/jobs.ts), and
+            it also derives `currentEstimatedUnitCost` from it, so nothing on the
+            server had to change to accept it.
+
+            Optional, and the placeholder says what blank MEANS rather than
+            leaving it to be guessed — the same correction the unit-price
+            placeholder above records. */}
+        <label className={labelClass}>
+          Your cost
+          <input
+            name="budgetedUnitCost"
+            type="text"
+            placeholder="What it costs you"
+            inputMode="decimal"
+            title="What the work costs you per unit, before markup. The bid recap marks this up to build your bid — a line with no cost here cannot be marked up."
+            className={`${field} w-28`}
+          />
+        </label>
         <button
           type="submit"
           disabled={isPending}
