@@ -251,8 +251,8 @@ function makeStyles(p: Palette) {
     sectionHeadGap: { marginTop: space.sm },
     sectionTitle: { color: p.colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.bold },
     cardTitle: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
-    cardBody: { color: p.colors.inkBody, fontSize: typography.size.md, marginTop: 4 },
-    cardMeta: { color: p.colors.inkMuted, fontSize: typography.size.sm, marginTop: 4 },
+    cardBody: { color: p.colors.inkBody, fontSize: typography.size.md, marginTop: space.xxs },
+    cardMeta: { color: p.colors.inkMuted, fontSize: typography.size.sm, marginTop: space.xxs },
     chipLabel: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
     chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   });

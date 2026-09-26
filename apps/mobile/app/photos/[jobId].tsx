@@ -55,6 +55,14 @@ import { useSync } from "@/lib/use-sync";
  * padding, the type — is scaled by the same factor, which lands the capture
  * at STAMP_WIDTH pixels on any phone with the stamp the same size relative
  * to the picture. */
+/** The stamp's own geometry, in ITS coordinate system rather than the
+ * screen's: these scale with the photo (see `stampScale`) and are burned
+ * into the image, so they are not screen spacing and do not belong on
+ * the app's 4-pt grid. Named so the spacing census can tell the
+ * difference. */
+const STAMP_PAD_Y = 18;
+const STAMP_PAD_X = 24;
+
 const STAMP_WIDTH = 1200;
 /** Points per pixel on this screen: 1/3 on a 3x phone. */
 const pointScale = () => 1 / PixelRatio.get();
@@ -411,7 +419,7 @@ export default function PhotosScreen() {
             <View
               style={[
                 styles.stamp,
-                { paddingVertical: 18 * stampScale, paddingHorizontal: 24 * stampScale },
+                { paddingVertical: STAMP_PAD_Y * stampScale, paddingHorizontal: STAMP_PAD_X * stampScale },
               ]}
             >
               {lines.map((line, i) => (
@@ -514,18 +522,18 @@ function makeStyles(p: Palette) {
       overflow: "hidden",
     },
     tileImage: { width: "100%", aspectRatio: 1, backgroundColor: p.colors.lineCard },
-    tileBody: { padding: 10, gap: space.one },
+    tileBody: { padding: space.control, gap: space.one },
     preview: { width: "100%", height: 220, borderRadius: radius.small, backgroundColor: p.colors.lineCard },
-    caption: { color: p.colors.inkBody, fontSize: typography.size.sm, marginTop: 2 },
-    meta: { color: p.colors.inkMuted, fontSize: typography.size.xs, marginTop: 2 },
-    warn: { color: p.colors.tagRoseInk, fontSize: typography.size.sm, marginTop: 2 },
+    caption: { color: p.colors.inkBody, fontSize: typography.size.sm, marginTop: space.two },
+    meta: { color: p.colors.inkMuted, fontSize: typography.size.xs, marginTop: space.two },
+    warn: { color: p.colors.tagRoseInk, fontSize: typography.size.sm, marginTop: space.two },
     attached: {
       color: p.colors.link,
       fontSize: typography.size.xs,
       fontWeight: typography.weight.semibold,
-      marginTop: 2,
+      marginTop: space.two,
     },
-    syncing: { color: p.colors.inkMuted, fontSize: typography.size.sm, fontStyle: "italic", marginTop: 2 },
+    syncing: { color: p.colors.inkMuted, fontSize: typography.size.sm, fontStyle: "italic", marginTop: space.two },
     hint: { color: p.colors.inkMuted, fontSize: typography.size.sm },
     label: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
     chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },

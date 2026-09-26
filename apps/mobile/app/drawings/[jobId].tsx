@@ -253,7 +253,7 @@ function makeStyles(p: Palette) {
       fontSize: typography.size.sm,
       fontWeight: typography.weight.semibold,
     },
-    revision: { borderTopWidth: 1, borderTopColor: p.colors.lineRow, paddingTop: 10, marginTop: 8, gap: 2 },
+    revision: { borderTopWidth: 1, borderTopColor: p.colors.lineRow, paddingTop: space.control, marginTop: space.xs, gap: 2 },
     revisionHead: { flexDirection: "row", alignItems: "center", gap: 8 },
     label: { color: p.colors.inkBody, fontSize: typography.size.md, flex: 1 },
     labelCurrent: { color: p.colors.ink, fontWeight: typography.weight.semibold },
@@ -264,7 +264,7 @@ function makeStyles(p: Palette) {
     },
     // A proper 44pt target each, icon and label together — the old bare
     // text links were the row's padding pretending to be a button.
-    actions: { flexDirection: "row", gap: space.lg, marginTop: 6 },
+    actions: { flexDirection: "row", gap: space.lg, marginTop: space.six },
     action: {
       flexDirection: "row",
       alignItems: "center",

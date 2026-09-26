@@ -323,7 +323,7 @@ function makeStyles(p: Palette) {
     },
     boxDone: { backgroundColor: p.colors.brand, borderColor: p.colors.brand },
     descriptionDone: { color: p.colors.inkMuted, textDecorationLine: "line-through" },
-    photoPrompt: { color: p.colors.link, fontSize: typography.size.sm, marginTop: 2 },
+    photoPrompt: { color: p.colors.link, fontSize: typography.size.sm, marginTop: space.two },
     footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
   });
 }

@@ -80,7 +80,7 @@ function makeStyles(p: Palette) {
       borderWidth: 1,
       borderColor: p.colors.lineCard,
       backgroundColor: p.colors.surface,
-      padding: 2,
+      padding: space.two,
       flexGrow: 0,
     },
     segment: {

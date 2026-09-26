@@ -235,6 +235,13 @@ export const EN = {
   // "Español" stays Español in an English one — so those two names are
   // literals in the switch, not keys. They were keys once, nothing
   // referenced them, and the census caught it.
+  "settings.appearance": "Screen",
+  "settings.appearance.system": "Follow the phone",
+  "settings.appearance.light": "Light",
+  "settings.appearance.dark": "Dark",
+  "settings.appearance.outdoor": "Outdoor",
+  "settings.appearance.note":
+    "Outdoor is black on white at its highest contrast, for direct sun. It never switches on its own.",
   "settings.language": "Language",
   "settings.language.auto": "Follow the phone",
   "settings.language.note":

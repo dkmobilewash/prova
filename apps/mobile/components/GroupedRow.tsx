@@ -106,7 +106,7 @@ function makeStyles(p: Palette) {
       alignItems: "center",
       gap: space.sm,
       minHeight: hitTarget,
-      paddingVertical: 10,
+      paddingVertical: space.control,
       paddingHorizontal: space.md,
     },
     pressed: { backgroundColor: p.colors.railHover },
@@ -132,17 +132,17 @@ function makeStyles(p: Palette) {
     subtitle: {
       color: p.colors.inkBody,
       fontSize: typography.size.sm,
-      marginTop: 2,
+      marginTop: space.two,
     },
     detail: {
       color: p.colors.inkMuted,
       fontSize: typography.size.sm,
-      marginTop: 1,
+      marginTop: space.one,
     },
     note: {
       color: p.colors.inkBody,
       fontSize: typography.size.sm,
-      marginTop: 2,
+      marginTop: space.two,
     },
     value: {
       color: p.colors.inkBody,

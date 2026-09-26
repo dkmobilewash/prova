@@ -9,7 +9,8 @@ import { Icon } from "@/components/Icon";
 import { LargeTitle } from "@/components/LargeTitle";
 import { SectionHeader } from "@/components/SectionHeader";
 import { clearCurrentJob } from "@/lib/current-job";
-import { type LanguageChoice, setLanguage, useT } from "@/lib/i18n";
+import { APPEARANCE_CHOICES, setAppearance, useAppearance, type Appearance } from "@/lib/appearance";
+import { type LanguageChoice, setLanguage, type StringKey, useT } from "@/lib/i18n";
 import { pendingCount, listRefused } from "@/lib/sync-queue";
 import {
   ensureReminderPermission,
@@ -24,9 +25,23 @@ import { useCurrentJob } from "@/lib/use-current-job";
 import { useMe } from "@/lib/use-me";
 import { usePalette } from "@/lib/use-palette";
 
+/** Written out rather than built as `settings.appearance.${pick}`, and the
+ * reason is a census rather than taste: strings-census.test.ts reads the
+ * keys the app asks for out of the SOURCE, so a key assembled at runtime
+ * is a key it cannot see — it reported all four of these as "written,
+ * documented and never called". A template literal defeats the type
+ * checker the same way. */
+const APPEARANCE_LABEL: Record<Appearance, StringKey> = {
+  system: "settings.appearance.system",
+  light: "settings.appearance.light",
+  dark: "settings.appearance.dark",
+  outdoor: "settings.appearance.outdoor",
+};
+
 /** More: the account, the queue, and the one piece of app state worth
  * being able to clear by hand — which job the phone thinks it is on. */
 export default function SettingsScreen() {
+  const appearance = useAppearance();
   const { signOut } = useAuth();
   const { user } = useUser();
   const { job } = useCurrentJob();
@@ -138,6 +153,34 @@ export default function SettingsScreen() {
           </View>
         </GroupedList>
 
+        {/* How the screen is lit. `outdoor` is the one people will come
+            looking for — a near-black-on-white palette at 7:1 and up, for
+            a phone held in direct sun — and it is deliberately a choice
+            rather than something sensed: see lib/appearance.ts. */}
+        <SectionHeader>{t("settings.appearance")}</SectionHeader>
+        <GroupedList>
+          <View style={styles.reminder}>
+            <View style={styles.choices}>
+              {APPEARANCE_CHOICES.map((pick: Appearance) => (
+                <Pressable
+                  key={pick}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: appearance === pick }}
+                  onPress={() => {
+                    void setAppearance(pick);
+                  }}
+                  style={[styles.choice, appearance === pick && styles.choiceOn]}
+                >
+                  <Text style={appearance === pick ? styles.choiceOnText : styles.choiceText}>
+                    {t(APPEARANCE_LABEL[pick])}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.label}>{t("settings.appearance.note")}</Text>
+          </View>
+        </GroupedList>
+
         {/* The language. Last of the settings and first in importance for
             the person this exists for — and the reason this whole screen
             is translated rather than left in English: finding "Idioma"
@@ -199,7 +242,7 @@ export default function SettingsScreen() {
 function makeStyles(p: Palette) {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: p.colors.canvas },
-    content: { paddingHorizontal: space.md, paddingBottom: 88 },
+    content: { paddingHorizontal: space.md, paddingBottom: space.scrollBottom },
     label: { color: p.colors.inkMuted, fontSize: typography.size.xs, fontWeight: typography.weight.semibold },
     count: {
       color: p.colors.brandInk,
@@ -209,8 +252,8 @@ function makeStyles(p: Palette) {
       minWidth: 22,
       textAlign: "center",
       borderRadius: radius.pill,
-      paddingVertical: 3,
-      paddingHorizontal: 6,
+      paddingVertical: space.badge,
+      paddingHorizontal: space.six,
       overflow: "hidden",
     },
     reminder: { padding: space.md, gap: space.sm },
@@ -219,8 +262,8 @@ function makeStyles(p: Palette) {
       borderWidth: 1,
       borderColor: p.colors.lineCard,
       borderRadius: radius.pill,
-      paddingVertical: 6,
-      paddingHorizontal: 12,
+      paddingVertical: space.six,
+      paddingHorizontal: space.sm,
     },
     choiceOn: { backgroundColor: p.colors.brand, borderColor: p.colors.brand },
     choiceText: { color: p.colors.inkBody, fontSize: typography.size.sm },

@@ -339,7 +339,7 @@ function makeStyles(p: Palette) {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: p.colors.canvas },
     loading: { color: p.colors.ink, fontSize: typography.size.md, padding: space.md },
-    content: { paddingHorizontal: space.md, paddingBottom: 88, gap: space.sm },
+    content: { paddingHorizontal: space.md, paddingBottom: space.scrollBottom, gap: space.sm },
     greeting: {
       color: p.colors.ink,
       fontSize: typography.size.xl2,

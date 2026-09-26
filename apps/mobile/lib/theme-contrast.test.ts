@@ -64,10 +64,36 @@ function pairsFor(palette: Palette, linkFloor: number): [string, string, string,
   ];
 }
 
-for (const [mode, palette, linkFloor] of [
-  ["dark", palettes.dark, 7],
-  ["light", palettes.light, 4.5],
-] as const) {
+/**
+ * The link floor differs per palette and nothing else does.
+ *
+ * `outdoor` holds 7:1 like dark: it exists for direct sun, so a "readable
+ * enough indoors" amber would defeat the only reason somebody chose it.
+ * Light stays at 4.5 because an amber clearing 7:1 on near-white has to
+ * be so brown it stops reading as a link at all — the reasoning at the
+ * top of theme.ts.
+ */
+const LINK_FLOOR: Record<keyof typeof palettes, number> = { dark: 7, light: 4.5, outdoor: 7 };
+
+/**
+ * DERIVED FROM `palettes`, NEVER LISTED — the scope rule from CLAUDE.md.
+ * This loop named its two palettes by hand, so a third one added to
+ * theme.ts would have been checked by nothing at all while every test
+ * here stayed green: not a wrong answer, an unasked question. The count
+ * assertion is the other half, in case `palettes` is ever re-shaped.
+ */
+const MODES = Object.keys(palettes) as (keyof typeof palettes)[];
+
+describe("every palette is checked", () => {
+  it("has a floor for each palette and checks all of them", () => {
+    expect(MODES.length).toBeGreaterThanOrEqual(3);
+    for (const mode of MODES) expect(LINK_FLOOR[mode], `no link floor for ${mode}`).toBeGreaterThan(0);
+  });
+});
+
+for (const [mode, palette, linkFloor] of MODES.map(
+  (mode) => [mode, palettes[mode], LINK_FLOOR[mode]] as const,
+)) {
   const PAIRS = pairsFor(palette, linkFloor);
 
   describe(`what the phone renders is readable — ${mode}`, () => {

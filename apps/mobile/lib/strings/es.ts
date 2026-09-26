@@ -227,6 +227,13 @@ export const ES: Record<keyof typeof EN, string> = {
   "settings.signOut": "Cerrar sesión",
 
   // See en.ts: the two language NAMES are deliberately not keys.
+  "settings.appearance": "Pantalla",
+  "settings.appearance.system": "Seguir el teléfono",
+  "settings.appearance.light": "Claro",
+  "settings.appearance.dark": "Oscuro",
+  "settings.appearance.outdoor": "Exterior",
+  "settings.appearance.note":
+    "Exterior es negro sobre blanco al máximo contraste, para el sol directo. Nunca cambia solo.",
   "settings.language": "Idioma",
   "settings.language.auto": "Seguir el teléfono",
   "settings.language.note":

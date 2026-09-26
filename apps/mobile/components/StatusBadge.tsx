@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { type Palette, radius, typography } from "@/lib/theme";
+import { type Palette, radius, statusPair, statusTokens, typography, space } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 
 /**
@@ -23,19 +23,16 @@ const LABELS: Record<string, string> = {
 };
 
 function pairFor(p: Palette, status: string): { bg: string; ink: string } {
-  const c = p.colors;
-  const pairs: Record<string, { bg: string; ink: string }> = {
-    ESTIMATE: { bg: c.tagSlate, ink: c.tagSlateInk },
-    CONTRACTED: { bg: c.tagBlue, ink: c.tagBlueInk },
-    IN_PROGRESS: { bg: c.tagAmber, ink: c.tagAmberInk },
-    COMPLETE: { bg: c.tagGreen, ink: c.tagGreenInk },
-    SIGNED: { bg: c.tagGreen, ink: c.tagGreenInk },
-    CONNECTED: { bg: c.tagGreen, ink: c.tagGreenInk },
-    NOT_CONNECTED: { bg: c.tagSlate, ink: c.tagSlateInk },
-    NEEDS_REAUTH: { bg: c.tagAmber, ink: c.tagAmberInk },
-    ERROR: { bg: c.tagRose, ink: c.tagRoseInk },
-  };
-  return pairs[status] ?? { bg: c.tagSlate, ink: c.tagSlateInk };
+  // The pairs live in lib/theme.ts now, keyed by the DOMAIN they belong
+  // to — a private copy here is how invoice states ended up with no
+  // tokens at all and the next screen that needed "Overdue" would have
+  // invented one. This component keeps only the lookup ORDER: a job
+  // status wins over an integration one of the same name, because this
+  // badge sits beside a job far more often than beside a connection.
+  const pair = statusTokens.job[status as keyof typeof statusTokens.job]
+    ? statusPair("job", status)
+    : statusPair("integration", status);
+  return { bg: p.colors[pair.bg], ink: p.colors[pair.ink] };
 }
 
 export function StatusBadge({ status }: { status: string }) {
@@ -55,8 +52,8 @@ function makeStyles(p: Palette) {
     badge: {
       alignSelf: "flex-start",
       borderRadius: radius.pill,
-      paddingHorizontal: 12,
-      paddingVertical: 3,
+      paddingHorizontal: space.sm,
+      paddingVertical: space.badge,
     },
     label: { fontSize: typography.size.xs, fontWeight: typography.weight.semibold },
   });

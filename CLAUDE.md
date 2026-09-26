@@ -467,6 +467,74 @@ scrollback gets broken by whoever didn't scroll far enough.
   instructions. The guard caught it in seconds — the cost was only that a
   branch built the wrong thing first.
 
+## UI rules (the phone, and anything a gloved hand touches)
+
+Added 2026-09-26 with the token delta they describe. The phone is the
+only surface in this product used outdoors, in gloves, one-handed, by
+somebody who did not choose the software — so these are not style
+preferences and they are not covered by any of the installed skills.
+
+### Which skill for which task
+
+Name the skill; do not go looking for a general one.
+
+| Task | Skill |
+| --- | --- |
+| iOS conventions, navigation, controls, status | `apple-hig-skills:hig-foundations`, `hig-patterns`, `hig-inputs`, `hig-components-*` |
+| React Native structure, lists, navigation | `building-react-native-apps:react-native-best-practices`, `react-navigation`, `frontend-mobile-development:react-native-architecture` |
+| Expo routing, native modules, dev/EAS builds | `expo:expo-router`, `expo-dev-client`, `eas-app-stores`, `eas-update` |
+| Tokens, theming, component libraries | `ux-ui-agent-skills:design-tokens`, `token-build`, `governance`, `ui-design:design-system-patterns` |
+| Accessibility audits and screen-reader checks | `accessibility-compliance:wcag-audit-patterns`, `screen-reader-testing`, `ux-ui-agent-skills:a11y-audit` |
+| Figma → code | `figma:figma-design-to-code`, `figma-code-connect` (authenticate the Figma MCP first) |
+
+### Tokens, not values
+
+Every colour, space, radius, type size and touch target comes from
+`apps/mobile/lib/theme.ts`. No hex, no bare numbers. Four censuses fail
+the build rather than a reviewer catching it: `design-tokens.test.ts`
+(hex, radius, gap, padding/margin, lineHeight-in-points),
+`theme-contrast.test.ts` (every ink/ground pair, in every palette),
+`theme-parity.test.ts` (one vocabulary across light, dark and outdoor),
+`touch-targets.test.ts` (the 48pt floor).
+
+A value that genuinely is not on the grid gets a NAME in `space` and a
+reason, as `control`, `controlX`, `badge` and `scrollBottom` did — it
+does not get to stay a number.
+
+### Field-use rules (no skill covers these)
+
+- **Primary actions are at least 56pt tall** (`hitTargetPrimary`);
+  everything tappable clears **48** (`hitTarget`). 48 rather than
+  Apple's 44 because these hands are in gloves and Android's own floor
+  is 48dp.
+- **Destructive actions are separated from the action beside them and
+  confirmed in two steps** — and read the "Cancel inherits the delete
+  pixel" entry under Traps before placing the pair, on either surface.
+- **Key actions live in the bottom third of the screen.** The phone is
+  held in one hand, often on a ladder.
+- **7:1 for text on any screen used outdoors**, which on the phone is
+  all of them; 3:1 for borders and non-text. No meaning carried by
+  colour alone — a status is a word and a colour, never a colour.
+- **Every screen that loads or saves shows offline, queued and synced
+  states.** `cache-parity.test.ts` and `offline-notes.test.ts` enforce
+  the read half; the outbox (`app/outbox.tsx`) is the write half.
+- **Prefer pickers, steppers and chips to typing**, and give a numeric
+  keypad for numbers (`keyboardType="decimal-pad"`).
+- **Photo capture tags each photo to a job and a log, and queues the
+  upload** for when there is signal. Never a bare camera roll write.
+
+### Before a screen is finished
+
+Self-review it against `accessibility-compliance:wcag-audit-patterns`
+and `apple-hig-skills:hig-patterns` — the two that cover what the
+censuses cannot see: labels and roles on every control, a reading order
+that makes sense, and whether the screen still works at the largest
+Dynamic Type size. **No test in this repo can see layout**: the screen
+suite renders in happy-dom, which does no layout and returns zeros from
+`getBoundingClientRect`. That is how a 1.35-POINT line height shipped on
+five screens. A phone or a simulator is the only instrument for
+anything about SIZE.
+
 ## Traps that already fired — do not rediscover
 
 - `export *` inside a `"use server"` file fails only at `build`, not
