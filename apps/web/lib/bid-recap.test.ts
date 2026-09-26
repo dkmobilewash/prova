@@ -47,7 +47,16 @@ describe("direct cost by cost type", () => {
       line({ id: "sub", quantity: 1, unitCost: 500, costCategory: "SUBCONTRACTOR" }),
       line({ id: "unknown", quantity: 1, unitCost: 250 }),
     ]);
-    expect(direct.byCategory).toEqual({ MATERIAL: 2000, LABOR: 1000, SUBCONTRACTOR: 500, OTHER: 0 });
+    // `toEqual` on the whole object rather than key-by-key, deliberately: a
+    // category the accumulator has stopped initialising shows up here as a
+    // missing key, and a missing key is what turned EQUIPMENT into a NaN bid.
+    expect(direct.byCategory).toEqual({
+      MATERIAL: 2000,
+      LABOR: 1000,
+      SUBCONTRACTOR: 500,
+      EQUIPMENT: 0,
+      OTHER: 0,
+    });
     expect(direct.uncategorised).toBe(250);
     expect(direct.uncategorisedLineCount).toBe(1);
     expect(direct.total).toBe(3750);

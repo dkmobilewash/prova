@@ -12,6 +12,7 @@ import {
   type RecapLine,
   type RecapRates,
 } from "@/lib/bid-recap";
+import { asCostCategory } from "@/lib/cost-category";
 import { NOT_ESTIMATE_STAGE } from "@/lib/estimating/draft-lines";
 import {
   actionFail,
@@ -46,25 +47,23 @@ const NO_SETTINGS =
   "Company settings aren't part of your job function. The account owner sets who sees what, on the Team page.";
 const NO_JOB = "That job isn't on your account any more.";
 
-/** Every rate the recap holds, in the order they apply. One list, so a new
- * rate cannot be added to the form and forgotten in the parse. */
-const RATE_KEYS = [
-  "materialMarkupPercent",
-  "laborMarkupPercent",
-  "subcontractorMarkupPercent",
-  "otherMarkupPercent",
-  "escalationPercent",
-  "materialTaxPercent",
-  "overheadPercent",
-  "profitPercent",
-  "bondPercent",
-  "contingencyPercent",
-] as const;
-
-const RATE_LABELS: Record<(typeof RATE_KEYS)[number], string> = {
+/**
+ * Every rate the recap holds, with the label its error message uses, in the
+ * order they apply.
+ *
+ * `Record<keyof RecapRates, string>` — a TOTAL record, so this does not compile
+ * until every rate the recap can read has an entry. That matters more than it
+ * looks: a rate missing from this list is never parsed out of the form, so the
+ * field saves NOTHING and the bid is short by that rate with no error anywhere.
+ * It was two lists (keys, then labels over the keys), which made the labels
+ * complete with respect to the keys and the keys complete with respect to
+ * nothing. `RATE_KEYS` is derived from it below rather than written again.
+ */
+const RATE_LABELS: Record<keyof RecapRates, string> = {
   materialMarkupPercent: "Material markup",
   laborMarkupPercent: "Labor markup",
   subcontractorMarkupPercent: "Subcontractor markup",
+  equipmentMarkupPercent: "Equipment markup",
   otherMarkupPercent: "Other markup",
   escalationPercent: "Escalation",
   materialTaxPercent: "Sales tax on material",
@@ -74,6 +73,10 @@ const RATE_LABELS: Record<(typeof RATE_KEYS)[number], string> = {
   contingencyPercent: "Contingency",
 };
 
+/** Key order is insertion order for non-numeric string keys, so the order above
+ * is the order rates are parsed and applied. */
+const RATE_KEYS = Object.keys(RATE_LABELS) as (keyof RecapRates)[];
+
 function ratesFromForm(formData: FormData): Record<string, string | null> {
   const rates: Record<string, string | null> = {};
   for (const key of RATE_KEYS) {
@@ -82,7 +85,9 @@ function ratesFromForm(formData: FormData): Record<string, string | null> {
   return rates;
 }
 
-const COST_CATEGORIES: readonly CostCategoryValue[] = ["MATERIAL", "LABOR", "SUBCONTRACTOR", "OTHER"];
+// The third hand-written copy of the CostCategory enum lived here, module
+// private so nothing could even test it. Gone: `asCostCategory` narrows
+// against the one list in lib/cost-category.ts.
 
 async function estimateJob(jobId: string, companyId: string) {
   const job = await prisma.job.findFirst({ where: { id: jobId, companyId }, select: { id: true, status: true } });
@@ -127,7 +132,7 @@ export async function setLineCostCategory(jobId: string, lineItemId: string, cat
   const gate = await estimateJob(jobId, companyId);
   if (!gate.ok) return actionFail(gate.error);
 
-  const next = COST_CATEGORIES.includes(category as CostCategoryValue) ? (category as CostCategoryValue) : null;
+  const next = asCostCategory(category);
   const updated = await prisma.jobLineItem.updateMany({
     where: { id: lineItemId, jobId, isDeleted: false },
     data: { costCategory: next },
@@ -239,7 +244,13 @@ export async function applyBidRecap(jobId: string): Promise<ActionResultWith<App
         // which is why both are read here and only one is marked up.
         unitCost: row.budgetedUnitCost != null ? Number(row.budgetedUnitCost) : null,
         unitPrice: row.unitPrice != null ? Number(row.unitPrice) : null,
-        costCategory: (row.costCategory as CostCategoryValue | null) ?? null,
+        // NARROWED, not cast. `as CostCategoryValue` asserted that the
+        // database only ever holds values this build knows — the claim that
+        // stops being true the moment the enum grows, and the reason a
+        // fifth value reached the recap's accumulator as an unknown key and
+        // produced a NaN bid total. An unrecognised value is now null, which
+        // the recap already renders as an uncategorised line.
+        costCategory: asCostCategory(row.costCategory),
       }));
 
       const rates: RecapRates = Object.fromEntries(

@@ -20,36 +20,22 @@
  * enum as the SCHEMA FILE declares it, not as this file declares it: a
  * table checked against itself would pass on any pair of matching
  * mistakes.
- */
-
-export type CostCategory = "LABOR" | "MATERIAL" | "SUBCONTRACTOR" | "OTHER";
-
-export const COST_CATEGORY_LABEL: Record<CostCategory, string> = {
-  LABOR: "Labor",
-  MATERIAL: "Material",
-  SUBCONTRACTOR: "Sub",
-  OTHER: "Other",
-};
-
-/** Commonest first, so the pick a contractor makes most often is nearest
- * the top of an open select. "Other" stays last: it is the fallback. */
-export const COST_CATEGORY_ORDER: readonly CostCategory[] = [
-  "LABOR",
-  "MATERIAL",
-  "SUBCONTRACTOR",
-  "OTHER",
-];
-
-/**
- * The label for a category that came out of the database, which is a plain
- * string as far as the caller's types are concerned.
  *
- * Falls back to the raw value rather than to "Other" or to an empty string.
- * A value this table has never heard of means the enum grew and this file
- * did not, and showing the raw token is the honest version of that — it is
- * ugly exactly where someone will see it and fix it, where "Other" would
- * quietly mis-file a cost and an empty string would lose it.
+ * THE TABLE ITSELF MOVED to `@/lib/cost-category` on 2026-09-26 and this
+ * file re-exports it. It was one of FOUR hand-written copies of the enum,
+ * and it was the only guarded one — the other three drifted, which is how a
+ * fifth value reached the bid recap as an unknown key and produced a NaN bid
+ * total. Nothing importing from here has to change; there is simply only one
+ * list now, and the guard below covers it for everybody.
  */
-export function costCategoryLabel(value: string): string {
-  return COST_CATEGORY_LABEL[value as CostCategory] ?? value;
-}
+
+export {
+  COST_CATEGORY_LABEL,
+  COST_CATEGORY_VALUES as COST_CATEGORY_ORDER,
+  costCategoryLabel,
+  type CostCategory,
+} from "@/lib/cost-category";
+
+
+
+

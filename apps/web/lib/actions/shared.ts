@@ -144,7 +144,12 @@ export async function assertLineItemOnJob(lineItemId: string, jobId: string) {
   return lineItem;
 }
 
-export const COST_CATEGORIES = ["LABOR", "MATERIAL", "SUBCONTRACTOR", "OTHER"] as const;
+/** The fourth hand-written copy of the `CostCategory` enum used to live here.
+ * It is an ALIAS now, not a list: four mirrors of one enum is what let a fifth
+ * value reach the bid recap as an unknown key and produce a NaN bid total, and
+ * the name is kept only so nothing importing it has to change. Add a category
+ * in `@/lib/cost-category` and every caller follows. */
+export { COST_CATEGORY_VALUES as COST_CATEGORIES } from "@/lib/cost-category";
 
 /** Moved to `@/lib/trade-scopes` on 2026-09-21 and re-exported here so every
  * server caller is unchanged. It left because this file imports `prisma` as a

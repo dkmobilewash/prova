@@ -57,6 +57,10 @@ model JobBidRecap {
   materialMarkupPercent      Decimal? @db.Decimal(5, 2)
   laborMarkupPercent         Decimal? @db.Decimal(5, 2)
   subcontractorMarkupPercent Decimal? @db.Decimal(5, 2)
+  /// Nullable with no backfill, like the four beside it: a company that
+  /// has never set an equipment markup has not set one, and defaulting it
+  /// to the OTHER rate would put a number on a bid nobody chose.
+  equipmentMarkupPercent     Decimal? @db.Decimal(5, 2)
   otherMarkupPercent         Decimal? @db.Decimal(5, 2)
 
   /// Applied after the markups, in the order the fields are listed here and
@@ -99,6 +103,10 @@ model CompanyBidDefaults {
   materialMarkupPercent      Decimal? @db.Decimal(5, 2)
   laborMarkupPercent         Decimal? @db.Decimal(5, 2)
   subcontractorMarkupPercent Decimal? @db.Decimal(5, 2)
+  /// Nullable with no backfill, like the four beside it: a company that
+  /// has never set an equipment markup has not set one, and defaulting it
+  /// to the OTHER rate would put a number on a bid nobody chose.
+  equipmentMarkupPercent     Decimal? @db.Decimal(5, 2)
   otherMarkupPercent         Decimal? @db.Decimal(5, 2)
 
   escalationPercent  Decimal? @db.Decimal(5, 2)

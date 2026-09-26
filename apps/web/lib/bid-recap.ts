@@ -57,23 +57,24 @@
  * backfill, which would write a 0%-margin cost figure nobody typed.
  */
 
-export type CostCategoryValue = "LABOR" | "MATERIAL" | "SUBCONTRACTOR" | "OTHER";
+import {
+  asCostCategory,
+  COST_CATEGORY_VALUES as CANONICAL_COST_CATEGORY_VALUES,
+  COST_CATEGORY_LONG_LABEL,
+  type CostCategory,
+} from "@/lib/cost-category";
 
-export const COST_CATEGORY_VALUES: readonly CostCategoryValue[] = [
-  "MATERIAL",
-  "LABOR",
-  "SUBCONTRACTOR",
-  "OTHER",
-];
+/**
+ * The second hand-written copy of the enum lived here, with its own labels —
+ * and its `OTHER` label read "Other / equipment", which is what a missing
+ * category looks like from inside the code that has to price it. All three are
+ * aliases of the one list now; the names stay so no caller changes.
+ */
+export type CostCategoryValue = CostCategory;
 
-export const COST_CATEGORY_LABELS: Record<CostCategoryValue, string> = {
-  MATERIAL: "Material",
-  LABOR: "Labor",
-  SUBCONTRACTOR: "Subcontractor",
-  // Equipment has no member of its own yet and belongs here — said on screen,
-  // not just in this comment.
-  OTHER: "Other / equipment",
-};
+export const COST_CATEGORY_VALUES = CANONICAL_COST_CATEGORY_VALUES;
+
+export const COST_CATEGORY_LABELS = COST_CATEGORY_LONG_LABEL;
 
 /** One estimate line, as the recap needs to read it. */
 export type RecapLine = {
@@ -109,11 +110,38 @@ export type RecapLine = {
   costCategory: CostCategoryValue | null;
 };
 
+/**
+ * Which rate marks up each cost type, what the step is called, and the order
+ * the steps are listed in.
+ *
+ * A TOTAL `Record` over `CostCategoryValue`, and that is the entire point of
+ * its shape. This was a four-element array literal, and an array cannot be
+ * INCOMPLETE — a category missing from it is marked up at nothing, which
+ * understates the bid by the whole markup with no error, no warning and no
+ * failing test anywhere. A `Record` over the union does not compile until
+ * every category has a rate, so the next value added to the enum stops the
+ * build here instead of quietly shipping a low bid.
+ *
+ * DECLARATION ORDER IS DISPLAY ORDER, and MATERIAL stays first: the sales-tax
+ * step downstream needs material's MARKED-UP figure, and `bid-recap.test.ts`
+ * pins each step's running total in sequence. Key order is insertion order for
+ * non-numeric string keys under ES2015+, so this one list is both the set and
+ * the order — there is no second array to fall out of step with the first.
+ */
+const MARKUP: Record<CostCategoryValue, { label: string; rate: keyof RecapRates }> = {
+  MATERIAL: { label: "Material markup", rate: "materialMarkupPercent" },
+  LABOR: { label: "Labor markup", rate: "laborMarkupPercent" },
+  SUBCONTRACTOR: { label: "Subcontractor markup", rate: "subcontractorMarkupPercent" },
+  EQUIPMENT: { label: "Equipment markup", rate: "equipmentMarkupPercent" },
+  OTHER: { label: "Other markup", rate: "otherMarkupPercent" },
+};
+
 /** Every rate, all optional. Percentages, 0-100 — never fractions of one. */
 export type RecapRates = {
   materialMarkupPercent?: number | null;
   laborMarkupPercent?: number | null;
   subcontractorMarkupPercent?: number | null;
+  equipmentMarkupPercent?: number | null;
   otherMarkupPercent?: number | null;
   escalationPercent?: number | null;
   materialTaxPercent?: number | null;
@@ -164,7 +192,16 @@ export function extendedPrice(line: RecapLine): number {
 }
 
 export function directCostByCategory(lines: readonly RecapLine[]): DirectCost {
-  const byCategory: Record<CostCategoryValue, number> = { MATERIAL: 0, LABOR: 0, SUBCONTRACTOR: 0, OTHER: 0 };
+  // DERIVED from the canonical list, not written out. As a literal this was
+  // `Record<CostCategoryValue, number>`, so adding a value to the enum made it
+  // a type error — which is a real guard, and it is still weaker than not being
+  // able to be wrong. Every category starts at zero, always; there has never
+  // been a decision to make here, only a list to keep in step. Built this way
+  // it is in step by construction.
+  const byCategory = Object.fromEntries(COST_CATEGORY_VALUES.map((category) => [category, 0])) as Record<
+    CostCategoryValue,
+    number
+  >;
   let uncategorised = 0;
   let uncategorisedLineCount = 0;
   let pricedWithNoCost = 0;
@@ -190,7 +227,24 @@ export function directCostByCategory(lines: readonly RecapLine[]): DirectCost {
       uncategorised += extended;
       continue;
     }
-    byCategory[line.costCategory] += extended;
+    // NARROWED AGAIN, HERE, even though every caller narrows at its own
+    // boundary. This accumulator is what turned a fifth enum value into a NaN
+    // bid total — `byCategory["EQUIPMENT"]` was undefined and `undefined +
+    // 2500` is NaN, which then flowed into markup, tax and the total. Callers
+    // being careful is not a guarantee; this is. It also covers the Ask
+    // handler, which builds recap lines in another lane.
+    //
+    // An unknown category counts as UNCATEGORISED rather than being dropped:
+    // the screen already offers to code an uncategorised line, so the money
+    // stays visible and somebody can act on it. Dropping it would understate
+    // the bid silently, which is the same failure wearing a tidier number.
+    const known = asCostCategory(line.costCategory);
+    if (known === null) {
+      uncategorisedLineCount += 1;
+      uncategorised += extended;
+      continue;
+    }
+    byCategory[known] += extended;
   }
 
   // `pricedWithNoCost` is deliberately NOT in this sum. It is a price total, and
@@ -236,9 +290,10 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
  * software has used for decades (On-Screen Takeoff / Quick Bid's Section
  * Markups is the reference):
  *
- *   1. MARKUP PER COST TYPE — material, labor, subcontractor and other are
- *      sold at their own rates. This is the layer that needs a cost type on
- *      the line, and the reason JobLineItem grew one.
+ *   1. MARKUP PER COST TYPE — every category in `MARKUP` above is sold at its
+ *      own rate. This is the layer that needs a cost type on the line, and the
+ *      reason JobLineItem grew one. Named there rather than listed here, so a
+ *      new category does not leave this sentence quietly wrong.
  *   2. ESCALATION — on the marked-up cost, because it escalates the price of
  *      the work rather than its raw cost. A long job priced today and built
  *      next year.
@@ -271,12 +326,14 @@ export function bidRecap(lines: readonly RecapLine[], rates: RecapRates): BidRec
 
   // 1. Markup per cost type. Tracked separately for the material figure, which
   //    the tax step below needs AFTER its markup.
-  const markups: [CostCategoryValue, string, number][] = [
-    ["MATERIAL", "Material markup", rate(rates.materialMarkupPercent)],
-    ["LABOR", "Labor markup", rate(rates.laborMarkupPercent)],
-    ["SUBCONTRACTOR", "Subcontractor markup", rate(rates.subcontractorMarkupPercent)],
-    ["OTHER", "Other markup", rate(rates.otherMarkupPercent)],
-  ];
+  const markups = (Object.keys(MARKUP) as CostCategoryValue[]).map(
+    (category) =>
+      [category, MARKUP[category].label, rate(rates[MARKUP[category].rate])] as [
+        CostCategoryValue,
+        string,
+        number,
+      ],
+  );
   let materialSold = direct.byCategory.MATERIAL;
   for (const [category, label, percent] of markups) {
     const base = direct.byCategory[category];
