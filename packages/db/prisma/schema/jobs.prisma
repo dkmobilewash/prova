@@ -645,6 +645,18 @@ enum CostCategory {
   LABOR
   MATERIAL
   SUBCONTRACTOR
+
+  /// Plant and rental — scissor lifts, scaffold, boom lifts, the things a
+  /// framing or drywall sub hires by the week. It lived inside OTHER until
+  /// 2026-09-26, deliberately, and the QuickBooks "Other cost" hint said so.
+  ///
+  /// ADDING THIS SPLIT HISTORY AND NOTHING CAN UN-SPLIT IT. Equipment booked
+  /// before this value existed is OTHER, and no backfill is possible — the
+  /// app cannot know which OTHER rows were equipment, and guessing would
+  /// invent cost attribution on real jobs. So an equipment figure is complete
+  /// going forward and understated for everything already entered. The screen
+  /// says that rather than letting the number imply otherwise.
+  EQUIPMENT
   OTHER
 }
 
