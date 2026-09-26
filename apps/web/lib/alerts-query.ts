@@ -27,7 +27,7 @@ import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import { jobIsOverBudget } from "@/lib/company-financials";
-import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
+import { certifiedPayrollWeekIsCovered, certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
 import { can, type Principal } from "@/lib/permissions";
 import { loadRatioReviews } from "@/lib/union-compliance-query";
 import { intakeTraySummary } from "@/lib/intake/review";
@@ -430,7 +430,13 @@ export async function loadAlerts(
         // Covered when a filed report's period contains the whole week.
         // A report whose period only clips the week is not evidence the
         // week was filed, and treating it as such would hide a real gap.
-        const isCovered = covered.some((c) => c.start <= start && c.end >= end);
+        //
+        // The containment moved into lib/certified-payroll-week.ts on
+        // 2026-09-26, unchanged, so that `certified_payroll` in the Ask box
+        // answers "is a document on record for this week" from the same
+        // predicate this alert is raised from. It was one tool in that box
+        // refusing what this one reports.
+        const isCovered = certifiedPayrollWeekIsCovered(covered, start, end);
         if (!isCovered) {
           payrollSources.push({
             jobId: job.id,

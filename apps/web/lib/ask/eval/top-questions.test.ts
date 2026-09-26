@@ -50,7 +50,9 @@ describe("the hundred questions", () => {
     // 110 since the tools of 2026-09-18; 113 with getting_started's three.
     // The census keeps its name.
     // 115 with find_bid_leads, 2026-09-24.
-    expect(TOTAL_QUESTIONS).toBe(115);
+    // 116 with the vendor price-movement question, 2026-09-26 — a gap that was
+    // never a gap, removed from the list injected into the system prompt.
+    expect(TOTAL_QUESTIONS).toBe(116);
     expect(TOP_QUESTIONS).toHaveLength(TOTAL_QUESTIONS);
   });
 
@@ -176,7 +178,14 @@ describe("the gaps, which are the point", () => {
     //
     // Named by hand rather than derived: a closed gap has no refusalTopic
     // left to derive from. Add a row here when you close one.
-    const closed = [{ id: "q-emr", tool: "experience_mod_rate", stale: ["experience modification", "mod rate"] }];
+    const closed = [
+      { id: "q-emr", tool: "experience_mod_rate", stale: ["experience modification", "mod rate"] },
+      // 2026-09-26. This one was never a gap: `priceMovement()` has computed a
+      // vendor's price change since /vendors/pricing was built, and the entry
+      // told the model to refuse it anyway. The fragments are the words that
+      // WERE on the list, so re-adding either sentence fails here.
+      { id: "q-vendor-movement", tool: "vendor_pricing", stale: ["price change", "price list over time"] },
+    ];
     const topics = KNOWN_GAPS.map((gap) => `${gap.topic} ${gap.why}`.toLowerCase());
     for (const { id, tool, stale } of closed) {
       const q = TOP_QUESTIONS.find((question) => question.id === id);

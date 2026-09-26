@@ -37,6 +37,10 @@ import { loadRetainageHeld } from "@/lib/retainage-query";
 import { changeOrderValueDelta, countUnbookable, PENDING_CHANGE_ORDER_STATUSES } from "@/lib/change-order";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
 import { loadRatioReviews, loadRemittance } from "@/lib/union-compliance-query";
+// The delay log's own labels and time formatting — the same module the
+// job's Field reports tab renders <DelayLog> from, so a cause or a
+// responsible party cannot be worded one way on screen and another here.
+import { causeLabel, formatMinutes, methodLabel, partyLabel } from "@/lib/delays-core";
 import { ratioLabel } from "@/lib/apprentice-ratio";
 import { loadCloseoutJobs } from "@/lib/closeout-query";
 import { loadApprenticeships } from "@/lib/apprenticeship-query";
@@ -51,9 +55,13 @@ import {
 } from "@/components/drawingLabels";
 import { orderState, stateLabel as orderStateLabel, daysLate } from "@/components/materialOrderLabels";
 import { currentAssignment } from "@/components/equipmentDeployment";
+// /vendors/pricing's own derivations. `priceMovement` is the percent change
+// that page renders under "Movement"; rule 1 in tools.ts is why the model is
+// handed it rather than two prices and a subtraction.
+import { isExpired, priceMovement, type QuoteData } from "@/components/vendorPricing";
 import { can, canReach, type Capability, type Principal } from "@/lib/permissions";
 import { refusalFor } from "./access";
-import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
+import { certifiedPayrollWeekIsCovered, certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
 import { NAME_NOT_RECORDED, crewMemberName, timeEntryWorkerId, timeEntryWorkerName } from "@/lib/worker-name";
 import {
   loadPlannedDaysMissingHours,
@@ -1916,21 +1924,71 @@ async function apprenticeshipStanding(companyId: string): Promise<ToolResult> {
 }
 
 /**
- * What was written up on site, most recent first.
+ * What was written up on site, most recent first — and the delay log beside
+ * it.
  *
  * A delay recorded on the day is the contemporaneous record a delay claim
  * is later built on, so reports carrying one are flagged and counted — that
  * is the question this gets asked for, months later, by somebody assembling
  * a claim.
  *
+ * WHICH DELAY RECORD THIS READS, AND WHY IT READS BOTH. Until 2026-09-18 a
+ * delay was one free-text box on the report (`DailyFieldReport.delays`),
+ * which `operations.prisma` now marks SUPERSEDED: the record is `DelayEvent`
+ * (labor.prisma), one row per delay with a cause, a responsible party,
+ * times, crew-hours lost and whether the GC was told. This handler read ONLY
+ * the superseded column until 2026-09-26 — so it reported delays filed
+ * before that changeover and a confident ZERO for every structured delay
+ * since, on the one question a delay claim is actually assembled from. The
+ * tool's own description promised that "reports WITH a delay are flagged".
+ *
+ * It now reads `DelayEvent` AND carries the legacy text, deliberately, for
+ * the same reason the job's field-reports tab still renders both: the older
+ * text is the only record those days have, and a claim from 2026 will be
+ * argued in 2027. The two are kept in SEPARATE fields rather than merged —
+ * `legacyDelayNote` has no cause, no responsible party and no hours, and
+ * merging it into the structured list would invent a delay that looks
+ * measured when it is a sentence somebody typed.
+ *
+ * A DELAY DOES NOT NEED A REPORT. `logDelay` writes a `DelayEvent` against a
+ * job and a date with no report involved, so a delay on a day nobody wrote
+ * up is real — and dropping it for want of a parent row is the same
+ * confident zero in a smaller costume. So a row here is a DAY on record
+ * rather than a report: `reportFiled` says which kind it is, and a
+ * delay-only day carries its delays with `workPerformed: null`.
+ *
+ * ONE FLAT ARRAY, DELIBERATELY. The obvious shape was
+ * `{ reports, delaysWithNoReportFiled }`, and it silently defeats the row
+ * cap: `forModel` (answer.ts) caps a result that IS an array or an object
+ * with a `rows` key, and neither of those is that — so every row would reach
+ * the prompt uncapped and with no count, which is precisely the defect
+ * handlers.reviewFixes.test.ts exists to pin. A flat list is capped by the
+ * machinery that already works.
+ *
  * The `unavailable` sentence is careful: a job with no reports is a job
  * nobody wrote up, which is NOT the same as a job where nothing happened,
- * and an answer that implies the second is worse than no answer.
+ * and an answer that implies the second is worse than no answer. It is set
+ * only when there is no report AND no delay: a job with delays logged and
+ * nothing written up has data to answer from.
  */
 async function dailyFieldReports(companyId: string, input: Input): Promise<ToolResult> {
-  const citations = [{ label: "Field reports", href: "/field-reports" }];
+  const citations = [
+    { label: "Field reports", href: "/field-reports" },
+    // The structured delay log lives on a job's own Field reports tab, not
+    // on the company-wide list — /field-reports renders only the legacy
+    // free-text note. Cited as /jobs, the convention every job-tab tool
+    // here follows, because the real page needs a job id.
+    { label: "Delay log", href: "/jobs" },
+  ];
   const jobMismatch = await jobNameMismatch(companyId, input.jobName);
   if (jobMismatch) return { data: [], citations, unavailable: jobMismatch };
+
+  // One job scope, spelled once, for both reads. Anything narrowing the
+  // reports has to narrow the delays identically or the two halves of one
+  // answer describe different jobs.
+  const jobWhere = input.jobName?.trim()
+    ? { name: { contains: input.jobName.trim(), mode: "insensitive" as const } }
+    : {};
 
   const reports = await prisma.dailyFieldReport.findMany({
     // The job filter is in the WHERE, not applied after the take. With
@@ -1940,17 +1998,15 @@ async function dailyFieldReports(companyId: string, input: Input): Promise<ToolR
     // confident, specific, false claim about the paperwork a delay claim
     // is built from. Found reviewing #303. `contains` + insensitive is
     // exactly what matchesJobName does, so nothing else changes.
-    where: {
-      companyId,
-      ...(input.jobName?.trim()
-        ? { job: { name: { contains: input.jobName.trim(), mode: "insensitive" as const } } }
-        : {}),
-    },
+    where: { companyId, ...(input.jobName?.trim() ? { job: jobWhere } : {}) },
     select: {
       reportDate: true,
       workPerformed: true,
       crewPresent: true,
       weather: true,
+      // SUPERSEDED by DelayEvent, read on purpose and kept apart from it —
+      // see this handler's header. Reports filed before 2026-09-18 have
+      // their delay here and nowhere else.
       delays: true,
       job: { select: { name: true } },
       filedBy: { select: { name: true, email: true } },
@@ -1959,30 +2015,154 @@ async function dailyFieldReports(companyId: string, input: Input): Promise<ToolR
     take: 40,
   });
 
-  const rows = reports
-    .map((report) => ({
+  // Bounded by the oldest report in view when there is one, so a delay on a
+  // day whose report exists but fell outside the 40 cannot be misfiled as a
+  // day nobody wrote up. With no reports at all there is no bound to take,
+  // and every delay found is genuinely unreported.
+  const oldestReportDate = reports.at(-1)?.reportDate ?? null;
+  const delayEvents = await prisma.delayEvent.findMany({
+    where: {
+      companyId,
+      ...(input.jobName?.trim() ? { job: jobWhere } : {}),
+      ...(oldestReportDate ? { date: { gte: oldestReportDate } } : {}),
+    },
+    select: {
+      date: true,
+      cause: true,
+      responsibleParty: true,
+      responsibleName: true,
+      startMinute: true,
+      endMinute: true,
+      workersAffected: true,
+      hoursLost: true,
+      description: true,
+      gcNotifiedHow: true,
+      gcNotifiedWho: true,
+      gcNotifiedAt: true,
+      changeOrder: { select: { number: true } },
+      job: { select: { name: true } },
+    },
+    orderBy: [{ date: "desc" }, { createdAt: "asc" }],
+    take: 200,
+  });
+
+  // Labelled with the same helpers the job's Field reports tab renders from,
+  // so the box and the page cannot word a cause or a responsible party
+  // differently.
+  const delayRow = (delay: (typeof delayEvents)[number]) => ({
+    job: delay.job.name,
+    date: iso(delay.date),
+    cause: causeLabel(delay.cause),
+    responsible: delay.responsibleName
+      ? `${partyLabel(delay.responsibleParty)} — ${delay.responsibleName}`
+      : partyLabel(delay.responsibleParty),
+    start: formatMinutes(delay.startMinute),
+    end: formatMinutes(delay.endMinute),
+    workersAffected: delay.workersAffected,
+    // Crew-hours lost, as ENTERED or as the delay form worked it out at
+    // entry. Never recomputed here: two surfaces deriving the same figure is
+    // the bug this file's header exists to prevent.
+    crewHoursLost: delay.hoursLost === null ? null : Number(delay.hoursLost),
+    description: delay.description,
+    // A notice with no method is not a notice. Null method means the GC has
+    // NOT been told, which is the fact a claim turns on, so it is stated
+    // rather than left as three nulls to interpret.
+    gcNotified: delay.gcNotifiedHow
+      ? {
+          how: methodLabel(delay.gcNotifiedHow),
+          who: delay.gcNotifiedWho,
+          at: delay.gcNotifiedAt?.toISOString() ?? null,
+        }
+      : null,
+    changeOrder: delay.changeOrder ? `CO #${delay.changeOrder.number}` : null,
+  });
+
+  const delaysByDay = new Map<string, ReturnType<typeof delayRow>[]>();
+  for (const delay of delayEvents) {
+    const key = `${delay.job.name}::${iso(delay.date)}`;
+    const list = delaysByDay.get(key);
+    if (list) list.push(delayRow(delay));
+    else delaysByDay.set(key, [delayRow(delay)]);
+  }
+
+  const reportRows = reports.map((report) => {
+    const key = `${report.job.name}::${iso(report.reportDate)}`;
+    const delays = delaysByDay.get(key) ?? [];
+    delaysByDay.delete(key);
+    const legacyDelayNote = report.delays?.trim() ? report.delays : null;
+    return {
       job: report.job.name,
       date: iso(report.reportDate),
-      workPerformed: report.workPerformed,
+      reportFiled: true,
+      workPerformed: report.workPerformed as string | null,
+      // Labelled "Other trades / visitors on site" on the screens since
+      // 2026-09-18; the crew itself comes off that day's time entries.
       crewPresent: report.crewPresent,
       weather: report.weather,
-      delay: report.delays,
-      hasDelay: Boolean(report.delays?.trim()),
+      delays,
+      // The free-text box that was the whole delay record before 2026-09-18.
+      // It carries no cause, no responsible party and no hours — never
+      // report it as if it did.
+      legacyDelayNote,
+      hasDelay: delays.length > 0 || legacyDelayNote !== null,
       filedBy: report.filedBy?.name ?? report.filedBy?.email ?? null,
-    }));
+    };
+  });
+
+  // Whatever is left in the map is a day with delays and no report. Same row
+  // shape, `reportFiled: false`, so nothing downstream has to know there are
+  // two kinds — and a reader skimming the list cannot miss the day.
+  const delayOnlyRows = [...delaysByDay.values()].map((delays) => ({
+    job: delays[0].job,
+    date: delays[0].date,
+    reportFiled: false,
+    workPerformed: null as string | null,
+    crewPresent: null,
+    weather: null,
+    delays,
+    legacyDelayNote: null,
+    hasDelay: true,
+    filedBy: null,
+  }));
+
+  // Newest first, job name to break a tie so the order is total and stable.
+  const rows = [...reportRows, ...delayOnlyRows].sort((a, b) =>
+    a.date === b.date ? a.job.localeCompare(b.job) : (b.date ?? "").localeCompare(a.date ?? ""),
+  );
 
   return {
     data: rows,
     summary: {
-      reports: rows.length,
-      reportsWithADelay: rows.filter((row) => row.hasDelay).length,
+      // Reports, not rows: a delay-only day is not a report somebody filed,
+      // and counting it as one would say the paperwork exists.
+      reports: reportRows.length,
+      reportsWithADelay: reportRows.filter((row) => row.hasDelay).length,
+      // Delays, not days carrying them: two delays on one day is two things
+      // that cost the crew time, and one row that mentions both.
+      delaysLogged: delayEvents.length,
+      daysWithADelayAndNoReportFiled: delayOnlyRows.length,
+      // Rounded because the column is Decimal(7,2) and floating-point
+      // addition of two-place decimals is not.
+      crewHoursLost:
+        Math.round(
+          delayEvents.reduce((sum, delay) => sum + (delay.hoursLost === null ? 0 : Number(delay.hoursLost)), 0) * 100,
+        ) / 100,
+      // The one count somebody acts on today: notice to the GC is what makes
+      // a delay claimable, and a delay with no method recorded has not been
+      // notified to anybody.
+      delaysTheGcWasNotTold: delayEvents.filter((delay) => delay.gcNotifiedHow === null).length,
+      // Counted apart because it has no cause, no party and no hours behind
+      // it — a summary that folded it in would overstate what is provable.
+      reportsWithOnlyALegacyDelayNote: reportRows.filter(
+        (row) => row.delays.length === 0 && row.legacyDelayNote !== null,
+      ).length,
     },
     citations,
     unavailable:
       rows.length === 0
         ? input.jobName
-          ? "No field report has been filed on that job. That means nobody wrote one up, not that nothing happened."
-          : "No field report has been filed. That means nobody wrote one up, not that nothing happened."
+          ? "No field report has been filed on that job and no delay has been logged against it. That means nobody wrote one up, not that nothing happened."
+          : "No field report has been filed and no delay has been logged. That means nobody wrote one up, not that nothing happened."
         : undefined,
   };
 }
@@ -2151,7 +2331,7 @@ async function jobPhotos(companyId: string, input: Input): Promise<ToolResult> {
 }
 
 /**
- * What vendors have quoted, and whether it is still good.
+ * What vendors have quoted, whether it is still good, and which way it moved.
  *
  * The validity date is the point. An expired quote carried into a bid is
  * how a job gets mis-priced, so `expired` is STATED rather than left as two
@@ -2161,35 +2341,124 @@ async function jobPhotos(companyId: string, input: Input): Promise<ToolResult> {
  * A quote with NO validity date is `null`, not `false`. "Not expired" would
  * be a claim that the price still stands, and nobody recorded anything that
  * says so.
+ *
+ * THE MOVEMENT FIGURE, AND WHY IT IS HERE NOW. Until 2026-09-26 this tool
+ * returned prices and no movement, `job_margin`'s description said "there is
+ * no vendor price history", and KNOWN_GAPS told the model to refuse "a
+ * vendor's recent price change". All three were false: `priceMovement()`
+ * (components/vendorPricing.ts) has computed it all along and
+ * /vendors/pricing renders it under "Movement". The model was being
+ * instructed to refuse a question its own product answers on screen.
+ *
+ * It arrives COMPUTED, by that same function, grouped the way that page
+ * groups — one movement per vendor per item, same unit only. tools.ts rule 1
+ * is the reason: a percentage the model works out from two prices is a figure
+ * that can differ between two runs of the same question, and this one is
+ * argued with a supplier.
+ *
+ * A ZERO MOVEMENT IS KEPT, and the page drops it. That is deliberate and it
+ * is the one place the two differ: the page has nothing to show for a price
+ * that did not move, while "they quoted the same $0.62 in June and again in
+ * September" is a real answer to "has their price gone up" — and a tool that
+ * returned nothing there would read as "we don't track that", which is the
+ * exact failure this change exists to end. `direction` is stated so the sign
+ * is never something the model has to read off a number.
  */
 async function vendorPricing(companyId: string): Promise<ToolResult> {
   const citations = [{ label: "Vendor pricing", href: "/vendors/pricing" }];
   const quotes = await prisma.vendorPriceQuote.findMany({
     where: { companyId },
     select: {
+      id: true,
       description: true,
       unit: true,
       unitPrice: true,
       quotedOn: true,
       validUntil: true,
-      vendor: { select: { name: true } },
+      source: true,
+      notes: true,
+      catalogEntryId: true,
+      vendor: { select: { id: true, name: true } },
     },
     orderBy: { quotedOn: "desc" },
   });
 
   const today = serverToday();
-  const rows = quotes.map((quote) => {
-    const validUntil = iso(quote.validUntil);
+
+  // The page's own shape, so its helpers apply unchanged.
+  const quoteData: QuoteData[] = quotes.map((quote) => ({
+    id: quote.id,
+    vendorId: quote.vendor.id,
+    vendorName: quote.vendor.name,
+    catalogEntryId: quote.catalogEntryId,
+    description: quote.description,
+    unit: quote.unit,
+    unitPrice: Number(quote.unitPrice),
+    quotedOn: iso(quote.quotedOn) as string,
+    validUntil: iso(quote.validUntil),
+    source: quote.source,
+    notes: quote.notes,
+  }));
+
+  // Grouped by catalog item where one is linked and otherwise by the wording,
+  // character for character what /vendors/pricing does. Wording is a weak key
+  // — two vendors describing the same board differently do not line up — and
+  // a DIFFERENT key here would put a movement between two quotes the page
+  // considers unrelated, which is worse than the weak key.
+  const itemKey = (quote: QuoteData) =>
+    quote.catalogEntryId ? `catalog:${quote.catalogEntryId}` : `text:${quote.description.trim().toLowerCase()}`;
+
+  // One movement per (item, vendor), attached to that vendor's NEWEST quote
+  // for the item — the page's loop, one call of priceMovement per pair.
+  const movementByQuoteId = new Map<string, NonNullable<ReturnType<typeof priceMovement>>>();
+  const pairs = new Map<string, QuoteData[]>();
+  for (const quote of quoteData) {
+    const key = `${itemKey(quote)}::${quote.vendorId}`;
+    const list = pairs.get(key);
+    if (list) list.push(quote);
+    else pairs.set(key, [quote]);
+  }
+  for (const group of pairs.values()) {
+    const movement = priceMovement(group);
+    if (movement) movementByQuoteId.set(movement.to.id, movement);
+  }
+
+  const rows = quoteData.map((quote) => {
+    const movement = movementByQuoteId.get(quote.id);
     return {
       material: quote.description,
-      vendor: quote.vendor?.name ?? null,
+      vendor: quote.vendorName,
       unit: quote.unit,
-      unitPrice: Number(quote.unitPrice),
-      quotedOn: iso(quote.quotedOn),
-      validUntil,
-      expired: validUntil === null ? null : daysBetween(validUntil, today) > 0,
+      unitPrice: quote.unitPrice,
+      quotedOn: quote.quotedOn,
+      validUntil: quote.validUntil,
+      // The page's own predicate rather than a second spelling of it. It was
+      // `daysBetween(validUntil, today) > 0` here, which agrees today and is
+      // a figure computed twice — the shape this file's header warns about.
+      expired: quote.validUntil === null ? null : isExpired(quote, today),
+      /**
+       * How THIS vendor's price for THIS material moved from their previous
+       * quote to this one. Null when they have only quoted it once, and null
+       * on a quote a newer one of theirs supersedes — the movement is
+       * reported on the newer row, exactly as the page reports it.
+       */
+      priceChange: movement
+        ? {
+            direction:
+              movement.changePercent > 0
+                ? ("up" as const)
+                : movement.changePercent < 0
+                  ? ("down" as const)
+                  : ("unchanged" as const),
+            changePercent: movement.changePercent,
+            fromUnitPrice: movement.from.unitPrice,
+            fromQuotedOn: movement.from.quotedOn,
+          }
+        : null,
     };
   });
+
+  const movements = [...movementByQuoteId.values()];
 
   return {
     data: rows,
@@ -2199,6 +2468,11 @@ async function vendorPricing(companyId: string): Promise<ToolResult> {
       // Counted apart from expired: an undated quote is a records gap, not
       // a stale price, and the fix is to ask the vendor for terms.
       withoutAValidityDate: rows.filter((row) => row.expired === null).length,
+      // Movements, and the two directions apart. "Four prices moved" is not
+      // the answer to "is anything going up" when three of them came down.
+      priceMovements: movements.length,
+      pricesUp: movements.filter((movement) => movement.changePercent > 0).length,
+      pricesDown: movements.filter((movement) => movement.changePercent < 0).length,
     },
     citations,
     unavailable: rows.length === 0 ? "No vendor price has been recorded." : undefined,
@@ -2510,12 +2784,39 @@ const CERTIFIED_PAYROLL_WEEKS = 8;
  * what would be blank on it if it did.
  *
  * WHAT THIS DOES NOT SAY, and it is the first thing the tool says: nothing
- * in this app records that a week was FILED. There is no submission model —
- * the page computes a week live from TimeEntry every time it is opened — so
- * "is certified payroll in?" cannot be answered as asked, and this tool
- * must not let that read as a yes. What it answers instead is the question
- * underneath: is the week's data complete enough that the form would come
- * out right.
+ * in this app records that a week was SUBMITTED. There is no submission
+ * model — no agency, no date sent, no receipt — and the WH-347 itself is
+ * computed live from TimeEntry every time the page is opened, so "did it go
+ * in?" cannot be answered as asked and this tool must not let anything read
+ * as a yes to it.
+ *
+ * WHAT IT DID NOT SAY, AND COULD HAVE, until 2026-09-26. This description
+ * used to claim it "does NOT and CANNOT say whether a week was FILED:
+ * nothing in this app records a payroll submission". The second half is
+ * true. The first half was not: a `ComplianceDocument` of type
+ * CERTIFIED_PAYROLL carries a `periodStart`/`periodEnd`, and
+ * `lib/alerts-query.ts` has been reading exactly those rows to raise the
+ * CERTIFIED_PAYROLL alert that `needs_attention` surfaces. So one tool in
+ * this box was refusing what another tool in the same box reports.
+ *
+ * THE RESOLUTION IS THAT THESE ARE TWO FACTS, not a correction of one:
+ *
+ *   - `documentOnRecord` — a certified-payroll document is filed here
+ *     against a period that CONTAINS this week. Same rows and the same
+ *     containment as the alert, through the same predicate
+ *     (`certifiedPayrollWeekIsCovered`), so the box and the bell cannot
+ *     disagree about a week.
+ *   - `submissionToAnAgency` — never recorded, on every row. A document on
+ *     record is a document somebody put here. It is not a receipt, and
+ *     nothing in this app is.
+ *
+ * So the honest sentence is "a certified payroll is on record for that week"
+ * or "nothing is on record for that week", and never "it was filed" or "it
+ * was not". `documentOnRecord: false` is not evidence nobody filed, either —
+ * it is evidence nothing was recorded HERE.
+ *
+ * What it answers besides that is the question underneath: is the week's
+ * data complete enough that the form would come out right.
  *
  * Three ways it comes out wrong, and each is counted separately because
  * each sends a different person to do a different thing:
@@ -2545,7 +2846,7 @@ async function certifiedPayroll(companyId: string, input: Input): Promise<ToolRe
     new Date(new Date(`${today}T00:00:00.000Z`).getTime() - CERTIFIED_PAYROLL_WEEKS * 7 * 86_400_000),
   );
 
-  const [entries, crafts] = await Promise.all([
+  const [entries, crafts, filedDocuments] = await Promise.all([
     prisma.timeEntry.findMany({
       // Scoped through the job to this company, and filtered in the QUERY
       // rather than afterwards — the defect that shipped in daily_field_reports
@@ -2579,7 +2880,36 @@ async function certifiedPayroll(companyId: string, input: Input): Promise<ToolRe
       where: { companyId },
       select: { id: true, fringeRateSchedules: { orderBy: { effectiveFrom: "desc" } } },
     }),
+    // The certified-payroll documents filed against a period, scoped through
+    // the job exactly as the time entries are. These are the same rows
+    // lib/alerts-query.ts reads to raise the CERTIFIED_PAYROLL alert; a
+    // company-level ComplianceDocument (a COI) has no jobId and is excluded
+    // by the job scope, which is right — a payroll week belongs to a job.
+    prisma.complianceDocument.findMany({
+      where: {
+        type: "CERTIFIED_PAYROLL",
+        job: {
+          companyId,
+          ...(input.jobName?.trim()
+            ? { name: { contains: input.jobName.trim(), mode: "insensitive" as const } }
+            : {}),
+        },
+      },
+      select: { periodStart: true, periodEnd: true, job: { select: { name: true } } },
+    }),
   ]);
+
+  // Periods per job. A document with either bound missing covers nothing:
+  // half a period cannot contain a week, and guessing the other end on a
+  // document whose certification is criminal is not a guess worth making.
+  const filedPeriodsByJob = new Map<string, { start: string; end: string }[]>();
+  for (const document of filedDocuments) {
+    if (!document.periodStart || !document.periodEnd) continue;
+    const period = { start: iso(document.periodStart) as string, end: iso(document.periodEnd) as string };
+    const list = filedPeriodsByJob.get(document.job?.name ?? "");
+    if (list) list.push(period);
+    else filedPeriodsByJob.set(document.job?.name ?? "", [period]);
+  }
 
   const schedulesByCraft = new Map(
     crafts.map((craft) => [
@@ -2673,10 +3003,30 @@ async function certifiedPayroll(companyId: string, input: Input): Promise<ToolRe
       workersWithNoCraft: week.noCraft.size,
       workersWithNoName: week.noName.size,
       readyToProduce: week.unpricedHours === 0 && week.noCraft.size === 0 && week.noName.size === 0,
+      /**
+       * A certified-payroll document is filed here against a period that
+       * CONTAINS this whole week. The same rows and the same containment as
+       * the CERTIFIED_PAYROLL alert, through the same predicate, so the box
+       * and the bell cannot disagree about a week.
+       *
+       * It is NOT `filed`, and the name is the point: false means nothing is
+       * on record here, never that nobody filed.
+       */
+      documentOnRecord: certifiedPayrollWeekIsCovered(
+        filedPeriodsByJob.get(week.job) ?? [],
+        // The week START, derived back from the ENDING this row is named by,
+        // so the containment is checked over the same seven days the sheet
+        // prints.
+        iso(new Date(Date.parse(`${week.weekEnding}T00:00:00.000Z`) - 6 * 86_400_000)) as string,
+        week.weekEnding,
+      ),
       // Said on EVERY row rather than once in a note, because a row is what
       // gets quoted back and a caveat that only exists in the preamble is a
-      // caveat that gets dropped.
-      filed: "not recorded — this app does not track a payroll submission",
+      // caveat that gets dropped. It is the OTHER fact from
+      // `documentOnRecord` and must never be collapsed into it: a document
+      // somebody put here is not a receipt from anybody.
+      submissionToAnAgency:
+        "not recorded — nothing in this app records that a certified payroll was sent to or received by anyone",
     }));
 
   return {
@@ -2685,6 +3035,11 @@ async function certifiedPayroll(companyId: string, input: Input): Promise<ToolRe
       weeks: rows.length,
       weeksReadyToProduce: rows.filter((row) => row.readyToProduce).length,
       weeksWithHoles: rows.filter((row) => !row.readyToProduce).length,
+      // Counted separately from the two above, because a week can be ready
+      // to produce with nothing on record and on record while its data has
+      // holes. Neither implies the other and neither is a submission.
+      weeksWithADocumentOnRecord: rows.filter((row) => row.documentOnRecord).length,
+      weeksWithNoDocumentOnRecord: rows.filter((row) => !row.documentOnRecord).length,
     },
     citations,
     unavailable:

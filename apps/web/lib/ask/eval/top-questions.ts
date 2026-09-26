@@ -331,6 +331,16 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   ),
   t("q-vendor-quote", "what did we get quoted for 5/8 type X?", "vendor_pricing", ESTIMATOR),
   t("q-vendor-stale", "are those prices still good or have they run out?", "vendor_pricing", ESTIMATOR),
+  // WAS A GAP THAT NEVER WAS ONE. KNOWN_GAPS carried "a vendor's recent price
+  // change: the catalog records what work has cost, not a vendor's price list
+  // over time", and `job_margin` said "there is no vendor price history".
+  // `priceMovement()` (components/vendorPricing.ts) had computed the change
+  // between a vendor's last two quotes all along and /vendors/pricing rendered
+  // it under "Movement" — so the list injected into the system prompt was
+  // telling the model to refuse a question on screen. `vendor_pricing` returns
+  // the figure now; the entry is gone, and the test below fails if it comes
+  // back.
+  t("q-vendor-movement", "has Allied put their price up on 5/8 type X?", "vendor_pricing", ESTIMATOR),
   t("q-estimate-read", "what's in the Northgate estimate?", "estimate_detail", ESTIMATOR),
   // WAS A GAP until BidPursuit (pursuits.prisma). A subcontractor's own
   // pre-bid pipeline was not modelled: `bid_status` starts at the bid
@@ -463,7 +473,10 @@ export const CENSUS_REFUSALS = 2;
  * and was told "nothing here reads it". No gap and no refusal changed. */
 /** 114 -> 115 on 2026-09-24: one question for `find_bid_leads`, the
  * lead-search command. No gap and no refusal changed. */
-export const TOTAL_QUESTIONS = 115;
+/** 115 -> 116 on 2026-09-26: one question for a vendor's price MOVEMENT,
+ * which `vendor_pricing` answers and KNOWN_GAPS was telling the model to
+ * refuse. A gap left the list; nothing was added to it. */
+export const TOTAL_QUESTIONS = 116;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the

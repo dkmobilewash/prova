@@ -383,9 +383,17 @@ export const TOOLS: ToolDefinition[] = [
     // — so the sentence was corrected rather than left to go quietly false.
     // A claim about what the app does NOT have expires exactly as fast as a
     // claim about what it does, which this repo has paid for twice.
+    //
+    // THREE TIMES. It then ended "Does NOT know travel time, addresses, or
+    // what tools to bring; none of those are recorded" — and `Job.siteAddress`
+    // IS recorded, and geocoded to `siteLatitude`/`siteLongitude` for a daily
+    // report's weather. No TOOL returns it, which is the true and narrower
+    // claim; the wide one was a sentence a model could repeat to somebody who
+    // can see the address on the job page. Corrected 2026-09-26, with the
+    // matching KNOWN_GAPS reason.
     capability: null,
     description:
-      "Jobs currently in progress, who is ASSIGNED to each, the job's scheduled start and end, and the GC contact. An assignment is a ROSTER and carries no date at all — it is everyone attached to the job, not who is there on a given day. For a question about a DAY, use crew_schedule; this tool cannot answer one and must never state or imply that somebody is on site today. It is still not an attendance record either: nothing here records who actually showed up. Does NOT know travel time, addresses, or what tools to bring; none of those are recorded.",
+      "Jobs currently in progress, who is ASSIGNED to each, the job's scheduled start and end, and the GC contact. An assignment is a ROSTER and carries no date at all — it is everyone attached to the job, not who is there on a given day. For a question about a DAY, use crew_schedule; this tool cannot answer one and must never state or imply that somebody is on site today. It is still not an attendance record either: nothing here records who actually showed up. It does not return the job's SITE ADDRESS and no tool here does — the address is on the job's own page. Nothing in this app measures travel time or distance, and nothing records what to load for a job; never estimate either.",
     input_schema: noInput,
   },
   {
@@ -417,7 +425,7 @@ export const TOOLS: ToolDefinition[] = [
     // the job page's costing section
     capability: "VIEW_JOB_COSTS",
     description:
-      "Contract value, cost to date, forecast cost at completion, percent complete, earned revenue and over/under billing for active jobs, plus how much of each job's value actually carries a cost estimate. Answers 'are we making money on this'. Does NOT know vendor price changes — there is no vendor price history.",
+      "Contract value, cost to date, forecast cost at completion, percent complete, earned revenue and over/under billing for active jobs, plus how much of each job's value actually carries a cost estimate. Answers 'are we making money on this'. It cannot tell you WHY a job's cost moved: it holds no vendor quotes and no material prices, so a job going over on material says nothing here about which supplier put their price up — that is `vendor_pricing`, which does hold a quote history and reports the movement.",
     input_schema: jobFilter,
   },
   {
@@ -577,10 +585,10 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "daily_field_reports",
-    // /field-reports
+    // /field-reports, and a job's own Field reports tab for the delay log.
     capability: "MANAGE_FIELD",
     description:
-      "Daily field reports filed on a job, most recent first — the work performed, who was on the crew, the weather and any delay recorded that day. Answers 'what happened on site' and 'what did we write down about that delay'. A delay noted here is the contemporaneous record a claim is later built on, so reports WITH a delay are flagged. It knows only what was filed: a day with no report is a day nobody wrote up, which is not the same as a day nothing happened.",
+      "Daily field reports filed on a job, most recent first — the work performed, who else was on site, the foreman's weather note — AND the structured delay log for those days: each delay's cause, who was responsible, when it started and ended, crew-hours lost, whether the GC was told and how, and any change order drafted from it. Answers 'what happened on site', 'what did we write down about that delay' and 'how many hours did that cost us'. A delay is the contemporaneous record a claim is later built on, so reports carrying one are flagged, `delaysTheGcWasNotTold` is counted (notice is what makes a delay claimable), and a day whose delays were logged with NO REPORT FILED is still a row, marked `reportFiled: false` with `workPerformed: null` — a delay does not need a report to exist, and dropping it would be a confident zero. Reports filed before 2026-09-18 may instead carry `legacyDelayNote`, a single free-text sentence which is all that was recorded then: it has NO cause, no responsible party and no hours, so never present it as though it did. It knows only what was filed: a day with no report is a day nobody wrote up, which is not the same as a day nothing happened, and a delay nobody logged is not a day that ran clean.",
     input_schema: jobFilter,
   },
   {
@@ -604,7 +612,7 @@ export const TOOLS: ToolDefinition[] = [
     // /vendors/pricing
     capability: "MANAGE_ESTIMATING",
     description:
-      "Prices vendors have quoted, per material, with who quoted it, when, and whether the quote is still inside its validity date. Answers 'what did we get quoted for that' and 'is that price still good'. A quote PAST its validity date is flagged as expired rather than listed as a current price — an expired quote carried into a bid is how a job is mis-priced. A quote with NO validity date recorded is reported as undated, never as valid indefinitely.",
+      "Prices vendors have quoted, per material, with who quoted it, when, whether the quote is still inside its validity date, AND how that vendor's price for that material MOVED from their previous quote to this one — the percent change, both prices and both dates, exactly as the Movement block on /vendors/pricing shows it. Answers 'what did we get quoted for that', 'is that price still good' and 'has their price gone up'. A movement is only ever the SAME vendor and the SAME unit: across vendors it is a difference of opinion, across units it is arithmetic on unrelated numbers, and neither is a price change. `priceChange` is null when that vendor has only quoted the item once, and null on a quote a newer one of theirs supersedes — the movement is reported on the newer quote. Never work a percentage out yourself; use `changePercent`. A quote PAST its validity date is flagged as expired rather than listed as a current price — an expired quote carried into a bid is how a job is mis-priced. A quote with NO validity date recorded is reported as undated, never as valid indefinitely. It knows only quotes somebody entered here: it is not a vendor's published price list, and a material with one quote has no movement rather than a flat price.",
     input_schema: noInput,
   },
   {
@@ -657,7 +665,7 @@ export const TOOLS: ToolDefinition[] = [
     // one the PAYROLL_COMPLIANCE function is built around.
     capability: "MANAGE_COMPLIANCE",
     description:
-      "For each of the last eight payroll weeks on a job: how many workers, how many hours, and the three things that would come out BLANK on a WH-347 — hours with no fringe rate schedule in force to price them, workers with no craft classification, and workers with no name on their account. Answers 'could we produce certified payroll for that week'. It does NOT and CANNOT say whether a week was FILED: nothing in this app records a payroll submission, the form is computed live every time it is opened, so a week reported as ready to produce has not been sent anywhere.",
+      "For each of the last eight payroll weeks on a job: how many workers, how many hours, the three things that would come out BLANK on a WH-347 — hours with no fringe rate schedule in force to price them, workers with no craft classification, and workers with no name on their account — and whether a certified-payroll DOCUMENT is on record here covering that whole week. Answers 'could we produce certified payroll for that week' and 'is there a certified payroll on file for that week'. TWO DIFFERENT FACTS, TWO FIELDS, NEVER ONE SENTENCE: `readyToProduce` is about the data behind the form; `documentOnRecord` is about a document somebody filed against a period — the same rows and the same whole-week containment as the CERTIFIED_PAYROLL alert in needs_attention, so the two cannot disagree. NEITHER IS PROOF OF FILING, and this is the part to say out loud every time: nothing in this app records a SUBMISSION — no agency, no date sent, no receipt — so say 'a certified payroll is on record for that week' or 'nothing is on record for that week', and never 'it was filed', 'it went in' or 'it was not filed'. `documentOnRecord: false` means nothing is recorded HERE, not that nobody filed; true means a document is here, not that it reached anybody. A document whose period only clips the week does not cover it and is not counted, because half a period is not evidence about a week.",
     input_schema: jobFilter,
   },
   {
@@ -827,17 +835,32 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
     topic: "what tools or materials to load for a job",
     why: "nothing records what a job needs from the shop.",
   },
-  {
-    topic: "a vendor's recent price change",
-    why: "the catalog records what work has cost, not a vendor's price list over time.",
-  },
+  /* "a vendor's recent price change" WAS HERE AND WAS FALSE — removed
+   * 2026-09-26. Its reason read "the catalog records what work has cost, not
+   * a vendor's price list over time", and `VendorPriceQuote` is a quote
+   * history: `priceMovement()` (components/vendorPricing.ts) computes the
+   * change between a vendor's last two quotes for an item and /vendors/pricing
+   * renders it under "Movement". `vendor_pricing` now returns that figure.
+   *
+   * This list is INJECTED INTO THE SYSTEM PROMPT, so a stale entry here is
+   * not a stale comment — it is a standing instruction to refuse a question
+   * the product answers on screen, and it cost `job_margin` a matching false
+   * sentence ("there is no vendor price history"). The EMR note further down
+   * says the same thing about the same mistake; this is the second time.
+   * Before adding a gap, and before leaving one, check the screen. */
   {
     topic: "who signed the safety talk",
     why: "the attendee roster is free text and the signature sheet is a photo, so a talk can be shown as logged but individual sign-off cannot be confirmed from the data.",
   },
   {
     topic: "driving directions or travel time",
-    why: "job addresses are not modelled as coordinates and there is no routing.",
+    // HALF OF THIS REASON WENT STALE and was corrected 2026-09-26: it said
+    // "job addresses are not modelled as coordinates", and they are —
+    // `Job.siteLatitude`/`siteLongitude`, geocoded when the site address is
+    // saved so a daily report can look up that day's weather. The gap is
+    // real and the conclusion never changed; only the argument for it was
+    // false, which is the version a model would have repeated.
+    why: "there is no routing, distance or travel-time calculation anywhere in this app, and no tool returns a job's address. A job's site address IS recorded and geocoded to coordinates (for a daily report's weather), so do not say addresses are not held — say there is nothing here that measures a journey, and never estimate one.",
   },
 
   /* ─── the gaps the hundred-question census left standing ───
