@@ -307,3 +307,139 @@ describe("/catalog does not render an owner-only control to a non-owner", () => 
     expect(importer).toContain("resetOnSuccess={false}");
   });
 });
+
+/**
+ * THE HOURS COLUMN: THE ACTION REFUSES RATHER THAN GUESSES — #514.
+ *
+ * `catalog-import-labor.test.ts` pins the arithmetic of the three readings in
+ * isolation. This block pins the half that cannot be tested there: what the
+ * ACTION does with a form, and what actually lands in `createMany`.
+ *
+ * It belongs in this file rather than beside the pure module because the two
+ * defects are the same shape and share this harness. The refusal above was a
+ * throw that destroyed the paste; this one is a silent fallback that would
+ * have destroyed the numbers. Both are about an import that must not answer a
+ * question the person did not answer.
+ */
+const HOURS_LIST = [
+  "Description,Unit,Unit Price,Hours",
+  '5/8" Type X board,SF,2.85,0.012',
+  "Corner bead,LF,1.20,0.03",
+].join("\n");
+
+/** The written rows from the last `createMany`, keyed by description. */
+function writtenRows() {
+  const last = created.at(-1) ?? [];
+  return new Map(last.map((row) => [String(row.description), row]));
+}
+
+describe("importing a price list that carries an Hours column", () => {
+  it("REFUSES when nothing says what the column means", async () => {
+    // No `laborColumn` on the form at all — which is also what a stale tab
+    // or a direct POST looks like.
+    const result = await importCatalogEntries(importForm(HOURS_LIST));
+
+    expect(result.ok).toBe(false);
+    const error = result.ok ? "" : result.error;
+    expect(error).toMatch(/hours column/i);
+    // The refusal names all three readings, because "pick one" without
+    // saying what the options are is a dead end in a sentence.
+    expect(error).toMatch(/per unit/i);
+    expect(error).toMatch(/units per hour/i);
+    expect(error).toMatch(/flat/i);
+
+    // NOTHING was written. A partial import here would be worse than a
+    // refusal: the duplicate rule means a second attempt skips every row the
+    // first one landed, so a half-import with wrong labor is permanent.
+    expect(created).toEqual([]);
+  });
+
+  it("refuses a laborColumn it does not recognise, rather than falling back", async () => {
+    const fd = importForm(HOURS_LIST);
+    fd.set("laborColumn", "HOURS");
+    const result = await importCatalogEntries(fd);
+    expect(result.ok).toBe(false);
+    expect(created).toEqual([]);
+  });
+
+  it("stores a RATE of 83.3333 for the hours-per-unit reading, and no flat hours", async () => {
+    const fd = importForm(HOURS_LIST);
+    fd.set("laborColumn", "PER_UNIT");
+
+    const result = await importCatalogEntries(fd);
+    expect(result.ok).toBe(true);
+
+    const board = writtenRows().get('5/8" Type X board');
+    expect(board?.productionRate).toBe("83.3333");
+    expect(board?.defaultLaborHours).toBeNull();
+
+    // THE FIGURE THIS WHOLE CHANGE IS FOR. Before it, this row imported as
+    // `defaultLaborHours: "0.012"` — flat hours, rounded to 0.01 by the
+    // column — so 600 SF of board carried a hundredth of an hour of labor.
+    expect(board?.defaultLaborHours).not.toBe("0.012");
+  });
+
+  it("stores the cell as the rate for the units-per-hour reading", async () => {
+    const fd = importForm(
+      ["Description,Unit,Hours", "Hang board,SF,60", "Tape and finish,SF,45"].join("\n"),
+    );
+    fd.set("laborColumn", "PER_HOUR");
+
+    expect((await importCatalogEntries(fd)).ok).toBe(true);
+    const row = writtenRows().get("Hang board");
+    expect(row?.productionRate).toBe("60");
+    expect(row?.defaultLaborHours).toBeNull();
+  });
+
+  it("stores flat hours, and only flat hours, for the flat reading", async () => {
+    const fd = importForm(["Description,Unit,Hours", "Hang one door,EA,2.5"].join("\n"));
+    fd.set("laborColumn", "FLAT");
+
+    expect((await importCatalogEntries(fd)).ok).toBe(true);
+    const row = writtenRows().get("Hang one door");
+    expect(row?.defaultLaborHours).toBe("2.5");
+    expect(row?.productionRate).toBeNull();
+  });
+
+  it("never writes both columns on one row, whichever reading is chosen", async () => {
+    for (const reading of ["PER_UNIT", "PER_HOUR", "FLAT"]) {
+      created.length = 0;
+      const fd = importForm(HOURS_LIST);
+      fd.set("laborColumn", reading);
+      await importCatalogEntries(fd);
+      for (const row of created.at(-1) ?? []) {
+        // An entry carrying both has an INERT rate — `estimatedHours` takes
+        // the flat hours as the override — so writing both would silently
+        // discard whichever the person actually meant.
+        expect(row.productionRate === null || row.defaultLaborHours === null).toBe(true);
+      }
+    }
+  });
+
+  it("imports a list with NO Hours column without asking anything", async () => {
+    // The question must not appear where the file does not raise it, and an
+    // unanswered `laborColumn` must not block an import that has no labor in
+    // it — that would be a refusal nobody could satisfy.
+    const result = await importCatalogEntries(importForm(PRICE_LIST));
+    expect(result.ok).toBe(true);
+
+    const board = writtenRows().get('5/8" Type X board');
+    expect(board?.productionRate).toBeNull();
+    expect(board?.defaultLaborHours).toBeNull();
+  });
+
+  it("leaves a zero-hours row with no labor rather than an infinite rate", async () => {
+    const fd = importForm(["Description,Unit,Hours", "Mystery item,SF,0"].join("\n"));
+    fd.set("laborColumn", "PER_UNIT");
+
+    // The file has an Hours column, but nothing in it can be stored under any
+    // reading — so `laborQuestion` is `absent` and the import proceeds rather
+    // than demanding an answer to a question with three identical outcomes.
+    const result = await importCatalogEntries(fd);
+    expect(result.ok).toBe(true);
+
+    const row = writtenRows().get("Mystery item");
+    expect(row?.productionRate).toBeNull();
+    expect(row?.defaultLaborHours).toBeNull();
+  });
+});

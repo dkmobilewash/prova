@@ -115,7 +115,16 @@ const NOT_AN_HOURS_NUMBER: Record<string, string> = {
 
   // -- already a string by the time it is rendered --
   "app/(app)/catalog/page.tsx\t{entry.defaultLaborHours.toString()}":
-    "Prisma Decimal(5,2) stringified. A Decimal is exact — it never carries binary float drift, so there is nothing to round.",
+    "Prisma Decimal(8,2) stringified — this reason said (5,2) until 2026-09-25 and the column has " +
+    "always been (8,2); the argument is unaffected, which is exactly why nobody noticed. A Decimal " +
+    "is exact — it never carries binary float drift, so there is nothing to round.",
+  "app/(app)/catalog/page.tsx\t{entry.defaultLaborHours != null && \" (unused — hrs/line wins)\"}":
+    "A SENTENCE, not a number — the same category as the DAS-140 blocking reason below. #514 gave a " +
+    "catalog entry a production rate beside its flat hours, and when both are set the rate is inert " +
+    "(estimatedHours takes the flat hours as the override), so the row says so where a reader would " +
+    "otherwise take the rate for the assumption the bid was built on. The hours value itself is " +
+    "rendered by the entry above, which is where the rounding argument applies; this expression is " +
+    "keyed on that column and emits only literal text.",
   "components/DelayLog.tsx\t{d.hoursLost}":
     "Already a string: the field-reports page passes String(Number(d.hoursLost)) from a Decimal column.",
   "components/TimeEntryRow.tsx\t{entry.hours}":

@@ -213,7 +213,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     note: "Your own catalog of standard line items and their default rates.",
     columns: [
       "id", "description", "unit", "tradeScope", "defaultUnitPrice",
-      "defaultBudgetedUnitCost", "defaultLaborHours", "craftClassificationId",
+      "defaultBudgetedUnitCost", "defaultLaborHours", "productionRate", "craftClassificationId",
       "createdAt", "updatedAt",
     ],
     scope: byCompany,

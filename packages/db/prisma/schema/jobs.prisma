@@ -244,6 +244,12 @@ model JobLineItem {
   /// number the actual-productivity back-check (lib/labor-productivity.ts)
   /// compares actuals against. Decimal(10,4), not the (8,2) that already
   /// cannot hold a per-unit rate on LineItemCatalogEntry.defaultLaborHours.
+  ///
+  /// `LineItemCatalogEntry.productionRate` is the same number at the same
+  /// precision, added 2026-09-25 (#514) — this comment used to point at that
+  /// gap, and a catalog-sourced line inherits the rate now, so the
+  /// back-check has something to compare against on work priced from the
+  /// price book rather than only on hand-typed lines.
   productionRate Decimal? @db.Decimal(10, 4)
 
   /// The company's own cost code for this line. Nullable with NO backfill,

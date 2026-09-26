@@ -5,6 +5,13 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
+import {
+  PRODUCTION_RATE_MAX,
+  PRODUCTION_RATE_MIN,
+  laborFieldsFor,
+  laborQuestion,
+  readingFromForm,
+} from "@/lib/catalog-import-labor";
 import { ActionResult, actionFail, actionOk, InputError, runAction, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, ownerRefusal, tradeScopeFromForm } from "./shared";
 import { catalogActuals, catalogSourcedLine, repriceDecision } from "@/lib/catalog-actuals";
 import { quotePriceDecision } from "@/lib/catalog-quote-price";
@@ -131,6 +138,19 @@ export async function createLineItemCatalogEntry(formData: FormData): Promise<Ac
     const defaultUnitPrice = nullableDecimalFromForm(formData, "defaultUnitPrice");
     const defaultBudgetedUnitCost = nullableDecimalFromForm(formData, "defaultBudgetedUnitCost");
     const defaultLaborHours = nullableDecimalFromForm(formData, "defaultLaborHours");
+    // The same bounds `saveWallTypeComponent` puts on the same quantity, and
+    // for the same reason: a rate of 0 divides into infinite hours, and a
+    // six-figure units-per-hour is a decimal slip rather than a fast crew.
+    //
+    // Shared with the IMPORTER rather than repeated as literals — a typed rate
+    // and an imported one land in the same column and are read by the same
+    // function, so a bound that applies to one and not the other is a hole
+    // shaped exactly like the bulk path nobody checks by hand.
+    const productionRate = nullableDecimalFromForm(formData, "productionRate", {
+      label: "Production rate",
+      min: PRODUCTION_RATE_MIN,
+      max: PRODUCTION_RATE_MAX,
+    });
     const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
 
     // InputError, not Error: both of these are things a person can fix, and
@@ -155,6 +175,7 @@ export async function createLineItemCatalogEntry(formData: FormData): Promise<Ac
         defaultUnitPrice,
         defaultBudgetedUnitCost,
         defaultLaborHours,
+        productionRate,
         craftClassificationId,
       },
     });
@@ -231,6 +252,12 @@ export async function saveLineItemAsCatalogEntry(lineItemId: string) {
       defaultUnitPrice: lineItem.unitPrice,
       defaultBudgetedUnitCost: lineItem.budgetedUnitCost,
       defaultLaborHours: lineItem.laborHours,
+      // #514, and the direction that makes the catalog learn: a line estimated
+      // at a rate promotes that rate, so the next bid inherits it. Copied as
+      // it stands, including when the line also carries flat hours — the pair
+      // keeps `estimatedHours()`'s precedence on the entry exactly as it had
+      // it on the line, rather than this writer picking one.
+      productionRate: lineItem.productionRate,
       craftClassificationId: lineItem.craftClassificationId,
     },
   });
@@ -566,6 +593,28 @@ export async function importCatalogEntries(formData: FormData): Promise<ActionRe
     return actionFail("Nothing readable to import — check the preview for what went wrong.");
   }
 
+  // WHAT THE HOURS COLUMN MEANS, RE-DERIVED HERE AND REFUSED IF UNANSWERED.
+  //
+  // The question is raised from the SERVER's own parse of the same text, not
+  // from anything the browser said it found, so a posted answer cannot be
+  // about a file the server is not reading. The only thing taken from the
+  // request is which of three readings the person chose — a fact about their
+  // file that no amount of code can establish.
+  //
+  // It REFUSES on a missing or unrecognised answer rather than falling back.
+  // Every available fallback is a guess about a labor figure: writing the
+  // cell in as flat hours is the original defect (0.012 hours for a 600 SF
+  // line, rounded to 0.01 on the way in), and inverting it blindly is worse
+  // in the other direction (600 / 0.012 = 50,000 hours). A refusal costs one
+  // click; both fallbacks cost a bid.
+  const labor = laborQuestion(rows);
+  const reading = labor.kind === "ask" ? readingFromForm(formData.get("laborColumn")) : null;
+  if (labor.kind === "ask" && reading === null) {
+    return actionFail(
+      "Say what the Hours column means before importing — the same figure can be hours per unit, units per hour, or flat hours for the line, and they are not interchangeable. Pick one in the preview.",
+    );
+  }
+
   const existing = await prisma.lineItemCatalogEntry.findMany({
     where: { companyId: company.id },
     select: { description: true },
@@ -586,7 +635,13 @@ export async function importCatalogEntries(formData: FormData): Promise<ActionRe
       unit: row.unit,
       defaultUnitPrice: row.unitPrice != null ? row.unitPrice.toString() : null,
       defaultBudgetedUnitCost: row.budgetedUnitCost != null ? row.budgetedUnitCost.toString() : null,
-      defaultLaborHours: row.laborHours != null ? row.laborHours.toString() : null,
+      // Was `defaultLaborHours: row.laborHours.toString()` unconditionally,
+      // which read every price list's per-unit productivity factor as flat
+      // per-line hours. `laborFieldsFor` writes ONE of the two columns
+      // according to the reading the person confirmed, and never both — a row
+      // carrying flat hours and a rate has an inert rate, since
+      // `estimatedHours` takes the flat hours as the override.
+      ...(reading ? laborFieldsFor(row, reading) : { defaultLaborHours: null, productionRate: null }),
       tradeScope: row.tradeScope,
     })),
   });

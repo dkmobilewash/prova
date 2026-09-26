@@ -3,7 +3,13 @@
 import { useMemo, useRef, useState } from "react";
 import { importCatalogEntries } from "@/lib/actions";
 import { MAX_IMPORT_ROWS, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
+import {
+  NOMINAL_QUANTITY,
+  type LaborReading,
+  laborQuestion,
+} from "@/lib/catalog-import-labor";
 import { money } from "@/lib/money";
+import { formatHours } from "@/lib/render-hours";
 import { tradeScopeLabel } from "@/lib/trade-scopes";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ActionForm } from "@/components/ActionForm";
@@ -48,18 +54,23 @@ import { ActionForm } from "@/components/ActionForm";
 const inputClass =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 
-/* The Hours column USED to be in this sample, at 0.012 / 0.03 / 0.02 — the
-   per-unit productivity factors a real price list carries. It is out because
-   the app does not treat that column as per-unit: `addCatalogLine` copies an
-   entry's hours onto the estimate line unchanged at every quantity, so 0.012
-   imported against a 600 SF line prices 0.012 hours of labor, not 7.2. The
-   column still imports and is still previewed; the example just stopped
-   teaching the reading the code does not implement. Which reading is RIGHT is
-   an open question — see changelog.d/cyrus-catalog-labor-hours-meaning.md. */
-const SAMPLE = `Description,Unit,Unit Price,Cost,Trade
-5/8" Type X board,SF,2.85,1.90,drywall
-Corner bead,LF,1.20,0.60,drywall
-Level 5 finish,SF,1.75,0.95,drywall`;
+/* THE HOURS COLUMN IS BACK IN THE SAMPLE, at the 0.012 / 0.03 / 0.02 a real
+   drywall price list carries.
+
+   It was pulled out because the app read that column as flat per-line hours,
+   so 0.012 against a 600 SF line priced 0.012 hours of labor instead of 7.2 —
+   the example had stopped teaching a reading the code did not implement, which
+   was the right call while that was true. The import asks which convention the
+   column uses now and stores a production rate for the per-unit answer, so the
+   example can show the shape people's real files have.
+
+   All three values are under 1, so this sample exercises the PER_UNIT lean and
+   arrives with that option pre-selected — deliberately, because the example's
+   job is to show what a normal import looks like end to end. */
+const SAMPLE = `Description,Unit,Unit Price,Cost,Hours,Trade
+5/8" Type X board,SF,2.85,1.90,0.012,drywall
+Corner bead,LF,1.20,0.60,0.03,drywall
+Level 5 finish,SF,1.75,0.95,0.02,drywall`;
 
 export function CatalogImport({
   existingDescriptions,
@@ -78,6 +89,33 @@ export function CatalogImport({
     () => (parsed ? splitAgainstExisting(parsed.rows, existingDescriptions) : null),
     [parsed, existingDescriptions],
   );
+
+  /* The Hours-column question, derived from THE SAME function the server uses
+     over the same text. The server re-derives it and refuses an unanswered
+     import, so this is the readable half of a decision that is enforced
+     behind it — not the decision itself. */
+  const labor = useMemo(() => (parsed ? laborQuestion(parsed.rows) : null), [parsed]);
+
+  /* Null means unanswered, and it STAYS null when the file's magnitudes do not
+     lean — `leanFrom` returns no suggestion inside 1–10, where a door
+     assembly's "1.5" is as plausibly hours-per-door as doors-per-hour. The
+     submit is disabled until the person picks, rather than a default being
+     pre-filled for them to not notice. */
+  const [reading, setReading] = useState<LaborReading | null>(null);
+
+  /* Keyed on the file, not on the mount: pasting a DIFFERENT list must not
+     inherit the answer given for the last one. `useMemo` recomputes `labor`
+     whenever the text changes, so comparing the lean's identity is enough —
+     and this runs during render rather than in an effect so the radio and the
+     submit button can never disagree for a frame. */
+  const leanKey = labor?.kind === "ask" ? `${labor.cell}:${labor.lean.suggested ?? ""}` : "";
+  const [seenLean, setSeenLean] = useState(leanKey);
+  if (leanKey !== seenLean) {
+    setSeenLean(leanKey);
+    setReading(labor?.kind === "ask" ? labor.lean.suggested : null);
+  }
+
+  const needsReading = labor?.kind === "ask" && reading === null;
 
   async function onFile(file: File | undefined) {
     setFileError(null);
@@ -136,11 +174,17 @@ export function CatalogImport({
         called <span className="text-ink-label">Description</span> (or Item, or Name). Unit, Price,
         Cost, Hours and Trade are all optional, and column names don&apos;t have to match exactly.
       </p>
+      {/* This paragraph used to say "Hours are for the whole line, not per
+          unit" and told people to leave the column OUT of the file. That was
+          an honest description of a defect: the app read every price list's
+          per-unit productivity factor as flat per-line hours. The column is
+          read properly now, and the app asks which convention the file uses
+          instead of documenting one and doing it regardless. */}
       <p className="mb-3 text-xs text-ink-body">
-        <span className="text-ink-label">Hours are for the whole line, not per unit.</span> They are
-        copied onto an estimate line unchanged whatever the quantity, so a price list&apos;s per-unit
-        productivity column (0.012 hrs per SF) will not scale — and the field stores two decimals, so
-        0.012 saves as 0.01. Leave Hours out of the file unless you mean a flat per-line figure.
+        <span className="text-ink-label">Keep your Hours column in.</span> It can be hours per unit
+        (0.012 hrs per SF), a production rate (83 SF per hour), or flat hours for the whole line —
+        whichever your list uses. You&apos;ll be shown what each reading works out to and asked to
+        pick before anything is added.
       </p>
 
       <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -216,6 +260,75 @@ export function CatalogImport({
             </ul>
           )}
 
+          {/* THE QUESTION, ASKED AS A CONSEQUENCE.
+              Every option states what 100 units would take under that
+              reading, computed from the figure that would actually be STORED
+              — so a rounding loss shows up as a number rather than as a
+              footnote. Nobody picks 8,333 hours for a hundred feet of board,
+              which is the point: the wrong answer is obvious without knowing
+              what a reciprocal is.
+
+              The lean pre-selects only when the magnitudes are decisive (all
+              under 1, or all over 10). Inside that band nothing is selected
+              and the submit stays disabled — a default there would be a guess
+              about a labor figure wearing the appearance of a default. */}
+          {labor?.kind === "ask" && (
+            <fieldset className="mt-3 rounded-md border border-line-card p-3">
+              <legend className="px-1 text-xs font-semibold text-ink-label">
+                What does your Hours column mean?
+              </legend>
+              <p className="text-xs text-ink-body">
+                {labor.sample.description} reads{" "}
+                <span className="tabular-nums text-ink-label">{labor.cell}</span>
+                {labor.sample.unit ? ` in the Hours column, per ${labor.sample.unit}.` : " in the Hours column."}{" "}
+                So {NOMINAL_QUANTITY} {labor.sample.unit ?? "units"} would take:
+              </p>
+
+              <div className="mt-2 flex flex-col gap-1">
+                {labor.consequences.map((option) => (
+                  <label
+                    key={option.reading}
+                    className="flex cursor-pointer items-baseline gap-2 rounded px-1 py-1 text-xs hover:bg-neutral-800"
+                  >
+                    {/* `laborColumnChoice`, not `laborColumn` — these radios
+                        sit OUTSIDE the `<ActionForm>` below, exactly as the
+                        visible `csvPreview` textarea does, and the value goes
+                        over the wire as a hidden input mirrored from state.
+                        Same split, same reason: the controls live with the
+                        preview and the form carries one copy of the answer. */}
+                    <input
+                      type="radio"
+                      name="laborColumnChoice"
+                      value={option.reading}
+                      checked={reading === option.reading}
+                      onChange={() => setReading(option.reading)}
+                      className="mt-0.5"
+                    />
+                    <span className="tabular-nums font-semibold text-ink-label">
+                      {option.hoursAtNominal != null
+                        ? `${formatHours(option.hoursAtNominal)} hrs`
+                        : "no labor"}
+                    </span>
+                    <span className="text-ink-body">
+                      {option.reading === "PER_UNIT" && "— hours per unit, the usual price-list column"}
+                      {option.reading === "PER_HOUR" && "— units per hour, a production rate"}
+                      {option.reading === "FLAT" && "— flat hours for the line, the same at any quantity"}
+                      {option.refusal && ` (${option.refusal})`}
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              <p className="mt-2 text-xs text-ink-muted">{labor.lean.because}</p>
+              {labor.unusable > 0 && (
+                <p className="mt-1 text-xs text-tag-amber-ink">
+                  {labor.unusable} of the {labor.carrying} rows with an Hours figure have a zero or
+                  negative one, and will import with no labor whichever you pick.
+                </p>
+              )}
+            </fieldset>
+          )}
+
           {split.fresh.length > 0 && (
             <div className="mt-3 overflow-x-auto rounded-md border border-line-row">
               <table className="w-full min-w-[560px] text-left text-xs">
@@ -225,7 +338,12 @@ export function CatalogImport({
                     <th className="px-3 py-2 font-medium">Unit</th>
                     <th className="px-3 py-2 font-medium">Price</th>
                     <th className="px-3 py-2 font-medium">Cost</th>
-                    <th className="px-3 py-2 font-medium">Hrs/line</th>
+                    {/* "Hours" now, not "Hrs/line": the column shows the cell
+                        as the FILE wrote it, and what it means is the question
+                        above rather than something this header can assert.
+                        Calling it Hrs/line was the old reading stated as a
+                        fact in the one place a person checks their figures. */}
+                    <th className="px-3 py-2 font-medium">Hours</th>
                     <th className="px-3 py-2 font-medium">Trade</th>
                   </tr>
                 </thead>
@@ -284,13 +402,26 @@ export function CatalogImport({
             className="mt-3 flex flex-wrap items-center gap-3"
           >
             <input type="hidden" name="csv" value={text} />
+            {reading && <input type="hidden" name="laborColumn" value={reading} />}
             <SubmitButton
               type="submit"
-              disabled={split.fresh.length === 0}
+              disabled={split.fresh.length === 0 || needsReading}
               className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
             >
               {split.fresh.length === 1 ? "Add 1 entry" : `Add ${split.fresh.length} entries`}
             </SubmitButton>
+            {/* DISABLED, not hidden, and this is the one place in this
+                component where that is the right way round. The button being
+                greyed out beside an unanswered question is the explanation;
+                the section above it is already on screen with the three
+                outcomes in it, so there is nothing to discover and nothing
+                lost by pressing. The action refuses the same case anyway —
+                `needsReading` saves a round trip, it is not the guard. */}
+            {needsReading && (
+              <span className="text-xs text-tag-amber-ink">
+                Pick what the Hours column means first.
+              </span>
+            )}
             <span className="text-xs text-ink-muted">
               Nothing already in the catalog is changed. Up to {MAX_IMPORT_ROWS} rows at a time.
             </span>

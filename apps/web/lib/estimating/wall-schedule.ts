@@ -114,16 +114,33 @@ export async function syncWallScheduleLines(tx: Tx, companyId: string, jobId: st
 
   for (const line of schedule.lines) {
     const laborHours = line.laborHours != null ? line.laborHours.toString() : null;
+    const component = componentById.get(line.componentId);
+    // #514. The COMPONENT'S rate, not the catalog entry's: the component is
+    // the more specific assumption and it is what `scheduleLines` already
+    // divided the quantity by to get `laborHours` above, so the two agree by
+    // construction rather than by coincidence.
+    //
+    // WHY STORE IT WHEN THE HOURS ARE ALREADY HERE. The hours are the figure
+    // that prices the line; the rate is the figure the actual-productivity
+    // back-check compares against (`productionBackCheck` takes an
+    // `estimatedRate`, and there is no way back to one from rounded hours and
+    // a quantity that may since have changed). Without this, every wall-schedule
+    // line — the largest block of labor on a framing bid — was outside that
+    // check while every hand-typed line was inside it.
+    const productionRate = component?.productionRate != null ? component.productionRate.toString() : null;
     const lineId = existingByComponent.get(line.componentId);
     if (lineId) {
       await tx.jobLineItem.update({
         where: { id: lineId },
-        data: { quantity: line.quantity.toString(), laborHours },
+        // The rate is re-synced with the hours, deliberately. Both are derived
+        // from the component, so writing one and not the other is how a line
+        // ends up priced at this month's productivity and back-checked against
+        // last month's.
+        data: { quantity: line.quantity.toString(), laborHours, productionRate },
       });
       updated += 1;
       continue;
     }
-    const component = componentById.get(line.componentId);
     const entry = component?.catalogEntry ?? null;
     await tx.jobLineItem.create({
       data: {
@@ -132,6 +149,7 @@ export async function syncWallScheduleLines(tx: Tx, companyId: string, jobId: st
         unit: line.unit,
         quantity: line.quantity.toString(),
         laborHours,
+        productionRate,
         unitPrice: entry?.defaultUnitPrice ?? null,
         budgetedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
         currentEstimatedUnitCost: entry?.defaultBudgetedUnitCost ?? null,

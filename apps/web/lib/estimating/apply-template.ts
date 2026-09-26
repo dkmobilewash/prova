@@ -58,6 +58,7 @@ export async function applyEstimateTemplate(
               defaultUnitPrice: true,
               defaultBudgetedUnitCost: true,
               defaultLaborHours: true,
+              productionRate: true,
               tradeScope: true,
               craftClassificationId: true,
             },
