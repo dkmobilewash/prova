@@ -194,7 +194,8 @@ type Row = {
     material: number;
     labor: number;
     subcontractor: number;
-    otherOrEquipment: number;
+    equipment: number;
+    other: number;
     notCostCoded: number;
     notCostCodedLineCount: number;
     total: number;
@@ -235,7 +236,8 @@ describe("bid_recap", () => {
       material: 2000,
       labor: 3000,
       subcontractor: 5000,
-      otherOrEquipment: 0,
+      equipment: 0,
+      other: 0,
       notCostCoded: 1000,
       notCostCodedLineCount: 1,
       total: 11000,

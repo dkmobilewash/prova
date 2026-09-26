@@ -61,6 +61,7 @@ import {
   asCostCategory,
   COST_CATEGORY_VALUES as CANONICAL_COST_CATEGORY_VALUES,
   COST_CATEGORY_LONG_LABEL,
+  EQUIPMENT_SPLIT_ON,
   type CostCategory,
 } from "@/lib/cost-category";
 
@@ -150,6 +151,41 @@ export type RecapRates = {
   bondPercent?: number | null;
   contingencyPercent?: number | null;
 };
+
+/**
+ * Every rate key AT RUNTIME, in the order they apply.
+ *
+ * `RecapRates` is a type, so its keys do not exist at runtime and anything
+ * needing to iterate them has had to write them out again. Two places did, and
+ * the second one was in another lane and a value behind: `lib/ask/handlers.ts`
+ * carried its own copy, so adding `equipmentMarkupPercent` made Ask compute a
+ * bid WITHOUT the equipment markup — $1,732.50 short on a $20k job, with its
+ * own tests green, because a list that is merely incomplete looks exactly like
+ * a list that is finished.
+ *
+ * Derived from a total `Record`, so it cannot be incomplete: add a rate to
+ * `RecapRates` and this stops compiling until it is named here, and every
+ * consumer picks it up without being edited. Key order is insertion order for
+ * non-numeric string keys.
+ */
+export const RECAP_RATE_FIELDS: Record<keyof RecapRates, { label: string; hint?: string }> = {
+  materialMarkupPercent: { label: "Material markup" },
+  laborMarkupPercent: { label: "Labor markup" },
+  subcontractorMarkupPercent: { label: "Subcontractor markup" },
+  equipmentMarkupPercent: {
+    label: "Equipment markup",
+    hint: `Lifts, scaffold, rentals. Its own category since ${EQUIPMENT_SPLIT_ON}.`,
+  },
+  otherMarkupPercent: { label: "Other markup", hint: "Permits, testing, anything uncategorised elsewhere." },
+  escalationPercent: { label: "Escalation", hint: "For work built later than it is priced." },
+  materialTaxPercent: { label: "Sales tax on material", hint: "Charged on material only, at what it sells for." },
+  overheadPercent: { label: "Overhead" },
+  profitPercent: { label: "Profit", hint: "Taken on the total including overhead." },
+  bondPercent: { label: "Bond premium" },
+  contingencyPercent: { label: "Contingency" },
+};
+
+export const RECAP_RATE_KEYS = Object.keys(RECAP_RATE_FIELDS) as (keyof RecapRates)[];
 
 export type DirectCost = {
   byCategory: Record<CostCategoryValue, number>;

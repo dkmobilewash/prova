@@ -93,7 +93,18 @@ import { openingsFromJson, scheduleLines, type WallComponentBasis, type WallType
 import { levelBid, outstandingNote, requestState } from "@/lib/bid-levelling";
 import { bidResponsiveness, responsivenessSentence } from "@/lib/bid-responsiveness";
 import { alternateDirection, bidTotals, type BidLineInput, type BidLineKind } from "@/lib/bid-lines";
-import { bidRecap as calculateBidRecap, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
+// RECAP_RATE_KEYS is IMPORTED, not declared here. It used to be a local
+// hand-written copy saying "the recap's ten rates", and when the recap grew an
+// eleventh (equipment) this file kept computing a bid without it — a bid total
+// $1,732.50 short of the Estimate screen's on a $20k job, with these tests green
+// throughout. The shared list is exhaustive over `RecapRates` by construction,
+// so the next rate arrives here with no edit at all.
+import {
+  bidRecap as calculateBidRecap,
+  RECAP_RATE_KEYS,
+  type CostCategoryValue,
+  type RecapRates,
+} from "@/lib/bid-recap";
 import { loadConceptualBenchmark, countFinishedJobsWithoutArea } from "@/lib/conceptual-estimate-query";
 import { conceptualRange, conceptualSentence, MINIMUM_SAMPLE } from "@/lib/conceptual-estimate";
 import { money } from "@/lib/money";
@@ -5202,20 +5213,6 @@ async function bidAlternates(companyId: string, input: Input): Promise<ToolResul
   };
 }
 
-/** The recap's ten rates, in the order `lib/bid-recap.ts` applies them. */
-const RECAP_RATE_KEYS = [
-  "materialMarkupPercent",
-  "laborMarkupPercent",
-  "subcontractorMarkupPercent",
-  "otherMarkupPercent",
-  "escalationPercent",
-  "materialTaxPercent",
-  "overheadPercent",
-  "profitPercent",
-  "bondPercent",
-  "contingencyPercent",
-] as const;
-
 /**
  * "What are we bidding Riverside at?"
  *
@@ -5298,7 +5295,12 @@ async function bidRecapTool(companyId: string, input: Input): Promise<ToolResult
           material: recap.direct.byCategory.MATERIAL,
           labor: recap.direct.byCategory.LABOR,
           subcontractor: recap.direct.byCategory.SUBCONTRACTOR,
-          otherOrEquipment: recap.direct.byCategory.OTHER,
+          // Two fields since 2026-09-26. `otherOrEquipment` reported OTHER
+          // alone under a name promising both, so equipment read as $0 here
+          // while the Estimate tab showed it — the field name outlived the
+          // world it described by one migration.
+          equipment: recap.direct.byCategory.EQUIPMENT,
+          other: recap.direct.byCategory.OTHER,
           // Marked up at nothing. Said out loud rather than folded in.
           notCostCoded: recap.direct.uncategorised,
           notCostCodedLineCount: recap.direct.uncategorisedLineCount,

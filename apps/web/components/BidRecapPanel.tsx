@@ -3,13 +3,15 @@
 import { useMemo, useState, useTransition, type FormEvent } from "react";
 import { applyBidRecap, saveBidRecap, setLineBudgetedCost, setLineCostCategory } from "@/lib/actions";
 import { money } from "@/lib/money";
-import { EQUIPMENT_SPLIT_NOTE, EQUIPMENT_SPLIT_ON } from "@/lib/cost-category";
+import { EQUIPMENT_SPLIT_NOTE } from "@/lib/cost-category";
 import {
   bidRecap,
   COST_CATEGORY_LABELS,
   COST_CATEGORY_VALUES,
   spreadToLines,
   spreadTotal,
+  RECAP_RATE_FIELDS,
+  RECAP_RATE_KEYS,
   type CostCategoryValue,
   type RecapLine,
   type RecapRates,
@@ -39,30 +41,7 @@ import {
  * Declaration order is the order they render, which matches the order they
  * apply in `bidRecap`.
  */
-const RATE_FIELD_SPECS: Record<keyof RecapRates, { label: string; hint?: string }> = {
-  materialMarkupPercent: { label: "Material markup" },
-  laborMarkupPercent: { label: "Labor markup" },
-  subcontractorMarkupPercent: { label: "Subcontractor markup" },
-  // This field used to be the OTHER markup wearing the label "Other /
-  // equipment markup" — one rate doing two jobs, which is what having no
-  // equipment category costs you at the point of pricing. Two fields now.
-  equipmentMarkupPercent: {
-    label: "Equipment markup",
-    hint: `Lifts, scaffold, rentals. Its own category since ${EQUIPMENT_SPLIT_ON}.`,
-  },
-  otherMarkupPercent: { label: "Other markup", hint: "Permits, testing, anything uncategorised elsewhere." },
-  escalationPercent: { label: "Escalation", hint: "For work built later than it is priced." },
-  materialTaxPercent: { label: "Sales tax on material", hint: "Charged on material only, at what it sells for." },
-  overheadPercent: { label: "Overhead" },
-  profitPercent: { label: "Profit", hint: "Taken on the total including overhead." },
-  bondPercent: { label: "Bond premium" },
-  contingencyPercent: { label: "Contingency" },
-};
-
-const RATE_FIELDS = (Object.keys(RATE_FIELD_SPECS) as (keyof RecapRates)[]).map((key) => ({
-  key,
-  ...RATE_FIELD_SPECS[key],
-}));
+const RATE_FIELDS = RECAP_RATE_KEYS.map((key) => ({ key, ...RECAP_RATE_FIELDS[key] }));
 
 export type RecapLineView = RecapLine & { description: string };
 

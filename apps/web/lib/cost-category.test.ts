@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -12,8 +13,10 @@ import {
   COST_CATEGORY_VALUES as RECAP_VALUES,
   bidRecap,
   directCostByCategory,
+  RECAP_RATE_KEYS,
   type CostCategoryValue,
   type RecapLine,
+  type RecapRates,
 } from "./bid-recap";
 import { COST_CATEGORY_ORDER } from "@/components/costCategoryLabels";
 
@@ -243,5 +246,123 @@ describe("the history split is stated, not implied", () => {
     // nothing about which way to distrust the number.
     expect(EQUIPMENT_SPLIT_NOTE).toMatch(/understated/);
     expect(EQUIPMENT_SPLIT_NOTE).toMatch(/not reclassified/);
+  });
+});
+
+describe("a consumer that ITERATES the rate keys gets the same bid as one that does not", () => {
+  /**
+   * The Ask divergence, pinned.
+   *
+   * `lib/ask/handlers.ts` does not receive a `RecapRates`; it builds one by
+   * mapping a list of key names over a database row. That is a second way to
+   * be wrong that no amount of care inside `bidRecap` can catch — the math is
+   * handed a rates object that is simply missing a rate, which is
+   * indistinguishable from a rate nobody set.
+   *
+   * Measured before the fix, on exactly this fixture: the screen said
+   * $25,987.50 and Ask said $24,255.00, understating by $1,732.50, with Ask's
+   * own ten tests green. The list said "the recap's ten rates" and the recap
+   * had eleven.
+   *
+   * So this asserts the two roads meet. `RECAP_RATE_KEYS` is exhaustive over
+   * `RecapRates` by construction, and this is the behavioural half: drop a key
+   * and the totals diverge here rather than on a GC's desk.
+   */
+  const lines: RecapLine[] = [
+    { id: "labor", quantity: 1, unitCost: 10000, unitPrice: 10000, costCategory: "LABOR" },
+    { id: "lifts", quantity: 1, unitCost: 10000, unitPrice: 10000, costCategory: "EQUIPMENT" },
+  ];
+
+  const stored: Record<string, number> = {
+    laborMarkupPercent: 10,
+    equipmentMarkupPercent: 15,
+    overheadPercent: 10,
+    profitPercent: 5,
+  };
+
+  it("REGRESSION: the bid is the same built either way", () => {
+    // Built the way Ask builds it — key list over a row.
+    const viaKeys = Object.fromEntries(
+      RECAP_RATE_KEYS.map((key) => [key, stored[key] ?? null]),
+    ) as RecapRates;
+
+    const direct = bidRecap(lines, stored as RecapRates);
+    const iterated = bidRecap(lines, viaKeys);
+
+    expect(iterated.bidTotal, "a rate is missing from RECAP_RATE_KEYS").toBe(direct.bidTotal);
+    // The measured figure, so a drift shows as a number somebody can recognise
+    // rather than as two equal wrong answers.
+    expect(direct.bidTotal).toBe(25987.5);
+    expect(iterated.bidTotal).not.toBe(24255);
+  });
+
+  it("carries the equipment markup specifically, which is the one that was lost", () => {
+    const viaKeys = Object.fromEntries(
+      RECAP_RATE_KEYS.map((key) => [key, stored[key] ?? null]),
+    ) as RecapRates;
+    expect(bidRecap(lines, viaKeys).steps.map((step) => step.key)).toContain("markup:EQUIPMENT");
+  });
+});
+
+describe("nobody hand-writes the rate list a second time", () => {
+  /**
+   * THE HALF THE REGRESSION ABOVE CANNOT SEE, and it was found by mutation
+   * rather than by thinking.
+   *
+   * Restoring a local ten-name rate array in `lib/ask/handlers.ts` — the exact
+   * code that shipped the $1,732.50 divergence — left every test in this repo
+   * GREEN, including the regression directly above. That test proves the
+   * SHARED list is complete; it cannot notice a consumer that has stopped
+   * reading it. `nothing is ever missing from a directory you do not walk`,
+   * arriving as: nothing is ever missing from a list nobody imports.
+   *
+   * So this census asks the other question — not "is the list complete" but
+   * "is there a second one". A rate key written as a STRING LITERAL is the
+   * signature of a hand-rolled list: the real consumers either import
+   * `RECAP_RATE_KEYS` or use the names as object KEYS (`RATE_LABELS`,
+   * `RATE_FIELD_SPECS`), which are identifiers and do not match.
+   */
+  const WEB = fileURLToPath(new URL("..", import.meta.url));
+  const CANONICAL = join(WEB, "lib/bid-recap.ts");
+  const NEEDLE = '"materialMarkupPercent"';
+
+  function sources(dir: string): string[] {
+    const out: string[] = [];
+    for (const entry of readdirSync(dir)) {
+      if (entry === "node_modules" || entry === ".next" || entry.startsWith(".")) continue;
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) out.push(...sources(full));
+      else if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) out.push(full);
+    }
+    return out;
+  }
+
+  const scanned = ["app", "components", "lib"].flatMap((d) => sources(join(WEB, d)));
+
+  it("walks a real set of files", () => {
+    // Anti-vacuity on SCOPE: an empty walk would make the census below pass
+    // while looking everywhere and seeing nothing.
+    expect(scanned.length).toBeGreaterThan(300);
+    expect(scanned).toContain(CANONICAL);
+  });
+
+  it("finds the canonical list, so the needle still matches something", () => {
+    // Anti-vacuity on the PATTERN: if the rate names are ever renamed, this
+    // fails here rather than silently approving every file in the app.
+    expect(readFileSync(CANONICAL, "utf8")).toContain(NEEDLE);
+  });
+
+  it("finds it NOWHERE else", () => {
+    const offenders = scanned
+      .filter((file) => file !== CANONICAL)
+      .filter((file) => readFileSync(file, "utf8").includes(NEEDLE))
+      .map((file) => file.slice(WEB.length));
+    expect(
+      offenders,
+      `these files hand-write the recap's rate names instead of importing RECAP_RATE_KEYS. ` +
+        `A list written out by hand is one rate behind the day a rate is added, and the bid it ` +
+        `computes is short by that rate with every test green — that is exactly how Ask reported ` +
+        `a bid $1,732.50 under the Estimate screen's.`,
+    ).toEqual([]);
   });
 });
