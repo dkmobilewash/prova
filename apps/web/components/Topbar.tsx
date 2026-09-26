@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { UserButton } from "@clerk/nextjs";
+import { UserMenu } from "@/components/UserMenu";
 import { MobileNav } from "@/components/MobileNav";
 import { SearchLauncher } from "@/components/SearchLauncher";
 import { AskLauncher } from "@/components/AskLauncher";
@@ -84,7 +84,7 @@ export function Topbar({
             </span>
           )}
         </Link>
-        <UserButton />
+        <UserMenu />
       </div>
     </div>
   );
