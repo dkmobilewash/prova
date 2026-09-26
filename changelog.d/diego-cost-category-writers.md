@@ -85,11 +85,36 @@ unrecognised cost type rather than nulling it. That is #525's defect —
 success — not reintroduced in two new places on the day it was fixed in the third.
 An empty string is each form's own "no cost type" and still clears.
 
+### Rebased onto #526, which landed first and changed the enum underneath this
+
+#526 merged while this was open: it added **EQUIPMENT** to `CostCategory` and ended
+what it called the enum's "eight hand-written copies" — a ninth is what produced a
+NaN bid total — by making `lib/cost-category.ts` the one list and `asCostCategory`
+the one validator.
+
+Two consequences, both good:
+
+- **EQUIPMENT appears in both new selects for free.** They render
+  `COST_CATEGORY_ORDER`, which is now `COST_CATEGORY_VALUES`, so the new cost-type
+  fields on `/catalog` and `/wall-types` offer it without an edit.
+- **This PR was about to add copies nine and ten.** It hand-rolled the membership
+  check in `createLineItemCatalogEntry` and `saveWallTypeComponent` — on the same
+  afternoon #526 removed eight of them. Both now call `asCostCategory`. The one
+  thing that helper cannot do is tell a CLEARED field from a bad one (both are
+  "not a category" and they need different answers), so the empty-string check
+  stays and the refusal stays.
+
+One conflict, in `FEATURE-AUDIT.md`: both PRs rewrote the cost-categorisation row.
+Resolved by keeping #526's row — including its **Built** status, since EQUIPMENT
+closed the gap that made it Partial, and reverting that would also desync the
+sheet header #526 already corrected — and appending this PR's sentence to the same
+cell.
+
 ### Checks
 
 | | |
 | --- | --- |
-| suite | **7,990 pass** (493 files) |
+| suite | **8,058 pass** (495 files) |
 | new tests | 8 |
 | mutations | 3 run, **3 caught** |
 | typecheck / lint | 0 errors |

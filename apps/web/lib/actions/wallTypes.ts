@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { COST_CATEGORY_VALUES, type CostCategoryValue } from "@/lib/bid-recap";
+import { asCostCategory, type CostCategory } from "@/lib/cost-category";
 import { syncWallScheduleLines, type WallSyncSummary } from "@/lib/estimating/wall-schedule";
 import { NOT_ESTIMATE_STAGE } from "@/lib/estimating/draft-lines";
 import { openingsFromJson, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
@@ -170,14 +170,21 @@ async function componentFields(formData: FormData, companyId: string) {
   };
 }
 
-/** The component's cost type, or null, refusing anything unrecognised. */
-function costCategoryFromForm(formData: FormData): CostCategoryValue | null {
+/**
+ * The component's cost type, or null, refusing anything unrecognised.
+ *
+ * Membership from `asCostCategory` (lib/cost-category.ts), not a local
+ * `includes`: #526 landed the same day to end eight hand-written copies of this
+ * enum — a ninth is what produced a NaN bid total — so this is not the place to
+ * start a tenth. What that helper cannot do is tell a CLEARED field from a bad
+ * one, since both are "not a category", and those two need different answers.
+ */
+function costCategoryFromForm(formData: FormData): CostCategory | null {
   const raw = String(formData.get("costCategory") ?? "").trim();
   if (raw === "") return null;
-  if (!COST_CATEGORY_VALUES.includes(raw as CostCategoryValue)) {
-    throw new InputError(`"${raw}" is not a cost type.`);
-  }
-  return raw as CostCategoryValue;
+  const parsed = asCostCategory(raw);
+  if (parsed === null) throw new InputError(`"${raw}" is not a cost type.`);
+  return parsed;
 }
 
 async function ownedWallType(wallTypeId: string, companyId: string) {
