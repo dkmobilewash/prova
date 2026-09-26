@@ -131,6 +131,14 @@ export async function createLineItemCatalogEntry(formData: FormData): Promise<Ac
     const defaultUnitPrice = nullableDecimalFromForm(formData, "defaultUnitPrice");
     const defaultBudgetedUnitCost = nullableDecimalFromForm(formData, "defaultBudgetedUnitCost");
     const defaultLaborHours = nullableDecimalFromForm(formData, "defaultLaborHours");
+    // The same bounds `saveWallTypeComponent` puts on the same quantity, and
+    // for the same reason: a rate of 0 divides into infinite hours, and a
+    // six-figure units-per-hour is a decimal slip rather than a fast crew.
+    const productionRate = nullableDecimalFromForm(formData, "productionRate", {
+      label: "Production rate",
+      min: 0.0001,
+      max: 100000,
+    });
     const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
 
     // InputError, not Error: both of these are things a person can fix, and
@@ -155,6 +163,7 @@ export async function createLineItemCatalogEntry(formData: FormData): Promise<Ac
         defaultUnitPrice,
         defaultBudgetedUnitCost,
         defaultLaborHours,
+        productionRate,
         craftClassificationId,
       },
     });
@@ -231,6 +240,12 @@ export async function saveLineItemAsCatalogEntry(lineItemId: string) {
       defaultUnitPrice: lineItem.unitPrice,
       defaultBudgetedUnitCost: lineItem.budgetedUnitCost,
       defaultLaborHours: lineItem.laborHours,
+      // #514, and the direction that makes the catalog learn: a line estimated
+      // at a rate promotes that rate, so the next bid inherits it. Copied as
+      // it stands, including when the line also carries flat hours — the pair
+      // keeps `estimatedHours()`'s precedence on the entry exactly as it had
+      // it on the line, rather than this writer picking one.
+      productionRate: lineItem.productionRate,
       craftClassificationId: lineItem.craftClassificationId,
     },
   });

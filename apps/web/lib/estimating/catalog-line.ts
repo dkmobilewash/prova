@@ -84,6 +84,7 @@ export function catalogLineFields(entry: {
   defaultUnitPrice: Prisma.Decimal | null;
   defaultBudgetedUnitCost: Prisma.Decimal | null;
   defaultLaborHours: Prisma.Decimal | null;
+  productionRate: Prisma.Decimal | null;
   tradeScope: TradeScope | null;
   craftClassificationId: string | null;
 }) {
@@ -111,6 +112,19 @@ export function catalogLineFields(entry: {
       // anyway — 0.012 stores as 0.01. So the behaviour stays put, the labels
       // now say what it is, and the decision is written up for a person.
       laborHours: entry.defaultLaborHours,
+      // PER UNIT, and the opposite direction from the flat hours above: units
+      // per hour, so hours are `quantity / productionRate`. Added #514, because
+      // the catalog is the one artefact that ACCUMULATES a company's
+      // productivity knowledge and it was the only place carrying labor that
+      // could not hold a rate — so a line priced from the price book had
+      // nothing for the back-check to compare against.
+      //
+      // BOTH FIELDS PASS THROUGH, and when both are set the flat hours win.
+      // That precedence is `estimatedHours()`'s, not a new one invented here:
+      // this mapping copies the pair onto the line and the line decides, so
+      // the catalog cannot come to mean something different from the line it
+      // creates. `catalog-line.test.ts` pins that it is a straight copy.
+      productionRate: entry.productionRate,
       craftClassificationId: entry.craftClassificationId,
       // Records which template this came from, so /catalog can later report
       // how work priced from it actually costed. A reference, not a live

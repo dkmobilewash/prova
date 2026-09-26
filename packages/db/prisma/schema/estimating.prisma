@@ -198,7 +198,54 @@ model LineItemCatalogEntry {
 
   defaultUnitPrice        Decimal?             @db.Decimal(12, 2)
   defaultBudgetedUnitCost Decimal?             @db.Decimal(12, 2)
+
+  /// FLAT hours for one line, copied onto an estimate line unchanged at every
+  /// quantity. NOT a per-unit figure — `catalog-line.test.ts` pins that at
+  /// quantity 1 AND quantity 100, because at quantity 1 the two readings are
+  /// indistinguishable and that is how the ambiguity survived.
+  ///
+  /// Kept exactly as it is. `Decimal(8, 2)` cannot hold a per-unit rate
+  /// anyway — 0.012 stores as 0.01 — so reinterpreting this column would be
+  /// both a silent change of meaning and lossy in the direction nobody checks.
   defaultLaborHours       Decimal?             @db.Decimal(8, 2)
+
+  /// UNITS PER HOUR — the same thing, the same name and the same direction as
+  /// `JobLineItem.productionRate` and `WallTypeComponent.productionRate`.
+  /// "This crew hangs 62.5 SF/hr". Hours are `quantity / productionRate`
+  /// (`lib/labor-productivity.ts`), so a LARGER number is FASTER work.
+  ///
+  /// WHY THIS IS A SECOND COLUMN RATHER THAN A REINTERPRETATION of
+  /// `defaultLaborHours` above: a flat figure somebody entered on purpose must
+  /// not silently become a rate. The two are not convertible without knowing
+  /// which was meant, and nothing recorded that.
+  ///
+  /// #435 put this column on `JobLineItem` and `WallTypeComponent` and not
+  /// here, which left the one artefact that ACCUMULATES this company's
+  /// productivity knowledge unable to hold it — and `jobs.prisma`'s own
+  /// comment on that column points straight at this gap. An estimate line
+  /// created from a catalog entry now inherits the rate, so the
+  /// actual-productivity back-check has something to compare against on work
+  /// priced from the price book.
+  ///
+  /// BOTH COLUMNS MAY BE SET, and the flat hours WIN. That is not a rule
+  /// invented here: `estimatedHours()` (lib/labor-productivity.ts) takes
+  /// `laborHours` as the override and derives from the rate only when it is
+  /// absent, so an entry carrying both produces a line whose rate is inert.
+  /// The catalog deliberately mirrors `JobLineItem`'s precedence rather than
+  /// growing a second one — a pair of columns that means one thing on the
+  /// line and another on the template is worse than either reading. Every
+  /// screen showing the pair says which wins.
+  ///
+  /// ⚠️ A PRICE LIST'S "HOURS" COLUMN IS NOT THIS NUMBER. Those carry HOURS
+  /// PER UNIT (0.012 hr/SF); this is UNITS PER HOUR (83.33 SF/hr). They are
+  /// reciprocals, so writing one into the other overstates labor by 1/x² —
+  /// 600 SF at 0.012 read as a rate is 50,000 hours instead of 7.2.
+  /// `importCatalogEntries` writes `defaultLaborHours`, not this column:
+  /// converting a file's hours column into a rate is a unit flip on a labor
+  /// figure, and which convention a given price list uses is a fact about
+  /// the file that only a person can confirm. Issue #514.
+  productionRate          Decimal?             @db.Decimal(10, 4)
+
   craftClassificationId   String?
   craftClassification     CraftClassification? @relation(fields: [craftClassificationId], references: [id])
 

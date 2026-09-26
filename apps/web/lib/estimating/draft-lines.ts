@@ -132,6 +132,11 @@ export async function draftLinesFromScope(
         budgetedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
         currentEstimatedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
         laborHours: entry?.defaultLaborHours ?? null,
+        // #514. No fallback to anything the model supplied, unlike the price
+        // and trade above: a production rate is not a figure an assistant
+        // should originate, and there is no field on a drafted line for one.
+        // It arrives only from a matched catalog entry or not at all.
+        productionRate: entry?.productionRate ?? null,
         craftClassificationId: entry?.craftClassificationId ?? null,
         tradeScope: entry?.tradeScope ?? item.tradeScope,
         sourceCatalogEntryId: entry?.id ?? null,

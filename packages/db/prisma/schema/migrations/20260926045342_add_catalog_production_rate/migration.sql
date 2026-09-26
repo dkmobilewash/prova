@@ -1,0 +1,22 @@
+-- The price book learns how fast the crew works.
+--
+-- ADDITIVE AND NULLABLE, WITH NO BACKFILL, AND THE ABSENCE OF A BACKFILL IS
+-- THE DECISION HERE. `LineItemCatalogEntry.defaultLaborHours` already holds a
+-- labor figure, and the obvious-looking migration — derive a rate from it —
+-- is unsound in both directions:
+--
+--   * those hours are FLAT (copied onto a line unchanged at any quantity), so
+--     there is no quantity to divide by, and
+--   * a rate and flat hours are not the same kind of number. Converting one
+--     into the other needs the quantity the hours were measured over, and
+--     nothing recorded it.
+--
+-- So every existing row gets NULL, which reads on screen as "no rate on this
+-- entry" — true — rather than as a productivity assumption nobody made. An
+-- estimator fills it in, or promotes a line that already carries one.
+--
+-- Nothing is dropped and nothing is rewritten, so the deploy window this
+-- repo's expand/contract rule exists for does not arise: the running build
+-- simply does not select this column.
+-- AlterTable
+ALTER TABLE "LineItemCatalogEntry" ADD COLUMN     "productionRate" DECIMAL(10,4);

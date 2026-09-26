@@ -1,7 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// The REAL precedence function, not a restatement of it. The last block in
+// this file composes it with this module's output, so a flip in
+// labor-productivity.ts turns a catalog test red rather than only a line one.
+// Safe to import statically despite the `@prova/db` mock below: it is pure
+// arithmetic and imports nothing.
+import { estimatedHours } from "@/lib/labor-productivity";
+
 /**
- * What a catalog entry's `defaultLaborHours` MEANS, pinned at two quantities.
+ * What a catalog entry's TWO labor figures MEAN, pinned at two quantities.
+ *
+ * Since #514 there are two, and they point in opposite directions:
+ * `defaultLaborHours` is flat for the whole line, `productionRate` is units
+ * per hour. Both are copied onto the line unchanged by this function — the
+ * arithmetic that makes them differ happens later, when the line is read.
+ * The last block in this file pins what happens when an entry carries both.
  *
  * `addCatalogLine` copies the entry's hours onto the new line flat while
  * `unitPrice` and `budgetedUnitCost` are per-unit figures the job page
@@ -50,6 +63,11 @@ const entry = {
   defaultUnitPrice: 2.85,
   defaultBudgetedUnitCost: 1.9,
   defaultLaborHours: 8,
+  // #514's column. Deliberately set ALONGSIDE the flat hours in the shared
+  // fixture, because that is the combination with a hazard in it — see the
+  // precedence block at the bottom of this file. Tests that want one or the
+  // other override it.
+  productionRate: 62.5,
   craftClassificationId: "craft-1",
   tradeScope: "METAL_FRAMING_DRYWALL",
 };
@@ -171,5 +189,101 @@ describe("addCatalogLine — the quantity box takes what a contractor types", ()
 
   it("refuses a negative quantity, which the old check did not", async () => {
     expect((await refusalFor("-5")).ok).toBe(false);
+  });
+});
+
+/**
+ * THE PAIR, AND WHICH ONE WINS — #514.
+ *
+ * A catalog entry can now carry flat hours AND a production rate, and the two
+ * cannot both decide a line's labor. The rule is NOT invented in
+ * `catalogLineFields`: it copies both onto the line, and `estimatedHours()`
+ * (lib/labor-productivity.ts) takes the flat hours as the override. So the
+ * catalog inherits `JobLineItem`'s precedence rather than growing a second one.
+ *
+ * WHY THIS IS WORTH A TEST RATHER THAN A COMMENT. A rate that loses to flat
+ * hours is inert — it divides nothing, changes no figure, and yet reads on a
+ * screen exactly like the productivity assumption a bid was built on. That is
+ * the "figure that looks measured but isn't" shape this repo refuses
+ * everywhere, and the only thing standing between it and an estimator is one
+ * `if` in another module. This composes the real `estimatedHours` with this
+ * function's real output, so if that precedence ever flips, a test that names
+ * the catalog goes red — not just one that names the line.
+ *
+ * It asserts what the code DOES. Whether an entry should be allowed to hold
+ * both is a product question, answered on purpose: it is allowed, and every
+ * screen showing the pair says which wins. Changing that is a decision, and
+ * this test is what it has to be made against.
+ */
+describe("addCatalogLine — flat hours and a production rate together", () => {
+  it("copies the rate through unchanged, at both quantities", async () => {
+    // Per-unit, and still NOT multiplied here — the division happens when the
+    // line is read. Same shape as unitPrice: the copy is flat, the meaning is
+    // not. A rate scaled at write time would be wrong by the quantity twice.
+    expect((await createdLineFor("1")).productionRate).toBe(62.5);
+    expect((await createdLineFor("600")).productionRate).toBe(62.5);
+  });
+
+  it("puts BOTH figures on the line, leaving the choice to the reader", async () => {
+    const data = await createdLineFor("600");
+    expect(data.laborHours).toBe(8);
+    expect(data.productionRate).toBe(62.5);
+  });
+
+  it("means the flat hours win: 8, not the 9.6 the rate would give", async () => {
+    const data = await createdLineFor("600");
+    // Asserted here as well as in the test above, so this one cannot pass
+    // vacuously: with no rate on the line, `estimatedHours` returns 8 for the
+    // trivial reason rather than because the flat hours BEAT something. Found
+    // by mutation — dropping the copy left this test green while four others
+    // went red.
+    expect(data.productionRate).toBe(62.5);
+    const hours = estimatedHours({
+      quantity: 600,
+      laborHours: data.laborHours as number,
+      productionRate: data.productionRate as number,
+    });
+    expect(hours).toBe(8);
+    // 600 / 62.5 = 9.6. Asserted by value so the losing branch is visible
+    // here: a reader can see exactly which number the entry did not produce.
+    expect(hours).not.toBe(9.6);
+  });
+
+  it("uses the rate when the entry carries no flat hours", async () => {
+    fake.prisma.job.findFirst.mockResolvedValue({ id: "job-1", status: "ESTIMATE" });
+    fake.prisma.lineItemCatalogEntry.findFirst.mockResolvedValue({
+      ...entry,
+      defaultLaborHours: null,
+    });
+    fake.prisma.jobLineItem.create.mockResolvedValue({ id: "li-1" });
+
+    await addCatalogLine("co-1", { jobId: "job-1", catalogEntryId: "cat-1", quantity: "600" });
+    const call = fake.prisma.jobLineItem.create.mock.calls.at(-1) as [
+      { data: Record<string, unknown> },
+    ];
+    expect(call[0].data.laborHours).toBeNull();
+    expect(call[0].data.productionRate).toBe(62.5);
+    expect(
+      estimatedHours({ quantity: 600, laborHours: null, productionRate: 62.5 }),
+    ).toBe(9.6);
+  });
+
+  it("leaves the rate null when the entry has none, rather than inventing a zero", async () => {
+    fake.prisma.job.findFirst.mockResolvedValue({ id: "job-1", status: "ESTIMATE" });
+    fake.prisma.lineItemCatalogEntry.findFirst.mockResolvedValue({
+      ...entry,
+      productionRate: null,
+    });
+    fake.prisma.jobLineItem.create.mockResolvedValue({ id: "li-1" });
+
+    await addCatalogLine("co-1", { jobId: "job-1", catalogEntryId: "cat-1", quantity: "600" });
+    const call = fake.prisma.jobLineItem.create.mock.calls.at(-1) as [
+      { data: Record<string, unknown> },
+    ];
+    expect(call[0].data.productionRate).toBeNull();
+    // A zero rate is worse than none: `hoursFromRate` guards `<= 0` and returns
+    // null, so a stored zero reads as "no rate" anyway while looking like one
+    // somebody entered.
+    expect(call[0].data.productionRate).not.toBe(0);
   });
 });

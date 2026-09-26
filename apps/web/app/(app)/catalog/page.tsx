@@ -431,6 +431,21 @@ export default async function CatalogPage() {
                     {entry.defaultLaborHours != null && (
                       <> · {entry.defaultLaborHours.toString()} hrs/line</>
                     )}
+                    {/* "/hr" against the "hrs/line" above, so the two are
+                        distinguishable at a glance — the whole point of the
+                        comment on that line. When BOTH are set the rate is
+                        inert (`estimatedHours()` takes the flat hours), and a
+                        number printed beside the one that beats it reads as
+                        being in use, so it says so rather than sitting there
+                        looking like an assumption the bid was built on. */}
+                    {entry.productionRate != null && (
+                      <>
+                        {" "}
+                        · {entry.productionRate.toString()}
+                        {entry.unit ? ` ${entry.unit}` : ""}/hr
+                        {entry.defaultLaborHours != null && " (unused — hrs/line wins)"}
+                      </>
+                    )}
                   </p>
                   <ActualsLine
                     entry={entry}
@@ -553,6 +568,31 @@ export default async function CatalogPage() {
             <span id="defaultLaborHours-help" className="max-w-[14rem] text-xs text-ink-body">
               Copied onto the line unchanged — a 6 SF line and a 600 SF line both
               get this many hours. Not a per-unit rate.
+            </span>
+          </label>
+          {/* The per-unit half of the pair, #514. Same label as the estimate
+              line's own field (`LaborHoursField`) on purpose: it is the same
+              number, and two names for it is how the flat-vs-per-unit confusion
+              this screen already carries a scar for started.
+
+              The help text states the PRECEDENCE, because that is the part a
+              filled-in rate can silently lose to. `estimatedHours()` takes the
+              flat hours as the override, so an entry carrying both produces a
+              line whose rate never divides anything — and nothing else on the
+              row would say so. */}
+          <label className="flex flex-col gap-1 text-sm text-ink-label">
+            Rate (units/hr)
+            <input
+              name="productionRate"
+              type="text"
+              inputMode="decimal"
+              placeholder="62.5"
+              aria-describedby="productionRate-help"
+              className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+            />
+            <span id="productionRate-help" className="max-w-[14rem] text-xs text-ink-body">
+              How fast the crew works — hours become quantity ÷ rate, so this one
+              does scale. If you fill in both, the whole-line hours above win.
             </span>
           </label>
           <label className="flex flex-col gap-1 text-sm text-ink-label">
