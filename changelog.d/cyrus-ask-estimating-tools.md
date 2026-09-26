@@ -99,19 +99,43 @@ That is the `/wall-types` starter-types button's own success sentence not
 arriving within ten seconds of the click. It cascaded `8 did not run`
 (`mode: "serial"`, `retries: 0`), so one write timing out cost nine verdicts.
 
-**Why it is not this branch's, said as reasoning rather than as proof.** The
-diff is `lib/ask/**`, three existing test files and one changelog file.
-`/wall-types/page.tsx`, `components/WallTypes.tsx` and
-`lib/actions/wallTypes.ts` are untouched and import nothing from `lib/ask`;
-the only `lib/ask` module any other page pulls in is `toolLabels.ts`, whose
-sole `tools.ts` import is `import type`, erased at build. There is no path by
-which seven read tools change whether a wall-type Server Action answers in
-ten seconds.
+**Why it is not this branch's — and the first version of this paragraph
+claimed more than it had checked, which is this file's own worst habit, so
+here is the traced version.** The diff is `lib/ask/**`, three existing test
+files and one changelog file. `/wall-types/page.tsx`,
+`components/WallTypes.tsx` and `lib/actions/wallTypes.ts` are untouched, and
+the first draft stopped there and said they "import nothing from `lib/ask`".
+That is true of those three files and MISLEADING, because `WallTypes.tsx`
+imports `addStarterWallTypes` from the actions BARREL, and the barrel
+`export *`s `./search` (`lib/actions/index.ts:77`) →
+`lib/actions/search.ts:5` → `lib/search/query.ts:1`, which imports `TOOLS`.
+So one of the two files I changed with runtime code IS in that Server
+Action's bundle graph.
 
-**What that leaves, honestly: one sample.** `retries: 0` and two workers
-against one Postgres mean a slow write is a hard failure, and a ten-second
-ceiling on a Server Action is thin — this repo has measured post-action
-server render at 3.7-4.4s on a warm build (the #61 entry). The likeliest
-reading is a timing flake in a spec that is a day old, and the honest state
-of it is that nobody has a second sample yet. Whoever sees this test red
-again should suspect the ceiling before the page.
+What that reaches, exactly. `handlers.ts` — all 859 new lines and nine new
+library imports — is imported by NOTHING but `lib/ask/answer.ts`, so it
+lives only in `/api/ask`'s bundle; every other mention of it in the repo is
+a comment. `tools.ts` is reachable, and the change to it is 128 lines of
+string literals and seven entries appended to a const array: no new imports,
+no new code path, and `providerCapability` finds a tool BY NAME, so no
+existing search provider's answer moves. The residual mechanism is therefore
+a few kilobytes of extra string data in a shared server bundle, which cannot
+change what that action returns and could at most touch a cold start.
+
+**A SECOND SAMPLE WAS TAKEN, AND IT DID NOT REPRODUCE.** Run `36216211306`
+on `3fabfe65`, the same branch one changelog commit later: `ci`, `dbtest`
+and `e2e-public` green, `e2e` red on `journey.spec.ts` step 11 **alone** —
+`main`'s baseline exactly. Two independent signals say so rather than one:
+the verdicts block ends at step 11 with none of the eight `SKIPPED` lines
+that trailed the wall-types failure in run one, and the Playwright artifact
+carried **26 files against run one's 32**, which is the count `main`'s own
+baseline run produced. A failed test writes its own screenshot, trace and
+error-context, so that file count is a number nobody typed.
+
+So the wall-types timeout was one bad sample, not a defect this branch
+introduced — which is what two runs can support and is as far as it goes.
+`retries: 0` with two workers against one Postgres makes a slow write a hard
+failure, and a ten-second ceiling on a Server Action is thin: this repo has
+measured post-action server render at 3.7-4.4s on a warm build (the #61
+entry). **Whoever sees that test red again should suspect the ceiling before
+the page**, and the cheap first read is the artifact's file count against 26.
