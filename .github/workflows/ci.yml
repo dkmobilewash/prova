@@ -473,3 +473,5 @@ jobs:
             apps/web/test-results
           retention-days: 14
           if-no-files-found: warn
+
+# push-scope probe, reverted immediately
