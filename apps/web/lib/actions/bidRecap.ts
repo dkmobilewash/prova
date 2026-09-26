@@ -8,6 +8,8 @@ import {
   bidRecap,
   spreadToLines,
   spreadTotal,
+  RECAP_RATE_FIELDS,
+  RECAP_RATE_KEYS,
   type CostCategoryValue,
   type RecapLine,
   type RecapRates,
@@ -59,28 +61,12 @@ const NO_JOB = "That job isn't on your account any more.";
  * complete with respect to the keys and the keys complete with respect to
  * nothing. `RATE_KEYS` is derived from it below rather than written again.
  */
-const RATE_LABELS: Record<keyof RecapRates, string> = {
-  materialMarkupPercent: "Material markup",
-  laborMarkupPercent: "Labor markup",
-  subcontractorMarkupPercent: "Subcontractor markup",
-  equipmentMarkupPercent: "Equipment markup",
-  otherMarkupPercent: "Other markup",
-  escalationPercent: "Escalation",
-  materialTaxPercent: "Sales tax on material",
-  overheadPercent: "Overhead",
-  profitPercent: "Profit",
-  bondPercent: "Bond premium",
-  contingencyPercent: "Contingency",
-};
-
-/** Key order is insertion order for non-numeric string keys, so the order above
- * is the order rates are parsed and applied. */
-const RATE_KEYS = Object.keys(RATE_LABELS) as (keyof RecapRates)[];
+const RATE_KEYS = RECAP_RATE_KEYS;
 
 function ratesFromForm(formData: FormData): Record<string, string | null> {
   const rates: Record<string, string | null> = {};
   for (const key of RATE_KEYS) {
-    rates[key] = nullablePercentFromForm(formData, key, { label: RATE_LABELS[key] });
+    rates[key] = nullablePercentFromForm(formData, key, { label: RECAP_RATE_FIELDS[key].label });
   }
   return rates;
 }

@@ -36,6 +36,12 @@
 
 /** One exportable table: what it is called, what comes out, and how it is
  * narrowed to a single company. */
+// The recap's rate columns are SHARED, not listed here. Two export column
+// lists named all ten rates by hand, so a new rate silently dropped out of
+// the CSV — the one file in the app whose whole purpose is that nothing of
+// yours is held back.
+import { RECAP_RATE_KEYS } from "@/lib/bid-recap";
+
 export type ExportDataset = {
   /** URL-safe key. Also the CSV filename. */
   key: string;
@@ -358,9 +364,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Bid recap per job",
     note: "The markup, overhead, profit, tax, bond and contingency rates each bid was built with — and when they were applied to the line prices.",
     columns: [
-      "id", "jobId", "materialMarkupPercent", "laborMarkupPercent", "subcontractorMarkupPercent",
-      "otherMarkupPercent", "escalationPercent", "materialTaxPercent", "overheadPercent", "profitPercent",
-      "bondPercent", "contingencyPercent", "appliedAt", "appliedTotal", "createdAt", "updatedAt",
+      "id", "jobId", ...RECAP_RATE_KEYS, "appliedAt", "appliedTotal", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -370,9 +374,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Default markup rates",
     note: "Your standing markup, overhead and profit rates, which pre-fill a new job's recap.",
     columns: [
-      "id", "materialMarkupPercent", "laborMarkupPercent", "subcontractorMarkupPercent", "otherMarkupPercent",
-      "escalationPercent", "materialTaxPercent", "overheadPercent", "profitPercent", "bondPercent",
-      "contingencyPercent", "createdAt", "updatedAt",
+      "id", ...RECAP_RATE_KEYS, "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },

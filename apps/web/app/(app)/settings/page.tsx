@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
+import { RECAP_RATE_KEYS } from "@/lib/bid-recap";
 import { NoAccess } from "@/components/NoAccess";
 import {
   createBond,
@@ -206,18 +207,10 @@ export default async function SettingsPage({
   const bidDefaults = bidDefaultsRow
     ? Object.fromEntries(
         (
-          [
-            "materialMarkupPercent",
-            "laborMarkupPercent",
-            "subcontractorMarkupPercent",
-            "otherMarkupPercent",
-            "escalationPercent",
-            "materialTaxPercent",
-            "overheadPercent",
-            "profitPercent",
-            "bondPercent",
-            "contingencyPercent",
-          ] as const
+          // Shared, not listed again: a key missing here means a stored rate
+          // never reaches the form, which looks exactly like a rate that
+          // failed to save.
+          RECAP_RATE_KEYS
         ).map((key) => [key, bidDefaultsRow[key]?.toString() ?? null]),
       )
     : null;

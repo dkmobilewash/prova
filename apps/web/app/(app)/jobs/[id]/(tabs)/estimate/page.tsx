@@ -45,7 +45,7 @@ import { WallSchedule } from "@/components/WallSchedule";
 import { estimatedHours, productionBackCheck } from "@/lib/labor-productivity";
 import { openingsFromJson, scheduleLines, type WallComponentBasis, type WallTypeInput } from "@/lib/wall-assemblies";
 import { BidRecapPanel, type RecapLineView } from "@/components/BidRecapPanel";
-import type { CostCategoryValue, RecapRates } from "@/lib/bid-recap";
+import { RECAP_RATE_KEYS, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
 import {
   addLineItem,
   addLineItemFromCatalog,
@@ -243,18 +243,11 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
     wallTypeInputs,
   ).unpricedRuns.map((run) => run.label);
 
-  const RECAP_RATE_KEYS = [
-    "materialMarkupPercent",
-    "laborMarkupPercent",
-    "subcontractorMarkupPercent",
-    "otherMarkupPercent",
-    "escalationPercent",
-    "materialTaxPercent",
-    "overheadPercent",
-    "profitPercent",
-    "bondPercent",
-    "contingencyPercent",
-  ] as const;
+  // The rate list is SHARED (`RECAP_RATE_KEYS`), not declared here. It was a
+  // local ten-name array, so when the recap grew an equipment rate this page
+  // kept handing the panel ten of eleven — the rate saved, and then rendered
+  // back blank, which reads as a save that failed rather than a list that is
+  // short.
   const recapSource = bidRecapRow ?? bidDefaults;
   const bidRecapRates: RecapRates = Object.fromEntries(
     RECAP_RATE_KEYS.map((key) => [key, recapSource?.[key] != null ? Number(recapSource[key]) : null]),
