@@ -39,6 +39,22 @@ export function JobSummaryHeader({
       </div>
       <p className="mt-1 text-sm text-ink-body">{summary.contactName}</p>
 
+      {/* WHERE THE JOB ACTUALLY IS, shown only when it is not just the
+          status pill restated. `source === "status"` means lib/job-lifecycle.ts
+          found nothing the pill above does not already say, and a line
+          reading "In progress — the job's status is in progress" would
+          teach a reader that this line is filler.
+
+          The evidence is printed rather than hidden in a tooltip: the
+          stage is a READING of the data, and the sentence behind it is the
+          part somebody can check. */}
+      {summary.lifecycle.source !== "status" && (
+        <p className="mt-2 text-sm">
+          <span className="font-medium text-ink">{summary.lifecycle.label}</span>
+          <span className="text-ink-muted"> — {summary.lifecycle.because}</span>
+        </p>
+      )}
+
       <dl className={`mt-3 ${gridClass}`}>
         {showsJobMoney && (
           <div>

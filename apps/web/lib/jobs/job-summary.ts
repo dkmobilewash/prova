@@ -1,5 +1,7 @@
 import { prisma } from "@prova/db";
 import { calculateRetainageSummary } from "@/lib/retainage";
+import { jobLifecycle, type JobLifecycle } from "@/lib/job-lifecycle";
+import { viewerToday } from "@/lib/viewerToday";
 
 /**
  * The few figures and facts that drive a decision on this job — what the
@@ -29,6 +31,10 @@ export type JobSummary = {
   contractValue: number;
   billedToDate: number;
   retainageBalance: number;
+  /** Where the job actually is, bid to warranty — DERIVED here, never
+   * stored. See lib/job-lifecycle.ts for why two of these stages are a
+   * date and a model rather than `JobStatus` values. */
+  lifecycle: JobLifecycle;
 };
 
 /** How many distinct people are on this job's crew: everyone ASSIGNED to
@@ -61,6 +67,10 @@ export function crewHeadcount(input: {
 }
 
 export async function loadJobSummary(companyId: string, jobId: string): Promise<JobSummary | null> {
+  // The READER's calendar day, so "in warranty" answers the question the
+  // person looking is asking. lib/job-lifecycle.ts takes it as a
+  // parameter rather than reading a clock; this is where it comes from.
+  const todayIso = await viewerToday();
   const job = await prisma.job.findUnique({
     where: { id: jobId },
     select: {
@@ -71,6 +81,10 @@ export async function loadJobSummary(companyId: string, jobId: string): Promise<
       startDate: true,
       endDate: true,
       substantialCompletionDate: true,
+      // The two later lifecycle stages. Statuses only — the lifecycle
+      // needs to know whether a package was accepted, not what was in it.
+      closeoutSubmissions: { select: { status: true } },
+      warrantyPeriod: { select: { startsOn: true, months: true } },
       contact: { select: { name: true } },
       lineItems: {
         where: { isDeleted: false },
@@ -106,6 +120,13 @@ export async function loadJobSummary(companyId: string, jobId: string): Promise<
     id: job.id,
     name: job.name,
     status: job.status,
+    lifecycle: jobLifecycle({
+      status: job.status,
+      substantialCompletionDate: job.substantialCompletionDate,
+      closeoutSubmissions: job.closeoutSubmissions,
+      warranty: job.warrantyPeriod,
+      todayIso,
+    }),
     contactName: job.contact.name,
     startDate: job.startDate,
     endDate: job.endDate,

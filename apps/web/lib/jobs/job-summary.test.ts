@@ -9,6 +9,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let jobRow: Record<string, unknown> | null = null;
+vi.mock("@/lib/viewerToday", () => ({ viewerToday: async () => "2026-09-26" }));
 vi.mock("@prova/db", () => ({
   Prisma: {},
   prisma: { job: { findUnique: async () => jobRow } },
@@ -31,6 +32,11 @@ function job(overrides: Record<string, unknown>) {
     retainageReleases: [],
     assignments: [],
     timeEntries: [],
+    // The two later lifecycle stages. Present and empty rather than
+    // absent: the loader selects them, so a fixture without them is a
+    // fixture of a shape Prisma never returns.
+    closeoutSubmissions: [],
+    warrantyPeriod: null,
     ...overrides,
   };
 }
