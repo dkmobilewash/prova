@@ -171,6 +171,21 @@ export const EVAL_CASES: EvalCase[] = [
   // is calculated FROM, and a figure derived from it was never quoted.
   tool("read-emr", "what's our EMR for the prequal Turner sent over?", "experience_mod_rate"),
 
+  // The seven estimating and takeoff features of 22-26 September. Every one
+  // is asked in the estimator's words, and two of them are deliberately
+  // phrased to collide with the near-miss beside them: "are the drawings we
+  // measured off still good" must reach takeoff_currency and not
+  // drawing_currency (the job's drawing register, a different paper trail),
+  // and "what does that come to with overhead and profit" must reach
+  // bid_recap and not estimate_detail, which holds the direct cost only.
+  tool("read-takeoff-currency", "are the drawings we measured Riverside off still good?", "takeoff_currency", { jobName: "Riverside" }, ESTIMATOR),
+  tool("read-wall-schedule", "how much board are we carrying on Riverside?", "wall_schedule", { jobName: "Riverside" }, ESTIMATOR),
+  tool("read-bid-levelling", "are those three framing quotes on Harbor lofts actually the same bid?", "bid_levelling", { projectName: "Harbor lofts" }, ESTIMATOR),
+  tool("read-bid-compliance", "is there anything left that would get our Harbor lofts bid thrown out?", "bid_compliance", { projectName: "Harbor lofts" }, ESTIMATOR),
+  tool("read-bid-alternates", "what are we at on Harbor lofts with the alternates in?", "bid_alternates", { projectName: "Harbor lofts" }, ESTIMATOR),
+  tool("read-bid-recap", "what does Riverside come to with overhead and profit on it?", "bid_recap", { jobName: "Riverside" }, ESTIMATOR),
+  tool("read-conceptual", "roughly what would a 40,000 square foot office fit-out run us?", "conceptual_estimate", { areaSqFt: "40000" }, ESTIMATOR),
+
   // ------------------------------------------------------- commands
   command("cmd-create-estimate", "create an estimate for Riverside Plaza for Turner", "create_estimate_job", { jobName: "Riverside Plaza", gcName: "Turner" }),
   // "Start a bid" IS create_estimate_job. Bare, the model must still call it
