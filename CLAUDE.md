@@ -37,18 +37,47 @@ Vercel deployment and repo settings). Each drives their own agent.
   replace the click-list; it is the floor under it. Read
   `apps/web/e2e/run.mjs`'s header before changing what it touches.
 
-  **CI runs it now — `ci.yml`'s `e2e-public` and `e2e` jobs — and half of it
-  is RED until two repository secrets exist.** `e2e-public` needs no
-  credentials and walks every page reachable without signing in, at 320, 375
-  and a 1280 control. `e2e` is the pilot journey and everything else behind
-  sign-in; it fails on its FIRST step, in seconds, naming
-  `E2E_CLERK_PUBLISHABLE_KEY` and `E2E_CLERK_SECRET_KEY` — the
-  `striking-jaybird` DEVELOPMENT instance's `pk_test_`/`sk_test_` keys, which
-  are Diego's to add. It fails rather than skips on purpose: a green check
-  for a suite that signed nobody in is the vacuous green this whole
-  directory exists to end. Until they are added, NOTHING behind sign-in is
-  checked in a browser by CI, whatever colour the run is; read the `e2e`
-  job's first step before believing otherwise.
+  **CI runs it now — `ci.yml`'s `e2e-public` and `e2e` jobs — and BOTH
+  halves run.** `e2e-public` needs no credentials and walks every page
+  reachable without signing in, at 320, 375 and a 1280 control. `e2e` is the
+  pilot journey and everything else behind sign-in: 63 specs, signed in
+  through a real Chromium against the `striking-jaybird` DEVELOPMENT
+  instance's `pk_test_`/`sk_test_` keys.
+
+  **This paragraph said the opposite for two days, and it was TRUE when it
+  was written.** It said half of CI was RED until two repository secrets
+  existed, that `e2e` failed on its FIRST step in seconds naming
+  `E2E_CLERK_PUBLISHABLE_KEY` and `E2E_CLERK_SECRET_KEY`, and that until
+  they were added NOTHING behind sign-in was checked in a browser whatever
+  colour the run was. Every word of that was accurate for about thirteen
+  hours. Corrected 2026-09-26 from the job logs at both ends:
+
+  | when | the `e2e` job's first step | what ran |
+  | --- | --- | --- |
+  | 2026-09-24 04:37:16Z, #486's own merge | `##[error]Missing repository secret(s): E2E_CLERK_PUBLISHABLE_KEY E2E_CLERK_SECRET_KEY` | nothing — the whole job log is 268 lines and it died 17s in |
+  | 2026-09-24 17:42Z | passed | the suite, on a 1,650-line log |
+  | 2026-09-26 05:24Z (`3889b179`) | passed | the journey, 3m13s, every step green |
+  | 2026-09-26 05:54Z (`d6fa3a6f`) | passed | `verdicts: collected 63, returned 63`, 62 passing |
+
+  So the secrets were added the same day #486 landed, and the sentence
+  telling everyone they were missing outlived them by two days — long enough
+  that three separate agents flagged it in one session, each of them
+  correctly declining to fix it inline because an audit ships alone.
+
+  The step still FAILS rather than skips, and that part needs no correction:
+  a green check for a suite that signed nobody in is the vacuous green this
+  whole directory exists to end. It also refuses a `pk_live_`/`sk_live_` key
+  outright, because this suite MINTS users.
+
+  **The old paragraph's last clause was the only part that survived, so read
+  it as the rule rather than the afterthought it looked like:** read the
+  `e2e` job's first step, not this file, before believing anything about
+  what CI signed in as. A sentence about a missing credential starts
+  expiring the moment somebody with the dashboard open does the obvious
+  thing, and nothing tells the file. Same shape as the `InvoiceCounter`
+  entry below, where both versions of the entry were true when written —
+  except that here the stale version was the one that said a capability was
+  MISSING, which is the direction that stops people looking.
 
   Two things that entry should not be read as saying. It does NOT mean the
   laptop keyring grew the `workflow` scope — it has not, and the Git-rules
@@ -1582,6 +1611,27 @@ scrollback gets broken by whoever didn't scroll far enough.
   run is not proof either: the assertion is measuring a race, so one green
   run is one sample. Two consecutive clean runs is the weakest claim worth
   making, and `main` has never produced one.
+
+  **AND `main` HAS NOW PRODUCED ITS FIRST SINGLE CLEAN RUN, WHICH DOES NOT
+  REFUTE THE SENTENCE ABOVE AND IS THE MORE USEFUL FACT BECAUSE OF THAT.**
+  2026-09-26, run 36220670340, `main` at `3889b179` (#520's merge): all four
+  jobs green, the `e2e` job's journey step running a full 3m13s and PASSING,
+  the verdict count green, step 11 printing nothing. The commit after it went
+  red again (`303d60bc`), and so did the one after that — `d6fa3a6f`, with
+  SEVEN entries: `/jobs/<id>` twice, `/jobs/<id>/billing`,
+  `/jobs/<id>/field-reports`, `/alerts`, `/drawings`, `/closeout`.
+
+  So "two consecutive" is still a claim nobody can make and the sentence
+  above stands as written. What changed is that there is now a GREEN `main`
+  run sitting in the history between two red ones, and the next person who
+  finds it while checking whether #510 is fixed will get the wrong answer
+  from it. One sample of a race is not a verdict — this file's own rule,
+  arriving as a temptation instead of a warning.
+
+  The fourth page list is worth more than the green run: four lists now, and
+  no page appears in all four. `/dashboard` was the only page recurring
+  across the first three, and it is absent from this one. The list is the
+  dice.
 
   **THE OUTLINED-BOUNDARY HYPOTHESIS IS REFUTED, AND THE ERROR NUMBER IS THE
   WHOLE ARGUMENT.** Added 2026-09-25. The best surviving explanation was: the
