@@ -1374,6 +1374,37 @@ scrollback gets broken by whoever didn't scroll far enough.
   Every guard here asserts the first. This is the first one to assert the
   second.
 
+  **AND THE THIRD MEMBER OF THAT FAMILY, 2026-09-26: A GUARD THAT A LIST
+  IS COMPLETE CANNOT NOTICE A SECOND LIST.** Same shape one step further
+  out, and found by mutation rather than by thinking — which is the only
+  reason it is written down instead of shipped.
+
+  `CostCategory` and the bid recap's rates each had one canonical list and
+  several hand-written copies. #526 collapsed them and added a regression
+  pinning that the canonical list is complete. Then the mutation for it —
+  restoring the local ten-name rate array in `lib/ask/handlers.ts`, the
+  exact code that had Ask reporting a bid **$1,732.50 under** the Estimate
+  screen — came back **GREEN. Every test in the repo passed**, including
+  the one written that hour for precisely this defect.
+
+  It had to. A completeness test proves the SHARED list has every member;
+  it cannot see a consumer that has stopped reading it. *Nothing is ever
+  missing from a list nobody imports* — the same sentence as the entry
+  above, with "directory you do not walk" swapped out.
+
+  The census that does work asks the other question: not "is the list
+  complete" but "is there a second one". Here the discriminator was free —
+  a rate key written as a STRING LITERAL is the signature of a hand-rolled
+  list, because the legitimate consumers use those names as object KEYS,
+  which are identifiers and do not match. It found **four more** lists
+  nobody had looked for, and one was a live hole in the PR that added the
+  census: the COMPANY defaults form had no equipment field at all, so that
+  rate was storable, parseable and impossible to type in.
+
+  So, for any value that has a canonical list: write BOTH guards. One that
+  the list is complete, one that it is the only one. Neither implies the
+  other, and only the second survives somebody helpfully inlining a copy.
+
   A second, smaller trap came out of the same fix, and the measured form
   of it is narrower than the one first written here: **two Tailwind
   utilities of the same property in one class string resolve by
