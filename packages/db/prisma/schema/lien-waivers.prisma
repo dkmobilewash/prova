@@ -1,0 +1,206 @@
+// Lien waivers the sub GIVES the GC in order to get paid.
+//
+// Its own file, like liens.prisma and backcharges.prisma, so this lane's
+// migrations do not collide with anyone else's schema edits.
+//
+// THE DIRECTION MATTERS, AND IT IS THE REASON THIS IS NOT A
+// ComplianceDocument. `ComplianceDocumentType.LIEN_WAIVER` already exists
+// and is the INBOUND one: paperwork the sub collects FROM its own subs and
+// vendors, keyed on a required `partyName`, with a PENDING -> RECEIVED
+// lifecycle and editable AI-extracted fields. This is the OUTBOUND one —
+// the waiver the sub signs and hands up the chain, against a pay
+// application, to release a payment.
+//
+// They cannot share a table, and the decisive reason is not that they feel
+// different: THEY HAVE OPPOSITE MUTABILITY RULES. ComplianceDocument says
+// in its own comment that extracted fields stay editable — "a 'please
+// verify' signal for the UI, not a lock". A signed waiver is an evidence
+// record: identity locked at signing, voidable but never deletable,
+// rendering its own frozen snapshot rather than live data (CLAUDE.md,
+// Evidence records). One table cannot hold both rules. The supporting
+// reasons are ordinary — PENDING/RECEIVED are the wrong states for
+// something you sign, `partyName` is required there and would be a
+// duplicate of the job's GC here, `jobId` is optional there and must be
+// required here, and the signing apparatus plus the exception columns
+// would be null for every COI and certified payroll in that table.
+//
+// They should still be findable together. That is a READ concern, solved
+// by showing both on the compliance surface, not by one model.
+//
+// THE LOAD-BEARING RULE, TAKEN WHOLESALE FROM liens.prisma: THIS APP NEVER
+// SAYS A WAIVER IS SAFE TO SIGN.
+//
+// That file forbids computing a legal deadline, because a confident wrong
+// answer costs lien rights in the same voice as a right one. The same
+// applies here, and harder, because a waiver is signed rather than merely
+// missed:
+//
+//   - no state-rules table, and no generated statutory wording. Which form
+//     a given state accepts, and what words must appear on it, is not
+//     something this app knows. It records WHICH of the four forms was
+//     issued, for how much, through what date, and whether it is signed;
+//     `documentUrl` carries the executed statutory form itself, because the
+//     GC's form is the GC's form;
+//   - nothing here decides that signing is safe. The one place the app has
+//     an opinion is the exception surface below, and it is a SUGGESTION
+//     rendered next to the field, never a value written on the person's
+//     behalf.
+//
+// WHY THE EXCEPTION COLUMNS ARE THE POINT OF THE FEATURE. Choosing the
+// wrong form is the obvious failure and the rare one. The expensive one is
+// an UNCONDITIONAL waiver with the exceptions left blank, which waives
+// retainage and every pending change order along with the amount actually
+// being paid — a sentence that reads as routine paperwork and costs the
+// held percentage of the job. So `exceptedAmount` is REQUIRED and carries
+// NO DEFAULT: a caller cannot omit it and land on zero by accident, which
+// is exactly how zero would get there. Retainage held (lib/retainage.ts)
+// and SUBMITTED-but-unapproved change orders are offered as candidates
+// beside the field, computed from rows the app already has, and typed in
+// by the person.
+//
+// NO COUNTER, DELIBERATELY. Lien waivers are not statutorily numbered —
+// there is no sequence to issue and nothing to reissue — so this model is
+// absent from the counter roll-call in CLAUDE.md on purpose, rather than by
+// omission. It IS a required-`jobId` RESTRICT child of Job, which is the
+// #227 shape and three edits: this model, `HANDLED_MODELS` in
+// packages/db/scripts/scratch-scope.mjs, and the `del(...)` order in BOTH
+// clean-scratch-data.mjs and seed-demo.mjs. scratch-cleanup-order.test.ts
+// fails the build if either script forgets.
+
+/// Whether the waiver takes effect only once the payment clears.
+///
+/// CONDITIONAL is effective on payment actually being received —
+/// the safe one, and the one that belongs with an invoice that has not
+/// been paid yet. UNCONDITIONAL is effective on signature: it states the
+/// money has been received, whether or not it has.
+enum LienWaiverCondition {
+  CONDITIONAL
+  UNCONDITIONAL
+}
+
+/// Whether this covers one payment period or closes the job out.
+///
+/// PROGRESS waives through a date, leaving later work intact. FINAL waives
+/// everything on the job, which is why the exception columns matter most
+/// here: anything not excepted on a final waiver is gone.
+enum LienWaiverStage {
+  PROGRESS
+  FINAL
+}
+
+/// One lien waiver, issued by this company against one job.
+///
+/// Four forms, as two axes rather than one four-valued enum: every
+/// combination of `condition` and `stage` is a real statutory form, so
+/// there is no impossible state for a single enum to rule out. (Contrast
+/// BidLine's alternate amount, which IS one signed column precisely
+/// because an amount plus a direction flag can disagree with itself. Two
+/// axes that cannot contradict each other are not that case.)
+model LienWaiver {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Required, which makes this a RESTRICT child of Job — see the #227
+  /// note in the header. A waiver without a job is not a thing that
+  /// exists: it always waives rights against one property and one job.
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  /// The pay application this waiver accompanies, when there is one.
+  ///
+  /// Nullable and SetNull rather than required: a final waiver at closeout
+  /// can cover a job's whole history rather than one invoice, and a waiver
+  /// is sometimes signed against a payment that was never separately
+  /// invoiced. The derived "no payment recorded" warning simply has
+  /// nothing to say when this is null, which is correct — the app has no
+  /// invoice to check payments against and should not pretend otherwise.
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  condition LienWaiverCondition
+  stage     LienWaiverStage
+
+  /// THE DATE THROUGH WHICH RIGHTS ARE WAIVED, AS ENTERED. UTC midnight,
+  /// rendered in UTC. Never stamped and never derived from an invoice
+  /// period: the date that governs is the one written on the form the GC
+  /// accepts, and it is routinely not the invoice's own end date.
+  ///
+  /// On a FINAL waiver this is the through-date of the whole job, which is
+  /// why it stays required for both stages rather than being optional for
+  /// one of them.
+  throughDate DateTime
+
+  /// What this waiver covers, in dollars — the payment it is exchanged
+  /// for. Decimal(12,2) like every other money column here; never a float.
+  amount Decimal @db.Decimal(12, 2)
+
+  /// WHAT IS EXPRESSLY EXCEPTED, and the reason this column has no
+  /// default. See the header: an unconditional waiver with this left blank
+  /// waives retainage and pending change orders along with the payment.
+  /// Required and defaultless so that zero is always something a person
+  /// chose and never something a caller omitted.
+  ///
+  /// Zero is a legitimate and common value. The point is not that it is
+  /// suspicious; it is that it must be stated.
+  exceptedAmount Decimal @db.Decimal(12, 2)
+
+  /// What those exceptions ARE, in words — "retainage held to date",
+  /// "PCO 14, disputed backcharge". Free text, because it is read by a GC
+  /// and by a lawyer, and nothing computes on it.
+  exceptionsNote String?
+
+  // DELIBERATELY NO `documentUrl`/`documentName` YET. The executed
+  // statutory form — the paper the GC actually accepted — is worth
+  // keeping, and this model will carry it. It is absent from v1 because
+  // there is no shared uploader in this app: ComplianceUploadForm,
+  // ContractDocumentUploadForm and TakeoffPlanUploader are three separate
+  // implementations, so the attachment is its own piece of work rather
+  // than two columns. Shipping the columns now would make them the
+  // "written, documented, and never called" shape CLAUDE.md keeps
+  // finding, and adding them later is a three-line additive migration.
+
+  // ---- Signing. The same shape as billing.prisma's SignatureRequest, and
+  // deliberately not that model: its e-sign page renders LIVE job line
+  // items and is hard-wired to the contract at award, so a discriminator
+  // there would route waiver signing through the contract path. The enum
+  // IS shared, because "pending or signed" means the same thing here.
+
+  /// The unguessable URL this is signed at. Unique so a token can never
+  /// address two waivers.
+  token  String          @unique
+  status SignatureStatus @default(PENDING)
+
+  signerName  String?
+  signerEmail String?
+  signedAt    DateTime?
+  ipAddress   String?
+  userAgent   String?
+
+  /// Prova's own figures, frozen at the moment of signature. A SIGNED
+  /// waiver renders only this and never live data — the same rule, for the
+  /// same reason, as SignatureRequest.snapshot: what was agreed to is what
+  /// was on the screen, not what the job has become since.
+  snapshot Json?
+
+  /// Withdrawn before signature. Never a delete: a waiver that was sent
+  /// and then pulled is evidence of having been sent (CLAUDE.md, "sent
+  /// correspondence can close but never delete"). Null on a live one.
+  revokedAt DateTime?
+
+  /// When the signing link stops working. Null reads as "no expiry"
+  /// everywhere it is checked, which is what existing rows would be if
+  /// this ever gains a backfill.
+  expiresAt DateTime?
+
+  createdByUserId String?
+  createdBy       User?   @relation("LienWaiverCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([jobId, throughDate])
+  @@index([invoiceId])
+  @@index([createdByUserId])
+}
