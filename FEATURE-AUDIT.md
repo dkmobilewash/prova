@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**148 items audited — 121 built / 22 partial / 4 missing / 1 descoped**
+**148 items audited — 123 built / 20 partial / 4 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -101,8 +101,8 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 121 |
-| Partial | 22 |
+| Built | 123 |
+| Partial | 20 |
 | Missing | 4 |
 | Descoped | 1 |
 
@@ -196,7 +196,7 @@ subcontract agreement storage and versioning shipped same-day.*
 | Built | Schedule of values (SOV) as the job's line-item structure | this is exactly what `JobLineItem` is, by design |
 | Partial | Job status lifecycle: bid → awarded → active → substantially complete → closed/warranty | today's `JobStatus` is a simpler 4-stage version: ESTIMATE → CONTRACTED → IN_PROGRESS → COMPLETE |
 
-## 06. Job Costing & Cost Coding — 3 built · 2 partial · 0 missing
+## 06. Job Costing & Cost Coding — 4 built · 1 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
@@ -204,7 +204,7 @@ subcontract agreement storage and versioning shipped same-day.*
 | Built | `estimatedCostToComplete` (derivable, PM-overridable) | mechanical by default, overridable per line — see `lib/wip.ts` |
 | Built | Line-item FK on `CostEntry` so cost rolls up to a specific SOV line | `CostEntry.lineItemId` |
 | Partial | Cost categorization: labor, material, equipment, sub/other, by trade tag | `CostCategory` has LABOR/MATERIAL/SUBCONTRACTOR/OTHER plus a `tradeScope` tag — no distinct EQUIPMENT bucket |
-| Partial | Job cost roll-up dashboard: budget vs. actual vs. forecast, per line item and per job | built per-job on `/jobs/[id]`; no cross-job/company-wide roll-up view |
+| Built | Job cost roll-up dashboard: budget vs. actual vs. forecast, per line item and per job | per-job on `/jobs/[id]`, and company-wide on `/wip` — every contracted job as a row, nineteen columns, with a totals line. The arithmetic (`wipScheduleTable`, `wipScheduleTotals`, `loadWipSchedule`) already existed and was already tested; until now the only thing that rendered it was the CSV download on `/cash-flow`, so the gap was a screen rather than a calculation |
 
 ## 07. Labor & Time Tracking — 7 built · 1 partial · 0 missing
 
@@ -318,7 +318,7 @@ forecasting shipped 26 Aug 2026.*
 | Built | License/registration records per state | `CompanyLicense`, with create/edit/delete on `/settings` — it was marked Built on the model alone from 25 Aug until 29 Aug, during which no licence could be created at all |
 | Built | Expiration/renewal alerts across all of the above | `lib/compliance-expiry.ts` ranks COIs, licences, policies and bonds together; surfaced on `/compliance` in full and on the dashboard as the worst three. Still computed at read time, never stored — delivery (email/SMS) is Sheet 26 |
 
-## 15. WIP & Financial Reporting — 5 built · 1 partial · 0 missing
+## 15. WIP & Financial Reporting — 6 built · 0 partial · 0 missing
 
 *Updated 3 Sep 2026: the Cash flow forecast row below was still marked
 Missing while `lib/cash-flow.ts`'s `calculateCashFlowForecast` had already
@@ -332,7 +332,7 @@ instruction to check before assuming anything needed building.*
 | Built | Percent-complete (cost-to-cost method) per line item and per job | `lib/wip.ts` |
 | Built | Revenue earned vs. billed (over/under-billing) report | plus an AI narrative layer over it — `generateWipNarrative` |
 | Built | WIP schedule export in surety/CPA-expected format | `/api/wip-schedule`, reachable from `/cash-flow`. One row per contracted or in-progress job, over- and under-billings in the two columns a balance sheet reads them as, and a title block stating the method and what a blank cell means. A figure whose estimates are thin is BLANK, not zero: the export goes through the same `jobEarnedRevenue`/`jobOverUnderBilling` guards the job page does, so it cannot state a number the screen refuses to |
-| Partial | Job profitability report (budget vs. actual vs. forecast margin) | visible per job on `/jobs/[id]`, and every active job's forecast-vs-contract variance now reads as a sentence in the dashboard's Job health section — still no dedicated exportable report |
+| Built | Job profitability report (budget vs. actual vs. forecast margin) | per job on `/jobs/[id]`, as a sentence per active job in the dashboard's Job health section, and company-wide on `/wip` with a CSV download. **This row said "no dedicated exportable report" and was already wrong before `/wip` existed** — the WIP schedule CSV carries contract value, cost to date, estimated cost at completion, estimated gross profit and gross profit earned, which is budget vs. actual vs. forecast margin, exportable. Corrected rather than claimed: the screen is new, the report was not |
 | Built | Cash flow forecast (AR aging, retainage receivable, pay app cycles) | `lib/cash-flow.ts`'s `calculateCashFlowForecast`, rendered on `/cash-flow` under "Forecast, next N months" — AR aging plus retainage expected by month, reading the retainage data from Sheet 11. Was marked Missing here until this update; the code and the nav entry were both already live |
 | Built | Company-wide backlog report across active jobs | `lib/company-financials.ts` sums contract value, blended gross margin, cash collected and retainage held across contracted and in-progress jobs; shown on the metric bar at the bottom of every screen. Derived on read, never stored |
 

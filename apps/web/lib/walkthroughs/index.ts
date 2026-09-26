@@ -3,6 +3,7 @@ import { alertsWalkthrough } from "./alerts";
 import { backchargesWalkthrough } from "./backcharges";
 import { bidsWalkthrough } from "./bids";
 import { cashFlowWalkthrough } from "./cash-flow";
+import { wipWalkthrough } from "./wip";
 import { catalogWalkthrough } from "./catalog";
 import { certificationsWalkthrough } from "./certifications";
 import { closeoutWalkthrough } from "./closeout";
@@ -79,6 +80,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
   backchargesWalkthrough,
   bidsWalkthrough,
   cashFlowWalkthrough,
+  wipWalkthrough,
   catalogWalkthrough,
   certificationsWalkthrough,
   closeoutWalkthrough,
