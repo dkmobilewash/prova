@@ -112,60 +112,6 @@ should have gone red. It asserts the labelled form now.
 | drop the raw dump | RED |
 | let `safeJson` throw | RED |
 
-## The 15 mismatches: Clerk's UserButton, and the day it took to name it
-
-React said it in one line, once it was allowed to speak:
-
-```
-<ClerkHostRenderer component="UserButton" mount={function} …>
-+   <div ref={{current:null}} data-clerk-component="UserButton">
-```
-
-The `+` is the node the CLIENT added and the server never sent.
-`<UserButton>` renders nothing during server rendering and a mount div on
-the client — `@clerk/nextjs` 6.9.6 defers to clerk-js, which does not
-exist on the server. It is in the Topbar, which `app/(app)/layout.tsx`
-mounts on EVERY authenticated page, so it was one React error per full
-page load across the whole signed-in app.
-
-That also explains the thing that made it look random: the failing pages
-changed every run — `/intake`, `/submittals`, `/closeout` one time,
-`/proposals`, `/lien-deadlines`, `/bids` the next. Nothing is special
-about those pages. Only a FULL page load hydrates; a client-side
-navigation does not, and which links get prefetched varies. The spec's own
-comment had already noticed the wandering and attributed it to the page.
-
-**`UserMenu` holds the button back one frame.** Server markup and the
-first client render are the same 28px circle, the effect swaps in the real
-control after hydration has already matched, and nothing moves because the
-placeholder is the avatar's own size. Not `suppressHydrationWarning`: that
-silences one element's own attributes and text, does not reconcile a
-subtree the server never sent, and would leave the mismatch happening
-while hiding the evidence.
-
-**The test hydrates rather than describes.** It server-renders, hydrates
-that exact HTML, and asserts on `onRecoverableError` — the callback React
-actually fires for a mismatch, not a proxy for it. It carries a MUTATION
-CONTROL as a permanent case: the bare `UserButton` must still fail to
-hydrate. If that ever passes, the stub has stopped modelling Clerk's
-asymmetry and every other case in the file has quietly become vacuous.
-
-| mutation | result |
-| --- | --- |
-| drop the deferral, render `UserButton` directly | RED, 3 failed |
-
-**The expensive part was not the bug, it was that production React will
-not say what differed.** A mismatch arrives as `#418` with args
-`["HTML", ""]` — the page, never the element. So the only tool left was
-reading, and four hypotheses came out of the shell's 85 transitive imports
-before one was right. One of them was a probe that "cleared" the Topbar
-**because it had mocked `UserButton` away** — the suspect removed from the
-line-up by the person running it.
-
-`E2E_DEV_SERVER=1` now exists for exactly this and printed the stack above
-in a single run. Reach for it FIRST next time; a day of reading is worth
-less than one dev-server run.
-
 ## A hydration mismatch on every authenticated page, for every Mac user
 
 Found while chasing the E2E hydration failures, and it is **not** what E2E
