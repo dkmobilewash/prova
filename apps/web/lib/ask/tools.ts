@@ -179,6 +179,27 @@ export type ToolName =
   | "job_overview"
   // The dashboard's getting-started card, for a brand-new account.
   | "getting_started"
+  /* ─── the estimating and takeoff features the assistant could not read ───
+   *
+   * Thirteen of them shipped between 22 and 26 September and not one had a
+   * tool, so every question an estimator asks in the week before a bid is
+   * due routed to nothing — or, worse, to the near-miss beside it.
+   *
+   * `drawing_currency` is that near-miss and is the reason this comment is
+   * here rather than in a commit message: it reads `DrawingSet` /
+   * `DrawingRevision`, the JOB's paper trail, and `takeoff_currency` reads
+   * `TakeoffPlan.revisionLabel` / `sheetIssuedOn`, a sheet somebody was
+   * emailed with an invitation to bid. `takeoff.prisma` says the two "must
+   * not become" each other; a question about measured quantities answered
+   * from the drawing register would be the right shape and the wrong paper.
+   */
+  | "takeoff_currency"
+  | "wall_schedule"
+  | "bid_levelling"
+  | "bid_compliance"
+  | "bid_alternates"
+  | "bid_recap"
+  | "conceptual_estimate"
   // "How do I…", from the app's own registered page walkthroughs — never
   // a fact about this company's data. See lib/ask/appHelp.ts.
   | "app_help";
@@ -362,6 +383,46 @@ const appHelpFilter = {
   },
 };
 
+/**
+ * The bid tools take the PROJECT AS THE GC NAMED IT, not a job name.
+ *
+ * Not the same filter as `jobFilter` and deliberately not reusing it: at bid
+ * time there is usually no job at all, and one GC sends three invitations per
+ * building. A bid is connected to a job only when somebody says so
+ * (`BidInvitation.wonJobId`, #491), so a tool that matched bids by job name
+ * would silently answer about another project's bid form.
+ */
+const bidProjectFilter = {
+  type: "object" as const,
+  properties: {
+    projectName: {
+      type: "string",
+      description:
+        "Optional. Part of the project name on the bid invitation, as the GC named it — \"St. Mary's\", 'Harbor lofts'. Matched loosely and case-insensitively. Omit to cover every bid invitation.",
+    },
+  },
+};
+
+/**
+ * conceptual_estimate: the building's gross area, as the person said it.
+ *
+ * A number the PERSON supplies, which is the one kind a tool may take — it is
+ * not a figure derived from this company's data, it is the thing they are
+ * asking about. The app multiplies it by the benchmark; the model never does,
+ * and `conceptual-estimate.ts` explains at length why that figure is the most
+ * dangerous one this product could produce.
+ */
+const grossAreaFilter = {
+  type: "object" as const,
+  properties: {
+    areaSqFt: {
+      type: "string",
+      description:
+        "Optional. The building's gross area in square feet, as the person said it — '40000' for a 40,000 SF office fit-out. Omit to get the per-square-foot range on its own, with nothing multiplied out.",
+    },
+  },
+};
+
 const safetyYearFilter = {
   type: "object" as const,
   properties: {
@@ -383,9 +444,17 @@ export const TOOLS: ToolDefinition[] = [
     // — so the sentence was corrected rather than left to go quietly false.
     // A claim about what the app does NOT have expires exactly as fast as a
     // claim about what it does, which this repo has paid for twice.
+    //
+    // THREE TIMES. It then ended "Does NOT know travel time, addresses, or
+    // what tools to bring; none of those are recorded" — and `Job.siteAddress`
+    // IS recorded, and geocoded to `siteLatitude`/`siteLongitude` for a daily
+    // report's weather. No TOOL returns it, which is the true and narrower
+    // claim; the wide one was a sentence a model could repeat to somebody who
+    // can see the address on the job page. Corrected 2026-09-26, with the
+    // matching KNOWN_GAPS reason.
     capability: null,
     description:
-      "Jobs currently in progress, who is ASSIGNED to each, the job's scheduled start and end, and the GC contact. An assignment is a ROSTER and carries no date at all — it is everyone attached to the job, not who is there on a given day. For a question about a DAY, use crew_schedule; this tool cannot answer one and must never state or imply that somebody is on site today. It is still not an attendance record either: nothing here records who actually showed up. Does NOT know travel time, addresses, or what tools to bring; none of those are recorded.",
+      "Jobs currently in progress, who is ASSIGNED to each, the job's scheduled start and end, and the GC contact. An assignment is a ROSTER and carries no date at all — it is everyone attached to the job, not who is there on a given day. For a question about a DAY, use crew_schedule; this tool cannot answer one and must never state or imply that somebody is on site today. It is still not an attendance record either: nothing here records who actually showed up. It does not return the job's SITE ADDRESS and no tool here does — the address is on the job's own page. Nothing in this app measures travel time or distance, and nothing records what to load for a job; never estimate either.",
     input_schema: noInput,
   },
   {
@@ -417,7 +486,7 @@ export const TOOLS: ToolDefinition[] = [
     // the job page's costing section
     capability: "VIEW_JOB_COSTS",
     description:
-      "Contract value, cost to date, forecast cost at completion, percent complete, earned revenue and over/under billing for active jobs, plus how much of each job's value actually carries a cost estimate. Answers 'are we making money on this'. Does NOT know vendor price changes — there is no vendor price history.",
+      "Contract value, cost to date, forecast cost at completion, percent complete, earned revenue and over/under billing for active jobs, plus how much of each job's value actually carries a cost estimate. Answers 'are we making money on this'. It cannot tell you WHY a job's cost moved: it holds no vendor quotes and no material prices, so a job going over on material says nothing here about which supplier put their price up — that is `vendor_pricing`, which does hold a quote history and reports the movement.",
     input_schema: jobFilter,
   },
   {
@@ -577,10 +646,10 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "daily_field_reports",
-    // /field-reports
+    // /field-reports, and a job's own Field reports tab for the delay log.
     capability: "MANAGE_FIELD",
     description:
-      "Daily field reports filed on a job, most recent first — the work performed, who was on the crew, the weather and any delay recorded that day. Answers 'what happened on site' and 'what did we write down about that delay'. A delay noted here is the contemporaneous record a claim is later built on, so reports WITH a delay are flagged. It knows only what was filed: a day with no report is a day nobody wrote up, which is not the same as a day nothing happened.",
+      "Daily field reports filed on a job, most recent first — the work performed, who else was on site, the foreman's weather note — AND the structured delay log for those days: each delay's cause, who was responsible, when it started and ended, crew-hours lost, whether the GC was told and how, and any change order drafted from it. Answers 'what happened on site', 'what did we write down about that delay' and 'how many hours did that cost us'. A delay is the contemporaneous record a claim is later built on, so reports carrying one are flagged, `delaysTheGcWasNotTold` is counted (notice is what makes a delay claimable), and a day whose delays were logged with NO REPORT FILED is still a row, marked `reportFiled: false` with `workPerformed: null` — a delay does not need a report to exist, and dropping it would be a confident zero. Reports filed before 2026-09-18 may instead carry `legacyDelayNote`, a single free-text sentence which is all that was recorded then: it has NO cause, no responsible party and no hours, so never present it as though it did. It knows only what was filed: a day with no report is a day nobody wrote up, which is not the same as a day nothing happened, and a delay nobody logged is not a day that ran clean.",
     input_schema: jobFilter,
   },
   {
@@ -604,7 +673,7 @@ export const TOOLS: ToolDefinition[] = [
     // /vendors/pricing
     capability: "MANAGE_ESTIMATING",
     description:
-      "Prices vendors have quoted, per material, with who quoted it, when, and whether the quote is still inside its validity date. Answers 'what did we get quoted for that' and 'is that price still good'. A quote PAST its validity date is flagged as expired rather than listed as a current price — an expired quote carried into a bid is how a job is mis-priced. A quote with NO validity date recorded is reported as undated, never as valid indefinitely.",
+      "Prices vendors have quoted, per material, with who quoted it, when, whether the quote is still inside its validity date, AND how that vendor's price for that material MOVED from their previous quote to this one — the percent change, both prices and both dates, exactly as the Movement block on /vendors/pricing shows it. Answers 'what did we get quoted for that', 'is that price still good' and 'has their price gone up'. A movement is only ever the SAME vendor and the SAME unit: across vendors it is a difference of opinion, across units it is arithmetic on unrelated numbers, and neither is a price change. `priceChange` is null when that vendor has only quoted the item once, and null on a quote a newer one of theirs supersedes — the movement is reported on the newer quote. Never work a percentage out yourself; use `changePercent`. A quote PAST its validity date is flagged as expired rather than listed as a current price — an expired quote carried into a bid is how a job is mis-priced. A quote with NO validity date recorded is reported as undated, never as valid indefinitely. It knows only quotes somebody entered here: it is not a vendor's published price list, and a material with one quote has no movement rather than a flat price.",
     input_schema: noInput,
   },
   {
@@ -657,7 +726,7 @@ export const TOOLS: ToolDefinition[] = [
     // one the PAYROLL_COMPLIANCE function is built around.
     capability: "MANAGE_COMPLIANCE",
     description:
-      "For each of the last eight payroll weeks on a job: how many workers, how many hours, and the three things that would come out BLANK on a WH-347 — hours with no fringe rate schedule in force to price them, workers with no craft classification, and workers with no name on their account. Answers 'could we produce certified payroll for that week'. It does NOT and CANNOT say whether a week was FILED: nothing in this app records a payroll submission, the form is computed live every time it is opened, so a week reported as ready to produce has not been sent anywhere.",
+      "For each of the last eight payroll weeks on a job: how many workers, how many hours, the three things that would come out BLANK on a WH-347 — hours with no fringe rate schedule in force to price them, workers with no craft classification, and workers with no name on their account — and whether a certified-payroll DOCUMENT is on record here covering that whole week. Answers 'could we produce certified payroll for that week' and 'is there a certified payroll on file for that week'. TWO DIFFERENT FACTS, TWO FIELDS, NEVER ONE SENTENCE: `readyToProduce` is about the data behind the form; `documentOnRecord` is about a document somebody filed against a period — the same rows and the same whole-week containment as the CERTIFIED_PAYROLL alert in needs_attention, so the two cannot disagree. NEITHER IS PROOF OF FILING, and this is the part to say out loud every time: nothing in this app records a SUBMISSION — no agency, no date sent, no receipt — so say 'a certified payroll is on record for that week' or 'nothing is on record for that week', and never 'it was filed', 'it went in' or 'it was not filed'. `documentOnRecord: false` means nothing is recorded HERE, not that nobody filed; true means a document is here, not that it reached anybody. A document whose period only clips the week does not cover it and is not counted, because half a period is not evidence about a week.",
     input_schema: jobFilter,
   },
   {
@@ -800,6 +869,73 @@ export const TOOLS: ToolDefinition[] = [
       "How to DO something inside the app, from its own registered 'Walk me through this page' walkthroughs — never a fact about this company's data. Answers 'how do I log a backcharge', 'where do I add a punch list item', 'how do I connect QuickBooks'. Cites the page and quotes its own steps. Filtered to pages this person can actually open — a page they cannot reach is never named, and never invents a step the app does not have. `route` is always a path that opens; say exactly it and never a path of your own, and never one containing square brackets. When a result carries `insideOneJob`, its `route` is the list to START from and NOT the page — that page lives inside one job, so say to open the job from `route` first and then the tab named in `page` (\"A job — billing\" is the Billing tab). NOT for a question about the company's own records — a number, a list, a status, an amount: use the tool that reads that data instead, never this one. If nothing in the app's own walkthroughs matches, say so rather than guessing at a page.",
     input_schema: appHelpFilter,
   },
+
+  /* ─── the bid and the takeoff ─────────────────────────────────────────
+   *
+   * Seven tools over the thirteen estimating features of 22-26 September.
+   * Every one of them reuses the library the screen renders through, and
+   * three of them exist mainly to REFUSE well: the strongest thing
+   * `takeoff_currency` may ever say is "this was measured off Rev 2, and Rev
+   * 3 has since been issued", `bid_levelling` will not call a quote lowest
+   * without saying what it leaves out, and `conceptual_estimate` returns a
+   * range with its sample size or nothing at all.
+   */
+  {
+    name: "takeoff_currency",
+    // The job's Takeoff tab, hard-gated on VIEW_JOB_COSTS (issue #383).
+    capability: "VIEW_JOB_COSTS",
+    description:
+      "Whether the quantities measured off a drawing on a job came off drawings that are still current. Per measured plan: the revision label and issue date printed on the sheet, how many measurements were taken off it, whether anything has been ISSUED SINCE (a drawing revision on the job, or an addendum on the linked bid that changed work already priced), and the sentence the screen shows. Answers 'am I bidding off superseded drawings' and 'which of my numbers need re-checking'. IT NEVER RE-MEASURES AND NEVER RE-QUANTIFIES, and neither may you: the app cannot see what moved on the new sheet, so a corrected quantity would be a guess printed beside real measurements. Report what is suspect and say to go and look. A plan with no issue date recorded is UNKNOWABLE, not current — say exactly that, because it cannot be shown to be superseded and cannot be shown to be current either. This is NOT drawing_currency, which reads the job's drawing register — the architect's issued sets and what has reached the trailer. This reads the sheet somebody measured.",
+    input_schema: jobFilter,
+  },
+  {
+    name: "wall_schedule",
+    // The job's Estimate tab, which withholds its content on VIEW_JOB_COSTS.
+    capability: "VIEW_JOB_COSTS",
+    description:
+      "The wall schedule on a job being estimated: each wall run's length and height meeting its wall type, turned into studs, track, board, insulation and the labor hours those carry — summed per wall-type component the way an estimate reads ('W2 — 5/8\" Type X board: 4,260 sq ft'). Answers 'how much board on Riverside' and 'how many studs are we carrying'. Every quantity comes back computed, including waste and the round-up on whole sheets and studs. A run with NO HEIGHT of its own on a type with no default height produces no quantities at all and is listed in unpricedRuns — say which runs those are rather than treating them as zero, because a guessed ten feet is a number that looks right and gets bid. Only jobs still at ESTIMATE stage carry a wall schedule on screen; after award the runs are the record the contract was priced from and are changed by change order, so this does not answer for a contracted job. It does not know what a component costs — that is the estimate itself (estimate_detail) and the marked-up bid (bid_recap).",
+    input_schema: jobFilter,
+  },
+  {
+    name: "bid_levelling",
+    // /bids
+    capability: "MANAGE_ESTIMATING",
+    description:
+      "The quotes collected for one bid, laid side by side per scope package: who quoted what, cheapest and dearest, the spread, whether the quotes are COMPARABLE, and the caution naming what the cheapest one excludes that the others do not. Answers 'are these three quotes actually the same bid' and 'who is lowest on framing'. NEVER PRESENT THE LOW NUMBER AS THE ANSWER when `comparable` is false: read the `caution` out, because a sub who left the soffits out is cheaper and is not comparable, and a total that ignores that buys a hole in your own scope. A request nobody has answered is NOT a quote of nothing — those are in `outstanding` with the state of each (awaited, overdue, declined) and are deliberately absent from the comparison, so say the comparison is incomplete when any are open. With one quote `comparable` is null, which means nothing to compare against, never that it is fine. It does not price the excluded work back on, and neither may you: that number would be this app's guess at somebody else's scope.",
+    input_schema: bidProjectFilter,
+  },
+  {
+    name: "bid_compliance",
+    // /bids
+    capability: "MANAGE_ESTIMATING",
+    description:
+      "What would get a bid thrown out before anybody reads the price: addenda not acknowledged, alternates with no amount, unit prices with no rate, allowances with no sum, and the things only a person can attest to (bid bond, signed bid form, subcontractor list, insurance certificate, prequalification, participation forms) that are not recorded as done. Answers 'is my bid responsive' and 'what's left before I can send this'. THERE IS NO COMPLIANT VERDICT HERE AND YOU MUST NOT INVENT ONE. The strongest sentence available is `sentence`, which says nothing is outstanding THAT THIS APP CAN SEE — it has never read the GC's own Invitation to Bid, only what somebody typed in from it. Never say a bid is compliant, complete or ready to submit. `blockingCount` is the items that would actually sink it; an optional one outstanding is worth mentioning and is not non-responsiveness. `repriceWarnings` is a different thing again: an addendum that changed work already priced means a number may now be wrong, not that paperwork is missing.",
+    input_schema: bidProjectFilter,
+  },
+  {
+    name: "bid_alternates",
+    // /bids
+    capability: "MANAGE_ESTIMATING",
+    description:
+      "A bid's alternates, unit prices and allowances, and what the bid comes to with them: the base bid as entered, each alternate as an ADD or a DEDUCT with whether the GC has accepted it, the awarded total (base plus ACCEPTED alternates only), the allowances CARRIED INSIDE the base, and the unit prices held. Answers 'what are we at with the alternates in' and 'what unit prices did we give them'. NEVER ADD AN ALLOWANCE TO THE BASE — it is already inside it, and doing so sends a bid out high by exactly that amount with nothing on screen looking wrong. Never add unit prices to anything: a unit price is a rate for future change work and has no quantity, so it belongs to no total. Use `awardedTotal` and `alternatesAccepted` as given rather than working anything out; `undecidedCount` above zero means the award total is provisional and you should say so. For whether a blank alternate or unit price makes the bid non-responsive, that is bid_compliance.",
+    input_schema: bidProjectFilter,
+  },
+  {
+    name: "bid_recap",
+    // The job's Estimate tab, which withholds its content on VIEW_JOB_COSTS.
+    capability: "VIEW_JOB_COSTS",
+    description:
+      "The bid recap on a job being estimated: direct cost split by material, labor, subcontractor and other, then every step from there to the number the GC is asked to pay — markup per cost type, escalation, sales tax on material, overhead, profit, bond premium, contingency — each with the rate it used, what it added and the running total, ending at `bidTotal`. Answers 'what are we bidding Riverside at' and 'what does that come to with overhead and profit'. THE ORDER OF THOSE STEPS CHANGES THE BID and is already applied — read `steps` and `bidTotal` as given and never re-derive, re-order or recompute any of it. A rate nobody entered contributes nothing and its step is simply absent, which is not a zero somebody typed. Lines with NO COST TYPE are never marked up: `uncategorised` and `uncategorisedLineCount` say how much of the bid went through this layer untouched, and that must be reported rather than folded in silently. `appliedAt` means the recap was spread into the line prices; without it the bid total is a working figure the estimate lines do not yet show. Only a job still at ESTIMATE stage has a recap on screen.",
+    input_schema: jobFilter,
+  },
+  {
+    name: "conceptual_estimate",
+    // /pipeline, where the helper sits beside a pursuit's estimated value.
+    capability: "MANAGE_ESTIMATING",
+    description:
+      "What this company's OWN finished work has run at per square foot, for pricing something with no drawings and no takeoff yet — a range (low, middle, high) for what similar work SOLD for and what it COST, with the number of finished jobs behind it, optionally multiplied out by a gross area the person gives. Answers 'what has similar work run at' and 'roughly what would a 40,000 SF office fit-out be'. IT NEVER RETURNS A SINGLE NUMBER AND YOU MUST NEVER STATE ONE: give the range and say how many jobs it came from, every time. Below three finished jobs carrying a gross area there is NO range at all — `because` says why, and that sentence is the whole answer. This is an order-of-magnitude figure from gross area, not an estimate and not a price to send anybody; say so. It is drawn only from this company's finished jobs, never a published index, and it must not be summed with, compared against or presented beside a line-item estimate (estimate_detail, bid_recap) — those are a different kind of claim. Nothing here is written anywhere.",
+    input_schema: grossAreaFilter,
+  },
 ];
 
 /**
@@ -827,17 +963,32 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
     topic: "what tools or materials to load for a job",
     why: "nothing records what a job needs from the shop.",
   },
-  {
-    topic: "a vendor's recent price change",
-    why: "the catalog records what work has cost, not a vendor's price list over time.",
-  },
+  /* "a vendor's recent price change" WAS HERE AND WAS FALSE — removed
+   * 2026-09-26. Its reason read "the catalog records what work has cost, not
+   * a vendor's price list over time", and `VendorPriceQuote` is a quote
+   * history: `priceMovement()` (components/vendorPricing.ts) computes the
+   * change between a vendor's last two quotes for an item and /vendors/pricing
+   * renders it under "Movement". `vendor_pricing` now returns that figure.
+   *
+   * This list is INJECTED INTO THE SYSTEM PROMPT, so a stale entry here is
+   * not a stale comment — it is a standing instruction to refuse a question
+   * the product answers on screen, and it cost `job_margin` a matching false
+   * sentence ("there is no vendor price history"). The EMR note further down
+   * says the same thing about the same mistake; this is the second time.
+   * Before adding a gap, and before leaving one, check the screen. */
   {
     topic: "who signed the safety talk",
     why: "the attendee roster is free text and the signature sheet is a photo, so a talk can be shown as logged but individual sign-off cannot be confirmed from the data.",
   },
   {
     topic: "driving directions or travel time",
-    why: "job addresses are not modelled as coordinates and there is no routing.",
+    // HALF OF THIS REASON WENT STALE and was corrected 2026-09-26: it said
+    // "job addresses are not modelled as coordinates", and they are —
+    // `Job.siteLatitude`/`siteLongitude`, geocoded when the site address is
+    // saved so a daily report can look up that day's weather. The gap is
+    // real and the conclusion never changed; only the argument for it was
+    // false, which is the version a model would have repeated.
+    why: "there is no routing, distance or travel-time calculation anywhere in this app, and no tool returns a job's address. A job's site address IS recorded and geocoded to coordinates (for a daily report's weather), so do not say addresses are not held — say there is nothing here that measures a journey, and never estimate one.",
   },
 
   /* ─── the gaps the hundred-question census left standing ───

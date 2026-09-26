@@ -10,6 +10,12 @@ import { describe, expect, it, vi } from "vitest";
  *     talk to an apprentice about a blank field;
  *   - a job with no field report is a job nobody WROTE UP, which is not a
  *     job where nothing happened;
+ *   - a delay lives in `DelayEvent` since 2026-09-18 and in a free-text box
+ *     on the report before that, and the two are not the same evidence: one
+ *     has a cause, a responsible party and crew-hours, the other is a
+ *     sentence. Reading only the superseded box reported a confident ZERO
+ *     for every structured delay since the changeover — see the
+ *     daily_field_reports block below;
  *   - a determination row with no file and no link proves nothing, and is
  *     the shape most likely to be mistaken for coverage.
  */
@@ -107,6 +113,80 @@ const REPORTS = [
   },
 ];
 
+/**
+ * Structured delays. The fixture is arranged so that reading ONLY the
+ * superseded `DailyFieldReport.delays` column — which is what this handler
+ * did until 2026-09-26 — gets a different answer from every assertion below:
+ *
+ *   - 2026-09-14 Northgate has a structured delay and `delays: null`, so the
+ *     old handler called that day clean;
+ *   - 2026-09-17 Riverside has a delay and NO REPORT AT ALL, which the old
+ *     handler could not represent;
+ *   - and 2026-09-15's whitespace `delays` still has to count as no delay,
+ *     so nothing structured is put on that day.
+ */
+const DELAY_EVENTS = [
+  {
+    date: new Date("2026-09-14T00:00:00.000Z"),
+    cause: "OTHER_TRADE",
+    responsibleParty: "GC",
+    responsibleName: "Baker Electric",
+    startMinute: 450,
+    endMinute: 690,
+    workersAffected: 3,
+    // Decimal(7,2) reaches a handler as something String()-able, so the
+    // fixture is a string like the real column.
+    hoursLost: "12.00",
+    description: "Electrician in the corridor ceiling; could not close up",
+    gcNotifiedHow: "EMAIL",
+    gcNotifiedWho: "Dana Whitcomb (GC super)",
+    gcNotifiedAt: new Date("2026-09-14T22:15:00.000Z"),
+    changeOrder: null,
+    job: { name: "Northgate Apartments" },
+  },
+  {
+    // Nobody filed a report this day, and nobody told the GC. Both facts are
+    // what a claim turns on, and both were invisible before.
+    date: new Date("2026-09-17T00:00:00.000Z"),
+    cause: "MATERIAL",
+    responsibleParty: "SUPPLIER",
+    responsibleName: null,
+    startMinute: null,
+    endMinute: null,
+    workersAffected: 2,
+    hoursLost: "4.50",
+    description: "Board delivery never turned up",
+    gcNotifiedHow: null,
+    gcNotifiedWho: null,
+    gcNotifiedAt: null,
+    changeOrder: { number: 7 },
+    job: { name: "Riverside Medical" },
+  },
+  {
+    // A NORTHGATE delay inside Riverside's date window, and the reason it is
+    // here: without it the job scope on the delay read was not load-bearing.
+    // Riverside's oldest report is 15 Sep, so the `date: { gte }` bound alone
+    // excluded Northgate's 14 Sep delay — and dropping the job clause
+    // entirely left every assertion green. A fixture whose two filters
+    // happen to exclude the same row cannot tell you which one is working.
+    date: new Date("2026-09-16T00:00:00.000Z"),
+    cause: "WEATHER",
+    responsibleParty: "NOBODY",
+    responsibleName: null,
+    startMinute: null,
+    endMinute: null,
+    workersAffected: null,
+    // Nobody recorded the hours. Must not be counted as zero-and-fine.
+    hoursLost: null,
+    description: "Rained out after lunch",
+    gcNotifiedHow: "TEXT",
+    gcNotifiedWho: "Dana Whitcomb (GC super)",
+    gcNotifiedAt: new Date("2026-09-16T20:00:00.000Z"),
+    changeOrder: null,
+    job: { name: "Northgate Apartments" },
+  },
+];
+
 const DETERMINATIONS = [
   {
     jurisdiction: "California DIR",
@@ -172,6 +252,24 @@ vi.mock("@prova/db", async (importOriginal) => ({
         return wanted ? REPORTS.filter((r) => r.job.name.toLowerCase().includes(wanted)) : REPORTS;
       },
     },
+    // Honours the job filter AND the `date: { gte }` bound, because the real
+    // one does and because that bound is what keeps a delay whose report fell
+    // outside the 40 most recent from being reported as a day nobody wrote up.
+    delayEvent: {
+      findMany: async ({
+        where,
+      }: {
+        where: { job?: { name?: { contains?: string } }; date?: { gte?: Date } };
+      }) => {
+        const wanted = where.job?.name?.contains?.toLowerCase();
+        const gte = where.date?.gte;
+        return DELAY_EVENTS.filter(
+          (d) =>
+            (wanted ? d.job.name.toLowerCase().includes(wanted) : true) &&
+            (gte ? d.date.getTime() >= gte.getTime() : true),
+        );
+      },
+    },
     prevailingWageDetermination: { findMany: async () => DETERMINATIONS },
     job: {
       findFirst: async ({ where }: { where: { name?: { contains?: string } } }) => {
@@ -229,19 +327,123 @@ describe("apprenticeship_standing", () => {
   });
 });
 
+type ReportRow = {
+  job: string;
+  date: string | null;
+  reportFiled: boolean;
+  workPerformed: string | null;
+  hasDelay: boolean;
+  legacyDelayNote: string | null;
+  delays: {
+    cause: string;
+    responsible: string;
+    start: string | null;
+    end: string | null;
+    crewHoursLost: number | null;
+    gcNotified: { how: string; who: string | null; at: string | null } | null;
+    changeOrder: string | null;
+  }[];
+};
+
 describe("daily_field_reports", () => {
-  it("flags the reports carrying a delay, which is what a claim is built from", async () => {
+  it("reads the STRUCTURED delay log, not just the superseded text box", async () => {
+    // THE FINDING. `DailyFieldReport.delays` is marked SUPERSEDED in
+    // operations.prisma — one free-text box, replaced 2026-09-18 by
+    // DelayEvent — and this handler read only that column. So it reported
+    // delays written up before the changeover and a confident ZERO for every
+    // structured delay since, on the exact question a delay claim against a
+    // GC is assembled from.
+    //
+    // Northgate's 14 Sep report has `delays: null` and a DelayEvent. Reading
+    // only the old column answers hasDelay: false here.
+    const rows = (await ask("daily_field_reports")).data as ReportRow[];
+    const northgate = rows.find((row) => row.job === "Northgate Apartments" && row.date === "2026-09-14")!;
+    expect(northgate.hasDelay).toBe(true);
+    expect(northgate.delays).toHaveLength(1);
+    expect(northgate.legacyDelayNote).toBeNull();
+  });
+
+  it("hands over the cause, the responsible party, the hours and the notice — not a sentence", async () => {
+    // What the superseded column could never carry, and what a claim is
+    // actually built from. Labelled with the same helpers <DelayLog> renders
+    // from, so the box and the job's Field reports tab cannot word a cause
+    // differently.
+    const rows = (await ask("daily_field_reports")).data as ReportRow[];
+    const delay = rows.find((row) => row.date === "2026-09-14")!.delays[0];
+    expect(delay).toMatchObject({
+      cause: "Another trade in the way",
+      responsible: "GC — Baker Electric",
+      start: "7:30 am",
+      end: "11:30 am",
+      crewHoursLost: 12,
+    });
+    expect(delay.gcNotified).toMatchObject({ how: "Email", who: "Dana Whitcomb (GC super)" });
+  });
+
+  it("keeps the legacy free-text note APART from the structured delays", async () => {
+    // Merging them would invent a delay that looks measured when it is a
+    // sentence somebody typed: no cause, no responsible party, no hours.
+    const rows = (await ask("daily_field_reports", { jobName: "Riverside" })).data as ReportRow[];
+    const legacy = rows.find((row) => row.date === "2026-09-16")!;
+    expect(legacy.legacyDelayNote).toContain("Hoist down 3 hours");
+    expect(legacy.delays).toEqual([]);
+    expect(legacy.hasDelay).toBe(true);
+  });
+
+  it("lists a delay logged on a day NOBODY FILED A REPORT", async () => {
+    // A DelayEvent needs no report — `logDelay` writes one against a job and
+    // a date. Dropping it for want of a parent row is the same confident zero
+    // in a smaller costume.
+    const rows = (await ask("daily_field_reports")).data as ReportRow[];
+    const orphan = rows.find((row) => row.date === "2026-09-17")!;
+    expect(orphan.reportFiled).toBe(false);
+    expect(orphan.workPerformed).toBeNull();
+    expect(orphan.delays[0]).toMatchObject({ cause: "Material late or wrong", changeOrder: "CO #7" });
+  });
+
+  it("says a delay the GC was NOT told about, which is what makes one claimable", async () => {
+    const rows = (await ask("daily_field_reports")).data as ReportRow[];
+    expect(rows.find((row) => row.date === "2026-09-17")!.delays[0].gcNotified).toBeNull();
+    expect((await ask("daily_field_reports")).summary).toMatchObject({ delaysTheGcWasNotTold: 1 });
+  });
+
+  it("counts delays, crew-hours and unreported days apart from reports", async () => {
+    // Every figure computed here rather than left for the model: a count it
+    // works out can differ between two runs of the same question.
+    expect((await ask("daily_field_reports")).summary).toEqual({
+      reports: 3,
+      // 16 Sep's legacy note and 14 Sep's structured delay. One before the
+      // changeover, one after — which is the whole point.
+      reportsWithADelay: 2,
+      reportsWithOnlyALegacyDelayNote: 1,
+      delaysLogged: 3,
+      daysWithADelayAndNoReportFiled: 2,
+      // 12.00 + 4.50. The third delay's hours were never recorded and must
+      // not be counted as zero — a blank is not a delay that cost nothing.
+      crewHoursLost: 16.5,
+      delaysTheGcWasNotTold: 1,
+    });
+  });
+
+  it("scopes the delays to the same job as the reports", async () => {
+    // Two halves of one answer describing different jobs would be worse than
+    // either half alone. Northgate's delay must not appear under Riverside.
     const result = await ask("daily_field_reports", { jobName: "Riverside" });
-    expect(result.summary).toEqual({ reports: 2, reportsWithADelay: 1 });
+    expect(result.summary).toEqual({
+      reports: 2,
+      reportsWithADelay: 1,
+      reportsWithOnlyALegacyDelayNote: 1,
+      delaysLogged: 1,
+      daysWithADelayAndNoReportFiled: 1,
+      crewHoursLost: 4.5,
+      delaysTheGcWasNotTold: 1,
+    });
   });
 
   it("does not count a whitespace-only delay as a delay", async () => {
     // An empty string is what a form submits when somebody tabbed past the
     // field. Counting it puts a delay on the record that nobody wrote.
-    const rows = (await ask("daily_field_reports", { jobName: "Riverside" })).data as {
-      date: string | null;
-      hasDelay: boolean;
-    }[];
+    const rows = (await ask("daily_field_reports", { jobName: "Riverside" })).data as ReportRow[];
     expect(rows.find((row) => row.date === "2026-09-15")!.hasDelay).toBe(false);
   });
 
@@ -251,13 +453,31 @@ describe("daily_field_reports", () => {
     const result = await ask("daily_field_reports", { jobName: "Cedar" });
     expect(result.unavailable).toContain("No job matches");
 
+    // Three reports and two delay-only days.
     const rows = (await ask("daily_field_reports")).data as unknown[];
-    expect(rows.length).toBe(3);
+    expect(rows.length).toBe(5);
   });
 
-  it("keeps the newest first", async () => {
-    const rows = (await ask("daily_field_reports")).data as { date: string | null }[];
-    expect(rows.map((row) => row.date)).toEqual(["2026-09-16", "2026-09-15", "2026-09-14"]);
+  it("keeps the newest first, with a delay-only day in its place in the order", async () => {
+    // Two rows share 16 Sep — Riverside's report and Northgate's delay-only
+    // day — so the job name breaks the tie and the order is total. An
+    // unstable order would let the same question answer differently twice.
+    const rows = (await ask("daily_field_reports")).data as ReportRow[];
+    expect(rows.map((row) => `${row.date} ${row.job}`)).toEqual([
+      "2026-09-17 Riverside Medical",
+      "2026-09-16 Northgate Apartments",
+      "2026-09-16 Riverside Medical",
+      "2026-09-15 Riverside Medical",
+      "2026-09-14 Northgate Apartments",
+    ]);
+  });
+
+  it("cites the delay log's own page as well as the field-report list", async () => {
+    // /field-reports renders only the legacy note; the structured log is on a
+    // job's own Field reports tab. Citing one page for a figure the other
+    // holds is a citation nobody can check.
+    const result = await ask("daily_field_reports");
+    expect(result.citations.map((citation) => citation.label)).toEqual(["Field reports", "Delay log"]);
   });
 });
 

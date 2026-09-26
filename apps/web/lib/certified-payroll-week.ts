@@ -66,6 +66,40 @@ export function certifiedPayrollWeekWindow(weekStart: Date): { gte: Date; lte: D
   return { gte, lte };
 }
 
+/** A period somebody filed a certified-payroll document against, as ISO
+ * dates. Both bounds inclusive, like the week window above. */
+export type FiledPayrollPeriod = { start: string; end: string };
+
+/**
+ * Whether a filed certified-payroll document covers a whole week.
+ *
+ * COVERS means the document's period CONTAINS the week end to end. A period
+ * that merely clips the week is not evidence the week was filed, and
+ * treating it as such hides a real gap on a document whose certification is
+ * criminal — so the containment is deliberate and the direction of the
+ * error matters more than the convenience.
+ *
+ * Lifted out of `lib/alerts-query.ts` on 2026-09-26, where it was one
+ * inline `covered.some(...)`, when `certified_payroll` (lib/ask/handlers.ts)
+ * needed the same answer. It is here rather than copied because this file
+ * already owns what a certified-payroll week IS, and because one tool in the
+ * Ask box refusing what another tool in the same box reports was the defect
+ * that sent anybody looking: two surfaces deriving "is this week covered"
+ * separately is how they come to disagree.
+ *
+ * Nothing about this says a document was SUBMITTED to anybody. It answers
+ * "is a document on record against this period" and no more; this app holds
+ * no submission, no send date and no receipt. Every caller has to keep those
+ * two sentences apart.
+ */
+export function certifiedPayrollWeekIsCovered(
+  periods: readonly FiledPayrollPeriod[],
+  weekStart: string,
+  weekEnd: string,
+): boolean {
+  return periods.some((period) => period.start <= weekStart && period.end >= weekEnd);
+}
+
 /** The week the certified-payroll page opens on.
  *
  * A `?weekStart=` the reader asked for always wins. WITHOUT one, the page

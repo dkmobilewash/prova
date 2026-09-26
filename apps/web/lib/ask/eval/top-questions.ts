@@ -331,6 +331,16 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   ),
   t("q-vendor-quote", "what did we get quoted for 5/8 type X?", "vendor_pricing", ESTIMATOR),
   t("q-vendor-stale", "are those prices still good or have they run out?", "vendor_pricing", ESTIMATOR),
+  // WAS A GAP THAT NEVER WAS ONE. KNOWN_GAPS carried "a vendor's recent price
+  // change: the catalog records what work has cost, not a vendor's price list
+  // over time", and `job_margin` said "there is no vendor price history".
+  // `priceMovement()` (components/vendorPricing.ts) had computed the change
+  // between a vendor's last two quotes all along and /vendors/pricing rendered
+  // it under "Movement" — so the list injected into the system prompt was
+  // telling the model to refuse a question on screen. `vendor_pricing` returns
+  // the figure now; the entry is gone, and the test below fails if it comes
+  // back.
+  t("q-vendor-movement", "has Allied put their price up on 5/8 type X?", "vendor_pricing", ESTIMATOR),
   t("q-estimate-read", "what's in the Northgate estimate?", "estimate_detail", ESTIMATOR),
   // WAS A GAP until BidPursuit (pursuits.prisma). A subcontractor's own
   // pre-bid pipeline was not modelled: `bid_status` starts at the bid
@@ -405,6 +415,28 @@ export const TOP_QUESTIONS: TopQuestion[] = [
     "A running clock is held only on the worker's phone (apps/mobile/lib/clock-session.ts) and the server writes a time entry when it CLOSES, so no row anywhere says who is on the clock this minute. `crew_schedule` answers who was planned, in the same shape, and reading it as who clocked in is the near-miss. Closing this needs an open-interval row on the server, which is a schema change.",
     FIELD,
   ),
+
+  // ══════════════════════════════════ the week before a bid is due
+  //
+  // Seven questions for the thirteen estimating and takeoff features that
+  // shipped between 22 and 26 September. Every one of them was asked here
+  // FIRST and routed to nothing: the features existed, the screens existed,
+  // and the box beside them could not read a single row.
+  //
+  // Two of the seven are written to collide on purpose, because a gap fails
+  // as a confident near-miss rather than as silence. "Are the drawings we
+  // measured off still current" reaches for `drawing_currency` — the job's
+  // own paper trail, which is not the sheet somebody was emailed with an
+  // invitation to bid — and "what does that come to with overhead on it"
+  // reaches for `estimate_detail`, which holds direct cost and no markup at
+  // all. Both near-misses answer in the right shape with the wrong figures.
+  t("q-takeoff-superseded", "did any of our Riverside numbers come off drawings that have been superseded?", "takeoff_currency", ESTIMATOR),
+  t("q-wall-quantities", "how much board and how many studs are we carrying on Riverside?", "wall_schedule", ESTIMATOR),
+  t("q-quotes-comparable", "are those three framing quotes actually bidding the same scope?", "bid_levelling", ESTIMATOR),
+  t("q-bid-responsive", "have we missed anything that would get our bid thrown out?", "bid_compliance", ESTIMATOR),
+  t("q-alternates-in", "what are we at on Harbor lofts with the alternates in?", "bid_alternates", ESTIMATOR),
+  t("q-bid-with-markup", "what does Riverside come to once overhead and profit are on it?", "bid_recap", ESTIMATOR),
+  t("q-order-of-magnitude", "roughly what would a 40,000 square foot office fit-out run us?", "conceptual_estimate", ESTIMATOR),
 ];
 
 /**
@@ -463,7 +495,25 @@ export const CENSUS_REFUSALS = 2;
  * and was told "nothing here reads it". No gap and no refusal changed. */
 /** 114 -> 115 on 2026-09-24: one question for `find_bid_leads`, the
  * lead-search command. No gap and no refusal changed. */
-export const TOTAL_QUESTIONS = 115;
+/** 115 -> 122 on 2026-09-26: seven questions for the estimating and takeoff
+ * tools — `takeoff_currency`, `wall_schedule`, `bid_levelling`,
+ * `bid_compliance`, `bid_alternates`, `bid_recap`, `conceptual_estimate`.
+ *
+ * NO GAP COUNT CHANGED, and that is worth saying rather than leaving to be
+ * noticed: these thirteen features were never ON the gap list. Nobody had
+ * written the questions down, so the census read as complete while every one
+ * of them routed to nothing — which is the failure this file exists to catch
+ * and did not, because a census can only find a hole somebody asked about.
+ * The lesson is not the number: it is that a feature shipping and a question
+ * being written are two separate events, and only the second one is here. */
+/** 122 -> 123 on 2026-09-26: one question for a vendor's price MOVEMENT,
+ * which `vendor_pricing` answers and KNOWN_GAPS was telling the model to
+ * refuse. A GAP LEFT THE LIST and nothing was added to it — the opposite
+ * motion from the entry above, and the other way this census goes wrong: a
+ * hole somebody wrote down, closed by code, and left on the list that is
+ * injected into the system prompt. It went from a census entry nobody had
+ * written to a refusal nobody had withdrawn. */
+export const TOTAL_QUESTIONS = 123;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the

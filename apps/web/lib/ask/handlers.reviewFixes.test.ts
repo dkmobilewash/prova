@@ -99,6 +99,33 @@ const OLD_ON_CEDAR = {
   filedBy: null,
 };
 
+/** One structured delay, on the SAME day as the report the 40-cap hides.
+ *
+ * This is the only fixture in the repo where the report cap and the delay read
+ * interact, and it is what the delay query's `date: { gte: oldestReportDate }`
+ * bound exists for. Company-wide, Cedar's 1 Aug report falls outside the 40
+ * most recent, so a delay read with no lower bound finds this delay, finds no
+ * report for that day IN VIEW, and files it as a day nobody wrote up — a
+ * confident, specific, false claim about the paperwork a delay claim is built
+ * from, which is the same defect this whole file is named after wearing the
+ * delay log as a disguise. */
+const DELAY_ON_CEDAR = {
+  date: new Date("2026-08-01T00:00:00.000Z"),
+  cause: "EQUIPMENT",
+  responsibleParty: "OURSELVES",
+  responsibleName: null,
+  startMinute: null,
+  endMinute: null,
+  workersAffected: 2,
+  hoursLost: "4.00",
+  description: "Hoist down half the morning",
+  gcNotifiedHow: null,
+  gcNotifiedWho: null,
+  gcNotifiedAt: null,
+  changeOrder: null,
+  job: { name: "Cedar Park Elementary" },
+};
+
 /** 60 messages — deliberately MORE than the old `take: 50`, with the
  * bounces spread so that some fall outside it. A fixture smaller than the
  * cap is what let this ship: the summary was asserted against 3 messages
@@ -148,6 +175,24 @@ vi.mock("@prova/db", async (importOriginal) => ({
         return take ? ordered.slice(0, take) : ordered;
       },
     },
+    // Honours the job filter AND the `date: { gte }` bound, because the real
+    // one does and because that bound is the whole subject of the last test in
+    // this file.
+    delayEvent: {
+      findMany: async ({
+        where,
+      }: {
+        where: { job?: { name?: { contains?: string } }; date?: { gte?: Date } };
+      }) => {
+        const wanted = where.job?.name?.contains?.toLowerCase();
+        const gte = where.date?.gte;
+        return [DELAY_ON_CEDAR].filter(
+          (d) =>
+            (wanted ? d.job.name.toLowerCase().includes(wanted) : true) &&
+            (gte ? d.date.getTime() >= gte.getTime() : true),
+        );
+      },
+    },
     submittal: { findMany: async () => SUBMITTALS },
     outboundMessage: {
       // Honours `take` if one is passed, so the mutation can reinstate it.
@@ -188,12 +233,46 @@ describe("daily_field_reports scopes before it limits", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].job).toBe("Cedar Park Elementary");
     expect(rows[0].date).toBe("2026-08-01");
-    // And the delay on it — the thing a claim is actually built from.
+    // And the delay on it — the thing a claim is actually built from. This
+    // one is the pre-2026-09-18 free-text note, which is all that day has.
     expect(rows[0].hasDelay).toBe(true);
   });
 
+  it("does not call a day unreported because the 40-cap hid its report", async () => {
+    // THE DATE BOUND. Cedar's 1 Aug report is the oldest of 46 and falls
+    // outside the company-wide 40, so its delay's day is not in view. Read the
+    // delays with no lower bound and that delay becomes a row saying nobody
+    // filed a report for Cedar on 1 Aug. Somebody did.
+    const rows = (await ask("daily_field_reports")).data as { date: string | null; reportFiled: boolean }[];
+    expect(rows.find((row) => row.date === "2026-08-01")).toBeUndefined();
+    expect(rows.every((row) => row.reportFiled)).toBe(true);
+  });
+
+  it("still attaches that delay to its report when the job IS asked for", async () => {
+    // The other half, and what makes the test above a bound rather than a
+    // silent drop: scoped to Cedar the report is in view, so the delay belongs
+    // to it.
+    const rows = (await ask("daily_field_reports", { jobName: "Cedar Park" })).data as {
+      date: string | null;
+      reportFiled: boolean;
+      delays: { crewHoursLost: number | null }[];
+      legacyDelayNote: string | null;
+    }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].reportFiled).toBe(true);
+    expect(rows[0].delays).toHaveLength(1);
+    expect(rows[0].delays[0].crewHoursLost).toBe(4);
+    // And the day's older typed note is still there beside it, unmerged.
+    expect(rows[0].legacyDelayNote).toBe("Hoist down half a day");
+  });
+
   it("still limits the unfiltered company-wide read", async () => {
+    // And the result is still a flat ARRAY, which is what `forModel` caps.
+    // Wrapping the reports and the delay-only days in an object would have
+    // walked straight past the cap — the first defect in this file, wearing
+    // the delay log as a disguise.
     const rows = (await ask("daily_field_reports")).data as unknown[];
+    expect(Array.isArray(rows)).toBe(true);
     expect(rows).toHaveLength(40);
   });
 });

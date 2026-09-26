@@ -37,6 +37,10 @@ import { loadRetainageHeld } from "@/lib/retainage-query";
 import { changeOrderValueDelta, countUnbookable, PENDING_CHANGE_ORDER_STATUSES } from "@/lib/change-order";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
 import { loadRatioReviews, loadRemittance } from "@/lib/union-compliance-query";
+// The delay log's own labels and time formatting — the same module the
+// job's Field reports tab renders <DelayLog> from, so a cause or a
+// responsible party cannot be worded one way on screen and another here.
+import { causeLabel, formatMinutes, methodLabel, partyLabel } from "@/lib/delays-core";
 import { ratioLabel } from "@/lib/apprentice-ratio";
 import { loadCloseoutJobs } from "@/lib/closeout-query";
 import { loadApprenticeships } from "@/lib/apprenticeship-query";
@@ -51,9 +55,13 @@ import {
 } from "@/components/drawingLabels";
 import { orderState, stateLabel as orderStateLabel, daysLate } from "@/components/materialOrderLabels";
 import { currentAssignment } from "@/components/equipmentDeployment";
+// /vendors/pricing's own derivations. `priceMovement` is the percent change
+// that page renders under "Movement"; rule 1 in tools.ts is why the model is
+// handed it rather than two prices and a subtraction.
+import { isExpired, priceMovement, type QuoteData } from "@/components/vendorPricing";
 import { can, canReach, type Capability, type Principal } from "@/lib/permissions";
 import { refusalFor } from "./access";
-import { certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
+import { certifiedPayrollWeekIsCovered, certifiedPayrollWeekStart } from "@/lib/certified-payroll-week";
 import { NAME_NOT_RECORDED, crewMemberName, timeEntryWorkerId, timeEntryWorkerName } from "@/lib/worker-name";
 import {
   loadPlannedDaysMissingHours,
@@ -80,6 +88,15 @@ import { cookies } from "next/headers";
 import { gettingStartedChecklist, type GettingStartedStepId } from "@/lib/getting-started";
 import { loadGettingStartedCounts } from "@/lib/getting-started-counts";
 import { GETTING_STARTED_HIDDEN_COOKIE, isGettingStartedHidden } from "@/lib/getting-started-cookie";
+import { loadTakeoffCurrency } from "@/lib/takeoff-currency-query";
+import { openingsFromJson, scheduleLines, type WallComponentBasis, type WallTypeInput } from "@/lib/wall-assemblies";
+import { levelBid, outstandingNote, requestState } from "@/lib/bid-levelling";
+import { bidResponsiveness, responsivenessSentence } from "@/lib/bid-responsiveness";
+import { alternateDirection, bidTotals, type BidLineInput, type BidLineKind } from "@/lib/bid-lines";
+import { bidRecap as calculateBidRecap, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
+import { loadConceptualBenchmark, countFinishedJobsWithoutArea } from "@/lib/conceptual-estimate-query";
+import { conceptualRange, conceptualSentence, MINIMUM_SAMPLE } from "@/lib/conceptual-estimate";
+import { money } from "@/lib/money";
 import { matchesJobName, TOOLS, type ToolName, type ToolResult } from "./tools";
 import { reachableWalkthroughs, searchAppHelp } from "./appHelp";
 import { capabilityForRoute } from "@/lib/permissions";
@@ -113,6 +130,14 @@ type Input = {
   name?: string;
   /** app_help's own words for what the person wants to do. */
   topic?: string;
+  /** The bid tools' project name, as the GC wrote it on the invitation.
+   * Deliberately not `jobName`: at bid time there is usually no job, and one
+   * GC sends three invitations per building. */
+  projectName?: string;
+  /** conceptual_estimate's gross area, as the person said it. A string
+   * because every filter here is, and because "40,000" is what somebody
+   * types — parsed by the app, never by the model. */
+  areaSqFt?: string;
 };
 
 const iso = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : null);
@@ -205,6 +230,13 @@ export const HANDLERS: Record<
   job_overview: jobOverview,
   getting_started: gettingStarted,
   app_help: appHelp,
+  takeoff_currency: takeoffCurrency,
+  wall_schedule: wallSchedule,
+  bid_levelling: bidLevelling,
+  bid_compliance: bidCompliance,
+  bid_alternates: bidAlternates,
+  bid_recap: bidRecapTool,
+  conceptual_estimate: conceptualEstimate,
 };
 
 /**
@@ -1916,21 +1948,71 @@ async function apprenticeshipStanding(companyId: string): Promise<ToolResult> {
 }
 
 /**
- * What was written up on site, most recent first.
+ * What was written up on site, most recent first — and the delay log beside
+ * it.
  *
  * A delay recorded on the day is the contemporaneous record a delay claim
  * is later built on, so reports carrying one are flagged and counted — that
  * is the question this gets asked for, months later, by somebody assembling
  * a claim.
  *
+ * WHICH DELAY RECORD THIS READS, AND WHY IT READS BOTH. Until 2026-09-18 a
+ * delay was one free-text box on the report (`DailyFieldReport.delays`),
+ * which `operations.prisma` now marks SUPERSEDED: the record is `DelayEvent`
+ * (labor.prisma), one row per delay with a cause, a responsible party,
+ * times, crew-hours lost and whether the GC was told. This handler read ONLY
+ * the superseded column until 2026-09-26 — so it reported delays filed
+ * before that changeover and a confident ZERO for every structured delay
+ * since, on the one question a delay claim is actually assembled from. The
+ * tool's own description promised that "reports WITH a delay are flagged".
+ *
+ * It now reads `DelayEvent` AND carries the legacy text, deliberately, for
+ * the same reason the job's field-reports tab still renders both: the older
+ * text is the only record those days have, and a claim from 2026 will be
+ * argued in 2027. The two are kept in SEPARATE fields rather than merged —
+ * `legacyDelayNote` has no cause, no responsible party and no hours, and
+ * merging it into the structured list would invent a delay that looks
+ * measured when it is a sentence somebody typed.
+ *
+ * A DELAY DOES NOT NEED A REPORT. `logDelay` writes a `DelayEvent` against a
+ * job and a date with no report involved, so a delay on a day nobody wrote
+ * up is real — and dropping it for want of a parent row is the same
+ * confident zero in a smaller costume. So a row here is a DAY on record
+ * rather than a report: `reportFiled` says which kind it is, and a
+ * delay-only day carries its delays with `workPerformed: null`.
+ *
+ * ONE FLAT ARRAY, DELIBERATELY. The obvious shape was
+ * `{ reports, delaysWithNoReportFiled }`, and it silently defeats the row
+ * cap: `forModel` (answer.ts) caps a result that IS an array or an object
+ * with a `rows` key, and neither of those is that — so every row would reach
+ * the prompt uncapped and with no count, which is precisely the defect
+ * handlers.reviewFixes.test.ts exists to pin. A flat list is capped by the
+ * machinery that already works.
+ *
  * The `unavailable` sentence is careful: a job with no reports is a job
  * nobody wrote up, which is NOT the same as a job where nothing happened,
- * and an answer that implies the second is worse than no answer.
+ * and an answer that implies the second is worse than no answer. It is set
+ * only when there is no report AND no delay: a job with delays logged and
+ * nothing written up has data to answer from.
  */
 async function dailyFieldReports(companyId: string, input: Input): Promise<ToolResult> {
-  const citations = [{ label: "Field reports", href: "/field-reports" }];
+  const citations = [
+    { label: "Field reports", href: "/field-reports" },
+    // The structured delay log lives on a job's own Field reports tab, not
+    // on the company-wide list — /field-reports renders only the legacy
+    // free-text note. Cited as /jobs, the convention every job-tab tool
+    // here follows, because the real page needs a job id.
+    { label: "Delay log", href: "/jobs" },
+  ];
   const jobMismatch = await jobNameMismatch(companyId, input.jobName);
   if (jobMismatch) return { data: [], citations, unavailable: jobMismatch };
+
+  // One job scope, spelled once, for both reads. Anything narrowing the
+  // reports has to narrow the delays identically or the two halves of one
+  // answer describe different jobs.
+  const jobWhere = input.jobName?.trim()
+    ? { name: { contains: input.jobName.trim(), mode: "insensitive" as const } }
+    : {};
 
   const reports = await prisma.dailyFieldReport.findMany({
     // The job filter is in the WHERE, not applied after the take. With
@@ -1940,17 +2022,15 @@ async function dailyFieldReports(companyId: string, input: Input): Promise<ToolR
     // confident, specific, false claim about the paperwork a delay claim
     // is built from. Found reviewing #303. `contains` + insensitive is
     // exactly what matchesJobName does, so nothing else changes.
-    where: {
-      companyId,
-      ...(input.jobName?.trim()
-        ? { job: { name: { contains: input.jobName.trim(), mode: "insensitive" as const } } }
-        : {}),
-    },
+    where: { companyId, ...(input.jobName?.trim() ? { job: jobWhere } : {}) },
     select: {
       reportDate: true,
       workPerformed: true,
       crewPresent: true,
       weather: true,
+      // SUPERSEDED by DelayEvent, read on purpose and kept apart from it —
+      // see this handler's header. Reports filed before 2026-09-18 have
+      // their delay here and nowhere else.
       delays: true,
       job: { select: { name: true } },
       filedBy: { select: { name: true, email: true } },
@@ -1959,30 +2039,154 @@ async function dailyFieldReports(companyId: string, input: Input): Promise<ToolR
     take: 40,
   });
 
-  const rows = reports
-    .map((report) => ({
+  // Bounded by the oldest report in view when there is one, so a delay on a
+  // day whose report exists but fell outside the 40 cannot be misfiled as a
+  // day nobody wrote up. With no reports at all there is no bound to take,
+  // and every delay found is genuinely unreported.
+  const oldestReportDate = reports.at(-1)?.reportDate ?? null;
+  const delayEvents = await prisma.delayEvent.findMany({
+    where: {
+      companyId,
+      ...(input.jobName?.trim() ? { job: jobWhere } : {}),
+      ...(oldestReportDate ? { date: { gte: oldestReportDate } } : {}),
+    },
+    select: {
+      date: true,
+      cause: true,
+      responsibleParty: true,
+      responsibleName: true,
+      startMinute: true,
+      endMinute: true,
+      workersAffected: true,
+      hoursLost: true,
+      description: true,
+      gcNotifiedHow: true,
+      gcNotifiedWho: true,
+      gcNotifiedAt: true,
+      changeOrder: { select: { number: true } },
+      job: { select: { name: true } },
+    },
+    orderBy: [{ date: "desc" }, { createdAt: "asc" }],
+    take: 200,
+  });
+
+  // Labelled with the same helpers the job's Field reports tab renders from,
+  // so the box and the page cannot word a cause or a responsible party
+  // differently.
+  const delayRow = (delay: (typeof delayEvents)[number]) => ({
+    job: delay.job.name,
+    date: iso(delay.date),
+    cause: causeLabel(delay.cause),
+    responsible: delay.responsibleName
+      ? `${partyLabel(delay.responsibleParty)} — ${delay.responsibleName}`
+      : partyLabel(delay.responsibleParty),
+    start: formatMinutes(delay.startMinute),
+    end: formatMinutes(delay.endMinute),
+    workersAffected: delay.workersAffected,
+    // Crew-hours lost, as ENTERED or as the delay form worked it out at
+    // entry. Never recomputed here: two surfaces deriving the same figure is
+    // the bug this file's header exists to prevent.
+    crewHoursLost: delay.hoursLost === null ? null : Number(delay.hoursLost),
+    description: delay.description,
+    // A notice with no method is not a notice. Null method means the GC has
+    // NOT been told, which is the fact a claim turns on, so it is stated
+    // rather than left as three nulls to interpret.
+    gcNotified: delay.gcNotifiedHow
+      ? {
+          how: methodLabel(delay.gcNotifiedHow),
+          who: delay.gcNotifiedWho,
+          at: delay.gcNotifiedAt?.toISOString() ?? null,
+        }
+      : null,
+    changeOrder: delay.changeOrder ? `CO #${delay.changeOrder.number}` : null,
+  });
+
+  const delaysByDay = new Map<string, ReturnType<typeof delayRow>[]>();
+  for (const delay of delayEvents) {
+    const key = `${delay.job.name}::${iso(delay.date)}`;
+    const list = delaysByDay.get(key);
+    if (list) list.push(delayRow(delay));
+    else delaysByDay.set(key, [delayRow(delay)]);
+  }
+
+  const reportRows = reports.map((report) => {
+    const key = `${report.job.name}::${iso(report.reportDate)}`;
+    const delays = delaysByDay.get(key) ?? [];
+    delaysByDay.delete(key);
+    const legacyDelayNote = report.delays?.trim() ? report.delays : null;
+    return {
       job: report.job.name,
       date: iso(report.reportDate),
-      workPerformed: report.workPerformed,
+      reportFiled: true,
+      workPerformed: report.workPerformed as string | null,
+      // Labelled "Other trades / visitors on site" on the screens since
+      // 2026-09-18; the crew itself comes off that day's time entries.
       crewPresent: report.crewPresent,
       weather: report.weather,
-      delay: report.delays,
-      hasDelay: Boolean(report.delays?.trim()),
+      delays,
+      // The free-text box that was the whole delay record before 2026-09-18.
+      // It carries no cause, no responsible party and no hours — never
+      // report it as if it did.
+      legacyDelayNote,
+      hasDelay: delays.length > 0 || legacyDelayNote !== null,
       filedBy: report.filedBy?.name ?? report.filedBy?.email ?? null,
-    }));
+    };
+  });
+
+  // Whatever is left in the map is a day with delays and no report. Same row
+  // shape, `reportFiled: false`, so nothing downstream has to know there are
+  // two kinds — and a reader skimming the list cannot miss the day.
+  const delayOnlyRows = [...delaysByDay.values()].map((delays) => ({
+    job: delays[0].job,
+    date: delays[0].date,
+    reportFiled: false,
+    workPerformed: null as string | null,
+    crewPresent: null,
+    weather: null,
+    delays,
+    legacyDelayNote: null,
+    hasDelay: true,
+    filedBy: null,
+  }));
+
+  // Newest first, job name to break a tie so the order is total and stable.
+  const rows = [...reportRows, ...delayOnlyRows].sort((a, b) =>
+    a.date === b.date ? a.job.localeCompare(b.job) : (b.date ?? "").localeCompare(a.date ?? ""),
+  );
 
   return {
     data: rows,
     summary: {
-      reports: rows.length,
-      reportsWithADelay: rows.filter((row) => row.hasDelay).length,
+      // Reports, not rows: a delay-only day is not a report somebody filed,
+      // and counting it as one would say the paperwork exists.
+      reports: reportRows.length,
+      reportsWithADelay: reportRows.filter((row) => row.hasDelay).length,
+      // Delays, not days carrying them: two delays on one day is two things
+      // that cost the crew time, and one row that mentions both.
+      delaysLogged: delayEvents.length,
+      daysWithADelayAndNoReportFiled: delayOnlyRows.length,
+      // Rounded because the column is Decimal(7,2) and floating-point
+      // addition of two-place decimals is not.
+      crewHoursLost:
+        Math.round(
+          delayEvents.reduce((sum, delay) => sum + (delay.hoursLost === null ? 0 : Number(delay.hoursLost)), 0) * 100,
+        ) / 100,
+      // The one count somebody acts on today: notice to the GC is what makes
+      // a delay claimable, and a delay with no method recorded has not been
+      // notified to anybody.
+      delaysTheGcWasNotTold: delayEvents.filter((delay) => delay.gcNotifiedHow === null).length,
+      // Counted apart because it has no cause, no party and no hours behind
+      // it — a summary that folded it in would overstate what is provable.
+      reportsWithOnlyALegacyDelayNote: reportRows.filter(
+        (row) => row.delays.length === 0 && row.legacyDelayNote !== null,
+      ).length,
     },
     citations,
     unavailable:
       rows.length === 0
         ? input.jobName
-          ? "No field report has been filed on that job. That means nobody wrote one up, not that nothing happened."
-          : "No field report has been filed. That means nobody wrote one up, not that nothing happened."
+          ? "No field report has been filed on that job and no delay has been logged against it. That means nobody wrote one up, not that nothing happened."
+          : "No field report has been filed and no delay has been logged. That means nobody wrote one up, not that nothing happened."
         : undefined,
   };
 }
@@ -2151,7 +2355,7 @@ async function jobPhotos(companyId: string, input: Input): Promise<ToolResult> {
 }
 
 /**
- * What vendors have quoted, and whether it is still good.
+ * What vendors have quoted, whether it is still good, and which way it moved.
  *
  * The validity date is the point. An expired quote carried into a bid is
  * how a job gets mis-priced, so `expired` is STATED rather than left as two
@@ -2161,35 +2365,124 @@ async function jobPhotos(companyId: string, input: Input): Promise<ToolResult> {
  * A quote with NO validity date is `null`, not `false`. "Not expired" would
  * be a claim that the price still stands, and nobody recorded anything that
  * says so.
+ *
+ * THE MOVEMENT FIGURE, AND WHY IT IS HERE NOW. Until 2026-09-26 this tool
+ * returned prices and no movement, `job_margin`'s description said "there is
+ * no vendor price history", and KNOWN_GAPS told the model to refuse "a
+ * vendor's recent price change". All three were false: `priceMovement()`
+ * (components/vendorPricing.ts) has computed it all along and
+ * /vendors/pricing renders it under "Movement". The model was being
+ * instructed to refuse a question its own product answers on screen.
+ *
+ * It arrives COMPUTED, by that same function, grouped the way that page
+ * groups — one movement per vendor per item, same unit only. tools.ts rule 1
+ * is the reason: a percentage the model works out from two prices is a figure
+ * that can differ between two runs of the same question, and this one is
+ * argued with a supplier.
+ *
+ * A ZERO MOVEMENT IS KEPT, and the page drops it. That is deliberate and it
+ * is the one place the two differ: the page has nothing to show for a price
+ * that did not move, while "they quoted the same $0.62 in June and again in
+ * September" is a real answer to "has their price gone up" — and a tool that
+ * returned nothing there would read as "we don't track that", which is the
+ * exact failure this change exists to end. `direction` is stated so the sign
+ * is never something the model has to read off a number.
  */
 async function vendorPricing(companyId: string): Promise<ToolResult> {
   const citations = [{ label: "Vendor pricing", href: "/vendors/pricing" }];
   const quotes = await prisma.vendorPriceQuote.findMany({
     where: { companyId },
     select: {
+      id: true,
       description: true,
       unit: true,
       unitPrice: true,
       quotedOn: true,
       validUntil: true,
-      vendor: { select: { name: true } },
+      source: true,
+      notes: true,
+      catalogEntryId: true,
+      vendor: { select: { id: true, name: true } },
     },
     orderBy: { quotedOn: "desc" },
   });
 
   const today = serverToday();
-  const rows = quotes.map((quote) => {
-    const validUntil = iso(quote.validUntil);
+
+  // The page's own shape, so its helpers apply unchanged.
+  const quoteData: QuoteData[] = quotes.map((quote) => ({
+    id: quote.id,
+    vendorId: quote.vendor.id,
+    vendorName: quote.vendor.name,
+    catalogEntryId: quote.catalogEntryId,
+    description: quote.description,
+    unit: quote.unit,
+    unitPrice: Number(quote.unitPrice),
+    quotedOn: iso(quote.quotedOn) as string,
+    validUntil: iso(quote.validUntil),
+    source: quote.source,
+    notes: quote.notes,
+  }));
+
+  // Grouped by catalog item where one is linked and otherwise by the wording,
+  // character for character what /vendors/pricing does. Wording is a weak key
+  // — two vendors describing the same board differently do not line up — and
+  // a DIFFERENT key here would put a movement between two quotes the page
+  // considers unrelated, which is worse than the weak key.
+  const itemKey = (quote: QuoteData) =>
+    quote.catalogEntryId ? `catalog:${quote.catalogEntryId}` : `text:${quote.description.trim().toLowerCase()}`;
+
+  // One movement per (item, vendor), attached to that vendor's NEWEST quote
+  // for the item — the page's loop, one call of priceMovement per pair.
+  const movementByQuoteId = new Map<string, NonNullable<ReturnType<typeof priceMovement>>>();
+  const pairs = new Map<string, QuoteData[]>();
+  for (const quote of quoteData) {
+    const key = `${itemKey(quote)}::${quote.vendorId}`;
+    const list = pairs.get(key);
+    if (list) list.push(quote);
+    else pairs.set(key, [quote]);
+  }
+  for (const group of pairs.values()) {
+    const movement = priceMovement(group);
+    if (movement) movementByQuoteId.set(movement.to.id, movement);
+  }
+
+  const rows = quoteData.map((quote) => {
+    const movement = movementByQuoteId.get(quote.id);
     return {
       material: quote.description,
-      vendor: quote.vendor?.name ?? null,
+      vendor: quote.vendorName,
       unit: quote.unit,
-      unitPrice: Number(quote.unitPrice),
-      quotedOn: iso(quote.quotedOn),
-      validUntil,
-      expired: validUntil === null ? null : daysBetween(validUntil, today) > 0,
+      unitPrice: quote.unitPrice,
+      quotedOn: quote.quotedOn,
+      validUntil: quote.validUntil,
+      // The page's own predicate rather than a second spelling of it. It was
+      // `daysBetween(validUntil, today) > 0` here, which agrees today and is
+      // a figure computed twice — the shape this file's header warns about.
+      expired: quote.validUntil === null ? null : isExpired(quote, today),
+      /**
+       * How THIS vendor's price for THIS material moved from their previous
+       * quote to this one. Null when they have only quoted it once, and null
+       * on a quote a newer one of theirs supersedes — the movement is
+       * reported on the newer row, exactly as the page reports it.
+       */
+      priceChange: movement
+        ? {
+            direction:
+              movement.changePercent > 0
+                ? ("up" as const)
+                : movement.changePercent < 0
+                  ? ("down" as const)
+                  : ("unchanged" as const),
+            changePercent: movement.changePercent,
+            fromUnitPrice: movement.from.unitPrice,
+            fromQuotedOn: movement.from.quotedOn,
+          }
+        : null,
     };
   });
+
+  const movements = [...movementByQuoteId.values()];
 
   return {
     data: rows,
@@ -2199,6 +2492,11 @@ async function vendorPricing(companyId: string): Promise<ToolResult> {
       // Counted apart from expired: an undated quote is a records gap, not
       // a stale price, and the fix is to ask the vendor for terms.
       withoutAValidityDate: rows.filter((row) => row.expired === null).length,
+      // Movements, and the two directions apart. "Four prices moved" is not
+      // the answer to "is anything going up" when three of them came down.
+      priceMovements: movements.length,
+      pricesUp: movements.filter((movement) => movement.changePercent > 0).length,
+      pricesDown: movements.filter((movement) => movement.changePercent < 0).length,
     },
     citations,
     unavailable: rows.length === 0 ? "No vendor price has been recorded." : undefined,
@@ -2510,12 +2808,39 @@ const CERTIFIED_PAYROLL_WEEKS = 8;
  * what would be blank on it if it did.
  *
  * WHAT THIS DOES NOT SAY, and it is the first thing the tool says: nothing
- * in this app records that a week was FILED. There is no submission model —
- * the page computes a week live from TimeEntry every time it is opened — so
- * "is certified payroll in?" cannot be answered as asked, and this tool
- * must not let that read as a yes. What it answers instead is the question
- * underneath: is the week's data complete enough that the form would come
- * out right.
+ * in this app records that a week was SUBMITTED. There is no submission
+ * model — no agency, no date sent, no receipt — and the WH-347 itself is
+ * computed live from TimeEntry every time the page is opened, so "did it go
+ * in?" cannot be answered as asked and this tool must not let anything read
+ * as a yes to it.
+ *
+ * WHAT IT DID NOT SAY, AND COULD HAVE, until 2026-09-26. This description
+ * used to claim it "does NOT and CANNOT say whether a week was FILED:
+ * nothing in this app records a payroll submission". The second half is
+ * true. The first half was not: a `ComplianceDocument` of type
+ * CERTIFIED_PAYROLL carries a `periodStart`/`periodEnd`, and
+ * `lib/alerts-query.ts` has been reading exactly those rows to raise the
+ * CERTIFIED_PAYROLL alert that `needs_attention` surfaces. So one tool in
+ * this box was refusing what another tool in the same box reports.
+ *
+ * THE RESOLUTION IS THAT THESE ARE TWO FACTS, not a correction of one:
+ *
+ *   - `documentOnRecord` — a certified-payroll document is filed here
+ *     against a period that CONTAINS this week. Same rows and the same
+ *     containment as the alert, through the same predicate
+ *     (`certifiedPayrollWeekIsCovered`), so the box and the bell cannot
+ *     disagree about a week.
+ *   - `submissionToAnAgency` — never recorded, on every row. A document on
+ *     record is a document somebody put here. It is not a receipt, and
+ *     nothing in this app is.
+ *
+ * So the honest sentence is "a certified payroll is on record for that week"
+ * or "nothing is on record for that week", and never "it was filed" or "it
+ * was not". `documentOnRecord: false` is not evidence nobody filed, either —
+ * it is evidence nothing was recorded HERE.
+ *
+ * What it answers besides that is the question underneath: is the week's
+ * data complete enough that the form would come out right.
  *
  * Three ways it comes out wrong, and each is counted separately because
  * each sends a different person to do a different thing:
@@ -2545,7 +2870,7 @@ async function certifiedPayroll(companyId: string, input: Input): Promise<ToolRe
     new Date(new Date(`${today}T00:00:00.000Z`).getTime() - CERTIFIED_PAYROLL_WEEKS * 7 * 86_400_000),
   );
 
-  const [entries, crafts] = await Promise.all([
+  const [entries, crafts, filedDocuments] = await Promise.all([
     prisma.timeEntry.findMany({
       // Scoped through the job to this company, and filtered in the QUERY
       // rather than afterwards — the defect that shipped in daily_field_reports
@@ -2579,7 +2904,36 @@ async function certifiedPayroll(companyId: string, input: Input): Promise<ToolRe
       where: { companyId },
       select: { id: true, fringeRateSchedules: { orderBy: { effectiveFrom: "desc" } } },
     }),
+    // The certified-payroll documents filed against a period, scoped through
+    // the job exactly as the time entries are. These are the same rows
+    // lib/alerts-query.ts reads to raise the CERTIFIED_PAYROLL alert; a
+    // company-level ComplianceDocument (a COI) has no jobId and is excluded
+    // by the job scope, which is right — a payroll week belongs to a job.
+    prisma.complianceDocument.findMany({
+      where: {
+        type: "CERTIFIED_PAYROLL",
+        job: {
+          companyId,
+          ...(input.jobName?.trim()
+            ? { name: { contains: input.jobName.trim(), mode: "insensitive" as const } }
+            : {}),
+        },
+      },
+      select: { periodStart: true, periodEnd: true, job: { select: { name: true } } },
+    }),
   ]);
+
+  // Periods per job. A document with either bound missing covers nothing:
+  // half a period cannot contain a week, and guessing the other end on a
+  // document whose certification is criminal is not a guess worth making.
+  const filedPeriodsByJob = new Map<string, { start: string; end: string }[]>();
+  for (const document of filedDocuments) {
+    if (!document.periodStart || !document.periodEnd) continue;
+    const period = { start: iso(document.periodStart) as string, end: iso(document.periodEnd) as string };
+    const list = filedPeriodsByJob.get(document.job?.name ?? "");
+    if (list) list.push(period);
+    else filedPeriodsByJob.set(document.job?.name ?? "", [period]);
+  }
 
   const schedulesByCraft = new Map(
     crafts.map((craft) => [
@@ -2673,10 +3027,30 @@ async function certifiedPayroll(companyId: string, input: Input): Promise<ToolRe
       workersWithNoCraft: week.noCraft.size,
       workersWithNoName: week.noName.size,
       readyToProduce: week.unpricedHours === 0 && week.noCraft.size === 0 && week.noName.size === 0,
+      /**
+       * A certified-payroll document is filed here against a period that
+       * CONTAINS this whole week. The same rows and the same containment as
+       * the CERTIFIED_PAYROLL alert, through the same predicate, so the box
+       * and the bell cannot disagree about a week.
+       *
+       * It is NOT `filed`, and the name is the point: false means nothing is
+       * on record here, never that nobody filed.
+       */
+      documentOnRecord: certifiedPayrollWeekIsCovered(
+        filedPeriodsByJob.get(week.job) ?? [],
+        // The week START, derived back from the ENDING this row is named by,
+        // so the containment is checked over the same seven days the sheet
+        // prints.
+        iso(new Date(Date.parse(`${week.weekEnding}T00:00:00.000Z`) - 6 * 86_400_000)) as string,
+        week.weekEnding,
+      ),
       // Said on EVERY row rather than once in a note, because a row is what
       // gets quoted back and a caveat that only exists in the preamble is a
-      // caveat that gets dropped.
-      filed: "not recorded — this app does not track a payroll submission",
+      // caveat that gets dropped. It is the OTHER fact from
+      // `documentOnRecord` and must never be collapsed into it: a document
+      // somebody put here is not a receipt from anybody.
+      submissionToAnAgency:
+        "not recorded — nothing in this app records that a certified payroll was sent to or received by anyone",
     }));
 
   return {
@@ -2685,6 +3059,11 @@ async function certifiedPayroll(companyId: string, input: Input): Promise<ToolRe
       weeks: rows.length,
       weeksReadyToProduce: rows.filter((row) => row.readyToProduce).length,
       weeksWithHoles: rows.filter((row) => !row.readyToProduce).length,
+      // Counted separately from the two above, because a week can be ready
+      // to produce with nothing on record and on record while its data has
+      // holes. Neither implies the other and neither is a submission.
+      weeksWithADocumentOnRecord: rows.filter((row) => row.documentOnRecord).length,
+      weeksWithNoDocumentOnRecord: rows.filter((row) => !row.documentOnRecord).length,
     },
     citations,
     unavailable:
@@ -4174,4 +4553,839 @@ async function appHelp(_companyId: string, input: Input, actor?: ToolActor): Pro
 function dedupeByHref(links: { label: string; href: string }[]): { label: string; href: string }[] {
   const seen = new Set<string>();
   return links.filter((link) => (seen.has(link.href) ? false : (seen.add(link.href), true)));
+}
+
+/* ═══════════════════════ the bid and the takeoff ═══════════════════════
+ *
+ * Seven tools over the estimating and takeoff features that shipped between
+ * 22 and 26 September 2026 and that the assistant could not read at all.
+ *
+ * Every figure below is computed by the library the SCREEN renders through —
+ * `lib/takeoff-currency.ts`, `lib/wall-assemblies.ts`, `lib/bid-levelling.ts`,
+ * `lib/bid-responsiveness.ts`, `lib/bid-lines.ts`, `lib/bid-recap.ts`,
+ * `lib/conceptual-estimate.ts` — for this file's own reason: two surfaces
+ * computing the same number separately is the specific bug this codebase has
+ * shipped twice. Nothing here re-derives a quantity, a spread, a bid total or
+ * a rate per square foot.
+ *
+ * Three of the seven exist as much to REFUSE as to answer, and each refusal
+ * is carried out of the library as a SENTENCE rather than reconstructed here:
+ * `takeoffCurrency`'s "go and check what moved — nothing here re-measures
+ * anything", `bidLevelling`'s caution naming what the low quote excludes, and
+ * `bidResponsiveness`'s refusal to ever say a bid is compliant.
+ */
+
+/**
+ * Distinguishes "no bid by that name" from "checked, nothing to report" —
+ * `jobNameMismatch`'s twin, and a separate function rather than a parameter
+ * because a BID IS NOT A JOB. At bid time the job usually does not exist, one
+ * GC sends three invitations per building, and a bid is tied to a job only
+ * when somebody says so (`BidInvitation.wonJobId`). Matching a bid by job
+ * name would answer about another project's bid form.
+ */
+async function bidProjectMismatch(companyId: string, projectName: string | undefined): Promise<string | null> {
+  const name = projectName?.trim();
+  if (!name) return null;
+  const match = await prisma.bidInvitation.findFirst({
+    where: { companyId, projectName: { contains: name, mode: "insensitive" } },
+    select: { id: true },
+  });
+  return match ? null : `No bid invitation matches "${name}".`;
+}
+
+/** Where a bid tool's project filter goes in a Prisma where clause. */
+const bidProjectWhere = (projectName: string | undefined) => {
+  const name = projectName?.trim();
+  return name ? { projectName: { contains: name, mode: "insensitive" as const } } : {};
+};
+
+/** The same, for a job name. */
+const jobNameWhere = (jobName: string | undefined) => {
+  const name = jobName?.trim();
+  return name ? { name: { contains: name, mode: "insensitive" as const } } : {};
+};
+
+/**
+ * How many jobs a company-wide takeoff-currency question reads.
+ *
+ * `loadTakeoffCurrency` is three queries PER JOB — the measured plans, the
+ * job's drawing revisions, and the addenda on any bid linked to it — because
+ * nothing joins those three and that is the design rather than a limitation.
+ * So a company-wide sweep is bounded, and the bound is REPORTED rather than
+ * hidden: `jobsWithMeasuredPlans` beside `jobsReviewed` is what stops "nothing
+ * is superseded" being said about a set nobody read.
+ */
+const TAKEOFF_CURRENCY_JOB_LIMIT = 20;
+
+/**
+ * "Am I bidding off superseded drawings?"
+ *
+ * The strongest thing this may ever say is `lib/takeoff-currency.ts`'s own
+ * sentence — "18 measurements came off Rev 2, issued 2026-09-04; Addendum 3
+ * (2026-09-11) has been issued since. Go and check what moved." It does not
+ * re-measure, and the tool description forbids the model from doing it
+ * either: the app cannot see what moved on the new sheet, so a corrected
+ * quantity would be a guess printed beside real measurements.
+ *
+ * UNKNOWABLE IS CARRIED THROUGH AS ITSELF. A plan with no issue date is
+ * neither current nor superseded, and flattening it either way is the one
+ * option that would be wrong — calling it current is the dangerous half.
+ */
+async function takeoffCurrency(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Jobs", href: "/jobs" }];
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  if (mismatch) return { data: { rows: [] }, citations, unavailable: mismatch };
+
+  // Only jobs that actually have a measured plan. A job with none is not a
+  // job whose quantities are suspect; it is a job with no takeoff.
+  const where = { companyId, takeoffPlans: { some: {} }, ...jobNameWhere(input.jobName) };
+  const [jobs, jobsWithMeasuredPlans] = await Promise.all([
+    prisma.job.findMany({
+      where,
+      select: { id: true, name: true, status: true },
+      orderBy: { updatedAt: "desc" },
+      take: TAKEOFF_CURRENCY_JOB_LIMIT,
+    }),
+    prisma.job.count({ where }),
+  ]);
+
+  const judged = await Promise.all(
+    jobs.map(async (job) => ({ job, currency: await loadTakeoffCurrency(companyId, job.id) })),
+  );
+
+  const sum = (pick: (entry: (typeof judged)[number]) => number) =>
+    judged.reduce((total, entry) => total + pick(entry), 0);
+
+  return {
+    data: {
+      jobsWithMeasuredPlans,
+      jobsReviewed: judged.length,
+      ...(jobsWithMeasuredPlans > judged.length
+        ? {
+            note: `Only the ${judged.length} most recently updated of ${jobsWithMeasuredPlans} jobs with measured plans were read. Say the answer covers those and not every job.`,
+          }
+        : {}),
+      rows: judged.map(({ job, currency }) => ({
+        job: job.name,
+        jobStatus: job.status,
+        // The banner sentence, or null when every plan is current and dated.
+        headline: currency.headline,
+        measurementsOnSupersededPlans: currency.measurementsAtRisk,
+        supersededPlans: currency.supersededCount,
+        plansWithNoIssueDate: currency.unknowableCount,
+        // An addendum nobody dated cannot be placed in time, so it cannot be
+        // said to supersede a sheet — and cannot be said not to. Reported
+        // rather than dropped, which is the one option that would be wrong.
+        addendaWithNoIssueDate: currency.undated,
+        plans: currency.plans.map((plan) => ({
+          state: plan.state,
+          // The library's own words, including the refusal to re-measure.
+          sentence: plan.sentence,
+          issuedSince: plan.supersededBy.map((item) => ({
+            kind: item.kind,
+            label: item.label,
+            issuedOn: item.issuedOn,
+            note: item.note,
+          })),
+        })),
+      })),
+    },
+    summary: {
+      jobsWithMeasuredPlans,
+      jobsReviewed: judged.length,
+      supersededPlans: sum((entry) => entry.currency.supersededCount),
+      plansWithNoIssueDate: sum((entry) => entry.currency.unknowableCount),
+      measurementsOnSupersededPlans: sum((entry) => entry.currency.measurementsAtRisk),
+    },
+    // An item link per job, because "take me to the one you just told me
+    // about" is the whole point of this answer — the Takeoff tab is where a
+    // person goes to compare the sheets. Safe under ItemLink's second rule:
+    // the tab is gated on VIEW_JOB_COSTS, which is this tool's own capability
+    // and is re-checked by `runTool` before any of this runs.
+    links: judged
+      .filter(({ currency }) => currency.supersededCount > 0 || currency.unknowableCount > 0)
+      .map(({ job, currency }) => ({
+        label: job.name,
+        href: `/jobs/${job.id}/takeoff`,
+        detail: currency.headline ?? undefined,
+      })),
+    citations,
+    unavailable:
+      judged.length === 0
+        ? input.jobName
+          ? "Nothing has been measured off a drawing on that job, so there are no quantities to check against a newer sheet."
+          : "No job has a measured plan on it. This only knows about sheets somebody uploaded and measured here — an empty answer is not a statement that your quantities are current."
+        : undefined,
+  };
+}
+
+/**
+ * "How much board on Riverside?"
+ *
+ * The join no takeoff product on the market makes: a plan-view run of wall
+ * meets the TYPE from the partition schedule and the HEIGHT from the
+ * sections, and only then becomes studs, track, board and insulation.
+ * `scheduleLines` is the arithmetic, waste and round-up included, summed
+ * BEFORE rounding for the reason that module gives — rounding each run then
+ * summing compounds the round-up, and on forty short runs that is forty
+ * extra sheets.
+ *
+ * ESTIMATE STAGE ONLY, exactly as the Estimate tab reads it: after award the
+ * runs are the record the contract was priced from and change by change
+ * order, and the tab shows no schedule. A figure this tool returned for a
+ * contracted job would cite a page that does not show it.
+ *
+ * A RUN WITH NO HEIGHT PRODUCES NOTHING and is named. A guessed ten feet is
+ * a number that looks right and gets bid.
+ */
+async function wallSchedule(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Jobs", href: "/jobs" }];
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  if (mismatch) return { data: { rows: [] }, citations, unavailable: mismatch };
+
+  const [types, runs] = await Promise.all([
+    prisma.wallType.findMany({
+      where: { companyId },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+      include: { components: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] } },
+    }),
+    prisma.wallRun.findMany({
+      where: { companyId, job: { status: "ESTIMATE", ...jobNameWhere(input.jobName) } },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      select: {
+        id: true,
+        label: true,
+        wallTypeId: true,
+        lengthFt: true,
+        heightFt: true,
+        openings: true,
+        job: { select: { id: true, name: true } },
+      },
+    }),
+  ]);
+
+  // Mapped exactly as the Estimate tab maps it, so the two cannot disagree
+  // about what a wall type is.
+  const typeInputs: WallTypeInput[] = types.map((type) => ({
+    id: type.id,
+    code: type.code,
+    defaultHeightFt: type.defaultHeightFt != null ? Number(type.defaultHeightFt) : null,
+    sides: type.sides,
+    studSpacingIn: Number(type.studSpacingIn),
+    components: type.components.map((component) => ({
+      id: component.id,
+      description: component.description,
+      unit: component.unit,
+      basis: component.basis as WallComponentBasis,
+      factor: Number(component.factor),
+      wastePercent: Number(component.wastePercent),
+      roundUp: component.roundUp,
+      productionRate: component.productionRate != null ? Number(component.productionRate) : null,
+    })),
+  }));
+
+  const byJob = new Map<string, { id: string; name: string; runs: typeof runs }>();
+  for (const run of runs) {
+    const entry = byJob.get(run.job.id);
+    if (entry) entry.runs.push(run);
+    else byJob.set(run.job.id, { id: run.job.id, name: run.job.name, runs: [run] });
+  }
+
+  const schedules = [...byJob.values()]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((job) => {
+      const schedule = scheduleLines(
+        job.runs.map((run) => ({
+          id: run.id,
+          label: run.label,
+          wallTypeId: run.wallTypeId,
+          lengthFt: Number(run.lengthFt),
+          heightFt: run.heightFt != null ? Number(run.heightFt) : null,
+          openings: openingsFromJson(run.openings),
+        })),
+        typeInputs,
+      );
+      // Hours, summed in TypeScript rather than left for the model. A
+      // component with no production rate carries no labor and contributes
+      // nothing — which is not the same as contributing zero, so the count of
+      // lines without hours goes back beside the total.
+      const withHours = schedule.lines.filter((line) => line.laborHours !== null);
+      return { job, schedule, hours: Number(withHours.reduce((total, line) => total + (line.laborHours ?? 0), 0).toFixed(2)), linesWithNoRate: schedule.lines.length - withHours.length };
+    });
+
+  const total = (pick: (entry: (typeof schedules)[number]) => number) =>
+    schedules.reduce((sum, entry) => sum + pick(entry), 0);
+
+  return {
+    data: {
+      rows: schedules.map(({ job, schedule, hours, linesWithNoRate }) => ({
+        job: job.name,
+        runsMeasured: job.runs.length,
+        lines: schedule.lines.map((line) => ({
+          item: line.description,
+          quantity: line.quantity,
+          unit: line.unit,
+          laborHours: line.laborHours,
+        })),
+        laborHours: hours,
+        linesWithNoProductionRate: linesWithNoRate,
+        // Named, never treated as zero.
+        runsWithNoHeight: schedule.unpricedRuns.map((run) => run.label),
+        runsWhoseWallTypeIsGone: schedule.orphanRuns.map((run) => run.label),
+      })),
+    },
+    summary: {
+      jobsWithWallRuns: schedules.length,
+      wallRuns: runs.length,
+      scheduleLines: total((entry) => entry.schedule.lines.length),
+      runsWithNoHeight: total((entry) => entry.schedule.unpricedRuns.length),
+      runsWhoseWallTypeIsGone: total((entry) => entry.schedule.orphanRuns.length),
+      laborHours: Number(total((entry) => entry.hours).toFixed(2)),
+    },
+    citations,
+    unavailable:
+      schedules.length === 0
+        ? input.jobName
+          ? "No wall runs are recorded on that job at estimate stage. A wall schedule is only carried while a job is still being estimated — after award the runs are the record the contract was priced from."
+          : "No job being estimated has any wall runs on it yet. Nothing here measures a drawing on its own; a run is a length somebody entered or traced."
+        : undefined,
+  };
+}
+
+/**
+ * "Are these three quotes actually the same bid?"
+ *
+ * `levelBid` returns the cheapest quote AND whether the quotes are
+ * comparable, in one object, and the caution is not optional — which is why
+ * this handler passes `comparable` and `caution` through untouched and the
+ * tool description forbids presenting a low number without them. A sub who
+ * left the soffits out is cheaper and is not comparable.
+ *
+ * AN UNANSWERED REQUEST IS NOT A QUOTE OF NOTHING. A null amount sorts to
+ * the front of an ascending sort, so a supplier who never replied would
+ * otherwise be printed as the low bid. `levelPackage` excludes them from the
+ * comparison; they come back under `outstanding` with the state of each.
+ */
+async function bidLevelling(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Bids", href: "/bids" }];
+  const mismatch = await bidProjectMismatch(companyId, input.projectName);
+  if (mismatch) return { data: { rows: [] }, citations, unavailable: mismatch };
+
+  // The READER's calendar day, as /bids itself uses: a request is overdue or
+  // it is not, and that is exactly the case serverToday() is not good enough
+  // for.
+  const today = await viewerToday();
+
+  const bids = await prisma.bidInvitation.findMany({
+    where: { companyId, ...bidProjectWhere(input.projectName) },
+    select: {
+      projectName: true,
+      status: true,
+      dueDate: true,
+      contact: { select: { name: true } },
+      quotes: {
+        orderBy: [{ packageLabel: "asc" }, { amount: "asc" }],
+        select: {
+          id: true,
+          packageLabel: true,
+          vendorName: true,
+          amount: true,
+          quotedOn: true,
+          requestedOn: true,
+          dueBy: true,
+          declinedAt: true,
+          exclusions: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const levelled = bids
+    .filter((bid) => bid.quotes.length > 0)
+    .map((bid) => ({
+      bid,
+      packages: levelBid(
+        bid.quotes.map((quote) => ({
+          id: quote.id,
+          packageLabel: quote.packageLabel,
+          vendorName: quote.vendorName,
+          // NULL STAYS NULL. `Number(null)` is 0, which would post a supplier
+          // who has not answered as a quote of nothing — and nothing sorts
+          // cheapest.
+          amount: quote.amount === null ? null : Number(quote.amount),
+          quotedOn: iso(quote.quotedOn),
+          requestedOn: iso(quote.requestedOn),
+          dueBy: iso(quote.dueBy),
+          declinedAt: iso(quote.declinedAt),
+          exclusions: quote.exclusions,
+        })),
+      ),
+    }));
+
+  const allPackages = levelled.flatMap((entry) => entry.packages);
+
+  return {
+    data: {
+      rows: levelled.map(({ bid, packages }) => ({
+        project: bid.projectName,
+        gc: bid.contact.name,
+        bidStatus: bid.status,
+        bidDueDate: iso(bid.dueDate),
+        packages: packages.map((group) => ({
+          package: group.packageLabel,
+          quotes: group.quotes.map((quote) => ({
+            vendor: quote.vendorName,
+            amount: quote.amount,
+            quotedOn: quote.quotedOn,
+            excludes: quote.exclusions,
+          })),
+          cheapest: group.cheapest ? { vendor: group.cheapest.vendorName, amount: group.cheapest.amount } : null,
+          dearest: group.dearest ? { vendor: group.dearest.vendorName, amount: group.dearest.amount } : null,
+          spread: group.spread,
+          // null with one quote: nothing to compare against, which is not
+          // the same as fine.
+          comparable: group.comparable,
+          // The sentence that stops the low number being read as the best
+          // one. Never reconstructed here.
+          caution: group.caution,
+          outstanding: group.outstanding.map((quote) => ({
+            vendor: quote.vendorName,
+            state: requestState(quote, today),
+            askedOn: quote.requestedOn ?? null,
+            wantedBy: quote.dueBy ?? null,
+          })),
+          declined: group.declined.map((quote) => quote.vendorName),
+          stillWaiting: outstandingNote(group, today),
+        })),
+      })),
+    },
+    summary: {
+      bidsWithQuotes: levelled.length,
+      packages: allPackages.length,
+      // The figure that decides whether a low number may be quoted at all.
+      packagesNotComparable: allPackages.filter((group) => group.comparable === false).length,
+      packagesWithOnlyOneQuote: allPackages.filter((group) => group.comparable === null && group.quotes.length === 1).length,
+      quotesWithAPrice: allPackages.reduce((sum, group) => sum + group.quotes.length, 0),
+      quotesOutstanding: allPackages.reduce((sum, group) => sum + group.outstanding.length, 0),
+      quotesDeclined: allPackages.reduce((sum, group) => sum + group.declined.length, 0),
+    },
+    citations,
+    unavailable:
+      levelled.length === 0
+        ? input.projectName
+          ? "No quotes have been logged against that bid, so there is nothing to compare."
+          : "No quotes have been logged against any bid. This compares what suppliers and subs sent back; an empty answer means nobody has recorded one."
+        : undefined,
+  };
+}
+
+/**
+ * "Is my bid responsive?"
+ *
+ * `bidResponsiveness` has no compliant verdict and returns none, and that is
+ * the whole design: this app has never read the GC's Invitation to Bid, only
+ * what somebody typed in from it. `responsivenessSentence` is the strongest
+ * sentence available and is carried out verbatim — the tool description
+ * forbids the model improving on it.
+ *
+ * DERIVED versus RECORDED comes through on every item. An unpriced alternate
+ * cannot be ticked and goes away when it is priced; a bond either was
+ * obtained or was not, and only a person can say. Telling somebody to "go and
+ * price it" and "go and confirm you did it" are different jobs.
+ */
+async function bidCompliance(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Bids", href: "/bids" }];
+  const mismatch = await bidProjectMismatch(companyId, input.projectName);
+  if (mismatch) return { data: { rows: [] }, citations, unavailable: mismatch };
+
+  const bids = await prisma.bidInvitation.findMany({
+    where: { companyId, ...bidProjectWhere(input.projectName) },
+    select: {
+      projectName: true,
+      status: true,
+      dueDate: true,
+      contact: { select: { name: true } },
+      lines: {
+        orderBy: { sortOrder: "asc" },
+        select: { id: true, kind: true, label: true, amount: true, unit: true, unitPrice: true, accepted: true },
+      },
+      // Oldest first: addenda are read as a sequence and the unacknowledged
+      // one is usually the newest.
+      addenda: {
+        orderBy: [{ issuedOn: "asc" }, { createdAt: "asc" }],
+        select: { id: true, reference: true, issuedOn: true, acknowledgedOn: true, affectsPricedScope: true, impactNote: true },
+      },
+      requirements: {
+        orderBy: { createdAt: "asc" },
+        select: { id: true, kind: true, label: true, required: true, satisfiedOn: true },
+      },
+    },
+    orderBy: { dueDate: "asc" },
+  });
+
+  const judged = bids.map((bid) => ({
+    bid,
+    result: bidResponsiveness({
+      lines: bid.lines.map((line) => ({
+        id: line.id,
+        kind: line.kind as BidLineKind,
+        label: line.label,
+        amount: line.amount === null ? null : Number(line.amount),
+        unit: line.unit,
+        unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
+        accepted: line.accepted,
+      })),
+      addenda: bid.addenda.map((addendum) => ({
+        id: addendum.id,
+        reference: addendum.reference,
+        issuedOn: iso(addendum.issuedOn),
+        // Null means not acknowledged, and that null is the point of the
+        // model — the most common reason a complying low bid is thrown out.
+        acknowledgedOn: iso(addendum.acknowledgedOn),
+        affectsPricedScope: addendum.affectsPricedScope,
+        impactNote: addendum.impactNote,
+      })),
+      requirements: bid.requirements.map((requirement) => ({
+        id: requirement.id,
+        kind: requirement.kind,
+        label: requirement.label,
+        required: requirement.required,
+        satisfiedOn: iso(requirement.satisfiedOn),
+      })),
+    }),
+  }));
+
+  return {
+    data: {
+      rows: judged.map(({ bid, result }) => ({
+        project: bid.projectName,
+        gc: bid.contact.name,
+        bidStatus: bid.status,
+        bidDueDate: iso(bid.dueDate),
+        // NEVER "ready to submit". The app has read what somebody typed in
+        // from the ITB, not the ITB.
+        sentence: responsivenessSentence(result),
+        wouldMakeTheBidNonResponsive: result.blockingCount,
+        outstanding: result.outstanding.map((item) => ({
+          what: item.sentence,
+          source: item.source,
+          wouldSinkTheBid: item.blocking,
+        })),
+        // Not a paperwork failure — a number that may now be wrong.
+        repriceWarnings: result.repriceWarnings,
+        addenda: bid.addenda.length,
+        addendaNotAcknowledged: bid.addenda.filter((addendum) => addendum.acknowledgedOn === null).length,
+      })),
+    },
+    summary: {
+      bids: judged.length,
+      bidsWithSomethingBlocking: judged.filter((entry) => entry.result.blockingCount > 0).length,
+      blockingItems: judged.reduce((sum, entry) => sum + entry.result.blockingCount, 0),
+      itemsOutstanding: judged.reduce((sum, entry) => sum + entry.result.outstanding.length, 0),
+      addendaNotAcknowledged: bids.reduce(
+        (sum, bid) => sum + bid.addenda.filter((addendum) => addendum.acknowledgedOn === null).length,
+        0,
+      ),
+      repriceWarnings: judged.reduce((sum, entry) => sum + entry.result.repriceWarnings.length, 0),
+    },
+    citations,
+    unavailable:
+      judged.length === 0
+        ? input.projectName
+          ? "No bid invitation matches that, so there is no bid form to check."
+          : "No bid invitations are recorded, so there is nothing to check for responsiveness."
+        : undefined,
+  };
+}
+
+/**
+ * "What are we at with the alternates in?"
+ *
+ * `bidTotals` exists because mixing the three kinds of bid line produces a
+ * number that reads perfectly and is wrong: an ALLOWANCE is already inside
+ * the base, an ALTERNATE is outside it and may be a deduct, and a UNIT PRICE
+ * is a rate with no quantity. So `awardedTotal` is base plus ACCEPTED
+ * alternates, `allowancesCarried` is reported and added to nothing, and unit
+ * prices have no amount to be picked up by a careless reduce.
+ *
+ * The one figure not in the library and computed here is the per-line
+ * DIRECTION word, via `alternateDirection` — because a minus sign in a table
+ * is the easiest thing on a bid document to miss.
+ */
+async function bidAlternates(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Bids", href: "/bids" }];
+  const mismatch = await bidProjectMismatch(companyId, input.projectName);
+  if (mismatch) return { data: { rows: [] }, citations, unavailable: mismatch };
+
+  const bids = await prisma.bidInvitation.findMany({
+    where: { companyId, ...bidProjectWhere(input.projectName) },
+    select: {
+      projectName: true,
+      status: true,
+      bidAmount: true,
+      contact: { select: { name: true } },
+      lines: {
+        orderBy: { sortOrder: "asc" },
+        select: { kind: true, label: true, description: true, amount: true, unit: true, unitPrice: true, accepted: true },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const priced = bids
+    .filter((bid) => bid.lines.length > 0)
+    .map((bid) => {
+      const lines: BidLineInput[] = bid.lines.map((line) => ({
+        kind: line.kind as BidLineKind,
+        label: line.label,
+        amount: line.amount === null ? null : Number(line.amount),
+        unit: line.unit,
+        unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
+        accepted: line.accepted,
+      }));
+      return {
+        bid,
+        lines,
+        totals: bidTotals(bid.bidAmount === null ? null : Number(bid.bidAmount), lines),
+      };
+    });
+
+  return {
+    data: {
+      rows: priced.map(({ bid, lines, totals }) => ({
+        project: bid.projectName,
+        gc: bid.contact.name,
+        bidStatus: bid.status,
+        baseBid: totals.base,
+        // Base plus ACCEPTED alternates. Null without a base, because "the
+        // alternates come to $4,000" is not an award.
+        awardedTotal: totals.awardedTotal,
+        alternatesOfferedTotal: totals.alternatesOffered,
+        alternatesAcceptedTotal: totals.alternatesAccepted,
+        alternatesTheGcHasNotAnswered: totals.undecidedCount,
+        // INSIDE the base already. Reported so the estimator can see how much
+        // of their own number is undefined scope — added to nothing.
+        allowancesCarriedInsideTheBase: totals.allowancesCarried,
+        alternates: lines
+          .filter((line) => line.kind === "ALTERNATE")
+          .map((line) => ({
+            label: line.label,
+            direction: alternateDirection(line.amount),
+            amount: line.amount,
+            // Null means the GC has not said, which is not rejected.
+            accepted: line.accepted,
+          })),
+        unitPrices: lines
+          .filter((line) => line.kind === "UNIT_PRICE")
+          .map((line) => ({ label: line.label, per: line.unit, rate: line.unitPrice })),
+        allowances: lines
+          .filter((line) => line.kind === "ALLOWANCE")
+          .map((line) => ({ label: line.label, amount: line.amount })),
+      })),
+    },
+    summary: {
+      bidsWithLines: priced.length,
+      alternates: priced.reduce((sum, entry) => sum + entry.totals.alternateCount, 0),
+      alternatesAccepted: priced.reduce((sum, entry) => sum + entry.totals.acceptedCount, 0),
+      alternatesUndecided: priced.reduce((sum, entry) => sum + entry.totals.undecidedCount, 0),
+      unitPrices: priced.reduce((sum, entry) => sum + entry.totals.unitPriceCount, 0),
+      allowances: priced.reduce((sum, entry) => sum + entry.totals.allowanceCount, 0),
+    },
+    citations,
+    unavailable:
+      priced.length === 0
+        ? input.projectName
+          ? "That bid carries no alternates, unit prices or allowances — just the base number."
+          : "No bid has any alternates, unit prices or allowances on it. Those are lines somebody enters from the GC's own bid form."
+        : undefined,
+  };
+}
+
+/** The recap's ten rates, in the order `lib/bid-recap.ts` applies them. */
+const RECAP_RATE_KEYS = [
+  "materialMarkupPercent",
+  "laborMarkupPercent",
+  "subcontractorMarkupPercent",
+  "otherMarkupPercent",
+  "escalationPercent",
+  "materialTaxPercent",
+  "overheadPercent",
+  "profitPercent",
+  "bondPercent",
+  "contingencyPercent",
+] as const;
+
+/**
+ * "What are we bidding Riverside at?"
+ *
+ * Direct cost in, the number a GC is asked to pay out. THE ORDER OF THE STEPS
+ * IS THE BID — markup per cost type, escalation, tax on material only,
+ * overhead, profit on the total INCLUDING overhead, bond, contingency — and
+ * reordering any two changes the answer, which is exactly why the model is
+ * handed `steps` and `bidTotal` already computed and told not to re-derive
+ * them.
+ *
+ * A BLANK RATE IS NOT A ZERO SOMEBODY TYPED. An absent rate contributes
+ * nothing and its step is simply not in the list, so the screen can say "this
+ * bid carries no overhead" rather than implying a zero.
+ *
+ * AN UNCATEGORISED LINE IS NEVER MARKED UP, and is named rather than quietly
+ * marked up at some default — how a bid grows a number nobody chose.
+ */
+async function bidRecapTool(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Jobs", href: "/jobs" }];
+  const mismatch = await jobNameMismatch(companyId, input.jobName);
+  if (mismatch) return { data: { rows: [] }, citations, unavailable: mismatch };
+
+  const [jobs, defaults] = await Promise.all([
+    prisma.job.findMany({
+      // ESTIMATE only, as the Estimate tab reads it: after award the recap is
+      // history and the contract value is the number the GC agreed to.
+      where: { companyId, status: "ESTIMATE", ...jobNameWhere(input.jobName) },
+      select: {
+        id: true,
+        name: true,
+        bidRecap: true,
+        lineItems: {
+          where: { isDeleted: false },
+          select: { id: true, quantity: true, unitPrice: true, costCategory: true },
+        },
+      },
+      orderBy: { name: "asc" },
+    }),
+    prisma.companyBidDefaults.findUnique({ where: { companyId } }),
+  ]);
+
+  const recaps = jobs
+    .filter((job) => job.lineItems.length > 0)
+    .map((job) => {
+      // The job's own recap, else the company's defaults pre-filling it —
+      // the Contact.defaultRetainagePercent pattern: a starting point, never
+      // a value enforced from elsewhere afterwards.
+      const source = job.bidRecap ?? defaults;
+      const rates = Object.fromEntries(
+        RECAP_RATE_KEYS.map((key) => [key, source?.[key] != null ? Number(source[key]) : null]),
+      ) as RecapRates;
+      return {
+        job,
+        rates,
+        ratesFrom: job.bidRecap ? "this job's own recap" : defaults ? "the company's default rates" : "nothing recorded",
+        recap: calculateBidRecap(
+          job.lineItems.map((item) => ({
+            id: item.id,
+            quantity: Number(item.quantity),
+            unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
+            costCategory: (item.costCategory as CostCategoryValue | null) ?? null,
+          })),
+          rates,
+        ),
+      };
+    });
+
+  return {
+    data: {
+      rows: recaps.map(({ job, ratesFrom, recap }) => ({
+        job: job.name,
+        ratesFrom,
+        directCost: {
+          material: recap.direct.byCategory.MATERIAL,
+          labor: recap.direct.byCategory.LABOR,
+          subcontractor: recap.direct.byCategory.SUBCONTRACTOR,
+          otherOrEquipment: recap.direct.byCategory.OTHER,
+          // Marked up at nothing. Said out loud rather than folded in.
+          notCostCoded: recap.direct.uncategorised,
+          notCostCodedLineCount: recap.direct.uncategorisedLineCount,
+          total: recap.direct.total,
+        },
+        // Already in the order that makes the bid. A step that added nothing
+        // is not here at all.
+        steps: recap.steps.map((step) => ({
+          step: step.label,
+          ratePercent: step.ratePercent,
+          added: step.amount,
+          runningTotal: step.runningTotal,
+        })),
+        bidTotal: recap.bidTotal,
+        addedOnTopOfDirectCost: recap.addedTotal,
+        // When set, the recap was spread into the line prices and the
+        // estimate's own lines already show it.
+        appliedToLinePricesOn: iso(job.bidRecap?.appliedAt ?? null),
+        appliedTotal: job.bidRecap?.appliedTotal != null ? Number(job.bidRecap.appliedTotal) : null,
+      })),
+    },
+    summary: {
+      jobsBeingEstimated: recaps.length,
+      jobsWithTheirOwnRates: recaps.filter((entry) => entry.job.bidRecap !== null).length,
+      linesNotCostCoded: recaps.reduce((sum, entry) => sum + entry.recap.direct.uncategorisedLineCount, 0),
+      recapsAlreadyAppliedToLinePrices: recaps.filter((entry) => entry.job.bidRecap?.appliedAt != null).length,
+    },
+    citations,
+    unavailable:
+      recaps.length === 0
+        ? input.jobName
+          ? "That job has no priced estimate lines at estimate stage, so there is nothing to mark up into a bid."
+          : "No job being estimated has any estimate lines on it, so there is no direct cost to mark up."
+        : undefined,
+  };
+}
+
+/**
+ * "What has similar work run at?"
+ *
+ * Pricing something with no drawings and no takeoff. A dollars-per-square-
+ * foot figure is the most dangerous number this product could produce — it
+ * looks exactly like a measured one and is arithmetically trivial — so
+ * `conceptual-estimate.ts` returns a RANGE with its sample size or nothing at
+ * all, and below three finished jobs there is no range and only a reason.
+ *
+ * `unavailable` is set from the BENCHMARK's reason, not the range's. "Enter
+ * the building's gross area" is a prompt for one more word; "only two
+ * finished jobs carry a gross area" is the data not being there, which is
+ * what `unavailable` means.
+ *
+ * NOTHING IS WRITTEN. There is no action that sets a pursuit's estimated
+ * value from this, deliberately, and this tool adds none.
+ */
+async function conceptualEstimate(companyId: string, input: Input): Promise<ToolResult> {
+  const citations = [{ label: "Bid pipeline", href: "/pipeline" }];
+
+  const [benchmark, finishedWithNoArea] = await Promise.all([
+    loadConceptualBenchmark(companyId),
+    countFinishedJobsWithoutArea(companyId),
+  ]);
+
+  // The person's own figure, parsed by the app. "40,000" is what somebody
+  // types; a model asked to strip the comma is a model doing arithmetic.
+  const typed = Number((input.areaSqFt ?? "").replace(/[,\s$]/g, ""));
+  const range = conceptualRange(Number.isFinite(typed) ? typed : 0, benchmark);
+
+  return {
+    data: {
+      // Zero means none was given — the range below is per square foot only.
+      areaSqFt: range.areaSqFt > 0 ? range.areaSqFt : null,
+      finishedJobsBehindThis: range.sampleSize,
+      fewestThatCanShowASpread: MINIMUM_SAMPLE,
+      finishedJobsWithNoAreaRecorded: finishedWithNoArea,
+      // Per square foot, from this company's own finished work. Null below
+      // the minimum sample, by construction, so nothing can print a figure
+      // that does not exist.
+      soldPerSqFt: benchmark.sellPerSqFt,
+      costPerSqFt: benchmark.costPerSqFt,
+      forThisArea: range.sell ? { sold: range.sell, cost: range.cost } : null,
+      // Why there is no range, in the words the screen shows.
+      because: range.because,
+      // The sentence the screen puts above the figures. Never a single
+      // number, and always says how many jobs are behind it.
+      sentence: conceptualSentence(range, money),
+      writesNothing: true,
+    },
+    summary: {
+      finishedJobsBehindThis: range.sampleSize,
+      fewestThatCanShowASpread: MINIMUM_SAMPLE,
+      finishedJobsWithNoAreaRecorded: finishedWithNoArea,
+    },
+    citations,
+    unavailable: benchmark.sellPerSqFt === null ? (benchmark.because ?? undefined) : undefined,
+  };
 }

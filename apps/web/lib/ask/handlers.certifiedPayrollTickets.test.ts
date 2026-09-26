@@ -6,11 +6,19 @@ import { describe, expect, it, vi } from "vitest";
  *
  * Each exists to make a distinction that the obvious answer flattens:
  *
- *   - "certified payroll is in" and "certified payroll COULD be produced"
- *     are different sentences, and only the second is knowable here.
- *     Nothing records a submission. A tool that let the first one be
- *     inferred would be putting a person's name under a criminal
- *     certification on the strength of an app that never saw the filing;
+ *   - "certified payroll WENT IN", "a certified payroll is ON RECORD here"
+ *     and "certified payroll COULD be produced" are THREE different
+ *     sentences. The first is unknowable — nothing records a submission, no
+ *     agency, no send date, no receipt — and a tool that let it be inferred
+ *     would be putting a person's name under a criminal certification on the
+ *     strength of an app that never saw the filing. The second and third are
+ *     both knowable and are not each other, so they are two fields.
+ *
+ *     This tool used to refuse the middle one too, claiming it "does NOT and
+ *     CANNOT say whether a week was FILED" — while `lib/alerts-query.ts` read
+ *     `ComplianceDocument` rows of type CERTIFIED_PAYROLL to raise the alert
+ *     `needs_attention` surfaces. One tool in the box refusing what another
+ *     tool in the same box reports;
  *   - a SIGNED T&M ticket is not a BILLED one. Nothing links a ticket to a
  *     change order or an invoice, so "signed" must not read as "settled".
  */
@@ -119,6 +127,40 @@ const CRAFTS = [
   { id: "craft-unpriced", fringeRateSchedules: [] },
 ];
 
+/**
+ * Certified-payroll documents somebody filed, with the period each covers.
+ *
+ * Arranged so that a handler which ignored them, or which accepted a period
+ * that merely CLIPS a week, gets a different answer:
+ *
+ *   - Riverside's clean week (6-12 Sep) is covered end to end;
+ *   - Riverside's holey week (13-19 Sep) has a document covering only its
+ *     first three days — a partial period is not evidence about a week;
+ *   - Cedar Park's week has nothing on record at all;
+ *   - and one document has a null period end, which covers nothing.
+ */
+const PAYROLL_DOCUMENTS = [
+  {
+    periodStart: new Date("2026-09-06T00:00:00.000Z"),
+    periodEnd: new Date("2026-09-12T00:00:00.000Z"),
+    job: { name: "Riverside Medical" },
+  },
+  {
+    // Clips the week and does not contain it.
+    periodStart: new Date("2026-09-13T00:00:00.000Z"),
+    periodEnd: new Date("2026-09-15T00:00:00.000Z"),
+    job: { name: "Riverside Medical" },
+  },
+  {
+    // Half a period cannot contain a week, and guessing the other end of it
+    // on a document whose certification is criminal is not a guess worth
+    // making.
+    periodStart: new Date("2026-09-06T00:00:00.000Z"),
+    periodEnd: null,
+    job: { name: "Cedar Park Elementary" },
+  },
+];
+
 const TICKETS = [
   {
     // Old enough that somebody should have chased it.
@@ -160,6 +202,22 @@ vi.mock("@prova/db", async (importOriginal) => ({
       },
     },
     craftClassification: { findMany: async () => CRAFTS },
+    // Honours the type and the job filter, because the real one does. A fake
+    // that returned every document whatever it was asked for would hide a
+    // handler reading COIs as certified payroll.
+    complianceDocument: {
+      findMany: async ({
+        where,
+      }: {
+        where: { type?: string; job?: { name?: { contains?: string } } };
+      }) => {
+        if (where.type !== "CERTIFIED_PAYROLL") return [];
+        const wanted = where.job?.name?.contains?.toLowerCase();
+        return wanted
+          ? PAYROLL_DOCUMENTS.filter((d) => d.job.name.toLowerCase().includes(wanted))
+          : PAYROLL_DOCUMENTS;
+      },
+    },
     tmTicket: {
       findMany: async ({ where }: { where: { job?: { name?: { contains?: string } } } }) => {
         const wanted = where.job?.name?.contains?.toLowerCase();
@@ -186,18 +244,81 @@ async function ask(name: string, input: Record<string, string> = {}) {
 }
 
 describe("certified_payroll", () => {
-  it("NEVER says a week was filed, on every row", async () => {
-    // The finding, and the whole reason this tool is worded the way it is.
-    // Nothing records a payroll submission — the form is computed live
-    // every time the page is opened — so a week that is ready to produce
-    // has not been sent anywhere. Said on each ROW rather than once in a
-    // note, because a row is what gets quoted back.
-    const rows = (await ask("certified_payroll")).data as { filed: string }[];
+  it("NEVER says a week was SUBMITTED, on every row", async () => {
+    // The half of the old wording that was right, and it must not be lost in
+    // fixing the half that was wrong. Nothing records a payroll submission —
+    // no agency, no send date, no receipt — so neither a week that is ready
+    // to produce NOR a week with a document on record has been sent anywhere
+    // as far as this app knows. Said on each ROW rather than once in a note,
+    // because a row is what gets quoted back.
+    const rows = (await ask("certified_payroll")).data as {
+      submissionToAnAgency: string;
+      documentOnRecord: boolean;
+    }[];
     expect(rows.length).toBeGreaterThan(0);
+    // And the control that makes this mean something: one of these rows DOES
+    // have a document on record, so the sentence is not true only of empties.
+    expect(rows.some((row) => row.documentOnRecord)).toBe(true);
     for (const row of rows) {
-      expect(row.filed).toMatch(/not recorded/i);
-      expect(row.filed).not.toMatch(/\byes\b|\bfiled\b$|submitted/i);
+      expect(row.submissionToAnAgency).toMatch(/not recorded/i);
+      expect(row.submissionToAnAgency).toMatch(/sent to or received by/i);
     }
+  });
+
+  it("SAYS a certified payroll is on record for a week, which it used to refuse", async () => {
+    // THE FINDING. The description claimed it "does NOT and CANNOT say
+    // whether a week was FILED: nothing in this app records a payroll
+    // submission". The second clause is true. The first was not:
+    // `ComplianceDocument` of type CERTIFIED_PAYROLL carries a period, and
+    // lib/alerts-query.ts has been reading exactly those rows to raise the
+    // CERTIFIED_PAYROLL alert `needs_attention` surfaces. So the box refused
+    // what the bell beside it reports.
+    const rows = (await ask("certified_payroll", { jobName: "Riverside" })).data as {
+      weekEnding: string;
+      documentOnRecord: boolean;
+    }[];
+    expect(rows.find((row) => row.weekEnding === "2026-09-12")!.documentOnRecord).toBe(true);
+  });
+
+  it("does not accept a period that merely CLIPS the week", async () => {
+    // Riverside's 13-19 Sep week has a document covering 13-15 Sep. Counting
+    // that as coverage hides a real gap on a document whose certification is
+    // criminal — the same containment lib/alerts-query.ts raises the alert
+    // from, through the same predicate.
+    const rows = (await ask("certified_payroll", { jobName: "Riverside" })).data as {
+      weekEnding: string;
+      documentOnRecord: boolean;
+    }[];
+    expect(rows.find((row) => row.weekEnding === "2026-09-19")!.documentOnRecord).toBe(false);
+  });
+
+  it("treats a document with a missing period end as covering nothing", async () => {
+    // Cedar Park's only document has a null periodEnd. Half a period cannot
+    // contain a week.
+    const rows = (await ask("certified_payroll", { jobName: "Cedar" })).data as {
+      documentOnRecord: boolean;
+    }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].documentOnRecord).toBe(false);
+  });
+
+  it("keeps ready-to-produce and on-record as two separate facts", async () => {
+    // Neither implies the other: a week can be ready with nothing on record,
+    // and on record while its data has holes. One field for both would make
+    // "ready" read as "in".
+    const rows = (await ask("certified_payroll", { jobName: "Riverside" })).data as {
+      weekEnding: string;
+      readyToProduce: boolean;
+      documentOnRecord: boolean;
+    }[];
+    expect(rows.find((row) => row.weekEnding === "2026-09-12")).toMatchObject({
+      readyToProduce: true,
+      documentOnRecord: true,
+    });
+    expect(rows.find((row) => row.weekEnding === "2026-09-19")).toMatchObject({
+      readyToProduce: false,
+      documentOnRecord: false,
+    });
   });
 
   it("counts the three holes APART, because each sends a different person", async () => {
@@ -248,6 +369,8 @@ describe("certified_payroll", () => {
       weeks: 2,
       weeksReadyToProduce: 1,
       weeksWithHoles: 1,
+      weeksWithADocumentOnRecord: 1,
+      weeksWithNoDocumentOnRecord: 1,
     });
   });
 

@@ -69,7 +69,25 @@ async function resolveDailyReport(ctx: CommandContext, input: CommandInput): Pro
   ];
   if (input.crewPresent) preview.push({ label: "Crew", value: input.crewPresent });
   if (input.weather) preview.push({ label: "Weather", value: input.weather });
-  if (input.delays) preview.push({ label: "Delays", value: input.delays });
+
+  /* NO `delays` HERE ANY MORE, and this is the whole reason the field is
+   * gone from the schema below too.
+   *
+   * `DailyFieldReport.delays` is marked SUPERSEDED in operations.prisma and
+   * `lib/field-reports-core.ts` says outright that "no screen sends it any
+   * more". This command was the last writer of it in the app: a delay the
+   * person mentioned to the assistant went into a free-text box with no
+   * cause, no responsible party, no hours and no record of telling the GC —
+   * which is exactly the record `DelayEvent` replaced it to stop producing,
+   * and exactly what a delay claim against a GC cannot be built from. A new
+   * row in a superseded column looks like pre-changeover data forever.
+   *
+   * It is not replaced with a DelayEvent card here on purpose: `parseDelay`
+   * REQUIRES a cause and a responsible party, and those are two judgements
+   * about who is at fault, not two fields to guess from a sentence. That is a
+   * card somebody has to design. Until then the description points at the
+   * delay log, which is a worse answer than logging it and a better one than
+   * logging it where nobody will look. */
 
   return {
     kind: "ready",
@@ -80,7 +98,6 @@ async function resolveDailyReport(ctx: CommandContext, input: CommandInput): Pro
       workPerformed,
       crewPresent: input.crewPresent ?? null,
       weather: input.weather ?? null,
-      delays: input.delays ?? null,
     },
     preview,
     warnings: [],
@@ -103,7 +120,9 @@ async function executeDailyReport(ctx: CommandContext, payload: ResolvedPayload)
         workPerformed,
         crewPresent: str(payload, "crewPresent"),
         weather: str(payload, "weather"),
-        delays: str(payload, "delays"),
+        // No `delays`. `createDailyFieldReport` only touches that column when
+        // the FormData carries the key, so leaving it out means an existing
+        // report's older typed note is untouched and a new one gets none.
       }),
     ),
   );
@@ -127,7 +146,7 @@ async function executeDailyReport(ctx: CommandContext, payload: ResolvedPayload)
 export const logDailyFieldReportCommand: DirectCommandDefinition = {
   name: "log_daily_field_report",
   description:
-    "Files TODAY's daily field report for a job: what work was done, who was on the crew, the weather, any delays. Needs the job's name and the work performed in the person's words; ask for either if missing. Always for today on the person's own calendar — it does NOT file a report for another day (that is done on the field reports page), and it refuses when today's report for that job already exists.",
+    "Files TODAY's daily field report for a job: what work was done, who was on the crew, the weather. Needs the job's name and the work performed in the person's words; ask for either if missing. Always for today on the person's own calendar — it does NOT file a report for another day (that is done on the field reports page), and it refuses when today's report for that job already exists. IT CANNOT LOG A DELAY, and must not put one in the work performed: a delay is its own record with a cause, who was responsible, the hours lost and whether the GC was told, and it is entered in the delay log on that job's Field reports tab. If the person mentions a delay, file the report and say plainly that the delay itself has to be logged there — that record is what a claim against the GC is built from, and a sentence buried in the day's write-up is not.",
   capability: "MANAGE_FIELD",
   tier: "T1_DRAFT",
   mode: "DIRECT",
@@ -149,7 +168,7 @@ export const logDailyFieldReportCommand: DirectCommandDefinition = {
         description: "Who or how many were on the crew, as the person said it, e.g. 'crew of 6' or 'Mike, Luis, Dan'. Omit if not said.",
       },
       weather: { type: "string", description: "The weather, as the person said it. Omit if not said." },
-      delays: { type: "string", description: "Any delay or hold-up the person mentioned. Omit if none." },
+      // `delays` WAS HERE and wrote a superseded column — see resolveDailyReport.
     },
   },
   continuationKeys: ["jobId"],
