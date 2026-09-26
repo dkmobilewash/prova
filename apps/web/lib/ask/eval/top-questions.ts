@@ -331,6 +331,16 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   ),
   t("q-vendor-quote", "what did we get quoted for 5/8 type X?", "vendor_pricing", ESTIMATOR),
   t("q-vendor-stale", "are those prices still good or have they run out?", "vendor_pricing", ESTIMATOR),
+  // WAS A GAP THAT NEVER WAS ONE. KNOWN_GAPS carried "a vendor's recent price
+  // change: the catalog records what work has cost, not a vendor's price list
+  // over time", and `job_margin` said "there is no vendor price history".
+  // `priceMovement()` (components/vendorPricing.ts) had computed the change
+  // between a vendor's last two quotes all along and /vendors/pricing rendered
+  // it under "Movement" — so the list injected into the system prompt was
+  // telling the model to refuse a question on screen. `vendor_pricing` returns
+  // the figure now; the entry is gone, and the test below fails if it comes
+  // back.
+  t("q-vendor-movement", "has Allied put their price up on 5/8 type X?", "vendor_pricing", ESTIMATOR),
   t("q-estimate-read", "what's in the Northgate estimate?", "estimate_detail", ESTIMATOR),
   // WAS A GAP until BidPursuit (pursuits.prisma). A subcontractor's own
   // pre-bid pipeline was not modelled: `bid_status` starts at the bid
@@ -496,7 +506,14 @@ export const CENSUS_REFUSALS = 2;
  * and did not, because a census can only find a hole somebody asked about.
  * The lesson is not the number: it is that a feature shipping and a question
  * being written are two separate events, and only the second one is here. */
-export const TOTAL_QUESTIONS = 122;
+/** 122 -> 123 on 2026-09-26: one question for a vendor's price MOVEMENT,
+ * which `vendor_pricing` answers and KNOWN_GAPS was telling the model to
+ * refuse. A GAP LEFT THE LIST and nothing was added to it — the opposite
+ * motion from the entry above, and the other way this census goes wrong: a
+ * hole somebody wrote down, closed by code, and left on the list that is
+ * injected into the system prompt. It went from a census entry nobody had
+ * written to a refusal nobody had withdrawn. */
+export const TOTAL_QUESTIONS = 123;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the

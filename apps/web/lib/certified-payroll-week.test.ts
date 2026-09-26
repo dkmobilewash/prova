@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { certifiedPayrollWeekStart, certifiedPayrollWeekWindow } from "./certified-payroll-week";
+import {
+  certifiedPayrollWeekIsCovered,
+  certifiedPayrollWeekStart,
+  certifiedPayrollWeekWindow,
+} from "./certified-payroll-week";
 import { buildCertifiedPayrollSummary, type CertifiedPayrollTimeEntryInput } from "./certified-payroll";
 import type { FringeRateScheduleInput } from "./labor-cost";
 
@@ -152,5 +156,61 @@ describe("the week of 2026-08-23, priced", () => {
     expect(firstHours + secondHours).toBe(46);
     expect(secondHours).toBe(6);
     expect(second[0].totalWageCost).toBeCloseTo(620.1, 2);
+  });
+});
+
+/**
+ * Whether a filed document covers a week.
+ *
+ * Lifted out of `lib/alerts-query.ts` so `certified_payroll` in the Ask box
+ * answers "is a certified payroll on record for this week" from the same
+ * predicate the CERTIFIED_PAYROLL alert is raised from. One tool in that box
+ * was refusing what another tool in the same box reports, and two surfaces
+ * deriving the same containment separately is how they come to disagree.
+ *
+ * CONTAINMENT, not overlap, and the direction of the error is the point: a
+ * period that clips a week is not evidence the week was filed, and reading it
+ * as coverage hides a real gap on a document whose certification is criminal.
+ */
+describe("certifiedPayrollWeekIsCovered", () => {
+  const week = { start: "2026-09-13", end: "2026-09-19" };
+
+  it("covers a week a period contains exactly", () => {
+    expect(certifiedPayrollWeekIsCovered([{ start: "2026-09-13", end: "2026-09-19" }], week.start, week.end)).toBe(true);
+  });
+
+  it("covers a week inside a longer period", () => {
+    // A monthly filing covers each of its weeks.
+    expect(certifiedPayrollWeekIsCovered([{ start: "2026-09-01", end: "2026-09-30" }], week.start, week.end)).toBe(true);
+  });
+
+  it("does NOT cover a week a period only clips", () => {
+    // Late at the start, short at the end, and inside it — three ways to
+    // overlap without containing, and none of them is evidence about the week.
+    expect(certifiedPayrollWeekIsCovered([{ start: "2026-09-14", end: "2026-09-19" }], week.start, week.end)).toBe(false);
+    expect(certifiedPayrollWeekIsCovered([{ start: "2026-09-13", end: "2026-09-18" }], week.start, week.end)).toBe(false);
+    expect(certifiedPayrollWeekIsCovered([{ start: "2026-09-15", end: "2026-09-16" }], week.start, week.end)).toBe(false);
+  });
+
+  it("does not cover a week from an adjacent period", () => {
+    expect(certifiedPayrollWeekIsCovered([{ start: "2026-09-06", end: "2026-09-12" }], week.start, week.end)).toBe(false);
+    expect(certifiedPayrollWeekIsCovered([{ start: "2026-09-20", end: "2026-09-26" }], week.start, week.end)).toBe(false);
+  });
+
+  it("covers a week if ANY period does, not only the first", () => {
+    expect(
+      certifiedPayrollWeekIsCovered(
+        [
+          { start: "2026-08-01", end: "2026-08-31" },
+          { start: "2026-09-13", end: "2026-09-19" },
+        ],
+        week.start,
+        week.end,
+      ),
+    ).toBe(true);
+  });
+
+  it("covers nothing when nothing is filed", () => {
+    expect(certifiedPayrollWeekIsCovered([], week.start, week.end)).toBe(false);
   });
 });

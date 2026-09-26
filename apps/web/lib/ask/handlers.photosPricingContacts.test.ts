@@ -43,32 +43,119 @@ const MEDIA = [
   },
 ];
 
+/**
+ * Quotes, arranged so the MOVEMENT figure has something to find and three
+ * ways to get it wrong.
+ *
+ * `5/8 Type X` is quoted twice by Allied in SF — June 0.62, September 0.71 —
+ * so there is a real +14.5% rise. `Westside` also quotes it, in SF, ONCE, and
+ * `Allied` quotes it a third time in MSF: a movement measured across vendors
+ * is a difference of opinion and one measured across units is arithmetic on
+ * unrelated numbers, so neither may produce a figure.
+ */
 const QUOTES = [
   {
-    // Valid until August. Today is September — expired.
+    // Valid until August. Today is September — expired. Still counts as price
+    // HISTORY: a price that lapsed is still where the price WAS.
+    id: "q-typex-jun",
     description: "5/8 Type X",
     unit: "SF",
     unitPrice: 0.62,
     quotedOn: new Date("2026-06-01T00:00:00.000Z"),
     validUntil: new Date("2026-08-31T00:00:00.000Z"),
-    vendor: { name: "Allied Building Products" },
+    source: "QUOTE",
+    notes: null,
+    catalogEntryId: "cat-typex",
+    vendor: { id: "v-allied", name: "Allied Building Products" },
   },
   {
+    // The same vendor, the same item, the same unit, three months later.
+    id: "q-typex-sep",
+    description: "5/8 Type X 4x12",
+    unit: "SF",
+    unitPrice: 0.71,
+    quotedOn: new Date("2026-09-12T00:00:00.000Z"),
+    validUntil: new Date("2026-12-31T00:00:00.000Z"),
+    source: "QUOTE",
+    notes: null,
+    // Linked to the SAME catalog item under different wording, which is why
+    // the page groups on the catalog id where there is one.
+    catalogEntryId: "cat-typex",
+    vendor: { id: "v-allied", name: "Allied Building Products" },
+  },
+  {
+    // Another vendor's only quote for the item. No movement of their own, and
+    // never a movement against Allied's.
+    id: "q-typex-westside",
+    description: "5/8 Type X",
+    unit: "SF",
+    unitPrice: 0.68,
+    quotedOn: new Date("2026-09-14T00:00:00.000Z"),
+    validUntil: new Date("2026-11-30T00:00:00.000Z"),
+    source: "PRICE_LIST",
+    notes: null,
+    catalogEntryId: "cat-typex",
+    vendor: { id: "v-westside", name: "Westside Supply" },
+  },
+  {
+    // Allied again, same item, DIFFERENT UNIT. Per MSF against per SF is the
+    // 1000x error this must never make.
+    id: "q-typex-msf",
+    description: "5/8 Type X",
+    unit: "MSF",
+    unitPrice: 710,
+    // BETWEEN the two SF quotes on purpose. Newest, it would become the
+    // movement's own end and there would be nothing to compare; oldest, a
+    // handler ignoring the unit would still land on the June SF quote and the
+    // fixture would prove nothing. In the middle, ignoring the unit compares
+    // $0.71/SF against $710/MSF and reports a 99.9% collapse.
+    quotedOn: new Date("2026-08-01T00:00:00.000Z"),
+    validUntil: null,
+    source: "QUOTE",
+    notes: null,
+    catalogEntryId: "cat-typex",
+    vendor: { id: "v-allied", name: "Allied Building Products" },
+  },
+  {
+    id: "q-stud",
     description: "3-5/8 25ga stud",
     unit: "EA",
     unitPrice: 4.1,
     quotedOn: new Date("2026-09-10T00:00:00.000Z"),
     validUntil: new Date("2026-12-31T00:00:00.000Z"),
-    vendor: { name: "Allied Building Products" },
+    source: "QUOTE",
+    notes: null,
+    catalogEntryId: null,
+    vendor: { id: "v-allied", name: "Allied Building Products" },
   },
   {
     // No terms recorded. NOT valid indefinitely.
+    id: "q-sealant",
     description: "Acoustic sealant",
     unit: "TUBE",
     unitPrice: 7.85,
     quotedOn: new Date("2026-05-02T00:00:00.000Z"),
     validUntil: null,
-    vendor: { name: "Westside Supply" },
+    source: "VERBAL",
+    notes: null,
+    catalogEntryId: null,
+    vendor: { id: "v-westside", name: "Westside Supply" },
+  },
+  {
+    // The same vendor and item quoted twice at the SAME price. The page hides
+    // a zero movement; this tool keeps it, because "they quoted the same
+    // $7.85 twice" answers "has their price gone up" and returning nothing
+    // reads as "we don't track that".
+    id: "q-sealant-later",
+    description: "Acoustic sealant",
+    unit: "TUBE",
+    unitPrice: 7.85,
+    quotedOn: new Date("2026-09-01T00:00:00.000Z"),
+    validUntil: null,
+    source: "VERBAL",
+    notes: null,
+    catalogEntryId: null,
+    vendor: { id: "v-westside", name: "Westside Supply" },
   },
 ];
 
@@ -174,10 +261,93 @@ describe("vendor_pricing", () => {
     // Different problems, different fixes: one is a stale price, the other
     // is a vendor who never gave terms.
     expect((await ask("vendor_pricing")).summary).toEqual({
-      quotes: 3,
+      quotes: 7,
       expired: 1,
-      withoutAValidityDate: 1,
+      withoutAValidityDate: 3,
+      priceMovements: 2,
+      pricesUp: 1,
+      pricesDown: 0,
     });
+  });
+
+  /* ── the movement figure the box was told to refuse ──────────────────── */
+
+  type Row = {
+    material: string;
+    vendor: string | null;
+    unit: string | null;
+    quotedOn: string | null;
+    priceChange: {
+      direction: "up" | "down" | "unchanged";
+      changePercent: number;
+      fromUnitPrice: number;
+      fromQuotedOn: string;
+    } | null;
+  };
+
+  it("RETURNS the price movement, which KNOWN_GAPS told the model to refuse", async () => {
+    // THE FINDING. tools.ts carried a gap entry reading "a vendor's recent
+    // price change: the catalog records what work has cost, not a vendor's
+    // price list over time", and job_margin's description said "there is no
+    // vendor price history". KNOWN_GAPS is injected into the system prompt, so
+    // those were standing INSTRUCTIONS to refuse a question /vendors/pricing
+    // answers on screen under "Movement" — `priceMovement()` has computed it
+    // all along.
+    const rows = (await ask("vendor_pricing")).data as Row[];
+    const september = rows.find((row) => row.quotedOn === "2026-09-12")!;
+    expect(september.priceChange).toEqual({
+      direction: "up",
+      // (0.71 - 0.62) / 0.62, one decimal — the figure the page renders, not
+      // one the model works out from two prices.
+      changePercent: 14.5,
+      fromUnitPrice: 0.62,
+      fromQuotedOn: "2026-06-01",
+    });
+  });
+
+  it("never measures a movement across UNITS", async () => {
+    // Allied quoted the same item per MSF in August, between the two SF
+    // quotes. Comparing $0.71/SF against $710/MSF would report a 99.9%
+    // collapse on a screen people bid from.
+    const rows = (await ask("vendor_pricing")).data as Row[];
+    expect(rows.find((row) => row.quotedOn === "2026-09-12")!.priceChange!.changePercent).toBe(14.5);
+    // And the MSF quote itself has no movement: it is Allied's only one in
+    // that unit.
+    expect(rows.find((row) => row.unit === "MSF")!.priceChange).toBeNull();
+  });
+
+  it("never measures a movement across VENDORS", async () => {
+    // Westside quoted the same item once, at $0.68. Against Allied's $0.71
+    // that is a difference of opinion, not a price change.
+    const rows = (await ask("vendor_pricing")).data as Row[];
+    expect(rows.find((row) => row.vendor === "Westside Supply" && row.material === "5/8 Type X")!.priceChange).toBeNull();
+  });
+
+  it("reports a price that did NOT move, which the page has nothing to show for", async () => {
+    // The one place this tool and the page differ, deliberately: "they quoted
+    // the same $7.85 in May and again in September" is an answer to "has their
+    // price gone up", and returning nothing there reads as "we don't track
+    // that" — which is the whole defect being fixed.
+    const rows = (await ask("vendor_pricing")).data as Row[];
+    expect(rows.find((row) => row.quotedOn === "2026-09-01")!.priceChange).toMatchObject({
+      direction: "unchanged",
+      changePercent: 0,
+    });
+  });
+
+  it("puts the movement on the NEWER quote and leaves the superseded one null", async () => {
+    // Otherwise the same rise would be reported twice, once from each end.
+    const rows = (await ask("vendor_pricing")).data as Row[];
+    expect(rows.find((row) => row.quotedOn === "2026-06-01")!.priceChange).toBeNull();
+  });
+
+  it("groups by the CATALOG item, so different wording for one thing still lines up", async () => {
+    // The September quote is worded "5/8 Type X 4x12" and the June one
+    // "5/8 Type X". Grouping on the wording would find no movement at all —
+    // and a movement the page shows and the box denies is the worse failure.
+    const rows = (await ask("vendor_pricing")).data as Row[];
+    expect(rows.find((row) => row.quotedOn === "2026-09-12")!.material).toBe("5/8 Type X 4x12");
+    expect(rows.find((row) => row.quotedOn === "2026-09-12")!.priceChange).not.toBeNull();
   });
 });
 
