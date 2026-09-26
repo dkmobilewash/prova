@@ -183,6 +183,7 @@ export function isRestricted(user: Principal): boolean {
  */
 export const ROUTE_CAPABILITY: Record<string, Capability> = {
   "/cash-flow": "VIEW_COMPANY_FINANCIALS",
+  "/wip": "VIEW_COMPANY_FINANCIALS",
   // Budget against actual for every phase code, summed across every job —
   // the whole book of cost, grouped by phase instead of by job. Gated like
   // `/cash-flow` rather than on VIEW_JOB_COSTS, whose own comment above

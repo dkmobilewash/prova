@@ -407,6 +407,20 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/wip",
+    label: "Work in progress",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M3 4.5h14M3 9h14M3 13.5h9"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
+  {
     href: "/cash-flow",
     label: "Cash flow",
     icon: (
@@ -689,7 +703,7 @@ export const NAV_GROUPS: NavGroup[] = [
     // to lien.
     // Settings USED to be last in this group and is not in any group now:
     // see NAV_FOOTER below.
-    items: [item("/cash-flow"), item("/phase-codes"), item("/backcharges"), item("/lien-deadlines")],
+    items: [item("/cash-flow"), item("/wip"), item("/phase-codes"), item("/backcharges"), item("/lien-deadlines")],
   },
   {
     heading: "Compliance & safety",
