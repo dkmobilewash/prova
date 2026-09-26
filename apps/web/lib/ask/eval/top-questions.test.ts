@@ -50,7 +50,12 @@ describe("the hundred questions", () => {
     // 110 since the tools of 2026-09-18; 113 with getting_started's three.
     // The census keeps its name.
     // 115 with find_bid_leads, 2026-09-24.
-    expect(TOTAL_QUESTIONS).toBe(115);
+    // 122 with the seven estimating and takeoff tools, 2026-09-26 — and the
+    // gap count did NOT move, which is the part worth reading: those thirteen
+    // features were never on the gap list, so this census read as complete
+    // while every question about them routed to nothing. A census only finds
+    // the holes somebody wrote a question for.
+    expect(TOTAL_QUESTIONS).toBe(122);
     expect(TOP_QUESTIONS).toHaveLength(TOTAL_QUESTIONS);
   });
 
