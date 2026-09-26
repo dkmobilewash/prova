@@ -158,6 +158,7 @@ model Company {
   experienceModRates        ExperienceModRate[]
   employerBurdenRates       EmployerBurdenRate[]
   lienDeadlines             LienDeadline[]
+  lienWaivers               LienWaiver[]
   workerCertifications      WorkerCertification[]
   requiredCertifications    CertificationRequirement[]
   bidPursuits               BidPursuit[]
@@ -234,6 +235,7 @@ model User {
   experienceModRatesCreated            ExperienceModRate[]    @relation("ExperienceModRateCreatedBy")
   employerBurdenRatesCreated           EmployerBurdenRate[]   @relation("EmployerBurdenRateCreatedBy")
   lienDeadlinesCreated                 LienDeadline[]         @relation("LienDeadlineCreatedBy")
+  lienWaiversCreated                   LienWaiver[]           @relation("LienWaiverCreatedBy")
   bidPursuitsCreated                   BidPursuit[]           @relation("BidPursuitCreatedBy")
   connectedQuickBooks                  QuickBooksConnection[]
   quickBooksSyncAttempts               QuickBooksSyncAttempt[]

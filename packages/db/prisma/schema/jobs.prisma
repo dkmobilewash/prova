@@ -136,6 +136,7 @@ model Job {
   assignments                    JobAssignment[]
   crewScheduleDays               CrewScheduleDay[]
   lienDeadlines                  LienDeadline[]
+  lienWaivers                    LienWaiver[]
   procoreProjectLink             ProcoreProjectLink?
   accProjectLink                 AccProjectLink?
   companycamProjectLink          CompanyCamProjectLink?

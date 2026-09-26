@@ -185,6 +185,12 @@ model Invoice {
   /// InvoiceLineItem and lib/pay-application.ts. Empty for a plain invoice.
   lineItems InvoiceLineItem[]
 
+  /// Lien waivers issued against this pay application. Usually one, but a
+  /// conditional signed to release the payment and an unconditional signed
+  /// once it cleared are two rows against the same invoice — which is the
+  /// correct paper trail, not a duplicate.
+  lienWaivers LienWaiver[]
+
   @@unique([jobId, number])
   @@index([jobId])
 }

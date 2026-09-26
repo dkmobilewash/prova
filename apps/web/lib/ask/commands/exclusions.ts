@@ -230,4 +230,38 @@ export const notYetRegistered: Exclusion[] = [
     reason: "Removes the fact that says a right was preserved; owner-only, one deliberate tap on the row. Never a command.",
   },
   { action: "deleteLienDeadline", reason: "T5: deletes are never commands." },
+
+  // Lien WAIVERS, per action, and never commands for a reason one step
+  // stronger than the deadlines above. A deadline a model gets wrong loses
+  // a right by inaction. A waiver a model gets wrong GIVES ONE AWAY, in
+  // writing, signed.
+  //
+  // The safety of that feature is one sentence: the app offers retainage
+  // and pending change orders as candidate exceptions BESIDE the field and
+  // never writes them into it, because a number a person reads and types
+  // is their decision and a number filled in for them is not. A confirm
+  // card carrying a proposed `exceptedAmount` is exactly the filled-in
+  // number that design exists to prevent — and it would arrive looking
+  // more considered than a blank field, which is worse. Reading waivers
+  // can be a tool; writing one is the billing tab.
+  {
+    action: "createLienWaiver",
+    reason:
+      "A waiver gives up money and lien rights in writing. Its excepted amount is the one figure the app deliberately refuses to fill in for anybody (lib/lien-waiver.ts), and a model proposing one on a confirm card is that refusal routed around. Issued on the job's billing tab by a person. Never a command.",
+  },
+  {
+    action: "updateLienWaiver",
+    reason:
+      "Correcting a waiver is the same judgement as issuing one — the form, the through date and the exceptions are what it gives up. Done on the billing tab, where the retainage and change-order figures are on screen beside it. Never a command.",
+  },
+  {
+    action: "markLienWaiverSigned",
+    reason:
+      "The signed date is the date on the executed form — evidence a person reads off a document the GC holds, not something a model can know. Recorded on the billing tab. Never a command.",
+  },
+  {
+    action: "revokeLienWaiver",
+    reason:
+      "Withdrawing a waiver invalidates a signing link that may already be in a GC's inbox, and this model has no delete precisely because that fact is evidence. One deliberate tap on the row. Never a command.",
+  },
 ];

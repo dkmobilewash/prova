@@ -150,6 +150,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
     "Decides what one invoice's balance line SAYS, for the two pages above. Takes the snapshot as an input and hands it to arBalanceFor; adds no formula of its own, and never sees more than one invoice.",
   "lib/invoice-balance-label.test.ts": "Pins that decision, including the settled-net invoice.",
   "lib/jobs/job-summary.ts": "The always-visible summary header's retainage-held figure — the same calculateRetainageSummary call, over a leaner per-job query shared by every tab.",
+  "lib/lien-waiver-query.ts":
+    "Retainage held is a CANDIDATE EXCEPTION on a lien waiver — the money a waiver gives up if it is not written into the exceptions. Reads the same calculateRetainageSummary().balance rather than recomputing from retainagePercent, for the reason this file exists.",
   "lib/pay-application-query.ts":
     "Assembles one pay application. PR #156 moved this out of the page so the G702 arithmetic could be tested without a database; the page now renders what this returns.",
   "lib/pay-application-query.test.ts": "Pins that assembly, including the removed-line close-out.",

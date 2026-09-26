@@ -1565,6 +1565,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // Lien deadlines — every write reachable only from /lien-deadlines, which
   // demands MANAGE_BILLING, and every one asserts it before any query.
   lienDeadlines: () => import("./actions/lienDeadlines"),
+  lienWaivers: () => import("./actions/lienWaivers"),
   // The payroll register import and issuing a WH-347 payroll number —
   // both MANAGE_COMPLIANCE, deliberately NOT owner-only like the bulk
   // spreadsheet importers beside the register import on /settings/import.

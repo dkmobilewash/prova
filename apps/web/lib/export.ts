@@ -755,6 +755,16 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     models: ["LienDeadline"],
   },
   {
+    key: "lien-waivers",
+    title: "Lien waivers you issued",
+    detail:
+      "Every waiver you gave a GC to get paid — which of the four forms it was, the amount, " +
+      "the date it ran through, what you excepted from it, and whether it was signed. The " +
+      "exceptions are the part worth keeping: they are the record of what you did NOT give " +
+      "up. The executed form the GC accepted is not in this file, so keep your own copy of it.",
+    models: ["LienWaiver"],
+  },
+  {
     key: "closeout-warranty-equipment",
     title: "Closeout, warranty, equipment and toolbox talks",
     detail:

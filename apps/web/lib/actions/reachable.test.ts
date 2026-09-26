@@ -95,9 +95,34 @@ const actionModules = readdirSync(ACTIONS_DIR)
   .filter((f) => f.endsWith(".ts") && !isTestFile(f) && !NOT_A_CALLER.has(f))
   .map((f) => join(ACTIONS_DIR, f));
 
+/**
+ * A FILE WHOSE PURPOSE IS TO NAME ACTIONS IT DOES NOT CALL, and so the one
+ * file that must never count as a caller.
+ *
+ * The third time this guard has been blind (see the header). Every
+ * per-action entry in `lib/ask/commands/exclusions.ts` is
+ * `{ action: "createThing", reason: "..." }` — the action's name, as a
+ * string literal, in a declaration that it is DELIBERATELY NOT REACHABLE
+ * from the assistant. The check below is a `\bname\b` regex over file
+ * text, so that string satisfied it: writing "this is not a command"
+ * marked the action as called.
+ *
+ * Found 2026-09-26 while adding three actions that genuinely had no UI
+ * yet. All three went green the moment they were excluded from Ask, which
+ * is precisely backwards. Measured before fixing: 16 actions carry an
+ * exact-name exclusion and the other 13 all have real call sites in `app/`
+ * or `components/`, so nothing was being hidden today — the hole was open,
+ * not yet fallen into.
+ *
+ * Same family as CLAUDE.md's #185: a census disarmed by text quoting its
+ * own pattern.
+ */
+const DECLARES_NON_CALLERS = join(WEB_ROOT, "lib/ask/commands/exclusions.ts");
+
 const allSources = sourceFiles(join(WEB_ROOT, "app"))
   .concat(sourceFiles(join(WEB_ROOT, "components")))
-  .concat(sourceFiles(join(WEB_ROOT, "lib")));
+  .concat(sourceFiles(join(WEB_ROOT, "lib")))
+  .filter((file) => file !== DECLARES_NON_CALLERS);
 
 describe("every Server Action is reachable", () => {
   const actions = actionModules.flatMap((file) =>
