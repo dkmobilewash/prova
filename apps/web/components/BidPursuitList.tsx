@@ -155,23 +155,38 @@ function BidPursuitFields({ pursuit, minBidDate }: { pursuit?: PursuitRow; minBi
           className={inputClass}
         />
       </label>
-      <label className="block text-sm">
-        <span className="text-ink-label">Estimated value of our scope (optional)</span>
-        <input
-          name="estimatedValue"
-          inputMode="decimal"
-          defaultValue={pursuit?.estimatedValue ?? ""}
-          placeholder="250,000"
-          className={inputClass}
-        />
-        {/* BESIDE the field, never inside it. The helper fills in nothing —
-            see ConceptualEstimateHelper for why a button that wrote into
-            this field would make the pipeline total part guess and part
-            quote, with nothing saying which rows were which. */}
+      {/* A wrapper so the label and the calculator are ONE grid cell while
+          staying separate elements — see the comment below the label. */}
+      <div className="block text-sm">
+        <label className="block">
+          <span className="text-ink-label">Estimated value of our scope (optional)</span>
+          <input
+            name="estimatedValue"
+            inputMode="decimal"
+            defaultValue={pursuit?.estimatedValue ?? ""}
+            placeholder="250,000"
+            className={inputClass}
+          />
+        </label>
+        {/* BESIDE the field, never inside it — and it took until #505 for that
+            to be true. This said exactly what it says now while the helper sat
+            INSIDE the `<label>`, which made this field's accessible name its
+            own text plus everything the calculator renders: "Gross area of the
+            building (SF)", the "Not saved" prose, all of it. A screen reader
+            announcing the pursuit's value field read the whole calculator as
+            its name, and an e2e selector needed `exact` to tell two textboxes
+            apart. Cyrus's spec found it by asking for the name exactly.
+            A comment is not a guard: `bidPursuitList.test.ts` now asserts the
+            helper is not a descendant of the label.
+
+            The helper still fills in nothing — see ConceptualEstimateHelper
+            for why a button that wrote into this field would make the pipeline
+            total part guess and part quote, with nothing saying which rows
+            were which. */}
         <span className="mt-1 block">
           <ConceptualEstimateHelper />
         </span>
-      </label>
+      </div>
       <label className="block text-sm sm:col-span-2">
         <span className="text-ink-label">Note (optional)</span>
         <input

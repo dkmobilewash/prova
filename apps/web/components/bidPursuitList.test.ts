@@ -426,3 +426,82 @@ describe("the add button before hydration", () => {
     expect(add?.disabled).toBe(false);
   });
 });
+
+describe("the pursuit value field's accessible name is its own text, and nothing else", () => {
+  /**
+   * THE DEFECT THIS EXISTS FOR, found by Cyrus's e2e spec on #505 rather than
+   * by anything here.
+   *
+   * `ConceptualEstimateHelper` was rendered INSIDE the "Estimated value of our
+   * scope" `<label>`. A `<label>`'s accessible name is its whole text content,
+   * so that field's name became its own words PLUS everything the calculator
+   * renders — "Gross area of the building (SF)", "Not saved — this is a
+   * calculator", all of it. A screen reader announcing the pursuit's value
+   * field read the entire calculator as its label, and two textboxes answered
+   * to that name by substring.
+   *
+   * The comment above the helper said "BESIDE the field, never inside it" the
+   * whole time it was inside. That is the shape this repo keeps paying for: a
+   * sentence asserting the thing it does not enforce. Hence a test.
+   *
+   * It asserts STRUCTURE rather than a computed accessible name, deliberately.
+   * happy-dom does not implement accname, so a "name" assertion here would be
+   * my own reimplementation of the algorithm agreeing with itself. Whether the
+   * helper is a descendant of the label is the actual defect, and it is a fact
+   * about the DOM that cannot be faked.
+   */
+  function valueLabel(): HTMLLabelElement {
+    const label = [...container.querySelectorAll("label")].find((el) =>
+      el.textContent?.includes("Estimated value of our scope"),
+    );
+    if (!label) throw new Error("no label for the estimated value field");
+    return label as HTMLLabelElement;
+  }
+
+  function helperButton(): HTMLButtonElement {
+    const button = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "What has similar work run at?",
+    );
+    if (!button) throw new Error("the conceptual calculator's opener is not rendered");
+    return button as HTMLButtonElement;
+  }
+
+  it("does not contain the calculator", () => {
+    renderList();
+    click("Add a pursuit");
+
+    const label = valueLabel();
+    const helper = helperButton();
+
+    // Both present — so this cannot pass by neither being rendered, which is
+    // how a structural assertion goes vacuous.
+    expect(label).toBeTruthy();
+    expect(helper).toBeTruthy();
+
+    expect(label.contains(helper)).toBe(false);
+  });
+
+  it("names the field and nothing the calculator renders", () => {
+    renderList();
+    click("Add a pursuit");
+
+    const text = valueLabel().textContent ?? "";
+    expect(text).toContain("Estimated value of our scope");
+    // The three strings the calculator puts on screen. Any of them inside the
+    // label means the regression is back.
+    expect(text).not.toContain("Gross area of the building");
+    expect(text).not.toContain("Not saved");
+    expect(text).not.toContain("What has similar work run at?");
+  });
+
+  it("keeps the input inside its own label, so the field is still named at all", () => {
+    // The fix moves the HELPER out, not the input. Losing the implicit
+    // association would trade one a11y defect for a worse one: a textbox with
+    // no accessible name whatsoever.
+    renderList();
+    click("Add a pursuit");
+
+    const input = valueLabel().querySelector('input[name="estimatedValue"]');
+    expect(input).toBeTruthy();
+  });
+});

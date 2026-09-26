@@ -415,18 +415,24 @@ test.describe("the estimating desk", () => {
     await expect(page.getByText("Not saved — this is a calculator, not part of the pursuit.")).toBeVisible();
     await expect(page.getByText("Enter the building's gross area to see what similar work has run at.")).toBeVisible();
 
-    // `exact`, and the reason is worth knowing rather than just working around.
-    // `ConceptualEstimateHelper` is rendered INSIDE the "Estimated value of our
-    // scope" `<label>` (BidPursuitList.tsx), so that field's accessible name is
-    // its own text PLUS everything the calculator renders — including "Gross
-    // area of the building (SF)". Two textboxes therefore answer to this name by
-    // substring. Only one answers to it exactly.
+    // `exact` is now belt and braces rather than load-bearing, and the history
+    // is worth keeping because this selector is what found the defect.
     //
-    // The a11y consequence is real and is reported rather than fixed here: a
-    // screen reader announcing the pursuit's value field reads the whole
-    // calculator as its label. Moving the helper to a sibling of the label —
-    // the comment above it already says "BESIDE the field, never inside it" —
-    // would fix both. That is Diego's markup and his call.
+    // `ConceptualEstimateHelper` WAS rendered inside the "Estimated value of our
+    // scope" `<label>`, so that field's accessible name was its own text plus
+    // everything the calculator renders — including "Gross area of the building
+    // (SF)". Two textboxes answered to this name by substring and only one
+    // answered exactly, which is how asking exactly surfaced it. A screen reader
+    // announcing the pursuit's value field read the whole calculator as its
+    // label.
+    //
+    // Fixed: the helper is a SIBLING of the label now, which is what the comment
+    // above it in BidPursuitList.tsx had claimed all along while it was not.
+    // `bidPursuitList.test.ts` asserts the helper is not a descendant of that
+    // label, and was mutation-tested by putting it back inside.
+    //
+    // `exact` stays because it is the more precise request, not because the
+    // ambiguity is still there.
     await page
       .getByRole("textbox", { name: "Gross area of the building (SF)", exact: true })
       .fill("40000");
