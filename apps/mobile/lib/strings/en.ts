@@ -342,6 +342,7 @@ export const EN = {
   "reports.method.text": "Text",
   "reports.method.inPerson": "In person",
   "reports.method.meeting": "Meeting",
+  "reports.method.other": "Other",
 
   // ticket-materials
   "tickets.signed": "Signed: {name}",
