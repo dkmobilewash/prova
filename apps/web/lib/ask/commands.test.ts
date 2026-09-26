@@ -438,6 +438,30 @@ describe("read-tool capabilities match the pages they cite", () => {
     // matched page's own ROUTE_CAPABILITY — the same rule this file states
     // for every other row, applied per result instead of once for the tool.
     app_help: null,
+
+    /* ───────── the bid and the takeoff, 22-26 September ───────── */
+
+    // The job's Takeoff tab is the one dynamic route under /jobs/[id] with a
+    // HARD gate — `requireCapability("VIEW_JOB_COSTS")` and `<NoAccess>` — so
+    // this literal is read off the page rather than argued from the subject.
+    // NOT the MANAGE_JOBS that `drawing_currency` carries: that tool cites
+    // /drawings, the job's paper trail, and this one cites the sheet somebody
+    // measured. Two features, two pages, two gates.
+    takeoff_currency: "VIEW_JOB_COSTS",
+    // The Estimate tab withholds its whole content on `showsJobMoney`, which
+    // is VIEW_JOB_COSTS — the same soft gate `estimate_detail` above takes
+    // its literal from, and for the same reason. The wall schedule renders
+    // inside that branch.
+    wall_schedule: "VIEW_JOB_COSTS",
+    // All three bid-day tools cite /bids and take its gate.
+    bid_levelling: ROUTE_CAPABILITY["/bids"],
+    bid_compliance: ROUTE_CAPABILITY["/bids"],
+    bid_alternates: ROUTE_CAPABILITY["/bids"],
+    // Marked-up money on the Estimate tab, like wall_schedule above.
+    bid_recap: "VIEW_JOB_COSTS",
+    // The helper sits on /pipeline beside a pursuit's estimated value, which
+    // is where the figure it informs gets typed.
+    conceptual_estimate: ROUTE_CAPABILITY["/pipeline"],
   };
 
   it.each(TOOLS.map((tool) => [tool.name, tool.capability] as const))("%s", (name, capability) => {

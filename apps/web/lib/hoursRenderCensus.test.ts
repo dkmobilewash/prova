@@ -98,6 +98,21 @@ const NOT_AN_HOURS_NUMBER: Record<string, string> = {
     "labor-productivity.ts imports no React and returns numbers; the screen " +
     "that shows them is ProductionBackCheckHint, which formats them there.",
 
+  "lib/ask/handlers.ts\t{job, schedule, hours, linesWithNoRate}":
+    "The same shape as the entry above: a destructure of `wallSchedule`'s own " +
+    "intermediate rows, in a module that imports no React. The rounding this " +
+    "census exists to enforce IS applied, one line earlier and before the " +
+    "figure leaves — `Number(sum.toFixed(2))`, which lib/render-hours.ts's own " +
+    "comment records as agreeing with `Math.round(x * 100) / 100` on every " +
+    "value hours can take. It stays a NUMBER rather than becoming " +
+    "formatHours()'s string because an Ask tool result is JSON the model " +
+    "narrates, not markup: every other figure in that file is a number, the " +
+    "provenance guard reads numbers out of it, and a lone stringified field " +
+    "would read as a different kind of value. Caught by this census on the " +
+    "branch that added the tool, which is the census doing its job — the " +
+    "brace scanner skips a group containing a colon, so an object literal " +
+    "passes and a shorthand destructure does not.",
+
   // -- already a string by the time it is rendered --
   "app/(app)/catalog/page.tsx\t{entry.defaultLaborHours.toString()}":
     "Prisma Decimal(5,2) stringified. A Decimal is exact — it never carries binary float drift, so there is nothing to round.",

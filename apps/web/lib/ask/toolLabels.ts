@@ -55,6 +55,17 @@ const LABELS: Record<ToolName, string> = {
   experience_mod_rate: "your mod rate",
   lien_deadlines: "your lien deadlines",
   app_help: "how to do that",
+  // "your drawings" is drawing_currency's, and these two must not read the
+  // same: one is the job's drawing register, the other is the sheet somebody
+  // measured off. A person waiting on an answer should be able to tell which
+  // question is being answered from the status line alone.
+  takeoff_currency: "the sheets you measured",
+  wall_schedule: "the wall schedule",
+  bid_levelling: "the quotes you collected",
+  bid_compliance: "your bid form",
+  bid_alternates: "the alternates on your bid",
+  bid_recap: "your bid number",
+  conceptual_estimate: "what similar work ran at",
 };
 
 export function toolLabel(name: ToolName): string {
