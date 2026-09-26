@@ -2,65 +2,82 @@ import { describe, expect, it } from "vitest";
 import { PERSONAS } from "./personas";
 
 /**
- * The identity fields on a persona have to be unique across the Clerk
- * instance, and nothing at the point where you would add a seventh
- * persona says so — you copy the line above and change the words that
- * look like they matter.
+ * THE THREE IDENTIFIERS CLERK WILL REJECT A DUPLICATE OF.
  *
- * A duplicate does not fail where you made it. It fails inside
- * `createUser` on whichever persona happens to be seeded SECOND, as the
- * same opaque 422 that cost a CI round trip on 2026-09-24 before
- * `describeClerkSeedFailure` existed. This file makes it fail on a laptop
- * in a second instead.
+ * `seedClerkUsers.ts` hands Clerk an email, a username and a phone number for
+ * every persona it has to create, and Clerk refuses a second user carrying any
+ * of the three. A duplicate here would arrive as a 422 in Playwright's GLOBAL
+ * SETUP — before a single spec, with no test to attribute it to — which is
+ * exactly the failure this suite spent two CI runs on 2026-09-25 diagnosing.
+ * A table nobody checks is a table the next person adds a colliding row to, so
+ * it is checked here, in a second.
+ *
+ * It also pins the phone numbers to Clerk's own reserved test block, +1 555 555
+ * 0100-0199. That is the same decision as `+clerk_test` on the emails and it is
+ * the whole reason these values are safe to commit: no number in that range can
+ * reach a person's handset, so no verification code can ever be sent anywhere
+ * real. A number typed outside it would look just as plausible in a diff.
  */
-describe("every persona is distinct where Clerk requires it", () => {
-  const all = Object.values(PERSONAS);
 
-  it("has personas to check", () => {
-    // Vacuity guard: an empty or near-empty record makes every
-    // uniqueness assertion below trivially true.
-    expect(all.length).toBeGreaterThan(3);
-  });
+const personas = Object.entries(PERSONAS);
 
-  for (const field of ["email", "username", "phone", "label"] as const) {
-    it(`gives every persona its own ${field}`, () => {
-      const values = all.map((p) => p[field]);
-      const duplicates = values.filter((v, i) => values.indexOf(v) !== i);
-      expect(duplicates, `two personas share a ${field}: ${duplicates.join(", ")}`).toEqual([]);
-      expect(values.length, "the field vanished from the personas").toBe(all.length);
-    });
+/** Reported by NAME, not as a count: "two personas share a username" is not
+ * something anybody can act on. */
+function duplicates(pick: (persona: (typeof personas)[number][1]) => string): string[] {
+  const seen = new Map<string, string[]>();
+  for (const [key, persona] of personas) {
+    const value = pick(persona);
+    seen.set(value, [...(seen.get(value) ?? []), key]);
   }
-});
+  return [...seen.entries()]
+    .filter(([, keys]) => keys.length > 1)
+    .map(([value, keys]) => `${value} is on ${keys.join(" and ")}`);
+}
 
-describe("the identities are Clerk's documented test fixtures, so nothing is delivered", () => {
-  const all = Object.values(PERSONAS);
-
-  it("uses +clerk_test on every email, which suppresses delivery", () => {
-    for (const p of all) expect(p.email, `${p.label}`).toContain("+clerk_test@");
+describe("the e2e personas table", () => {
+  it("has personas at all", () => {
+    // The floor first: every assertion below passes on an empty table.
+    expect(personas.length).toBeGreaterThanOrEqual(6);
   });
 
-  it("uses a fictional phone from Clerk's 555-01XX test range", () => {
-    // Clerk: "+1 (XXX) 555-0100" through "+1 (XXX) 555-0199" send no SMS
-    // and verify with 424242. A REAL number here would text a stranger
-    // every time CI runs, which is the failure worth a test of its own.
-    // "+1 (XXX) 555-01XX" reads directly as one pattern: +1, any area
-    // code, the 555 exchange, then 01 and two free digits. Written this
-    // way after a first version sliced digit offsets by hand and got the
-    // window wrong — the range is easier to assert than to index.
-    for (const p of all) {
-      expect(p.phone, `${p.label} is outside Clerk's +1 (XXX) 555-01XX test range`).toMatch(
-        /^\+1\d{3}55501\d{2}$/,
+  it("gives every persona all four fields, non-blank", () => {
+    for (const [key, persona] of personas) {
+      expect(persona.email.trim(), `${key} needs an email`).not.toBe("");
+      expect(persona.label.trim(), `${key} needs a label`).not.toBe("");
+      expect(persona.username.trim(), `${key} needs a username — Clerk requires one`).not.toBe("");
+      expect(persona.phone.trim(), `${key} needs a phone — Clerk requires one`).not.toBe("");
+    }
+  });
+
+  it("never reuses an email, a username or a phone number", () => {
+    expect(duplicates((p) => p.email), "Clerk refuses a duplicate email").toEqual([]);
+    expect(duplicates((p) => p.username), "Clerk refuses a duplicate username").toEqual([]);
+    expect(duplicates((p) => p.phone), "Clerk refuses a duplicate phone number").toEqual([]);
+    expect(duplicates((p) => p.label), "two personas with one label make a failure unreadable").toEqual([]);
+  });
+
+  it("suppresses email delivery on every address", () => {
+    for (const [key, persona] of personas) {
+      // Clerk's documented suffix for an address it will never send to.
+      expect(persona.email, `${key} must carry Clerk's +clerk_test suffix`).toContain("+clerk_test@");
+    }
+  });
+
+  it("uses only Clerk's reserved test phone block, so no real handset can be reached", () => {
+    for (const [key, persona] of personas) {
+      // +1 555 555 0100 through 0199.
+      expect(persona.phone, `${key}'s phone must be E.164 in the +1 555 555 01xx test range`).toMatch(
+        /^\+1555555 ?01\d\d$/,
       );
     }
   });
 
-  it("uses usernames Clerk will accept", () => {
-    // Clerk usernames are alphanumeric plus _ and -, and cannot be an
-    // email-looking string. Keeping them derived from the persona key
-    // means a new persona gets a legal one by construction.
-    for (const p of all) {
-      expect(p.username, `${p.label}`).toMatch(/^[a-z0-9_-]{4,64}$/);
-      expect(p.username).not.toContain("@");
+  it("uses usernames Clerk's default rules accept", () => {
+    for (const [key, persona] of personas) {
+      // Letters, digits, underscore and hyphen; at least four characters.
+      expect(persona.username, `${key}'s username must be 4+ chars of [A-Za-z0-9_-]`).toMatch(
+        /^[A-Za-z0-9_-]{4,64}$/,
+      );
     }
   });
 });

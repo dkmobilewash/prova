@@ -126,6 +126,13 @@ export const EN = {
   "safety.noTalks": "No talks logged",
   "safety.noIncidents": "No incidents",
 
+  // A queued write that never reached this phone's own storage. NOT the
+  // network: no signal is the normal case and the queue handles it, so
+  // "check your connection" would send somebody outside to fix the wrong
+  // thing. See lib/save-queued.ts.
+  "save.failed":
+    "This phone couldn't save that. Nothing was sent, so write it down before you leave the screen.",
+
   // The offline note, said on every field screen
   "offline.stale": "Showing what this phone last loaded, {age} — no connection",
   "offline.nothing":

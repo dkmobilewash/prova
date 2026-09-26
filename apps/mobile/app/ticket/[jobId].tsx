@@ -23,7 +23,7 @@ import { type Palette, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
-import { enqueue } from "@/lib/sync-queue";
+import { saveQueued } from "@/lib/save-queued";
 import { useSync } from "@/lib/use-sync";
 import type { TmTicket } from "@/lib/types";
 
@@ -83,11 +83,19 @@ export default function TicketScreen() {
       signerName: signerName.trim(),
       signaturePath,
     };
+    // Queued BEFORE the form is cleared — see lib/save-queued.ts. This
+    // one carries a signature the GC's super just drew; losing it
+    // silently would mean asking them to sign again for no stated reason.
+    const saved = await saveQueued(op);
+    if (!saved.ok) {
+      setError(saved.error);
+      return;
+    }
+    setError(null);
     setWorkDescription("");
     setSignerName("");
     setSignaturePath(null);
     setShowForm(false);
-    await enqueue(op);
     await sync();
   };
 

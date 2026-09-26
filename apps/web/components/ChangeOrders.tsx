@@ -28,6 +28,7 @@ import {
   VALUE_QUALIFIER,
   groupIntoBands,
 } from "@/components/changeOrderStates";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { DocuSignPanel, type DocuSignEnvelopeView } from "@/components/DocuSignPanel";
 import type { DocuSignCardState } from "@/lib/docusign/setup";
 
@@ -473,15 +474,35 @@ function ProposalRow({ proposal, canRemove }: { proposal: ProposalView; canRemov
         <span>
           <span className="text-ink-muted">{proposal.changeType.toLowerCase()}</span> {proposal.summary}
         </span>
+        {/* RIGHT-PINNED (`shrink-0` in a `justify-between` parent), so
+            `pinned="end"`: the LAST control is the one that keeps its
+            position when the row empties, and Cancel has to be the control
+            that inherits the pixel Delete vacated. Measured in real
+            Chromium rather than reasoned — see changelog.d for the numbers.
+            A one-click `onClick={() => run(() => removeProposal(…))}` lived
+            here until issue #258; it was the last unconfirmed destructive in
+            the app and had a documented exception in
+            rowActionsCensus.test.ts holding the rule armed for everyone
+            else. */}
         {canRemove && (
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={() => run(() => removeProposal(proposal.id))}
-            className="text-xs text-ink-muted hover:text-rose-600 disabled:opacity-50"
-          >
-            {isPending ? "removing…" : "remove"}
-          </button>
+          <RowActions
+            as="span"
+            className="flex shrink-0 items-center gap-2"
+            destructive={
+              <ConfirmDelete
+                describe="Takes this proposed change off the draft change order. The line item it refers to is untouched, and nothing has gone to the GC yet."
+                label="remove"
+                confirmLabel="Remove it"
+                pendingLabel="removing…"
+                pinned="end"
+                pending={isPending}
+                onConfirm={() => run(() => removeProposal(proposal.id))}
+                deleteClassName="text-xs text-ink-muted hover:text-rose-600 disabled:opacity-50"
+                cancelClassName="text-xs text-ink-label underline hover:text-ink-body disabled:opacity-50"
+                confirmClassName="text-xs text-red-400 underline disabled:opacity-50"
+              />
+            }
+          />
         )}
       </div>
       {error && <p className="text-xs text-tag-rose-ink">{error}</p>}
@@ -494,43 +515,64 @@ function DraftActions({ changeOrder, today }: { changeOrder: ChangeOrderView } &
   const discard = useActionRunner();
 
   return (
-    <div className="mt-3 flex flex-wrap items-end gap-3">
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          const formData = new FormData(event.currentTarget);
-          submit.run(() => submitChangeOrder(changeOrder.id, formData));
-        }}
-        className="flex flex-wrap items-end gap-2"
+    <div className="mt-3">
+      {/* LEFT-ALIGNED cluster, so the default `pinned="start"`: the FIRST
+          slot is the stable one. "Send to GC" is an ordinary action in the
+          same cluster and is therefore `children` — arming the discard
+          removes it from the row entirely, which is RowActions' rule 1 and
+          the reason it is a component rather than a convention.
+
+          The label is "Discard", not "Discard draft": rowActionsCensus caps
+          a delete label at 12 characters because a LONG label makes the
+          armed pair narrower than the button it replaces, and the confirm
+          then drifts under where the label used to be (CLAUDE.md, #265).
+          What is being discarded is in `describe` and in the card's own
+          heading, which cost no width. */}
+      <RowActions
+        className="flex flex-wrap items-end gap-3"
+        destructive={
+          <ConfirmDelete
+            describe="Throws this draft change order away, with every proposed change on it. Only a draft can be discarded — once it has gone to the GC it can be voided, which leaves the record behind."
+            label="Discard"
+            confirmLabel="Discard it"
+            pendingLabel="Discarding…"
+            pending={discard.isPending}
+            onConfirm={() => discard.run(() => deleteChangeOrderDraft(changeOrder.id))}
+            armedClassName="flex flex-wrap items-center gap-2"
+            deleteClassName="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+            cancelClassName="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-800 disabled:opacity-50"
+            confirmClassName="rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+          />
+        }
       >
-        <label className={labelClass}>
-          Date sent to GC
-          <input name="submittedOn" type="date" defaultValue={today} className={`${inputClass} w-40`} />
-        </label>
-        <button
-          type="submit"
-          disabled={submit.isPending || changeOrder.proposals.length === 0}
-          className={primaryBtn}
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const formData = new FormData(event.currentTarget);
+            submit.run(() => submitChangeOrder(changeOrder.id, formData));
+          }}
+          className="flex flex-wrap items-end gap-2"
         >
-          {submit.isPending ? "Sending…" : "Send to GC"}
-        </button>
-        {submit.error && <p className="w-full text-xs text-tag-rose-ink">{submit.error}</p>}
-      </form>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          discard.run(() => deleteChangeOrderDraft(changeOrder.id));
-        }}
-      >
-        <button
-          type="submit"
-          disabled={discard.isPending}
-          className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {discard.isPending ? "Discarding…" : "Discard draft"}
-        </button>
-        {discard.error && <p className="mt-1 text-xs text-tag-rose-ink">{discard.error}</p>}
-      </form>
+          <label className={labelClass}>
+            Date sent to GC
+            <input name="submittedOn" type="date" defaultValue={today} className={`${inputClass} w-40`} />
+          </label>
+          <button
+            type="submit"
+            disabled={submit.isPending || changeOrder.proposals.length === 0}
+            className={primaryBtn}
+          >
+            {submit.isPending ? "Sending…" : "Send to GC"}
+          </button>
+          {submit.error && <p className="w-full text-xs text-tag-rose-ink">{submit.error}</p>}
+        </form>
+      </RowActions>
+      {/* OUTSIDE the RowActions, not in its children. A failed discard
+          leaves the row ARMED with its error shown (see ConfirmDelete's
+          `fired` comment), and anything in `children` is not rendered while
+          armed — so an error put there would be invisible in exactly the
+          case it exists for. */}
+      {discard.error && <p className="mt-1 text-xs text-tag-rose-ink">{discard.error}</p>}
     </div>
   );
 }

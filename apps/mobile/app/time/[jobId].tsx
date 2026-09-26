@@ -48,7 +48,8 @@ import {
 } from "@/lib/crew-entry";
 import { uuid } from "@/lib/id";
 import { isValidPin, startHandover } from "@/lib/handover";
-import { enqueue, queuedOperationIds, type CreateOp } from "@/lib/sync-queue";
+import { saveQueued, type SaveResult } from "@/lib/save-queued";
+import { queuedOperationIds, type CreateOp } from "@/lib/sync-queue";
 import { useSync } from "@/lib/use-sync";
 import type {
   Craft,
@@ -175,6 +176,9 @@ export default function TimeScreen() {
   const [reportDates, setReportDates] = useState<Set<string>>(new Set());
   const [delayCounts, setDelayCounts] = useState<Map<string, number>>(new Map());
   const [showSign, setShowSign] = useState(false);
+  /** This screen had no error slot either: hours and a day's signature
+   * both went to the queue with nothing watching the write. */
+  const [saveError, setSaveError] = useState<string | null>(null);
   // "Hand the phone to a crew member": who, and the PIN that brings it
   // back. See lib/handover.ts — this is the C15/D-13 case, the hanger or
   // taper who does not carry a company phone.
@@ -277,7 +281,8 @@ export default function TimeScreen() {
       return false;
     }
     setClockError(null);
-    await saveEntry({
+    setSaveError(null);
+    const saved = await saveEntry({
       type: "time:create",
       jobId: openSession.jobId,
       clientOperationId: uuid(),
@@ -290,13 +295,35 @@ export default function TimeScreen() {
       clockEndedAt: endedAtISO,
       clockBreakMinutes: openSession.breakMinutes || undefined,
     });
+    // THE SHIFT IS NOT CLOSED UNLESS ITS ENTRY REACHED THE QUEUE. This
+    // returned true unconditionally, so `onClockOut` went on to
+    // `clearSession()` and erased `clockStartedAt` — the only record of when
+    // the shift began — for a write that never happened. Measured on a
+    // 4h 0m clock: queue empty, session gone, screen reading "Not on the
+    // clock". The caller keeps the clock running instead, exactly as it does
+    // for the zero-hours refusal above, and `saveEntry` has already put the
+    // reason on screen.
+    if (!saved.ok) return false;
     await sync();
     return true;
   };
 
-  /** Queues one entry and shows it straight away as "Syncing…" when it is
-   * for this job. The server's copy replaces it on the next load. */
-  const saveEntry = async (op: Extract<CreateOp, { type: "time:create" }>) => {
+  /**
+   * Queues one entry and shows it straight away as "Syncing…" when it is
+   * for this job. The server's copy replaces it on the next load.
+   *
+   * IT RETURNS THE RESULT, and that is load-bearing rather than tidy. It
+   * used to return void, so neither of its two callers could see a failed
+   * write: `submit` cleared the crew's rows and closed the sheet anyway,
+   * and `closeInterval` reported the shift closed and let `clearSession`
+   * destroy `clockStartedAt`.
+   *
+   * IT ALSO DOES NOT CLEAR `saveError` ON SUCCESS. `submit` calls this in a
+   * loop, one entry per crew member, so clearing here meant a later success
+   * wiped an earlier failure's message — one worker's hours gone with
+   * nothing on screen. The callers clear once, before they start.
+   */
+  const saveEntry = async (op: Extract<CreateOp, { type: "time:create" }>): Promise<SaveResult> => {
     if (op.jobId === jobId) {
       const crewId = op.crewMemberId ?? null;
       setOptimistic((rows) => [
@@ -317,7 +344,14 @@ export default function TimeScreen() {
         ...rows,
       ]);
     }
-    await enqueue(op);
+    const saved = await saveQueued(op);
+    if (!saved.ok) {
+      // The optimistic row above claims these hours are logged. They are
+      // not, so take it back off rather than leave a false one up.
+      setOptimistic((rows) => rows.filter((r) => r.clientOperationId !== op.clientOperationId));
+      setSaveError(saved.error);
+    }
+    return saved;
   };
 
   const onClockIn = async () => {
@@ -484,9 +518,15 @@ export default function TimeScreen() {
       signerName: signerName.trim(),
       signaturePath,
     };
+    const saved = await saveQueued(op);
+    if (!saved.ok) {
+      setShowSign(false);
+      setSaveError(saved.error);
+      return;
+    }
+    setSaveError(null);
     setShowSign(false);
     setSignaturePath(null);
-    await enqueue(op);
     await sync();
   };
 
@@ -494,16 +534,17 @@ export default function TimeScreen() {
     if (!jobId || !canSave) return;
     const toSave = rows;
     const savedDate = date;
-    setRows([]);
-    setNote("");
-    // Back to today next time: a sheet reopened tomorrow must not still say
-    // the day that was logged last.
-    setDate("");
-    setShowForm(false);
+    setSaveError(null);
+    // QUEUED BEFORE ANYTHING IS CLEARED — see lib/save-queued.ts. The old
+    // order emptied the crew's rows, the note and the date and closed the
+    // sheet first, so a phone that could not write to its own storage took a
+    // whole crew's day off the screen with nothing to retype it from.
+    //
     // One entry per person, each with its own idempotency key, so a retried
     // offline flush replays each rather than duplicating any.
-    for (const r of toSave) {
-      await saveEntry({
+    for (let i = 0; i < toSave.length; i += 1) {
+      const r = toSave[i];
+      const saved = await saveEntry({
         type: "time:create",
         jobId,
         clientOperationId: uuid(),
@@ -515,7 +556,21 @@ export default function TimeScreen() {
         lineItemId: lineItemId || undefined,
         craftClassificationId: r.craftId || undefined,
       });
+      if (!saved.ok) {
+        // KEEP THIS ROW AND EVERY ROW AFTER IT, and drop the ones before —
+        // those are already on the queue, and offering them again is how one
+        // crew member gets paid twice. The sheet stays open on exactly what
+        // still needs saving, and saveEntry has put the reason on screen.
+        setRows(toSave.slice(i));
+        return;
+      }
     }
+    setRows([]);
+    setNote("");
+    // Back to today next time: a sheet reopened tomorrow must not still say
+    // the day that was logged last.
+    setDate("");
+    setShowForm(false);
     await sync();
   };
 
@@ -645,6 +700,8 @@ export default function TimeScreen() {
         onDismiss={dismissRefused}
         onRetry={retrySetAside}
       />
+
+      {saveError ? <Text style={styles.saveError}>{saveError}</Text> : null}
 
       {ratioWarnings.length > 0 ? (
         <View style={styles.ratioBanner}>
@@ -1037,6 +1094,13 @@ function makeStyles(p: Palette) {
     },
     crewName: { color: p.colors.ink, fontSize: typography.size.md, fontWeight: typography.weight.semibold },
     rowProblem: { color: p.colors.tagRoseInk, fontSize: typography.size.sm },
+    saveError: {
+      color: p.colors.barRose,
+      fontSize: typography.size.md,
+      lineHeight: leadingFor(typography.size.md),
+      paddingHorizontal: space.md,
+      paddingBottom: space.sm,
+    },
     ratioBanner: {
       margin: space.md,
       marginBottom: 0,

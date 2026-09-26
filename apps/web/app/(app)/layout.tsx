@@ -1,15 +1,18 @@
 import { requireCompanyContext } from "@/lib/auth";
-import { Sidebar } from "@/components/Sidebar";
-import { Topbar } from "@/components/Topbar";
-import { MetricBar } from "@/components/MetricBar";
 import { loadCompanyFinancials } from "@/lib/company-financials-query";
 import { getMoneyRailStages } from "@/lib/moneyRail";
 import { countVisibleAlerts } from "@/lib/alerts-query";
 import { can, type Principal } from "@/lib/permissions";
 import { viewerToday } from "@/lib/viewerToday";
-import { TimeZoneCookie } from "@/components/TimeZoneCookie";
-import { FullTour } from "@/components/FullTour";
-import { ShellRegion, ShellRegionFallback } from "@/components/ShellRegion";
+import { helpChannelFromEnv } from "@/lib/help-config";
+import {
+  FullTourRegion,
+  MetricBarRegion,
+  SidebarRegion,
+  TimeZoneCookieRegion,
+  TopbarRegion,
+} from "@/components/AppChrome";
+import { ShellRegionFallback } from "@/components/ShellRegion";
 import { shellQueryFailed } from "@/lib/shell-region-failure";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 
@@ -93,42 +96,54 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // side panel) is bounded by the same numbers the bars are laid out
     // with, rather than repeating them and drifting.
     //
-    // Every shell region below is inside its own <ShellRegion>: a widget
-    // that throws is replaced by a quiet fallback of the same height and the
-    // page keeps working. The page itself ({children}) is deliberately NOT
-    // wrapped — app/(app)/error.tsx owns that and must stay loud. See
-    // components/ShellRegion.tsx; shellRegion.test.ts fails the build if a
-    // shell component is rendered here bare.
+    // Every shell region below is ONE client component from
+    // components/AppChrome.tsx, and that indirection is load-bearing rather
+    // than tidy. Each of those components pairs the region's <ShellRegion>
+    // boundary with its widget inside the BROWSER'S OWN module. Writing the
+    // pairing out here instead — <ShellRegion region="sidebar"><Sidebar …/>
+    // </ShellRegion> — means the <Sidebar> element is created by a SERVER
+    // component and has to cross the RSC boundary as a client component's
+    // children, where React's production Flight serializer defers it past
+    // 3,200 bytes and the browser turns it into a LAZY. A lazy suspends the
+    // region's Suspense, and that is the 2026-09-21 outage's own trap
+    // (components/Hint.tsx) one door along. See AppChrome.tsx's header,
+    // CLAUDE.md's #418 entry, and PR #501 — including the part of that entry
+    // that says a `B:`/`S:` marker pair in the shell is NOT evidence of this:
+    // React also streams a boundary late for being merely big.
+    //
+    // A region that throws is still replaced by a quiet fallback of the same
+    // height and the page keeps working. The page itself ({children}) is
+    // deliberately NOT inside a region — app/(app)/error.tsx owns that and
+    // must stay loud, and the region components take no children at all, so
+    // it cannot end up in one. See components/ShellRegion.tsx;
+    // shellRegion.test.ts fails the build if a shell widget is paired here.
     <div className="flex h-screen bg-canvas [--shell-metricbar:52px] [--shell-topbar:56px]">
       {/* Renders nothing. Parks the browser's IANA zone in a cookie so
           the server can work out what day it is where the reader is. */}
-      <ShellRegion region="helper">
-        <TimeZoneCookie />
-      </ShellRegion>
+      <TimeZoneCookieRegion />
       {/* "Take the full tour": renders nothing until someone starts it.
           Here rather than on a page because it moves between pages. */}
-      <ShellRegion region="helper">
-        <FullTour principal={principal} />
-      </ShellRegion>
-      <ShellRegion region="sidebar">
-        <Sidebar
+      <FullTourRegion principal={principal} />
+      <SidebarRegion
+        companyName={company.name}
+        principal={principal}
+        showsInternal={showsInternal}
+        businessScope={businessScope}
+        stages={moneyRailStages}
+      />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopbarRegion
           companyName={company.name}
+          alertCount={alertCount}
           principal={principal}
           showsInternal={showsInternal}
           businessScope={businessScope}
-          stages={moneyRailStages}
+          // Resolved HERE, on the server: lib/help-config.ts reads
+          // process.env and imports the @prova/integrations barrel, neither
+          // of which belongs in a browser bundle. The topbar is a client
+          // component now, so it is handed the answer, not the question.
+          helpChannel={helpChannelFromEnv()}
         />
-      </ShellRegion>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <ShellRegion region="topbar">
-          <Topbar
-            companyName={company.name}
-            alertCount={alertCount}
-            principal={principal}
-            showsInternal={showsInternal}
-            businessScope={businessScope}
-          />
-        </ShellRegion>
         {/* No background of its own: each page brings its own ground, so a
             page still written against the dark theme keeps it and a
             converted one opts into the light canvas. */}
@@ -143,9 +158,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             above and was logged; the region shows its fallback instead. */}
         {can(principal, "VIEW_COMPANY_FINANCIALS") &&
           (financials ? (
-            <ShellRegion region="metricbar">
-              <MetricBar financials={financials} />
-            </ShellRegion>
+            <MetricBarRegion financials={financials} />
           ) : (
             <ShellRegionFallback region="metricbar" />
           ))}

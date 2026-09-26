@@ -122,9 +122,27 @@ export function TimeEntryFields({
 
       <label className={labelClass}>
         Hours
+        {/* `hrs`, NOT `8` (issue #305). A placeholder that is a plausible
+            number of hours sits in the same box, at nearly the same weight,
+            as a real entry — so the box reads as ALREADY FILLED IN. An
+            automated click-through set the date, pressed Log time, and
+            reported a silent payroll failure; the row had not saved because
+            `required` had blocked the submit with the browser's native
+            bubble, which is transient and invisible to a screenshot.
+
+            The fix is NOT a defaultValue of 8. A form that pre-fills eight
+            hours logs eight hours for anybody who forgets to change it, and
+            that figure goes onto a WH-347 carrying a criminal
+            certification. An empty required field is the right behaviour;
+            only the placeholder lied about it.
+
+            `hrs` is this app's own existing convention for an hours box —
+            see the estimate tab's `laborHours` and RuleSetFields' five
+            overtime thresholds. `numericInputCensus.test.ts` holds the line
+            for every hours field, not just this one. */}
         <input
           name="hours"
-          placeholder="8"
+          placeholder="hrs"
           required
           defaultValue={defaults?.hours ?? ""}
           className={`w-20 ${fieldClass}`}

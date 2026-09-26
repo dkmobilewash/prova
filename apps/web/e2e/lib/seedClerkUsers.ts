@@ -158,25 +158,39 @@ export async function seedClerkUsers(): Promise<Record<PersonaKey, { id: string;
 
   const result = {} as Record<PersonaKey, { id: string; email: string }>;
   for (const [key, persona] of Object.entries(PERSONAS) as [PersonaKey, (typeof PERSONAS)[PersonaKey]][]) {
+    // Both calls are inside the try. A failing LIST is as opaque as a failing
+    // create, and the reader of a CI log needs the same sentence either way.
     let user;
     try {
       const existing = await clerk.users.getUserList({ emailAddress: [persona.email] });
-      user =
-        existing.data[0] ??
-        (await clerk.users.createUser({
-          emailAddress: [persona.email],
-          // Required by the striking-jaybird instance; a fictional test
-          // number that sends no SMS. See the note in personas.ts.
-          username: persona.username,
-          phoneNumber: [persona.phone],
-          firstName: "E2E",
-          lastName: persona.label,
-          skipPasswordRequirement: true,
-          skipPasswordChecks: true,
-        }));
+      if (existing.data[0]) {
+        result[key] = { id: existing.data[0].id, email: persona.email };
+        continue;
+      }
+      user = await clerk.users.createUser({
+        emailAddress: [persona.email],
+        // REQUIRED BY THE DEVELOPMENT INSTANCE, not decoration. Without them
+        // this call answers 422 `form_data_missing` naming exactly these two,
+        // so the suite cannot grow a persona at all — see personas.ts, which
+        // records what that cost and why the phone is in Clerk's own reserved
+        // test range.
+        username: persona.username,
+        phoneNumber: [persona.phone],
+        firstName: "E2E",
+        lastName: persona.label,
+        // `skipPasswordChecks` is deliberately NOT sent. It means "accept this
+        // password without validating it", and there is no password here —
+        // `skipPasswordRequirement` is the whole point. Clerk's own docs scope
+        // it to migrating plaintext passwords in. It was passed alongside for
+        // a long time and nothing noticed, because this branch had not run for
+        // weeks: the six original personas already exist on the instance and
+        // are found by the read above, so `createUser` is only reached the day
+        // somebody adds a new one.
+        skipPasswordRequirement: true,
+      });
     } catch (error) {
-      // `cause` keeps the original for a stack; the message is what a
-      // person reads out of a CI log, and it has to stand alone there.
+      // `cause` keeps the original for a stack; the message is what a person
+      // reads out of a CI log, and it has to stand alone there.
       throw new Error(describeClerkSeedFailure(error, persona), { cause: error });
     }
     result[key] = { id: user.id, email: persona.email };

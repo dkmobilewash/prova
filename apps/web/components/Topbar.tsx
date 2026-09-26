@@ -1,17 +1,35 @@
+"use client";
+
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { MobileNav } from "@/components/MobileNav";
 import { SearchLauncher } from "@/components/SearchLauncher";
 import { AskLauncher } from "@/components/AskLauncher";
 import { HelpButton } from "@/components/HelpButton";
-import { helpChannelFromEnv } from "@/lib/help-config";
+import { AfterMount } from "@/components/AfterMount";
+import type { HelpChannel } from "@/lib/help-request";
 import type { Principal } from "@/lib/permissions";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 
 /** Dark chrome: the charcoal bar (#171717, same surface as the rail)
  * with the 2px brand-yellow rule under it, per the approved dark
  * mockups. Chrome and rail read as one continuous frame around the
- * #0f0f0f canvas — that seamlessness is the design, not a leftover. */
+ * #0f0f0f canvas — that seamlessness is the design, not a leftover.
+ *
+ * A CLIENT COMPONENT since 2026-09-25, and for the same reason MetricBar
+ * beside it is one. Everything this bar renders is a client component
+ * already (MobileNav, SearchLauncher, AskLauncher, HelpButton, Clerk's
+ * UserButton); while this file was a SERVER component each of those was an
+ * element created on the server and serialized through React's Flight
+ * payload, which defers any element it reaches past 3,200 bytes and hands
+ * the browser a lazy instead. Inside `<ShellRegion>`'s `<Suspense>` that
+ * deferral is a hydration mismatch on one page load in three — see
+ * components/AppChrome.tsx, which is what mounts this now.
+ *
+ * The one thing that had to move out is the help channel. It is read from
+ * configuration (`helpChannelFromEnv()` in lib/help-config.ts, which reads
+ * `process.env` and imports the `@prova/integrations` barrel), so it is
+ * resolved in app/(app)/layout.tsx and passed down as plain data. */
 export function Topbar({
   companyName,
   /** Alerts needing attention. Lives in the chrome rather than on the
@@ -25,6 +43,7 @@ export function Topbar({
   principal,
   showsInternal = false,
   businessScope,
+  helpChannel,
 }: {
   companyName: string;
   alertCount: number;
@@ -34,6 +53,10 @@ export function Topbar({
   /** The three onboarding questions' answers, or undefined for "hide
    * nothing" — see navGroupsFor in navItems.tsx. */
   businessScope?: BusinessScopeAnswers;
+  /** Resolved on the SERVER by `helpChannelFromEnv()` — see the note at the
+   * top of this file. Plain data, so the panel can only offer what the
+   * action will accept. */
+  helpChannel: HelpChannel;
 }) {
   return (
     <div className="print:hidden flex h-14 shrink-0 items-center justify-between gap-3 border-b-2 border-brand bg-rail px-4 sm:px-6">
@@ -59,7 +82,7 @@ export function Topbar({
             one screen is not help — see HelpButton for the two shapes this
             rejected. The channel is resolved server-side so the panel can
             only offer what the action will accept. */}
-        <HelpButton companyName={companyName} channel={helpChannelFromEnv()} />
+        <HelpButton companyName={companyName} channel={helpChannel} />
         <Link
           href="/alerts"
           aria-label={
@@ -84,7 +107,18 @@ export function Topbar({
             </span>
           )}
         </Link>
-        <UserButton />
+        {/* GATED UNTIL MOUNT, and the reason is measured rather than
+            stylistic: Clerk's UserButton renders `clerk.loaded &&
+            <ClerkHostRenderer/>`, and `loaded` is FALSE on the server
+            always — so the server writes nothing here, on every signed-in
+            page. If Clerk's script wins the race against hydration, the
+            browser's first render writes the button where the server's HTML
+            has none, which is an element-level React #418. The server
+            already renders nothing, so this changes nothing anybody sees.
+            See components/AfterMount.tsx. */}
+        <AfterMount>
+          <UserButton />
+        </AfterMount>
       </div>
     </div>
   );

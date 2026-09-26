@@ -8,13 +8,13 @@ import { GroupedList } from "@/components/GroupedList";
 import { Icon } from "@/components/Icon";
 import { Sheet } from "@/components/Sheet";
 import { SignaturePad } from "@/components/SignaturePad";
-import { type Palette, space, typography } from "@/lib/theme";
+import { type Palette, leadingFor, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import { endHandover, getHandover, pinAccepted, type Handover } from "@/lib/handover";
 import { useT } from "@/lib/i18n";
 import { uuid } from "@/lib/id";
 import { localToday } from "@/lib/local-today";
-import { enqueue } from "@/lib/sync-queue";
+import { saveQueued } from "@/lib/save-queued";
 
 /**
  * The phone while a crew member is holding it.
@@ -44,6 +44,10 @@ export default function HandoverScreen() {
   const [showSign, setShowSign] = useState(false);
   const [signaturePath, setSignaturePath] = useState<string | null>(null);
   const [showBack, setShowBack] = useState(false);
+  /** The one thing this screen could not say before: that a save failed.
+   * It had no error slot at all, so a phone that could not write to its
+   * own storage cleared the hours field and showed nothing. */
+  const [error, setError] = useState<string | null>(null);
   const [pin, setPin] = useState("");
   const [pinWrong, setPinWrong] = useState(false);
 
@@ -67,9 +71,11 @@ export default function HandoverScreen() {
   const addHours = async () => {
     if (!canAdd) return;
     const entered = hours.trim();
-    setHours("");
-    setNote("");
-    await enqueue({
+    // Queued BEFORE the field is cleared. This is somebody's pay on a
+    // phone that is not theirs, and the old order cleared the hours and
+    // then queued them — so a failed write left them with an empty box,
+    // no row, and nothing said. See lib/save-queued.ts.
+    const saved = await saveQueued({
       type: "time:create",
       jobId: handover.jobId,
       clientOperationId: uuid(),
@@ -81,12 +87,23 @@ export default function HandoverScreen() {
       // only thing that says the time is Ana's, so it is not optional.
       crewMemberId: handover.crewMemberId,
     });
+    if (!saved.ok) {
+      setError(saved.error);
+      return;
+    }
+    setError(null);
+    setHours("");
+    setNote("");
     setSaved((rows) => [...rows, { hours: entered, at: new Date().toISOString() }]);
   };
 
   const signAndFinish = async () => {
     if (!signaturePath) return;
-    await enqueue({
+    // The handover does NOT end unless the signature reached the queue.
+    // Ending it first would hand the phone back having lost the one
+    // record that says these hours are agreed, with the screen already
+    // gone and nobody to tell.
+    const saved = await saveQueued({
       type: "signoff:create",
       jobId: handover.jobId,
       clientOperationId: uuid(),
@@ -94,6 +111,11 @@ export default function HandoverScreen() {
       signerName: handover.name,
       signaturePath,
     });
+    if (!saved.ok) {
+      setError(saved.error);
+      setShowSign(false);
+      return;
+    }
     setShowSign(false);
     await endHandover();
     router.replace("/(tabs)");
@@ -141,6 +163,14 @@ export default function HandoverScreen() {
             </Button>
           </View>
         </GroupedList>
+
+        {error ? (
+          <GroupedList>
+            <View style={styles.saved}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          </GroupedList>
+        ) : null}
 
         {saved.length > 0 ? (
           <GroupedList>
@@ -240,5 +270,10 @@ function makeStyles(p: Palette) {
     savedRow: { color: p.colors.ink, fontSize: typography.size.md },
     savedNote: { color: p.colors.inkMuted, fontSize: typography.size.xs },
     signNote: { color: p.colors.inkBody, fontSize: typography.size.sm, lineHeight: 20 },
+    errorText: {
+      color: p.colors.barRose,
+      fontSize: typography.size.md,
+      lineHeight: leadingFor(typography.size.md),
+    },
   });
 }
