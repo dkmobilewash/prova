@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
+import { COST_CATEGORY_VALUES, type CostCategoryValue } from "@/lib/bid-recap";
 import { syncWallScheduleLines, type WallSyncSummary } from "@/lib/estimating/wall-schedule";
 import { NOT_ESTIMATE_STAGE } from "@/lib/estimating/draft-lines";
 import { openingsFromJson, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
@@ -158,9 +159,25 @@ async function componentFields(formData: FormData, companyId: string) {
     wastePercent: nullableDecimalFromForm(formData, "wastePercent", { label: "Waste", min: 0, max: 100, unit: "%" }) ?? "0",
     roundUp: formData.get("roundUp") === "on",
     productionRate: nullableDecimalFromForm(formData, "productionRate", { label: "Production rate", min: 0.0001, max: 100000 }),
+    // #513. A wall type is the one place a cost type is knowable up front —
+    // board and studs are material, hang-and-finish is labor — and every run of
+    // this type on every job then inherits it. An unrecognised value is REFUSED
+    // rather than silently nulled, which is the defect #525 fixed in
+    // `setLineCostCategory`; an empty string is the select's "no cost type".
+    costCategory: costCategoryFromForm(formData),
     catalogEntryId,
     craftClassificationId,
   };
+}
+
+/** The component's cost type, or null, refusing anything unrecognised. */
+function costCategoryFromForm(formData: FormData): CostCategoryValue | null {
+  const raw = String(formData.get("costCategory") ?? "").trim();
+  if (raw === "") return null;
+  if (!COST_CATEGORY_VALUES.includes(raw as CostCategoryValue)) {
+    throw new InputError(`"${raw}" is not a cost type.`);
+  }
+  return raw as CostCategoryValue;
 }
 
 async function ownedWallType(wallTypeId: string, companyId: string) {

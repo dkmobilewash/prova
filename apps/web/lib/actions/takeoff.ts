@@ -6,7 +6,7 @@ import { isBlank, labelFromKey, parseNumericInput } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import type { Opening, TakeoffLine } from "@/lib/takeoff";
-import { recipeLines, type RecipeArgs, type RecipeInput } from "@/lib/takeoff-recipes";
+import { recipeCostCategory, recipeLines, type RecipeArgs, type RecipeInput } from "@/lib/takeoff-recipes";
 import { documentUrlProblem } from "@/lib/document-uploads";
 import { parseFeetInches } from "@/lib/feet-inches";
 import {
@@ -82,7 +82,7 @@ export async function addTakeoffLines(jobId: string, formData: FormData): Promis
     return actionFail("Those measurements produce no quantities — check the numbers.");
   }
 
-  await prisma.$transaction(createLineItemRows(jobId, label, lines));
+  await prisma.$transaction(createLineItemRows(jobId, label, lines, recipeCostCategory(recipeId)));
 
   revalidatePath(`/jobs/${jobId}`);
   return actionOk;
@@ -94,11 +94,26 @@ export async function addTakeoffLines(jobId: string, formData: FormData): Promis
  *
  * SHARED SO THEY CANNOT DRIFT. The two differ in where the measurements came
  * from and in nothing else: what reaches a `JobLineItem` is a description, a
- * unit and a quantity, and no price, cost, hours, trade or catalog link. A
- * second copy of this is how one of them quietly starts writing a
- * `budgetedUnitCost` nobody entered.
+ * unit, a quantity and the recipe's cost type, and no price, cost, hours, trade
+ * or catalog link. A second copy of this is how one of them quietly starts
+ * writing a `budgetedUnitCost` nobody entered.
+ *
+ * THE COST TYPE JOINED THAT LIST IN #513, and it is the one field here that is
+ * not a measurement. It is included because it is not a GUESS: every recipe
+ * declares its own (`takeoff-recipes.ts`), a recipe turns a measurement into
+ * quantities of stuff, and labor on this app lives in hours on the line rather
+ * than in a line of its own. Without it takeoff was the one automated path
+ * still producing uncoded lines — and an uncoded line is marked up at nothing,
+ * so a bid taken off a plan carried no markup at all.
+ *
+ * Still no price and no cost: that is #515's question, not this one.
  */
-function createLineItemRows(jobId: string, label: string, lines: TakeoffLine[]) {
+function createLineItemRows(
+  jobId: string,
+  label: string,
+  lines: TakeoffLine[],
+  costCategory: ReturnType<typeof recipeCostCategory>,
+) {
   return lines.map((line) =>
     prisma.jobLineItem.create({
       data: {
@@ -109,6 +124,7 @@ function createLineItemRows(jobId: string, label: string, lines: TakeoffLine[]) 
         description: label ? `${label} — ${line.label}` : line.label,
         unit: line.unit,
         quantity: line.quantity,
+        costCategory,
       },
     }),
   );
@@ -589,7 +605,7 @@ export async function postTakeoffMeasurements(jobId: string, formData: FormData)
     }
 
     await prisma.$transaction([
-      ...createLineItemRows(jobId, label, lines),
+      ...createLineItemRows(jobId, label, lines, recipeCostCategory(recipeId)),
       prisma.takeoffMeasurement.updateMany({ where: { id: { in: ids } }, data: { postedAt: new Date() } }),
     ]);
 

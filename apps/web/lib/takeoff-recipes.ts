@@ -55,6 +55,26 @@ export type Recipe = {
   label: string;
   /** Pure: turns the recipe's inputs + args into material lines. */
   lines: (inputs: RecipeInput[], args: RecipeArgs) => TakeoffLine[];
+  /**
+   * The kind of cost every line this recipe produces IS — #513.
+   *
+   * DECLARED PER RECIPE, NOT INFERRED FROM A LABEL. Reading "Paint" or "board"
+   * and concluding MATERIAL is the guess `JobLineItem.costCategory` exists to
+   * replace, and it would be wrong in the direction nobody checks: a
+   * mis-inferred material rate applied to labor is a silently wrong bid.
+   *
+   * Every recipe here is MATERIAL, and that is not a coincidence to be relied
+   * on — it is what a recipe DOES. A recipe turns a measurement into quantities
+   * of stuff; labor on this app lives in `laborHours`/`productionRate` on the
+   * line, not in a line of its own. A recipe that one day produces a labor line
+   * says so here, and nothing else has to change.
+   *
+   * Why takeoff needs this at all when the other three writers inherit from a
+   * template: a plan measurement has no template to inherit from. Without it,
+   * takeoff would be the one automated path still producing uncoded lines, and
+   * an uncoded line is marked up at nothing.
+   */
+  costCategory: "MATERIAL" | "LABOR" | "SUBCONTRACTOR" | "OTHER";
 };
 
 /** Two decimals, so a quantity reads like a quantity rather than like a
@@ -82,6 +102,7 @@ function sumLinear(inputs: RecipeInput[]): Feet {
 export const RECIPES: Recipe[] = [
   {
     id: "wall",
+    costCategory: "MATERIAL",
     trade: "drywall",
     label: "Wall (drywall)",
     lines: (inputs, args) => {
@@ -95,6 +116,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "ceiling",
+    costCategory: "MATERIAL",
     trade: "drywall",
     label: "Ceiling (drywall)",
     lines: (inputs, args) => {
@@ -105,6 +127,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "paint",
+    costCategory: "MATERIAL",
     trade: "paint",
     label: "Paint",
     lines: (inputs, args) => {
@@ -121,6 +144,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "flooring",
+    costCategory: "MATERIAL",
     trade: "flooring",
     label: "Flooring",
     lines: (inputs, args) => {
@@ -141,6 +165,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "fixture-count",
+    costCategory: "MATERIAL",
     trade: "general",
     label: "Fixture count",
     lines: (inputs) =>
@@ -159,6 +184,17 @@ export function findRecipe(id: string): Recipe | undefined {
  * Server Action call, so the number shown before saving and the number saved
  * cannot drift apart (a preview that disagrees with the row it creates is
  * worse than no preview — see estimate-labor-cost.ts for the same reasoning). */
+/**
+ * What kind of cost a recipe's lines are, or null for an unknown recipe id.
+ *
+ * Read by `createLineItemRows` so a posted takeoff line arrives coded (#513).
+ * Null rather than a default for an id nothing matches, because
+ * `recipeLines` returns no lines for one either — there is nothing to code.
+ */
+export function recipeCostCategory(recipeId: string): Recipe["costCategory"] | null {
+  return findRecipe(recipeId)?.costCategory ?? null;
+}
+
 export function recipeLines(recipeId: string, inputs: RecipeInput[], args: RecipeArgs): TakeoffLine[] {
   const recipe = findRecipe(recipeId);
   if (!recipe) return [];

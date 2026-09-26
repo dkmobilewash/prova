@@ -137,6 +137,11 @@ export async function draftLinesFromScope(
         // should originate, and there is no field on a drafted line for one.
         // It arrives only from a matched catalog entry or not at all.
         productionRate: entry?.productionRate ?? null,
+        // #513. From the matched catalog entry only, with NO fallback to
+        // anything the model supplied — the same rule as the rate above. A cost
+        // type decides which markup rate the recap applies, so an assistant
+        // guessing it would be choosing a number on the bid.
+        costCategory: entry?.costCategory ?? null,
         craftClassificationId: entry?.craftClassificationId ?? null,
         tradeScope: entry?.tradeScope ?? item.tradeScope,
         sourceCatalogEntryId: entry?.id ?? null,

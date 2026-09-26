@@ -1,4 +1,4 @@
-import { Prisma, prisma, type TradeScope } from "@prova/db";
+import { Prisma, prisma, type CostCategory, type TradeScope } from "@prova/db";
 import { parseNumericInput } from "@/lib/numeric-input";
 import type { ActionResultWith } from "@/lib/actions/shared";
 import { NOT_ESTIMATE_STAGE } from "./draft-lines";
@@ -86,6 +86,7 @@ export function catalogLineFields(entry: {
   defaultLaborHours: Prisma.Decimal | null;
   productionRate: Prisma.Decimal | null;
   tradeScope: TradeScope | null;
+  costCategory: CostCategory | null;
   craftClassificationId: string | null;
 }) {
   return {
@@ -124,6 +125,16 @@ export function catalogLineFields(entry: {
       // the catalog cannot come to mean something different from the line it
       // creates. `catalog-line.test.ts` pins that it is a straight copy.
       productionRate: entry.productionRate,
+      // #513. What the bid recap MARKS UP BY, and until now no automated writer
+      // set it — so every line the product generated landed uncoded and was
+      // carried into the bid at direct cost. The more of the automation you
+      // used, the less of your bid got marked up.
+      //
+      // Null stays null rather than defaulting to MATERIAL: `bid-recap.ts`
+      // reports an uncategorised line and marks it up at nothing on purpose, and
+      // a default here would be the number nobody chose that its own comment
+      // refuses.
+      costCategory: entry.costCategory,
       craftClassificationId: entry.craftClassificationId,
       // Records which template this came from, so /catalog can later report
       // how work priced from it actually costed. A reference, not a live
