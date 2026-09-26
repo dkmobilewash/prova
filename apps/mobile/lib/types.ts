@@ -31,9 +31,11 @@ export type DelayRow = {
   id: string;
   date: string;
   cause: string;
-  causeLabel: string;
   responsibleParty: string;
-  responsibleLabel: string;
+  /// `causeLabel`/`responsibleLabel` — the server's own ENGLISH wording — were
+  /// here and are deliberately gone (issue #484). The screen words the enum
+  /// itself so a synced row and a just-logged one cannot disagree about
+  /// language. The API still sends them; nothing here reads them.
   responsibleName: string | null;
   start: string | null;
   end: string | null;

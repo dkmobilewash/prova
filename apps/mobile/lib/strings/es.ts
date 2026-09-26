@@ -334,6 +334,7 @@ export const ES: Record<keyof typeof EN, string> = {
   "reports.method.text": "Mensaje",
   "reports.method.inPerson": "En persona",
   "reports.method.meeting": "Junta",
+  "reports.method.other": "Otro",
 
   // ticket-materials
   "tickets.signed": "Firmó: {name}",

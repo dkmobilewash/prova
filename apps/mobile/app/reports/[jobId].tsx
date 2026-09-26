@@ -13,7 +13,7 @@ import { SyncStatus } from "@/components/SyncStatus";
 import * as api from "@/lib/api";
 import { tokenOrNull } from "@/lib/clerk-token";
 import { dayFromClockIn } from "@/lib/clock-session";
-import { useT } from "@/lib/i18n";
+import { useT, type StringKey } from "@/lib/i18n";
 import { uuid } from "@/lib/id";
 import { saveQueued } from "@/lib/save-queued";
 import { queuedOperationIds } from "@/lib/sync-queue";
@@ -59,7 +59,43 @@ const METHODS = [
   ["TEXT", "reports.method.text"],
   ["IN_PERSON", "reports.method.inPerson"],
   ["MEETING", "reports.method.meeting"],
+  // NotificationMethod's sixth member. It was absent, so "Other" could not be
+  // recorded on the phone at all, and — once the row below started rendering
+  // through this table instead of the server's label — an OTHER stored from the
+  // web would have rendered as the raw token. Found by counting this table
+  // against the enum rather than by reading it.
+  ["OTHER", "reports.method.other"],
 ] as const;
+
+/**
+ * A raw enum value from the server, as a word in the reader's language.
+ *
+ * WHY THE ROW IS RENDERED FROM THE ENUM AND NOT FROM THE SERVER'S LABEL
+ * (issue #484). `/api/v1` returns `causeLabel`/`responsibleLabel` already
+ * worded — in ENGLISH, always. The optimistic row drawn the instant somebody
+ * logged a delay took its words from the chips, which ARE translated. So on a
+ * Spanish phone the row read `Retraso · Clima · GC` and then, when the write
+ * synced and the server's row replaced it, `Retraso · Weather · GC`. The row
+ * changed language under the person who had just typed it.
+ *
+ * The enum is the thing both halves agree on, so both halves are now worded
+ * here. The server's label fields are gone from `DelayRow` entirely rather
+ * than left unread — a field nobody renders is one somebody renders again.
+ *
+ * Falls back to the RAW TOKEN, deliberately, the same way
+ * `costCategoryLabel` does on the web: a value this table has never heard of
+ * means the enum grew and this file did not, and SCREAMING_SNAKE on screen is
+ * ugly exactly where somebody will see it and fix it. `delay-label-census`
+ * fails the build before it can get that far.
+ */
+function labelFor(
+  table: readonly (readonly [string, StringKey])[],
+  value: string,
+  t: (key: StringKey) => string,
+): string {
+  const key = table.find(([v]) => v === value)?.[1];
+  return key ? t(key) : value;
+}
 
 type Day = { date: string; report: FieldReportRow | null; delays: DelayRow[] };
 
@@ -77,7 +113,7 @@ function daysOf(reports: FieldReportRow[], delays: DelayRow[]): Day[] {
 }
 
 export default function ReportsScreen() {
-  const { t } = useT();
+  const { t, language } = useT();
   const { me } = useMe();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
@@ -187,10 +223,6 @@ export default function ReportsScreen() {
       gcNotifiedWho: told ? toldWho.trim() || undefined : undefined,
       gcNotifiedAt: told ? new Date().toISOString() : undefined,
     };
-    const causeKey = CAUSES.find(([v]) => v === op.cause)?.[1];
-    const causeText = causeKey ? t(causeKey) : op.cause;
-    const partyKey = PARTIES.find(([v]) => v === op.responsibleParty)?.[1];
-    const partyText = partyKey ? t(partyKey) : op.responsibleParty;
     setOptimisticDelays((rows) => [
       ...rows,
       {
@@ -198,9 +230,7 @@ export default function ReportsScreen() {
         clientOperationId: op.clientOperationId,
         date: op.date,
         cause: op.cause,
-        causeLabel: causeText,
         responsibleParty: op.responsibleParty,
-        responsibleLabel: partyText,
         responsibleName: op.responsibleName ?? null,
         start: op.startTime ?? null,
         end: op.endTime ?? null,
@@ -312,7 +342,10 @@ export default function ReportsScreen() {
               <View key={d.id} style={styles.delay}>
                 {d.id.startsWith("local-") ? <Text style={styles.syncing}>{t("common.syncing")}</Text> : null}
                 <Text style={styles.delayTitle}>
-                  {t("reports.delay.headline", { cause: d.causeLabel, party: d.responsibleLabel })}
+                  {t("reports.delay.headline", {
+                    cause: labelFor(CAUSES, d.cause, t),
+                    party: labelFor(PARTIES, d.responsibleParty, t),
+                  })}
                   {d.responsibleName ? ` (${d.responsibleName})` : ""}
                 </Text>
                 <Text style={styles.meta}>{d.description}</Text>
@@ -327,7 +360,17 @@ export default function ReportsScreen() {
                   </Text>
                 ) : null}
                 <Text style={d.gcNotifiedHow ? styles.meta : styles.delayText}>
-                  {d.gcNotifiedHow ? `${t("reports.delay.gcTold", { how: d.gcNotifiedHow.toLowerCase().replace("_", " ") })}${d.gcNotifiedWho ? ` (${d.gcNotifiedWho})` : ""}` : t("reports.delay.gcNotTold")}
+                  {d.gcNotifiedHow
+                    ? `${t("reports.delay.gcTold", {
+                        // Lowercased with the READER'S locale, because the label
+                        // sits mid-sentence ("GC told by phone"). It used to be
+                        // the raw enum lowercased, which put an English word in a
+                        // Spanish sentence — "Se le avisó al GC por phone" — and
+                        // rendered IN_PERSON as "in person" only by accident of
+                        // the underscore replace.
+                        how: labelFor(METHODS, d.gcNotifiedHow, t).toLocaleLowerCase(language),
+                      })}${d.gcNotifiedWho ? ` (${d.gcNotifiedWho})` : ""}`
+                    : t("reports.delay.gcNotTold")}
                 </Text>
               </View>
             ))}
