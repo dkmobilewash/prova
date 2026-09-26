@@ -236,14 +236,19 @@ model LineItemCatalogEntry {
   /// line and another on the template is worse than either reading. Every
   /// screen showing the pair says which wins.
   ///
-  /// ⚠️ A PRICE LIST'S "HOURS" COLUMN IS NOT THIS NUMBER. Those carry HOURS
-  /// PER UNIT (0.012 hr/SF); this is UNITS PER HOUR (83.33 SF/hr). They are
-  /// reciprocals, so writing one into the other overstates labor by 1/x² —
-  /// 600 SF at 0.012 read as a rate is 50,000 hours instead of 7.2.
-  /// `importCatalogEntries` writes `defaultLaborHours`, not this column:
-  /// converting a file's hours column into a rate is a unit flip on a labor
-  /// figure, and which convention a given price list uses is a fact about
-  /// the file that only a person can confirm. Issue #514.
+  /// ⚠️ A PRICE LIST'S "HOURS" COLUMN IS NOT NECESSARILY THIS NUMBER. Some
+  /// carry HOURS PER UNIT (0.012 hr/SF) and some carry UNITS PER HOUR
+  /// (83.33 SF/hr), and the two are reciprocals — so writing one into the
+  /// other overstates labor by 1/x²: 600 SF at 0.012 read as a rate is
+  /// 50,000 hours instead of 7.2, and inverting a file that really meant
+  /// 60 SF/hr gives 36,000. Both blind rules are catastrophic.
+  ///
+  /// `importCatalogEntries` therefore ASKS, and refuses an import that has
+  /// not been answered: `lib/catalog-import-labor.ts` states what each
+  /// reading would do to a row out of the person's own file ("100 SF would
+  /// take 1.2 hours / 8,333 hours / 0.01 hours") and writes ONE of the two
+  /// columns from the answer, never both. Which convention a file uses is a
+  /// fact about the file, not something any code can derive. Issue #514.
   productionRate          Decimal?             @db.Decimal(10, 4)
 
   craftClassificationId   String?

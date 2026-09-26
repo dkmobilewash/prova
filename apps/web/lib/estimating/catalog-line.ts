@@ -101,16 +101,15 @@ export function catalogLineFields(entry: {
       // multiplies out. That asymmetry is real and was undocumented, and an
       // estimator could not tell which was meant.
       //
-      // It is NOT settled which it should be — the two writers of
-      // `defaultLaborHours` disagree with each other. `saveLineItemAsCatalogEntry`
-      // copies a line's total hours in without dividing by quantity (flat);
-      // `importCatalogEntries` maps a price list's hours column straight in, and
-      // a price list's hours column is a per-unit productivity factor (the
-      // import sample's own 0.012 for a SF of board). Changing this line to
-      // multiply would re-scale the labor burden on every catalog-sourced line
-      // already estimated, and `Decimal(8, 2)` cannot hold a per-unit rate
-      // anyway — 0.012 stores as 0.01. So the behaviour stays put, the labels
-      // now say what it is, and the decision is written up for a person.
+      // THE TWO WRITERS NO LONGER DISAGREE, and this comment recorded that
+      // they did for three weeks. `saveLineItemAsCatalogEntry` copies a line's
+      // total hours in without dividing by quantity, which is flat and correct
+      // for this column; `importCatalogEntries` used to map a price list's
+      // per-unit productivity factor into it, which was not. #514 fixed the
+      // import rather than this line: it asks which convention the file uses
+      // and writes a per-unit answer to `productionRate` instead, so nothing
+      // that reaches `defaultLaborHours` is per-unit any more and no
+      // already-estimated line was re-scaled.
       laborHours: entry.defaultLaborHours,
       // PER UNIT, and the opposite direction from the flat hours above: units
       // per hour, so hours are `quantity / productionRate`. Added #514, because

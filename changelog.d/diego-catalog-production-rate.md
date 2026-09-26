@@ -51,22 +51,62 @@ still reads like the assumption a bid was built on, so `/catalog` prints
 `(unused — hrs/line wins)` beside it and the form's help text says it before
 anyone types.
 
-**What this deliberately did NOT do.** `importCatalogEntries` still writes
-`defaultLaborHours`. A price list's "Hours" column carries hours **per unit**
-(0.012 hr/SF) and this column is units **per hour** (83.33 SF/hr) — reciprocals
-— so mapping one to the other overstates labor by 1/x²: 600 SF at 0.012 read as
-a rate is **50,000 hours instead of 7.2**, a ~6,900× error feeding a bid. Which
-convention a given file uses is a fact about the file, and the app cannot know
-it. That is its own change, with a person confirming the conversion against a
-real row from their own sheet before it is applied.
+**And the import stops degrading your price list.** This is the second half,
+and it is the reason the column matters to anyone who did not want to type it
+in by hand.
+
+`importCatalogEntries` wrote a file's Hours column straight into
+`defaultLaborHours`, which is **flat hours for a whole line**. A real price
+list's Hours column is per-unit — the importer's own sample carried 0.012 for a
+square foot of board — so a 600 SF line imported that way priced **0.012 hours**
+of labor instead of 7.2, and `Decimal(8,2)` rounded it to 0.01 on the way in.
+Two errors stacked, both silent, on the number that decides whether a bid makes
+money.
+
+**#514's own prescription was to map that column into the rate, and that is
+worse.** They are reciprocals, so `hoursFromRate` computes `600 / 0.012` =
+**50,000 hours** — wrong by 1/x², about 6,900× here. Inverting unconditionally
+is no better: a list that genuinely says `60 SF/hr` inverts to 0.0167 and 600 SF
+reads as **36,000 hours**. Both blind rules are catastrophic, in opposite
+directions, and which convention a file uses is a fact about the file that no
+code can derive.
+
+**So the import asks — as a consequence, not as a unit.** "Is this hours per
+unit or units per hour?" is a question a good estimator can read the wrong way
+round at 6pm, and a misread question is worse than no question because it
+produces a confident answer. The preview names a row out of their own file and
+prices all three readings on it:
+
+    5/8" Type X board reads 0.012 in the Hours column, per SF.
+    So 100 SF would take:
+      1.2 hrs      — hours per unit, the usual price-list column
+      8333.33 hrs  — units per hour, a production rate
+      0.01 hrs     — flat hours for the line, the same at any quantity
+
+**Nobody in this trade picks 8,333 hours.** That is a check a foreman can make
+in two seconds without knowing what a reciprocal is — the same move as a
+takeoff calibration readback, which proves a scale by stating what it implies
+rather than by naming the ratio.
+
+Three details carry more than they look. Each figure is computed from the
+number that would actually be **stored**, not the raw cell — `1/0.012` is
+83.333… and the column holds four decimals, so quoting hours off the unrounded
+value would promise something the product does not compute; it also makes the
+flat reading's own loss visible as `0.01` rather than as a footnote. The
+magnitudes **pre-select** only when they are decisive (all under 1, or all over
+10) and otherwise select nothing and say the numbers do not settle it — the
+band in between holds the real ambiguity, where a door assembly's `1.5` is as
+plausibly hours-per-door as doors-per-hour. And the action **refuses** an
+unanswered import rather than falling back, because every available fallback is
+a guess about a labor figure.
 
 **Checks.**
 
 | | |
 | --- | --- |
-| suite | **7,841 pass** (488 files) |
-| new tests | 15 — 5 on the pair's precedence, 10 in a writer census |
-| mutations | 4 run, 4 caught — one of them only after the census was rewritten to catch it |
+| suite | **7,900 pass** (490 files) |
+| new tests | 59 — 5 on the pair's precedence, 10 in a writer census, 32 on the three readings, 8 on what the action writes and refuses |
+| mutations | 8 run, 8 caught — one only after the census was rewritten to catch it |
 | typecheck / lint | 0 errors |
 | migration | one additive nullable column, no backfill, nothing dropped |
 
@@ -81,3 +121,46 @@ reads the literal now; the same mutation is red. Its own controls also caught a
 backtracking bug in its regex (`…:\s*(?!true\b)` matches `: true`, because
 `\s*` gives back the space it needs), which is the argument for writing the
 control even when the pattern looks obvious.
+
+### The mutations, because two of them are the fix's own worst version
+
+| | Mutation | Result |
+| --- | --- | --- |
+| M1 | drop the rate from `catalogLineFields` | 4 red |
+| M2 | flip `estimatedHours` precedence | 1 red |
+| M3 | `wall-schedule.ts` back to pre-#514 | green → **rewrote the census** → 1 red |
+| M4 | add a fourth writer of catalog-sourced lines | 1 red, names the file |
+| M5 | import falls back to `FLAT` instead of refusing | 2 red |
+| M6 | map the Hours column straight into the rate (**#514's literal prescription**) | 6 red |
+| M7 | widen the lean to cover the 1–10 band | 1 red — the door-assembly case |
+| M8 | write both labor columns on one row | 6 red |
+
+M6 is the one worth keeping: the change the issue asked for is now a
+six-assertion failure across the pure module and the action, so it cannot be
+re-applied by somebody reading the issue instead of the code.
+
+### Corrected along the way, because each would have been false on merge
+
+Four sentences asserted the open question this closes, and one asserted a
+column width wrong:
+
+- `catalog-line.ts` said the two writers of `defaultLaborHours` "disagree with
+  each other" — true for three weeks, and fixed by changing the import rather
+  than that line, so nothing already estimated was re-scaled;
+- `catalog-line.test.ts`'s header said it was "deliberately not an endorsement"
+  of flat hours. It is one now;
+- `/catalog`'s form comment called it "an open question recorded in
+  changelog.d/…". The answer was *both, in two columns*;
+- `CatalogImport`'s own copy told people to **leave the Hours column out of the
+  file**. That was an honest description of a defect; it now says to keep it in,
+  and the sample has the column back at the 0.012 / 0.03 / 0.02 a real drywall
+  list carries;
+- `hoursRenderCensus`'s exemption for the catalog's hours said `Decimal(5,2)`;
+  the column has always been `(8,2)`. The argument is unaffected, which is
+  exactly why nobody noticed.
+
+The bounds on a production rate are now shared between the typed field and the
+importer instead of being literals in each — a typed rate and an imported one
+land in the same column and are read by the same function, so a bound that
+applies to one and not the other is a hole shaped exactly like the bulk path
+nobody checks by hand.

@@ -31,12 +31,14 @@ import { estimatedHours } from "@/lib/labor-productivity";
  * difference between the two fields is not in this function, it is in what the
  * job page later does with each.
  *
- * This pins the CURRENT behaviour. It is deliberately not an endorsement —
+ * This pins the CURRENT behaviour, and as of #514 it is also an endorsement.
+ * The paragraph here used to end "it is deliberately not an endorsement —
  * `importCatalogEntries` writes a per-unit productivity factor into the same
- * column, so the two writers disagree. See
- * changelog.d/cyrus-catalog-labor-hours-meaning.md. If someone decides hours
- * should scale, this test is the thing they must change on purpose, which is
- * the whole point of it existing.
+ * column, so the two writers disagree", which was true and is no longer: the
+ * import asks which convention the file uses and sends a per-unit answer to
+ * `productionRate`, so nothing reaching `defaultLaborHours` is per-unit and
+ * flat is the only reading it has to carry. If someone decides these hours
+ * should scale, this test is still the thing they must change on purpose.
  */
 const fake = vi.hoisted(() => ({
   prisma: {

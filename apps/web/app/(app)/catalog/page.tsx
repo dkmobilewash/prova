@@ -551,10 +551,13 @@ export default async function CatalogPage() {
               arithmetic is what nobody could tell. `addCatalogLine` copies this
               value onto the new line as-is while unit price and budgeted cost
               are both multiplied by quantity downstream — so a 6 SF line and a
-              600 SF line built from this entry carry identical hours. Whether
-              that is what anyone WANTED is an open question recorded in
-              changelog.d/cyrus-catalog-labor-hours-meaning.md; until it is
-              answered the field says what it does. */}
+              600 SF line built from this entry carry identical hours.
+
+              That open question is ANSWERED as of #514, and the answer was
+              "both, in two columns": this field stays flat and the Rate field
+              below it carries the per-unit reading, so an estimator picks the
+              one they mean instead of the app picking for them. The import asks
+              the same question about a file's Hours column. */}
           <label className="flex flex-col gap-1 text-sm text-ink-label">
             Default labor hrs — whole line
             <input
