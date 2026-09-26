@@ -69,6 +69,14 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     columns: [
       "id", "contactId", "name", "scope", "status", "startDate", "endDate",
       "operatingLocationId", "retainagePercent", "substantialCompletionDate",
+      // Added #525, all of it data the customer typed or the app geocoded from
+      // what they typed, and none of it exported until a column-level census
+      // went looking. The site's own address and the bid's own dates were
+      // missing from the file a contractor downloads when they leave.
+      "projectLocation", "grossAreaSqFt", "siteAddress", "siteCounty",
+      "siteLatitude", "siteLongitude", "siteTimeZone", "siteGeocodedAt",
+      "bidDueDate", "bidAdvertisedOn", "bidResearch", "publicWorks",
+      "awardingBody", "jobberId",
       "createdAt", "updatedAt",
     ],
     scope: byCompany,
@@ -86,6 +94,15 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "craftClassificationId", "unitPrice", "sortOrder", "budgetedUnitCost",
       "currentEstimatedUnitCost", "estimatedCostToComplete", "isDeleted",
       "aiDrafted", "sourceCatalogEntryId", "originChangeOrderId",
+      // Added #525, and two of these are mine: #512 gave the recap
+      // `costCategory` to mark up by and #514 gave the line `productionRate`,
+      // and neither PR added its column here — so the figures a bid is built
+      // from were absent from the export that is supposed to be the whole
+      // record. `priceBasis` says whether a price was a catalog match, a
+      // past-bid inference or a guess, which is exactly the provenance a
+      // person re-reading their own estimate needs.
+      "tradeScope", "costCategory", "productionRate", "priceBasis",
+      "phaseCodeId", "wallTypeComponentId",
       "createdAt", "updatedAt",
     ],
     scope: byJob,
@@ -114,7 +131,9 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     key: "invoices",
     model: "invoice",
     label: "Invoices / pay applications",
-    columns: ["id", "jobId", "number", "description", "amount", "issuedAt", "dueAt", "retainageWithheld"],
+    // `status` added #525 — an invoice export with no status cannot tell a
+    // draft from one a GC has been sent, on the file a person reconciles from.
+    columns: ["id", "jobId", "number", "description", "amount", "status", "issuedAt", "dueAt", "retainageWithheld"],
     note: "retainageWithheld is what was held on that application, not a running balance.",
     scope: byJob,
   },
@@ -130,7 +149,9 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     key: "payments",
     model: "payment",
     label: "Payments received",
-    columns: ["id", "invoiceId", "amount", "method", "receivedAt", "note"],
+    // `feeAmount`/`feeSource` added #525 — a payment net of a processor fee
+    // reconciles to the wrong number without them.
+    columns: ["id", "invoiceId", "amount", "method", "receivedAt", "note", "feeAmount", "feeSource"],
     note: "What the GC actually paid, against which invoice.",
     scope: (companyId) => ({ invoice: { job: { companyId } } }),
   },
@@ -139,7 +160,10 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "costEntry",
     label: "Costs",
     note: "Actual cost booked against a scope line. This is the actuals side of job costing.",
-    columns: ["id", "lineItemId", "description", "amount", "incurredAt", "createdAt"],
+    // `category` and `tradeScope` added #525: category is what tells a LABOR
+    // cost entry from a material one, which is the whole basis of the recap's
+    // markup and of phase-code variance.
+    columns: ["id", "lineItemId", "description", "amount", "category", "tradeScope", "incurredAt", "createdAt"],
     scope: (companyId) => ({ lineItem: { job: { companyId } } }),
   },
   {
@@ -151,7 +175,13 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "Money is not on this row; rates live on the fringe and wage tables.",
     columns: [
       "id", "jobId", "lineItemId", "employeeUserId", "craftClassificationId",
-      "date", "hours", "payType", "perDiemAmount", "travelPayAmount", "note", "createdAt",
+      "date", "hours", "payType", "perDiemAmount", "travelPayAmount", "note",
+      // Added #525. The clock trail and the correction trail: on a certified
+      // payroll this is the difference between an hours figure and an hours
+      // figure somebody can defend.
+      "crewMemberId", "clockStartedAt", "clockEndedAt", "clockBreakMinutes",
+      "lastCorrectedAt", "lastCorrectedByUserId",
+      "createdAt",
     ],
     scope: byJob,
   },
@@ -194,7 +224,13 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "that contact's portal, and a copy in a spreadsheet is a copy that leaks.",
     columns: [
       "id", "name", "email", "phone", "address", "defaultRetainagePercent",
-      "paymentTermsDays", "standardFormsUsed", "createdAt", "updatedAt",
+      "paymentTermsDays", "standardFormsUsed",
+      // Added #525. `portalRevokedAt` is deliberately here while `portalToken`
+      // stays withheld: WHETHER a portal link was revoked, and when, is the
+      // customer's own record; the link itself is a credential.
+      "status", "accountType", "portalRevokedAt", "msaExpirationDate",
+      "prequalificationExpiresAt", "jobberId",
+      "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -430,6 +466,15 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "assignedName",
       "readyAt",
       "verifiedAt",
+      // Added #525: WHO marked an item ready and who verified it, and the
+      // reopen trail. On a punch list that is the whole evidentiary point —
+      // "it was signed off, then reopened, and here is who and why" — and the
+      // export carried the timestamps while dropping every name and the reason.
+      "readyByUserId",
+      "verifiedByUserId",
+      "reopenedAt",
+      "reopenedByUserId",
+      "reopenReason",
       "causedByOthers",
       "responsibleParty",
       "backchargeId",
@@ -814,6 +859,42 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
  * panel's closing sentence ("sequence counters, sync logs…") is the promise
  * this list is held to.
  */
+/**
+ * Columns that EVERY dataset omits on purpose, with the reason.
+ *
+ * WHY THIS LIST EXISTS. `exportCompletenessCensus` guaranteed every MODEL was
+ * accounted for and said nothing about columns, so a new column on an
+ * already-exported table was invisible — the "right pattern, wrong scope"
+ * shape CLAUDE.md records for `theme-contrast`. A column-level census found
+ * **74 missing columns across 28 datasets**, including `Invoice.status`, the
+ * whole of a job's site address and bid dates, the punch list's entire
+ * who-signed-it-off trail, and `JobLineItem.costCategory`/`productionRate` —
+ * the two figures #512 and #514 had just made load-bearing, left out by the
+ * very PRs that added them.
+ *
+ * Thirty-two of those seventy-four were deliberate and undeclared, which is
+ * the state this list ends. Declared here rather than per dataset because
+ * these repeat across almost all of them: a per-dataset list would be 28
+ * copies of the same sentence, and the next person would add the 29th.
+ *
+ * A credential belongs in `EXPORT_WITHHELD` above, not here. The distinction
+ * is who the omission is for: `EXPORT_WITHHELD` is shown on the page because
+ * a person would otherwise go looking for the column; these are plumbing
+ * nobody asks for.
+ */
+export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
+  companyId:
+    "every file is already one company's rows — the scope of the export IS this column, " +
+    "so a column repeating it on every line carries no information",
+  clientId:
+    "offline-sync bookkeeping: the id the phone gave a row before the server had one",
+  clientOperationId:
+    "offline-sync bookkeeping: the idempotency key that stopped a queued write landing twice",
+  clientUpdatedAt:
+    "offline-sync bookkeeping: when the phone last touched the row, used to resolve a " +
+    "conflict against the server's own updatedAt, which IS exported",
+};
+
 export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
   BackchargeCounter: "sequence counter — the numbers it issued are on the rows themselves",
   ChangeOrderCounter: "sequence counter — the numbers it issued are on the exported change orders",

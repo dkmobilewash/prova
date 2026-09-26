@@ -1620,10 +1620,22 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // which withholds on VIEW_JOB_COSTS. The walk derives each and executes
   // it as a principal without its capability.
   wallTypes: () => import("./actions/wallTypes"),
-  // The bid recap. The rates and cost types are reachable only from the
-  // Estimate tab, which withholds on VIEW_JOB_COSTS; the company defaults
-  // only from /settings (MANAGE_ESTIMATING, owner). Each is executed below
-  // as a principal without its capability.
+  // The bid recap. The rates, the cost types and a line's budgeted cost are
+  // reachable only from the Estimate tab, which withholds on VIEW_JOB_COSTS;
+  // the company defaults only from /settings. Each is executed below as a
+  // principal without its capability.
+  //
+  // CORRECTED #525: this said the defaults were "MANAGE_ESTIMATING, owner",
+  // and `saveCompanyBidDefaults` asserts `MANAGE_COMPLIANCE` and is not
+  // owner-gated. Its own doc comment records why the owner gate was removed —
+  // it refused a PAYROLL_COMPLIANCE member who legitimately holds the page's
+  // capability — so this comment was describing the version before that fix.
+  //
+  // Worth more than the correction: a comment naming a capability is the one
+  // kind this file cannot check. Everything else here is DERIVED from the
+  // page-import walk and executed, so it cannot drift; this sentence is prose
+  // beside a mechanism, and it drifted while every assertion around it stayed
+  // true. Read the action, not this line.
   bidRecap: () => import("./actions/bidRecap"),
   // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it
   // is reachable from /settings/assistant alone, which demands

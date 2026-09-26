@@ -358,3 +358,55 @@ describe("setting one line's budgeted cost from the recap", () => {
     expect(result.ok).toBe(false);
   });
 });
+
+/**
+ * setLineCostCategory refuses an unrecognised cost type instead of clearing it.
+ *
+ * WHAT #524 FLAGGED, AND WHAT WAS ACTUALLY WRONG. The flag was "not wrapped in
+ * `runAction`, so a Prisma failure reaches production as a redacted digest".
+ * False: `runAction` converts an `InputError` and RETHROWS everything else, so
+ * wrapping buys nothing against a pool timeout — and a Prisma failure IS a
+ * digest from every action in this codebase, deliberately, because CLAUDE.md's
+ * rule is that `throw` is for genuine bugs and a connection timeout is one.
+ *
+ * Found by writing the test for the claim and watching it go red, after the
+ * claim had been repeated in two PR bodies without anyone reading `runAction`.
+ *
+ * The real defect was next door: an unrecognised category was silently coerced
+ * to `null`, identically to the deliberate "no cost type". So a typo or a
+ * tampered value CLEARED a line's cost type and returned success — and an
+ * uncategorised line is never marked up, so that line quietly dropped out of
+ * every markup in the bid.
+ */
+describe("setting a line's cost type", () => {
+  const categoryOf = (id: string) => db.jobLineItem.find((l) => l.id === id)!.costCategory;
+
+  it("sets a real category", async () => {
+    const { setLineCostCategory } = await actions();
+    expect((await setLineCostCategory("job_1", "board", "SUBCONTRACTOR")).ok).toBe(true);
+    expect(categoryOf("board")).toBe("SUBCONTRACTOR");
+  });
+
+  it("clears it on an empty string — the select's own 'No cost type'", async () => {
+    const { setLineCostCategory } = await actions();
+    expect((await setLineCostCategory("job_1", "board", "")).ok).toBe(true);
+    expect(categoryOf("board")).toBeNull();
+  });
+
+  it("REFUSES a misspelling rather than clearing the line's cost type", async () => {
+    // The defect. "MATERAIL" used to land as null with `{ ok: true }`, and the
+    // line then earned no markup at all.
+    const { setLineCostCategory } = await actions();
+    const result = await setLineCostCategory("job_1", "board", "MATERAIL");
+    expect(result.ok).toBe(false);
+    expect(result.ok ? "" : result.error).toContain("MATERAIL");
+    expect(categoryOf("board")).toBe("MATERIAL");
+  });
+
+  it("returns the stale-tab refusal rather than rejecting", async () => {
+    const { setLineCostCategory } = await actions();
+    const result = await setLineCostCategory("job_1", "gone", "MATERIAL");
+    expect(result.ok).toBe(false);
+    expect(result.ok ? "" : result.error).toMatch(/no longer on the estimate/);
+  });
+});
