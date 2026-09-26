@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**148 items audited — 124 built / 19 partial / 4 missing / 1 descoped**
+**148 items audited — 126 built / 17 partial / 4 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -101,8 +101,8 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 124 |
-| Partial | 19 |
+| Built | 126 |
+| Partial | 17 |
 | Missing | 4 |
 | Descoped | 1 |
 
@@ -187,14 +187,14 @@ subcontract agreement storage and versioning shipped same-day.*
 | Partial | E-signature on subcontract agreements, change orders, lien waivers | `SignatureRequest` covers the initial contract only, once, at award. Through DocuSign (optional, per company) the contract summary, any uploaded subcontract version and a SUBMITTED change order can also be sent — `DocuSignEnvelope`. Lien waivers: not covered by either |
 | Built | Contract document versioning/amendments | `ContractDocument.versionNumber`, auto-incrementing per job, with an uploader/note per version |
 
-## 05. Job / Project Structure — 2 built · 2 partial · 0 missing
+## 05. Job / Project Structure — 4 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Job = subcontract awarded by a GC (not owner-direct) | the `Contact` on a `Job` functions as the GC in this ICP |
-| Partial | Job metadata: GC, project name/address, contract value, dates, jurisdiction | name/dates/derived contract value/location all present; no distinct project ADDRESS. **Corrected 2026-09-12: this row also said there was no "substantial completion" date. `Job.substantialCompletionDate` has existed since the retainage work** (`jobs.prisma:54`) and drives the retainage release forecast on `/jobs/[id]` and `/cash-flow`. Found while reading this sheet for the WIP export; the address half stands |
+| Built | Job metadata: GC, project name/address, contract value, dates, jurisdiction | name, dates, derived contract value, location and jurisdiction all present — and **the project ADDRESS this row said was missing has existed for a while**: `Job.siteAddress`, entered on `JobDetailsForm`, geocoded to `siteLatitude`/`siteLongitude`/`siteTimeZone`, and read by the job page, field reports, both DAS forms and the calendar feed. Corrected 2026-09-26 by reading the schema; the substantial-completion half of this row was corrected the same way on 2026-09-12. A row wrong twice in two weeks about fields that were already there |
 | Built | Schedule of values (SOV) as the job's line-item structure | this is exactly what `JobLineItem` is, by design |
-| Partial | Job status lifecycle: bid → awarded → active → substantially complete → closed/warranty | today's `JobStatus` is a simpler 4-stage version: ESTIMATE → CONTRACTED → IN_PROGRESS → COMPLETE |
+| Built | Job status lifecycle: bid → awarded → active → substantially complete → closed/warranty | every stage exists, and two of them are deliberately NOT `JobStatus` values: bid/awarded/active are the enum, substantial completion is `Job.substantialCompletionDate` (whose own schema comment says "a plain field, not a JobStatus stage"), closeout is `CloseoutSubmission` with its own status chain, warranty is `WarrantyPeriod`. Adding `SUBSTANTIALLY_COMPLETE` beside a date that could disagree with it is what "derived state is never stored" forbids. What was actually missing was that nothing DERIVED the stage for a reader — `lib/job-lifecycle.ts` now does, furthest-stage-wins, today as a parameter, and the job header shows it with the evidence behind it whenever it says more than the status pill |
 
 ## 06. Job Costing & Cost Coding — 4 built · 1 partial · 0 missing
 
