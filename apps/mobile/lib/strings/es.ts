@@ -137,6 +137,9 @@ export const ES: Record<keyof typeof EN, string> = {
   "safety.noTalks": "Sin pláticas registradas",
   "safety.noIncidents": "Sin incidentes",
 
+  "save.failed":
+    "Este teléfono no pudo guardar eso. No se envió nada, así que apúntalo antes de salir de la pantalla.",
+
   "offline.stale": "Mostrando lo último que cargó este teléfono, {age} — sin conexión",
   "offline.nothing":
     "No se puede cargar ahora, y este teléfono no lo ha cargado antes. Lo que agregues se guarda y se envía cuando vuelvas a tener señal.",

@@ -15,7 +15,8 @@ import { tokenOrNull } from "@/lib/clerk-token";
 import { dayFromClockIn } from "@/lib/clock-session";
 import { useT } from "@/lib/i18n";
 import { uuid } from "@/lib/id";
-import { enqueue, queuedOperationIds } from "@/lib/sync-queue";
+import { saveQueued } from "@/lib/save-queued";
+import { queuedOperationIds } from "@/lib/sync-queue";
 import { JobSections } from "@/components/JobSections";
 import { emptyFor } from "@/lib/empty-state";
 import { NotYourJobFunction } from "@/components/NotYourJobFunction";
@@ -82,7 +83,7 @@ export default function ReportsScreen() {
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const getToken = useStableGetToken();
-  const { reports, pending, error, offline, create, refresh } = useFieldReports(jobId ?? "");
+  const { reports, pending, error, setError, offline, create, refresh } = useFieldReports(jobId ?? "");
   const [delays, setDelays] = useState<DelayRow[]>([]);
   // Delays logged on this phone that the server hasn't returned yet — shown
   // at once as "Syncing…" rather than appearing seconds after Save.
@@ -133,11 +134,16 @@ export default function ReportsScreen() {
       weather: conditions.trim() || null,
       delays: null,
     };
+    // QUEUED BEFORE THE FORM IS CLEARED — see lib/save-queued.ts. `create`
+    // returns the `{ ok }` result for exactly this, and the old order threw
+    // it away: the sheet closed and the day's work-performed text went with
+    // it, on the record of what happened on a job.
+    const saved = await create(fields);
+    if (!saved.ok) return;
     setWorkPerformed("");
     setOtherTrades("");
     setConditions("");
     setShowReport(false);
-    await create(fields);
     await loadDelays();
   };
 
@@ -181,17 +187,6 @@ export default function ReportsScreen() {
       gcNotifiedWho: told ? toldWho.trim() || undefined : undefined,
       gcNotifiedAt: told ? new Date().toISOString() : undefined,
     };
-    setCause(null);
-    setParty(null);
-    setPartyName("");
-    setWhat("");
-    setFrom("");
-    setTo("");
-    setWorkers("");
-    setHoursLost("");
-    setTold(null);
-    setToldWho("");
-    setShowDelay(false);
     const causeKey = CAUSES.find(([v]) => v === op.cause)?.[1];
     const causeText = causeKey ? t(causeKey) : op.cause;
     const partyKey = PARTIES.find(([v]) => v === op.responsibleParty)?.[1];
@@ -218,7 +213,34 @@ export default function ReportsScreen() {
         changeOrderId: null,
       },
     ]);
-    await enqueue(op);
+    // Queued BEFORE the form is cleared — see lib/save-queued.ts. This
+    // comment used to sit above a function that cleared eleven fields and
+    // closed the sheet first, and said it did not; a comment stating the
+    // opposite of its code is worse than no comment, because it is what the
+    // next reader checks instead of the code.
+    //
+    // The optimistic row DOES still go up first, on purpose: it is what
+    // makes the delay appear without waiting on the write. It is taken back
+    // off below if the write did not land, because a delay that never
+    // reached the queue must not sit on this screen looking logged.
+    const saved = await saveQueued(op);
+    if (!saved.ok) {
+      setOptimisticDelays((rows) => rows.filter((r) => r.clientOperationId !== op.clientOperationId));
+      setError(saved.error);
+      return;
+    }
+    setError(null);
+    setCause(null);
+    setParty(null);
+    setPartyName("");
+    setWhat("");
+    setFrom("");
+    setTo("");
+    setWorkers("");
+    setHoursLost("");
+    setTold(null);
+    setToldWho("");
+    setShowDelay(false);
     await sync();
   };
 
