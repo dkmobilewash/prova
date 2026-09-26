@@ -127,15 +127,51 @@ export async function setLineCostCategory(jobId: string, lineItemId: string, cat
   const gate = await estimateJob(jobId, companyId);
   if (!gate.ok) return actionFail(gate.error);
 
-  const next = COST_CATEGORIES.includes(category as CostCategoryValue) ? (category as CostCategoryValue) : null;
-  const updated = await prisma.jobLineItem.updateMany({
-    where: { id: lineItemId, jobId, isDeleted: false },
-    data: { costCategory: next },
-  });
-  if (updated.count === 0) return actionFail("That line is no longer on the estimate.");
+  /*
+   * THE `runAction` WRAPPER IS HERE FOR THE REFUSAL BELOW, NOT FOR PRISMA — and
+   * the first version of this change said otherwise, which was wrong.
+   *
+   * #524 flagged "setLineCostCategory is not wrapped in runAction, so a Prisma
+   * failure reaches production as a redacted digest". The premise is false:
+   * `runAction` converts an `InputError` and RETHROWS everything else
+   * (`shared.ts`), so wrapping buys nothing against a pool timeout. A Prisma
+   * failure reaches production as a digest from EVERY action in this codebase,
+   * wrapped or not, and that is deliberate — CLAUDE.md's rule is that `throw`
+   * is for genuine bugs, and a connection timeout is one.
+   *
+   * Caught by writing the test for the claim: it asserted the action resolves
+   * when Prisma throws, and it went red. The flag had been repeated from my own
+   * PR body twice without anyone reading `runAction`.
+   *
+   * WHAT WAS ACTUALLY WRONG HERE, found while checking that: an unrecognised
+   * category was SILENTLY COERCED TO NULL. `COST_CATEGORIES.includes(...)
+   * ? ... : null` treats "MATERAIL" and a tampered value exactly like the
+   * deliberate "no cost type" — so a bad value quietly CLEARED a line's cost
+   * type, and an uncategorised line is never marked up. That is a line dropping
+   * out of every markup because of a typo, with a success response.
+   *
+   * An empty string is the real "clear it" signal — the select's own
+   * "No cost type" option — so that stays. Anything else is now refused, which
+   * needs an `InputError`, which is what the wrapper is for.
+   */
+  return runAction(async () => {
+    const trimmed = category.trim();
+    const next = trimmed === "" ? null : (trimmed as CostCategoryValue);
+    if (next !== null && !COST_CATEGORIES.includes(next)) {
+      throw new InputError(
+        `"${trimmed}" is not a cost type. Pick one of ${COST_CATEGORIES.join(", ")}, or "No cost type" to clear it.`,
+      );
+    }
 
-  revalidateJob(jobId);
-  return actionOk;
+    const updated = await prisma.jobLineItem.updateMany({
+      where: { id: lineItemId, jobId, isDeleted: false },
+      data: { costCategory: next },
+    });
+    if (updated.count === 0) throw new InputError("That line is no longer on the estimate.");
+
+    revalidateJob(jobId);
+    return actionOk;
+  });
 }
 
 /**

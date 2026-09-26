@@ -88,8 +88,21 @@ describe("TimeEntry keeps the shape certified payroll depends on", () => {
 
   it("still lists exactly the time-entry columns the CSV export names", async () => {
     // The export enumerates its columns by hand, so a new column must NOT
-    // silently appear in a customer's download. crewMemberId is not in the
-    // list, and this pins that until the wiring commit adds it deliberately.
+    // silently appear in a customer's download. This used to pin a list
+    // WITHOUT `crewMemberId` and said so — "until the wiring commit adds it
+    // deliberately".
+    //
+    // #525 is that commit, and it arrived from the other direction: a
+    // column-level census (`exportColumnCensus.test.ts`) required every scalar
+    // on an exported model to be exported, withheld or declared as plumbing,
+    // and these six were none of the three. So the decision is made here, in
+    // the open, which is exactly what this test was holding the door for.
+    //
+    // The clock and correction columns belong in a customer's download for the
+    // same reason the hours do: on a certified payroll they are the difference
+    // between an hours figure and an hours figure somebody can defend. There is
+    // still no SSN column anywhere near this — `_NoFullSsnColumn` above is the
+    // guard for that and it is untouched.
     const { EXPORT_DATASETS } = await import("./export");
     const timeEntries = EXPORT_DATASETS.find((d) => d.key === "time-entries");
     expect(timeEntries?.columns).toEqual([
@@ -104,6 +117,12 @@ describe("TimeEntry keeps the shape certified payroll depends on", () => {
       "perDiemAmount",
       "travelPayAmount",
       "note",
+      "crewMemberId",
+      "clockStartedAt",
+      "clockEndedAt",
+      "clockBreakMinutes",
+      "lastCorrectedAt",
+      "lastCorrectedByUserId",
       "createdAt",
     ]);
   });
