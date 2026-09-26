@@ -54,9 +54,14 @@ function costCategoryValuesFromSchema(): string[] {
 
 describe("every cost category has a word a contractor would say", () => {
   it("parses the enum out of the schema at all", () => {
-    // Anti-vacuity. Without this, a parse returning [] would make the two
-    // cases below pass on an empty table.
-    expect(costCategoryValuesFromSchema().length).toBe(4);
+    // Anti-vacuity, and a FLOOR rather than an exact count on purpose. Its only
+    // job is to prove the parse returned something real, because a parse
+    // returning [] would make the two cases below pass on an empty table. The
+    // census is the next case, which compares the parsed set against the label
+    // table both ways — so an exact number here adds nothing and costs a red
+    // build every time the enum legitimately grows. It was `toBe(4)` and
+    // EQUIPMENT made it red on 2026-09-26 while the real census was fine.
+    expect(costCategoryValuesFromSchema().length).toBeGreaterThanOrEqual(4);
   });
 
   it("labels exactly the values the schema declares — no more, no fewer", () => {

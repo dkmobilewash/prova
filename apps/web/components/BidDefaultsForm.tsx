@@ -2,6 +2,7 @@
 
 import { useState, useTransition, type FormEvent } from "react";
 import { saveCompanyBidDefaults } from "@/lib/actions";
+import { RECAP_RATE_FIELDS, RECAP_RATE_KEYS } from "@/lib/bid-recap";
 
 /**
  * The company's standing markup rates, on Settings.
@@ -15,18 +16,18 @@ import { saveCompanyBidDefaults } from "@/lib/actions";
 
 export type BidDefaultsView = Record<string, string | null>;
 
-const FIELDS: { key: string; label: string }[] = [
-  { key: "materialMarkupPercent", label: "Material markup" },
-  { key: "laborMarkupPercent", label: "Labor markup" },
-  { key: "subcontractorMarkupPercent", label: "Subcontractor markup" },
-  { key: "otherMarkupPercent", label: "Other / equipment markup" },
-  { key: "escalationPercent", label: "Escalation" },
-  { key: "materialTaxPercent", label: "Sales tax on material" },
-  { key: "overheadPercent", label: "Overhead" },
-  { key: "profitPercent", label: "Profit" },
-  { key: "bondPercent", label: "Bond premium" },
-  { key: "contingencyPercent", label: "Contingency" },
-];
+/**
+ * DERIVED, not written out. This was a tenth hand-written rate list, and it was
+ * the most expensive of them: the per-job form and the parse both grew an
+ * equipment rate on 2026-09-26 and this one did not, so the company-wide
+ * equipment markup was storable, parseable — and impossible to type in. A rate
+ * with no input is a rate nobody can ever set, and nothing failed to say so.
+ *
+ * Its `otherMarkupPercent` label also still read "Other / equipment markup",
+ * which is the old one-rate-doing-two-jobs world surviving on the one screen
+ * that had not been looked at.
+ */
+const FIELDS = RECAP_RATE_KEYS.map((key) => ({ key: key as string, ...RECAP_RATE_FIELDS[key] }));
 
 export function BidDefaultsForm({ defaults }: { defaults: BidDefaultsView | null }) {
   const [isPending, startTransition] = useTransition();
