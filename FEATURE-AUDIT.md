@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**148 items audited — 121 built / 22 partial / 4 missing / 1 descoped**
+**148 items audited — 122 built / 21 partial / 4 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -101,8 +101,8 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 121 |
-| Partial | 22 |
+| Built | 122 |
+| Partial | 21 |
 | Missing | 4 |
 | Descoped | 1 |
 
@@ -307,12 +307,12 @@ forecasting shipped 26 Aug 2026.*
 | Built | GC-issued backcharge tracking against a job (damages, cleanup, etc.) | `Backcharge` + `BackchargeCounter`, `/backcharges` — numbers issued per job and never reissued, eight categories so "what do cleanup backcharges cost us a year" is answerable, issue/receipt/respond-by dates all ENTERED not stamped. The claimed amount locks the moment we answer, so a savings figure can't be computed against a number nobody claimed |
 | Built | Backcharge disputes/resolution status | `BackchargeStatus` RECEIVED → DISPUTED → ACCEPTED / SETTLED / WITHDRAWN, with the objection's own date and grounds. Only a settlement stores a figure: accepting concedes the claim and a withdrawal concedes nothing, both derived from the status in `lib/backcharges.ts`. Past the deadline to object is derived per render, never stored. Deliberately does NOT net against a pay application — see the note on the page and in ARCHITECTURE.md |
 
-## 14. Compliance Document Management — 5 built · 1 partial · 0 missing
+## 14. Compliance Document Management — 6 built · 0 partial · 0 missing
 
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Certificates of insurance (issued to GCs, received from lower-tier subs) | `ComplianceDocument.type = CERTIFICATE_OF_INSURANCE`, plus `CompanyInsurancePolicy` for the company's own coverage |
-| Partial | Lien waivers (conditional/unconditional, progress/final) per pay period | `LIEN_WAIVER` type exists generically — no conditional/unconditional or progress/final sub-typing |
+| Built | Lien waivers (conditional/unconditional, progress/final) per pay period | `LienWaiver` (liens/`lien-waivers.prisma`) is the OUTBOUND waiver — the one handed to a GC to get paid — as two axes, condition × stage, so all four statutory forms are distinct. Issued on the job's billing tab against a pay application, with `exceptedAmount` required and defaultless: retainage held and SUBMITTED change orders are offered as candidate exceptions beside the field and never written into it, and three live warnings (`lib/lien-waiver.ts`) say what an unconditional or final waiver would give up. Advisory, never blocking, and nothing anywhere says a waiver is safe to sign. `ComplianceDocumentType.LIEN_WAIVER` remains the INBOUND direction — waivers collected from subs and vendors — and is unchanged. Signed status is ENTERED off the executed form; there is no Prova e-sign page for a waiver, so the two e-signature rows below are untouched |
 | Built | Certified payroll submissions | type exists, now with AI extraction on upload |
 | Built | Union fringe/benefit filings | `UNION_FRINGE_BENEFIT_FILING` type |
 | Built | License/registration records per state | `CompanyLicense`, with create/edit/delete on `/settings` — it was marked Built on the model alone from 25 Aug until 29 Aug, during which no licence could be created at all |

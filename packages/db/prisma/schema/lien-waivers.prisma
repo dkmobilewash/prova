@@ -15,9 +15,9 @@
 // different: THEY HAVE OPPOSITE MUTABILITY RULES. ComplianceDocument says
 // in its own comment that extracted fields stay editable — "a 'please
 // verify' signal for the UI, not a lock". A signed waiver is an evidence
-// record: identity locked at signing, voidable but never deletable,
-// rendering its own frozen snapshot rather than live data (CLAUDE.md,
-// Evidence records). One table cannot hold both rules. The supporting
+// record: identity locked once it is recorded as signed, voidable but
+// never deletable (CLAUDE.md, Evidence records). One table cannot hold
+// both rules. The supporting
 // reasons are ordinary — PENDING/RECEIVED are the wrong states for
 // something you sign, `partyName` is required there and would be a
 // duplicate of the job's GC here, `jobId` is optional there and must be
@@ -38,9 +38,9 @@
 //   - no state-rules table, and no generated statutory wording. Which form
 //     a given state accepts, and what words must appear on it, is not
 //     something this app knows. It records WHICH of the four forms was
-//     issued, for how much, through what date, and whether it is signed;
-//     `documentUrl` carries the executed statutory form itself, because the
-//     GC's form is the GC's form;
+//     issued, for how much, through what date, and whether it came back
+//     signed. The signature itself happens on the GC's form, which is why
+//     there is no e-sign page here — see the note on `status` below;
 //   - nothing here decides that signing is safe. The one place the app has
 //     an opinion is the exception surface below, and it is a SUGGESTION
 //     rendered next to the field, never a value written on the person's
@@ -160,38 +160,42 @@ model LienWaiver {
   // "written, documented, and never called" shape CLAUDE.md keeps
   // finding, and adding them later is a three-line additive migration.
 
-  // ---- Signing. The same shape as billing.prisma's SignatureRequest, and
-  // deliberately not that model: its e-sign page renders LIVE job line
-  // items and is hard-wired to the contract at award, so a discriminator
-  // there would route waiver signing through the contract path. The enum
-  // IS shared, because "pending or signed" means the same thing here.
+  // ---- Whether it was signed, and when.
+  //
+  // NO TOKEN, NO E-SIGN PAGE, AND THAT IS THE DOMAIN RATHER THAN A CORNER
+  // CUT. A lien waiver is signed on the GC's own statutory form, in the
+  // GC's own system or on paper — the header says the app will not
+  // generate statutory wording, and it follows that the app is not where
+  // the signature happens either. What this model is for is the RECORD:
+  // which form went out, what it excepted, and whether it came back
+  // signed.
+  //
+  // So `signedAt` is ENTERED, like every other date that matters here
+  // (CLAUDE.md, Evidence records: "dates that matter are ENTERED, not
+  // stamped"), read off the executed document rather than stamped when
+  // somebody clicked. The v1 of this model carried `token`, `snapshot`,
+  // `expiresAt`, `ipAddress` and `userAgent` copied from
+  // SignatureRequest, and every one of them would have been a column
+  // nothing wrote — SIGNED was unreachable with no page to reach it from.
+  // That is the "written, documented, and never called" shape, at schema
+  // level.
 
-  /// The unguessable URL this is signed at. Unique so a token can never
-  /// address two waivers.
-  token  String          @unique
+  /// PENDING until somebody records that the executed form came back.
   status SignatureStatus @default(PENDING)
 
-  signerName  String?
-  signerEmail String?
-  signedAt    DateTime?
-  ipAddress   String?
-  userAgent   String?
+  /// Who signed it, as written on the form. Free text: it is a name on a
+  /// document, and nothing computes on it.
+  signerName String?
 
-  /// Prova's own figures, frozen at the moment of signature. A SIGNED
-  /// waiver renders only this and never live data — the same rule, for the
-  /// same reason, as SignatureRequest.snapshot: what was agreed to is what
-  /// was on the screen, not what the job has become since.
-  snapshot Json?
+  /// The date on the executed document — ENTERED, never stamped. Null
+  /// while the waiver is out. Whether a waiver is "outstanding" is DERIVED
+  /// from this and `revokedAt`, never stored.
+  signedAt DateTime?
 
-  /// Withdrawn before signature. Never a delete: a waiver that was sent
-  /// and then pulled is evidence of having been sent (CLAUDE.md, "sent
-  /// correspondence can close but never delete"). Null on a live one.
+  /// Withdrawn before it was signed. Never a delete: a waiver that was
+  /// issued and then pulled is evidence of having been issued (CLAUDE.md,
+  /// "sent correspondence can close but never delete").
   revokedAt DateTime?
-
-  /// When the signing link stops working. Null reads as "no expiry"
-  /// everywhere it is checked, which is what existing rows would be if
-  /// this ever gains a backfill.
-  expiresAt DateTime?
 
   createdByUserId String?
   createdBy       User?   @relation("LienWaiverCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)

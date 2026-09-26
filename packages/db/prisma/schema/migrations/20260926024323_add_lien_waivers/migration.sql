@@ -16,25 +16,16 @@ CREATE TABLE "LienWaiver" (
     "amount" DECIMAL(12,2) NOT NULL,
     "exceptedAmount" DECIMAL(12,2) NOT NULL,
     "exceptionsNote" TEXT,
-    "token" TEXT NOT NULL,
     "status" "SignatureStatus" NOT NULL DEFAULT 'PENDING',
     "signerName" TEXT,
-    "signerEmail" TEXT,
     "signedAt" TIMESTAMP(3),
-    "ipAddress" TEXT,
-    "userAgent" TEXT,
-    "snapshot" JSONB,
     "revokedAt" TIMESTAMP(3),
-    "expiresAt" TIMESTAMP(3),
     "createdByUserId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "LienWaiver_pkey" PRIMARY KEY ("id")
 );
-
--- CreateIndex
-CREATE UNIQUE INDEX "LienWaiver_token_key" ON "LienWaiver"("token");
 
 -- CreateIndex
 CREATE INDEX "LienWaiver_companyId_idx" ON "LienWaiver"("companyId");

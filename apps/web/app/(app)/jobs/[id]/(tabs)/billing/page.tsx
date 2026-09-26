@@ -16,6 +16,8 @@ import { money } from "@/lib/money";
 import { invoiceBalanceLabel, balanceToneClass } from "@/lib/invoice-balance-label";
 import { SubmitButton } from "@/components/SubmitButton";
 import { createInvoice, deletePayment } from "@/lib/actions";
+import { LienWaivers } from "@/components/LienWaivers";
+import { loadLienWaiverSection } from "@/lib/lien-waiver-query";
 import { ActionForm } from "@/components/ActionForm";
 
 const rowDeleteClass = "text-xs text-red-400 hover:underline";
@@ -140,6 +142,8 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
 
   const timeZone = await viewerTimeZone();
   const createInvoiceWithId = createInvoice.bind(null, job.id);
+
+  const lienWaiverSection = await loadLienWaiverSection(job.id);
 
   return (
     <div>
@@ -308,6 +312,8 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
       </section>
 
       <PayApplications jobId={job.id} lineItems={payApplicationLineItemOptions} payApplications={payApplications} timeZone={timeZone} />
+
+      <LienWaivers jobId={job.id} section={lienWaiverSection} canManage={showsBilling} />
     </div>
   );
 }
