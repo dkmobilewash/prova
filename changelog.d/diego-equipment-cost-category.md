@@ -81,3 +81,39 @@ used `"EQUIPMENT"` as the token the enum could never hold, one commit before the
 enum held it; the replacement asserts its own premise, because a test whose
 subject is "a value this build has never heard of" is one enum addition away
 from having no subject at all.
+
+**And then the mutation for the Ask fix came back GREEN, which is the part of
+this worth reading.** Ask computes the bid recap itself and kept its own list of
+rate names — so the equipment rate never reached it and it answered **$1,732.50
+under the Estimate screen** on a $20k job, with its own ten tests passing. Diego's
+call was to fix it in this PR rather than let `main` disagree with itself about a
+dollar figure.
+
+The regression test written to pin that has a blind spot, and only mutation found
+it: restoring a local ten-name array in `lib/ask/handlers.ts` — the exact code that
+shipped the divergence — left **every test in the repo passing**. That test proves
+the SHARED list is complete; it cannot see a consumer that has stopped reading it.
+*Nothing is ever missing from a list nobody imports.*
+
+So the census asks the other question — not "is the list complete" but "is there a
+second one". A rate key written as a **string literal** is the signature of a
+hand-rolled list; the real consumers use the names as object keys, which are
+identifiers and do not match. It found **four more**, none of which had been
+spotted, and one was a live hole in this PR's own feature:
+
+| site | what it did |
+| --- | --- |
+| `BidDefaultsForm.tsx` | the COMPANY form had **no equipment field at all** — the rate was storable, parseable and impossible to type in |
+| `settings/page.tsx` | serialised the row to that form through its own list, so a saved rate never rendered back |
+| the estimate tab's page | same, per job — a save that worked would read as one that failed |
+| `lib/export.ts` | two CSV column lists naming all ten rates, in the file whose whole purpose is that nothing is held back |
+
+All five now derive from `RECAP_RATE_FIELDS` — a total `Record` over
+`keyof RecapRates` carrying each rate's key, label and hint. Four label lists and
+five key lists become one of each, and Cyrus's file got *smaller*: twelve lines of
+array became an import.
+
+The general lesson, and it is the companion to the scope entry in CLAUDE.md: a
+guard that a list is COMPLETE and a guard that the list is the ONLY ONE are
+different guards, and the first cannot imply the second. Ask which one a check is,
+then write the other.
