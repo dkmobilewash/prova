@@ -59,8 +59,35 @@ export const QUICKBOOKS_ACCOUNT_PURPOSES = [
   { value: "LABOR", label: "Labor cost", hint: "Crew wages and burden." },
   { value: "MATERIAL", label: "Material cost", hint: "Board, metal, compound, finishes." },
   { value: "SUBCONTRACTOR", label: "Subcontractor cost", hint: "Lower-tier subs you hire." },
-  { value: "OTHER", label: "Other cost", hint: "Equipment, permits, anything else." },
+  { value: "OTHER", label: "Other cost", hint: "Permits, testing, anything else." },
 ] as const;
+
+/**
+ * WHY THERE IS NO "EQUIPMENT" ROW ABOVE, although `CostCategory` grew one on
+ * 2026-09-26.
+ *
+ * Because the four COST purposes here are read by nothing. Every lookup of
+ * this table in the app asks for `INCOME` (invoice push, and the billing tab's
+ * enable check) or `DEPOSIT` (payment push) — those are the only two, checked
+ * rather than assumed. Prova pushes invoices and payments to QuickBooks; it
+ * does not push costs, so there is no code that picks an expense account by a
+ * line\'s cost type.
+ *
+ * Adding an equipment row would therefore not complete anything. It would add
+ * a fifth control that stores a value nobody reads, while telling an owner —
+ * by existing — that their equipment costs land in the account they chose.
+ * That is the "written, documented, and never called" shape, and the more
+ * expensive half of it is the implication, not the dead column.
+ *
+ * What DID need fixing is one word: `OTHER`\'s hint read "Equipment, permits,
+ * anything else." until equipment became its own category, at which point it
+ * was pointing owners at the wrong bucket. The hint is live guidance even
+ * though the mapping is inert.
+ *
+ * So this is the note to read when a cost push is built: the four rows are
+ * waiting for it, EQUIPMENT joins them then, and that is the PR that makes any
+ * of them mean something.
+ */
 
 /**
  * Every purpose the code may look up — the five Settings offers, plus

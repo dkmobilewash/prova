@@ -3,12 +3,15 @@
 import { useMemo, useState, useTransition, type FormEvent } from "react";
 import { applyBidRecap, saveBidRecap, setLineBudgetedCost, setLineCostCategory } from "@/lib/actions";
 import { money } from "@/lib/money";
+import { EQUIPMENT_SPLIT_NOTE } from "@/lib/cost-category";
 import {
   bidRecap,
   COST_CATEGORY_LABELS,
   COST_CATEGORY_VALUES,
   spreadToLines,
   spreadTotal,
+  RECAP_RATE_FIELDS,
+  RECAP_RATE_KEYS,
   type CostCategoryValue,
   type RecapLine,
   type RecapRates,
@@ -24,18 +27,21 @@ import {
  * `TakeoffForm` and `WallSchedule` already follow).
  */
 
-const RATE_FIELDS: { key: keyof RecapRates; label: string; hint?: string }[] = [
-  { key: "materialMarkupPercent", label: "Material markup" },
-  { key: "laborMarkupPercent", label: "Labor markup" },
-  { key: "subcontractorMarkupPercent", label: "Subcontractor markup" },
-  { key: "otherMarkupPercent", label: "Other / equipment markup" },
-  { key: "escalationPercent", label: "Escalation", hint: "For work built later than it is priced." },
-  { key: "materialTaxPercent", label: "Sales tax on material", hint: "Charged on material only, at what it sells for." },
-  { key: "overheadPercent", label: "Overhead" },
-  { key: "profitPercent", label: "Profit", hint: "Taken on the total including overhead." },
-  { key: "bondPercent", label: "Bond premium" },
-  { key: "contingencyPercent", label: "Contingency" },
-];
+/**
+ * Every rate the form offers, keyed by the rate it writes.
+ *
+ * A TOTAL `Record` over `keyof RecapRates`, not an array, and the difference is
+ * a whole capability: an array can be missing a rate, and a rate with no input
+ * on this form is one NOBODY CAN EVER SET — the server parses it, the schema
+ * stores it, and it stays null forever with nothing on screen to say why. That
+ * is the far side of the same drift that produced a NaN bid total: there, a
+ * category the math did not know about; here, a rate the form does not offer.
+ * This does not compile until every rate has a field.
+ *
+ * Declaration order is the order they render, which matches the order they
+ * apply in `bidRecap`.
+ */
+const RATE_FIELDS = RECAP_RATE_KEYS.map((key) => ({ key, ...RECAP_RATE_FIELDS[key] }));
 
 export type RecapLineView = RecapLine & { description: string };
 
@@ -173,6 +179,16 @@ export function BidRecapPanel({
           {recap.direct.uncategorised > 0 ? ` (${money(recap.direct.uncategorised)})` : ""} — marked up at nothing. Set
           the type on each line below.
         </p>
+      )}
+
+      {/* LAST of the three notices, and muted rather than amber, because it is
+          not a problem with this estimate — it is a fact about what the
+          equipment figure can and cannot include. The two above are things the
+          reader can fix on this screen; this one nobody can. Shown only when an
+          equipment or other figure is actually present: a permanent notice is
+          noise that teaches people to stop reading notices. */}
+      {(recap.direct.byCategory.EQUIPMENT > 0 || recap.direct.byCategory.OTHER > 0) && (
+        <p className="text-xs text-ink-muted">{EQUIPMENT_SPLIT_NOTE}</p>
       )}
 
       <div className="flex flex-col gap-2 border-t border-line-row pt-3">

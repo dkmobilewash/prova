@@ -20,7 +20,8 @@ import {
   jobStatusTransitionRefusal,
   type JobStatusValue,
 } from "@/lib/job-status-transitions";
-import { actionFail, actionOk, InputError, runAction, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, COST_CATEGORIES, craftClassificationIdFromForm, decimalFromForm, isUniqueConstraintError, phaseCodeIdFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
+import { asCostCategory } from "@/lib/cost-category";
+import { actionFail, actionOk, InputError, runAction, type ActionResult, assertEditableDirectly, assertJobInCompany, assertLineItemOnJob, craftClassificationIdFromForm, decimalFromForm, isUniqueConstraintError, phaseCodeIdFromForm, nullableDecimalFromForm, tradeScopeFromForm } from "./shared";
 import { parseNumericInput } from "@/lib/numeric-input";
 
 /**
@@ -571,9 +572,11 @@ export async function addCostEntry(jobId: string, lineItemId: string, formData: 
   if (!parsedAmount.ok) return actionFail(parsedAmount.error);
   const amount = parsedAmount.value;
   const categoryRaw = String(formData.get("category") ?? "OTHER");
-  const category = COST_CATEGORIES.includes(categoryRaw as (typeof COST_CATEGORIES)[number])
-    ? (categoryRaw as (typeof COST_CATEGORIES)[number])
-    : "OTHER";
+  // `?? "OTHER"` is deliberate HERE and only here: a logged cost has already
+  // been spent, so it has to land somewhere, and Other is the category that
+  // says "nobody coded this". The estimate side leaves an unknown value null
+  // instead, because an uncategorised estimate line is a question, not a cost.
+  const category = asCostCategory(categoryRaw) ?? "OTHER";
   const tradeScope = tradeScopeFromForm(formData);
 
   if (!description) {

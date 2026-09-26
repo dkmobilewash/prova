@@ -8,10 +8,13 @@ import {
   bidRecap,
   spreadToLines,
   spreadTotal,
+  RECAP_RATE_FIELDS,
+  RECAP_RATE_KEYS,
   type CostCategoryValue,
   type RecapLine,
   type RecapRates,
 } from "@/lib/bid-recap";
+import { asCostCategory, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { NOT_ESTIMATE_STAGE } from "@/lib/estimating/draft-lines";
 import {
   actionFail,
@@ -46,43 +49,31 @@ const NO_SETTINGS =
   "Company settings aren't part of your job function. The account owner sets who sees what, on the Team page.";
 const NO_JOB = "That job isn't on your account any more.";
 
-/** Every rate the recap holds, in the order they apply. One list, so a new
- * rate cannot be added to the form and forgotten in the parse. */
-const RATE_KEYS = [
-  "materialMarkupPercent",
-  "laborMarkupPercent",
-  "subcontractorMarkupPercent",
-  "otherMarkupPercent",
-  "escalationPercent",
-  "materialTaxPercent",
-  "overheadPercent",
-  "profitPercent",
-  "bondPercent",
-  "contingencyPercent",
-] as const;
-
-const RATE_LABELS: Record<(typeof RATE_KEYS)[number], string> = {
-  materialMarkupPercent: "Material markup",
-  laborMarkupPercent: "Labor markup",
-  subcontractorMarkupPercent: "Subcontractor markup",
-  otherMarkupPercent: "Other markup",
-  escalationPercent: "Escalation",
-  materialTaxPercent: "Sales tax on material",
-  overheadPercent: "Overhead",
-  profitPercent: "Profit",
-  bondPercent: "Bond premium",
-  contingencyPercent: "Contingency",
-};
+/**
+ * Every rate the recap holds, with the label its error message uses, in the
+ * order they apply.
+ *
+ * `Record<keyof RecapRates, string>` — a TOTAL record, so this does not compile
+ * until every rate the recap can read has an entry. That matters more than it
+ * looks: a rate missing from this list is never parsed out of the form, so the
+ * field saves NOTHING and the bid is short by that rate with no error anywhere.
+ * It was two lists (keys, then labels over the keys), which made the labels
+ * complete with respect to the keys and the keys complete with respect to
+ * nothing. `RATE_KEYS` is derived from it below rather than written again.
+ */
+const RATE_KEYS = RECAP_RATE_KEYS;
 
 function ratesFromForm(formData: FormData): Record<string, string | null> {
   const rates: Record<string, string | null> = {};
   for (const key of RATE_KEYS) {
-    rates[key] = nullablePercentFromForm(formData, key, { label: RATE_LABELS[key] });
+    rates[key] = nullablePercentFromForm(formData, key, { label: RECAP_RATE_FIELDS[key].label });
   }
   return rates;
 }
 
-const COST_CATEGORIES: readonly CostCategoryValue[] = ["MATERIAL", "LABOR", "SUBCONTRACTOR", "OTHER"];
+// The third hand-written copy of the CostCategory enum lived here, module
+// private so nothing could even test it. Gone: `asCostCategory` narrows
+// against the one list in lib/cost-category.ts.
 
 async function estimateJob(jobId: string, companyId: string) {
   const job = await prisma.job.findFirst({ where: { id: jobId, companyId }, select: { id: true, status: true } });
@@ -156,10 +147,17 @@ export async function setLineCostCategory(jobId: string, lineItemId: string, cat
    */
   return runAction(async () => {
     const trimmed = category.trim();
-    const next = trimmed === "" ? null : (trimmed as CostCategoryValue);
-    if (next !== null && !COST_CATEGORIES.includes(next)) {
+    // NARROWED against the canonical list (`@/lib/cost-category`) rather than
+    // against a copy of the enum kept in this file, so a new member is accepted
+    // here the day it exists. #527's REFUSAL is what matters and it is
+    // unchanged: an unrecognised value must not become null. `asCostCategory`
+    // returns null for both "not a category" and "clear it", which is exactly
+    // the conflation #527 removed — so the empty-string check happens FIRST and
+    // anything else that narrows to null is an error, not a clear.
+    const next = trimmed === "" ? null : asCostCategory(trimmed);
+    if (trimmed !== "" && next === null) {
       throw new InputError(
-        `"${trimmed}" is not a cost type. Pick one of ${COST_CATEGORIES.join(", ")}, or "No cost type" to clear it.`,
+        `"${trimmed}" is not a cost type. Pick one of ${COST_CATEGORY_VALUES.join(", ")}, or "No cost type" to clear it.`,
       );
     }
 
@@ -275,7 +273,13 @@ export async function applyBidRecap(jobId: string): Promise<ActionResultWith<App
         // which is why both are read here and only one is marked up.
         unitCost: row.budgetedUnitCost != null ? Number(row.budgetedUnitCost) : null,
         unitPrice: row.unitPrice != null ? Number(row.unitPrice) : null,
-        costCategory: (row.costCategory as CostCategoryValue | null) ?? null,
+        // NARROWED, not cast. `as CostCategoryValue` asserted that the
+        // database only ever holds values this build knows — the claim that
+        // stops being true the moment the enum grows, and the reason a
+        // fifth value reached the recap's accumulator as an unknown key and
+        // produced a NaN bid total. An unrecognised value is now null, which
+        // the recap already renders as an uncategorised line.
+        costCategory: asCostCategory(row.costCategory),
       }));
 
       const rates: RecapRates = Object.fromEntries(
