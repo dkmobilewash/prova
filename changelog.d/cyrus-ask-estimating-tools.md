@@ -78,3 +78,40 @@ written the questions down, so a census built to find holes read as complete
 while every one of these questions routed to nothing. A feature shipping and
 a question being written are two separate events, and only the second one is
 in that file.
+
+**CI, BY SHA, AND ONE FAILURE THAT IS NOT `main`'S BASELINE.** Run
+`36215728083` on `7b40038a`: `ci`, `dbtest` and `e2e-public` green; `e2e`
+red on TWO tests where main is red on one.
+
+The control was read rather than assumed. Run `36212287391` on `890100f5` —
+this branch's exact base — is red on `journey.spec.ts` step 11 alone,
+`62 passed`, which is the #510 baseline. Mine is that step 11 (its page list
+is `/jobs/<id>/billing`, `/bids`, `/certifications`, disjoint from the three
+earlier lists, exactly as the #418 entry says: the list is the race's dice,
+not a location) **plus**:
+
+    estimating-spine.spec.ts:135 › 3. wall types: the starter partition
+    schedule (#467)
+      Locator: getByText('Added W1 and W2.')
+      Timeout: 10000ms — element(s) not found
+
+That is the `/wall-types` starter-types button's own success sentence not
+arriving within ten seconds of the click. It cascaded `8 did not run`
+(`mode: "serial"`, `retries: 0`), so one write timing out cost nine verdicts.
+
+**Why it is not this branch's, said as reasoning rather than as proof.** The
+diff is `lib/ask/**`, three existing test files and one changelog file.
+`/wall-types/page.tsx`, `components/WallTypes.tsx` and
+`lib/actions/wallTypes.ts` are untouched and import nothing from `lib/ask`;
+the only `lib/ask` module any other page pulls in is `toolLabels.ts`, whose
+sole `tools.ts` import is `import type`, erased at build. There is no path by
+which seven read tools change whether a wall-type Server Action answers in
+ten seconds.
+
+**What that leaves, honestly: one sample.** `retries: 0` and two workers
+against one Postgres mean a slow write is a hard failure, and a ten-second
+ceiling on a Server Action is thin — this repo has measured post-action
+server render at 3.7-4.4s on a warm build (the #61 entry). The likeliest
+reading is a timing flake in a spec that is a day old, and the honest state
+of it is that nobody has a second sample yet. Whoever sees this test red
+again should suspect the ceiling before the page.
