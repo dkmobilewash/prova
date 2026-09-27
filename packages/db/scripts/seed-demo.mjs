@@ -65,6 +65,45 @@ import { describe } from "./connection-target.mjs";
 loadEnvFiles();
 
 const MARK = "[demo]";
+
+/*
+ * THE NAMES THAT GO ON CAMERA, and the reason they are a constant rather
+ * than four literals at their create sites.
+ *
+ * Every demo row carries `[demo]` in a visible field so `--undo` can find it
+ * again without touching anything a person typed. That tag is also the one
+ * thing nobody wants in a screen recording, so `--camera-names` takes it off
+ * the jobs and the GC contacts — the rows that appear in almost every frame.
+ *
+ * Which breaks undo, unless undo can recognise them WITHOUT the tag. It
+ * finds jobs by `name contains MARK` and then scopes ~40 child models by the
+ * resulting `jobIds`, so an untagged job does not merely survive: its entire
+ * tree survives with it, and the run reports a clean removal. Same for
+ * contacts. So undo matches the tag OR one of these exact names.
+ *
+ * The trade, stated rather than hidden: a job a PERSON creates with exactly
+ * one of these names, in the same company, would be removed by `--undo`.
+ * These are distinctive enough that the collision is remote, this only ever
+ * runs against the demo project, and undo prints every untagged row it
+ * matched before deleting anything. The alternative — leaving a renamed job
+ * unremovable forever — is worse and silent.
+ *
+ * `--camera-names` therefore strips the tag and nothing else. It does not
+ * take a new name, because a name this list does not know is a row undo can
+ * never find again.
+ */
+const DEMO_JOB_NAMES = {
+  riverside: "Riverside Medical Office Building",
+  northgate: "Northgate Apartments Phase 2",
+  lakeshore: "Lakeshore Retail Fit-Out",
+  cedar: "Cedar Park Elementary",
+};
+const DEMO_CONTACT_NAMES = {
+  brackett: "Brackett Construction",
+  halvorsen: "Halvorsen Builders",
+  pell: "Pell Development Group",
+};
+const CAMERA_NAMES = process.argv.includes("--camera-names");
 const UNDO = process.argv.includes("--undo");
 const FORCE = process.argv.includes("--force");
 const LIST_COMPANIES = process.argv.includes("--list-companies");
@@ -222,6 +261,69 @@ async function main() {
 
   if (UNDO) return undo(company.id);
 
+  // ------------------------------------------------ take the tag off camera
+  //
+  // Every demo row carries `[demo]` so undo can find it again. That tag is
+  // also the thing nobody wants in a screen recording, and doing it by hand
+  // is twelve trips through Job details and Contact details with a note
+  // beside the keyboard of what was renamed.
+  //
+  // STRIPS THE TAG AND NOTHING ELSE. It deliberately takes no new name: undo
+  // recognises these rows by the tag or by one of the exact names in
+  // DEMO_JOB_NAMES / DEMO_CONTACT_NAMES, so a name neither knows is a row
+  // nothing can ever remove — and because jobs scope ~40 child models by id,
+  // one stranded job strands its whole tree while undo still reports success.
+  //
+  // Idempotent, and reversible by `--camera-names --restore`.
+  if (CAMERA_NAMES) {
+    const restore = process.argv.includes("--restore");
+    const suffix = ` ${MARK}`;
+    let changed = 0;
+    for (const [model, known] of [
+      ["job", DEMO_JOB_NAMES],
+      ["contact", DEMO_CONTACT_NAMES],
+    ]) {
+      const rows = await prisma[model].findMany({
+        where: {
+          companyId: company.id,
+          OR: [{ name: { contains: MARK } }, { name: { in: Object.values(known) } }],
+        },
+        select: { id: true, name: true },
+      });
+      for (const r of rows) {
+        const to = restore
+          ? r.name.includes(MARK)
+            ? r.name
+            : `${r.name}${suffix}`
+          : r.name.replace(suffix, "");
+        if (to === r.name) continue;
+        // Never invent a name undo cannot find again. A tagged row whose
+        // stripped form is not in the known list would become unremovable,
+        // so it is refused rather than renamed.
+        if (!restore && !Object.values(known).includes(to)) {
+          console.error(
+            `\nseed: REFUSING — stripping the tag from ${model} "${r.name}" would leave\n` +
+              `seed: "${to}", which is not in the known list, so --undo could never find it\n` +
+              "seed: again. Add it to the constant at the top of this file first.\n" +
+              "seed: nothing has been renamed.",
+          );
+          process.exit(1);
+        }
+        await prisma[model].update({ where: { id: r.id }, data: { name: to } });
+        console.log(`seed: ${model.padEnd(8)} "${r.name}"  ->  "${to}"`);
+        changed += 1;
+      }
+    }
+    console.log(
+      changed
+        ? `\nseed: ${changed} name(s) ${restore ? "restored" : "cleaned for camera"}. ` +
+            "--undo still finds every one of them.\n" +
+            "seed: nothing else was touched — vendors, equipment, catalog and crew keep their tag."
+        : "\nseed: nothing to change; the names are already how you asked for them.",
+    );
+    return;
+  }
+
   // ------------------------------------------------- refuse a second seed
   //
   // Run twice against the same company, this script used to duplicate the
@@ -284,7 +386,7 @@ async function main() {
   const gc = await prisma.contact.create({
     data: {
       companyId: company.id,
-      name: `Brackett Construction ${MARK}`,
+      name: `${DEMO_CONTACT_NAMES.brackett} ${MARK}`,
       email: "pm@brackettconstruction.example",
       phone: "(503) 555-0142",
       defaultRetainagePercent: "5",
@@ -300,7 +402,7 @@ async function main() {
   const gc2 = await prisma.contact.create({
     data: {
       companyId: company.id,
-      name: `Halvorsen Builders ${MARK}`,
+      name: `${DEMO_CONTACT_NAMES.halvorsen} ${MARK}`,
       email: "office@halvorsenbuilders.example",
       phone: "(503) 555-0188",
       defaultRetainagePercent: "10",
@@ -319,7 +421,7 @@ async function main() {
   const gc3 = await prisma.contact.create({
     data: {
       companyId: company.id,
-      name: `Pell Development Group ${MARK}`,
+      name: `${DEMO_CONTACT_NAMES.pell} ${MARK}`,
       email: "preconstruction@pelldevelopment.example",
       phone: "(503) 555-0119",
       status: "PROSPECT",
@@ -370,7 +472,7 @@ async function main() {
     data: {
       companyId: company.id,
       contactId: gc.id,
-      name: `Riverside Medical Office Building ${MARK}`,
+      name: `${DEMO_JOB_NAMES.riverside} ${MARK}`,
       scope: "Metal framing, drywall and ACT ceilings, levels 1–3.",
       status: "IN_PROGRESS",
       startDate: day(-52),
@@ -393,7 +495,7 @@ async function main() {
     data: {
       companyId: company.id,
       contactId: gc2.id,
-      name: `Northgate Apartments Phase 2 ${MARK}`,
+      name: `${DEMO_JOB_NAMES.northgate} ${MARK}`,
       scope: "Load-bearing metal stud framing and drywall, 48 units.",
       status: "CONTRACTED",
       startDate: day(21),
@@ -405,7 +507,7 @@ async function main() {
     data: {
       companyId: company.id,
       contactId: gc.id,
-      name: `Lakeshore Retail Fit-Out ${MARK}`,
+      name: `${DEMO_JOB_NAMES.lakeshore} ${MARK}`,
       scope: "Tenant improvement — partitions, soffits, level 5 finish.",
       status: "ESTIMATE",
       retainagePercent: "5",
@@ -479,7 +581,7 @@ async function main() {
     data: {
       companyId: company.id,
       contactId: gc2.id,
-      name: `Cedar Park Elementary ${MARK}`,
+      name: `${DEMO_JOB_NAMES.cedar} ${MARK}`,
       scope: "Classroom wing — framing, drywall, ceilings. Substantially complete.",
       status: "COMPLETE",
       startDate: day(-240),
@@ -2318,13 +2420,43 @@ async function main() {
   return { company, user, gc, gc2, gc3, riverside, northgate, lakeshore, riversideLines, oregonPrior, oregonCurrent };
 }
 
+/*
+ * Say out loud which rows were matched by NAME rather than by the tag.
+ *
+ * A row without the tag is the one case where undo is acting on something it
+ * cannot prove this script wrote — a person could have typed that name. It is
+ * still the right thing to delete (see DEMO_JOB_NAMES), but it must never
+ * happen quietly: the log is the only record of what a run touched, and
+ * "removed 4 jobs" reads identically whether or not one of them was a
+ * person's own.
+ */
+function announceUntagged(label, rows) {
+  const untagged = rows.filter((r) => !r.name.includes(MARK));
+  if (!untagged.length) return;
+  console.log(
+    `seed: ${untagged.length} ${label}(s) matched by NAME, not by the ${MARK} tag ` +
+      `— presumed renamed by --camera-names:`,
+  );
+  for (const r of untagged) console.log(`seed:   "${r.name}"`);
+}
+
 async function undo(companyId) {
   // Ordered children-first. Only rows this script tagged.
+  //
+  // TAGGED **OR** KNOWN-BY-NAME. `--camera-names` takes the tag off these
+  // for a screen recording, and a job matched by neither would not merely
+  // survive — every one of the ~40 child models below is scoped by the
+  // `jobIds` this query returns, so its whole tree would survive too and the
+  // run would still report a clean removal. See DEMO_JOB_NAMES at the top.
   const jobs = await prisma.job.findMany({
-    where: { companyId, name: { contains: MARK } },
-    select: { id: true },
+    where: {
+      companyId,
+      OR: [{ name: { contains: MARK } }, { name: { in: Object.values(DEMO_JOB_NAMES) } }],
+    },
+    select: { id: true, name: true },
   });
   const jobIds = jobs.map((j) => j.id);
+  announceUntagged("job", jobs);
 
   // Children of a demo CONTACT are scoped by the contact, not by their own
   // tag — the same way children of a demo JOB are scoped by jobIds above.
@@ -2332,11 +2464,16 @@ async function undo(companyId) {
   // through a preview hangs off a demo contact and is untagged; scoped by
   // tag it would survive, and then contact.deleteMany would fail on the
   // foreign key and leave the whole demo dataset half-removed.
+  // Tagged OR known by name, for the same reason as the jobs above.
   const contacts = await prisma.contact.findMany({
-    where: { companyId, name: { contains: MARK } },
-    select: { id: true },
+    where: {
+      companyId,
+      OR: [{ name: { contains: MARK } }, { name: { in: Object.values(DEMO_CONTACT_NAMES) } }],
+    },
+    select: { id: true, name: true },
   });
   const contactIds = contacts.map((c) => c.id);
+  announceUntagged("contact", contacts);
 
   // Same rule again for the union-compliance set: the LOCAL carries the tag
   // and everything under it is scoped by its id, so a craft classification

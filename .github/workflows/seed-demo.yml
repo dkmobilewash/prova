@@ -81,6 +81,8 @@ on:
           - seed
           - undo
           - list-companies
+          - camera-names
+          - restore-names
           - list-scratch
           - delete-scratch
       company_id:
@@ -178,6 +180,8 @@ jobs:
             seed)           node scripts/seed-demo.mjs ;;
             undo)           node scripts/seed-demo.mjs --undo ;;
             list-companies) node scripts/seed-demo.mjs --list-companies ;;
+            camera-names)   node scripts/seed-demo.mjs --camera-names ;;
+            restore-names)  node scripts/seed-demo.mjs --camera-names --restore ;;
             list-scratch)   node scripts/clean-scratch-data.mjs ;;
             delete-scratch) node scripts/clean-scratch-data.mjs --delete ;;
             *)
