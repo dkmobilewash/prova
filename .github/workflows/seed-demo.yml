@@ -12,6 +12,11 @@
 #
 # THE ORDER MATTERS, and the scripts enforce it rather than trusting you:
 #
+#   0. list-companies  name every company with its id, job count and how
+#                      many of those jobs are [demo] rows. Changes nothing,
+#                      and it is the only way to learn a company id — no
+#                      page in the app renders one, and everything else here
+#                      silently scopes to the OLDEST company.
 #   1. list-scratch    see what hand-entered rows are there. Changes nothing.
 #   2. delete-scratch  remove them. Refuses while a [demo] dataset exists,
 #                      because a safety incident carries an employee name,
@@ -27,6 +32,14 @@
 # SIGN IN TO A PREVIEW ONCE BEFORE THE FIRST SEED. The scripts are scoped to
 # ONE company — the oldest, or `company_id` — and a database with no company
 # has nothing to scope to. They stop and say so rather than inventing one.
+#
+# AND THE OLDEST COMPANY IS PROBABLY NOT YOURS. A preview signs you in
+# against the DEVELOPMENT Clerk instance and talks to this database, so an
+# address with no row here falls through to `requireCompanyContext`'s create
+# branch and gets a brand new empty company. Seeding then fills the oldest
+# one, which is somebody else's, and your own screens stay empty — which
+# reads exactly like a broken app. Run `list-companies` FIRST and pass your
+# own id as `company_id`.
 #
 # WHY YOU TYPE THE HOST RATHER THAN "demo"
 #
@@ -67,10 +80,11 @@ on:
         options:
           - seed
           - undo
+          - list-companies
           - list-scratch
           - delete-scratch
       company_id:
-        description: 'Optional: company id to scope to. Blank = the oldest company.'
+        description: 'Optional: company id to scope to. Blank = the oldest company. Run list-companies to see the ids.'
         required: false
 
 concurrency:
@@ -163,6 +177,7 @@ jobs:
           case "$OPERATION" in
             seed)           node scripts/seed-demo.mjs ;;
             undo)           node scripts/seed-demo.mjs --undo ;;
+            list-companies) node scripts/seed-demo.mjs --list-companies ;;
             list-scratch)   node scripts/clean-scratch-data.mjs ;;
             delete-scratch) node scripts/clean-scratch-data.mjs --delete ;;
             *)

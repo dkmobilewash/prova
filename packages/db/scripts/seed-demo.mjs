@@ -67,6 +67,7 @@ loadEnvFiles();
 const MARK = "[demo]";
 const UNDO = process.argv.includes("--undo");
 const FORCE = process.argv.includes("--force");
+const LIST_COMPANIES = process.argv.includes("--list-companies");
 
 const target = describe(process.env.DATABASE_URL);
 if (!target) {
@@ -156,6 +157,59 @@ const dirIssueInForceOn = (date) => {
 };
 
 async function main() {
+  // ------------------------------------------------- name the companies
+  //
+  // THIS LOG IS THE ONLY WINDOW INTO THIS DATABASE, and until this flag
+  // existed it could only ever name one company. Both this script and
+  // clean-scratch-data.mjs resolve the OLDEST company, and `SEED_COMPANY_ID`
+  // takes an id that NOTHING IN THE APP RENDERS — `company.id` appears in
+  // `apps/web` only inside `where` clauses, never in markup. So an operator
+  // who needed a company other than the oldest had no way to learn its id,
+  // from the app or from here.
+  //
+  // That is not hypothetical. On ep-patient-lake the demo set sits under
+  // "My Company" (the `requireCompanyContext` fallback name for a Clerk
+  // identity with no name on it), while a person signing in on a preview
+  // falls through to the create branch and gets `${name}'s Company` of their
+  // own, empty. Every list page then shows its empty state, which reads
+  // exactly like a broken app — CLAUDE.md's preview-company trap. The fix
+  // for it is to seed THEIR company, and that needs its id.
+  //
+  // Read-only by construction: `findMany` and `count`, no write of any kind,
+  // and it returns before `--undo` or the reseed guard is reached. It prints
+  // both a total job count and the [demo]-tagged subset, because "which
+  // company holds the demo data" and "which company has a person's own rows
+  // in it" are different questions and the answer to the second decides
+  // whether seeding is safe.
+  if (LIST_COMPANIES) {
+    const companies = await prisma.company.findMany({
+      orderBy: { createdAt: "asc" },
+      select: { id: true, name: true, createdAt: true },
+    });
+    if (!companies.length) {
+      console.log("\nseed: no company on this database at all. Sign in to the app once first.");
+      return;
+    }
+    console.log(`\nseed: ${companies.length} compan${companies.length === 1 ? "y" : "ies"}, oldest first —\n`);
+    for (const c of companies) {
+      const [jobs, demoJobs, users] = await Promise.all([
+        prisma.job.count({ where: { companyId: c.id } }),
+        prisma.job.count({ where: { companyId: c.id, name: { contains: MARK } } }),
+        prisma.user.count({ where: { companyId: c.id } }),
+      ]);
+      console.log(
+        `  ${c.id}  ${c.createdAt.toISOString().slice(0, 10)}  ` +
+          `job ${String(jobs).padStart(3)} (${demoJobs} demo)  user ${String(users).padStart(2)}  ` +
+          `"${c.name}"`,
+      );
+    }
+    console.log(
+      "\nseed: pass one of those ids as company_id to seed or undo that company.\n" +
+        "seed: nothing has been written.",
+    );
+    return;
+  }
+
   const company = process.env.SEED_COMPANY_ID
     ? await prisma.company.findUnique({ where: { id: process.env.SEED_COMPANY_ID } })
     : await prisma.company.findFirst({ orderBy: { createdAt: "asc" } });
