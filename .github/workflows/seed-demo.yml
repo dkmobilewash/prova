@@ -38,8 +38,8 @@
 # address with no row here falls through to `requireCompanyContext`'s create
 # branch and gets a brand new empty company. Seeding then fills the oldest
 # one, which is somebody else's, and your own screens stay empty — which
-# reads exactly like a broken app. Run `list-companies` FIRST and pass your
-# own id as `company_id`.
+# reads exactly like a broken app. The fix is to seed YOUR company: pass its
+# name as `company_name` (see below), or run `list-companies` and pass its id.
 #
 # WHY YOU TYPE THE HOST RATHER THAN "demo"
 #
@@ -54,6 +54,31 @@
 # An endpoint id is not a credential — CLAUDE.md names all three in the open,
 # and the rule there is to name the endpoint rather than say "the database".
 # Connection strings are the secret; hostnames are the whole point.
+#
+# WHICH COMPANY, AND WHY `company_name` EXISTS
+#
+# The seed used to take `company_id` or else the OLDEST company. Both are the
+# wrong answer for the case that actually comes up. Nothing in the app ever
+# shows a person their company id — not a screen, not the CSV export, which
+# leaves it out on purpose — so `company_id` asks for a value the operator
+# cannot obtain. And "the oldest company" is precisely NOT the one they want:
+# signing in to a preview with an address this database has never seen makes
+# `requireCompanyContext` create a brand new empty company called "<Your
+# Name>'s Company", which is the NEWEST row here.
+#
+# So give `company_name` instead — the name that is on the screen in front of
+# you. It matches case-insensitively on the whole name, never a substring, and
+# it REFUSES rather than guessing: no match prints every company there is, two
+# matches print both with their ids. "My Company" and "Cyrus's Company" are
+# auto-generated names, so two of them on one database is ordinary.
+#
+# Give ONE of `company_id` and `company_name`, never both. Both is refused
+# outright — the realistic way it happens is a name typed into a form that
+# still held an id from the last run, and letting either quietly win means a
+# stale value chooses the target while the log reads as though the other did.
+#
+# Not sure which company you want? The `list-companies` operation writes
+# nothing and prints what is on this database, ids included.
 #
 # REQUIRED SECRETS:
 #   DEMO_DATABASE_URL  the pooled Neon endpoint for the demo project
@@ -85,6 +110,13 @@ on:
           - delete-scratch
       company_id:
         description: 'Optional: company id to scope to. Blank = the oldest company. Run list-companies to see the ids.'
+        required: false
+      # `required: false` and NO `default:`. A `required: true` input with
+      # `default: ""` is contradictory and GitHub rejects the whole file for
+      # it silently — see the note on expect_host above. Blank here means
+      # "not given", which is the untouched historical behaviour.
+      company_name:
+        description: 'Optional: company NAME to scope to (exact, case-insensitive). Do not also set company_id.'
         required: false
 
 concurrency:
@@ -170,6 +202,7 @@ jobs:
           SEED_EXPECT_HOST: ${{ inputs.expect_host }}
           SCRATCH_EXPECT_HOST: ${{ inputs.expect_host }}
           SEED_COMPANY_ID: ${{ inputs.company_id }}
+          SEED_COMPANY_NAME: ${{ inputs.company_name }}
           OPERATION: ${{ inputs.operation }}
         run: |
           set -e
@@ -194,12 +227,28 @@ jobs:
         env:
           OPERATION: ${{ inputs.operation }}
           EXPECT_HOST: ${{ inputs.expect_host }}
+          COMPANY_ID: ${{ inputs.company_id }}
+          COMPANY_NAME: ${{ inputs.company_name }}
           STATUS: ${{ job.status }}
         run: |
           {
             echo "### $OPERATION — $STATUS"
             echo ""
             echo "Target asserted as \`$EXPECT_HOST\`."
+            echo ""
+            # Which company was ASKED for, echoed onto the run's own page.
+            # What was RESOLVED is in the Run step's log, prefixed `seed:`,
+            # and the two are deliberately not the same claim.
+            if [ -n "$COMPANY_ID" ] && [ -n "$COMPANY_NAME" ]; then
+              echo "Both \`company_id\` and \`company_name\` were given — that is refused."
+              echo "Clear one and run again."
+            elif [ -n "$COMPANY_ID" ]; then
+              echo "Company asked for by id \`$COMPANY_ID\`."
+            elif [ -n "$COMPANY_NAME" ]; then
+              echo "Company asked for by name \`$COMPANY_NAME\`."
+            else
+              echo "No company named — the oldest one, as always."
+            fi
             echo ""
             if [ "$STATUS" != "success" ]; then
               echo "Open the **Run** step above for the reason. A refusal there"

@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { loadEnvFiles } from "./load-env.mjs";
 import { describe } from "./connection-target.mjs";
+import { companyTargetRequest, resolveCompanyTarget } from "./company-target.mjs";
 
 /**
  * Builds a demonstrable company: a few jobs at genuinely different stages,
@@ -50,9 +51,20 @@ import { describe } from "./connection-target.mjs";
  *
  *   SEED_EXPECT_HOST=ep-icy-hat-afqau56u node scripts/seed-demo.mjs
  *
- * It is scoped to ONE company — the first one, or SEED_COMPANY_ID — and
- * every row it writes is tagged in a way `--undo` can find again, so a demo
- * dataset can be removed without touching anything a person entered.
+ * It is scoped to ONE company and every row it writes is tagged in a way
+ * `--undo` can find again, so a demo dataset can be removed without touching
+ * anything a person entered.
+ *
+ * WHICH company: SEED_COMPANY_ID, or SEED_COMPANY_NAME, or — with neither
+ * given — the oldest, which is what it has always done. The name exists
+ * because the id does not appear anywhere in the app, so it is the one input
+ * this script needs that nobody can look up; and because the company a person
+ * most often wants to seed is the empty one their first sign-in just created,
+ * which is the NEWEST rather than the oldest. A name that matches no company,
+ * or more than one, REFUSES and prints the candidates with their ids rather
+ * than picking; giving BOTH variables refuses too. See company-target.mjs for
+ * why each of those boundaries sits where it does. `--list-companies` prints
+ * what is there when a lookup refuses.
  *
  * IT REFUSES TO SEED A COMPANY THAT ALREADY HAS DEMO DATA. Run twice, it
  * used to duplicate the equipment and then die half-finished on the
@@ -156,6 +168,45 @@ const dirIssueInForceOn = (date) => {
   return answer;
 };
 
+/**
+ * WHICH COMPANY, and why that one.
+ *
+ * The decision itself is pure and lives in company-target.mjs, where it is
+ * tested without a database. This does only the fetching, and what it fetches
+ * depends on the question:
+ *
+ *   - an id is a `findUnique`, exactly as before;
+ *   - no input at all is the oldest company, exactly as before — the same
+ *     query and the same refusal message, byte for byte;
+ *   - a NAME reads every company's id and name (never more), because the
+ *     interesting answers are "none of them" and "two of them", and both need
+ *     the whole list to be printed. Matching in JS rather than in a
+ *     `mode: "insensitive"` filter keeps the rule in one readable place a test
+ *     can reach, instead of split between here and Postgres collation.
+ */
+async function resolveCompany() {
+  const request = companyTargetRequest(process.env);
+  const candidates =
+    request.by === "id"
+      ? [await prisma.company.findUnique({ where: { id: request.id } })]
+      : request.by === "name"
+        ? await prisma.company.findMany({
+            select: { id: true, name: true },
+            orderBy: { createdAt: "asc" },
+          })
+        : request.by === "oldest"
+          ? [await prisma.company.findFirst({ orderBy: { createdAt: "asc" } })]
+          : [];
+
+  const outcome = resolveCompanyTarget(request, candidates);
+  if (outcome.error) {
+    console.error(`\n${outcome.error.map((line) => `seed: ${line}`).join("\n")}`);
+    process.exit(1);
+  }
+  for (const line of outcome.lines) console.log(`seed: ${line}`);
+  return outcome.company;
+}
+
 async function main() {
   // ------------------------------------------------- name the companies
   //
@@ -204,19 +255,13 @@ async function main() {
       );
     }
     console.log(
-      "\nseed: pass one of those ids as company_id to seed or undo that company.\n" +
-        "seed: nothing has been written.",
+      "\nseed: to seed or undo one of these, pass its name as company_name — or its\n" +
+        "seed: id as company_id, but never both. Nothing has been written.",
     );
     return;
   }
 
-  const company = process.env.SEED_COMPANY_ID
-    ? await prisma.company.findUnique({ where: { id: process.env.SEED_COMPANY_ID } })
-    : await prisma.company.findFirst({ orderBy: { createdAt: "asc" } });
-  if (!company) {
-    console.error("seed: no company found. Sign in to the app once first.");
-    process.exit(1);
-  }
+  const company = await resolveCompany();
   const user = await prisma.user.findFirst({ where: { companyId: company.id } });
   console.log(`seed: company         ${company.name} (${company.id})`);
 
