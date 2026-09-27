@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
@@ -10,7 +10,6 @@ import {
   markContracted,
   recordExecutedSubcontract,
   retainageForm,
-  settleAction,
   startJob,
   submitLineItem,
 } from "../lib/journey";
@@ -220,6 +219,42 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     return Number(match![0].replace(/[$,]/g, ""));
   }
 
+  /**
+   * RUNS A SERVER ACTION AND WAITS FOR *ITS* POST, THEN FOR A CONSEQUENCE ON
+   * SCREEN. Both halves are scars from this file's own CI runs.
+   *
+   * `settleAction` in lib/journey.ts waits for `response.request().method()
+   * === "POST"` — the FIRST post of any kind. A signed-in page is not quiet:
+   * Clerk's client talks to its own FAPI host over POST, so that wait can be
+   * satisfied by a request that has nothing to do with the action, and the
+   * `page.reload()` after it then navigates out from under the write it was
+   * about to check. On the third CI run of this file that is what beat 4
+   * looked like from the outside: `settleAction` returned, the reload
+   * happened, and the contract total "moved by $0.00" — the same code having
+   * passed twice before it with the figure exactly right. So the POST is
+   * filtered to THIS ORIGIN, which is where a Next Server Action posts.
+   *
+   * And a filtered POST is still only "the server answered". The second
+   * argument is the thing on screen that cannot be there until the write
+   * landed, which is what the repo's own discipline asks for — assert the
+   * accepted state, not the request. Given both, a flake has to beat two
+   * independent checks.
+   */
+  async function settleOnThisOrigin(what: string, run: () => Promise<unknown>, landed?: Locator): Promise<void> {
+    const origin = new URL(page.url()).origin;
+    const posted = page.waitForResponse(
+      (response) => response.request().method() === "POST" && response.url().startsWith(origin),
+    );
+    await run();
+    await posted;
+    if (landed) {
+      await expect(
+        landed,
+        `${what}: the action's POST came back and nothing on screen said it had landed`,
+      ).toBeVisible({ timeout: 20_000 });
+    }
+  }
+
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext();
     page = await context.newPage();
@@ -317,7 +352,7 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     await expect(page.locator("[data-retainage-empty]")).toHaveCount(1);
 
     const form = retainageForm(page);
-    await settleAction(page, async () => {
+    await settleOnThisOrigin("saving the retainage percentage", async () => {
       await form.locator('input[name="retainagePercent"]').fill(String(RETAINAGE_PERCENT));
       await form.getByRole("button", { name: "Save" }).click();
     });
@@ -340,11 +375,17 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     const costForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Log cost" }) });
     await expect(costForm, "one line item, one cost form").toHaveCount(1);
 
-    await settleAction(page, async () => {
-      await costForm.locator('input[name="description"]').fill("ZZ-E2E Shoot — board delivery");
-      await costForm.locator('input[name="amount"]').fill(String(COST_LOGGED));
-      await costForm.getByRole("button", { name: "Log cost" }).click();
-    });
+    await settleOnThisOrigin(
+      "logging a cost against the base line",
+      async () => {
+        await costForm.locator('input[name="description"]').fill("ZZ-E2E Shoot — board delivery");
+        await costForm.locator('input[name="amount"]').fill(String(COST_LOGGED));
+        await costForm.getByRole("button", { name: "Log cost" }).click();
+      },
+      // The cost row the estimate tab renders under its line. It cannot be on
+      // the page before the write.
+      page.getByText("ZZ-E2E Shoot — board delivery"),
+    );
 
     await page.reload();
     await expectHealthy(page, "estimate tab after logging a cost", { monitor });
@@ -375,11 +416,15 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     // three screens a person uses — which tests more of the product, and is
     // the reason the CO number below is #1 and not the sheet's #2.
     const draftForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Start draft" }) });
-    await settleAction(page, async () => {
-      await draftForm.locator('input[name="title"]').fill("Upgrade to Type X at mechanical rooms");
-      await draftForm.locator('input[name="description"]').fill("Architect's RFI response — two-hour rated wall not on bid drawings.");
-      await draftForm.getByRole("button", { name: "Start draft" }).click();
-    });
+    await settleOnThisOrigin(
+      "starting the change-order draft",
+      async () => {
+        await draftForm.locator('input[name="title"]').fill("Upgrade to Type X at mechanical rooms");
+        await draftForm.locator('input[name="description"]').fill("Architect's RFI response — two-hour rated wall not on bid drawings.");
+        await draftForm.getByRole("button", { name: "Start draft" }).click();
+      },
+      page.getByText(/CO #\d+: Upgrade to Type X at mechanical rooms/),
+    );
     await page.reload();
     await expectHealthy(page, "estimate tab with a change-order draft", { monitor });
 
@@ -397,14 +442,20 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     const addForms = page.locator("form").filter({ has: page.getByRole("button", { name: "Add to CO" }) });
     await expect(addForms, "one draft change order, one open proposal form").toHaveCount(1);
     const addForm = addForms.first();
-    await settleAction(page, async () => {
+    await settleOnThisOrigin(
+      "adding the priced scope to the draft",
+      async () => {
       await addForm.locator('input[name="itemDescription"]').fill(CO_LINE.description);
       await addForm.locator('input[name="unit"]').fill(CO_LINE.unit);
       await addForm.locator('input[name="quantity"]').fill(CO_LINE.quantity);
       await addForm.locator('input[name="unitPrice"]').fill(CO_LINE.unitPrice);
       await addForm.locator('input[name="budgetedUnitCost"]').fill(CO_LINE.budgetedUnitCost);
       await addForm.getByRole("button", { name: "Add to CO" }).click();
-    });
+      },
+      // The proposal row on the card. Nothing renders it until the proposal
+      // exists, and "Send to GC" stays disabled while there are none.
+      page.getByText(CO_LINE.description).first(),
+    );
     await page.reload();
     await expectHealthy(page, "estimate tab with a priced proposal on the draft", { monitor });
 
@@ -417,9 +468,15 @@ test.describe("the launch-video run sheet, beat by beat", () => {
       "a drafted change order must not be in the contract value — beat 4 says so out loud",
     ).toBe(BASE_CONTRACT);
 
-    await settleAction(page, async () => {
-      await page.getByRole("button", { name: "Send to GC" }).first().click();
-    });
+    await settleOnThisOrigin(
+      "sending the change order to the GC",
+      async () => {
+        await page.getByRole("button", { name: "Send to GC" }).first().click();
+      },
+      // The status chip the SUBMITTED band renders, and the Decision panel's
+      // own buttons — neither exists on a draft.
+      page.getByRole("button", { name: "Approve", exact: true }).first(),
+    );
     await page.reload();
     await expectHealthy(page, "estimate tab with the change order sent", { monitor });
 
@@ -431,9 +488,21 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     ).toBe(BASE_CONTRACT);
 
     // [press Approve]
-    await settleAction(page, async () => {
-      await page.getByRole("button", { name: "Approve", exact: true }).first().click();
-    });
+    //
+    // THE ONE PRESS THE WHOLE BEAT IS ABOUT, so it waits for the state
+    // change and not for a request. "Executed" is `STATUS_LABEL.APPROVED`
+    // (components/changeOrderStates.ts) and is the chip the card grows only
+    // once the approval has been written; the Decision panel that carried
+    // this very button is gone by then. Without this the reload below can
+    // race the write, and what that looks like is "the contract total moved
+    // by $0.00" — a sentence that reads like the product being broken.
+    await settleOnThisOrigin(
+      "approving the change order",
+      async () => {
+        await page.getByRole("button", { name: "Approve", exact: true }).first().click();
+      },
+      page.getByText("Executed", { exact: true }).first(),
+    );
     await page.reload();
     await expectHealthy(page, "estimate tab after approving the change order", { monitor });
 
@@ -530,9 +599,19 @@ test.describe("the launch-video run sheet, beat by beat", () => {
       "the form's own total must agree with 62% of the base line plus 48% of the change-order line",
     ).toBeVisible();
 
-    await settleAction(page, async () => {
-      await page.getByRole("button", { name: "Submit pay application" }).click();
-    });
+    await settleOnThisOrigin(
+      "submitting the pay application",
+      async () => {
+        await page.getByRole("button", { name: "Submit pay application" }).click();
+      },
+      // THE NUMBERED APPLICATION, not the form closing. The form's own
+      // submit button and the opener that replaces it carry THE SAME LABEL,
+      // so "the opener came back" is satisfied by the button that was
+      // already on screen — the needle-already-on-the-page trap, one
+      // refactor deep. A link reading "Application #n" cannot exist until
+      // the invoice does.
+      page.getByRole("link", { name: /^Application #\d+$/ }),
+    );
     await page.reload();
     await expectHealthy(page, "billing tab after submitting the pay application", { monitor });
 

@@ -60,6 +60,26 @@ neither a pass nor a fail. The cross-check is now the LAST test in the file,
 because it is the one most likely to be about a locator and the three after it
 were read-only and depended on nothing in it.
 
+**And a fifth thing, from the third CI run: waiting for "a POST" is not
+waiting for the action.** `settleAction` in `apps/web/e2e/lib/journey.ts`
+resolves on the first request whose method is POST, and a signed-in page is
+not quiet — Clerk's client posts to its own host. On run three that wait
+returned early, the `page.reload()` after it raced the write, and beat 4
+reported "the contract total moved by $0.00 and the proposal was $2,000.00"
+— the same code having passed twice before with the figure exactly right. A
+sentence like that reads as the product being broken, which is the expensive
+part.
+
+This file now waits for a POST **to its own origin** and then for a
+CONSEQUENCE on screen that cannot be there until the write landed: the
+"Executed" chip for the approval, a numbered "Application #n" link for the
+pay application, the proposal row for the proposal. The pay-application one
+needed care for exactly the usual reason — the form's submit button and the
+opener that replaces it carry the same label, so "the button came back" is
+satisfied by the button that was already there. The shared helper is in
+Diego's lane and is left alone; the fix is local and the reasoning is in the
+file.
+
 **What it deliberately does not prove, said in the file rather than left to be
 discovered.** The shoot runs on the demo dataset and this suite has none of
 it, so every beat is walked against a job the spec builds; that proves the
