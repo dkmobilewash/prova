@@ -17,6 +17,13 @@ is dead, which is the whole distance between "built" and "in the field".
   answer.
 - `eas.json` has development / preview / production profiles, each naming
   an EAS environment, and production auto-increments its build number.
+  That takes TWO settings, not one: `autoIncrement` on the profile says to
+  bump a number, and `cli.appVersionSource: "remote"` says which number —
+  one kept in the EAS account rather than in `app.json`. With only the
+  first, the CLI stops and asks; a non-interactive run fails there instead.
+  Remote is deliberate: `local` makes every build rewrite `app.json`, a
+  tracked file in a worktree two lanes share. `store-readiness.test.ts`
+  pins both halves, having pinned only the first until 2026-09-26.
 - `EXPO_ACCESS_TOKEN` is set in Vercel (production and preview) — that is
   the SERVER's key for sending pushes, and is unrelated to the credentials
   below.
@@ -40,13 +47,33 @@ values have to live in EAS. `EXPO_PUBLIC_API_URL` is already in
 belong in the repo:
 
 ```
-npx eas env:create --environment production \
+npx eas env:set --environment production \
   --name EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY --value pk_live_...
-npx eas env:create --environment preview \
+npx eas env:set --environment preview \
   --name EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY --value pk_test_...
-npx eas env:create --environment preview \
+npx eas env:set --environment preview \
   --name EXPO_PUBLIC_API_URL --value https://<the deployment to test>
 ```
+
+`env:set`, not `env:create` — the CLI answers the old name with *"This
+command is deprecated. Use eas env:set instead"* (eas-cli 24.7.0).
+
+**It then asks for a visibility: Plain text, Sensitive or Secret. Choose
+Plain text**, and the reason is worth more than the answer. Every
+`EXPO_PUBLIC_` value is inlined into the JavaScript bundle at build time —
+it ships on every phone and can be read out of the binary, so none of the
+three options makes it a secret and marking it Secret claims a protection
+that does not exist. What Secret *does* do is make the value write-only,
+so it can never be read back — and reading it back is the one check worth
+having here:
+
+```
+npx eas env:list --environment production   # confirm pk_live_, not pk_test_
+```
+
+A crossed pair does not error. It signs people in against one company's
+users and reads another's data, which is a thing you can only catch by
+looking.
 
 **Match the pair.** `pk_live_` goes with `https://app.cstream.ai`;
 `pk_test_` goes with a preview or a local server. Crossed, you get a
@@ -93,6 +120,23 @@ npx eas submit --platform ios --profile production
 
 It asks for the Apple ID, the team, and the App Store Connect app id, and
 remembers them.
+
+**Wait for step 3 to report `finished` before running this.** With no
+finished production build, submit cannot pick one and instead opens a menu
+— *"What would you like to submit?"* — offering to select a build from
+EAS. The list it shows is every iOS build on the account, and on a first
+release those are all `development` profile, `internal` distribution.
+Apple rejects one of those at upload: TestFlight takes `store`
+distribution only, which is a different certificate and profile. So the
+menu reads like a choice and is really a signal that the build step has
+not happened yet. Confirm which kind you have before submitting:
+
+```
+npx eas build:list --platform ios --limit 1
+#   Status        finished
+#   Profile       production
+#   Distribution  store        <- the line that matters
+```
 
 ## 5. TestFlight
 
