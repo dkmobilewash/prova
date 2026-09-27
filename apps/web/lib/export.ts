@@ -255,7 +255,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     note: "Your own catalog of standard line items and their default rates.",
     columns: [
       "id", "description", "unit", "tradeScope", "defaultUnitPrice",
-      "defaultBudgetedUnitCost", "defaultLaborHours", "productionRate", "craftClassificationId",
+      "defaultBudgetedUnitCost", "defaultLaborHours", "productionRate", "costCategory", "craftClassificationId",
       "createdAt", "updatedAt",
     ],
     scope: byCompany,
@@ -317,7 +317,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     note: "What each wall type is built from, and how each part is counted.",
     columns: [
       "id", "wallTypeId", "description", "unit", "basis", "factor", "wastePercent", "roundUp",
-      "catalogEntryId", "productionRate", "craftClassificationId", "sortOrder", "createdAt", "updatedAt",
+      "catalogEntryId", "productionRate", "costCategory", "craftClassificationId", "sortOrder", "createdAt", "updatedAt",
     ],
     scope: (companyId: string) => ({ wallType: { companyId } }),
   },

@@ -33,6 +33,38 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const KEY = "prova.handover";
 
+/**
+ * One set of hours this handover has already put in the queue.
+ *
+ * WHY THE RECEIPT LIVES BESIDE THE FLAG (issue #482). The hours were held in
+ * React state, so force-quitting the app — which this module exists to survive,
+ * and which somebody wanting out of this screen will do — lost every row from
+ * the screen while the QUEUE still held them. `Sign and finish` is disabled
+ * until at least one row exists, so the only thing the screen then offered was
+ * entering the hours again: a SECOND `time:create` with a fresh
+ * `clientOperationId`, and a duplicate day's pay on the one screen whose whole
+ * purpose is that the hours are right.
+ *
+ * READING THE PENDING QUEUE BACK IS NOT ENOUGH, and that is worth writing down
+ * because it is the obvious fix and the issue proposed it. `useQueueDrain`
+ * flushes every 20 seconds while the app is foregrounded, with no exclusion for
+ * a handover — so on a phone WITH signal the op is gone from the queue within
+ * seconds of being written, and a relaunch would find nothing there. The
+ * offline case would be fixed and the online case would not, which is the worse
+ * half to leave: a basement is where the queue is visibly doing its job, and a
+ * yard with signal is where it looks like nothing happened.
+ *
+ * `clientOperationId` is carried so a reader can tell whether a row is still
+ * waiting to go up, and so nothing here can be mistaken for a second entry.
+ */
+export type HandoverEntry = {
+  clientOperationId: string;
+  hours: string;
+  /** When the phone accepted it, for ordering. Not what the entry is FOR — the
+   * TimeEntry carries its own entered date. */
+  at: string;
+};
+
 export type Handover = {
   crewMemberId: string;
   /** Shown on every screen of the handover, so nobody logs eight hours
@@ -43,6 +75,9 @@ export type Handover = {
   startedAt: string;
   /** Four digits, or absent. See the note above about what this is. */
   pin?: string;
+  /** Absent on a handover opened before #482, and on one where nothing has
+   * been entered yet. Read it as `?? []`. */
+  entries?: HandoverEntry[];
 };
 
 export async function getHandover(): Promise<Handover | null> {
@@ -59,10 +94,54 @@ export async function getHandover(): Promise<Handover | null> {
       jobName: typeof parsed.jobName === "string" && parsed.jobName ? parsed.jobName : "this job",
       startedAt: typeof parsed.startedAt === "string" ? parsed.startedAt : new Date().toISOString(),
       pin: typeof parsed.pin === "string" && /^\d{4}$/.test(parsed.pin) ? parsed.pin : undefined,
+      // CARRIED THROUGH, and this line is the fix as much as the writer below
+      // is: this function rebuilds the record field by field, so a new field
+      // that is not named here is silently dropped on every read — the receipt
+      // would be written, never come back, and #482 would look fixed.
+      //
+      // A malformed row is DROPPED rather than failing the whole parse. Losing
+      // one receipt line costs a re-entry; failing the parse returns null,
+      // which `app/_layout.tsx` reads as "no handover open" and would unlock
+      // the foreman's whole app to whoever is holding the phone.
+      entries: Array.isArray(parsed.entries) ? parsed.entries.filter(isEntry) : undefined,
     };
   } catch {
     return null;
   }
+}
+
+function isEntry(value: unknown): value is HandoverEntry {
+  if (!value || typeof value !== "object") return false;
+  const e = value as Partial<HandoverEntry>;
+  return (
+    typeof e.clientOperationId === "string" &&
+    e.clientOperationId.length > 0 &&
+    typeof e.hours === "string" &&
+    e.hours.length > 0 &&
+    typeof e.at === "string"
+  );
+}
+
+/**
+ * Records that this handover has put one set of hours in the queue, and
+ * returns the whole list so a caller renders what is on disk rather than what
+ * it hoped it wrote.
+ *
+ * DEDUPED ON `clientOperationId`, which costs one comparison and means a
+ * double-tap or a retried write cannot make one entry look like two — on a
+ * screen where two rows reading "8 hours" is the exact thing being prevented.
+ *
+ * Returns `[]` if the handover ended underneath it. That is not an error worth
+ * surfacing: the phone is back with the foreman and this screen is gone.
+ */
+export async function recordHandoverEntry(entry: HandoverEntry): Promise<HandoverEntry[]> {
+  const open = await getHandover();
+  if (!open) return [];
+  const existing = open.entries ?? [];
+  if (existing.some((e) => e.clientOperationId === entry.clientOperationId)) return existing;
+  const entries = [...existing, entry];
+  await AsyncStorage.setItem(KEY, JSON.stringify({ ...open, entries }));
+  return entries;
 }
 
 export async function startHandover(handover: Omit<Handover, "startedAt">): Promise<void> {

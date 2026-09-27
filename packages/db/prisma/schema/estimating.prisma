@@ -251,6 +251,26 @@ model LineItemCatalogEntry {
   /// fact about the file, not something any code can derive. Issue #514.
   productionRate          Decimal?             @db.Decimal(10, 4)
 
+  /// The kind of cost this item IS, carried onto every line created from it.
+  ///
+  /// WHY THE TEMPLATE CARRIES IT (#513). `JobLineItem.costCategory` is what the
+  /// bid recap marks up by, and an uncategorised line is deliberately marked up
+  /// at NOTHING — the alternative is a bid growing a number nobody chose. But
+  /// not one of the four automated line-creating paths set it, and none of the
+  /// three templates carried one to pass through, so every line the product
+  /// generated landed uncoded: the more of the automation you used, the less of
+  /// your bid got marked up.
+  ///
+  /// A catalog entry is the right place for it. "5/8\" Type X board" is material
+  /// every time it is used, and saying so once is the whole argument for a price
+  /// book.
+  ///
+  /// Nullable with NO BACKFILL, for the same reason `craftClassificationId`
+  /// beside it has none: inferring "material" from a description string is
+  /// exactly the guess this column replaces. An entry nobody has coded reads as
+  /// uncoded, and the recap says so.
+  costCategory            CostCategory?
+
   craftClassificationId   String?
   craftClassification     CraftClassification? @relation(fields: [craftClassificationId], references: [id])
 

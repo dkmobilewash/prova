@@ -77,6 +77,25 @@ model WallTypeComponent {
   /// Round the total up to a whole unit — sheets and studs are bought whole.
   roundUp      Boolean @default(false)
 
+  /// The kind of cost this component IS, carried onto the line the wall
+  /// schedule derives from it (#513).
+  ///
+  /// A WALL TYPE IS THE ONE PLACE THIS IS KNOWABLE UP FRONT, which is why the
+  /// column is here and not only on the catalog entry. Board, studs and track
+  /// are material; the hang-and-finish component is labor. That is a property
+  /// of the assembly, decided once when the wall type is built, and every run
+  /// of W2 on every job inherits it.
+  ///
+  /// Takes precedence over the linked catalog entry's own category when both
+  /// are set, for the same reason `craftClassificationId` does below: the
+  /// component is the more specific statement. A component with none falls
+  /// back to its catalog entry, and a line with neither reads as uncoded and is
+  /// marked up at nothing — never at a default.
+  ///
+  /// Nullable, no backfill. Inferring "material" from the word "board" is the
+  /// guess this column exists to replace.
+  costCategory CostCategory?
+
   /// Where the line's price comes from when it is created. A template link,
   /// like JobLineItem.sourceCatalogEntryId: re-pricing the catalog never
   /// reaches back into a line already on an estimate.

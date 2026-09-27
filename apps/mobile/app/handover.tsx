@@ -10,7 +10,14 @@ import { Sheet } from "@/components/Sheet";
 import { SignaturePad } from "@/components/SignaturePad";
 import { type Palette, leadingFor, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
-import { endHandover, getHandover, pinAccepted, type Handover } from "@/lib/handover";
+import {
+  endHandover,
+  getHandover,
+  pinAccepted,
+  recordHandoverEntry,
+  type Handover,
+  type HandoverEntry,
+} from "@/lib/handover";
 import { useT } from "@/lib/i18n";
 import { uuid } from "@/lib/id";
 import { localToday } from "@/lib/local-today";
@@ -40,7 +47,17 @@ export default function HandoverScreen() {
   const [handover, setHandover] = useState<Handover | null>(null);
   const [hours, setHours] = useState("");
   const [note, setNote] = useState("");
-  const [saved, setSaved] = useState<{ hours: string; at: string }[]>([]);
+  /**
+   * What this handover has already queued — READ BACK FROM DISK on mount, not
+   * accumulated in memory (issue #482).
+   *
+   * It was component state, so force-quitting the app emptied it while the
+   * queue still held the hours. `Sign and finish` is disabled until this has a
+   * row, so the screen's only offer was entering the hours again — a second
+   * `time:create`, a duplicate day's pay, and no way for a crew member holding
+   * somebody else's phone to know the first one had landed.
+   */
+  const [saved, setSaved] = useState<HandoverEntry[]>([]);
   const [showSign, setShowSign] = useState(false);
   const [signaturePath, setSignaturePath] = useState<string | null>(null);
   const [showBack, setShowBack] = useState(false);
@@ -59,6 +76,9 @@ export default function HandoverScreen() {
         // arriving here without one means the foreman already took it back.
         if (!open) router.replace("/(tabs)");
         setHandover(open);
+        // The receipt travels with the handover, so a relaunch shows what was
+        // already put in rather than an empty screen and a dead button.
+        setSaved(open?.entries ?? []);
       })();
     }, []),
   );
@@ -75,10 +95,11 @@ export default function HandoverScreen() {
     // phone that is not theirs, and the old order cleared the hours and
     // then queued them — so a failed write left them with an empty box,
     // no row, and nothing said. See lib/save-queued.ts.
+    const clientOperationId = uuid();
     const saved = await saveQueued({
       type: "time:create",
       jobId: handover.jobId,
-      clientOperationId: uuid(),
+      clientOperationId,
       date: today,
       hours: entered,
       payType: "STRAIGHT",
@@ -94,7 +115,21 @@ export default function HandoverScreen() {
     setError(null);
     setHours("");
     setNote("");
-    setSaved((rows) => [...rows, { hours: entered, at: new Date().toISOString() }]);
+    // Recorded on disk, and the screen renders WHAT CAME BACK rather than what
+    // it hoped it wrote. `recordHandoverEntry` dedupes on the operation id, so
+    // a double-tap cannot show one entry as two.
+    //
+    // A failed receipt write does not lose the hours — they are already in the
+    // queue — so this falls back to showing the row for the rest of this
+    // session. The only thing lost is surviving another force-quit, which is
+    // strictly better than the empty screen this replaces.
+    const row: HandoverEntry = { clientOperationId, hours: entered, at: new Date().toISOString() };
+    try {
+      const rows = await recordHandoverEntry(row);
+      setSaved(rows.length > 0 ? rows : [row]);
+    } catch {
+      setSaved((rows) => [...rows, row]);
+    }
   };
 
   const signAndFinish = async () => {
@@ -176,8 +211,8 @@ export default function HandoverScreen() {
           <GroupedList>
             <View style={styles.saved}>
               <Text style={styles.savedTitle}>{t("handover.saved.title")}</Text>
-              {saved.map((row, index) => (
-                <Text key={`${row.at}-${index}`} style={styles.savedRow}>
+              {saved.map((row) => (
+                <Text key={row.clientOperationId} style={styles.savedRow}>
                   {t("handover.saved.row", { hours: row.hours, name: handover.name })}
                 </Text>
               ))}
