@@ -408,7 +408,7 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   // question, because the census grades routing and a refusal routes
   // nowhere. These two are what the box does NEXT, in the foreman's words.
   t("q-who-would-know", "who would know who was actually on Riverside last Tuesday?", "who_would_know", FIELD),
-  c("q-ask-teammate", "yes, ask Hector who was on Riverside last Tuesday", "ask_teammate", FIELD),
+  c("q-ask-who-would-know", "yes, ask Hector who was on Riverside last Tuesday", "ask_who_would_know", FIELD),
   // The clock-in model (#309) records an interval once it is CLOSED; a
   // running clock lives only in the phone's own storage. So "who is on the
   // clock" has no server row to read, and crew_schedule — who was PLANNED —

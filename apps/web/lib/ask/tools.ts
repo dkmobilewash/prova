@@ -481,7 +481,7 @@ export const TOOLS: ToolDefinition[] = [
     // the note on KNOWN_GAPS below. This is the one case, built properly.
     capability: "MANAGE_FIELD",
     description:
-      "For one job and one day, WHO THE RECORDS NAME as having something to do with that day — never who was there. Returns three things, each from its own row: who FILED that day's daily field report (they wrote it up, so they would know), who was on the CREW SCHEDULE for that day (planned, not attended), and who is ASSIGNED to the job (the roster, no date). Use it right after refusing a question about who actually showed up, so the refusal can say who to ask. It does NOT record attendance and nothing it returns means a person was on site; say each name with where it came from and never as having been there. `canBeEmailed` is false for a crew member with no login — they have no email here, so do not offer to message them. If it names nobody, nobody on the data can be asked: say so and offer nothing.",
+      "For one job and one day, WHO THE RECORDS NAME as having something to do with that day — never who was there. Returns five lists, each from its own row: who FILED that day's daily field report (they wrote it up, so they would know), who was on the CREW SCHEDULE for that day (planned, not attended), who LOGGED HOURS on the job that day (paperwork, not a register), who is ASSIGNED to the job (the roster, no date), and the GC's own PEOPLE on this job with their titles (a superintendent walks the site). Use it right after refusing a question about who actually showed up, so the refusal can say who to ask. It does NOT record attendance and nothing it returns means a person was on site; say each name with where it came from and never as having been there. `canBeEmailed` is false for a crew member with no login and for anyone with no email on file — say that plainly and do not offer to message them; `isYou` marks the asker. If it names nobody who can be emailed, say so and offer nothing.",
     input_schema: {
       type: "object",
       properties: {
@@ -990,7 +990,7 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
   },
   {
     topic: "who ACTUALLY showed up on a day, as opposed to who was planned",
-    why: "attendance is not recorded anywhere. crew_schedule holds who was PLANNED and TimeEntry holds hours somebody logged; neither is a register. A planned day with no hours means nobody logged it — never that the person was absent, which is a claim about a man rather than about paperwork. After refusing, who_would_know says who the rows name for that job and day — the report's filer, the schedule, the roster — which is who to ask; ask_teammate drafts them the message for the person to send.",
+    why: "attendance is not recorded anywhere. crew_schedule holds who was PLANNED and TimeEntry holds hours somebody logged; neither is a register. A planned day with no hours means nobody logged it — never that the person was absent, which is a claim about a man rather than about paperwork. After refusing, who_would_know says who the rows name for that job and day — the report's filer, the schedule, the hours, the roster, the GC's people — which is who to ask; ask_who_would_know drafts the message to one of them, for the person to send.",
   },
   /* THE NEXT STEP ABOVE IS ON ONE GAP, BY DECISION, NOT ON ALL OF THEM.
    *

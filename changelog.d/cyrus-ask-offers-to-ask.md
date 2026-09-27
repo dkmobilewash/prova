@@ -19,31 +19,45 @@ it addresses only the support inbox by construction.
 **What was added: two registry entries and one prompt rule.**
 
 - `who_would_know` (read tool, MANAGE_FIELD). For a job and a day it reads the
-  three rows that NAME somebody — who filed that day's daily field report,
-  who was on the crew schedule for that day, who is assigned to the job —
-  and returns each name with where it came from. The result carries
+  five rows that NAME somebody — who filed that day's daily field report,
+  who was on the crew schedule for that day, who logged hours on the job
+  that day, who is assigned to the job, and the GC's own people on the job
+  (`ContactPerson`, with titles; read only for an asker who could open the
+  contact page's People section, as `contact_lookup` gates it) — and
+  returns each name with where it came from. The result carries
   `attendanceIsRecorded: false` beside the names, marks the asker (so nobody
-  is offered an email to themselves), and lists a crew member with no login
-  as `canBeEmailed: false` rather than dropping them. A day that names
-  nobody comes back as `unavailable` in words, not an empty shape.
-- `ask_teammate` (command, T4, HANDOFF, MANAGE_JOBS). Takes the teammate's
-  name, the job, the day in the person's words and optionally their
-  question; the address comes off the `User` row, the day is parsed by
-  `dates.ts`, and the subject and body are COMPOSED IN CODE from the job,
-  the day and the person's words — there is no body field for the model to
-  write. The card opens the composer; the person presses Send there. A
-  crew member is refused with where their phone is, the asker's own account
-  is refused, a name matching nobody is refused, several is a chip row.
+  is offered an email to themselves), and lists anyone with no email as
+  `canBeEmailed: false` rather than dropping them.
+
+  **That last one is the demo's honest sentence, and it was found by the
+  seed, not designed.** On Riverside the man who would actually know is the
+  foreman, Hector Ramirez — a `CrewMember`, no login, and `CrewMember` HAS
+  NO EMAIL COLUMN; SMS is modelled and not wired. So the product cannot
+  message him, and the tool says so instead of quietly naming somebody
+  else. Who it CAN reach is the GC's superintendent, Marco Silva, off the
+  `ContactPerson` row — he walks the site, and he has an address.
+- `ask_who_would_know` (command, T4, HANDOFF, MANAGE_JOBS). Takes the name
+  as the tool returned it, the job, the day in the person's words and
+  optionally their question; the address comes off the `User` or
+  `ContactPerson` row, the day is parsed by `dates.ts`, and the subject and
+  body are COMPOSED IN CODE from the job, the day and the person's words —
+  there is no body field for the model to write. The card opens the
+  composer; the person presses Send there. A crew member is refused with
+  where their phone is and NEVER swapped for somebody with an address; a
+  GC person with no email is refused with the page to add one; the asker's
+  own account is refused; a name matching nobody is refused; several is a
+  chip row on `recipient` (`user:<id>` / `person:<id>`).
 - The prompt rule (`answer.ts`): refuse first, in one sentence; call
   `who_would_know`; name ONLY what it returns, with sources, never as having
-  been on site; ask whether to draft; call `ask_teammate` only on a yes; if
+  been on site; ask whether to draft; call `ask_who_would_know` only on a yes; if
   it names nobody, say so and offer nothing.
 
 **What a test proves** (`handlers.whoWouldKnow.test.ts`,
-`commands/askTeammate.test.ts`, plus the registry censuses that now
+`commands/askWhoWouldKnow.test.ts`, plus the registry censuses that now
 include both): every name traces to a row and every query carries
 `companyId`; the model cannot supply an address, subject or body; the crew
-member, the asker and the stranger are each refused in words; the payload
+member, the GC person with no address, the asker and the stranger are each
+refused in words, and the GC's people are not read for a FIELD asker; the payload
 is exactly what the composer loader reads. **What no test here can prove:**
 what the model SAYS. CI runs with `ANTHROPIC_API_KEY` forced empty, so the
 refusal-then-offer wording is checked only by a person asking a deployment

@@ -139,7 +139,7 @@ describe("who is offered what", () => {
       "add_punch_items",
       "log_time_entry",
       "send_email",
-      "ask_teammate",
+      "ask_who_would_know",
       "reschedule_job",
       "schedule_crew",
     ]);
@@ -157,7 +157,7 @@ describe("who is offered what", () => {
       "add_catalog_line",
       "raise_rfi",
       "send_email",
-      "ask_teammate",
+      "ask_who_would_know",
       "reschedule_job",
       "log_bid_invitation",
       "add_bid_pursuit",
@@ -241,12 +241,12 @@ describe("who is offered what", () => {
   });
 
   it("registers the outward sends as T4 and HANDOFF only — a tap never sends", () => {
-    // Two, since 2026-09-27: send_email to a contact, ask_teammate to a
+    // Two, since 2026-09-27: send_email to a contact, ask_who_would_know to a
     // person on the team. Both open the same composer and neither sends;
     // the person's press of Send there is the send. Anything added here
     // must be HANDOFF or commands.ts's "T5 has no member" stops being true.
     const outward = COMMANDS.filter((c) => c.tier === "T4_OUTWARD");
-    expect(outward.map((c) => c.name)).toEqual(["send_email", "ask_teammate"]);
+    expect(outward.map((c) => c.name)).toEqual(["send_email", "ask_who_would_know"]);
     for (const command of outward) {
       expect(command.mode, command.name).toBe("HANDOFF");
       expect(command.execute, command.name).toBeUndefined();

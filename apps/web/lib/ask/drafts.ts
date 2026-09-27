@@ -75,7 +75,7 @@ async function loadDraftRow(
   viewer: Viewer,
   proposalId: string | undefined,
   /** The command(s) this page owns. A list because two commands can share
-   * one form: `send_email` and `ask_teammate` both prefill the composer. */
+   * one form: `send_email` and `ask_who_would_know` both prefill the composer. */
   command: CommandName | readonly CommandName[],
 ): Promise<DraftLookup<Record<string, unknown>>> {
   const owned: readonly CommandName[] = typeof command === "string" ? [command] : command;
@@ -147,7 +147,7 @@ export async function loadRfiDraft(viewer: Viewer, proposalId: string | undefine
 /** The two commands whose card opens the composer. Both write the same
  * payload keys (`toAddress`, `toName`, `jobId`, `subject`, `body`), so one
  * loader reads both; `commands/messages.ts` holds the pair. */
-export const COMPOSER_COMMANDS = ["send_email", "ask_teammate"] as const satisfies readonly CommandName[];
+export const COMPOSER_COMMANDS = ["send_email", "ask_who_would_know"] as const satisfies readonly CommandName[];
 
 /** The message composer's prefill. A job is optional on an email, so a
  * missing `jobId` is "not tied to a job" rather than "gone". */

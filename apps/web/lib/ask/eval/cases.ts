@@ -288,7 +288,7 @@ export const EVAL_CASES: EvalCase[] = [
   noCommand("gap-attendance-no-card", "who actually showed up on Riverside last Tuesday?"),
   // …and the yes, one turn later, is the command — by the teammate's name,
   // never an address, with the day in the person's words for the app to parse.
-  command("ask-teammate-yes", "yes, draft a message to Hector asking who was on Riverside last Tuesday", "ask_teammate", { personName: "Hector", jobName: "Riverside" }),
+  command("ask-who-would-know-yes", "yes, draft a message to Hector asking who was on Riverside last Tuesday", "ask_who_would_know", { personName: "Hector", jobName: "Riverside" }),
   noCommand("none-delete-job", "delete the Riverside job"),
   noCommand("none-contract", "mark Riverside as contracted"),
   // Accounting holds no MANAGE_JOBS, so send_email is not offered to them
