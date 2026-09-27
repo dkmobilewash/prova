@@ -64,6 +64,18 @@
  *                 compliance, and a won bid linked to its job. One company,
  *                 one GC, one bid, because every one of those panels hangs
  *                 off a bid invitation row.
+ *   AI_SWITCH  — its own empty company, for specs/ai-switch.spec.ts: the
+ *                 per-company AI switch (#533). It needs its own for a
+ *                 stronger reason than any other row here — every other
+ *                 spec's company differs in its DATA, and this one differs
+ *                 in what the application is WILLING TO DO. A spec that
+ *                 turns AI off is not adding a row somebody else might
+ *                 count; it is changing how the assistant, the compliance
+ *                 upload and the estimate drafter behave for every viewer
+ *                 of that company at once. Run against MAIN it could make
+ *                 an unrelated spec fail with a refusal sentence, which
+ *                 reads as a broken feature rather than as a neighbour's
+ *                 write.
  *   BAD_INPUTS — its own empty company, for specs/known-bad-inputs.spec.ts:
  *                 the inputs that took the product down on 2026-09-21
  *                 (`2,800`, `12,500`, `0.10`), each driven as its own
@@ -188,6 +200,12 @@ export const PERSONAS = {
     label: "BID_DESK",
     username: "e2e_biddesk",
     phone: "+15555550118",
+  },
+  aiSwitch: {
+    email: "e2e-aiswitch+clerk_test@example.com",
+    label: "AI_SWITCH",
+    username: "e2e_aiswitch",
+    phone: "+15555550119",
   },
 } as const;
 
