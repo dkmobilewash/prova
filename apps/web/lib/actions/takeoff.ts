@@ -18,6 +18,8 @@ import {
   type StoredMeasurement,
   type WallBridge,
 } from "@/lib/takeoff-plan";
+import { syncWallScheduleLines } from "@/lib/estimating/wall-schedule";
+import { planMeasuredWallRun, WALL_TYPE_GONE } from "@/lib/estimating/measured-wall-run";
 import {
   InputError,
   actionFail,
@@ -593,6 +595,26 @@ export async function postTakeoffMeasurements(jobId: string, formData: FormData)
       },
     }));
 
+    // ISSUE #515. A wall measurement can be posted two ways now, and the
+    // difference is the whole point of that issue: as a WALL RUN against a wall
+    // type, which arrives priced, attributed and traceable — or as recipe
+    // output, which arrives as bare quantities somebody then prices by hand.
+    // The wall-type path is preferred and is what the form offers first; the
+    // typed-height path stays because a company with no wall types defined
+    // still has to be able to post what it measured.
+    const wallTypeId = recipeId === "wall" ? String(formData.get("wallTypeId") ?? "").trim() : "";
+    if (wallTypeId) {
+      return postMeasuredWallRun({
+        companyId: company.id,
+        jobId,
+        label,
+        wallTypeId,
+        stored,
+        measurementIds: ids,
+        formData,
+      });
+    }
+
     const wall = recipeId === "wall" ? wallBridgeFromForm(formData) : null;
     const inputs = recipeInputsFromMeasurements(recipeId, stored, wall);
     if (!inputs.ok) return actionFail(inputs.error);
@@ -615,13 +637,110 @@ export async function postTakeoffMeasurements(jobId: string, formData: FormData)
   });
 }
 
-/** The two things a wall needs that a drawing does not carry. Openings reuse
- * the parallel-array rule the typed form already uses: a half-filled pair is
- * dropped rather than counted as a zero-sized hole. */
-function wallBridgeFromForm(formData: FormData): WallBridge {
-  const heightFt = numberFromForm(formData, "heightFt", { min: 0.01 }).n;
-  const sides = String(formData.get("sides") ?? "2") === "1" ? 1 : 2;
+/**
+ * A measured run posted as a `WallRun` against a wall type, rather than as
+ * recipe output (issue #515).
+ *
+ * WHAT THIS BUYS, and why the seam was worth closing. A wall run created from
+ * the Wall types page arrives complete: `syncWallScheduleLines` gives every
+ * component line its description, quantity, labour hours, unit price, budgeted
+ * unit cost, craft classification, catalog link, production rate and — since
+ * #513 — its cost category. A plan takeoff posted as recipe output arrived
+ * carrying description, unit and quantity and nothing else. So the newest and
+ * most impressive way to get quantities into a bid was also the one that
+ * dropped you back into hand-pricing every row, while the path that needs no
+ * PDF at all arrived priced.
+ *
+ * NOTHING IS ADDED TO THE CAPTURE LAYER, which is what `takeoff.prisma` argues
+ * for at length: a wall is a LINEAR measurement somebody elected to treat as a
+ * wall at posting time, so the decision belongs here and not in the geometry.
+ * The length comes from the traced runs; the height, sides and spacing come
+ * from the wall type.
+ *
+ * AND THE TAKEOFF INHERITS `refreshWallSchedule` FOR FREE. Because this creates
+ * a real `WallRun`, a recalibration or a corrected height re-derives the lines
+ * through the same reconcile every other wall run uses, rather than stranding a
+ * second set beside the first.
+ */
+async function postMeasuredWallRun(args: {
+  companyId: string;
+  jobId: string;
+  label: string;
+  wallTypeId: string;
+  stored: StoredMeasurement[];
+  measurementIds: string[];
+  formData: FormData;
+}): Promise<ActionResult> {
+  const { companyId, jobId, label, wallTypeId, stored, measurementIds, formData } = args;
 
+  // The two rows the decision needs. Read here; DECIDED in
+  // `planMeasuredWallRun`, which is pure and carries every refusal — the
+  // pattern `bid-recap.ts` and `takeoff.ts` already follow, and the reason the
+  // refusals are testable without a database.
+  const wallType = await prisma.wallType.findFirst({
+    where: { id: wallTypeId, companyId },
+    select: { id: true, code: true, defaultHeightFt: true, sides: true },
+  });
+  if (!wallType) return actionFail(WALL_TYPE_GONE);
+
+  const plan = planMeasuredWallRun({
+    wallType: {
+      code: wallType.code,
+      defaultHeightFt: wallType.defaultHeightFt != null ? wallType.defaultHeightFt.toNumber() : null,
+      sides: wallType.sides,
+    },
+    layerCount: await prisma.wallTypeComponent.count({ where: { wallTypeId: wallType.id } }),
+    typedHeightFt: optionalNumberFromForm(formData, "heightFt", { min: 0.01 })?.n ?? null,
+    label,
+  });
+  if (!plan.ok) return actionFail(plan.error);
+
+  const bridge: WallBridge = {
+    heightFt: plan.heightFt,
+    sides: plan.sides,
+    openings: wallOpeningsFromForm(formData),
+  };
+  const inputs = recipeInputsFromMeasurements("wall", stored, bridge);
+  if (!inputs.ok) return actionFail(inputs.error);
+  const first = inputs.inputs[0];
+  if (!first || first.kind !== "wall") {
+    return actionFail("Those measurements do not make a wall — pick at least one traced run.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.wallRun.create({
+      data: {
+        companyId,
+        jobId,
+        wallTypeId: wallType.id,
+        // Named after what the estimator called the selection, falling back to
+        // the type's own code so a run is never nameless on the schedule.
+        label: plan.label,
+        lengthFt: first.wall.lengthFt.toFixed(2),
+        heightFt: plan.heightFt.toFixed(2),
+        openings: bridge.openings,
+      },
+    });
+    // The same whole-job reconcile every other wall run goes through, so these
+    // lines are indistinguishable from ones typed on the Wall types page.
+    await syncWallScheduleLines(tx, companyId, jobId);
+    await tx.takeoffMeasurement.updateMany({
+      where: { id: { in: measurementIds } },
+      data: { postedAt: new Date() },
+    });
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/jobs/${jobId}/estimate`);
+  return actionOk;
+}
+
+/** Openings reuse the parallel-array rule the typed form already uses: a
+ * half-filled pair is dropped rather than counted as a zero-sized hole. Shared,
+ * because a wall posted against a wall type deducts the same openings as one
+ * posted with a typed height — the height is the only thing that differs. */
+function wallOpeningsFromForm(formData: FormData): Opening[] {
   const widths = formData.getAll("openingWidth");
   const heights = formData.getAll("openingHeight");
   const openings: Opening[] = [];
@@ -633,7 +752,15 @@ function wallBridgeFromForm(formData: FormData): WallBridge {
     if (!height.ok) throw new InputError(height.error);
     openings.push({ widthFt: width.n, heightFt: height.n });
   }
-  return { heightFt, sides, openings };
+  return openings;
+}
+
+/** The two things a wall needs that a drawing does not carry, typed by hand.
+ * The wall-type path below supplies both from the type instead. */
+function wallBridgeFromForm(formData: FormData): WallBridge {
+  const heightFt = numberFromForm(formData, "heightFt", { min: 0.01 }).n;
+  const sides = String(formData.get("sides") ?? "2") === "1" ? 1 : 2;
+  return { heightFt, sides, openings: wallOpeningsFromForm(formData) };
 }
 
 /** The shop-varying numbers a recipe takes, read the way the typed form reads
