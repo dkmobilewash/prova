@@ -194,18 +194,37 @@ test.describe("plan-ingestion runner", () => {
     await expect(panel().locator('[data-plan-ingest="progress"]')).toHaveCount(0);
   });
 
-  test("5. a field-function member sees no panel at all", async () => {
-    // The panel and all four of its actions answer to VIEW_JOB_COSTS, which is
-    // what this tab withholds — and the first version of those actions asserted
-    // MANAGE_ESTIMATING instead, which would have refused an estimator who can
-    // open the page and answered somebody who cannot.
-    //
-    // FIELD is a MEMBER inside MAIN's company, not this one, so it cannot reach
-    // this job at all — which is the stronger check: the tab itself refuses
-    // before any question about the panel arises.
-    await signInAs(page, PERSONAS.field.email);
-    await page.goto(`/jobs/${jobId}/takeoff`);
-    await expect(panel(), "a field-function member must not see the ingest panel").toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Read the sheets" })).toHaveCount(0);
+  test("5. somebody from another company cannot reach the panel at all", async ({ browser }) => {
+    // A FRESH CONTEXT, not this file's shared page, and the first version got
+    // that wrong: `signInAs` does not sign out first, so switching persona in a
+    // context that is already signed in fails with Clerk's "You're already
+    // signed in." CI named it, on a run where steps 1-4 passed — so the spec
+    // was broken and the feature was not. The specs that switch persona use a
+    // per-test `page` fixture for exactly this reason (money-rail-gate); this
+    // file cannot, because steps 1-4 are serial over one job.
+    const other = await browser.newContext();
+    const otherPage = await other.newPage();
+    try {
+      // WHAT THIS PROVES IS TENANCY, NOT THE CAPABILITY, and the step is named
+      // for what it proves rather than what it looks like. FIELD is a MEMBER
+      // inside MAIN's company, so this job is not theirs and the tab refuses
+      // before any question about the panel arises.
+      //
+      // The capability itself — all four actions answering to VIEW_JOB_COSTS —
+      // is proved by `lib/action-capability-guards.test.ts`, which EXECUTES each
+      // one without it. That is the right instrument, and it is what caught the
+      // first version asserting MANAGE_ESTIMATING: a guard that would have
+      // refused an estimator who can open the page and answered somebody who
+      // cannot.
+      await signInAs(otherPage, PERSONAS.field.email);
+      await otherPage.goto(`/jobs/${jobId}/takeoff`);
+      await expect(
+        otherPage.locator('[data-plan-ingest="panel"]'),
+        "another company's job must not render its ingest panel",
+      ).toHaveCount(0);
+      await expect(otherPage.getByRole("button", { name: "Read the sheets" })).toHaveCount(0);
+    } finally {
+      await other.close();
+    }
   });
 });
