@@ -64,6 +64,12 @@
  *                 compliance, and a won bid linked to its job. One company,
  *                 one GC, one bid, because every one of those panels hangs
  *                 off a bid invitation row.
+ *   PLAN_INGEST — its own empty company, for specs/plan-ingest.spec.ts: the
+ *                 ingestion job runner. Kept off TAKEOFF even though it needs
+ *                 the same setup — a plan set with a calibrated sheet — because
+ *                 starting a run WRITES task rows against that plan, and
+ *                 takeoff-plan.spec.ts counts what is on its job. Sharing would
+ *                 make either file's failure depend on the other's ordering.
  *   AI_SWITCH  — its own empty company, for specs/ai-switch.spec.ts: the
  *                 per-company AI switch (#533). It needs its own for a
  *                 stronger reason than any other row here — every other
@@ -206,6 +212,12 @@ export const PERSONAS = {
     label: "AI_SWITCH",
     username: "e2e_aiswitch",
     phone: "+15555550119",
+  },
+  planIngest: {
+    email: "e2e-planingest+clerk_test@example.com",
+    label: "PLAN_INGEST",
+    username: "e2e_planingest",
+    phone: "+15555550120",
   },
 } as const;
 
