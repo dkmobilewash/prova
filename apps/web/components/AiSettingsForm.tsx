@@ -139,7 +139,16 @@ export function AiSettingsForm({ settings }: { settings: AiSettingsView }) {
           being a data-loss bug. With AI off, every feature box above is
           disabled, so none of them would reach the action and all seven would
           be recorded as switched off — the company's per-feature choices
-          destroyed by the act of turning AI off. These carry them through. */}
+          destroyed by the act of turning AI off. These carry them through.
+
+          MEASURED, not reasoned about. Removing these eight lines and pushing
+          them to CI turned `e2e/specs/ai-switch.spec.ts` step 3 red with
+          `Expected: 5, Received: 0` — five per-feature choices gone after one
+          save. Steps 1 and 2 stayed GREEN throughout, and so did all 8,107
+          unit tests across 498 files, because the subject is real form
+          serialization and happy-dom does not serialize a form the way a
+          browser does. Do not "simplify" this away; nothing but that spec can
+          see it go. */}
       {!aiEnabled &&
         AI_FEATURE_KEYS.filter((feature) => !disabled.has(feature)).map((feature) => (
           <input key={feature} type="hidden" name={`feature:${feature}`} value="on" />

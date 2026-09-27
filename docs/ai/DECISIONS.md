@@ -163,8 +163,40 @@ what was actually known.
   anybody quotes it.
 - **Whether Haiku 4.5 is accurate enough for sheet classification and title
   blocks.** The eval decides. Nothing is known yet.
-- **`promptVersion` has no writer.** It gets one when prompts become versioned
-  files, in the step that first changes a prompt.
+- **The 250MB upload ceiling for plan sets is not built, and this entry exists
+  because it was simply dropped.** Diego approved it as part of step 0 — 250MB
+  for plan sets only, direct-to-storage — and step 0 shipped without it and
+  without recording it, which is the failure this file is supposed to prevent.
+  It surfaced only because he asked whether step 0 was complete.
+
+  What it actually takes, checked rather than assumed: it is **not** a constant
+  bump. `DOCUMENT_UPLOAD_MAX_BYTES` is a single global 15MB, and
+  `DOCUMENT_UPLOAD_TARGETS` carries `root`/`scope`/`capability`/`refusal` per
+  target with **no per-target byte cap** — so "plan sets only" means adding
+  per-target ceilings plus a plan-set target that does not exist yet. Job media
+  already caps per kind (25MB a photo, 200MB a video, enforced at the moment
+  the token is minted), so there is prior art to copy rather than invent.
+
+  It rides with ingestion deliberately, because a raised ceiling with nothing
+  uploading a plan set is a number no test can exercise. **Carrying it is safe
+  in a way the entry below is not: if it is forgotten, the first real plan set
+  is refused at 15MB with a sentence on screen.** It announces itself.
+
+- **`promptVersion` has no writer, and forgetting THAT is silent.** It gets one
+  when prompts become versioned files, in the step that first changes a prompt.
+
+  The asymmetry with the entry above is the point, and it changes what has to
+  be built alongside it. A missing cap shouts; a missing prompt version does
+  not — rows accumulate with `null`, nothing breaks, and the first time somebody
+  claims a prompt change made anything better, the rows cannot be attributed to
+  either version. That is this repo's most expensive recurring shape.
+
+  So the guard is built WITH the first prompt file, not after it: a census that
+  fails the build if a usage row can be written for a feature whose prompt is
+  versioned without carrying a version. A note in this file is not sufficient
+  and saying so here is not a contradiction — CLAUDE.md's own lesson is that
+  "nobody has fixed X" is a claim with an expiry date, and this paragraph is
+  one. The test is what outlives it.
 - **A manual-entry path for compliance documents**, so switching document
   reading off does not stop filing. Not built.
 - **Whether the Ask loop's `recordProposal` should carry a company's model
