@@ -1,0 +1,219 @@
+// Plan-set ingestion, the job runner half: one job per uploaded plan set, one
+// task per page per stage, and a claim column that makes a three-hundred-page
+// run resumable. Diego's lane (AI, from 2026-09-26).
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// WHY A RUNNER AT ALL, AND WHY IT SHIPS BEFORE ANY INGESTION. A 300-sheet
+// drawing set is 300 model calls. A Vercel function has 60 seconds. So the work
+// cannot be one request, and the moment it is more than one request the only
+// questions that matter are what happens when an invocation dies halfway and
+// how a person sees where it got to. Those are answered here, with a stage that
+// does no model work at all, so that the answers are proved on something cheap
+// before three hundred paid calls depend on them.
+//
+// WHY HAND-ROLLED RATHER THAN A QUEUE. Both properties it needs already exist
+// in this repo, proven, and neither needs a service: `notification-run.ts` has
+// the bounded-run loop (45s of work under a 60s `maxDuration`, an injected
+// `now()` so the budget is testable without waiting for it, and a TOTAL
+// ordering so a truncated run cuts in the same place every time), and
+// `allowance.ts` has claim-before-work. A queue would add a credential and a
+// second failure mode to get the same two things.
+
+/// Which pass over the pages a task belongs to.
+///
+/// AN ENUM RATHER THAN FREE TEXT, for the reason #526 paid for: a typo'd
+/// stage string would create tasks nothing ever claims, and a job stuck at
+/// "99%" with one invisible task left is indistinguishable from a job that
+/// finished. A member here cannot be misspelled.
+///
+/// `PAGE_INVENTORY` is the whole of this PR and does NO model call: it records
+/// that a page exists and whether it carries a text layer. It is the trivial
+/// stage the runner is proved on. The rest are declared now and unreachable
+/// until the pass that implements them lands — the same argument
+/// `AiFeature.PLAN_INGESTION` made in #533, and the same reason: a stage added
+/// to the enum later is a migration plus a retrofit onto every call site,
+/// where a stage that is merely unused costs nothing.
+enum PlanIngestStage {
+  /// Per page: it exists, and does it have selectable text. No model call.
+  PAGE_INVENTORY
+  /// Per page: what kind of sheet is this. Not built.
+  CLASSIFY
+  /// Per page: read the title block. Not built.
+  TITLE_BLOCK
+  /// Whole set: assemble the sheet index. Not built.
+  SHEET_INDEX
+}
+
+/// One ingestion run over one uploaded plan set.
+///
+/// A SEPARATE MODEL FROM `TakeoffPlan` rather than columns on it, because a
+/// plan set can be ingested more than once — a re-run after a failure, or a
+/// later stage arriving after the first pass is long finished — and a run has
+/// its own beginning, end and outcome. Columns on the plan would make the
+/// second run overwrite the first one's history.
+///
+/// PROGRESS IS NOT STORED, and that is not an optimisation. This repo's rule is
+/// that derived state is never stored, because a stored flag can disagree with
+/// what it was derived from — and here the disagreement has a specific shape: a
+/// `percentComplete` column written by a worker that then dies is wrong
+/// forever, and it is wrong in the direction that makes a stuck job look
+/// finished. `count(finishedAt != null) / count(*)` over the tasks cannot lie,
+/// because the tasks are the work.
+model PlanIngestJob {
+  id     String      @id @default(cuid())
+  planId String
+  plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  /// Denormalised from the plan so a worker can scope a claim without a join,
+  /// and so usage attribution has the company without reading two tables.
+  /// Safe to duplicate: a plan never changes company.
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Which pass this run is performing. One job per stage per plan, so a
+  /// later stage is a new job rather than a mutation of the finished one.
+  stage PlanIngestStage
+
+  /// How many pages this run was created for, recorded at creation.
+  ///
+  /// THE ONE COUNT THAT IS STORED, and the exception is deliberate: it is not
+  /// derived from the tasks, it is the claim the CREATOR made about how many
+  /// there should be. Keeping it lets `pageCount` be compared against
+  /// `count(tasks)` — a job whose task rows went missing is otherwise a job
+  /// that reports 100% having done part of the work, which is exactly the
+  /// failure the no-stored-progress rule above is about. The two numbers
+  /// disagreeing is a fact worth being able to see.
+  pageCount Int
+
+  /// Entered by the runner, not defaulted: a job row exists before any worker
+  /// has picked it up, and `startedAt` must mean "a worker began" rather than
+  /// "a row was written".
+  startedAt  DateTime?
+  /// Set when every task is finished or has exhausted its attempts. A job with
+  /// failed tasks still FINISHES — it does not hang — and the failures are
+  /// visible per page. A run that stopped short is a run nobody can retry.
+  finishedAt DateTime?
+
+  /// Who uploaded the set this run is for. Nullable because a run started by a
+  /// scheduler or a backfill has no person behind it.
+  startedByUserId String?
+  startedByUser   User?   @relation(fields: [startedByUserId], references: [id], onDelete: SetNull)
+
+  tasks PlanIngestTask[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One run per stage per plan at a time. A second `PAGE_INVENTORY` job on the
+  /// same plan while the first is unfinished would have two workers claiming
+  /// two task sets over the same pages, and the progress figure would be over
+  /// whichever set was queried.
+  ///
+  /// It is NOT unique on (planId, stage) outright, because re-running a stage
+  /// after it finished is legitimate. `finishedAt` being part of the key is not
+  /// expressible here, so the constraint the database can hold is the index,
+  /// and `startPlanIngest` enforces the rest in a transaction.
+  @@index([planId, stage])
+  @@index([companyId, createdAt])
+  @@index([startedByUserId])
+}
+
+/// One unit of claimable work: one page, one stage.
+///
+/// THE CLAIM COLUMN IS THE DESIGN. A worker takes work with `updateMany` on
+/// `claimedAt: null`, which is atomic in Postgres — two workers racing for the
+/// same row produce one winner and one zero-count update, so the loser simply
+/// takes the next row. Nothing needs a lock, and no work is done twice.
+///
+/// WHAT MAKES IT RESUMABLE is that claiming and finishing are separate. An
+/// invocation that dies mid-page leaves a row claimed and unfinished, which is
+/// a state the next run can SEE — as opposed to a queue message that was acked
+/// on receipt, where a dead worker's page is simply gone.
+///
+/// AND WHAT MAKES THAT SAFE RATHER THAN A NEW BUG is `claimExpiresAt` below.
+/// Diego asked for stuck-lease reclaim specifically, and it is the correction
+/// that turns this from a clever column into a correct one: without it a task
+/// claimed by an invocation that then died is claimed FOREVER, and a job hangs
+/// at one page short with no error and nothing to retry. A claim column with no
+/// expiry converts a resumable job into a permanently stuck one, which is worse
+/// than not being resumable at all — a stuck job looks like a slow job.
+model PlanIngestTask {
+  id    String        @id @default(cuid())
+  jobId String
+  job   PlanIngestJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  /// 1-based, the way the viewer and the title block both count — the same
+  /// convention `TakeoffPlanPage.pageNumber` uses.
+  ///
+  /// A PAGE NUMBER, NOT A FOREIGN KEY to `TakeoffPlanPage`. Those rows are
+  /// created by a PERSON naming a sheet in the viewer, so most pages of a
+  /// freshly uploaded set have none — and ingestion's whole job is to run over
+  /// pages nobody has named yet. A foreign key would make the work depend on
+  /// the thing the work produces.
+  pageNumber Int
+
+  /// Repeated from the job so a claim can be scoped to one stage without a
+  /// join, and so a task row means something on its own.
+  stage PlanIngestStage
+
+  /// When a worker took this row. Null means available.
+  claimedAt DateTime?
+
+  /// When the claim lapses, so another worker may take it.
+  ///
+  /// SET BY THE CLAIMER, not computed on read, so the value is what the worker
+  /// that holds it actually promised — a deadline derived at read time from a
+  /// constant would change meaning the moment somebody tuned the constant, and
+  /// would apply retroactively to claims made under the old one.
+  claimExpiresAt DateTime?
+
+  /// Set when the work for this page succeeded. A finished task is never
+  /// reclaimed, whatever its claim says.
+  finishedAt DateTime?
+
+  /// How many times this page has been attempted, incremented on CLAIM rather
+  /// than on failure.
+  ///
+  /// ON CLAIM IS THE LOAD-BEARING CHOICE. Incrementing on failure cannot count
+  /// the attempt that died before it could write anything — which is the exact
+  /// failure mode a page that reliably kills its worker produces, and it would
+  /// be retried forever at the ceiling's expense. Counting the claim means a
+  /// page that crashes the process still exhausts its attempts and reports.
+  attempts Int @default(0)
+
+  /// Why the last attempt failed, for the per-page retry in the UI. A SENTENCE
+  /// for a person, never a stack: this is rendered on a screen beside a Retry
+  /// button.
+  error String?
+
+  /// The earliest a failed task may be claimed again. Null means now.
+  ///
+  /// ITS OWN COLUMN RATHER THAN DERIVED FROM `updatedAt`, which was the first
+  /// design and is wrong: `updatedAt` moves for reasons that are not attempts,
+  /// so backoff computed from it would lengthen every time anything touched the
+  /// row, and a column that means two things cannot be reasoned about.
+  ///
+  /// WHY BACKOFF NEEDS A COLUMN AT ALL when the cron only ticks every few
+  /// minutes — which is the objection worth answering, because the schedule
+  /// does supply most of the delay for free. Two places it does not: a single
+  /// invocation's loop can re-claim a task it just failed, within the same 45
+  /// seconds, and burn the attempt ceiling on one page in one run; and the
+  /// per-page Retry button is a person who can click faster than any sensible
+  /// interval. Without this, "three attempts" can be spent in three seconds
+  /// against a transient fault that would have cleared.
+  nextAttemptAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One task per page per stage per job. The guard against a double-create
+  /// producing two claimable rows for one page, which would spend twice.
+  @@unique([jobId, pageNumber, stage])
+  /// The claim query's own index: available work for a job, oldest page first.
+  @@index([jobId, finishedAt, claimedAt])
+  /// Backoff's own index — the claim skips tasks whose retry is still ahead.
+  @@index([nextAttemptAt])
+  /// The reclaim query's index: expired claims across all jobs.
+  @@index([claimExpiresAt])
+}

@@ -153,6 +153,61 @@ never hold the control over whether a model is used.
 
 ---
 
+## Step 1 — the job runner (2026-09-27)
+
+### Vercel is on Hobby, so a cron runs ONCE A DAY, and that decided the design
+
+Measured, not assumed: pushing `*/5 * * * *` **failed the deployment outright** —
+no deployment was even created — and Vercel's own error link resolves to
+`vercel.com/docs/cron-jobs/usage-and-pricing`, which states that Hobby accounts
+are limited to cron jobs running once per day and that more frequent expressions
+"will fail during deployment". 100 jobs per project, minimum interval once per
+day, ±59 minutes of precision.
+
+**This is the most load-bearing fact about ingestion on this product**, because
+the obvious architecture — a cron that works through a queue — would advance a
+300-sheet plan set by one 45-second slice per day. It is not slow; it does not
+work.
+
+So the run is driven by the **open page**, calling `advancePlanIngest` in a loop,
+and the cron is a once-daily sweep for runs whose tab was closed and which
+nobody reopens. What makes both safe at once is the claim column: the browser, a
+second browser and the cron can all advance the same job simultaneously, each
+claim atomic.
+
+**If throughput ever has to happen without somebody watching**, the fix is a Pro
+plan plus one line in `vercel.json` — not a redesign. That is worth knowing
+before anybody proposes moving ingestion to a background worker.
+
+### The claim column needs a lease, or it makes things worse
+
+A task claimed by an invocation that then dies is claimed *forever*, and the job
+hangs one page short with no error and nothing to retry. **A claim column with no
+expiry converts a resumable job into a permanently stuck one**, which is worse
+than not being resumable, because a stuck job looks like a slow one.
+`claimExpiresAt` is the reclaim, and `CLAIM_LEASE_MS` must exceed the run budget
+or a lease expires under a worker still legitimately working — asserted in a
+test, because those two constants live apart and somebody will tune one.
+
+### `attempts` increments on CLAIM, not on failure
+
+An attempt that dies before it can write anything is exactly what a page that
+kills its worker produces. Counting failures would retry that page forever.
+
+### Backoff needed its own column
+
+Deriving it from `updatedAt` was the first design and is wrong: that column moves
+for reasons that are not attempts. Without `nextAttemptAt`, three attempts can be
+spent in three seconds inside one loop, or as fast as a person clicks Retry.
+
+### The first stage does no model work, and the server cannot do more yet
+
+`PAGE_INVENTORY` records that a page was reached. `TakeoffPlan` has no
+`pageCount` column because the server has no PDF library — the viewer knows the
+count because `pdfjs-dist` runs in the browser. **So no server-side stage can
+open a plan file at all until something rasterises it**, which remains the one
+genuinely undecided piece of the ingestion design.
+
 ## Open questions
 
 Recorded so nobody re-derives them, and so a later claim can be checked against

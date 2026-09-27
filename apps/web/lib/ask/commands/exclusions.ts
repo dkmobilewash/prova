@@ -55,6 +55,11 @@ export const notYetRegistered: Exclusion[] = [
   { action: "wallTypes.*", reason: "Wall types are the company's partition schedule and a job's wall runs are measurements off the drawings; both are entered where the schedule and the runs are shown, and every run write regenerates estimate lines. Never a command." },
   { action: "bidRecap.*", reason: "Markup, overhead and profit are the estimator's own margin call, read off the recap they are looking at; applying one rewrites every line price on the job. Never a command." },
   {
+    action: "planIngest.*",
+    reason:
+      "The plan-ingestion runner. Starting a run spends the company's plan-sheet allowance a page at a time, and retrying resets an attempt ceiling that exists to bound that spend — so a model must be able to do neither. The person uploads a plan set and the panel on the job drives the run; the model is never the thing that decides three hundred pages are worth reading.",
+  },
+  {
     action: "aiSettings.*",
     reason:
       "The switch that decides whether AI runs for this company at all. Reachable from a prompt it would let the assistant be asked to re-enable itself, or to turn off the audit trail of its own proposals — a model must never hold the control over whether a model is used. Owner-only on /settings/assistant, and permanently never a command.",

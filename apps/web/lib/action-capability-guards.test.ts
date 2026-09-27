@@ -1642,6 +1642,12 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // turning AI off stops work for every member of the company, and turning it
   // back on is a decision about where their documents may go.
   aiSettings: () => import("./actions/aiSettings"),
+  // The plan-ingestion runner, reachable from /jobs/[id]/takeoff alone, which is
+  // hard-gated on VIEW_JOB_COSTS. All four actions assert that — the first
+  // version asserted MANAGE_ESTIMATING, which sounds right for a plan set and is
+  // not the capability that door takes; this suite named all four and the page,
+  // which is how it was caught rather than shipped.
+  planIngest: () => import("./actions/planIngest"),
   // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it
   // is reachable from /settings/assistant alone, which demands
   // MANAGE_COMPLIANCE. The card actions (confirm, cancel, settle, load)

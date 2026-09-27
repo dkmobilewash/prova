@@ -102,8 +102,15 @@ model TakeoffPlan {
   uploadedByUserId String?
   uploadedBy       User?   @relation("TakeoffPlanUploadedBy", fields: [uploadedByUserId], references: [id])
 
-  pages     TakeoffPlanPage[]
-  createdAt DateTime          @default(now())
+  pages TakeoffPlanPage[]
+
+  /// Ingestion runs over this set — see plan-ingest.prisma. CASCADEd from here
+  /// like everything else under this model, which is what keeps both new models
+  /// out of `HANDLED_MODELS` and the two cleanup `del()` orders: one
+  /// `takeoffPlan.deleteMany({ jobId })` still reaches all of it.
+  ingestJobs PlanIngestJob[]
+
+  createdAt DateTime @default(now())
 
   @@index([jobId, createdAt])
   @@index([companyId])
