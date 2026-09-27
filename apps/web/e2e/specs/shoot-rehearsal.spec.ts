@@ -828,11 +828,22 @@ test.describe("the launch-video run sheet, beat by beat", () => {
       '/cash-flow labels two different sums "Total outstanding" — the AR aging total (net of retainage) and the retainage receivable. Read the one inside the Retainage receivable section, never the first one on the page.',
     ).toHaveCount(2);
 
-    const retainageSection = page.locator('section[data-tour="cash-flow-retainage"]');
+    // BY ITS HEADING, not by the section's `data-tour` hook — and that is a
+    // constraint from a census rather than a preference.
+    // `lib/walkthroughs/walkthroughCensus.test.ts` counts every tour-anchor
+    // literal in the repo with `git grep` and requires the import walk from
+    // the registered pages to reach every one of them. A literal written in a
+    // spec file is an anchor in a file no walkthrough's page renders, so it
+    // fails that census with an off-by-one — which is exactly what it did on
+    // the first attempt at this fix. The heading is the stabler handle anyway:
+    // it is the thing on screen that tells a person which total this is.
+    const retainageSection = page
+      .locator("section")
+      .filter({ has: page.getByRole("heading", { name: "Retainage receivable" }) });
     await expect(
-      retainageSection.getByRole("heading", { name: "Retainage receivable" }),
-      "the retainage section is found by its own hook, so the figure read below cannot be the aging total",
-    ).toBeVisible();
+      retainageSection,
+      "the retainage section is found by its own heading, so the figure read below cannot be the aging total",
+    ).toHaveCount(1);
     const outstanding = retainageSection.getByText(/^Total outstanding: /);
     await expect(
       outstanding,
