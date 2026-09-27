@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { prisma, type PlanIngestStage } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
@@ -138,7 +137,20 @@ export async function startPlanIngest(
     return job;
   });
 
-  revalidatePath(`/jobs/${plan.jobId}`);
+  // NO `revalidatePath` HERE, AND THAT IS A FIX RATHER THAN AN OMISSION.
+  //
+  // Found by a person clicking this, on 2026-09-27: starting a run made the
+  // plan viewer jump from the sheet they were working on back to sheet 1 of 12.
+  // The mechanism is the one #61's investigation established and CLAUDE.md
+  // records — `revalidatePath` sets `pathWasRevalidated` UNCONDITIONALLY, the
+  // path argument is irrelevant, so flight data is appended and the client
+  // re-renders FROM THE ROOT. That remounts `TakeoffPlanViewer`, whose selected
+  // `pageNumber` is component state, and the estimator loses their place.
+  //
+  // Nothing needs the revalidation: the panel takes the run's state from this
+  // function's own return value, and no other part of the page renders ingest
+  // state. A revalidate here bought a re-render nobody asked for and cost the
+  // one thing the person was looking at.
   return { ok: true, value: await ingestViewOf(created.id, created.stage) };
 }
 
@@ -243,7 +255,9 @@ export async function retryPlanIngestPage(ingestJobId: string, pageNumber: numbe
     data: { finishedAt: null },
   });
 
-  revalidatePath(`/jobs/${job.plan.jobId}`);
+  // No `revalidatePath`, for the same reason as `startPlanIngest` above: it
+  // would re-render from the root and throw the viewer back to sheet 1. The
+  // panel drops the retried page from its own list and resumes the loop.
   return actionOk;
 }
 

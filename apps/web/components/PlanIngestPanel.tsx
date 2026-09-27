@@ -135,10 +135,11 @@ export function PlanIngestPanel({ planId, pageCount, existing }: PlanIngestPanel
   function onStart() {
     setError(null);
     startTransition(async () => {
-      if (pageCount === null) {
-        setError("Open this plan set in the viewer first, so C Stream knows how many sheets it has.");
-        return;
-      }
+      // `pageCount === null` cannot reach here — the button is disabled and the
+      // sentence is rendered as guidance instead. Kept as a guard because a
+      // disabled button is a UI fact rather than a contract, and this call
+      // creates rows.
+      if (pageCount === null) return;
       const started = await startPlanIngest(planId, "PAGE_INVENTORY", pageCount);
       if (!started.ok) return setError(started.error);
       setView(started.value);
@@ -176,14 +177,27 @@ export function PlanIngestPanel({ planId, pageCount, existing }: PlanIngestPanel
 
       {!view && (
         <>
+          {/* DERIVED FROM `pageCount`, NOT WRITTEN INTO ERROR STATE AFTER A
+              CLICK — a fix a person found by clicking this on 2026-09-27. The
+              sentence used to be set as an `error` when somebody pressed the
+              button with no sheet on file, and NOTHING CLEARED IT: they went
+              and set a scale, the header updated to "1 sheet worked on", and
+              the panel still told them to open the plan set in the viewer
+              first. The advice was stale and the app looked like it had not
+              noticed.
+
+              As guidance it cannot go stale — the prop changes, the sentence
+              goes. The same reasoning as this repo's rule that derived state is
+              never stored, applied to a sentence rather than a figure. */}
           <p className="mb-3 text-sm text-ink-body">
-            C Stream can walk this plan set sheet by sheet. It stops and resumes safely, so you can close this
-            page and come back.
+            {pageCount === null
+              ? "Open this plan set in the viewer first, so C Stream knows how many sheets it has. Setting a sheet's scale is what puts it on file."
+              : "C Stream can walk this plan set sheet by sheet. It stops and resumes safely, so you can close this page and come back."}
           </p>
           <button
             type="button"
             onClick={onStart}
-            disabled={isPending}
+            disabled={isPending || pageCount === null}
             className="min-h-[48px] rounded-md bg-neutral-800 px-4 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50"
           >
             {isPending ? "Starting…" : "Read the sheets"}

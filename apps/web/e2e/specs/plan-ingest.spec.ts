@@ -106,17 +106,26 @@ test.describe("plan-ingestion runner", () => {
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 30_000 });
     await expectHealthy(page, "takeoff tab after uploading a sheet", { monitor });
 
-    // A plan with NO calibrated sheet: the panel appears, and pressing the
-    // button says what is missing instead of starting a run over nothing.
-    // THE POINT OF THIS STEP is that the refusal is a sentence a person can act
-    // on — the server has no PDF library, so it genuinely does not know how many
-    // sheets the document has until somebody opens one.
+    // A plan with NO calibrated sheet: the panel appears, says what is missing,
+    // and the button is DISABLED rather than clickable-then-refusing.
+    //
+    // THIS ASSERTION CHANGED AFTER A PERSON CLICKED IT on 2026-09-27. The first
+    // version set that sentence as an `error` when the button was pressed, and
+    // nothing cleared it — so after they went and set a scale, the panel still
+    // told them to open the plan set in the viewer first. The advice was stale
+    // and the app looked like it had not noticed. Derived from the prop it can
+    // only be true while it is true, and the spec asserts the shape that cannot
+    // go stale rather than the one that could.
     await expect(panel()).toBeVisible();
-    await panel().getByRole("button", { name: "Read the sheets" }).click();
     await expect(
-      page.getByText("Open this plan set in the viewer first, so C Stream knows how many sheets it has."),
+      panel().getByText(/Open this plan set in the viewer first/),
+      "the panel should say what is missing before anybody presses anything",
     ).toBeVisible();
-    await expectHealthy(page, "ingest refused with no sheets on file", { monitor });
+    await expect(
+      panel().getByRole("button", { name: "Read the sheets" }),
+      "with no sheet on file there is nothing to run over, so the button is refused up front",
+    ).toBeDisabled();
+    await expectHealthy(page, "ingest panel with no sheets on file", { monitor });
   });
 
   test("2. set a scale, which is what puts a sheet on file", async () => {
@@ -146,6 +155,11 @@ test.describe("plan-ingestion runner", () => {
     await expectHealthy(page, "takeoff tab with one sheet on file", { monitor });
 
     await expect(panel()).toBeVisible();
+    // The guidance from step 1 is GONE now a sheet exists, and the button is
+    // live. This is the other half of the staleness fix: the sentence tracks
+    // the prop in both directions, not just on first render.
+    await expect(panel().getByText(/Open this plan set in the viewer first/)).toHaveCount(0);
+    await expect(panel().getByRole("button", { name: "Read the sheets" })).toBeEnabled();
     await panel().getByRole("button", { name: "Read the sheets" }).click();
 
     // THE ASSERTION THIS FILE EXISTS FOR. Nothing polls on a timer and nothing
