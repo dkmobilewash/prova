@@ -904,6 +904,35 @@ const SECTION_DECIDED: Record<
     reason:
       "The other half of approveTimesheetDay, same control, same capability, already asserted. Reopening unlocks a day's hours for editing, so it is if anything the more consequential of the two. Recorded for execution, no behaviour change.",
   },
+
+  /* ---- /contacts/[id] — the "Client portal" section.
+   *
+   * These two moved OUT of UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE below, which
+   * is what that list is for. The entry there said they were "the
+   * highest-risk item on this page" and deserved "its own argument and its
+   * own click-through, not a line in a batch". That argument has now been
+   * had, and the risk was understated rather than overstated: this is not a
+   * figure being shown to the wrong colleague, it is MINTING A BEARER
+   * CREDENTIAL for somebody outside the tenant. Any authenticated member of
+   * the company could issue one, a FIELD foreman included.
+   *
+   * The section they sit in withholds on MANAGE_BILLING as of this change,
+   * so the derivation here is the ordinary one — the capability the section
+   * reaching the action withholds on — rather than a judgement invented for
+   * these two. Before it, the section withheld nothing at all, which is why
+   * the ordinary rule derived nothing and why the debt entry existed. ---- */
+  "billing.enablePortalAccess": {
+    capability: "MANAGE_BILLING",
+    section: "Client portal",
+    reason:
+      "Mints `Contact.portalToken`, the bearer credential that logs a GC into `/portal/[token]` with no password and no expiry. MANAGE_BILLING is read off what the link OPENS: the contract line items and total, the change orders, and every invoice with its payments and retainage-adjusted balance — that capability's own doc comment, verbatim. It is also the narrowest capability holding everyone with a reason to send the link (ACCOUNTING, PROJECT_MANAGER, EXECUTIVE, every OWNER) while removing FIELD, PAYROLL_COMPLIANCE and ESTIMATOR. Not the VIEW_JOB_COSTS of the contract-paperwork four: that is the inside view of cost and margin, which the portal shows a GC none of, and it would readmit ESTIMATOR.",
+  },
+  "billing.revokeClientPortalAccess": {
+    capability: "MANAGE_BILLING",
+    section: "Client portal",
+    reason:
+      "The other half of enablePortalAccess, same section and same capability, and deliberately not a looser one on the grounds that revoking is the safe direction. It is not safe: it cuts a GC off from the invoices they are being asked to pay, mid-job, and the token cannot be rotated afterwards — enabling brings the SAME link back. Whoever may hand out the credential is who may take it away, or a job function ends up able to kill a live link it cannot restore.",
+  },
 };
 
 /**
@@ -922,8 +951,16 @@ const SECTION_DECIDED: Record<
  */
 const UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE: Record<string, { page: string; reason: string }> = {
   // `/contacts/[id]` withholds on three capabilities section by section
-  // (MANAGE_ESTIMATING for bid invitations, MANAGE_BILLING for the client
-  // portal, VIEW_JOB_COSTS elsewhere). That is a bigger per-section read
+  // (MANAGE_ESTIMATING for bid invitations, MANAGE_BILLING, VIEW_JOB_COSTS
+  // elsewhere). Corrected here: this comment used to attribute the
+  // MANAGE_BILLING gate to "the client portal", and it was not there — the
+  // page's `showsBilling` wrapped "Payment reliability", and the Client
+  // portal section was wrapped in nothing at all, which is how two
+  // credential-minting actions came to be reachable by a FIELD foreman with
+  // this file describing the gate that would have stopped them. A
+  // capability named in prose is not a capability in the source. It is
+  // there now, and the two actions are in SECTION_DECIDED above. That is a
+  // bigger per-section read
   // than this pass took on, and the CRM half is a different lane
   // (WORK-SPLIT.md, the fourth lane) whose actions want announcing before
   // they are touched. Deciding three of thirteen would leave the page
@@ -939,8 +976,13 @@ const UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE: Record<string, { page: string; reason:
   "estimating.createBidInvitation": { page: "/contacts/[id]", reason: "Bid invitations sit in a MANAGE_ESTIMATING section of this page, so the derivation is probably easy — but `/bids` and `/pipeline` read the same rows under the same capability and #79 is in flight on `/bids` right now. Left for a pass that can take the three surfaces together." },
   "estimating.deleteBidInvitation": { page: "/contacts/[id]", reason: "Same section as createBidInvitation, same reason for leaving it." },
   "estimating.updateBidInvitationStatus": { page: "/contacts/[id]", reason: "Same section as createBidInvitation. This is the one of the three that changes a status the GC's invitation is tracked by, so it is the first thing the next pass should take." },
-  "billing.enablePortalAccess": { page: "/contacts/[id]", reason: "Grants a client contact access to the portal — an outward-facing grant, and the highest-risk item on this page. Deliberately NOT swept in with the crew and contract work: a grant of access to somebody outside the company deserves its own argument and its own click-through, not a line in a batch." },
-  "billing.revokeClientPortalAccess": { page: "/contacts/[id]", reason: "The other half of enablePortalAccess; goes with it, whichever way that one is decided." },
+  // `billing.enablePortalAccess` and `billing.revokeClientPortalAccess`
+  // were here and are now in SECTION_DECIDED above, gated on
+  // MANAGE_BILLING. They are the only two entries this list has ever paid
+  // off, and the check below is what forced it: an entry recorded as
+  // undecided that starts asserting a capability fails by name, so the
+  // debt could not be quietly settled in one place and left standing in
+  // the other.
   "quickbooks.linkContactToQuickBooks": { page: "/contacts/[id]", reason: "Links a contact to a QuickBooks customer. MANAGE_BILLING is the likely answer given every other QuickBooks action, but its door is this page rather than /settings, so it is a per-section read this pass did not do." },
 
   // `/dashboard` withholds its money tiles on VIEW_JOB_COSTS and
