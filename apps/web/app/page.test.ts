@@ -312,6 +312,22 @@ describe("/ landing content renders signed out, with no auth call of its own", (
     // Top-aligned, for the demo's own reason: a changing height centred
     // against the words would open a hole that moves with every frame.
     expect(hero).toMatch(/class="grid items-start[^"]*lg:grid-cols-/);
+    // AND THE PANEL IS WIDER AT xl THAN AT lg. Cyrus asked for a bigger
+    // demo, and the number is the figure's own `max-w-[34rem]` cap — a
+    // column wider than 544 does not widen the panel, it parks it at 544
+    // with dead space beside it. Widening also BOUGHT fold margin rather
+    // than spending it: sampled across the full loop at 1280, the tallest
+    // frame is 603.9 at a 544 column against 623.9 at 420, so the panel
+    // ends 84.1px above an 800 fold where it used to end 64.1 above.
+    // This asserts the two columns differ, not the pixel value, which is a
+    // measurement and lives in LandingPage.tsx's note.
+    const grid = hero.match(/class="(grid items-start[^"]*)"/)?.[1] ?? "";
+    expect(grid, "no hero grid found").not.toBe("");
+    const lgCols = grid.match(/lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,(\d+)px\)\]/)?.[1];
+    const xlCols = grid.match(/xl:grid-cols-\[minmax\(0,1fr\)_minmax\(0,(\d+)px\)\]/)?.[1];
+    expect(lgCols, "the lg demo column is gone").toBeTruthy();
+    expect(xlCols, "the demo is not widened at xl").toBeTruthy();
+    expect(Number(xlCols)).toBeGreaterThan(Number(lgCols));
     expect(hero).not.toMatch(/class="[^"]*\bitems-center\b[^"]*lg:grid-cols-/);
   });
 

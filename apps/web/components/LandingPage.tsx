@@ -462,36 +462,44 @@ export function LandingPage() {
           call between two layouts; it is the only arrangement that fits.
 
           The price is the headline's size, and it is a real price rather
-          than a free win. In the 612px left column the 96px headline
-          cannot go: its min-content is 824.3px, and hyphenating it into
-          that column is the "six ragged lines" this comment already
-          rejects. Swept in the browser at 1280, line count in that column:
+          than a free win. In the left column the 96px headline cannot go,
+          and hyphenating it in is the "six ragged lines" this comment
+          already rejects.
 
-            96 / 80 / 76px   6 lines, and min-content OVERFLOWS the column
-            72 / 70 / 68px   5 lines
-            64px             4 lines, widest line 588.7 of 612  <- chosen
-            48px             3 lines
+          THE FIRST VERSION OF THIS PARAGRAPH SAID 64px IN A 612px COLUMN,
+          AND BOTH NUMBERS MOVED THE SAME DAY — because the panel got wider
+          and the page got a typeface. Cyrus asked for a bigger panel; the
+          column is now 488px and the face is Barlow Condensed (see
+          app/layout.tsx, which carries why). A condensed face fits far more
+          per line, so a NARROWER column ended up carrying a BIGGER
+          headline: 84px against the 64px that preceded it.
 
-          `xl:text-[4rem]` is the largest size that keeps the four-line
-          shape the full-width headline had, and it leaves 62.5px (10%)
-          between min-content and the column. THE CLAMP IS UNTOUCHED: every
-          width below 1280 renders exactly what it rendered before, 9vw and
-          the 96px top end included, so the scale pass this file defends is
-          only overridden where the demo moves beside it.
+          Swept in the browser at 1280, the largest size that still sets the
+          headline in four lines, per face, in this 488px column:
 
-          ABOUT THAT 10% OF SLACK — IT IS MEASURED IN THE WRONG FONT AND
-          THAT IS THE HONEST STATE OF IT. This page loads NO webfont:
-          `document.fonts.size` is 0 and the <h1> computes to
-          `ui-sans-serif, system-ui, sans-serif`, so it renders in SF on
-          Cyrus's Mac, Segoe on Windows and whatever this container's
-          fontconfig picks here. Every width in this comment is the
-          container's font. The direction of the error is the safe one —
-          the fallback here is a wide face, and both SF and Segoe are
-          narrower, so a real visitor gets MORE slack, not less — but the
-          line count is not guaranteed: a narrower face may set this
-          headline in three lines rather than four. Nothing breaks if it
-          does; it comes up shorter and the demo does not move, because the
-          demo spans both rows and is anchored to the top of the first. */}
+            Barlow Condensed  84px      Archivo           64px
+            Archivo Narrow    72px      Chivo             none fits
+            Roboto Condensed  72px      SYSTEM FALLBACK   none fits
+
+          The last row is the one that matters: the stack this page used to
+          render in does not fit this column AT ALL, at any size down to 56.
+          The panel could not have been widened this far without the face.
+
+          `xl:text-[5.25rem]` is 84px, and it leaves 39.1px (8%) between the
+          headline's min-content (448.9px) and the column. THE CLAMP IS
+          UNTOUCHED: every width below 1280 keeps 9vw and the 96px top end,
+          so the scale pass this file defends is overridden only where the
+          demo moves beside it.
+
+          AND THAT 8% IS NOW A REAL NUMBER RATHER THAN A GUESS, WHICH IS THE
+          QUIETEST IMPROVEMENT HERE. The previous version of this paragraph
+          had to end with a confession: the page declared no webfont, so
+          every width in it was whatever face the measuring machine happened
+          to have — SF on a Mac, Segoe on Windows, something else in a
+          container — and the line count was therefore not guaranteed on
+          anybody's screen. A self-hosted face removes that caveat instead
+          of shrinking it. The same bytes render on every machine, so the
+          measurements in this file now describe what a visitor sees. */}
       <section className="flex min-h-[78svh] flex-col justify-center py-10">
         {/* The two cells of that row, plus the headline spanning both of
             them at `lg`. `items-start`, NOT `items-center`, for the reason
@@ -502,8 +510,30 @@ export function LandingPage() {
             `lg:gap-y-10` keeps the headline-to-row gap at the 40px it was
             when the headline was a sibling of this grid rather than a cell
             in it; `lg:gap-x-14` is the 56px between the two columns, which
-            #459 measured and pinned. */}
-        <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:gap-x-14 lg:gap-y-10">
+            #459 measured and pinned.
+
+            `xl:grid-cols-[…_544px]` WIDENS THE DEMO COLUMN FROM 420, AND 544
+            IS NOT A ROUND NUMBER — it is 34rem, the figure's own
+            `max-w-[34rem]` cap in components/landing/AskDemo.tsx. A column
+            wider than that does not make the panel wider; it makes the
+            panel sit at 544 with dead space beside it, since the cell pins
+            the figure right. So 544 is the largest column that is ALL
+            panel, and going past it means changing the figure's cap and
+            re-measuring the reserve tiers below.
+
+            WIDENING MADE THE FOLD BETTER, NOT WORSE, WHICH IS THE OPPOSITE
+            OF WHAT THE RISK LOOKED LIKE — the demo's cards reflow, and a
+            wider panel wraps SHORTER. Sampled across the full 26-step loop
+            at 1280, tallest frame by column width:
+
+              420 -> 623.9    500 -> 617.9    544 -> 603.9
+
+            so the panel ends 84.1px above an 800-tall fold where the 420
+            column left 64.1. The headline pays for the width instead (see
+            the preamble's face table), and every width from 500 up clears
+            the fold, so this is a choice about how big the panel should be
+            rather than whether it fits. */}
+        <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:gap-x-14 lg:gap-y-10 xl:grid-cols-[minmax(0,1fr)_minmax(0,544px)]">
           {/* THE FLOOR WAS 3rem AND IT MADE THE WHOLE PAGE WIDER THAN A
               320px PHONE. Measured in real Chromium 2026-09-21, which is the
               only thing that can see it — happy-dom does no layout:
@@ -571,23 +601,26 @@ export function LandingPage() {
               was tried here and silently dropped the desktop headline from
               96px to 72px; the layout is sized to the type instead.
 
-              `xl:text-[4rem]` IS THAT OVERRIDE, DELIBERATELY, AND ONLY WHERE
-              THE COLUMN CHANGES UNDER IT. The old one was a bug because it
-              shrank the headline while the headline still had the whole row
-              — nothing was bought with it. This one is paired with
-              `xl:col-end-2`: from 1280 the headline has a 612px column
-              instead of the row, because the demo is beside it, and 612px
-              is a width 96px cannot be set in. Below 1280 the clamp is
-              untouched. The hero's preamble carries the sweep and the fold
-              budget that chose 4rem; do not move this number without
-              re-reading it, and do not "restore" 96px here without also
-              putting the demo back under the headline — it will overflow
-              its column by 212px and the page will pan sideways.
+              `xl:text-[5.25rem]` IS THAT OVERRIDE, DELIBERATELY, AND ONLY
+              WHERE THE COLUMN CHANGES UNDER IT. The old one was a bug
+              because it shrank the headline while the headline still had
+              the whole row — nothing was bought with it. This one is paired
+              with `xl:col-end-2`: from 1280 the headline has a 488px column
+              instead of the row, because the demo is beside it. Below 1280
+              the clamp is untouched. The hero's preamble carries the face
+              sweep and the fold budget that chose 5.25rem; do not move this
+              number without re-reading it, and do not "restore" 96px here
+              without also putting the demo back under the headline — it
+              overflows this column and the page pans sideways.
+
+              `font-headline` is the other half of it and is NOT decoration:
+              the system stack this page used to render in does not fit this
+              column at any size. app/layout.tsx has the measurement.
 
               `xl:row-start-1` is not decoration either: with the demo
               spanning both rows, auto-placement would otherwise put the
               words where the headline belongs. */}
-          <h1 className="order-2 max-w-4xl text-[clamp(2rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink lg:order-none lg:col-span-2 xl:col-end-2 xl:col-start-1 xl:row-start-1 xl:text-[4rem]">
+          <h1 className="order-2 max-w-4xl font-headline text-[clamp(2rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink lg:order-none lg:col-span-2 xl:col-end-2 xl:col-start-1 xl:row-start-1 xl:text-[5.25rem]">
             The job-site system for union specialty-trade subcontractors.
           </h1>
           {/* THE WORDS. `items-start` on the grid above, NOT `items-center`,
@@ -718,9 +751,23 @@ export function LandingPage() {
               stretching down it. The 660 reserve does not bind there either;
               it is distributed across the two spanned rows, both of which
               are already taller. What this does leave is background to the
-              RIGHT of the paperwork list, below the figure — measured at
-              370.7px at 1280. It is off the first screen, which is the
-              screen this whole arrangement is for.
+              RIGHT of the paperwork list, below the figure, and WIDENING
+              THE PANEL MADE IT BIGGER RATHER THAN SMALLER: 551.2px at 1280,
+              against 370.7 when the column was 420. Both ends of that moved
+              the wrong way — a narrower left column makes the words taller
+              (769 against 691) and a wider panel makes the figure shorter
+              (603.9 against 623.9), and the gap is the difference between
+              them.
+
+              It is all below the fold, which is the screen this arrangement
+              exists for, and it is recorded here rather than fixed because
+              the fix is a third structural change and belongs in its own
+              pass: the paperwork list could take the right column under the
+              demo at `xl` (`xl:col-start-2 xl:row-start-2`), which fills the
+              gap exactly and shortens the page. That needs it lifted out of
+              the words column to be a grid child of its own, which changes
+              its spacing on a phone, so it is a deliberate decision and not
+              a tidy-up to fold into a font change.
 
               The tiers are the tallest frame at each figure width, because
               a narrower figure wraps taller. Measured, with the headroom
@@ -823,7 +870,7 @@ export function LandingPage() {
           The problem, in the reader's own language. Moved up from fourth:
           it earns the rest of the page, so it goes before the rest. */}
       <Reveal className={sectionSpace}>
-        <h2 className="text-3xl font-semibold text-ink sm:text-4xl">The old way, and the C Stream way</h2>
+        <h2 className="font-headline text-3xl font-semibold text-ink sm:text-4xl">The old way, and the C Stream way</h2>
         <div className="mt-8 grid gap-6 sm:grid-cols-2 sm:gap-8">
           <div className="rounded-xl border border-line-card bg-surface p-6 sm:p-8">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">The old way</h3>
@@ -1100,7 +1147,7 @@ export function LandingPage() {
       <Reveal className={sectionSpace}>
         <div className="grid items-start gap-8 lg:grid-cols-2 lg:gap-14">
           <div className="min-w-0">
-            <h2 className="text-3xl font-semibold text-ink sm:text-4xl">
+            <h2 className="font-headline text-3xl font-semibold text-ink sm:text-4xl">
               Protecting yourself when it goes wrong
             </h2>
             <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
@@ -1133,7 +1180,7 @@ export function LandingPage() {
           would have been the same words twice. See
           CapabilitiesSection.tsx's own header. */}
       <Reveal className={sectionSpace}>
-        <h2 className="text-3xl font-semibold text-ink sm:text-4xl">Everything else it does</h2>
+        <h2 className="font-headline text-3xl font-semibold text-ink sm:text-4xl">Everything else it does</h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
           The rest of the job, in the same system, so none of it needs a second spreadsheet.
         </p>
@@ -1145,7 +1192,7 @@ export function LandingPage() {
       {/* -------------------------------------------------------------- 9
           Objection handling. Copy unchanged. */}
       <Reveal className={`${sectionSpace} max-w-2xl`}>
-        <h2 className="text-3xl font-semibold text-ink sm:text-4xl">Not generic construction software</h2>
+        <h2 className="font-headline text-3xl font-semibold text-ink sm:text-4xl">Not generic construction software</h2>
         <p className="mt-4 text-base leading-relaxed text-ink-body sm:text-lg">
           The classifications, the fringe rate schedules and the compliance paperwork are built around
           union framing and drywall, plaster, EIFS, ceiling and fireproofing work &mdash; not bolted on
@@ -1158,7 +1205,7 @@ export function LandingPage() {
           before the ask. It is a disclosure, not proof. See the header. */}
       <Reveal className={sectionSpace}>
         <div className="rounded-2xl border border-line-card bg-surface p-8 sm:p-10">
-          <h2 className="text-2xl font-semibold text-ink sm:text-3xl">C Stream is new</h2>
+          <h2 className="font-headline text-2xl font-semibold text-ink sm:text-3xl">C Stream is new</h2>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
             This is not an established platform with years of customers behind it &mdash; it is a new
             system, built directly with subs in these trades. You will find rough edges, and what you
@@ -1185,7 +1232,7 @@ export function LandingPage() {
           Closing CTA. The third of three placements (nav, hero, here). */}
       <Reveal className={sectionSpace}>
         <div className="flex flex-col items-start gap-6 rounded-2xl border border-line-card bg-surface p-8 sm:p-10">
-          <h2 className="text-2xl font-semibold text-ink sm:text-3xl">See it on your own job</h2>
+          <h2 className="font-headline text-2xl font-semibold text-ink sm:text-3xl">See it on your own job</h2>
           <p className="max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg">
             Put a real job in it &mdash; the estimate, a week of hours, one pay application &mdash; and
             see whether the numbers come out where you expect.

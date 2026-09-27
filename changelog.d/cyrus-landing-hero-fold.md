@@ -84,3 +84,107 @@ visitor gets more slack than the 62.5px measured, not less), but the line
 count is not guaranteed: a narrower face may set the headline in three lines
 rather than four. Nothing breaks if it does — the demo spans both rows and is
 anchored to the top of the first, so it does not move when the headline does.
+
+---
+
+**Then Cyrus asked for two more things on the same branch: a bigger Ask
+panel, and a typeface.** They turned out to be the same change.
+
+**The panel is 544px wide at `xl`, up from 420.** 544 is not a round
+number: it is 34rem, the figure's own `max-w-[34rem]` cap. A column wider
+than that does not widen the panel — it parks the panel at 544 with dead
+space beside it, because the cell pins the figure right. So 544 is the
+largest column that is ALL panel.
+
+**Widening BOUGHT fold margin instead of spending it**, which is the
+opposite of the risk. The demo's cards reflow, and a wider panel wraps
+shorter. Sampled across the full 26-step loop at 1280, tallest frame by
+column width: 420 → 623.9, 460 → 623.9, 500 → 617.9, 520 → 617.9,
+544 → **603.9**. So the largest panel is also the safest one, and the
+answer to "what is the biggest panel that still clears an 800 fold" is
+"the biggest panel there is".
+
+**THE PAGE HAD NO TYPEFACE AT ALL, AND THAT IS THE WHOLE ARGUMENT.**
+Nothing in `globals.css`, `tailwind.config.ts` or `layout.tsx` set a
+family. Measured, not assumed: `document.fonts.size` was 0 and no font
+file was requested. Every heading rendered in `ui-sans-serif, system-ui,
+sans-serif` — SF Pro on a Mac, Segoe UI on Windows, Roboto on Android. The
+page had no identity and looked different on every machine, and every
+width this repo has ever measured for it was a measurement of whatever the
+measuring machine happened to have. That is why the first half of this
+entry had to end with a caveat about its own numbers.
+
+**No psychology claim is being made and none should be.** The evidence for
+"serifs read as trustworthy" compares competent faces against Comic Sans;
+it says nothing about choosing between two competent ones. The two reasons
+here are both measurable: one appearance everywhere, and a condensed face
+fits materially more per line.
+
+**That second reason is what made the bigger panel possible.** Min-content
+of "subcontractors." — the widest unbreakable word, and the thing that
+decides how narrow its column can be — at 64px, in real Chromium:
+
+    system fallback   549.5      Archivo           449.9
+    Barlow Condensed  342.0      Chivo             484.7
+    Archivo Narrow    364.5      Roboto Condensed  383.2
+
+In the hero's left column at the widened panel (488px), the largest size
+that still sets the headline in four lines:
+
+    Barlow Condensed  84px   <- chosen      Archivo          64px
+    Archivo Narrow    72px                  Chivo            none fits
+    Roboto Condensed  72px                  SYSTEM FALLBACK  none fits
+
+**The last row is the finding.** The stack this page used to render in
+does not fit the widened column at any size down to 56px. The panel could
+not have been widened this far without changing the face. Barlow Condensed
+over Archivo Narrow on the numbers — 84px against 72px in the same column
+— and it reads like the signage this trade is surrounded by. Roboto
+Condensed tied Archivo Narrow and is the Android system font, so it is the
+one condensed face that would look like no choice had been made.
+
+So the headline went UP from the 64px this branch shipped an hour earlier,
+in a column 124px NARROWER. Headings only; body text stays on the system
+stack, because a second family is a second download.
+
+**`next/font/local`, not `next/font/google`, and the reason is a failed
+build rather than a preference.** The Google loader fetches at BUILD time —
+a third-party dependency on every build in CI and on Vercel, for a 22KB
+file that never changes, where a failure to reach it fails the build
+rather than degrading it. It also could not be measured from an agent
+container at all: Node's fetch does not use the egress proxy, so the build
+died on "Failed to fetch `Barlow Condensed` from Google Fonts" and there
+was no page to put a browser in front of. A face chosen by measurement has
+to be measurable. The file and its OFL licence are in `app/fonts/`.
+
+    viewport     before this branch   after #532's fold fix   now
+    1280x900     271.4 BELOW fold     164.1 above             184.1 above
+    1280x800     371.4 BELOW          64.1 above               84.1 above
+    1280x720     391.4 BELOW          15.9 BELOW                4.1 above
+    1366x768     403.4 BELOW          32.1 above               52.1 above
+    1920x1080    91.4 BELOW           344.1 above             364.1 above
+    1024x768     387.5 BELOW          387.5 BELOW             292.6 BELOW
+    375x812      21.8 BELOW           21.8 BELOW               21.8 BELOW
+    320x568      421.8 BELOW          421.8 BELOW             421.8 BELOW
+
+**The checks.** The measuring harness now REFUSES to report a number unless
+`document.fonts` says the face is loaded — without that control it measures
+the fallback and calls it the result, which is the exact mistake the
+webfont exists to end. Phone geometry is unchanged to the pixel and the
+cell height is still constant across the loop at 320, 336, 344, 360 and
+375, with `scrollWidth === innerWidth` at every one. `displayFontWiring.
+test.ts` holds the five-link chain that delivers the face — file, `src`,
+the variable, the `<html>` mount, the Tailwind family, a component using it
+— because every link but the last fails SILENTLY back to the system stack,
+which is what the page did before and so looks like nothing is wrong. It
+strips comments before reading structure, since both files discuss
+`font-headline` in their own notes. Five mutations, five reds, plus two on
+the widened column.
+
+**What is worse, and is recorded rather than hidden.** The empty background
+to the right of the paperwork list, below the figure, grew from 370.7px to
+**551.2px** — a narrower left column makes the words taller (769 against
+691) while a wider panel makes the figure shorter (603.9 against 623.9).
+It is all below the fold. The fix is a third structural change (the
+paperwork list taking the right column under the demo at `xl`) and belongs
+in its own pass rather than folded into a font change.
