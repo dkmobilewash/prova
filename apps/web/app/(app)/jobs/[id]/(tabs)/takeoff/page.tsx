@@ -5,6 +5,8 @@ import { NoAccess } from "@/components/NoAccess";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { TakeoffMeasurementList } from "@/components/TakeoffMeasurementList";
 import { TakeoffPlanUploader } from "@/components/TakeoffPlanUploader";
+import { PlanIngestPanel } from "@/components/PlanIngestPanel";
+import { unfinishedIngestFor } from "@/lib/plan-ingest/claim";
 import { TakeoffCurrencyBanner } from "@/components/TakeoffCurrencyBanner";
 import { TakeoffPlanRevisionForm } from "@/components/TakeoffPlanRevisionForm";
 import { loadTakeoffCurrency } from "@/lib/takeoff-currency-query";
@@ -176,6 +178,25 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
       </div>
 
       {!isEstimateStage && <NotEstimating />}
+
+      {/* READING THE SHEETS, above the viewer because it is about the whole set
+          rather than one sheet.
+
+          `pageCount` is the number of sheets ON FILE, not the PDF's page count,
+          and the difference is deliberate rather than a shortcut: `TakeoffPlan`
+          has no `pageCount` column because the server has no PDF library to read
+          one with — the viewer knows it because `pdfjs-dist` renders the document
+          in the BROWSER. So this first stage walks the sheets C Stream already
+          knows about, which is well defined and honest. The real page count
+          arrives with rasterisation, which the step-1 plan flagged as the one
+          genuinely undecided piece. */}
+      {isEstimateStage && (
+        <PlanIngestPanel
+          planId={plan.id}
+          pageCount={plan.pages.length > 0 ? plan.pages.length : null}
+          existing={await unfinishedIngestFor(plan.id, "PAGE_INVENTORY")}
+        />
+      )}
 
       <TakeoffPlanViewer jobId={job.id} planId={plan.id} sheets={sheets} />
 

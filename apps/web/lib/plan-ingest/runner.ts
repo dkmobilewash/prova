@@ -221,6 +221,32 @@ export async function runIngest(options: {
 }
 
 /**
+ * What a run looks like to a screen.
+ *
+ * DECLARED HERE, in the module with no database, ON PURPOSE. The panel is a
+ * client component, `claim.ts` imports prisma, and
+ * `client-prisma-boundary.test.ts` fails the build when a `"use client"` module
+ * can reach `PrismaClient` — which it caught within a minute of the AI settings
+ * form being written the other way round. A screen needing the SHAPE of a run is
+ * not a reason to send it the queries. `type PlanIngestStage` above is a
+ * type-only import and erases at compile time, so it crosses nothing.
+ */
+export type IngestView = {
+  jobId: string;
+  stage: PlanIngestStage;
+  total: number;
+  finished: number;
+  exhausted: number;
+  pending: number;
+  inFlight: number;
+  percent: number;
+  complete: boolean;
+  /** True when every remaining page is inside its backoff window — so the panel
+   *  can say "waiting to retry" rather than showing a bar that looks stalled. */
+  waiting: boolean;
+};
+
+/**
  * The progress figure, derived from counts and never stored.
  *
  * `settled` is finished plus permanently failed, because a job whose last page

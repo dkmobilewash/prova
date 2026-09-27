@@ -1,0 +1,263 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { prisma, type PlanIngestStage } from "@prova/db";
+import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
+import { claimPorts, closeIfSettled, ingestViewOf } from "@/lib/plan-ingest/claim";
+import { runIngest, MAX_ATTEMPTS, type IngestView } from "@/lib/plan-ingest/runner";
+import { isRunnableStage, stageWork } from "@/lib/plan-ingest/stages";
+import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "./shared";
+
+/**
+ * Starting, advancing and retrying a plan-ingestion run.
+ *
+ * WHY THE BROWSER DRIVES THIS AND THE CRON IS ONLY A SAFETY NET — the decision
+ * worth reading, because it is the opposite of how the notifications digest
+ * works and the reason is not obvious.
+ *
+ * A cron's interval bounds throughput. At five minutes a tick and 45 seconds of
+ * work per tick, a 300-page set with real model calls would take well over an
+ * hour, most of it spent waiting for the next tick rather than working — and
+ * the person who just uploaded the drawings is sitting in front of a progress
+ * bar that moves once every five minutes. Worse, the interval that fixes that
+ * is a plan feature: sub-daily crons are not available on every Vercel plan, so
+ * throughput would depend on billing.
+ *
+ * So `advancePlanIngest` is a Server Action the OPEN PAGE calls in a loop. The
+ * work happens while somebody is watching it, at whatever rate the work allows,
+ * on any plan. The cron then exists for the one thing the browser cannot do:
+ * finish a run whose page was closed halfway.
+ *
+ * WHAT MAKES THAT SAFE IS THE CLAIM COLUMN, and this is where it earns its keep
+ * twice over. The browser, a second browser and the cron can all be advancing
+ * the same job simultaneously; each claim is atomic, so no page is done twice
+ * and no invocation needs to know about the others. A design where the browser
+ * "owned" the run would need a lock, a lease on the lock, and a way to tell a
+ * dead tab from a slow one — which is the same problem again, one level up.
+ *
+ * THE CAPABILITY IS `VIEW_JOB_COSTS`, AND THE FIRST VERSION OF THIS FILE GOT IT
+ * WRONG. It asserted `MANAGE_ESTIMATING`, which sounds right for a plan set and
+ * is not the capability the door takes: `/jobs/[id]/takeoff` is hard-gated on
+ * `VIEW_JOB_COSTS`, and its own header says "one gate, one door" because a second
+ * capability on that page would make every action behind it ambiguous to the
+ * census. Asserting the tidier-sounding one would have refused an estimator who
+ * can open the page and answered somebody who cannot — issue #383's exact shape.
+ *
+ * `lib/action-capability-guards.test.ts` named all four actions and the page they
+ * are reachable from, which is how this was caught rather than shipped. Every
+ * action asserts it rather than trusting the page, because a Server Action is a
+ * separate endpoint with a stable id that answers whoever posts to it.
+ */
+
+const NOT_YOURS =
+  "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
+
+/** One page that failed for the last time, as the panel lists it. A named type
+ *  rather than an inline shape so the guard in `planIngestFailures` fits on one
+ *  line: `action-capability-guards.test.ts` reads the guard as source text, and a
+ *  return type long enough to wrap pushed the `can(...)` onto its own line where
+ *  the census could not see it. Found by that suite naming the action. */
+export type FailedPage = { pageNumber: number; attempts: number; error: string | null };
+
+/** The plan set, proved to belong to the caller's company. Returns null rather
+ *  than throwing, so every caller can put a sentence on screen. */
+async function planInCompany(planId: string, companyId: string) {
+  return prisma.takeoffPlan.findFirst({
+    where: { id: planId, companyId },
+    select: { id: true, jobId: true, companyId: true },
+  });
+}
+
+/**
+ * Create a run over `pageCount` pages, or hand back the one already running.
+ *
+ * THE PAGE COUNT COMES FROM THE BROWSER, and it has to: `TakeoffPlan` has no
+ * `pageCount` column because the server has no PDF library to read one with —
+ * the viewer knows it because `pdfjs-dist` renders the document there. So this
+ * takes the count as an argument and bounds it, rather than trusting it: a
+ * client that asked for a million pages would otherwise create a million rows.
+ */
+export async function startPlanIngest(
+  planId: string,
+  stage: PlanIngestStage,
+  pageCount: number,
+): Promise<ActionResultWith<IngestView>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(NOT_YOURS) as ActionResultWith<IngestView>;
+  const companyId = context.company.id;
+
+  const plan = await planInCompany(planId, companyId);
+  if (!plan) return { ok: false, error: "That plan set could not be found." };
+
+  if (!isRunnableStage(stage)) {
+    // REFUSED UP FRONT rather than one page at a time. A job created for an
+    // unbuilt stage would claim every page, fail on each, and spend three
+    // attempts per page before reporting anything — three hundred pages of
+    // failure to say "not built yet". `stageWork` refuses too; this is the
+    // first of the two, and the one a person sees.
+    return { ok: false, error: "That kind of plan reading isn't built yet." };
+  }
+
+  // A count the browser supplied, bounded both ends. Zero is legitimate (an
+  // empty PDF is reachable) and produces a job that completes immediately,
+  // which `ingestProgress` calls 100% rather than dividing by zero.
+  if (!Number.isInteger(pageCount) || pageCount < 0 || pageCount > 2_000) {
+    return { ok: false, error: "That plan set's page count doesn't look right, so nothing was started." };
+  }
+
+  // AN UNFINISHED RUN IS REUSED, NOT DUPLICATED. Two people opening the same
+  // plan set would otherwise create two jobs over the same pages, and the
+  // progress figure would be over whichever one was queried — a bar that jumps
+  // backwards depending on who is looking.
+  const existing = await prisma.planIngestJob.findFirst({
+    where: { planId, stage, finishedAt: null },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, stage: true },
+  });
+  if (existing) return { ok: true, value: await ingestViewOf(existing.id, existing.stage) };
+
+  const created = await prisma.$transaction(async (tx) => {
+    const job = await tx.planIngestJob.create({
+      data: { planId, companyId, stage, pageCount, startedByUserId: context.id },
+      select: { id: true, stage: true },
+    });
+    if (pageCount > 0) {
+      await tx.planIngestTask.createMany({
+        data: Array.from({ length: pageCount }, (_, index) => ({
+          jobId: job.id,
+          pageNumber: index + 1,
+          stage,
+        })),
+      });
+    }
+    return job;
+  });
+
+  revalidatePath(`/jobs/${plan.jobId}`);
+  return { ok: true, value: await ingestViewOf(created.id, created.stage) };
+}
+
+/**
+ * Do one slice of work and report where the run got to.
+ *
+ * CALLED IN A LOOP BY THE OPEN PAGE. Its budget is deliberately far below the
+ * cron's: a Server Action holds the person's request open, so a 45-second one
+ * would look like a hung page. Several short slices give the progress bar
+ * something to show and let the person navigate away between them — and
+ * navigating away mid-slice costs nothing, because the claim lapses and the
+ * cron or the next visit picks it up.
+ */
+export async function advancePlanIngest(ingestJobId: string): Promise<ActionResultWith<IngestView>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(NOT_YOURS) as ActionResultWith<IngestView>;
+
+  // SCOPED TO THE CALLER'S COMPANY, from the session rather than the argument.
+  // The id in the argument is a claim; this is the check. Without it the action
+  // would advance any company's run for anybody who knew an id.
+  const job = await prisma.planIngestJob.findFirst({
+    where: { id: ingestJobId, companyId: context.company.id },
+    select: { id: true, stage: true, startedAt: true, planId: true },
+  });
+  if (!job) return { ok: false, error: "That plan reading could not be found." };
+
+  if (!job.startedAt) {
+    await prisma.planIngestJob.updateMany({
+      where: { id: job.id, startedAt: null },
+      data: { startedAt: new Date() },
+    });
+  }
+
+  try {
+    await runIngest({
+      ports: claimPorts({ jobId: job.id, work: stageWork(job.stage) }),
+      // Five seconds. Short enough that the page stays responsive, long enough
+      // that a slice is worth the round trip.
+      budgetMs: 5_000,
+    });
+  } catch (err) {
+    // A page's own failure is caught inside `runIngest` and recorded against
+    // its row; reaching here means the loop itself broke, which is a bug. The
+    // sentence is generic because a thrown error's text can carry a connection
+    // string and this reaches a screen.
+    console.error("[plan-ingest] advance threw", { jobId: job.id, stage: job.stage, err });
+    return { ok: false, error: "Reading this plan set stopped unexpectedly. Nothing was lost — try again." };
+  }
+
+  await closeIfSettled(job.id);
+  return { ok: true, value: await ingestViewOf(job.id, job.stage) };
+}
+
+/**
+ * Give one failed page its attempts back.
+ *
+ * WHY THIS RESETS `attempts` RATHER THAN NUDGING IT. The ceiling exists to stop
+ * an automatic loop spending without end; a person clicking Retry is not that
+ * loop, and they have read the error. Decrementing by one would give them a
+ * single try and then refuse again with the same message, which reads as a
+ * broken button.
+ *
+ * It refuses a page that is currently being worked on rather than yanking the
+ * claim out from under a live worker — the one case where a person's click and
+ * the machinery genuinely conflict.
+ */
+export async function retryPlanIngestPage(ingestJobId: string, pageNumber: number): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(NOT_YOURS);
+
+  const job = await prisma.planIngestJob.findFirst({
+    where: { id: ingestJobId, companyId: context.company.id },
+    select: { id: true, planId: true, plan: { select: { jobId: true } } },
+  });
+  if (!job) return actionFail("That plan reading could not be found.");
+
+  const at = new Date();
+  const reset = await prisma.planIngestTask.updateMany({
+    where: {
+      jobId: job.id,
+      pageNumber,
+      finishedAt: null,
+      // Not currently held by a live worker. `claimExpiresAt` in the past is
+      // fair game — that worker is gone.
+      OR: [{ claimedAt: null }, { claimExpiresAt: { lt: at } }],
+    },
+    data: { attempts: 0, error: null, claimedAt: null, claimExpiresAt: null, nextAttemptAt: null },
+  });
+
+  if (reset.count !== 1) {
+    // Three states share this sentence on purpose: already finished, being read
+    // right now, or no such page. All three mean "there is nothing for you to
+    // retry", and distinguishing them on screen would be three messages for one
+    // decision the person does not have to make.
+    return actionFail("That page is either already read or being read right now, so there was nothing to retry.");
+  }
+
+  // A job closed because every page had failed must REOPEN when one is retried,
+  // or the run is complete with work outstanding and no tick will ever visit it.
+  await prisma.planIngestJob.updateMany({
+    where: { id: job.id, finishedAt: { not: null } },
+    data: { finishedAt: null },
+  });
+
+  revalidatePath(`/jobs/${job.plan.jobId}`);
+  return actionOk;
+}
+
+/** Every failed page of a run, for the panel's retry list. */
+export async function planIngestFailures(ingestJobId: string): Promise<ActionResultWith<FailedPage[]>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(NOT_YOURS) as ActionResultWith<FailedPage[]>;
+
+  const job = await prisma.planIngestJob.findFirst({
+    where: { id: ingestJobId, companyId: context.company.id },
+    select: { id: true },
+  });
+  if (!job) return { ok: false, error: "That plan reading could not be found." };
+
+  const failures = await prisma.planIngestTask.findMany({
+    where: { jobId: job.id, finishedAt: null, attempts: { gte: MAX_ATTEMPTS } },
+    orderBy: { pageNumber: "asc" },
+    select: { pageNumber: true, attempts: true, error: true },
+  });
+  return { ok: true, value: failures };
+}
