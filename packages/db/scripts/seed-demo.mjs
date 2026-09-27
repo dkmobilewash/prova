@@ -273,6 +273,42 @@ async function main() {
     },
   });
 
+  // ------------------------------------------------------- people at the GC
+  //
+  // Contact is the GC as an account; ContactPerson is who to actually call
+  // there (crm.prisma). Until 2026-09-27 this script wrote none, so
+  // Brackett's People section read "No one added at Brackett Construction
+  // yet" — on a dataset whose message log names two people there, whose
+  // interaction log records a call to "Dana" and a site walk "with the
+  // super", and whose toolbox talks list Dana as a presenter. These are
+  // those two people, given the row the product already has for them.
+  // Nothing here is new to the dataset except the titles and the phones.
+  //
+  // The superintendent is the one the launch video's third beat needs.
+  // Nothing in this app records who was on site — the Ask box refuses to
+  // name anyone, and that refusal is the point of the beat — so the honest
+  // next move is to ask somebody who would know. On the sub's own side that
+  // is the foreman, and Hector Ramirez below is a CrewMember: the model has
+  // no email column and the SMS channel is modelled but not wired
+  // (messaging.prisma), so the product cannot message him and has to say
+  // so rather than pretend. On the GC's side it is the superintendent, who
+  // keeps the gate log and the daily manpower count by trade, and who has
+  // an address the product CAN send to — the one the message log below was
+  // already using for him.
+  //
+  // undo() finds these through the contact, not through a tag — the same
+  // rule as interactions and bid invitations — and the name is left clean
+  // because it prints on the "To" line of every message drafted to them.
+  const gcPeople = {};
+  for (const [key, name, title, email, phone] of [
+    ["super", "Marco Silva", "Superintendent", "super@brackettconstruction.example", "(503) 555-0161"],
+    ["pm", "Dana Whitfield", "Project Manager", "dana@brackettconstruction.example", "(503) 555-0157"],
+  ]) {
+    gcPeople[key] = await prisma.contactPerson.create({
+      data: { companyId: company.id, contactId: gc.id, name, title, email, phone },
+    });
+  }
+
   // ------------------------------------------------------------------- jobs
   // Deliberately at four different stages, because a demo that shows four
   // jobs all in the same state shows one screen four times.
@@ -1755,19 +1791,26 @@ async function main() {
   // are worked out from followUpOn, so one of these is deliberately in the
   // past and one in the future. followUpAssignedToUserId is a separate
   // field from loggedByUserId on purpose, and both are exercised here.
+  //
+  // The two Brackett entries name a person, and the row links to that
+  // person: "last contact" on the People section is derived from this log
+  // per person (contacts/[id]/page.tsx), so a log that only names them in
+  // prose leaves every person reading as never contacted.
   const interactions = [
-    [gc, "CALL", -12, "Called Dana about the level 3 ceiling grid RFI. She will chase the architect.", 2],
-    [gc, "SITE_VISIT", -5, "Walked levels 1-2 with the super. Punch walk pencilled for the 20th.", null],
-    [gc2, "EMAIL", -21, "Sent the updated MSA for signature. No reply yet.", -4],
-    [gc2, "NOTE", -9, "Their AP has moved to net 30 in practice regardless of what the contract says.", null],
-    [gc3, "CALL", -16, "Intro call on the Riverfront Tower package. Bid due in three weeks.", 5],
-    [gc3, "EMAIL", -2, "Sent prequal packet and bonding letter.", null],
+    // [contact, type, daysAgo, summary, followUpDaysFromNow, person key]
+    [gc, "CALL", -12, "Called Dana about the level 3 ceiling grid RFI. She will chase the architect.", 2, "pm"],
+    [gc, "SITE_VISIT", -5, "Walked levels 1-2 with the super. Punch walk pencilled for the 20th.", null, "super"],
+    [gc2, "EMAIL", -21, "Sent the updated MSA for signature. No reply yet.", -4, null],
+    [gc2, "NOTE", -9, "Their AP has moved to net 30 in practice regardless of what the contract says.", null, null],
+    [gc3, "CALL", -16, "Intro call on the Riverfront Tower package. Bid due in three weeks.", 5, null],
+    [gc3, "EMAIL", -2, "Sent prequal packet and bonding letter.", null, null],
   ];
-  for (const [contact, type, at, summary, followUp] of interactions) {
+  for (const [contact, type, at, summary, followUp, person] of interactions) {
     await prisma.contactInteraction.create({
       data: {
         companyId: company.id,
         contactId: contact.id,
+        contactPersonId: person === null ? null : gcPeople[person].id,
         type,
         occurredOn: day(at),
         summary: `${summary} ${MARK}`,
@@ -2154,15 +2197,18 @@ async function main() {
   const messages = [
     // [job, to, toName, subject, body, sentDaysAgo, relatedType, events]
     // events: [type, daysAgo, minutesPastMidnight, detail]
-    [riverside, "dana@brackettconstruction.example", "Dana Whitfield", "RFI 3 — rated assembly at mechanical rooms 2A/2B", "Dana, following up on RFI 3. We need the UL assembly before we can close those walls. Framing is holding.", -9, "RFI", [["QUEUED", -9, 494, null], ["SENT", -9, 495, null], ["DELIVERED", -9, 498, null]]],
-    [riverside, "dana@brackettconstruction.example", "Dana Whitfield", "Submittal 2 — ceiling grid, revision B", "Revision B attached, incorporating the seismic bracing comments.", -20, "SUBMITTAL", [["QUEUED", -20, 601, null], ["SENT", -20, 602, null], ["DELIVERED", -20, 604, null]]],
+    // The Brackett recipients are read off their ContactPerson rows above,
+    // so the message log and the People section cannot name the same person
+    // at two different addresses.
+    [riverside, gcPeople.pm.email, gcPeople.pm.name, "RFI 3 — rated assembly at mechanical rooms 2A/2B", "Dana, following up on RFI 3. We need the UL assembly before we can close those walls. Framing is holding.", -9, "RFI", [["QUEUED", -9, 494, null], ["SENT", -9, 495, null], ["DELIVERED", -9, 498, null]]],
+    [riverside, gcPeople.pm.email, gcPeople.pm.name, "Submittal 2 — ceiling grid, revision B", "Revision B attached, incorporating the seismic bracing comments.", -20, "SUBMITTAL", [["QUEUED", -20, 601, null], ["SENT", -20, 602, null], ["DELIVERED", -20, 604, null]]],
     [cedar, "ap@brackettconstruction.example", null, "Closeout package — Cedar, second submission", "Full package attached with the corrected as-builts and the executed unconditional waiver.", -14, "CLOSEOUT", [["QUEUED", -14, 933, null], ["SENT", -14, 934, null], ["DELIVERED", -14, 941, null]]],
     // Bounced: a real, fixable problem, and the detail is what makes it fixable.
     [northgate, "j.reyes@halvorsenbuilders.example", "Joel Reyes", "Northgate Phase 2 — schedule of values for review", "Attached the SOV for the 48 units, broken out by building.", -6, null, [["QUEUED", -6, 545, null], ["SENT", -6, 546, null], ["BOUNCED", -6, 549, "550 5.1.1 recipient address rejected: user unknown"]]],
     // Handed to the provider six days ago and never confirmed. The state
     // /messages calls "unconfirmed", which needs a message at least a day
     // old — hence the explicit createdAt below.
-    [riverside, "super@brackettconstruction.example", "Marco Silva", "Level 3 ceiling grid — start date", "Confirming we start the level 3 grid Monday, assuming the mechanical rough-in is signed off.", -6, null, [["QUEUED", -6, 1012, null], ["SENT", -6, 1013, null]]],
+    [riverside, gcPeople.super.email, gcPeople.super.name, "Level 3 ceiling grid — start date", "Confirming we start the level 3 grid Monday, assuming the mechanical rough-in is signed off.", -6, null, [["QUEUED", -6, 1012, null], ["SENT", -6, 1013, null]]],
     // Never reached the provider at all: no events, no providerMessageId.
     // Reads as "Never sent" rather than as an empty log.
     [cedar, "ap@brackettconstruction.example", null, "Retainage release — Cedar", "The closeout package went in on the 14th. Confirming the retainage release schedule.", -3, null, []],
@@ -2196,7 +2242,7 @@ async function main() {
     }
   }
 
-  console.log("seed: change orders, submittals, punch list, closeout, talks, orders, drawings, union local, crafts, fringe rates, crew, craft-tagged hours, payroll register, WH-347 numbers, catalog, pricing, RFIs, safety, bids, interactions, equipment, prevailing wage, backcharges, closeout submissions and messages written");
+  console.log("seed: GC people, change orders, submittals, punch list, closeout, talks, orders, drawings, union local, crafts, fringe rates, crew, craft-tagged hours, payroll register, WH-347 numbers, catalog, pricing, RFIs, safety, bids, interactions, equipment, prevailing wage, backcharges, closeout submissions and messages written");
   return { company, user, gc, gc2, gc3, riverside, northgate, lakeshore, riversideLines, oregonPrior, oregonCurrent };
 }
 
