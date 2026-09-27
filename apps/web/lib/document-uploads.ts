@@ -109,6 +109,7 @@ export const DOCUMENT_UPLOAD_PURPOSES = [
   "executed-subcontract",
   "compliance-document",
   "plan-takeoff",
+  "bid-quote",
 ] as const;
 
 export type DocumentUploadPurpose = (typeof DOCUMENT_UPLOAD_PURPOSES)[number];
@@ -182,6 +183,21 @@ export const DOCUMENT_UPLOAD_TARGETS: Record<DocumentUploadPurpose, DocumentUplo
     // key of this table.
     capability: "MANAGE_JOBS",
     refusal: "Managing jobs isn't part of your job function.",
+  },
+  "bid-quote": {
+    root: "bid-quotes",
+    // COMPANY-scoped, not job-scoped, and that follows the row rather than a
+    // preference: `BidQuote` hangs off a `BidInvitation`, which is
+    // company-scoped and carries no `jobId` at all. A job prefix would be a
+    // path with nothing to put in it — and on a bid the company has not won,
+    // there is no job to name.
+    scope: "company",
+    // Gated, for the reason `compliance-document` is: the action this token
+    // feeds sends the whole file to a model against the company's paid monthly
+    // allowance. `readBidQuoteDocument` asserts the same capability, so a
+    // person who cannot use it never moves the bytes either.
+    capability: "MANAGE_ESTIMATING",
+    refusal: "Estimating isn't part of your job function.",
   },
   "compliance-document": {
     root: "compliance",

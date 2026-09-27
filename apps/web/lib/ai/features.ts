@@ -73,6 +73,7 @@ export const AI_FEATURE_LABEL: Record<AiFeatureKey, string> = {
   DRAFT_ESTIMATE_LINES: "Drafting estimate lines",
   BID_RESEARCH: "Bid research",
   LEAD_SEARCH: "Lead search",
+  QUOTE_EXTRACT: "Reading a sub's quote",
   PLAN_INGESTION: "Reading plan sets",
 };
 
@@ -97,6 +98,8 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
   BID_RESEARCH:
     "Looking up a new project on the web to pre-fill a bid card. The project name and location leave for the search.",
   LEAD_SEARCH: "Searching the web for projects out to bid in your trades and area.",
+  QUOTE_EXTRACT:
+    "Reading a quote a sub or supplier sent you, and filling in the amount, date and exclusions for you to check. Nothing is saved until you press save, and with this off you can still type a quote in by hand.",
   PLAN_INGESTION:
     "Reading an uploaded plan set: splitting it into sheets, classifying them and indexing the title blocks. Not built yet — the switch is here first so it is not retrofitted later.",
 };

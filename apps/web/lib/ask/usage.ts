@@ -176,6 +176,12 @@ export type AskUsageFeature =
   | "ask"
   | "wip-narrative"
   | "compliance-extract"
+  /** Reading a sub's quote document (lib/actions/quoteRead.ts). Its own row
+   *  rather than folded into `compliance-extract`, even though both are one
+   *  whole file into one request and both claim the SAME page ledger: they are
+   *  switched separately, so a bill that could not tell them apart could not
+   *  answer "what did the thing we turned off actually cost us". */
+  | "quote-extract"
   | "draft-estimate-lines"
   /** The public-web lookup behind "start a bid" (lib/ask/commands/
    *  estimating.ts). Its own row, because web search is billed per search
@@ -347,6 +353,7 @@ const FEATURE_LABELS: Record<string, string> = {
   ask: "Ask",
   "wip-narrative": "WIP narrative",
   "compliance-extract": "Document extraction",
+  "quote-extract": "Quote reading",
   "draft-estimate-lines": "Estimate drafting",
   "bid-research": "Bid research (web)",
   "lead-search": "Lead search (web)",

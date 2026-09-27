@@ -55,6 +55,11 @@ export const notYetRegistered: Exclusion[] = [
   { action: "wallTypes.*", reason: "Wall types are the company's partition schedule and a job's wall runs are measurements off the drawings; both are entered where the schedule and the runs are shown, and every run write regenerates estimate lines. Never a command." },
   { action: "bidRecap.*", reason: "Markup, overhead and profit are the estimator's own margin call, read off the recap they are looking at; applying one rewrites every line price on the job. Never a command." },
   {
+    action: "quoteRead.*",
+    reason:
+      "Reading a sub's quote. It spends the company's paid document allowance on a file, and what it returns is a SUGGESTION a person corrects in the form before saving — so a command would either spend money on a prompt's say-so or hand the model's own reading straight to `saveBidQuote`, which is the one thing this feature is built not to do. The estimator uploads the quote where they log it. Never a command.",
+  },
+  {
     action: "aiSettings.*",
     reason:
       "The switch that decides whether AI runs for this company at all. Reachable from a prompt it would let the assistant be asked to re-enable itself, or to turn off the audit trail of its own proposals — a model must never hold the control over whether a model is used. Owner-only on /settings/assistant, and permanently never a command.",
