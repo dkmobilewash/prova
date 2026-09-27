@@ -41,7 +41,27 @@ function reads(row: PlanMeasurementRow): string {
   return `${primitive.count} × ${primitive.item}`;
 }
 
-export function TakeoffMeasurementList({ jobId, sheet }: { jobId: string; sheet: PlanSheet }) {
+/** A wall type a measured run can be posted against. Only types that HAVE
+ * layers reach here — one without produces no schedule lines, so posting
+ * against it would record a run and add nothing. `defaultHeightFt` is a number
+ * rather than a Decimal because this is a client component. */
+export type PostableWallType = {
+  id: string;
+  code: string;
+  name: string;
+  defaultHeightFt: number | null;
+  sides: number;
+};
+
+export function TakeoffMeasurementList({
+  jobId,
+  sheet,
+  wallTypes,
+}: {
+  jobId: string;
+  sheet: PlanSheet;
+  wallTypes: PostableWallType[];
+}) {
   const [selected, setSelected] = useState<string[]>([]);
   const [recipe, setRecipe] = useState(PLAN_RECIPES[0]?.id ?? "wall");
 
@@ -178,7 +198,27 @@ export function TakeoffMeasurementList({ jobId, sheet }: { jobId: string; sheet:
           </label>
         </div>
 
-        {recipe === "wall" && <WallBridgeFields />}
+        {recipe === "wall" && <WallBridgeFields wallTypes={wallTypes} />}
+
+        {/* #515's open question, answered on screen rather than in a migration.
+            Only the wall recipe has something to point at — a `WallType` whose
+            components carry the price, the craft and the catalog link. Ceilings,
+            paint, flooring and counts have no equivalent, so their lines land
+            with a quantity and no price.
+        
+            The alternative was mapping each recipe's output to catalog entries
+            the way `WallTypeComponent.catalogEntryId` does. That is a real
+            feature and a larger one, and guessing it here would put a price on
+            a bid nobody chose — the thing `bid-recap.ts` refuses to do. So the
+            absence is NAMED instead: an estimator learns it at the takeoff,
+            where the measurement is in front of them, rather than discovering
+            it in the recap with the bid already built. */}
+        {recipe !== "wall" && (
+          <p className="text-xs text-ink-muted">
+            These land as quantities with no price — only a wall can be priced from a wall type. You will see them on
+            the estimate as uncoded lines to price.
+          </p>
+        )}
 
         <div className="flex flex-wrap items-center gap-3">
           <SubmitButton
@@ -201,17 +241,55 @@ export function TakeoffMeasurementList({ jobId, sheet }: { jobId: string; sheet:
 /** The two things a wall needs that a drawing does not carry, plus the
  * openings to deduct. The height is typed once and applies to every run
  * selected, because the runs are summed into one wall. */
-function WallBridgeFields() {
+function WallBridgeFields({ wallTypes }: { wallTypes: PostableWallType[] }) {
   const [openings, setOpenings] = useState<{ w: string; h: string }[]>([]);
+  /** Empty means "quantities only" — the behaviour before #515, kept because a
+   * company with no wall types still has to be able to post what it measured. */
+  const [wallTypeId, setWallTypeId] = useState("");
+  const picked = wallTypes.find((type) => type.id === wallTypeId) ?? null;
 
   return (
     <div className="flex flex-col gap-2 rounded-md border border-line-row p-2">
       <p className="text-xs text-ink-muted">
         A drawing carries the run, not the height. Every line you picked is added together into one wall.
       </p>
+
+      {/* #515. Posting against a wall type gives the measured run the whole
+          schedule — price, cost, craft, catalog link and cost category — the
+          way a run typed on the Wall types page already gets. Without one the
+          measurement lands as a bare quantity somebody prices by hand, which
+          is what this picker exists to stop being the default. */}
+      {wallTypes.length > 0 ? (
+        <label className="flex flex-col gap-1 text-xs text-ink-label">
+          Wall type
+          <select
+            name="wallTypeId"
+            value={wallTypeId}
+            onChange={(event) => setWallTypeId(event.target.value)}
+            className="max-w-sm rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
+          >
+            <option value="">Quantities only — no price</option>
+            {wallTypes.map((type) => (
+              <option key={type.id} value={type.id}>
+                {type.code} — {type.name}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-ink-muted">
+            {picked
+              ? `Adds a wall run priced from ${picked.code}'s layers, boarded ${picked.sides === 1 ? "one side" : "both sides"}.`
+              : "These runs land as quantities with no price. Pick a wall type to have them priced."}
+          </span>
+        </label>
+      ) : (
+        <p className="text-xs text-tag-amber-ink">
+          No wall type has layers yet, so these runs can only land as quantities with no price. Adding layers on the
+          Wall types page is what lets a measured run arrive priced.
+        </p>
+      )}
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-xs text-ink-label">
-          Wall height (ft)
+          {picked ? `Wall height (ft) — ${picked.defaultHeightFt ?? "type has none"}` : "Wall height (ft)"}
           <input
             name="heightFt"
             inputMode="decimal"
@@ -219,35 +297,45 @@ function WallBridgeFields() {
             className="w-24 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-ink-label">
-          Boarded
-          <select
-            name="sides"
-            defaultValue="2"
-            className="rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
-          >
-            <option value="2">Both sides</option>
-            <option value="1">One side</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-ink-label">
-          Stud spacing (in)
-          <input
-            name="spacingIn"
-            inputMode="decimal"
-            placeholder="16"
-            className="w-24 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-ink-label">
-          Waste (%)
-          <input
-            name="wastePercent"
-            inputMode="decimal"
-            placeholder="10"
-            className="w-20 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
-          />
-        </label>
+        {/* HIDDEN once a wall type is picked, and that is not tidiness: the
+            type owns `sides` and `studSpacingIn`, and each of its components
+            owns its own `wastePercent`, `factor` and `roundUp`. Left on screen
+            these three would be inputs that look like they matter and are
+            ignored — the same defect as a rate nobody can set, wearing the
+            opposite face. */}
+        {!picked && (
+          <>
+            <label className="flex flex-col gap-1 text-xs text-ink-label">
+              Boarded
+              <select
+                name="sides"
+                defaultValue="2"
+                className="rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
+              >
+                <option value="2">Both sides</option>
+                <option value="1">One side</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-ink-label">
+              Stud spacing (in)
+              <input
+                name="spacingIn"
+                inputMode="decimal"
+                placeholder="16"
+                className="w-24 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-ink-label">
+              Waste (%)
+              <input
+                name="wastePercent"
+                inputMode="decimal"
+                placeholder="10"
+                className="w-20 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
+              />
+            </label>
+          </>
+        )}
         <button
           type="button"
           onClick={() => setOpenings((current) => [...current, { w: "", h: "" }])}

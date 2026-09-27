@@ -136,6 +136,15 @@ export async function syncWallScheduleLines(tx: Tx, companyId: string, jobId: st
         // from the component, so writing one and not the other is how a line
         // ends up priced at this month's productivity and back-checked against
         // last month's.
+        //
+        // AND THE PRICE IS DELIBERATELY NOT HERE — stated because #515 read the
+        // omission and could not tell whether it was a choice. `unitPrice` and
+        // `budgetedUnitCost` are written when the line is CREATED and never
+        // again: a re-sync happens whenever a run's length or a type's layers
+        // change, and an estimator who has adjusted a price on this bid must not
+        // lose it to a recalibration. The quantity and the labour are geometry
+        // and are the schedule's to own; the price, once it exists, is the
+        // estimator's. A line that should be repriced is one somebody deletes.
         data: { quantity: line.quantity.toString(), laborHours, productionRate },
       });
       updated += 1;

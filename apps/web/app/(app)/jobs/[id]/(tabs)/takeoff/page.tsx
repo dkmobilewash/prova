@@ -47,6 +47,17 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   // spent deciding.
   const currency = await loadTakeoffCurrency(company.id, job.id);
 
+  // #515. What a measured wall run can be posted AGAINST, so it arrives priced
+  // instead of as a bare quantity. Only types that HAVE layers: one without
+  // produces no schedule lines, so posting against it would record a run and
+  // add nothing to the estimate — worse than the quantities it replaced. The
+  // action refuses a layerless type as well, because a form can send anything.
+  const postableWallTypes = await prisma.wallType.findMany({
+    where: { companyId: company.id, components: { some: {} } },
+    orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+    select: { id: true, code: true, name: true, defaultHeightFt: true, sides: true },
+  });
+
   const plan = await prisma.takeoffPlan.findFirst({
     where: { jobId: job.id, companyId: company.id },
     orderBy: { createdAt: "desc" },
@@ -174,7 +185,15 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
             Measured on sheet {sheet.pageNumber}
             {sheet.label ? ` — ${sheet.label}` : ""}
           </h3>
-          <TakeoffMeasurementList jobId={job.id} sheet={sheet} />
+          <TakeoffMeasurementList
+            jobId={job.id}
+            sheet={sheet}
+            // Decimal does not cross into a client component.
+            wallTypes={postableWallTypes.map((type) => ({
+              ...type,
+              defaultHeightFt: type.defaultHeightFt != null ? type.defaultHeightFt.toNumber() : null,
+            }))}
+          />
         </div>
       ))}
     </section>
