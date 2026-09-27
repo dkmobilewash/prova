@@ -129,6 +129,25 @@ describe("what the model is told", () => {
     expect(SYSTEM_PROMPT).toMatch(/never do arithmetic/i);
   });
 
+  it("tells the model how to follow the attendance refusal: refuse first, name only what who_would_know returns, draft only on a yes", () => {
+    // Found by mutation, 2026-09-27: deleting this rule left every test
+    // green, so nothing was guarding the one sentence the beat rests on.
+    // The rule is one bullet; each clause below is a thing the model must
+    // not do without it.
+    const rule = SYSTEM_PROMPT.split("\n").find((line) => /^- WHEN THEY ASK WHO ACTUALLY SHOWED UP/.test(line));
+    expect(rule, "the attendance rule is missing from the prompt").toBeDefined();
+    expect(rule).toMatch(/comes FIRST/);
+    expect(rule).toMatch(/nobody here records attendance/);
+    expect(rule).toMatch(/Call who_would_know/);
+    expect(rule).toMatch(/name ONLY the people it returns/);
+    expect(rule).toMatch(/never as having been on site/);
+    expect(rule).toMatch(/canBeEmailed false is named and NOT offered/);
+    expect(rule).toMatch(/never quietly draft to somebody else/);
+    expect(rule).toMatch(/Only if they say yes, call ask_who_would_know/);
+    expect(rule).toMatch(/names nobody it can reach.*offer nothing/);
+    expect(rule).toMatch(/Never name a person who_would_know did not return/);
+  });
+
   it("states the two claims the data cannot support", () => {
     // Both are cases where a tool name reads stronger than the rows: an
     // assignment is not attendance, and a booking is not a location.
