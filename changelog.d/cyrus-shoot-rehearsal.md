@@ -41,6 +41,25 @@ the take, a false line on the sheet. The spec asserts the banner's stated
 count equals the number of boxes it actually lists, so a panel reading
 "0 things are missing" fails instead of satisfying a substring.
 
+**And a fourth thing, found by the spec's own first CI run rather than by
+reading.** `/cash-flow` prints **"Total outstanding" twice, about two
+different sums** — the AR aging total, net of retainage, and the retainage
+receivable — one section apart, same three words, same type size. The first
+version of this spec asked for that label without naming a section and failed
+on its own count assertion instead of reading whichever one Playwright reached
+first, which is the only reason it is written down here rather than having
+produced a confidently wrong figure. Beat 2's cross-check points a finger at
+"the retainage total on /cash-flow"; there are two candidates, and only one of
+them is retainage. The count is now asserted as exactly two and the figure is
+read from inside the section that owns it, so a third label or a missing one
+says so rather than being read by position.
+
+That first run also cost three good beats their verdicts: the block is serial,
+so the locator failure skipped beats A, B and 6 and they came back as SKIPPED —
+neither a pass nor a fail. The cross-check is now the LAST test in the file,
+because it is the one most likely to be about a locator and the three after it
+were read-only and depended on nothing in it.
+
 **What it deliberately does not prove, said in the file rather than left to be
 discovered.** The shoot runs on the demo dataset and this suite has none of
 it, so every beat is walked against a job the spec builds; that proves the

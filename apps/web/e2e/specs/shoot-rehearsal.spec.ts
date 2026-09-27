@@ -608,77 +608,6 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     await expect(page.getByText(/^Expected release:/)).toHaveCount(0);
   });
 
-  // ──────────────────────────────────────────── beat 2's cross-check
-  test("beat 2's cross-check: the rail's 'Getting paid' figure is NOT the retainage total, and the sheet says retake", async () => {
-    // ════════════════════════════════════════════════════════════════════
-    // THE FINDING WITH THE MOST AT STAKE TOMORROW MORNING.
-    //
-    // Beat 2's narration points at the rail and says "Same number down
-    // there, because it's the same sum", and the sheet's Wrong branch reads:
-    // "The two numbers differ by any amount → stop and retake. That match is
-    // the entire claim of the beat."
-    //
-    // They are not the same sum. `lib/moneyRail.ts` builds the Getting paid
-    // stage as `unbilledContractValue + retainageHeld`, and prints that
-    // definition on screen as the stage's own caption. On any company with
-    // work left to invoice — which is every company that is trading — the
-    // rail figure is LARGER than retainage held, by exactly the value not yet
-    // billed.
-    //
-    // So the retake instruction fires on correct behaviour, and following it
-    // costs the morning. Measured here on the smallest honest case: one
-    // contracted job, part billed.
-    // ════════════════════════════════════════════════════════════════════
-    await page.goto("/dashboard");
-    await expectHealthy(page, "dashboard, reading the money rail", { monitor });
-
-    const railStage = page.locator(`nav[aria-label="Main"] [title=${JSON.stringify(GETTING_PAID_DETAIL)}]`);
-    await expect(
-      railStage,
-      "the rail's Getting paid stage is found by its own caption — if this caption has changed, the stage may no longer mean what this test measures",
-    ).toHaveCount(1);
-    const railText = await railStage.innerText();
-    expect(railText, "the rail stage should label itself").toContain("Getting paid");
-    const railFigure = dollars(railText, "the rail's Getting paid figure");
-
-    // The retainage total the assistant's own retainage answer sums, and the
-    // figure /cash-flow puts on screen under "Retainage receivable".
-    await page.goto("/cash-flow");
-    await expectHealthy(page, "/cash-flow", { monitor });
-    const outstanding = page.getByText(/^Total outstanding: /);
-    await expect(
-      outstanding,
-      "/cash-flow should name the retainage outstanding — it is the number beat 2 claims the rail matches",
-    ).toHaveCount(1);
-    const cashFlowRetainage = dollars(await outstanding.innerText(), "/cash-flow retainage outstanding");
-
-    // Both sides first, as exact figures, so that the inequality below is a
-    // statement about two known numbers rather than about two unknowns.
-    expect(cashFlowRetainage, "/cash-flow and the Retainage tab must agree on what the GC is holding").toBe(
-      RETAINAGE_WITHHELD,
-    );
-    expect(railFigure).toBe(RAIL_GETTING_PAID);
-
-    // THE REFUTATION.
-    expect(
-      railFigure,
-      [
-        `the rail reads ${money(railFigure)} and retainage held is ${money(cashFlowRetainage)}.`,
-        `The gap is ${money(railFigure - cashFlowRetainage)}, which is this job's contract value not yet invoiced —`,
-        "the rail's own caption says so. Beat 2's script calls these the same sum and its Wrong branch says to",
-        "stop and retake when they differ. If this assertion has gone red, the rail has been REDEFINED to mean",
-        "retainage alone, and beat 2's claim has become true — delete this test rather than loosening it.",
-      ].join(" "),
-    ).not.toBe(cashFlowRetainage);
-    expect(railFigure - cashFlowRetainage).toBe(UNBILLED_AFTER);
-
-    // And the caption, asserted as TEXT: it is the sentence on screen that
-    // contradicts the narration, and it is what makes this a documentation
-    // defect rather than a product one.
-    await page.goto("/dashboard");
-    await expect(page.locator(`nav[aria-label="Main"] [title=${JSON.stringify(GETTING_PAID_DETAIL)}]`)).toHaveCount(1);
-  });
-
   // ────────────────────────────────────────────── union add-on, beat A
   test("beat A: the WH-347 refuses to look finished, and it can never stop refusing", async () => {
     await page.goto(`/jobs/${jobId}/crew`);
@@ -830,6 +759,112 @@ test.describe("the launch-video run sheet, beat by beat", () => {
       await expectHealthy(page, `after the shoot's invoice: ${target}`, { monitor });
     }
     await expect(page.locator("main").getByText(JOB_NAME).first()).toBeVisible();
+  });
+
+  // ──────────────────────────────────────────── beat 2's cross-check
+  //
+  // LAST ON PURPOSE, and the reason is this file's own first CI run. This
+  // describe block is SERIAL, so a failure here skips every test after it —
+  // and on the first run it failed on a locator (see inside) and took beats
+  // A, B and 6 down with it, which came back as four SKIPPED verdicts and
+  // proved nothing about three beats that were fine. Beats A, B and 6 are
+  // read-only and depend on nothing here, so the cheapest fix is ordering:
+  // the test most likely to be about a locator goes after the ones that are
+  // about the product. It still needs beat 5 to have run, which it has.
+  test("beat 2's cross-check: the rail's 'Getting paid' figure is NOT the retainage total, and the sheet says retake", async () => {
+    // ════════════════════════════════════════════════════════════════════
+    // THE FINDING WITH THE MOST AT STAKE TOMORROW MORNING.
+    //
+    // Beat 2's narration points at the rail and says "Same number down
+    // there, because it's the same sum", and the sheet's Wrong branch reads:
+    // "The two numbers differ by any amount → stop and retake. That match is
+    // the entire claim of the beat."
+    //
+    // They are not the same sum. `lib/moneyRail.ts` builds the Getting paid
+    // stage as `unbilledContractValue + retainageHeld`, and prints that
+    // definition on screen as the stage's own caption. On any company with
+    // work left to invoice — which is every company that is trading — the
+    // rail figure is LARGER than retainage held, by exactly the value not yet
+    // billed.
+    //
+    // So the retake instruction fires on correct behaviour, and following it
+    // costs the morning. Measured here on the smallest honest case: one
+    // contracted job, part billed.
+    // ════════════════════════════════════════════════════════════════════
+    await page.goto("/dashboard");
+    await expectHealthy(page, "dashboard, reading the money rail", { monitor });
+
+    const railStage = page.locator(`nav[aria-label="Main"] [title=${JSON.stringify(GETTING_PAID_DETAIL)}]`);
+    await expect(
+      railStage,
+      "the rail's Getting paid stage is found by its own caption — if this caption has changed, the stage may no longer mean what this test measures",
+    ).toHaveCount(1);
+    const railText = await railStage.innerText();
+    expect(railText, "the rail stage should label itself").toContain("Getting paid");
+    const railFigure = dollars(railText, "the rail's Getting paid figure");
+
+    // The retainage total the assistant's own retainage answer sums, and the
+    // figure /cash-flow puts on screen under "Retainage receivable".
+    await page.goto("/cash-flow");
+    await expectHealthy(page, "/cash-flow", { monitor });
+
+    // ════════════════════════════════════════════════════════════════════
+    // AND A FOURTH THING FOR WHOEVER POINTS A CAMERA AT THIS PAGE:
+    // /cash-flow SAYS "Total outstanding" TWICE, ABOUT TWO DIFFERENT SUMS.
+    //
+    // One is the AR aging total, NET of retainage; the other is the
+    // retainage receivable. Same three words, same type size, one section
+    // apart. This spec's first run pinned the label without a section and
+    // failed on the count rather than reading whichever one Playwright
+    // reached first — which is the only reason it is written down here
+    // instead of having produced a confidently wrong figure.
+    //
+    // It is asserted as TWO, deliberately: if the page ever grows a third,
+    // or loses one, this says so. Beat 2's cross-check sends a finger at
+    // "the retainage total on /cash-flow", and there are two candidates.
+    // ════════════════════════════════════════════════════════════════════
+    await expect(
+      page.getByText(/^Total outstanding: /),
+      '/cash-flow labels two different sums "Total outstanding" — the AR aging total (net of retainage) and the retainage receivable. Read the one inside the Retainage receivable section, never the first one on the page.',
+    ).toHaveCount(2);
+
+    const retainageSection = page.locator('section[data-tour="cash-flow-retainage"]');
+    await expect(
+      retainageSection.getByRole("heading", { name: "Retainage receivable" }),
+      "the retainage section is found by its own hook, so the figure read below cannot be the aging total",
+    ).toBeVisible();
+    const outstanding = retainageSection.getByText(/^Total outstanding: /);
+    await expect(
+      outstanding,
+      "/cash-flow should name the retainage outstanding — it is the number beat 2 claims the rail matches",
+    ).toHaveCount(1);
+    const cashFlowRetainage = dollars(await outstanding.innerText(), "/cash-flow retainage outstanding");
+
+    // Both sides first, as exact figures, so that the inequality below is a
+    // statement about two known numbers rather than about two unknowns.
+    expect(cashFlowRetainage, "/cash-flow and the Retainage tab must agree on what the GC is holding").toBe(
+      RETAINAGE_WITHHELD,
+    );
+    expect(railFigure).toBe(RAIL_GETTING_PAID);
+
+    // THE REFUTATION.
+    expect(
+      railFigure,
+      [
+        `the rail reads ${money(railFigure)} and retainage held is ${money(cashFlowRetainage)}.`,
+        `The gap is ${money(railFigure - cashFlowRetainage)}, which is this job's contract value not yet invoiced —`,
+        "the rail's own caption says so. Beat 2's script calls these the same sum and its Wrong branch says to",
+        "stop and retake when they differ. If this assertion has gone red, the rail has been REDEFINED to mean",
+        "retainage alone, and beat 2's claim has become true — delete this test rather than loosening it.",
+      ].join(" "),
+    ).not.toBe(cashFlowRetainage);
+    expect(railFigure - cashFlowRetainage).toBe(UNBILLED_AFTER);
+
+    // And the caption, asserted as TEXT: it is the sentence on screen that
+    // contradicts the narration, and it is what makes this a documentation
+    // defect rather than a product one.
+    await page.goto("/dashboard");
+    await expect(page.locator(`nav[aria-label="Main"] [title=${JSON.stringify(GETTING_PAID_DETAIL)}]`)).toHaveCount(1);
   });
 
   test("the browser threw nothing the run sheet would have to explain on camera", async () => {
