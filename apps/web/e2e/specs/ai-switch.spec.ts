@@ -91,19 +91,33 @@ test.describe("the per-company AI switch", () => {
   let page: Page;
   let monitor: HealthMonitor;
 
-  /** By the wire name, deliberately. Everything this file is about is which
+  /** By the wire name, deliberately: everything this file is about is which
    *  fields reach the server, so the field name is the right handle — and it
-   *  is unambiguous, where the accessible name of each box includes its whole
-   *  description paragraph. */
-  const box = (feature: string): Locator => page.locator(`input[name="feature:${feature}"]`);
+   *  is unambiguous where the accessible name of each box includes its whole
+   *  description paragraph.
+   *
+   *  `[type="checkbox"]` IS LOAD-BEARING AND WAS MISSING ON THE FIRST RUN.
+   *  Once AI is switched off the form renders a HIDDEN input under the very
+   *  same name — that is the fix this file exists to verify — so
+   *  `input[name="feature:ASK"]` resolves to two elements and Playwright's
+   *  strict mode refuses it. The baseline run failed on `toBeDisabled()`
+   *  there, which is a defect in this spec and not in the product, and it is
+   *  worth the correction being visible: a red from an ambiguous locator and
+   *  a red from a broken page look identical in a summary, which is the exact
+   *  confusion `settings-import.spec.ts` records two weeks of. */
+  const box = (feature: string): Locator =>
+    page.locator(`input[type="checkbox"][name="feature:${feature}"]`);
   const master = (): Locator => page.locator('input[name="aiEnabled"]');
   const save = (): Locator => page.getByRole("button", { name: "Save AI settings" });
 
   /** How many of the seven are ticked, read from the live DOM.
    *
-   *  `isChecked()` on each rather than a CSS `:checked` count, because a
-   *  hidden input carrying the same name would be counted by the latter — and
-   *  this file must never confuse the fix with the thing being fixed. */
+   *  Per box via `isChecked()` rather than one `:checked` count, so a failure
+   *  names the feature. (An earlier version of this comment claimed the count
+   *  would otherwise include the hidden inputs — that was true before `box()`
+   *  narrowed to `[type="checkbox"]` and is not any more. Corrected rather
+   *  than left standing: a justification that has stopped being true is how a
+   *  check gets "simplified" into a broken one by somebody who believed it.) */
   async function tickedCount(): Promise<number> {
     let ticked = 0;
     for (const feature of ALL) {
