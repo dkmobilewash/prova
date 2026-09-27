@@ -244,8 +244,13 @@ describe("/ landing content renders signed out, with no auth call of its own", (
    *    much while the scene plays. (At `lg` the words column beside it is
    *    the taller of the two, so the `lg:` tier is insurance rather than
    *    load-bearing; the component's note carries the margins.)
+   *  - `xl:col-start-2` with `xl:row-start-1`/`xl:row-end-3`: from 1280 the
+   *    demo sits BESIDE the headline, spanning both rows, so it begins at
+   *    the top of the hero and is whole above the fold. That is the one
+   *    thing here Cyrus asked for out loud; the fold arithmetic that forced
+   *    it is in the inline comment on those assertions.
    */
-  it("puts the demo first on a phone, pins it right at lg in a fixed-width cell, and reserves its height", () => {
+  it("puts the demo first on a phone, beside the headline at xl, and reserves its height", () => {
     const heroEnd = html.indexOf("</section>");
     const hero = html.slice(0, heroEnd);
     const cell = hero.match(/<div data-landing-demo="true" class="([^"]*)"/)?.[1] ?? "";
@@ -261,9 +266,49 @@ describe("/ landing content renders signed out, with no auth call of its own", (
     // what differs from the assistant section the demo came from.
     expect(cell).toMatch(/(^|\s)min-h-\[\d+px\]/);
     expect(cell).toMatch(/(^|\s)lg:min-h-\[\d+px\]/);
+    // The base tier covers the NARROWEST figure, which is the tallest one:
+    // 288px wide at a 320px phone wraps to 889.8px. That reserve read 750
+    // for weeks and was short by 139.8 — not because anyone mis-measured,
+    // but because the page's own 320px overflow used to prop the figure
+    // wider, and fixing the overflow took the prop away. The component's
+    // note carries the per-width measurements. This asserts only the floor,
+    // since anything under 800 cannot be covering a 288px-wide figure.
+    const base = Number(cell.match(/(?:^|\s)min-h-\[(\d+)px\]/)?.[1] ?? 0);
+    expect(base, "the base reserve must cover the 320px figure").toBeGreaterThanOrEqual(800);
     // The headline is first in the markup and spans both columns at lg.
     expect(hero.indexOf("<h1")).toBeLessThan(hero.indexOf("data-landing-demo"));
     expect(hero).toMatch(/<h1 class="[^"]*lg:col-span-2/);
+    // AND STOPS SPANNING AT xl, WHERE THE DEMO MOVES BESIDE IT. This is the
+    // one assertion in this file that was changed rather than kept, so it
+    // says what it is now for. Cyrus asked (2026-09-26, filming at 1280) for
+    // the Ask animation to be whole without scrolling. Measured in real
+    // Chromium against a production build, across a full 26-step loop: with
+    // the headline above it the tallest frame's bottom edge lands at 1171.4,
+    // which is 271.4px below a 900-tall fold and 371.4 below an 800. Header
+    // and hero padding alone are 112px, so nothing of any size fits above
+    // the demo — it has to be in the FIRST grid row, and the headline has to
+    // move out of that row into a column beside it.
+    //
+    // What these four assert, together, is that arrangement: the demo takes
+    // column 2 and spans BOTH rows (so it starts at the top of the hero and
+    // the words still sit under the headline), and the headline takes column
+    // 1 of row 1. Drop any one of them and auto-placement quietly puts the
+    // words where the headline belongs, which renders as a hole and not as
+    // an error. The headline's `xl:text-[4rem]` is the price and is asserted
+    // separately below.
+    expect(hero).toMatch(/<h1 class="[^"]*xl:col-end-2/);
+    expect(hero).toMatch(/<h1 class="[^"]*xl:row-start-1/);
+    expect(cell).toContain("xl:col-start-2");
+    expect(cell).toContain("xl:row-start-1");
+    expect(cell).toContain("xl:row-end-3");
+    // 96px cannot be set in the 612px column the headline gets at xl — its
+    // min-content there is 824.3px, so without a size override the headline
+    // overflows its column by 212px and the page pans sideways. A size is
+    // required; this does not pin which one, because that is a measurement
+    // and it lives in LandingPage.tsx's note with the sweep that chose it.
+    expect(hero, "the xl headline needs a size that fits a 612px column").toMatch(
+      /<h1 class="[^"]*xl:text-\[[\d.]+rem\]/,
+    );
     // Top-aligned, for the demo's own reason: a changing height centred
     // against the words would open a hole that moves with every frame.
     expect(hero).toMatch(/class="grid items-start[^"]*lg:grid-cols-/);

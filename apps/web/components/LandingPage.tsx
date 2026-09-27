@@ -423,15 +423,75 @@ export function LandingPage() {
           PANEL beside it) is recorded as six ragged lines pushing past
           their own column.
 
-          So the headline keeps the full 1088px and its three lines, and
-          the demo takes the right half of the row underneath — where the
-          pay application was. It is on the first screen beside the words,
-          which is what the decision was for; it is simply under the
-          headline rather than next to it. ON A PHONE IT IS FIRST, ABOVE
-          THE HEADLINE, exactly as asked: the three children are ordered
-          demo / headline / words below `lg`, and the <h1> stays FIRST IN
-          THE MARKUP so a screen reader meets the headline before a pause
-          button. */}
+          So below `xl` the headline keeps the row to itself and the demo
+          takes the right half of the row underneath — where the pay
+          application was. ON A PHONE IT IS FIRST, ABOVE THE HEADLINE,
+          exactly as asked: the three children are ordered demo / headline
+          / words below `lg`, and the <h1> stays FIRST IN THE MARKUP so a
+          screen reader meets the headline before a pause button.
+
+          TWO THINGS THE PARAGRAPH ABOVE GOT WRONG, BOTH CORRECTED FROM A
+          MEASUREMENT 2026-09-27, AND THE SECOND IS WHY THE HEADLINE HAS AN
+          `xl:` SIZE NOW. It says the headline "keeps the full 1088px and
+          its three lines". It does not keep 1088px — `max-w-4xl` caps it
+          at 896 — and at 1280 it is FOUR lines, 395.5px tall, not three.
+          The 1088px in the arithmetic above is the GRID's width, which is
+          the right number for deciding whether a column can hold the
+          headline; it was then carried into a sentence about the headline
+          itself, which is a different element with a cap of its own.
+
+          AND AT `xl` THE DEMO IS NOW BESIDE THE HEADLINE AFTER ALL — the
+          layout this comment says could not be built. Nothing above is
+          wrong about WHY: at 96px the headline's min-content really is
+          824.3px and a 612px column really cannot hold it. What changed is
+          that the fold was measured, and the stacked layout loses. Cyrus,
+          filming at 1280 on 2026-09-26: "can we get the animation to come
+          up more at the top so they dont have to scroll down to see the
+          whole thing". Real Chromium, production build, sampled across a
+          full 26-step loop so the number is the TALLEST frame:
+
+            header 40 + hero py-10 + h1 395.5 + gap-y-10 -> demo top 547.5
+            tallest frame 623.9              -> demo bottom 1171.4
+            fold at 1280x900  900   =>  271.4px of the panel below it
+            fold at 1280x800  800   =>  371.4px below it
+
+          The budget says the demo must start at y <= 276.1 to be whole at
+          900, and <= 176.1 at 800. Header and padding alone are 112. So
+          NOTHING may sit above the demo — no headline of any size — and
+          the demo has to be in the FIRST grid row. That is not a taste
+          call between two layouts; it is the only arrangement that fits.
+
+          The price is the headline's size, and it is a real price rather
+          than a free win. In the 612px left column the 96px headline
+          cannot go: its min-content is 824.3px, and hyphenating it into
+          that column is the "six ragged lines" this comment already
+          rejects. Swept in the browser at 1280, line count in that column:
+
+            96 / 80 / 76px   6 lines, and min-content OVERFLOWS the column
+            72 / 70 / 68px   5 lines
+            64px             4 lines, widest line 588.7 of 612  <- chosen
+            48px             3 lines
+
+          `xl:text-[4rem]` is the largest size that keeps the four-line
+          shape the full-width headline had, and it leaves 62.5px (10%)
+          between min-content and the column. THE CLAMP IS UNTOUCHED: every
+          width below 1280 renders exactly what it rendered before, 9vw and
+          the 96px top end included, so the scale pass this file defends is
+          only overridden where the demo moves beside it.
+
+          ABOUT THAT 10% OF SLACK — IT IS MEASURED IN THE WRONG FONT AND
+          THAT IS THE HONEST STATE OF IT. This page loads NO webfont:
+          `document.fonts.size` is 0 and the <h1> computes to
+          `ui-sans-serif, system-ui, sans-serif`, so it renders in SF on
+          Cyrus's Mac, Segoe on Windows and whatever this container's
+          fontconfig picks here. Every width in this comment is the
+          container's font. The direction of the error is the safe one —
+          the fallback here is a wide face, and both SF and Segoe are
+          narrower, so a real visitor gets MORE slack, not less — but the
+          line count is not guaranteed: a narrower face may set this
+          headline in three lines rather than four. Nothing breaks if it
+          does; it comes up shorter and the demo does not move, because the
+          demo spans both rows and is anchored to the top of the first. */}
       <section className="flex min-h-[78svh] flex-col justify-center py-10">
         {/* The two cells of that row, plus the headline spanning both of
             them at `lg`. `items-start`, NOT `items-center`, for the reason
@@ -509,8 +569,25 @@ export function LandingPage() {
               are MEASURED specs carried forward from the scale pass and are
               not to be traded away for layout convenience. A `lg:` override
               was tried here and silently dropped the desktop headline from
-              96px to 72px; the layout is sized to the type instead. */}
-          <h1 className="order-2 max-w-4xl text-[clamp(2rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink lg:order-none lg:col-span-2">
+              96px to 72px; the layout is sized to the type instead.
+
+              `xl:text-[4rem]` IS THAT OVERRIDE, DELIBERATELY, AND ONLY WHERE
+              THE COLUMN CHANGES UNDER IT. The old one was a bug because it
+              shrank the headline while the headline still had the whole row
+              — nothing was bought with it. This one is paired with
+              `xl:col-end-2`: from 1280 the headline has a 612px column
+              instead of the row, because the demo is beside it, and 612px
+              is a width 96px cannot be set in. Below 1280 the clamp is
+              untouched. The hero's preamble carries the sweep and the fold
+              budget that chose 4rem; do not move this number without
+              re-reading it, and do not "restore" 96px here without also
+              putting the demo back under the headline — it will overflow
+              its column by 212px and the page will pan sideways.
+
+              `xl:row-start-1` is not decoration either: with the demo
+              spanning both rows, auto-placement would otherwise put the
+              words where the headline belongs. */}
+          <h1 className="order-2 max-w-4xl text-[clamp(2rem,9vw,6rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink lg:order-none lg:col-span-2 xl:col-end-2 xl:col-start-1 xl:row-start-1 xl:text-[4rem]">
             The job-site system for union specialty-trade subcontractors.
           </h1>
           {/* THE WORDS. `items-start` on the grid above, NOT `items-center`,
@@ -535,7 +612,7 @@ export function LandingPage() {
               than that, which is why the cell below carries a reserve — see
               its note. The column's height is load-bearing in a way it was
               not when a still panel sat beside it. */}
-          <div className="order-3 flex min-w-0 flex-col gap-8 lg:order-none">
+          <div className="order-3 flex min-w-0 flex-col gap-8 lg:order-none xl:col-end-2 xl:col-start-1 xl:row-start-2">
             <p className="max-w-2xl text-lg leading-relaxed text-ink-body sm:text-xl lg:text-2xl">
               The estimate, the contract, the crew&rsquo;s hours, certified payroll and the GC&rsquo;s
               pay application &mdash; all in one place, so the same numbers don&rsquo;t get typed in
@@ -631,6 +708,20 @@ export function LandingPage() {
               same shape and only 7.1px of margin, which is how thin this
               can get without anyone noticing.
 
+              AT `xl` THE CELL SPANS BOTH ROWS (`xl:row-start-1` ->
+              `xl:row-end-3`) so that the demo begins at the TOP of the
+              hero — see the fold budget in the section's preamble, which is
+              the whole reason the headline moved out of its way. The cell
+              is then taller than the frame by construction, since the rows
+              it spans are the headline's and the words', and `lg:items-start`
+              is what keeps the figure at the top of that span instead of
+              stretching down it. The 660 reserve does not bind there either;
+              it is distributed across the two spanned rows, both of which
+              are already taller. What this does leave is background to the
+              RIGHT of the paperwork list, below the figure — measured at
+              370.7px at 1280. It is off the first screen, which is the
+              screen this whole arrangement is for.
+
               The tiers are the tallest frame at each figure width, because
               a narrower figure wraps taller. Measured, with the headroom
               each tier leaves:
@@ -646,20 +737,52 @@ export function LandingPage() {
               the frame — and below `lg`, where the cell is alone in its
               row, that is the row's height too.
 
-              WHY THERE IS NO NARROWER TIER BELOW 375, WHICH LOOKS LIKE AN
-              OVERSIGHT AND IS NOT. At 320 the content box is 288px, so the
-              figure should be 288 wide and 889.8 tall. It is 343.5 and
-              733.8 — because the <h1> in this same grid has a min-content
-              width of 343.5px at its 40px floor and widens the column to
-              hold it. (That overflow is the page's, not this cell's: the
-              320px note above the headline says the floor fits in 288 and
-              the measurement says it needs 343.5 — scrollWidth 359 against
-              an innerWidth of 320, unchanged by this change and present
-              before it.) SO: IF THAT OVERFLOW IS EVER FIXED, THE FIGURE
-              DROPS BACK TO 288 WIDE AND THIS BASE TIER IS 140px SHORT.
-              Re-measure with it. Same rule if the script gains a taller
-              frame: a reserve shorter than the frame is a wobble of exactly
-              the difference.
+              THE PARAGRAPH BELOW ASKED FOR A RE-MEASUREMENT AND IT WAS OWED
+              ONE: 750 HAD BEEN SHORT AT EVERY WIDTH UNDER 375 SINCE THE
+              320px OVERFLOW WAS FIXED. It says, of the base tier, "IF THAT
+              OVERFLOW IS EVER FIXED, THE FIGURE DROPS BACK TO 288 WIDE AND
+              THIS BASE TIER IS 140px SHORT. Re-measure with it." The
+              overflow was fixed — the headline's floor is 2rem now and its
+              min-content at 320 is 274.8px, inside the 288px box — so the
+              figure IS 288 wide, and the prediction was right to the pixel:
+              889.8 against a 750 reserve, and the cell's own height swung
+              750 -> 889.8 across the loop while every other width held
+              still. That is a 139.8px jump of the headline and of every
+              section under it, on the smallest phone, during the one
+              animation this page is built around.
+
+              Re-measured 2026-09-27, same method (full 26-step loop, real
+              Chromium, production build), tallest frame per width:
+
+                320 -> 889.8   336 -> 785.8   344 -> 785.8
+                360 -> 769.8   375 -> 733.8   414 -> 635.9
+
+              A narrower box wraps taller, monotonically, so the worst case
+              inside a tier is at the tier's LEFT EDGE — which is the only
+              width each tier below needed measuring at:
+
+                890px   base, to 335    worst 889.8 at 320    0.2
+                790px   from 336        worst 785.8 at 336    4.2
+                770px   from 360        worst 769.8 at 360    0.2
+                750px   from 375        worst 733.8 at 375   16.2
+
+              The cost is page background between a short frame and the
+              headline at 336-374, and it is the trade this note already
+              describes below: a reserve shorter than the frame is a wobble
+              of exactly the difference, and a gap is not.
+
+              WHY THERE WAS NO NARROWER TIER BELOW 375, WHICH LOOKED LIKE
+              AN OVERSIGHT AND WAS NOT — AND IS NOW SPENT. At 320 the
+              content box is 288px, so the figure should be 288 wide and
+              889.8 tall. When this was written it was 343.5 and 733.8,
+              because the <h1> in this same grid had a min-content width of
+              343.5px at its 40px floor and widened the column to hold it —
+              the page's own 320px overflow, propping this cell up. That
+              overflow was then fixed (the floor is 2rem), the figure went
+              back to 288 wide, and the 140px this paragraph predicted
+              arrived. The four tiers above are the re-measurement it asked
+              for. Same rule if the script gains a taller frame: a reserve
+              shorter than the frame is a wobble of exactly the difference.
 
               The price below `lg` is page background between a short frame
               and the headline — the trade Cyrus made for the demo coming
@@ -667,7 +790,7 @@ export function LandingPage() {
               figure are what stop any frame widening the page. */}
           <div
             data-landing-demo
-            className="order-first min-h-[750px] min-w-0 min-[576px]:min-h-[620px] lg:order-none lg:flex lg:min-h-[660px] lg:items-start lg:justify-end"
+            className="order-first min-h-[890px] min-w-0 min-[336px]:min-h-[790px] min-[360px]:min-h-[770px] min-[375px]:min-h-[750px] min-[576px]:min-h-[620px] lg:order-none lg:flex lg:min-h-[660px] lg:items-start lg:justify-end xl:col-end-3 xl:col-start-2 xl:row-end-3 xl:row-start-1"
           >
             <AskDemo />
           </div>
