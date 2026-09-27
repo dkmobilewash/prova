@@ -80,4 +80,5 @@ export * from "./wallTypes";
 export * from "./bidRecap";
 export * from "./quoteRead";
 export * from "./aiSettings";
+export * from "./planIngest";
 export * from "./takeoff";

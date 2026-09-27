@@ -948,6 +948,10 @@ export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
   AskAllowancePeriod:
     "AI usage metering — how much of this month's included allowance has been claimed. Our bookkeeping about what we owe them, not a record of their work, and it is meaningless outside this app.",
   AskProposal: "AI usage — a change the assistant proposed and waited on; anything confirmed is in the real tables",
+  PlanIngestJob:
+    "processing bookkeeping — one run of plan-set ingestion, its stage and when it started and stopped. What the run PRODUCED is in the real tables and exports with them; this is the scaffolding, and it means nothing outside this app.",
+  PlanIngestTask:
+    "processing bookkeeping — one page of one ingestion run: which worker claimed it, how many attempts it took, and the sentence shown if it failed. Same argument as PlanIngestJob, and the failure sentence is transient: the plan set is still on file and a failed page is re-runnable, so the durable fact is the plan rather than the attempt at it.",
   LicenseClassificationReference: "shared reference table of licence classifications, the same for every company",
 };
 

@@ -141,6 +141,13 @@ const isProtectedRoute = createRouteMatcher([
 // itself with a timing-safe check of `Authorization: Bearer $CRON_SECRET`,
 // and fails closed when no secret is set — unset must mean the schedule
 // does not work, never that it works for anyone who knows the URL.
+// /api/plan-ingest/run is deliberately NOT protected here either, for exactly
+// the reason above and by exactly the same mechanism: it is the plan-ingestion
+// worker, a scheduler with no Clerk session, and it checks
+// `Authorization: Bearer $CRON_SECRET` itself, timing-safe, failing closed with
+// 503 when no secret is set. Recorded as its own line rather than folded into
+// the digest's, because a reader looking for why THIS route is unlisted should
+// find it under its own name.
 // /api/quickbooks/callback is deliberately NOT protected here — see
 // QuickBooksOAuthCookiePayload in lib/quickbooks-constants.ts. Intuit's
 // redirect back to that route is a third-party-initiated navigation;
