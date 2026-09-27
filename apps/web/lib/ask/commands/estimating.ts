@@ -119,7 +119,13 @@ async function researchFor(
     return { suggestions: [], warning: "Web research is unavailable right now, so this card is only what you gave." };
   }
   if (!result.ok) {
-    return { suggestions: [], warning: "Web research is unavailable right now, so this card is only what you gave." };
+    // A switched-off feature is not an outage, and saying "unavailable right
+    // now" to somebody who turned it off themselves sends them looking for a
+    // fault. The card is still created either way; only the warning changes.
+    return {
+      suggestions: [],
+      warning: result.sentence ?? "Web research is unavailable right now, so this card is only what you gave.",
+    };
   }
   if (result.suggestions.length === 0) {
     return { suggestions: [], warning: `Nothing about ${projectName} in ${location} turned up on the web, so this card is only what you gave.` };

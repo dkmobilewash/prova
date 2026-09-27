@@ -100,16 +100,39 @@ Vercel deployment and repo settings). Each drives their own agent.
   billing/AIA, retainage, WIP, and `apps/web/app/(app)/jobs/[id]/page.tsx`
   (fixed section slots: Retainage → Field Reports → Pay Apps — insert at
   your slot, never at the end). Cyrus: self-contained verticals (safety,
-  vendors, equipment, punch lists, RFIs, submittals) and **AI** — the Ask
-  assistant (`lib/ask/**`, `Ask*` components), the model integration
-  (`packages/integrations/src/anthropic.ts`, `ask.ts`), AI extraction and
-  AI usage metering. **AI moved from Diego to Cyrus on 2026-09-21**,
-  announced in `#prova-build`; any older line in this repo or its PR
-  history calling AI "Diego's lane" is stale. Where an AI feature sits on
-  Diego's numbers (Ask's `draft_invoice`, the WIP narrative), the logic
-  underneath is Diego's and the AI layer on top is Cyrus's. Shared, edit
+  vendors, equipment, punch lists, RFIs, submittals). Shared, edit
   surgically: schema files, `middleware.ts`, `navItems.tsx`,
   `lib/actions/shared.ts`, the actions barrel.
+
+  **AI IS DIEGO'S LANE AGAIN, FROM 2026-09-26.** That covers the whole of
+  it: the Ask assistant (`lib/ask/**`, `Ask*` components), the model
+  integration (`packages/integrations/src/{anthropic,ask,research,leads,
+  models}.ts`), the per-company AI switch (`lib/ai/**`,
+  `lib/actions/aiSettings.ts`), AI extraction, AI usage metering, and the
+  takeoff/estimating AI work now in progress.
+
+  **READ THE SHAPE OF THIS ENTRY BEFORE ITS CONTENT, because it has now been
+  wrong in both directions and each version was true when written.** This
+  paragraph said AI was Diego's until 2026-09-21, then said in bold that it
+  had "moved from Diego to Cyrus" and that "any older line in this repo or
+  its PR history calling AI 'Diego's lane' is stale" — which was correct for
+  five days and is now itself the stale line it warned about. An ownership
+  claim is not a fact about the code; it is a fact about an agreement between
+  two people, and it perishes the moment they agree something else. The
+  older-lines warning is the part that aged worst: it told a reader to
+  distrust exactly the sentence that is true today. So this version names the
+  date and does not tell anybody which other lines to disbelieve.
+
+  Diego announced it in `#prova-build` on 2026-09-26 and said he would tell
+  Cyrus directly. If you are Cyrus's agent and this is the first you are
+  hearing of it, that is the thing to check rather than the code.
+
+  The split for a feature that sits on both is unchanged and still the right
+  rule, now with both halves on the same side: where an AI feature reads
+  Diego's numbers (Ask's `draft_invoice`, the WIP narrative), the arithmetic
+  underneath stays deterministic code and the model only narrates what it is
+  handed — see ARCHITECTURE.md. That was never a lane boundary; it is the
+  product rule, and it survives the ownership change intact.
 
   Corrected 2026-09-02: this line said `Sidebar.tsx` for weeks and it is
   the wrong file. `Sidebar.tsx` renders whatever `navGroupsFor()` hands

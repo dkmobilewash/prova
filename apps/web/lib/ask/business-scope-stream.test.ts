@@ -71,7 +71,16 @@ vi.mock("@prova/db", async (importOriginal) => ({
   prisma: new Proxy(
     {},
     {
-      get() {
+      get(_target, property) {
+        // ONE READ IS NOW LEGITIMATE, and the exception is narrow on purpose.
+        // The per-company AI switch (lib/ai/settings.ts) is checked before any
+        // model pass, so `streamAnswer` touches exactly this table and no
+        // other. `null` is "no row", which means every default — AI on — the
+        // state this file's assertions were written under. Every other table
+        // still throws, so the marker keeps doing its job.
+        if (property === "companyAiSettings") {
+          return { findUnique: async () => null };
+        }
         throw new Error("this test must not touch the database");
       },
     },

@@ -20,6 +20,12 @@ const fake = vi.hoisted(() => {
     tx,
     prisma: {
       $transaction: vi.fn(async (run: (t: typeof tx) => Promise<unknown>) => run(tx)),
+      // The per-company AI switch, read by `draftLinesFromScope` before it
+      // calls the model (lib/ai/settings.ts). Left resolving `undefined`,
+      // which `aiSettingsFor` reads as "no row" and therefore every default —
+      // AI on. Present at all because `aiGate` fails CLOSED: a missing model
+      // on this fake is a refusal, not a pass.
+      companyAiSettings: { findUnique: fn() },
       contact: { findMany: fn(), findFirst: fn() },
       job: { findMany: fn(), findFirst: fn() },
       lineItemCatalogEntry: { findMany: fn(), findFirst: fn() },

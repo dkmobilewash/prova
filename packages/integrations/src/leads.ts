@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { AI_CLIENT_OPTIONS, modelFor } from "./models";
 import type { AskUsageTotals } from "./ask";
 import { clipValue, normaliseUrl, searchedUrls, searchErrored, type ResearchSource } from "./research";
 
@@ -293,7 +294,7 @@ export async function findLeads(input: LeadSearchInput): Promise<LeadSearch> {
   const turn = leadQueryTurn(input);
   if (turn === null) return { ok: false, reason: "invalid", searches, usage };
 
-  const client = input.client ?? new Anthropic();
+  const client = input.client ?? new Anthropic(AI_CLIENT_OPTIONS);
   const webSearch: Anthropic.WebSearchTool20250305 = {
     type: "web_search_20250305",
     name: "web_search",
@@ -307,7 +308,7 @@ export async function findLeads(input: LeadSearchInput): Promise<LeadSearch> {
   try {
     for (let round = 0; round <= MAX_CONTINUATIONS; round += 1) {
       const response = await client.messages.create({
-        model: input.model ?? "claude-opus-5",
+        model: input.model ?? modelFor("LEAD_SEARCH").model,
         max_tokens: 8000,
         system: LEAD_SYSTEM,
         tools: [webSearch, RECORD_TOOL_DEFINITION],

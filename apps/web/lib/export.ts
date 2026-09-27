@@ -415,6 +415,25 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: byCompany,
   },
   {
+    // EXPORTED rather than filed as internal bookkeeping, and the distinction is
+    // worth stating because the three AI tables beside it ARE internal. Usage
+    // metering, the allowance ledger and the proposal audit are records the app
+    // generates about itself. This is a row a PERSON set — which features they
+    // turned off, and why their allowance is what it is. Same split as
+    // `bidDefaults` above, also pure configuration, also exported.
+    key: "aiSettings",
+    model: "companyAiSettings",
+    label: "AI settings",
+    note:
+      "Whether the assistant is on for your company, any features you switched off, " +
+      "and your monthly plan-sheet allowance. Absent means every default was in use.",
+    columns: [
+      "id", "aiEnabled", "disabledFeatures", "planSheetsPerMonth", "modelOverride",
+      "updatedByUserId", "createdAt", "updatedAt",
+    ],
+    scope: byCompany,
+  },
+  {
     key: "rfis",
     model: "rfi",
     label: "RFIs",

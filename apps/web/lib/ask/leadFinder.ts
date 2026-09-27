@@ -1,10 +1,10 @@
 import {
-  ASK_DEFAULT_MODEL,
   findLeads as liveFindLeads,
   LEAD_MAX_SEARCHES,
   type LeadSearch,
   type LeadSearchInput,
 } from "@prova/integrations";
+import { aiGate } from "@/lib/ai/settings";
 import { recordAskUsage as liveRecordAskUsage, type AskUsageRecord } from "./usage";
 import type { LeadFinder } from "./commands";
 
@@ -41,7 +41,17 @@ export function boundLeadFinder(
     // partially, and an import-time read of an export the mock left out
     // takes the whole Ask module graph down with it.
     const { findLeads, recordAskUsage } = deps ?? { findLeads: liveFindLeads, recordAskUsage: liveRecordAskUsage };
+    // THE PER-COMPANY AI SWITCH, before any search runs. A company with lead
+    // search off gets the sentence and spends nothing — and `off` is its own
+    // reason rather than `unavailable` so the log line below can tell the two
+    // apart.
+    const gate = await aiGate(actor.companyId, "LEAD_SEARCH");
+    if (!gate.ok) {
+      console.log("[ask] lead search", { companyId: actor.companyId, ok: false, reason: "off" });
+      return { ok: false, reason: "off", sentence: gate.error };
+    }
     const result = await findLeads({
+      model: gate.model,
       trades: input.trades,
       region: input.region,
       sizeBand: input.sizeBand,
@@ -61,7 +71,10 @@ export function boundLeadFinder(
       await recordAskUsage({
         companyId: actor.companyId,
         userId: actor.userId,
-        model: ASK_DEFAULT_MODEL,
+        // The model that actually ran, from the gate. This was Ask's default,
+        // which is the right answer only while every feature shares one
+        // model — they no longer do.
+        model: gate.model,
         usage: result.usage,
         outcome: result.ok ? "answered" : `error:${result.reason}`,
         feature: "lead-search",

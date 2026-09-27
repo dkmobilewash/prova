@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { AI_CLIENT_OPTIONS, modelFor } from "./models";
 import type { AskUsageTotals } from "./ask";
 
 /**
@@ -227,7 +228,7 @@ export async function researchProject(input: ProjectResearchInput): Promise<Proj
   const location = input.location.trim().slice(0, 200);
   if (!projectName || !location) return { ok: false, reason: "unavailable", searches, usage };
 
-  const client = input.client ?? new Anthropic();
+  const client = input.client ?? new Anthropic(AI_CLIENT_OPTIONS);
   const webSearch: Anthropic.WebSearchTool20250305 = {
     type: "web_search_20250305",
     name: "web_search",
@@ -241,7 +242,7 @@ export async function researchProject(input: ProjectResearchInput): Promise<Proj
   try {
     for (let round = 0; round <= MAX_CONTINUATIONS; round += 1) {
       const response = await client.messages.create({
-        model: input.model ?? "claude-opus-5",
+        model: input.model ?? modelFor("BID_RESEARCH").model,
         max_tokens: 8000,
         system: RESEARCH_SYSTEM,
         tools: [webSearch, RECORD_TOOL_DEFINITION],

@@ -1,0 +1,119 @@
+// Per-company AI settings: the switch, the per-feature switches, the
+// ingestion allowance, and a model override. Diego's lane (AI, from
+// 2026-09-26).
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// WHY THIS EXISTS. Until now nothing in this app could turn AI off for one
+// company. What gated it was, in order: a SERVER-WIDE `ANTHROPIC_API_KEY`,
+// per-person capabilities, courtesy rate limits, and a paid monthly
+// allowance — so the only way to stop the assistant for one customer was to
+// stop it for everybody. A contractor who wants their drawings kept away from
+// a model had no answer, and that is a reasonable thing to want.
+//
+// `/settings/assistant` already exists and its own header says "nothing on
+// this page writes". This model is what makes it write for the first time.
+
+/// Which AI feature a per-company switch can turn off.
+///
+/// AN ENUM RATHER THAN FREE TEXT, and the reason is #526's: that PR spent its
+/// afternoon removing EIGHT hand-written copies of `CostCategory`, because a
+/// fifth member produced a NaN bid total from an index nobody had wired. A
+/// `String[]` of feature keys here would be the same shape — a typo'd
+/// "compliance_extract" would silently disable nothing, and read as disabled
+/// on the settings page.
+///
+/// The members are the `AskUsage.feature` strings, upper-cased, and
+/// `aiFeatureCensus.test.ts` fails the build when a model caller reports a
+/// feature with no member here. That is the check that makes "every AI feature
+/// is behind a switch" a fact rather than an intention.
+enum AiFeature {
+  /// The Ask box: `streamToolConversation`.
+  ASK
+  /// `generateWipNarrative` — figures in, prose out.
+  WIP_NARRATIVE
+  /// `extractComplianceDocument` — the PDF/image extractor.
+  COMPLIANCE_EXTRACT
+  /// `draftEstimateLineItems` — free-text scope to drafted lines.
+  DRAFT_ESTIMATE_LINES
+  /// `researchProject` — web search on a new bid.
+  BID_RESEARCH
+  /// `findLeads` — web search for pursuits.
+  LEAD_SEARCH
+  /// Plan-set ingestion: split, classify, title blocks, sheet index. Not
+  /// built yet; the member exists so the switch is ready before the feature
+  /// is, rather than being retrofitted onto six call sites afterwards.
+  PLAN_INGESTION
+}
+
+/// One row per company. Absent means every default below.
+///
+/// A SINGLETON TABLE, the same shape as `CompanyBidDefaults` — not columns on
+/// `Company`. There will be more than one knob here (a switch, a list, an
+/// allowance, a model), they change together, and they are read by a
+/// different part of the app from the company profile.
+///
+/// ABSENT IS NOT OFF. A company with no row has AI on, every feature enabled,
+/// and the default allowance, because that is what every existing customer
+/// has today and a migration must not switch a working product off under
+/// them. `aiSettingsFor()` returns those defaults rather than null, so no
+/// caller has to remember the difference.
+model CompanyAiSettings {
+  id        String  @id @default(cuid())
+  companyId String  @unique
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// The master switch. False refuses every model call for this company, with
+  /// a sentence naming who can turn it back on.
+  ///
+  /// DEFAULT TRUE, deliberately, and this is the one default worth arguing
+  /// about. Defaulting false would be the safer-looking choice and would
+  /// silently break the assistant for every company on the day this migrates
+  /// — a product that stops working after a deploy, with nothing on screen
+  /// saying why. Off is a decision somebody makes, not a state they inherit.
+  aiEnabled Boolean @default(true)
+
+  /// Features switched off individually while `aiEnabled` stays true.
+  ///
+  /// A subtractive list rather than an additive one, for the same reason
+  /// `aiEnabled` defaults true: a new feature is available unless somebody
+  /// turned it off, so shipping one does not require every company to opt in
+  /// before it works. The cost is that a company cannot pre-refuse a feature
+  /// that does not exist yet, which is the right way round.
+  disabledFeatures AiFeature[]
+
+  /// Plan sheets included per calendar month, metered by
+  /// `AskAllowancePeriod.planSheetsUsed`.
+  ///
+  /// Per company rather than a constant so a plan can move it without a
+  /// migration — `ASK_MONTHLY_ALLOWANCE` is a constant today and
+  /// `allowanceForCompany(_companyId)` ignores its argument, with a comment
+  /// saying what a per-plan version would need. This is that.
+  ///
+  /// 1,500 is Diego's figure for the $399 plan: five 300-sheet sets a month.
+  /// Whether it is sustainable is a question about measured cost, and step 2
+  /// answers it with real numbers rather than my estimate.
+  planSheetsPerMonth Int @default(1500)
+
+  /// Override the model for every feature on this company, e.g. a customer who
+  /// wants the cheapest option on everything.
+  ///
+  /// Null means "use the per-feature default from `modelFor`", which is the
+  /// normal case. A plain String rather than an enum because model ids are
+  /// Anthropic's to name and a new one must not need a migration — the same
+  /// reasoning `AskUsage.model` beside it already uses. Validated against the
+  /// known list on write, so a typo cannot silently route every call to a
+  /// model that does not exist.
+  modelOverride String?
+
+  /// Who last changed these and when — an owner-only setting worth an audit
+  /// line, since turning AI off is the kind of change somebody later asks
+  /// about. Nullable: a row created by a backfill has no author.
+  updatedByUserId String?
+  updatedByUser   User?   @relation(fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([updatedByUserId])
+}

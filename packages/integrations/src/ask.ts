@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { AI_CLIENT_OPTIONS, modelFor } from "./models";
 
 /**
  * A tool-calling conversation, with the provider kept on this side of the
@@ -178,8 +179,21 @@ export type AskConversationOptions<H = never> = {
   client?: Pick<Anthropic, "messages">;
 };
 
-/** Exported so the app can record which model proposed a write. */
-export const ASK_DEFAULT_MODEL = "claude-opus-5";
+/**
+ * Exported so the app can record which model proposed a write.
+ *
+ * Now DERIVED rather than a literal — `modelFor("ASK")` reads the company
+ * override, then `ANTHROPIC_MODEL_ASK`, then `ANTHROPIC_MODEL_DEFAULT`, then
+ * the per-feature default (`models.ts`). The name is kept because
+ * `/settings/assistant` and the connection check both display it.
+ *
+ * A `const` evaluated at module load, which is the one thing to know about it:
+ * an env change needs a restart, not a request. That matches how the rest of
+ * this package reads `process.env` and it is the right trade for a value on a
+ * settings page — but a per-COMPANY override cannot be a module constant, so
+ * `streamToolConversation` resolves that per call below.
+ */
+export const ASK_DEFAULT_MODEL = modelFor("ASK").model;
 const DEFAULT_MODEL = ASK_DEFAULT_MODEL;
 const DEFAULT_MAX_PASSES = 6;
 
@@ -231,7 +245,7 @@ export async function checkAnthropicConnection(
   client?: Pick<Anthropic, "models">,
 ): Promise<AnthropicConnection> {
   if (!anthropicIsConfigured()) return { ok: false, status: null, type: "not_configured" };
-  const api = client ?? new Anthropic();
+  const api = client ?? new Anthropic(AI_CLIENT_OPTIONS);
   try {
     const info = await api.models.retrieve(model);
     return { ok: true, model: info.id };
@@ -265,7 +279,7 @@ function apiErrorType(err: { error?: unknown }): string | null {
 export async function* streamToolConversation<H = never>(
   options: AskConversationOptions<H>,
 ): AsyncGenerator<AskEvent<H>> {
-  const client = options.client ?? new Anthropic();
+  const client = options.client ?? new Anthropic(AI_CLIENT_OPTIONS);
   // Prior turns go in as real conversation turns rather than as text glued
   // into the system prompt. Two reasons, and the second is the important
   // one: it is what they are, and it keeps the system block — the trusted

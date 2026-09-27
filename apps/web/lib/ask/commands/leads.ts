@@ -494,6 +494,12 @@ async function resolveFindBidLeads(ctx: CommandContext, input: CommandInput): Pr
     return { kind: "refuse", reason: "The web lookup failed part-way, so nothing was searched to the end. Try again in a minute." };
   }
   if (!result.ok) {
+    // The switch speaks for itself. `sentence` is set only for `off`, and it
+    // is the wording `lib/ai/settings.ts` owns — reproducing it here would
+    // give the same refusal two spellings that drift apart.
+    if (result.reason === "off" && result.sentence) {
+      return { kind: "refuse", reason: result.sentence };
+    }
     return {
       kind: "refuse",
       reason:
