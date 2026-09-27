@@ -146,7 +146,7 @@ export function resolveCompanyTarget(request, candidates) {
             ? `Copy one of those names exactly, or give its id as company_id. The`
             : ``,
           rows.length
-            ? `list-companies operation prints the same list with dates and demo counts.`
+            ? `list-companies operation prints the same list with dates and job counts.`
             : ``,
         ].filter((line) => line !== ""),
       };
@@ -159,8 +159,8 @@ export function resolveCompanyTarget(request, candidates) {
           `seeding the wrong company is not something you would notice afterwards.`,
           ...matches.map((c) => `  ${describeRow(c)}`),
           `Pass the id of the one you mean as company_id — the list-companies`,
-          `operation prints these with their dates and demo-row counts, which is`,
-          `usually enough to tell two same-named companies apart. Nothing written.`,
+          `operation prints each one's date, job count and how many of those jobs`,
+          `are demo rows, which is usually enough to tell two apart. Nothing written.`,
         ],
       };
     }

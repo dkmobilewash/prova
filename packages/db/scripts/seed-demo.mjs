@@ -86,7 +86,10 @@ if (!target) {
   console.error("seed: DATABASE_URL is missing or unreadable. Nothing done.");
   process.exit(1);
 }
-console.log(`seed: writing to      ${target.label}`);
+// `--list-companies` writes nothing, so it must not announce that it is
+// about to. Same column, different verb — this log is the record of what
+// happened, and a read-only run saying "writing to" is the record lying.
+console.log(`seed: ${LIST_COMPANIES ? "reading from" : "writing to  "}    ${target.label}`);
 
 const expect = process.env.SEED_EXPECT_HOST?.trim();
 if (!expect) {
