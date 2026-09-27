@@ -16,13 +16,17 @@ import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "
  * worth reading, because it is the opposite of how the notifications digest
  * works and the reason is not obvious.
  *
- * A cron's interval bounds throughput. At five minutes a tick and 45 seconds of
- * work per tick, a 300-page set with real model calls would take well over an
- * hour, most of it spent waiting for the next tick rather than working — and
- * the person who just uploaded the drawings is sitting in front of a progress
- * bar that moves once every five minutes. Worse, the interval that fixes that
- * is a plan feature: sub-daily crons are not available on every Vercel plan, so
- * throughput would depend on billing.
+ * A cron's interval bounds throughput, and on THIS project the interval is once
+ * per day. That is not a guess and not a preference — it is measured: pushing a
+ * `*​/5 * * * *` schedule failed the deployment outright, and Vercel's own error
+ * link resolves to its cron usage-and-pricing page, which says Hobby accounts
+ * "are limited to cron jobs that run once per day" and that more frequent
+ * expressions "will fail during deployment". 100 jobs per project, minimum
+ * interval once per day.
+ *
+ * So a cron-driven runner would advance a 300-page plan set by one 45-second
+ * slice per DAY. The design below is not an optimisation; it is the only version
+ * of this feature that works on the plan this product is on.
  *
  * So `advancePlanIngest` is a Server Action the OPEN PAGE calls in a loop. The
  * work happens while somebody is watching it, at whatever rate the work allows,

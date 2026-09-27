@@ -8,7 +8,7 @@
     },
     {
       "path": "/api/plan-ingest/run",
-      "schedule": "*/5 * * * *"
+      "schedule": "17 4 * * *"
     }
   ]
 }

@@ -30,6 +30,21 @@ import { stageWork } from "@/lib/plan-ingest/stages";
  * FAILS CLOSED on a missing `CRON_SECRET`: unset must never mean "the schedule
  * works for everybody". Unlike the digest it needs no base URL, because it sends
  * nothing and links to nothing.
+ *
+ * **THIS RUNS ONCE A DAY, AND IT IS NOT THE THING THAT MOVES A RUN ALONG.**
+ * Measured rather than assumed: a `*​/5 * * * *` schedule FAILED THE DEPLOYMENT,
+ * and Vercel's own error link resolves to its cron usage-and-pricing page —
+ * Hobby accounts are limited to cron jobs that run once per day, and more
+ * frequent expressions fail at deploy time. So this endpoint advances an
+ * abandoned run by one slice per day, which is a sweep, not a worker.
+ *
+ * The work is driven by the OPEN PAGE calling `advancePlanIngest` in a loop
+ * (`lib/actions/planIngest.ts` argues it in full), which is what makes ingestion
+ * possible at all here. This exists for the one case a browser cannot cover: a
+ * run whose tab was closed and which nobody reopens. If that case ever needs to
+ * be minutes rather than a day, the fix is a Pro plan and one line in
+ * `vercel.json`, not a redesign — the claim column already lets any number of
+ * workers advance the same job at once.
  */
 
 export const runtime = "nodejs";
