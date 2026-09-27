@@ -135,13 +135,24 @@ export function AiSettingsForm({ settings }: { settings: AiSettingsView }) {
         </span>
       </label>
 
-      {/* DELIBERATE MUTATION — DO NOT MERGE. The hidden inputs that carry the
-          per-feature choices through a save-while-disabled are removed here to
-          prove `e2e/specs/ai-switch.spec.ts` step 3 can see the data-loss bug.
-          Restored in the next commit. If you are reading this on a merged
-          commit, the switch is a trap: turning AI off wipes every per-feature
-          choice, and turning it back on leaves all seven features refusing
-          individually. */}
+      {/* A DISABLED CHECKBOX POSTS NOTHING EITHER, and this is what stops that
+          being a data-loss bug. With AI off, every feature box above is
+          disabled, so none of them would reach the action and all seven would
+          be recorded as switched off — the company's per-feature choices
+          destroyed by the act of turning AI off. These carry them through.
+
+          MEASURED, not reasoned about. Removing these eight lines and pushing
+          them to CI turned `e2e/specs/ai-switch.spec.ts` step 3 red with
+          `Expected: 5, Received: 0` — five per-feature choices gone after one
+          save. Steps 1 and 2 stayed GREEN throughout, and so did all 8,107
+          unit tests across 498 files, because the subject is real form
+          serialization and happy-dom does not serialize a form the way a
+          browser does. Do not "simplify" this away; nothing but that spec can
+          see it go. */}
+      {!aiEnabled &&
+        AI_FEATURE_KEYS.filter((feature) => !disabled.has(feature)).map((feature) => (
+          <input key={feature} type="hidden" name={`feature:${feature}`} value="on" />
+        ))}
 
       <div className="flex flex-wrap items-center gap-3">
         <button
