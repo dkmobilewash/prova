@@ -86,17 +86,22 @@ beforeAll(async () => {
     data: { companyId, jobId, fileUrl: "https://example.test/sheet.pdf" },
   });
   const page = await prisma.takeoffPlanPage.create({ data: { planId: plan.id, pageNumber: 1 } });
-  // 1 page unit = 1 foot, so a 20-unit trace is 20 feet and the arithmetic below
-  // can be read by hand.
+  // COORDINATES ARE NORMALISED 0..1 — fractions of the page, not page units.
+  // `verticesProblem` refuses anything outside that box, which is what the
+  // first run of this file discovered: `xs: [0, 20]` is twenty page-widths off
+  // the sheet, and the refusal said so in those words.
+  //
+  // So the calibration makes the full page width 100ft, and a trace across
+  // 0.2 of it is 20ft — the arithmetic stays readable by hand.
   const calibration = await prisma.takeoffScaleCalibration.create({
-    data: { pageId: page.id, x1: 0, y1: 0, x2: 1, y2: 0, declaredDistanceFeet: "1" },
+    data: { pageId: page.id, x1: 0, y1: 0, x2: 1, y2: 0, declaredDistanceFeet: "100" },
   });
   const measurement = await prisma.takeoffMeasurement.create({
-    data: { pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", xs: [0, 20], ys: [0, 0], label: "Corridor" },
+    data: { pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", xs: [0, 0.2], ys: [0, 0], label: "Corridor" },
   });
   measurementId = measurement.id;
   const bare = await prisma.takeoffMeasurement.create({
-    data: { pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", xs: [0, 10], ys: [0, 0], label: "Lobby" },
+    data: { pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", xs: [0, 0.1], ys: [0, 0], label: "Lobby" },
   });
   bareMeasurementId = bare.id;
 });
@@ -142,7 +147,7 @@ describe("posting a measured run against a wall type", () => {
     expect(runs).toHaveLength(1);
     expect(runs[0].wallTypeId).toBe(wallTypeId);
     expect(runs[0].label).toBe("Level 3 corridor");
-    expect(Number(runs[0].lengthFt), "20 page units at 1 unit per foot").toBe(20);
+    expect(Number(runs[0].lengthFt), "0.2 of a page whose width is 100ft").toBe(20);
     expect(Number(runs[0].heightFt), "the wall type's default, not typed").toBe(9);
 
     // THE POINT OF #515. Before this, a posted takeoff line carried description,
