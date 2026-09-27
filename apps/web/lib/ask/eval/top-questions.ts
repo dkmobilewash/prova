@@ -403,6 +403,12 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   c("q-pursuit-stage", "we called about Northgate Medical, move it to contacted", "set_pursuit_stage", ESTIMATOR),
   c("q-leads-find", "anything out to bid near us for drywall that we don't know about yet?", "find_bid_leads", ESTIMATOR),
   c("q-schedule-crew", "put Mike on Riverside tomorrow", "schedule_crew", FIELD),
+  // The offer after the attendance refusal (2026-09-27). "Who actually showed
+  // up" itself is refused — KNOWN_GAPS — and is not in this census as a
+  // question, because the census grades routing and a refusal routes
+  // nowhere. These two are what the box does NEXT, in the foreman's words.
+  t("q-who-would-know", "who would know who was actually on Riverside last Tuesday?", "who_would_know", FIELD),
+  c("q-ask-teammate", "yes, ask Hector who was on Riverside last Tuesday", "ask_teammate", FIELD),
   // The clock-in model (#309) records an interval once it is CLOSED; a
   // running clock lives only in the phone's own storage. So "who is on the
   // clock" has no server row to read, and crew_schedule — who was PLANNED —
@@ -513,7 +519,12 @@ export const CENSUS_REFUSALS = 2;
  * hole somebody wrote down, closed by code, and left on the list that is
  * injected into the system prompt. It went from a census entry nobody had
  * written to a refusal nobody had withdrawn. */
-export const TOTAL_QUESTIONS = 123;
+/** 123 -> 125 on 2026-09-27: the two halves of "I don't know, but here is
+ * who to ask". Neither is a question a contractor types cold — both follow
+ * the attendance refusal, which is a KNOWN_GAP and not an entry here — but
+ * they are routable, and a tool nobody's words reach is the shape this
+ * census exists to notice. */
+export const TOTAL_QUESTIONS = 125;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the

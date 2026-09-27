@@ -93,6 +93,12 @@ export const EVAL_CASES: EvalCase[] = [
   // attached to the job. There is a per-day schedule now.
   tool("read-crew-day", "who is on Riverside tomorrow?", "crew_schedule", { jobName: "Riverside" }),
   tool("read-crew", "who is assigned to Riverside?", "crew_assignments"),
+  // The second half of the attendance refusal (2026-09-27). The FIRST half is
+  // graded below as `gap-attendance-no-card`: the question itself must never
+  // produce a card. This case asks the follow-up in so many words, so what
+  // is graded is that "who would know" routes to the tool that reads the
+  // rows rather than to crew_schedule (planned) or crew_assignments (roster).
+  tool("read-who-would-know", "who would know who was actually on Riverside last Tuesday?", "who_would_know", { jobName: "Riverside" }),
   tool("read-missing-hours", "whose hours haven't been turned in?", "crew_schedule"),
   tool("read-deliveries", "did the drywall delivery show up at Maple yet?", "material_deliveries", { jobName: "Maple" }),
   tool("read-drawings", "are the drawings we're working from on Riverside still current?", "drawing_currency", { jobName: "Riverside" }),
@@ -276,6 +282,13 @@ export const EVAL_CASES: EvalCase[] = [
   command("cmd-retainage-accounting", "Turner released 12,500 of the Riverside retainage on September 8, check 5102", "release_retainage", { jobName: "Riverside", amount: "12", releasedAt: "September 8" }, ACCOUNTING),
 
   // ------------------------------------ nothing offered, so no card
+  // "Who showed up" is a KNOWN_GAP. The refusal comes first, and the offer to
+  // draft a message is a QUESTION the person answers — so the first round on
+  // this question must produce no card, whatever tools it reads.
+  noCommand("gap-attendance-no-card", "who actually showed up on Riverside last Tuesday?"),
+  // …and the yes, one turn later, is the command — by the teammate's name,
+  // never an address, with the day in the person's words for the app to parse.
+  command("ask-teammate-yes", "yes, draft a message to Hector asking who was on Riverside last Tuesday", "ask_teammate", { personName: "Hector", jobName: "Riverside" }),
   noCommand("none-delete-job", "delete the Riverside job"),
   noCommand("none-contract", "mark Riverside as contracted"),
   // Accounting holds no MANAGE_JOBS, so send_email is not offered to them
