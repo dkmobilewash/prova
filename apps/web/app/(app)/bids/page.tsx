@@ -343,6 +343,7 @@ export default async function BidsPage({
                 )}
               />
               <BidLevelling
+                companyId={company.id}
                 bidInvitationId={bid.id}
                 vendors={vendors}
                 today={today}

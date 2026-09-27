@@ -1642,6 +1642,12 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // turning AI off stops work for every member of the company, and turning it
   // back on is a decision about where their documents may go.
   aiSettings: () => import("./actions/aiSettings"),
+  // Reading a sub's quote, reachable from /bids alone, which withholds on
+  // MANAGE_ESTIMATING. `readBidQuoteDocument` asserts the same — and unlike the
+  // plan-ingest actions, this one was right first time, because the capability
+  // was copied from the neighbour it sits beside (`saveBidQuote`) rather than
+  // chosen from the feature's name.
+  quoteRead: () => import("./actions/quoteRead"),
   // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it
   // is reachable from /settings/assistant alone, which demands
   // MANAGE_COMPLIANCE. The card actions (confirm, cancel, settle, load)
