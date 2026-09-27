@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Image, PixelRatio, StyleSheet, Text, View } from "react-native";
 import ViewShot, { type ViewShotRef } from "react-native-view-shot";
 import { Button } from "@/components/Button";
+import { FooterActions } from "@/components/FooterActions";
 import { Chip } from "@/components/Chip";
 import { EmptyState } from "@/components/EmptyState";
 import { Field } from "@/components/Field";
@@ -394,16 +395,17 @@ export default function PhotosScreen() {
         }
       />
 
-      <View style={[styles.footer, styles.footerRow]}>
-        <Button variant="secondary" onPress={pickFromLibrary}>
-          {t("photos.library")}
+      <FooterActions
+        secondary={[
+          <Button key="library" variant="secondary" onPress={pickFromLibrary}>
+            {t("photos.library")}
+          </Button>,
+        ]}
+      >
+        <Button fullWidth onPress={takePhoto}>
+          {t("photos.take")}
         </Button>
-        <View style={styles.footerMain}>
-          <Button fullWidth onPress={takePhoto}>
-            {t("photos.take")}
-          </Button>
-        </View>
-      </View>
+      </FooterActions>
 
       {/* The thing that gets captured: the picture with the stamp over it,
           rendered off-screen at full size. Off-screen rather than hidden —
@@ -538,8 +540,6 @@ function makeStyles(p: Palette) {
     label: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
     chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
-    footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-    footerMain: { flex: 1 },
     offscreen: { position: "absolute", left: -10000, top: 0 },
     stamp: {
       position: "absolute",

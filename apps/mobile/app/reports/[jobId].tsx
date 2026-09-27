@@ -2,6 +2,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
+import { FooterActions } from "@/components/FooterActions";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
 import { DateField } from "@/components/DateField";
@@ -382,22 +383,23 @@ export default function ReportsScreen() {
         })}
       />
 
-      <View style={[styles.footer, styles.footerRow]}>
-        <Button variant="secondary" onPress={openDelay}>
-          {t("reports.delay.log")}
+      <FooterActions
+        secondary={[
+          <Button key="delay" variant="secondary" onPress={openDelay}>
+            {t("reports.delay.log")}
+          </Button>,
+        ]}
+      >
+        <Button
+          fullWidth
+          onPress={() => {
+            setReportDate(today);
+            setShowReport(true);
+          }}
+        >
+          {t("reports.new")}
         </Button>
-        <View style={styles.footerMain}>
-          <Button
-            fullWidth
-            onPress={() => {
-              setReportDate(today);
-              setShowReport(true);
-            }}
-          >
-            {t("reports.new")}
-          </Button>
-        </View>
-      </View>
+      </FooterActions>
 
       <Sheet
         visible={showReport}
@@ -537,7 +539,5 @@ function makeStyles(p: Palette) {
     row: { flexDirection: "row", gap: 8 },
     half: { flex: 1 },
     footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
-    footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-    footerMain: { flex: 1 },
   });
 }
