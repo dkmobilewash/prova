@@ -47,3 +47,35 @@ stating rather than assuming: it counts `node …mjs` commands two ways and
 requires the two to agree, so adding an operation that pointed at a script
 this repo does not have would fail there rather than showing as a button
 that runs and says "cannot find module".
+
+Two more things came out of filming with it.
+
+**Seeding a SECOND company on one database died half-way.** `providerMessageId`
+was built as `demo-[demo]-${toAddress}-${sentAt}` and is `@unique` in
+`messaging.prisma` with no company in the key — correctly, since it holds a
+provider's own id. So it is unique per company and collides across them. The
+jobs, contacts, crew, 49 time entries and equipment committed; the messages did
+not. That is issue #180's shape, and the reseed guard then refuses the retry, so
+the company is stuck until somebody runs `--undo`. `company.id` is in the tag
+now. The other five globally unique fields on models this seed writes were
+checked by intersecting every single-field `@unique` in the schema against every
+model the seed calls `create`/`upsert` on: none of the five is written at all,
+so each stays null, and null does not collide under a unique index in Postgres.
+
+**`--camera-names` takes the `[demo]` tag off the jobs and the GC contacts**,
+which is the twelve-trips-through-Job-details chore before a screen recording.
+The interesting half is what it must not break. `undo` finds jobs by
+`name contains [demo]` and then scopes about forty child models by the resulting
+`jobIds`, so a job it cannot match does not merely survive — its whole tree
+survives with it, and the run still reports a clean removal. Same for contacts.
+So the names live in `DEMO_JOB_NAMES` / `DEMO_CONTACT_NAMES` at the top of the
+file, undo matches the tag OR one of those exact names, and the rename strips
+the tag and nothing else: it takes no new name, and refuses rather than write
+one the constants do not know, because that is a row nothing could ever remove.
+`--restore` puts the tags back.
+
+The trade is stated rather than hidden: a job a PERSON creates with exactly one
+of those names in the same company would be removed by `--undo`. The names are
+distinctive, this only runs against the demo project, and undo now prints every
+untagged row it matched before deleting anything — "removed 4 jobs" reads
+identically whether or not one of them was somebody's own.
