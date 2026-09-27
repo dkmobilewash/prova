@@ -1637,6 +1637,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // beside a mechanism, and it drifted while every assertion around it stayed
   // true. Read the action, not this line.
   bidRecap: () => import("./actions/bidRecap"),
+  // The per-company AI switch, reachable from /settings/assistant alone, which
+  // demands MANAGE_COMPLIANCE. `saveCompanyAiSettings` asserts that AND owner:
+  // turning AI off stops work for every member of the company, and turning it
+  // back on is a decision about where their documents may go.
+  aiSettings: () => import("./actions/aiSettings"),
   // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it
   // is reachable from /settings/assistant alone, which demands
   // MANAGE_COMPLIANCE. The card actions (confirm, cancel, settle, load)

@@ -29,7 +29,7 @@ import { readPaymentEntry } from "@/lib/billing/payment-entry";
 import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
 import { payAppEntryError, payAppRowsFromForm, payAppTotal } from "@/lib/pay-application";
 import { recordAskUsage } from "@/lib/ask/usage";
-import { ASK_DEFAULT_MODEL } from "@prova/integrations";
+import { aiGate } from "@/lib/ai/settings";
 import {
   actionFail,
   actionOk,
@@ -962,6 +962,13 @@ export async function generateJobWipNarrative(
   // `ActionResultWith<string>`.
   if (!can(context, "VIEW_JOB_COSTS")) return { ok: false as const, error: JOB_COSTS_ONLY };
   const { company, ...user } = context;
+
+  // THE PER-COMPANY AI SWITCH, before the job's figures are even assembled.
+  // Written out rather than through `actionFail` for the same reason the
+  // capability check above is: this action returns `ActionResultWith<string>`.
+  const gate = await aiGate(company.id, "WIP_NARRATIVE");
+  if (!gate.ok) return { ok: false as const, error: gate.error };
+
   const job = await assertJobInCompany(jobId, company.id);
 
   const lineItems = await prisma.jobLineItem.findMany({
@@ -1046,11 +1053,16 @@ export async function generateJobWipNarrative(
     recordAskUsage({
       companyId: company.id,
       userId: user.id,
-      model: ASK_DEFAULT_MODEL,
+      // The model that actually ran, from the gate.
+      model: gate.model,
+      // The most attributable AI call in the app: a narrative is ABOUT one
+      // job by construction.
+      jobId,
       usage,
       outcome: "answered",
       feature: "wip-narrative",
     }),
+    gate.model,
   );
 
   return { ok: true, value: narrative };

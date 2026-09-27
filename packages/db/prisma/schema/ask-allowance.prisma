@@ -72,6 +72,25 @@ model AskAllowancePeriod {
   failedQuestions Int @default(0)
   failedPages     Int @default(0)
 
+  /// PLAN SHEETS claimed this period, metered SEPARATELY from `pagesUsed`
+  /// above and by the same claim-before-the-call rule.
+  ///
+  /// WHY A THIRD UNIT RATHER THAN MORE PAGES. Ingesting one 300-sheet plan set
+  /// is 300 pages — the ENTIRE existing monthly page allowance — so a
+  /// contractor who uploaded a drawing set would have no document allowance
+  /// left for the compliance paperwork the same job needs, and the second set
+  /// that month would be refused outright. The two are not the same product
+  /// either: a page is a document somebody hands the assistant, and a sheet is
+  /// a unit of a bulk job that runs unattended.
+  ///
+  /// Diego set the included figure at 1,500 sheets a month; the per-company
+  /// value lives on `CompanyAiSettings.planSheetsPerMonth` so a plan can move
+  /// it without a migration, and `allowanceForCompany` reads it.
+  planSheetsUsed   Int @default(0)
+  /// Of those, sheets whose model call then failed — marked, never released,
+  /// for exactly the reasons the two fields above are.
+  failedPlanSheets Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

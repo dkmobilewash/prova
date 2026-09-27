@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { AI_CLIENT_OPTIONS, modelFor } from "./models";
 import type { AskUsageTotals } from "./ask";
 
 /**
@@ -97,11 +98,15 @@ export interface WipNarrativeJobSummary {
 export async function generateWipNarrative(
   summary: WipNarrativeJobSummary,
   onUsage?: ModelUsageReporter,
+  /** The model, already resolved by the caller's `aiGate` against this
+   *  company's override. Omitted falls back to the feature default, which is
+   *  what a test or a caller with no company context gets. */
+  model?: string,
 ): Promise<string> {
-  const client = new Anthropic();
+  const client = new Anthropic(AI_CLIENT_OPTIONS);
 
   const response = await client.messages.create({
-    model: "claude-opus-5",
+    model: model ?? modelFor("WIP_NARRATIVE").model,
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [
@@ -171,8 +176,11 @@ export async function extractComplianceDocument(params: {
    *  It base64-encodes a file of up to 15MB into a single request — an
    *  audit put it at $2.25-$4.50 per upload, 50-90x a warm Ask question. */
   onUsage?: ModelUsageReporter;
+  /** The model, already resolved by the caller's `aiGate` against this
+   *  company's override. Omitted falls back to the feature default. */
+  model?: string;
 }): Promise<ComplianceDocumentExtraction> {
-  const client = new Anthropic();
+  const client = new Anthropic(AI_CLIENT_OPTIONS);
 
   const fileBlock: Anthropic.ContentBlockParam =
     params.mediaType === "application/pdf"
@@ -186,7 +194,7 @@ export async function extractComplianceDocument(params: {
         };
 
   const response = await client.messages.create({
-    model: "claude-opus-5",
+    model: params.model ?? modelFor("COMPLIANCE_EXTRACT").model,
     max_tokens: 1024,
     system: EXTRACTION_SYSTEM_PROMPT,
     tools: [
@@ -323,8 +331,11 @@ export async function draftEstimateLineItems(
    *  time, so one AskUsage row could hide an entire second model call and
    *  the cap counted questions rather than calls. Reported separately. */
   onUsage?: ModelUsageReporter,
+  /** The model, already resolved by the caller's `aiGate` against this
+   *  company's override. Omitted falls back to the feature default. */
+  model?: string,
 ): Promise<DraftLineItem[]> {
-  const client = new Anthropic();
+  const client = new Anthropic(AI_CLIENT_OPTIONS);
 
   const catalogEntries = reference.catalogEntries.slice(0, MAX_REFERENCE_CATALOG_ENTRIES);
   const wonBids = reference.wonBids.slice(0, MAX_REFERENCE_WON_BIDS);
@@ -361,7 +372,7 @@ export async function draftEstimateLineItems(
   ].join("\n\n---\n\n");
 
   const response = await client.messages.create({
-    model: "claude-opus-5",
+    model: model ?? modelFor("DRAFT_ESTIMATE_LINES").model,
     max_tokens: 2048,
     system: DRAFT_SYSTEM_PROMPT,
     tools: [

@@ -138,6 +138,9 @@ model Company {
   /// The paid AI allowance this company has claimed, one row per calendar
   /// month — see ask-allowance.prisma.
   askAllowancePeriods       AskAllowancePeriod[]
+  /// This company's AI switch, per-feature switches and ingestion allowance —
+  /// see ai-settings.prisma. Absent means every default, never "off".
+  aiSettings                CompanyAiSettings?
   vendorPriceQuotes         VendorPriceQuote[]
   outboundMessages          OutboundMessage[]
   contactInteractions       ContactInteraction[]
@@ -302,6 +305,9 @@ model User {
   apprenticeshipEnrollments ApprenticeshipEnrollment[] @relation("ApprenticeEnrollments")
   askProposals              AskProposal[]
   askUsage                  AskUsage[]
+  /// AI settings rows this person last changed — an audit line on an
+  /// owner-only switch, not a thing they own.
+  aiSettingsChanged         CompanyAiSettings[]
 
   @@index([companyId])
 }

@@ -6,6 +6,8 @@ import { auditSummary, listAskProposals, OUTCOME_LABEL, type AuditOutcome } from
 import { ASK_LIMITS, MIGRATE_COMMAND, usageSummary } from "@/lib/ask/usage";
 import { allowanceSummary } from "@/lib/ask/allowance";
 import { AssistantConnectionCheck } from "@/components/AssistantConnectionCheck";
+import { AiSettingsForm } from "@/components/AiSettingsForm";
+import { aiSettingsFor } from "@/lib/ai/settings";
 import { StatusLine } from "@/components/StatusLine";
 import { assistantStatus } from "@/lib/status-sentences";
 
@@ -16,12 +18,21 @@ import { assistantStatus } from "@/lib/status-sentences";
  * Exists because a feature that can write rows on a prompt needs a place
  * where the owner can read what it wrote, who asked for it, and what was
  * refused — without opening a database. The rows are AskProposal
- * (ask.prisma), append-only and stamped; nothing on this page writes.
+ * (ask.prisma), append-only and stamped.
+ *
+ * THIS PARAGRAPH SAID "nothing on this page writes" UNTIL 2026-09-26, and it
+ * was true for as long as the page was only an audit log. The first section is
+ * now the per-company AI switch (`AiSettingsForm`, `saveCompanyAiSettings`),
+ * which is the one thing here that changes anything — so the sentence is gone
+ * rather than left standing for somebody to rely on. Everything BELOW that
+ * section still only reads.
  *
  * OWNER-ONLY on top of the route's MANAGE_COMPLIANCE, the same shape as
  * /settings itself: the list carries every member's questions and, for
  * money cards, amounts. The route capability gets a person to the
- * settings area; the role check decides who reads this.
+ * settings area; the role check decides who reads this. The switch asserts
+ * both again in its own action, because a Server Action is a separate endpoint
+ * that answers whoever posts to it whatever the page decided.
  */
 
 const OUTCOME_CLASS: Record<AuditOutcome, string> = {
@@ -53,10 +64,11 @@ export default async function AssistantAuditPage() {
   }
 
   const now = new Date();
-  const [rows, usage, allowance] = await Promise.all([
+  const [rows, usage, allowance, aiSettings] = await Promise.all([
     listAskProposals(company.id, now),
     usageSummary(company.id, now),
     allowanceSummary(company.id, now),
+    aiSettingsFor(company.id),
   ]);
   const summary = auditSummary(rows, now);
   const configured = anthropicIsConfigured();
@@ -75,6 +87,23 @@ export default async function AssistantAuditPage() {
         the right-hand label says what happened when they did. A tap that wrote nothing carries the
         app&apos;s own sentence for why; nothing here was decided by the model.
       </p>
+
+      {/* WHAT AI IS ALLOWED TO DO — first, above everything, because it is the
+          only section on this page that CHANGES anything, and because it is the
+          answer to the question that brings most people here: whether this
+          company's drawings and paperwork go to a model at all.
+
+          It is also the section that makes this page's own header wrong. It read
+          "nothing on this page writes" from the day it was built, which was true
+          of an audit log and is not true any more. */}
+      <section className="mb-6 rounded-lg border border-line-card bg-surface p-4" data-ask="ai-settings">
+        <h2 className="mb-1 text-sm font-semibold text-ink">What AI is allowed to do</h2>
+        <p className="mb-3 text-sm text-ink-body">
+          Your company&apos;s choice, not ours. Switching something off here stops it for everyone in the
+          company, and nothing from this company reaches a model through it while it is off.
+        </p>
+        <AiSettingsForm settings={aiSettings} />
+      </section>
 
       {/* The screen half of the loop's failure log line: an owner can see
           whether a key exists and press one button to learn whether it

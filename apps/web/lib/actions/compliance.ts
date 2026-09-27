@@ -10,10 +10,10 @@ import {
   type DocumentUploadContentType,
 } from "@/lib/document-uploads";
 import { requireCompanyContext } from "@/lib/auth";
+import { aiGate } from "@/lib/ai/settings";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import { extractComplianceDocument } from "@prova/integrations";
-import { ASK_DEFAULT_MODEL } from "@prova/integrations";
 import { recordAskUsage } from "@/lib/ask/usage";
 import { markAskAllowanceFailure } from "@/lib/ask/allowance";
 import { claimDocumentPages } from "@/lib/ask/documentSpend";
@@ -246,6 +246,24 @@ export async function uploadComplianceDocument(
     jobId = job.id;
   }
 
+  // THE PER-COMPANY AI SWITCH, before the bytes are fetched back out of the
+  // store, let alone sent anywhere. A company that has switched document
+  // reading off has said its paperwork must not reach a model, and this is
+  // the check that makes that true rather than promised.
+  //
+  // AND IT REFUSES THE WHOLE UPLOAD, which is a consequence worth stating
+  // rather than burying: this action is the ONLY way a compliance document
+  // gets created, and the required `type` and `partyName` come out of the
+  // extraction — so with the reader off there is nothing to write. A
+  // manual-entry path is the real answer and is not in this change, so the
+  // sentence says what the trade is instead of pretending the switch is free.
+  const aiRead = await aiGate(company.id, "COMPLIANCE_EXTRACT");
+  if (!aiRead.ok) {
+    return uploadFail(
+      `${aiRead.error} Reading the document is how its type, party and dates get filled in, so filing one is off until it is back on.`,
+    );
+  }
+
   const read = await readStoredDocument(fileUrl);
   if (!read.ok) {
     return uploadFail(read.error);
@@ -277,6 +295,8 @@ export async function uploadComplianceDocument(
       fileBase64: read.buffer.toString("base64"),
       mediaType: read.mediaType,
       fileName: fileName ?? "document",
+      // The model this company's gate resolved.
+      model: aiRead.model,
       // Metered since 2026-09-14. The most expensive single call in this
       // app — a 15MB file base64'd into one request, put at $2.25-$4.50 an
       // upload by audit, against a warm Ask question at $0.05 — and until
@@ -285,7 +305,14 @@ export async function uploadComplianceDocument(
         recordAskUsage({
           companyId: company.id,
           userId: user.id,
-          model: ASK_DEFAULT_MODEL,
+          // The model that actually ran. This column is what step 2's cost
+          // numbers get computed from, and the features no longer share one
+          // model.
+          model: aiRead.model,
+          // Null for a company-level document — a COI or a union agreement is
+          // filed against the company, not a job — which is exactly why this
+          // column is nullable.
+          jobId,
           usage,
           outcome: "answered",
           feature: "compliance-extract",

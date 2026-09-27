@@ -78,4 +78,5 @@ export * from "./bluebeam";
 export * from "./search";
 export * from "./wallTypes";
 export * from "./bidRecap";
+export * from "./aiSettings";
 export * from "./takeoff";

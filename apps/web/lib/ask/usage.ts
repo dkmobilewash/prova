@@ -200,6 +200,37 @@ export type AskUsageRecord = {
   outcome: AskUsageOutcome;
   /** Defaults to "ask" so every existing call site is unchanged. */
   feature?: AskUsageFeature;
+  /**
+   * The job this spend belongs to, when there is one.
+   *
+   * WHY IT IS WORTH HAVING, and it is not book-keeping: the first question
+   * anybody asks about an AI bill is "which jobs is this going on", and until
+   * now nothing could answer it — every row was company-wide, so a job whose
+   * drawings were read three times looked exactly like one nobody touched.
+   * Step 0 of the AI plan, at Diego's request.
+   *
+   * A PLAIN COLUMN, DELIBERATELY NOT A FOREIGN KEY (ask.prisma says so too).
+   * This table is an append-only spend ledger; a job deleted by the scratch
+   * cleanup must not take its billing history with it, and `ON DELETE SET
+   * NULL` would erase the attribution rather than keep it. What was spent is a
+   * fact about the past.
+   *
+   * Absent for the calls that genuinely have no job — a lead search, a bid
+   * research pass on a project that is not a job yet, a question about the
+   * whole company — which is why it is nullable rather than required.
+   */
+  jobId?: string | null;
+  /**
+   * Which version of the prompt produced this, once prompts are versioned.
+   *
+   * NOTHING SETS THIS YET, and that is recorded rather than hidden: the column
+   * is here so that when a prompt changes, the rows written before and after
+   * are TELLABLE APART — which is the whole basis of saying a change made
+   * anything better. Retrofitting it would mean a migration and a month of
+   * rows that cannot be attributed to either version. The prompts themselves
+   * are versioned in the step that first changes one.
+   */
+  promptVersion?: string | null;
 };
 
 /**
@@ -217,6 +248,9 @@ export async function recordAskUsage(record: AskUsageRecord): Promise<void> {
     companyId: record.companyId,
     userId: record.userId,
     model: record.model,
+    // An id, like every other field here. Never a job NAME — the rule this
+    // log line has followed since it was written is ids and counts only.
+    jobId: record.jobId ?? null,
     outcome: record.outcome,
     passes: usage.passes,
     inputTokens: usage.inputTokens,
@@ -246,6 +280,8 @@ export async function recordAskUsage(record: AskUsageRecord): Promise<void> {
         cacheReadTokens: usage.cacheReadTokens,
         cacheWriteTokens: usage.cacheWriteTokens,
         outcome: record.outcome,
+        jobId: record.jobId ?? null,
+        promptVersion: record.promptVersion ?? null,
       },
     });
   } catch (err) {
