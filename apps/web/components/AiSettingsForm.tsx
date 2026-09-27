@@ -135,15 +135,13 @@ export function AiSettingsForm({ settings }: { settings: AiSettingsView }) {
         </span>
       </label>
 
-      {/* A DISABLED CHECKBOX POSTS NOTHING EITHER, and this is what stops that
-          being a data-loss bug. With AI off, every feature box above is
-          disabled, so none of them would reach the action and all seven would
-          be recorded as switched off — the company's per-feature choices
-          destroyed by the act of turning AI off. These carry them through. */}
-      {!aiEnabled &&
-        AI_FEATURE_KEYS.filter((feature) => !disabled.has(feature)).map((feature) => (
-          <input key={feature} type="hidden" name={`feature:${feature}`} value="on" />
-        ))}
+      {/* DELIBERATE MUTATION — DO NOT MERGE. The hidden inputs that carry the
+          per-feature choices through a save-while-disabled are removed here to
+          prove `e2e/specs/ai-switch.spec.ts` step 3 can see the data-loss bug.
+          Restored in the next commit. If you are reading this on a merged
+          commit, the switch is a trap: turning AI off wipes every per-feature
+          choice, and turning it back on leaves all seven features refusing
+          individually. */}
 
       <div className="flex flex-wrap items-center gap-3">
         <button
