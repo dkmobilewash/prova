@@ -139,8 +139,22 @@ Then:
 npx eas submit --platform ios --profile production
 ```
 
-It asks for the Apple ID, the team, and the App Store Connect app id, and
-remembers them.
+The FIRST time, it asks for the Apple ID and the team and remembers them.
+It also derives the App Store Connect app id — the "Ensuring your app
+exists on App Store Connect" line — and that step needs an Apple session,
+so a submit could not run unattended at all.
+
+`eas.json` now pins `submit.production.ios.ascAppId` (6816567508), so it
+does not. An id is not a credential: it is in the App Store Connect URL
+and in the public listing, which is why it can sit in the repo when
+nothing else here does. Build 2 submitted with no login round-trip.
+
+Two details worth having rather than rediscovering. `--non-interactive`
+REFUSES without it — *"Set ascAppId in the submit profile (eas.json) or
+re-run this command in interactive mode"* — so this is what makes the
+step scriptable. And the key nests under `ios`: put it directly on the
+profile and eas.json fails schema validation with
+`"submit.production.ascAppId" is not allowed`.
 
 **Wait for step 3 to report `finished` before running this.** With no
 finished production build, submit cannot pick one and instead opens a menu
