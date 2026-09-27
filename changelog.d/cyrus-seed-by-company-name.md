@@ -37,13 +37,58 @@ is a name typed into a form that still held an id from the previous run, so
 "the id wins" means a stale id chooses the target while the log reads as
 though the name had.
 
-Each refusal points at the read-only `list-companies` operation, which comes
-from `cyrus/seed-counters-zzbqtu` and landed while this was being written — a
-refusal that leaves the operator with nowhere to look is only half a refusal,
-and there is nowhere else to look: no page in the app renders a company id. A
-listing was written here too and then deleted rather than reconciled, because
-that one had already been run against `ep-patient-lake` and this one had not.
-Two implementations of one thing is worse than either.
+Each refusal points at the read-only `list-companies` operation, which arrived
+on `cyrus/seed-counters-zzbqtu` while this was being written and rides in on the
+same PR — a refusal that leaves the operator with nowhere to look is only half a
+refusal, and there is nowhere else to look: no page in the app renders a company
+id. A second listing was written here and then deleted rather than reconciled,
+because that one had already been run against `ep-patient-lake` and this one had
+not. Two implementations of one thing is worse than either.
+
+**And running it proved the feature was not enough on its own.** Pointed at a
+second company on a database that already held a demo set, the seed wrote the
+jobs, the GC contacts, six crew, 49 time entries and eight equipment items and
+then died on `Unique constraint failed on the fields: (providerMessageId)` —
+CI run 36358650969. That is issue #180's shape: a company left holding a
+PARTIAL set, and the reseed guard then refuses the retry because it counts
+tagged rows per family and finds some. So "seed a company other than the oldest
+one" was broken past the equipment stage on any database that had ever been
+seeded before, and a name input that resolves correctly and then leaves a
+half-seeded tenant behind is worse than no input at all.
+
+The cause is one line and the reason nothing caught it is the interesting part.
+`providerMessageId` was `demo-[demo]-<address>-<day>`, and that column is
+`@unique` with NO company in the key — correctly, since it holds a provider's
+own id. Every other tag this script writes is scoped by a `where: { companyId }`,
+so this is the only value the DATABASE requires to be globally unique. Nobody
+had ever run the seed against two companies on one database; the demo project
+grew a second and a third the moment people began signing in to previews, so
+the assumption stopped holding without a line of the script changing.
+
+`apps/web/lib/seedGlobalUniqueScope.test.ts` is the part that lasts. The
+intersection that found the bug — every single-field `@unique` in the schema
+against every model the seed writes — was a one-off, and a one-off rots the day
+somebody seeds a new model with a globally unique tag. It is now derived and
+pinned: six pairs, five of them never written and one carrying `company.id`, and
+a seventh appearing fails by name. Built to CLAUDE.md's three rules for a
+deriving check, because all three failure modes are live here — both sets are
+size-checked against plain string splits that share no regex with the patterns
+that built them; the schema folder comes from `packages/db/package.json`'s own
+`prisma.schema` rather than a hand-written list, and a folder that is not there
+throws "NOTHING WAS SCANNED" instead of passing over an empty set; and comments
+AND string-literal text are blanked length-preservingly first, which is not
+decoration — the fix's own docblock names `providerMessageId` four times, so a
+raw-text census answers about prose, and three `https://` URLs in the script
+would otherwise open line comments that swallow the code after them. Preserving
+length pays for itself twice: a failure quotes the real expression back from the
+original source rather than the blanked one.
+
+Mutation-tested six ways, each confirmed applied before its result was read:
+the fix reverted (red, naming the field, the line and the expression), the fix
+present only in a comment (red), the schema folder pointed at nothing (red on
+the scope, not green), a new seeded model with an unscoped globally unique field
+(red, naming it), the `@unique` pattern drifted so it matches nothing (red on
+the count), and the comment stripping removed (red).
 
 Nothing about the seed's safety moved. `SEED_EXPECT_HOST` is still compared
 against the host the connection string resolves to and still refuses before a
