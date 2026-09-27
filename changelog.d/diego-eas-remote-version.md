@@ -49,12 +49,49 @@ distribution that Apple rejects at upload, because TestFlight takes
 previous step has not happened. The runbook now says to check
 `Distribution: store` before submitting.
 
-**What this does NOT claim.** The build was still running when this was
-written, so nothing here asserts that the submit, the App Store Connect
-record or TestFlight itself work — those remain what `RELEASE.md` has
-always said they are, steps a person takes in Apple's systems that no
-test in this repo can see. Only the prompts above were observed, and each
-correction is one of them.
+**THE PUSH-KEY PROMPT DID NOT FIRE, AND THE RUNBOOK SAID IN CAPITALS THAT
+IT WOULD.** Section 3 was headed "this is where the push key is made" and
+told you to say yes to an APNs key, *"without it no notification can ever
+arrive"*. The production build never asked. Nothing was wrong — key
+`H84XACSPNN` had existed since 16 Sep, made by a DEVELOPMENT build, and
+the very next line of that section says credentials are stored in the EAS
+account so later builds stop asking. The two sentences contradicted each
+other and the louder one was read first.
+
+The cost was a session hunting a fault that did not exist, on the one
+credential the file calls fatal. The prompt fires on the first build that
+NEEDS the credential, which is usually months before release; **an absent
+prompt is not evidence in either direction, so the runbook now says to
+LOOK at the credentials list instead of inferring from a question.**
+
+**AND THE SUBMIT FAILED ON A CREDENTIAL THAT HAD BEEN WRONG FOR TEN DAYS
+WITHOUT SAYING SO.** An APNs key had been uploaded into the App Store
+Connect API Key slot on 16 Sep. Both are `.p8` files and are
+indistinguishable by eye; they come from different places and authorize
+different things. Nothing complained at upload, nothing complained during
+the build, and it surfaced only at the first authenticated submit call as
+a 401 `NOT_AUTHORIZED` about a bearer token — an error naming none of it.
+
+What DOES say so is the credentials page, which is now in the runbook: a
+real key resolves to a team and a role, and the wrong one resolves to
+`None` and `None`. Fixed with a new key at **App Manager** — least
+privilege that can upload a build, manage TestFlight and read the app
+record — and the SAME build then submitted, so the binary was never
+implicated.
+
+**A sub-second step never did the work it names.** `eas submit:view`
+prints `errored` and no reason; the reason is the submission's step list,
+where `Upload to App Store Connect` read `<1s` failing and `3s`
+succeeding, on one build, twenty minutes apart. That duration is the
+diagnosis, and it is the cheap reusable part: a submit that dies in under
+a second has not touched the binary, so rebuilding is wasted time.
+
+**What this still does NOT claim.** TestFlight itself — Test Information,
+internal testers, the app arriving on a phone — happens in Apple's
+systems and no test here can see it. `RELEASE.md` carries those as steps
+a person takes, which is what they remain. What IS verified is the chain
+up to Apple accepting the binary: build `adcf98b8` finished as `store`
+distribution, submission `fed2eb3d` succeeded, same build id.
 
 Mutation-tested: removing `appVersionSource` from `eas.json` turns the new
 assertion red and names it; the assertion above it stays green, which is

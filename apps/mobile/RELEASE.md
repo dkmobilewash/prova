@@ -85,7 +85,7 @@ A build made without these does not fail — it installs and then says
 `lib/env.ts`, and it exists because the alternative was an app that
 reported "No connection" forever.
 
-## 3. The first iOS build — this is where the push key is made
+## 3. The first iOS build
 
 ```
 npx eas build --platform ios --profile production
@@ -94,12 +94,33 @@ npx eas build --platform ios --profile production
 EAS will ask to log into Apple and then offer to create, for this bundle
 id:
 
-- a **distribution certificate**,
-- a **provisioning profile**,
-- a **push key (APNs)** — say yes. **Without it no notification can ever
-  arrive, no matter what the server does.** This is the missing half of
-  the alert-push work; the server key (`EXPO_ACCESS_TOKEN`) has been in
-  Vercel since 2026-09-17 and cannot help on its own.
+- a **distribution certificate** — say yes. The development builds have
+  one, but TestFlight needs App Store distribution, which is a different
+  certificate and a different provisioning profile;
+- a **provisioning profile** — yes, same reason;
+- a **push key (APNs)** if the account does not already have one.
+  **Without it no notification can ever arrive, no matter what the server
+  does** — the server key (`EXPO_ACCESS_TOKEN`) has been in Vercel since
+  2026-09-17 and cannot help on its own.
+
+**This heading used to read "this is where the push key is made", and on
+2026-09-26 the first production build did not ask about a push key at
+all.** Nothing was wrong: `H84XACSPNN` had been created on 16 Sep by a
+DEVELOPMENT build, and the next line of this section — credentials are
+stored in the EAS account, so later builds stop asking — is why. But the
+instruction as written made a missing prompt read as a missing key, on
+precisely the credential this file says is fatal to get wrong, which
+sent a session looking for a fault that did not exist.
+
+So: **the prompt appears on the first build that NEEDS the credential,
+which is usually a development build months earlier, not this one.** An
+absent prompt is not evidence either way. Look instead — the list is at
+`expo.dev/accounts/<account>/settings/credentials`, and **Apple Push
+Keys** either has a row or does not:
+
+```
+npx eas credentials -p ios      # → Push Notifications
+```
 
 Credentials are stored in the EAS account, so later builds stop asking.
 
@@ -137,6 +158,65 @@ npx eas build:list --platform ios --limit 1
 #   Profile       production
 #   Distribution  store        <- the line that matters
 ```
+
+### When a submission fails, read its STEPS
+
+`eas submit:view <id>` prints `errored` and not one word about why. The
+reason is in the submission's step list on `expo.dev`, and **the duration
+is the diagnosis**:
+
+| Upload to App Store Connect | means |
+| --- | --- |
+| **under 1s, failed** | it never sent the binary — credentials |
+| **seconds, succeeded** | it really uploaded |
+
+Both were observed on the same build on 2026-09-26, `adcf98b8`: `<1s`
+failing, then `3s` succeeding after one credential changed. So a
+sub-second failure there is never the binary, and rebuilding is wasted
+time.
+
+### The 401 that cost an evening, and what it actually was
+
+```
+Reading App information for Apple app identifier: 6816567508...
+Unexpected response (401) from App Store Connect: NOT_AUTHORIZED
+  "Authentication credentials are missing or invalid."
+```
+
+An **APNs key had been uploaded into the App Store Connect API Key slot.**
+Both are `.p8` files, they are byte-indistinguishable to a human, and they
+come from different places — APNs keys from the Developer portal's *Keys*
+section, App Store Connect API keys from *App Store Connect → Users and
+Access → Integrations*. Put one where the other goes and **nothing
+complains for ten days**; it fails at the first authenticated submit call,
+with an error about a bearer token that names none of this.
+
+**The credentials page says which you have, and it is the only thing that
+does.** A real API key resolves to a team and a role; a wrong one resolves
+to neither:
+
+| Identifier | Key ID | Team | Roles |
+| --- | --- | --- | --- |
+| `C Stream APNs` | 98VGB84MG2 | **None** | **None** |
+| `[Expo] EAS Submit …` | KKN57T7THY | Diego Carrillo | `APP_MANAGER` |
+
+Two `None`s is the tell. Fix it without rebuilding — the binary is fine:
+
+```
+npx eas credentials -p ios
+#  → App Store Connect: Manage your API Key
+#  → Add a new API Key For EAS Submit
+#  → role: App Manager        (not Admin: least privilege that can upload
+#                              builds, manage TestFlight and read the app
+#                              record, which is all submit needs)
+#  → yes, use it for this project
+npx eas submit --platform ios --latest
+```
+
+**Do not revoke the old key in Apple's portal to "clean up".** The push
+key sits beside it in the same list and a confident delete takes out the
+one credential this file says is unrecoverable-by-rebuild. Removing the
+dead entry from EAS is enough, and is not urgent.
 
 ## 5. TestFlight
 
