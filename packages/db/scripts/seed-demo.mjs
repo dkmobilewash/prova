@@ -2283,7 +2283,25 @@ async function main() {
         createdAt: day(sentAt),
         // Null means it never reached the provider, which is a different
         // failure from bouncing and reads differently on the page.
-        providerMessageId: wentOut ? `demo-${MARK}-${toAddress}-${sentAt}` : null,
+        //
+        // COMPANY-SCOPED, and that is not tidiness. `providerMessageId` is
+        // `@unique` in messaging.prisma with NO company in the key — it is a
+        // provider's own id, and two providers never issue the same one — so
+        // an id built from address and day alone is unique per COMPANY and
+        // collides across them. Every other tag in this file is scoped by a
+        // `where: { companyId }`, which hid it: this is the only value the
+        // DATABASE requires to be globally unique.
+        //
+        // It cost a half-finished seed on 2026-09-27, the #180 shape exactly.
+        // Seeding a SECOND company on a database that already had one wrote
+        // the jobs, the crew, 49 time entries and the equipment and then died
+        // here on `Unique constraint failed on the fields:
+        // (providerMessageId)` — leaving a company with a partial demo set
+        // and a reseed guard that then refuses to try again. Nobody had ever
+        // run this against two companies on one database; the demo project
+        // grew a second and a third the moment people started signing in to
+        // previews, so it stopped being hypothetical.
+        providerMessageId: wentOut ? `demo-${MARK}-${company.id}-${toAddress}-${sentAt}` : null,
         relatedType,
         relatedId: relatedType === null ? null : job.id,
         sentByUserId: user?.id ?? null,
