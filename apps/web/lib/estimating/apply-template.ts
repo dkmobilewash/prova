@@ -60,6 +60,7 @@ export async function applyEstimateTemplate(
               defaultLaborHours: true,
               productionRate: true,
               tradeScope: true,
+              costCategory: true,
               craftClassificationId: true,
             },
           },

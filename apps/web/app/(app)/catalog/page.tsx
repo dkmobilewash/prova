@@ -17,6 +17,7 @@ import { CatalogImport } from "@/components/CatalogImport";
 import { EstimateTemplates, type TemplateRow } from "@/components/EstimateTemplates";
 import { CatalogEntryRow } from "@/components/CatalogEntryRow";
 import { TRADE_SCOPE_OPTIONS, tradeScopeLabel } from "@/lib/trade-scopes";
+import { COST_CATEGORY_LABEL, COST_CATEGORY_ORDER } from "@/components/costCategoryLabels";
 import { money } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
 import { EmptyState } from "@/components/EmptyState";
@@ -438,6 +439,15 @@ export default async function CatalogPage() {
                         number printed beside the one that beats it reads as
                         being in use, so it says so rather than sitting there
                         looking like an assumption the bid was built on. */}
+                    {/* Named on the row because an entry with no cost type
+                        produces lines the recap marks up at NOTHING, and that is
+                        invisible until somebody opens the recap and reads the
+                        warning. #513. */}
+                    {entry.costCategory == null ? (
+                      <> · <span className="text-tag-amber-ink">no cost type — won&apos;t be marked up</span></>
+                    ) : (
+                      <> · {COST_CATEGORY_LABEL[entry.costCategory]}</>
+                    )}
                     {entry.productionRate != null && (
                       <>
                         {" "}
@@ -597,6 +607,26 @@ export default async function CatalogPage() {
               How fast the crew works — hours become quantity ÷ rate, so this one
               does scale. If you fill in both, the whole-line hours above win.
             </span>
+          </label>
+          {/* #513. The bid recap marks up BY cost type, and until now nothing
+              automated set it — so every line generated from this entry landed
+              uncoded and was carried into the bid at direct cost, earning no
+              markup at all. Set here once per item rather than re-coded on
+              every bid, which is the whole argument for a price book. */}
+          <label className="flex flex-col gap-1 text-sm text-ink-label">
+            Cost type
+            <select
+              name="costCategory"
+              defaultValue=""
+              className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
+            >
+              <option value="">No cost type</option>
+              {COST_CATEGORY_ORDER.map((value) => (
+                <option key={value} value={value}>
+                  {COST_CATEGORY_LABEL[value]}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="flex flex-col gap-1 text-sm text-ink-label">
             Trade

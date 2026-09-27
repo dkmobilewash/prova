@@ -212,23 +212,39 @@ describe("the census can see what it is reasoning about", () => {
   });
 });
 
-describe("every catalog-sourced line carries the production rate", () => {
+/**
+ * The fields every writer must carry, and WHY THE LIST IS PLURAL AS OF #513.
+ *
+ * This census was written for `productionRate`. `costCategory` is the same
+ * defect with a worse consequence — it is what the bid recap MARKS UP BY, and
+ * an uncategorised line is marked up at NOTHING — and it went unset by all four
+ * writers for exactly the same reason: nothing required them to agree.
+ *
+ * So the requirement is a LIST rather than a second copy of this file. A fifth
+ * writer that forgets either one fails by name, and a sixth inherited field is
+ * one entry here.
+ */
+const INHERITED_FIELDS = ["productionRate", "costCategory"] as const;
+
+describe("every catalog-sourced line carries what it inherits", () => {
   it("is written by exactly the three known mappings", () => {
     expect([...writers].sort()).toEqual([...EXPECTED_WRITERS].sort());
   });
 
   for (const path of EXPECTED_WRITERS) {
-    it(`${path} writes productionRate into the same literal as the row`, () => {
-      const source = stripComments(readFileSync(join(REPO_ROOT, path), "utf8"));
-      const literals = writeLiterals(source);
-      // Non-empty, so a brace scanner that found nothing cannot pass this by
-      // having nothing to check.
-      expect(literals.length).toBeGreaterThan(0);
-      for (const literal of literals) {
-        expect(literal).not.toBe("");
-        expect(literal).toMatch(/\bproductionRate\b/);
-      }
-    });
+    for (const field of INHERITED_FIELDS) {
+      it(`${path} writes ${field} into the same literal as the row`, () => {
+        const source = stripComments(readFileSync(join(REPO_ROOT, path), "utf8"));
+        const literals = writeLiterals(source);
+        // Non-empty, so a brace scanner that found nothing cannot pass this by
+        // having nothing to check.
+        expect(literals.length).toBeGreaterThan(0);
+        for (const literal of literals) {
+          expect(literal).not.toBe("");
+          expect(literal).toMatch(new RegExp(`\\b${field}\\b`));
+        }
+      });
+    }
   }
 });
 

@@ -154,6 +154,13 @@ export async function syncWallScheduleLines(tx: Tx, companyId: string, jobId: st
         budgetedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
         currentEstimatedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
         tradeScope: entry?.tradeScope ?? null,
+        // #513, and the precedence is the same as the craft's directly below:
+        // the COMPONENT first, its catalog entry second. A wall type is the one
+        // place a cost type is knowable up front — board and studs are material,
+        // hang-and-finish is labor — and the component is the more specific
+        // statement of it. Neither set means uncoded, and `bid-recap.ts` reports
+        // that and marks it up at nothing rather than picking a default.
+        costCategory: component?.costCategory ?? entry?.costCategory ?? null,
         craftClassificationId: component?.craftClassificationId ?? entry?.craftClassificationId ?? null,
         sourceCatalogEntryId: entry?.id ?? null,
         priceBasis: entry ? "COMPANY_CATALOG" : null,
