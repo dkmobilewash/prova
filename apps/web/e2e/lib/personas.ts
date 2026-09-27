@@ -64,6 +64,17 @@
  *                 compliance, and a won bid linked to its job. One company,
  *                 one GC, one bid, because every one of those panels hangs
  *                 off a bid invitation row.
+ *   SHOOT      — its own empty company, for specs/shoot-rehearsal.spec.ts: the
+ *                 launch-video run sheet, walked beat by beat the night
+ *                 before the shoot. It MUST be its own, and for the hardest
+ *                 reason on this list: the run sheet's beat 5 submits a pay
+ *                 application, which creates an invoice, and this product has
+ *                 no way to delete one — evidence records close, they never
+ *                 delete. So this persona's company is the only one in the
+ *                 suite that accumulates an irreversible money document every
+ *                 run. Pointed at any other company it would move a figure
+ *                 somebody else counts, permanently.
+ *
  *   AI_SWITCH  — its own empty company, for specs/ai-switch.spec.ts: the
  *                 per-company AI switch (#533). It needs its own for a
  *                 stronger reason than any other row here — every other
@@ -206,6 +217,12 @@ export const PERSONAS = {
     label: "AI_SWITCH",
     username: "e2e_aiswitch",
     phone: "+15555550119",
+  },
+  shoot: {
+    email: "e2e-shoot+clerk_test@example.com",
+    label: "SHOOT",
+    username: "e2e_shoot",
+    phone: "+15555550120",
   },
 } as const;
 
