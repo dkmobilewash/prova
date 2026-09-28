@@ -352,13 +352,26 @@ export default async function SettingsPage({
           questions, answered once at signup (or skipped) and changeable
           here at any time. See lib/businessScope.ts: this only changes
           what the rail shows, never what a direct link, a search or Ask
-          can reach. */}
+          can reach.
+
+          THE COPY BELOW NAMES NO MENUS, ON PURPOSE. It used to open
+          "Retainage, prevailing wage, certified payroll and a few other
+          menus", and two of those three were never affected by any answer:
+          `ROUTE_HIDDEN_WHEN` hides `/submittals`, `/prevailing-wage` and
+          `/union-compliance`, while retainage and certified payroll have no
+          top-level route at all — they are job tabs, and
+          `app/(app)/jobs/[id]/(tabs)/layout.tsx` does not consult business
+          scope at all. businessScope.ts's own comment says so; this screen
+          did not. A sentence that enumerates routes is false the day the map
+          changes, so this one describes what the answers DO instead. Keep it
+          that way: if you find yourself adding a menu name here, the map is
+          the thing that moved. */}
       <section id="setup" className="mb-10">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Set up for your work</h2>
         <p className="mb-4 text-sm text-ink-body">
-          Retainage, prevailing wage, certified payroll and a few other menus only apply to some
-          businesses. Answer these and the menu only shows what yours needs — nothing is removed for
-          good: search and Ask can still reach anything, and you can change these any time.
+          Not every menu applies to every business. Your answers here tailor which ones the sidebar
+          shows you — nothing is removed for good: every page stays reachable by search, by Ask and
+          by its own link, and you can change your answers any time.
         </p>
         <BusinessScopeSettingsForm scope={businessScope} isOwner={currentUser.role === "OWNER"} />
       </section>
