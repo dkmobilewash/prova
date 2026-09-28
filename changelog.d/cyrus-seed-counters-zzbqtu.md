@@ -59,8 +59,23 @@ not. That is issue #180's shape, and the reseed guard then refuses the retry, so
 the company is stuck until somebody runs `--undo`. `company.id` is in the tag
 now. The other five globally unique fields on models this seed writes were
 checked by intersecting every single-field `@unique` in the schema against every
-model the seed calls `create`/`upsert` on: none of the five is written at all,
-so each stays null, and null does not collide under a unique index in Postgres.
+model the seed calls `create`/`upsert` on.
+
+**That check was right about the conclusion and WRONG ABOUT ONE OF ITS
+REASONS**, corrected here from the guard that was written to replace it.
+Four of the five — `Contact.portalToken`, `CrewMember.linkedUserId`,
+`OutboundMessageEvent.providerEventId` and `BidInvitation.wonJobId` — are
+never written by this script, so each stays null, and null does not collide
+under a unique index in Postgres. The fifth, `WarrantyPeriod.jobId`, **is**
+written (`jobId: cedar.id`), and is safe for a different reason: a cuid from
+a job this same run created is globally unique by construction.
+
+The distinction is the whole rule rather than a footnote. "Not written,
+therefore null" would have passed a field written with a hardcoded literal,
+which is exactly the defect being fixed. The rule is: **null, or carries
+`company.id`, or carries some row's generated id** — and a flat "must contain
+`company.id`" would have failed `WarrantyPeriod.jobId`, which is correct as
+it stands.
 
 **`--camera-names` takes the `[demo]` tag off the jobs and the GC contacts**,
 which is the twelve-trips-through-Job-details chore before a screen recording.
