@@ -86,14 +86,22 @@ describe("the synthetic quote fixtures are documents a reader can open", () => {
 
     for (const fixture of QUOTE_FIXTURES) {
       const text = await textOf(quotePdf(fixture.lines));
-      // Every fixture is marked synthetic, which is both a naming convention and
-      // the check that this really is the invented document and not something
-      // that wandered in from a customer.
+      // Every fixture is marked synthetic — the check that this really is the
+      // invented document and not something that wandered in from a customer.
+      //
+      // THE MARKING IS THE WRITER'S NOW, not each case's, so this also proves
+      // `SYNTHETIC_FOOTER` is actually reaching the page. It used to be the first
+      // line of every fixture, fused to the vendor name, until the eval's first
+      // run showed all seven readings spending part of their caution panel
+      // discussing it — see that constant's header.
       expect(text, `${fixture.id} should open and be marked synthetic`).toContain("ZZ SYNTHETIC");
       // And a line only this case carries, so a fixture cannot pass by being
       // some OTHER fixture — the mixed-up-file failure that would make the
-      // eval's per-case verdicts meaningless.
-      const marker = fixture.lines.find((line) => line.length > 12 && !line.includes("ZZ SYNTHETIC"));
+      // eval's per-case verdicts meaningless. No `ZZ SYNTHETIC` exclusion here
+      // any more: the marking is no longer in `fixture.lines` at all, so a filter
+      // for it would be a condition that can never be false, which is the shape
+      // this directory keeps deleting.
+      const marker = fixture.lines.find((line) => line.length > 12);
       expect(marker, `${fixture.id} needs a line long enough to identify it`).toBeTruthy();
       const words = marker!.split(/\s+/).filter((w) => w.length > 3);
       expect(words.length, `${fixture.id}'s marker line should have real words`).toBeGreaterThan(0);

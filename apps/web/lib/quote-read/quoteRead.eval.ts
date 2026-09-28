@@ -60,26 +60,68 @@ import { QUOTE_FIXTURES, quotePdf } from "./quoteFixtures";
  * half where a confident wrong answer costs money.
  */
 
+/**
+ * Whether this document should produce a caution at all.
+ *
+ * THE DIRECTION THIS FILE WAS BLIND TO UNTIL 2026-09-28. The first run scored
+ * 7 of 7 on amounts and `declined without saying why: 0` — and every one of the
+ * seven wrote a paragraph, including the two with nothing whatever to caution
+ * about. `declined without saying why` only ever rewarded HAVING a note; nothing
+ * penalised having one that should not exist. An asymmetric scorer for amounts
+ * sitting beside a one-directional one for notes.
+ *
+ * It matters because of where the note lands. `QuoteReadingNotes` renders the
+ * panel headed "Check these before you save" whenever `readingNotes` is
+ * non-empty, and its own header says it stays silent on a clean read *"because a
+ * panel that always says something teaches people to skip it"*. A note on every
+ * quote defeats that in one step: the caution becomes furniture, and the cost is
+ * paid on the one reading where it mattered.
+ *
+ * So "none" is an assertion about the SCREEN, not about prose style, and it is
+ * fatal for the same reason an invented number is — both put something in front
+ * of an estimator that should not be there. `required` is fatal too: a blank
+ * amount with no reason reads as a failed read rather than a deliberate one.
+ */
+type NoteExpectation = "required" | "none";
+
 /** Cases the fixtures do not carry on their own: what a correct reading is. */
-const EXPECTED: Record<string, { amount: number | null; why: string }> = {
-  "plain-total": { amount: 184_500, why: "one printed total, thousands separator and cents" },
+const EXPECTED: Record<string, { amount: number | null; note: NoteExpectation; why: string }> = {
+  // Clean: one printed total, exclusions listed, nothing ambiguous. The panel
+  // must not speak here, and this is the case that proves it can stay quiet.
+  "plain-total": { amount: 184_500, note: "none", why: "one printed total, thousands separator and cents" },
   "subtotal-tax-total": {
     amount: 78_385.86,
+    // Also clean: a TOTAL is printed, so rule 2's "say so" branch (tax listed
+    // with no total) does not apply and there is nothing to report.
+    note: "none",
     // The TOTAL, not the subtotal: the prompt says so, and a reader who took
     // 72,400 would be levelling a pre-tax price against a post-tax one.
     why: "subtotal, tax and total on the page — the total is the price",
   },
-  "range-no-single-total": { amount: null, why: "a range, so there is no one figure to bid against" },
+  "range-no-single-total": {
+    amount: null,
+    note: "required",
+    why: "a range, so there is no one figure to bid against",
+  },
   "base-plus-alternates": {
     amount: null,
+    note: "required",
     // Arguably 212,000. It is NOT: which alternates are in is the estimator's
     // decision, and a base bid presented as the price is the shape that loses a
     // job. The prompt is explicit and this case is here to hold it to that.
     why: "base plus separately priced alternates — no total until somebody picks",
   },
-  "unit-price-no-quantity": { amount: null, why: "$/sq ft with the quantity undetermined" },
-  "not-a-quote": { amount: null, why: "a specification section, not a price at all" },
-  "no-date": { amount: 61_750, why: "a total with no date — the amount reads, the date must not be invented" },
+  "unit-price-no-quantity": { amount: null, note: "required", why: "$/sq ft with the quantity undetermined" },
+  "not-a-quote": { amount: null, note: "required", why: "a specification section, not a price at all" },
+  "no-date": {
+    amount: 61_750,
+    // The one case with an amount that SHOULD still speak: "valid thirty days
+    // from issue" cannot be dated without the issue date, and the first run's
+    // note said to ask the sub whether the price is still good — which is the
+    // kind of thing this field is for.
+    note: "required",
+    why: "a total with no date — the amount reads, the date must not be invented",
+  },
 };
 
 type Verdict = {
@@ -89,6 +131,8 @@ type Verdict = {
   want: number | null;
   /** Did it say why, when it declined to give a number? */
   explained: boolean;
+  /** Did the caution panel speak exactly when it should have? */
+  note: "right" | "missing" | "unwanted";
   dateOk: boolean;
   notes: string | null;
 };
@@ -137,9 +181,20 @@ describe("the quote reader, against synthetic documents", () => {
               ? ("correct" as const)
               : ("wrong" as const);
 
+      const spoke = Boolean(got.readingNotes?.trim());
+      const note =
+        expected.note === "required"
+          ? spoke
+            ? ("right" as const)
+            : ("missing" as const)
+          : spoke
+            ? ("unwanted" as const)
+            : ("right" as const);
+
       verdicts.push({
         id,
         amount,
+        note,
         got: got.amount,
         want: expected.amount,
         // When it declines a number it must say why, or the estimator is left
@@ -164,6 +219,20 @@ describe("the quote reader, against synthetic documents", () => {
       expect(verdicts.at(-1)!.dateOk, `${id}: quotedOn should be a real ISO day or null, got ${got.quotedOn}`).toBe(
         true,
       );
+
+      // THE CAUTION PANEL HAS TO BE RIGHT IN BOTH DIRECTIONS. An unwanted note
+      // is fatal rather than cosmetic: it renders as "Check these before you
+      // save" over a reading with nothing wrong with it, and a panel that always
+      // speaks is one nobody reads. The message carries the note itself, because
+      // "it said something it should not have" is unactionable without the text.
+      expect(
+        note === "unwanted" ? `unwanted note: ${got.readingNotes}` : "note ok",
+        `${id}: a clean reading must leave readingNotes null — the panel is headed "Check these before you save"`,
+      ).toBe("note ok");
+      expect(
+        note === "missing" ? "no note at all" : "note ok",
+        `${id}: this reading needs a caution and produced none — ${expected.why}`,
+      ).toBe("note ok");
     });
   }
 
@@ -194,6 +263,9 @@ describe("the quote reader, against synthetic documents", () => {
       wrong: verdicts.filter((v) => v.amount === "wrong").length,
       missed: verdicts.filter((v) => v.amount === "missed").length,
       unexplained: verdicts.filter((v) => !v.explained).length,
+      noteRight: verdicts.filter((v) => v.note === "right").length,
+      noteUnwanted: verdicts.filter((v) => v.note === "unwanted").length,
+      noteMissing: verdicts.filter((v) => v.note === "missing").length,
     };
     console.log(`\nquote eval: requested ${requested}, returned ${verdicts.length}`);
     if (verdicts.length !== requested) {
@@ -203,10 +275,16 @@ describe("the quote reader, against synthetic documents", () => {
       `  amount: ${tally.correct} correct, ${tally.invented} INVENTED, ${tally.wrong} wrong, ${tally.missed} missed`,
     );
     console.log(`  declined without saying why: ${tally.unexplained}`);
+    // The caution panel, in both directions — an UNWANTED note is the one the
+    // first run could not see, and the length is printed so creeping verbosity
+    // shows up before it becomes a paragraph nobody reads.
+    console.log(
+      `  caution panel: ${tally.noteRight} right, ${tally.noteUnwanted} UNWANTED, ${tally.noteMissing} missing`,
+    );
     for (const v of verdicts) {
       const shape = v.amount.padEnd(8);
-      console.log(`  ${shape} ${v.id}  got=${v.got ?? "null"} want=${v.want ?? "null"}`);
-      if (v.notes) console.log(`           notes: ${v.notes}`);
+      console.log(`  ${shape} ${v.id}  got=${v.got ?? "null"} want=${v.want ?? "null"}  note=${v.note}`);
+      if (v.notes) console.log(`           notes (${v.notes.length} chars): ${v.notes}`);
     }
   });
 });

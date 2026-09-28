@@ -84,7 +84,8 @@ Rules, in order of importance:
 4. quotedOn is the date printed on the quote, as YYYY-MM-DD. If only a month and year appear, or no date at all, use null. Never use today's date.
 5. vendorName is the quoting company's name as printed. Not a salesperson's name. Empty string if the document names nobody.
 6. packageLabel is a short description of the scope being priced, in the words the document uses. Null if it does not say.
-7. If the document is not a price quote at all — an invoice, a spec section, a submittal — set amount to null and say what it appears to be in readingNotes.`;
+7. If the document is not a price quote at all — an invoice, a spec section, a submittal — set amount to null and say what it appears to be in readingNotes.
+8. readingNotes IS A WARNING, NOT A SUMMARY, AND IT MUST BE null ON A CLEAN READ. The person is looking at every field you filled in, with the document open beside it. Write a note ONLY when something would change what they do next: there is no single total and why, a figure you are unsure you read correctly, two totals on one page, a date you could not establish, or a document that is not a quote. Do NOT restate the amount, the vendor, the project, the address or the scope. Do NOT list the fields the document does not have. Do NOT describe watermarks, stamps or markings unless they bear on whether the price is real. A quote with one printed total and its exclusions listed needs no note at all, and must get none: the note appears on screen as "Check these before you save", so a note on every quote is a note nobody reads, which costs you the one that mattered.`;
 
 /**
  * Reads one quote document and proposes its fields.

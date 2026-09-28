@@ -35,6 +35,26 @@ export type QuoteFixture = {
   lines: string[];
 };
 
+/**
+ * The synthetic marking, appended by the WRITER rather than written into each
+ * case — so no fixture can be added without it, and it sits at the foot of the
+ * page instead of in the middle of a company name.
+ *
+ * IT USED TO BE THE FIRST LINE, FUSED TO THE VENDOR: `ZZ SYNTHETIC — Cascade
+ * Interior Systems`. That made the eval measure its own harness. The first run
+ * (2026-09-28) came back 7 of 7 correct on amounts, and **all seven readingNotes
+ * discussed the marker** — one of them advising the reader to "verify the quote
+ * is genuine", which is sound about the document it was handed and meaningless
+ * about any real one. The model was resolving a vendor-name ambiguity that exists
+ * nowhere but here, correctly, every time, and spending a sentence of a
+ * warning panel on it.
+ *
+ * On its own line at the foot it still marks the document, `quoteFixtures.test.ts`
+ * still proves it reaches the rendered text, and it no longer competes with the
+ * vendor name for the reader's attention.
+ */
+const SYNTHETIC_FOOTER = ["", "ZZ SYNTHETIC FIXTURE - invented for testing, not a real quote"];
+
 /** Escapes the three characters a PDF string literal cannot carry raw. */
 function pdfString(text: string): string {
   return text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
@@ -50,7 +70,7 @@ function pdfString(text: string): string {
 export function quotePdf(lines: string[]): Buffer {
   const content =
     ["BT", "/F1 11 Tf", "54 738 Td", "14 TL"]
-      .concat(lines.map((line) => `(${pdfString(line)}) Tj T*`))
+      .concat(lines.concat(SYNTHETIC_FOOTER).map((line) => `(${pdfString(line)}) Tj T*`))
       .concat(["ET"])
       .join("\n") + "\n";
 
@@ -97,7 +117,7 @@ export const QUOTE_FIXTURES: QuoteFixture[] = [
   {
     id: "plain-total",
     lines: [
-      "ZZ SYNTHETIC — Cascade Interior Systems",
+      "Cascade Interior Systems",
       "1420 Mill Street, Reno NV",
       "",
       "QUOTATION",
@@ -116,7 +136,7 @@ export const QUOTE_FIXTURES: QuoteFixture[] = [
   {
     id: "subtotal-tax-total",
     lines: [
-      "ZZ SYNTHETIC — Pioneer Wall & Ceiling",
+      "Pioneer Wall & Ceiling",
       "",
       "Proposal  -  4/18/2026",
       "Acoustical ceilings, second floor",
@@ -131,7 +151,7 @@ export const QUOTE_FIXTURES: QuoteFixture[] = [
   {
     id: "range-no-single-total",
     lines: [
-      "ZZ SYNTHETIC — Alta Plaster Co.",
+      "Alta Plaster Co.",
       "",
       "Budget indication only - not a firm quote",
       "Three-coat stucco, building B",
@@ -145,7 +165,7 @@ export const QUOTE_FIXTURES: QuoteFixture[] = [
   {
     id: "base-plus-alternates",
     lines: [
-      "ZZ SYNTHETIC — Redline Drywall LLC",
+      "Redline Drywall LLC",
       "",
       "Bid Proposal - May 2, 2026",
       "EIFS, west and south elevations",
@@ -161,7 +181,7 @@ export const QUOTE_FIXTURES: QuoteFixture[] = [
   {
     id: "unit-price-no-quantity",
     lines: [
-      "ZZ SYNTHETIC — Summit Fireproofing",
+      "Summit Fireproofing",
       "",
       "Quote 2026-0455",
       "Spray-applied fireproofing, structural steel",
@@ -175,7 +195,7 @@ export const QUOTE_FIXTURES: QuoteFixture[] = [
   {
     id: "not-a-quote",
     lines: [
-      "ZZ SYNTHETIC — SECTION 09 21 16",
+      "SECTION 09 21 16",
       "GYPSUM BOARD ASSEMBLIES",
       "",
       "PART 1 - GENERAL",
@@ -192,7 +212,7 @@ export const QUOTE_FIXTURES: QuoteFixture[] = [
   {
     id: "no-date",
     lines: [
-      "ZZ SYNTHETIC — Keystone Lath & Plaster",
+      "Keystone Lath & Plaster",
       "",
       "PRICE QUOTE",
       "Interior lath and plaster, lobby and corridors",
