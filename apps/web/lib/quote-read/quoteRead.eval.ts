@@ -32,7 +32,15 @@ import { QUOTE_FIXTURES, quotePdf } from "./quoteFixtures";
  *
  * ── HOW TO RUN IT, AND WHAT IT COSTS ──
  *
- *     ANTHROPIC_API_KEY=… pnpm --filter @prova/web ask:eval
+ *     ANTHROPIC_API_KEY=… pnpm --filter @prova/web exec \
+ *       vitest run --config vitest.eval.config.mts lib/quote-read/quoteRead.eval.ts
+ *
+ * NAME THE FILE. This said `pnpm --filter @prova/web ask:eval` until 2026-09-28,
+ * which is the script that runs this — and also `routing.eval.ts` and
+ * `top-questions.eval.ts`, because the config's `include` is `**\/*.eval.ts`.
+ * That understated the cost of following the instruction, in a paragraph whose
+ * entire job is to state the cost. Use the script when you mean to run every
+ * eval; name this file when you mean to run this one.
  *
  * By hand, never in CI, like every other eval here — and this repo's memory
  * carries a scar about an eval run emptying a shared credit balance, so the
