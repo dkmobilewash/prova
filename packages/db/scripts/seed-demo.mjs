@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { loadEnvFiles } from "./load-env.mjs";
 import { describe } from "./connection-target.mjs";
+import { companyTargetRequest, resolveCompanyTarget } from "./company-target.mjs";
 
 /**
  * Builds a demonstrable company: a few jobs at genuinely different stages,
@@ -50,9 +51,20 @@ import { describe } from "./connection-target.mjs";
  *
  *   SEED_EXPECT_HOST=ep-icy-hat-afqau56u node scripts/seed-demo.mjs
  *
- * It is scoped to ONE company — the first one, or SEED_COMPANY_ID — and
- * every row it writes is tagged in a way `--undo` can find again, so a demo
- * dataset can be removed without touching anything a person entered.
+ * It is scoped to ONE company and every row it writes is tagged in a way
+ * `--undo` can find again, so a demo dataset can be removed without touching
+ * anything a person entered.
+ *
+ * WHICH company: SEED_COMPANY_ID, or SEED_COMPANY_NAME, or — with neither
+ * given — the oldest, which is what it has always done. The name exists
+ * because the id does not appear anywhere in the app, so it is the one input
+ * this script needs that nobody can look up; and because the company a person
+ * most often wants to seed is the empty one their first sign-in just created,
+ * which is the NEWEST rather than the oldest. A name that matches no company,
+ * or more than one, REFUSES and prints the candidates with their ids rather
+ * than picking; giving BOTH variables refuses too. See company-target.mjs for
+ * why each of those boundaries sits where it does. `--list-companies` prints
+ * what is there when a lookup refuses.
  *
  * IT REFUSES TO SEED A COMPANY THAT ALREADY HAS DEMO DATA. Run twice, it
  * used to duplicate the equipment and then die half-finished on the
@@ -67,13 +79,17 @@ loadEnvFiles();
 const MARK = "[demo]";
 const UNDO = process.argv.includes("--undo");
 const FORCE = process.argv.includes("--force");
+const LIST_COMPANIES = process.argv.includes("--list-companies");
 
 const target = describe(process.env.DATABASE_URL);
 if (!target) {
   console.error("seed: DATABASE_URL is missing or unreadable. Nothing done.");
   process.exit(1);
 }
-console.log(`seed: writing to      ${target.label}`);
+// `--list-companies` writes nothing, so it must not announce that it is
+// about to. Same column, different verb — this log is the record of what
+// happened, and a read-only run saying "writing to" is the record lying.
+console.log(`seed: ${LIST_COMPANIES ? "reading from" : "writing to  "}    ${target.label}`);
 
 const expect = process.env.SEED_EXPECT_HOST?.trim();
 if (!expect) {
@@ -155,14 +171,100 @@ const dirIssueInForceOn = (date) => {
   return answer;
 };
 
-async function main() {
-  const company = process.env.SEED_COMPANY_ID
-    ? await prisma.company.findUnique({ where: { id: process.env.SEED_COMPANY_ID } })
-    : await prisma.company.findFirst({ orderBy: { createdAt: "asc" } });
-  if (!company) {
-    console.error("seed: no company found. Sign in to the app once first.");
+/**
+ * WHICH COMPANY, and why that one.
+ *
+ * The decision itself is pure and lives in company-target.mjs, where it is
+ * tested without a database. This does only the fetching, and what it fetches
+ * depends on the question:
+ *
+ *   - an id is a `findUnique`, exactly as before;
+ *   - no input at all is the oldest company, exactly as before — the same
+ *     query and the same refusal message, byte for byte;
+ *   - a NAME reads every company's id and name (never more), because the
+ *     interesting answers are "none of them" and "two of them", and both need
+ *     the whole list to be printed. Matching in JS rather than in a
+ *     `mode: "insensitive"` filter keeps the rule in one readable place a test
+ *     can reach, instead of split between here and Postgres collation.
+ */
+async function resolveCompany() {
+  const request = companyTargetRequest(process.env);
+  const candidates =
+    request.by === "id"
+      ? [await prisma.company.findUnique({ where: { id: request.id } })]
+      : request.by === "name"
+        ? await prisma.company.findMany({
+            select: { id: true, name: true },
+            orderBy: { createdAt: "asc" },
+          })
+        : request.by === "oldest"
+          ? [await prisma.company.findFirst({ orderBy: { createdAt: "asc" } })]
+          : [];
+
+  const outcome = resolveCompanyTarget(request, candidates);
+  if (outcome.error) {
+    console.error(`\n${outcome.error.map((line) => `seed: ${line}`).join("\n")}`);
     process.exit(1);
   }
+  for (const line of outcome.lines) console.log(`seed: ${line}`);
+  return outcome.company;
+}
+
+async function main() {
+  // ------------------------------------------------- name the companies
+  //
+  // THIS LOG IS THE ONLY WINDOW INTO THIS DATABASE, and until this flag
+  // existed it could only ever name one company. Both this script and
+  // clean-scratch-data.mjs resolve the OLDEST company, and `SEED_COMPANY_ID`
+  // takes an id that NOTHING IN THE APP RENDERS — `company.id` appears in
+  // `apps/web` only inside `where` clauses, never in markup. So an operator
+  // who needed a company other than the oldest had no way to learn its id,
+  // from the app or from here.
+  //
+  // That is not hypothetical. On ep-patient-lake the demo set sits under
+  // "My Company" (the `requireCompanyContext` fallback name for a Clerk
+  // identity with no name on it), while a person signing in on a preview
+  // falls through to the create branch and gets `${name}'s Company` of their
+  // own, empty. Every list page then shows its empty state, which reads
+  // exactly like a broken app — CLAUDE.md's preview-company trap. The fix
+  // for it is to seed THEIR company, and that needs its id.
+  //
+  // Read-only by construction: `findMany` and `count`, no write of any kind,
+  // and it returns before `--undo` or the reseed guard is reached. It prints
+  // both a total job count and the [demo]-tagged subset, because "which
+  // company holds the demo data" and "which company has a person's own rows
+  // in it" are different questions and the answer to the second decides
+  // whether seeding is safe.
+  if (LIST_COMPANIES) {
+    const companies = await prisma.company.findMany({
+      orderBy: { createdAt: "asc" },
+      select: { id: true, name: true, createdAt: true },
+    });
+    if (!companies.length) {
+      console.log("\nseed: no company on this database at all. Sign in to the app once first.");
+      return;
+    }
+    console.log(`\nseed: ${companies.length} compan${companies.length === 1 ? "y" : "ies"}, oldest first —\n`);
+    for (const c of companies) {
+      const [jobs, demoJobs, users] = await Promise.all([
+        prisma.job.count({ where: { companyId: c.id } }),
+        prisma.job.count({ where: { companyId: c.id, name: { contains: MARK } } }),
+        prisma.user.count({ where: { companyId: c.id } }),
+      ]);
+      console.log(
+        `  ${c.id}  ${c.createdAt.toISOString().slice(0, 10)}  ` +
+          `job ${String(jobs).padStart(3)} (${demoJobs} demo)  user ${String(users).padStart(2)}  ` +
+          `"${c.name}"`,
+      );
+    }
+    console.log(
+      "\nseed: to seed or undo one of these, pass its name as company_name — or its\n" +
+        "seed: id as company_id, but never both. Nothing has been written.",
+    );
+    return;
+  }
+
+  const company = await resolveCompany();
   const user = await prisma.user.findFirst({ where: { companyId: company.id } });
   console.log(`seed: company         ${company.name} (${company.id})`);
 
@@ -2229,7 +2331,25 @@ async function main() {
         createdAt: day(sentAt),
         // Null means it never reached the provider, which is a different
         // failure from bouncing and reads differently on the page.
-        providerMessageId: wentOut ? `demo-${MARK}-${toAddress}-${sentAt}` : null,
+        //
+        // COMPANY-SCOPED, and that is not tidiness. `providerMessageId` is
+        // `@unique` in messaging.prisma with NO company in the key — it is a
+        // provider's own id, and two providers never issue the same one — so
+        // an id built from address and day alone is unique per COMPANY and
+        // collides across them. Every other tag in this file is scoped by a
+        // `where: { companyId }`, which hid it: this is the only value the
+        // DATABASE requires to be globally unique.
+        //
+        // It cost a half-finished seed on 2026-09-27, the #180 shape exactly.
+        // Seeding a SECOND company on a database that already had one wrote
+        // the jobs, the crew, 49 time entries and the equipment and then died
+        // here on `Unique constraint failed on the fields:
+        // (providerMessageId)` — leaving a company with a partial demo set
+        // and a reseed guard that then refuses to try again. Nobody had ever
+        // run this against two companies on one database; the demo project
+        // grew a second and a third the moment people started signing in to
+        // previews, so it stopped being hypothetical.
+        providerMessageId: wentOut ? `demo-${MARK}-${company.id}-${toAddress}-${sentAt}` : null,
         relatedType,
         relatedId: relatedType === null ? null : job.id,
         sentByUserId: user?.id ?? null,
