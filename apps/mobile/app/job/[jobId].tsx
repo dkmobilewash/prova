@@ -1,9 +1,10 @@
-import { router, useLocalSearchParams } from "expo-router";
+import { Stack, router, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { setCurrentJob } from "@/lib/current-job";
 import { GroupedList } from "@/components/GroupedList";
 import { GroupedRow } from "@/components/GroupedRow";
+import { HeaderHomeButton } from "@/components/HeaderHomeButton";
 import { Icon } from "@/components/Icon";
 import { SectionHeader } from "@/components/SectionHeader";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -44,6 +45,20 @@ export default function JobHubScreen() {
   const { me } = useMe();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
+  // `useRouter()` and not the `router` singleton this file already imports,
+  // deliberately: `alerts.tsx` reads `canGoBack` through the hook, and these
+  // two screens are the only cold-start push destinations there are. Keeping
+  // the call identical means one tap on a phone answers for both of them —
+  // if they differed, a failure on one would not tell you about the other.
+  const strandedRouter = useRouter();
+  // The SAME dead end #548 fixed on `/alerts`, on the other push target.
+  // `assignCrewMember` pushes `{ jobId }`, `targetFromData` maps that to
+  // `/job/<id>` (push-target.ts:19), and this screen lives outside `(tabs)`
+  // — so a tap that launches the app COLD leaves it alone on the stack with
+  // no back chevron and no tab bar. The comment below has said since it was
+  // written that "a notification or a link lands here without passing
+  // through" the jobs list; nothing acted on that.
+  const stranded = !strandedRouter.canGoBack();
   const { jobId, name, status } = useLocalSearchParams<{
     jobId: string;
     name?: string;
@@ -66,41 +81,44 @@ export default function JobHubScreen() {
   );
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Text style={styles.name}>{name ?? "Job"}</Text>
-        {status ? <StatusBadge status={status} /> : null}
-      </View>
+    <>
+      {stranded ? <Stack.Screen options={{ headerLeft: () => <HeaderHomeButton /> }} /> : null}
+      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <Text style={styles.name}>{name ?? "Job"}</Text>
+          {status ? <StatusBadge status={status} /> : null}
+        </View>
 
-      {GROUPS.map((group) => {
-        const rows = visible.filter((feature) => feature.group === group.key);
-        if (rows.length === 0) return null;
-        return (
-          <View key={group.key}>
-            <SectionHeader>{group.title}</SectionHeader>
-            <GroupedList>
-              {rows.map((feature, i) => (
-                <GroupedRow
-                  key={feature.path}
-                  icon={<Icon name={feature.icon} />}
-                  title={feature.title}
-                  subtitle={feature.subtitle}
-                  divider={i > 0}
-                  onPress={() => router.push(`/${feature.path}/${jobId}`)}
-                />
-              ))}
-            </GroupedList>
-          </View>
-        );
-      })}
+        {GROUPS.map((group) => {
+          const rows = visible.filter((feature) => feature.group === group.key);
+          if (rows.length === 0) return null;
+          return (
+            <View key={group.key}>
+              <SectionHeader>{group.title}</SectionHeader>
+              <GroupedList>
+                {rows.map((feature, i) => (
+                  <GroupedRow
+                    key={feature.path}
+                    icon={<Icon name={feature.icon} />}
+                    title={feature.title}
+                    subtitle={feature.subtitle}
+                    divider={i > 0}
+                    onPress={() => router.push(`/${feature.path}/${jobId}`)}
+                  />
+                ))}
+              </GroupedList>
+            </View>
+          );
+        })}
 
-      {me && !holds(me, "MANAGE_FIELD") && !holds(me, "MANAGE_JOBS") ? (
-        <Text style={styles.noneForYou}>
-          Nothing on this job is part of your job function. The account owner sets who sees what, on
-          the Team page.
-        </Text>
-      ) : null}
-    </ScrollView>
+        {me && !holds(me, "MANAGE_FIELD") && !holds(me, "MANAGE_JOBS") ? (
+          <Text style={styles.noneForYou}>
+            Nothing on this job is part of your job function. The account owner sets who sees what, on
+            the Team page.
+          </Text>
+        ) : null}
+      </ScrollView>
+    </>
   );
 }
 
