@@ -178,3 +178,45 @@ ways — restoring the flag turns the guard red and names the offender;
 mis-rooting the walk leaves the guard vacuously GREEN and is caught by the
 scope and size tests instead; a parser that collides routes is caught by
 the size test alone while scope still passes.
+
+## Addendum 3, 28 Sep 2026 — the same question asked per COMPANY, and the bar this document set
+
+Nothing in the table above changed. This records that the rail now hides
+routes for a second, unrelated reason, and that this document is what kept
+that list short.
+
+The three onboarding questions on `/welcome` (`lib/businessScope.ts`) hide
+rail entries per COMPANY rather than per product decision — a company that
+says it never works under a GC does not see `/submittals`. That filter is
+**display-only by construction**, which is the whole difference from the 3 Sep
+cuts: the route still renders on a direct URL, global search still finds it,
+Ask still explains it, and the company's own owner can change the answer in
+Settings. A 3 Sep cut removed the entry from the codebase's one nav list for
+everybody; this narrows one tenant's view of it.
+
+`/backcharges` joined the hidden set, on the reasoning in that file's own map
+comment: `gcReference`, `claimedAmount` ("what the GC says we owe") and
+`respondByDate` ("most subcontracts state one") are three columns that exist
+only because there is a GC above you.
+
+**`/rfis`, `/drawings`, `/closeout`, `/proposals`, `/intake` and `/bids` were
+each read and LEFT VISIBLE, and this document is why.** The bar applied was
+row 5's lesson rather than its verdict: `/closeout` looks like GC workflow
+because `CloseoutSubmission` carries a `gcResponse` column, and the 3 Sep
+table cut it on exactly that ground — but the page also holds warranty
+periods and callbacks, and a contractor working direct for owners gets those
+calls straight from the owner. Hiding it would have repeated this audit's
+most expensive shape: a scope argument that is true about one record on the
+page being applied to the whole page.
+
+So the same sentence addendum 2 ends on governs this filter too. Deferring a
+feature, hiding it from one company that said it does not do that kind of
+work, and telling a contractor it does not exist are three different acts.
+Only the second is what this filter does, and only because search and Ask
+make it recoverable.
+
+**What stops it widening quietly.** `businessScope.test.ts` pins that those
+six routes stay visible on every answer shape, so adding one turns a named
+test red and somebody has to say why in a PR. And a route is never hidden
+from a company that already has rows behind it — `lib/businessScopeData.ts`,
+guarded from both ends by `businessScopeData.test.ts`.

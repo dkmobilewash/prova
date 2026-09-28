@@ -27,6 +27,7 @@ export function MobileNav({
   principal,
   showsInternal = false,
   businessScope,
+  routesWithData,
 }: {
   companyName: string;
   principal: Principal;
@@ -35,10 +36,14 @@ export function MobileNav({
   /** The three onboarding questions' answers, or undefined for "hide
    * nothing" — see navGroupsFor in navItems.tsx. */
   businessScope?: BusinessScopeAnswers;
+  /** The hrefs this company already has rows behind, out of the ones the
+   * answers could hide — gathered server-side and handed down as data, so
+   * a route with live records behind it keeps its door. See navGroupsFor. */
+  routesWithData?: readonly string[];
 }) {
   // Filtered here rather than in the layout so the desktop rail and
   // the mobile drawer run the same function on the same input.
-  const groups = navGroupsFor(principal, { showsInternal, businessScope });
+  const groups = navGroupsFor(principal, { showsInternal, businessScope, routesWithData });
   const footer = navFooterFor(principal);
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
