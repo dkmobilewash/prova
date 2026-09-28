@@ -1,8 +1,9 @@
 import { useAuth } from "@clerk/expo";
-import { Redirect } from "expo-router";
+import { Redirect, Stack, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { GroupedList } from "@/components/GroupedList";
+import { HeaderHomeButton } from "@/components/HeaderHomeButton";
 import { GroupedRow } from "@/components/GroupedRow";
 import { Skeleton } from "@/components/Skeleton";
 import { SyncStatus } from "@/components/SyncStatus";
@@ -47,6 +48,13 @@ export default function AlertsScreen() {
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const severity = useMemo(() => severityStyles(palette), [palette]);
+  const router = useRouter();
+  // A cold-start notification tap leaves this screen as the only entry on
+  // the stack, so there is no back chevron and no tab bar — the screen is a
+  // dead end. Asked at render rather than assumed: a WARM tap pushes this on
+  // top of real history and keeps its ordinary Back, and two competing ways
+  // out of one screen is its own small confusion.
+  const stranded = !router.canGoBack();
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [offline, setOffline] = useState<string | "nothing" | null>(null);
@@ -89,56 +97,59 @@ export default function AlertsScreen() {
   });
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          tintColor={palette.colors.inkMuted}
-          onRefresh={async () => {
-            setRefreshing(true);
-            await load();
-            setRefreshing(false);
-          }}
-        />
-      }
-    >
-      <SyncStatus state={offline} />
-      {!loaded ? (
-        <View style={styles.skeletonGroup}>
-          <Skeleton height={64} />
-          <Skeleton height={64} />
-          <Skeleton height={64} />
-        </View>
-      ) : alerts.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>{empty.emptyTitle}</Text>
-          {empty.emptyDescription ? (
-            <Text style={styles.emptyBody}>{empty.emptyDescription}</Text>
-          ) : null}
-        </View>
-      ) : (
-        <GroupedList>
-          {alerts.map((item, i) => {
-            const tone = severity[item.severity];
-            return (
-              <GroupedRow
-                key={item.key}
-                title={item.title}
-                subtitle={item.detail}
-                trailing={
-                  <View style={[styles.tag, { backgroundColor: tone.bg }]}>
-                    <Text style={[styles.tagLabel, { color: tone.ink }]}>{t(tone.label)}</Text>
-                  </View>
-                }
-                divider={i > 0}
-              />
-            );
-          })}
-        </GroupedList>
-      )}
-    </ScrollView>
+    <>
+      {stranded ? <Stack.Screen options={{ headerLeft: () => <HeaderHomeButton /> }} /> : null}
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            tintColor={palette.colors.inkMuted}
+            onRefresh={async () => {
+              setRefreshing(true);
+              await load();
+              setRefreshing(false);
+            }}
+          />
+        }
+      >
+        <SyncStatus state={offline} />
+        {!loaded ? (
+          <View style={styles.skeletonGroup}>
+            <Skeleton height={64} />
+            <Skeleton height={64} />
+            <Skeleton height={64} />
+          </View>
+        ) : alerts.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>{empty.emptyTitle}</Text>
+            {empty.emptyDescription ? (
+              <Text style={styles.emptyBody}>{empty.emptyDescription}</Text>
+            ) : null}
+          </View>
+        ) : (
+          <GroupedList>
+            {alerts.map((item, i) => {
+              const tone = severity[item.severity];
+              return (
+                <GroupedRow
+                  key={item.key}
+                  title={item.title}
+                  subtitle={item.detail}
+                  trailing={
+                    <View style={[styles.tag, { backgroundColor: tone.bg }]}>
+                      <Text style={[styles.tagLabel, { color: tone.ink }]}>{t(tone.label)}</Text>
+                    </View>
+                  }
+                  divider={i > 0}
+                />
+              );
+            })}
+          </GroupedList>
+        )}
+      </ScrollView>
+    </>
   );
 }
 
