@@ -1,5 +1,7 @@
 import type { PlanIngestStage } from "@prova/db";
 import type { RunnerPorts } from "./runner";
+import { pageInventoryWork } from "./pageInventory";
+import { titleBlockWork } from "./titleBlock";
 
 /**
  * What each stage's per-page work actually is.
@@ -38,18 +40,57 @@ import type { RunnerPorts } from "./runner";
 export type StageWork = RunnerPorts["work"];
 
 /**
+ * WHICH RUN a stage's work is for.
+ *
+ * `ClaimedTask` carries only `{id, pageNumber, stage, attempts}` — nothing about
+ * the plan, the company or the job — because `runner.ts` and `claim.ts` are built
+ * to know nothing about what a page's work IS. That property is worth keeping, so
+ * the run's identity arrives the other way: `claimPorts({jobId, work})` takes
+ * `work` as an injected value, and both call sites already hold the job row. A
+ * stage is therefore a FACTORY over this, and the closure it returns is a
+ * per-invocation cache — which is what lets `PAGE_INVENTORY` open one PDF and
+ * serve many pages from it without `runner.ts` learning that PDFs exist.
+ *
+ * `ingestJobId` is here because a `PlanSheetProposal` is keyed on the RUN, not on
+ * the page — see that model's header for why a re-run must not overwrite a
+ * proposal somebody has already accepted beside.
+ */
+export type StageCtx = {
+  planId: string;
+  companyId: string;
+  ingestJobId: string;
+  /** The construction JOB the plan set belongs to — not the ingest job. Carried
+   *  because `AskUsage.jobId` is what makes "which jobs is this AI bill going on"
+   *  answerable, and looking it up inside the work would be one query per page. */
+  jobId: string;
+  /** Who started the run, for the spend ledger. NULL ON THE CRON, which has no
+   *  person — the first caller in this app for which that is the real case rather
+   *  than a nullable column being polite. */
+  startedByUserId: string | null;
+};
+
+/**
  * A total `Record` over the enum, so adding a stage without deciding what it
  * does fails to compile — the shape #526 landed for `CostCategory` after a
  * missing member produced a NaN bid total from an unwired index. A stage with no
  * entry would otherwise create claimable tasks that nothing can ever do, and a
  * job stuck at 99% with one invisible task is indistinguishable from a job that
  * finished.
+ *
+ * `CLASSIFY` STAYS NULL ON PURPOSE and is not an omission. Reading the title block
+ * yields the sheet number, the title AND the discipline, which is the
+ * classification — so building both stages would mean two paid model calls per
+ * page for one answer. `SHEET_INDEX` stays null for a different reason: ordering
+ * sheets, spotting duplicate numbers and flagging gaps is pure computation over
+ * rows that are already there, so it belongs in a read-time module like
+ * `lib/intake/review.ts` rather than in a per-page job. As a stage it would either
+ * run three hundred times over the same set or need a one-task job, and
+ * `PlanIngestJob.pageCount` exists precisely to be compared against the task count.
  */
-const STAGE_WORK: Record<PlanIngestStage, StageWork | null> = {
-  // Succeeds for every page, having done nothing. See the header.
-  PAGE_INVENTORY: async () => ({ ok: true }),
+const STAGE_WORK: Record<PlanIngestStage, ((ctx: StageCtx) => StageWork) | null> = {
+  PAGE_INVENTORY: pageInventoryWork,
   CLASSIFY: null,
-  TITLE_BLOCK: null,
+  TITLE_BLOCK: titleBlockWork,
   SHEET_INDEX: null,
 };
 
@@ -74,9 +115,9 @@ export function isRunnableStage(stage: PlanIngestStage): boolean {
  * because the first one is the kind of check that gets bypassed by a backfill
  * script.
  */
-export function stageWork(stage: PlanIngestStage): StageWork {
-  const work = STAGE_WORK[stage];
-  if (work) return work;
+export function stageWork(stage: PlanIngestStage, ctx: StageCtx): StageWork {
+  const build = STAGE_WORK[stage];
+  if (build) return build(ctx);
   return async () => ({
     ok: false,
     error: "This kind of plan reading isn't built yet, so nothing was read. Nothing about this page was changed.",

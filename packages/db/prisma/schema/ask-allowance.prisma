@@ -85,7 +85,16 @@ model AskAllowancePeriod {
   ///
   /// Diego set the included figure at 1,500 sheets a month; the per-company
   /// value lives on `CompanyAiSettings.planSheetsPerMonth` so a plan can move
-  /// it without a migration, and `allowanceForCompany` reads it.
+  /// it without a migration.
+  ///
+  /// `allowanceForCompany` DOES NOT READ IT, and this line said it did. That
+  /// function returns `{questions, pages}` and ignores its `companyId` argument
+  /// entirely — deliberately, since widening it would reshape a type the Ask box
+  /// and the compliance upload share to carry a unit neither of them spends. The
+  /// ceiling reaches the claim another way: `aiGate` already returns the company's
+  /// `AiSettings`, which carries `planSheetsPerMonth`, so the gated caller hands it
+  /// to `claimPlanSheet` (`lib/ask/planSheetSpend.ts`) and no page pays for a
+  /// second query to learn it.
   planSheetsUsed   Int @default(0)
   /// Of those, sheets whose model call then failed — marked, never released,
   /// for exactly the reasons the two fields above are.

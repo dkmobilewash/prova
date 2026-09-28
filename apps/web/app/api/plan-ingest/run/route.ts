@@ -107,7 +107,18 @@ export async function GET(request: Request) {
   const job = await prisma.planIngestJob.findFirst({
     where: { finishedAt: null },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, stage: true, companyId: true, planId: true, startedAt: true },
+    // `plan.jobId` for the spend ledger — see the same select in
+    // `advancePlanIngest`. The cron has no session, so `companyId` here is the
+    // job row's own and is the only tenancy this path has.
+    select: {
+      id: true,
+      stage: true,
+      companyId: true,
+      planId: true,
+      startedAt: true,
+      startedByUserId: true,
+      plan: { select: { jobId: true } },
+    },
   });
 
   if (!job) {
@@ -131,7 +142,16 @@ export async function GET(request: Request) {
   let report: RunReport;
   try {
     report = await runIngest({
-      ports: claimPorts({ jobId: job.id, work: stageWork(job.stage) }),
+      ports: claimPorts({
+        jobId: job.id,
+        work: stageWork(job.stage, {
+          planId: job.planId,
+          companyId: job.companyId,
+          ingestJobId: job.id,
+          jobId: job.plan.jobId,
+          startedByUserId: job.startedByUserId,
+        }),
+      }),
       budgetMs: DEFAULT_RUN_BUDGET_MS,
     });
   } catch (err) {

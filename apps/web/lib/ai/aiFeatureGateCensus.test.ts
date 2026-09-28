@@ -299,12 +299,26 @@ describe("every AI feature is behind the per-company switch", () => {
 
   it("covers every feature the switch offers, and says which one is not built", () => {
     const covered = new Set(calls.map((call) => call.feature));
-    // PLAN_INGESTION is in the enum and has no model call yet: the switch was
-    // added BEFORE the feature so it cannot be retrofitted onto call sites
-    // afterwards, which is how the other six came to need this census. When
-    // ingestion lands, it joins `covered` and this list goes empty — and if
-    // somebody ships it ungated, the assertion above is what fails.
-    const notBuilt: AiFeatureKey[] = ["PLAN_INGESTION"];
+    // EMPTY NOW, AND THIS LIST DOING ITS JOB IS WHY. It held `PLAN_INGESTION`
+    // from #533 until 2026-09-28: the switch was added BEFORE the feature so it
+    // could not be retrofitted onto call sites afterwards, which is how the other
+    // six came to need this census in the first place. Its own comment said "when
+    // ingestion lands, it joins `covered` and this list goes empty", and that is
+    // what happened — `extractSheetTitleBlock` is gated by
+    // `lib/plan-ingest/titleBlock.ts`.
+    //
+    // Worth knowing what the landing looked like, because the gate was nearly
+    // invisible to this file: that stage injects its ports so it can be tested
+    // without a database, and the first version injected `typeof aiGate` — so the
+    // literal call lived at the call site and `deps.gate(...)` was all this census
+    // could see. It refused, correctly. The fix was not to teach this file about
+    // dependency injection but to stop the gate being swappable: the feature is
+    // bound once in the stage's production wiring, `aiGate(companyId,
+    // "PLAN_INGESTION")`, so no caller can pass a different one.
+    //
+    // A new feature added to the enum and not yet built goes back in here, with
+    // the date and the reason. Leaving it empty is the normal state.
+    const notBuilt: AiFeatureKey[] = [];
     const missing = AI_FEATURE_KEYS.filter((key) => !covered.has(key) && !notBuilt.includes(key));
     expect(missing).toEqual([]);
     for (const key of notBuilt) expect(covered.has(key)).toBe(false);

@@ -173,7 +173,17 @@ export async function advancePlanIngest(ingestJobId: string): Promise<ActionResu
   // would advance any company's run for anybody who knew an id.
   const job = await prisma.planIngestJob.findFirst({
     where: { id: ingestJobId, companyId: context.company.id },
-    select: { id: true, stage: true, startedAt: true, planId: true },
+    // `plan.jobId` comes along because a stage records its spend against the
+    // construction job (`AskUsage.jobId`), and looking it up inside the per-page
+    // work would be one query per page — three hundred on a set.
+    select: {
+      id: true,
+      stage: true,
+      startedAt: true,
+      planId: true,
+      startedByUserId: true,
+      plan: { select: { jobId: true } },
+    },
   });
   if (!job) return { ok: false, error: "That plan reading could not be found." };
 
@@ -186,7 +196,16 @@ export async function advancePlanIngest(ingestJobId: string): Promise<ActionResu
 
   try {
     await runIngest({
-      ports: claimPorts({ jobId: job.id, work: stageWork(job.stage) }),
+      ports: claimPorts({
+        jobId: job.id,
+        work: stageWork(job.stage, {
+          planId: job.planId,
+          companyId: context.company.id,
+          ingestJobId: job.id,
+          jobId: job.plan.jobId,
+          startedByUserId: job.startedByUserId,
+        }),
+      }),
       // Five seconds. Short enough that the page stays responsive, long enough
       // that a slice is worth the round trip.
       budgetMs: 5_000,
