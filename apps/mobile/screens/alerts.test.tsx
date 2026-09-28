@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "@/lib/api";
 import type { AlertRow } from "@/lib/types";
-import { deviceStore, goOffline } from "./setup";
+import { deviceStore, goOffline, setCanGoBack, stackScreenOptions } from "./setup";
 import { mount } from "./render";
 
 /**
@@ -84,5 +84,56 @@ describe("the alerts screen", () => {
     expect(screen.text()).toContain("Licence renews soon");
     expect(screen.text()).toMatch(/Showing what this phone last loaded.*no connection/);
     screen.unmount();
+  });
+});
+
+/**
+ * THE WAY OUT OF A SCREEN NOTHING NAVIGATED TO.
+ *
+ * Reported from a phone on 2026-09-28, the first time anyone reached this
+ * screen at all: "once the alerts page opens that is the only page that is
+ * available, there is no option to return to the home or other jobs."
+ *
+ * `/alerts` has no route into it except a notification tap — no tab, no
+ * link, no button anywhere in the app — and a tap that launches the app
+ * COLD leaves it as the only entry on the stack. No back chevron, because
+ * there is genuinely nothing behind it, and no tab bar, because it lives
+ * outside `(tabs)`. The alert list was a room with the door bricked up.
+ *
+ * What is askable here and what is not: `<Stack.Screen>` renders null and
+ * the header is drawn by a navigator that does not exist in this
+ * environment, so these assert what the screen REQUESTED. That the button
+ * itself works is `HeaderHomeButton`'s own test.
+ */
+describe("getting out of the alerts screen", () => {
+  it("offers a way home when a cold tap left nothing to go back to", async () => {
+    stackScreenOptions.length = 0;
+    setCanGoBack(false);
+    await open();
+
+    // Counted as "at least one", not "exactly one": the screen re-renders
+    // when its load resolves, so the number of times it states its options
+    // is a fact about React rather than about the header.
+    const withHeader = stackScreenOptions.filter((o) => "headerLeft" in o);
+    expect(
+      withHeader.length,
+      "stranded on /alerts with no back chevron and no tab bar — the dead end reported from the phone",
+    ).toBeGreaterThan(0);
+    expect(typeof withHeader[0].headerLeft).toBe("function");
+  });
+
+  it("leaves the ordinary Back alone when there IS history behind it", async () => {
+    // A WARM tap pushes this on top of whatever the person was doing, and
+    // that Back is the right way out. Two competing ways out of one screen
+    // is its own small confusion — this is the control that keeps the fix
+    // from applying itself everywhere.
+    stackScreenOptions.length = 0;
+    setCanGoBack(true);
+    await open();
+
+    expect(
+      stackScreenOptions.filter((o) => "headerLeft" in o),
+      "overrode the back chevron on a screen that already had one",
+    ).toEqual([]);
   });
 });
