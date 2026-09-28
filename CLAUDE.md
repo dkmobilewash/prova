@@ -922,15 +922,53 @@ anything about SIZE.
   two stores rather than less: each environment's own token names its own
   store, so the check follows the environment automatically.
 
-  Two things no agent in this repo can do, so do not spend the afternoon
-  looking: **the Vercel MCP has no environment-variable tool** — projects,
-  deployments, build and runtime logs, deployment protection, domains and
-  analytics, and nothing that reads or writes an env var (checked three
-  times now, most recently 2026-09-09) — and a read-write blob token is a
-  credential, so it never travels through an agent channel regardless.
+  **THE VERCEL MCP DOES HAVE ENVIRONMENT-VARIABLE TOOLS, AS OF 2026-09-28,
+  AND THIS BULLET SAID THE OPPOSITE THREE TIMES OVER.** It read: *"the
+  Vercel MCP has no environment-variable tool — projects, deployments,
+  build and runtime logs, deployment protection, domains and analytics,
+  and nothing that reads or writes an env var (checked three times now,
+  most recently 2026-09-09)"*. Nobody checked carelessly; the tool surface
+  moved under a sentence that had been verified three times, which is
+  exactly why it was believed.
+
+  Six of them, read out of the tool schemas rather than from a memory of
+  them:
+
+  | tool | what it does |
+  | --- | --- |
+  | `filter_project_envs` | lists a project's variables; has a `decrypt` parameter |
+  | `get_project_env` | its own `id` parameter says "to get the **decrypted value**" |
+  | `create_project_env` / `edit_project_env` | write |
+  | `get_shared_env_var` | "Retrieve the **decrypted value** of a Shared Environment Variable" |
+  | `update_shared_env_variable` | writes team-level shared variables |
+
+  **Established by use, not by reading a list.** On 2026-09-28
+  `filter_project_envs` returned every variable on `prova-web` — keys,
+  types, targets, ids — and `edit_project_env` WROTE a new `CRON_SECRET`,
+  confirmed by `updatedAt` moving. That write is also how the two-hour
+  production deploy freeze that day was cleared, so this is not a
+  capability somebody went looking for.
+
+  One thing that behaviour settles and one it does not. A `sensitive`-type
+  variable comes back from the LISTING as `value: ""` — production
+  `DATABASE_URL` is `sensitive`, and its value was not returned. Whether
+  `get_project_env` reaches it is **UNTESTED AND DELIBERATELY SO**: testing
+  it means decrypting a live database credential to satisfy curiosity, and
+  the rule below has not changed. Do not run that experiment to close this
+  paragraph.
+
+  **The other half of the original bullet still stands and is the part to
+  keep:** a read-write blob token is a credential, so it never travels
+  through an agent channel regardless of which tool could fetch it.
   Connecting the store to an environment in the dashboard mints the
   variable itself, which is better than pasting one: nothing is copied, so
   nothing can be pasted into the wrong project.
+
+  A useful thing learned while writing that `CRON_SECRET`: a
+  `sensitive`-type variable **cannot be edited in the dashboard** — Vercel
+  makes it write-once and never shows the value, so the Edit button
+  refuses. `edit_project_env` patches it anyway. Delete-and-recreate is not
+  required.
 - **A successful write can show up as an empty list — cause NOT
   established, and now with TWO dead explanations instead of one.**
   Observed: the action returned ok, the row was in the database, the page
@@ -1232,13 +1270,44 @@ anything about SIZE.
       session on it shares one `environment_id`, and one of them has no
       `DATABASE_URL` and no `.env` at all, so the environment injects
       nothing;
-    - **The Vercel MCP cannot leak the string.** It has no env-var tool;
-      checked twice rather than asserted from a partial search.
+    - ~~**The Vercel MCP cannot leak the string.** It has no env-var tool;
+      checked twice rather than asserted from a partial search.~~
+      **WITHDRAWN 2026-09-28 — THIS ELIMINATION RESTED ON A PREMISE THAT IS
+      NOW FALSE.** The MCP has six env-var tools (see the Vercel-MCP
+      paragraph under the blob-store entry above, which carries the
+      evidence), and two of them describe themselves as returning a
+      DECRYPTED value. So "it cannot reach a secret" is no longer something
+      this list gets to assert.
+      **This is a withdrawal, not a reversal, and the difference matters.**
+      What is still true: production `DATABASE_URL` is a `sensitive`-type
+      variable, and `filter_project_envs` returns `value: ""` for those —
+      observed, not assumed, on 2026-09-28. What is NOT established:
+      whether `get_project_env` returns it, which is untested on purpose
+      because testing it means decrypting a live database credential.
+      So the Vercel MCP is back to UNKNOWN on this question rather than
+      cleared — and an unknown must not sit in a list of eliminations,
+      which is the whole reason this entry is being rewritten rather than
+      quietly deleted. Anyone reading this list to decide where to look
+      next should treat the MCP as a live candidate again.
 
-  What survives is a CHECKOUT holding the connection string. Two sessions
-  were live on this repo at the time on Diego's account — "CRM Buildout"
-  and "Prova contractor operating system", the Phase C sales lane, which
-  matches the symptom since the rows were leads and opportunities.
+  **TWO things survive now, and this sentence said one until 2026-09-28** —
+  it read *"What survives is a CHECKOUT holding the connection string"*,
+  which was a fair reading of a list of four eliminations and is not a fair
+  reading of a list of three.
+
+  The first, and still the better-evidenced: a CHECKOUT holding the
+  connection string. Two sessions were live on this repo at the time on
+  Diego's account — "CRM Buildout" and "Prova contractor operating system",
+  the Phase C sales lane, which matches the symptom since the rows were
+  leads and opportunities. Nothing about that has weakened.
+
+  The second is the Vercel MCP, returned to the board by the withdrawal
+  above. It is the WEAKER of the two and should not displace the first: it
+  has no motive-shaped fit with the symptom the way the sales lane does,
+  and the one relevant behaviour actually observed — `value: ""` for a
+  `sensitive` variable — points away from it. It is listed because
+  "unknown" and "eliminated" are different states, and this file has an
+  entry of its own about a checker that folded one into the other.
 
   **A cloud session cannot be questioned from another container.**
   `ListAgents` sees only this machine, and `SendMessage` to either title
