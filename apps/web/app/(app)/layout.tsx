@@ -14,7 +14,8 @@ import {
 } from "@/components/AppChrome";
 import { ShellRegionFallback } from "@/components/ShellRegion";
 import { shellQueryFailed } from "@/lib/shell-region-failure";
-import type { BusinessScopeAnswers } from "@/lib/businessScope";
+import { routesHiddenByAnswers, type BusinessScopeAnswers } from "@/lib/businessScope";
+import { loadRoutesWithData } from "@/lib/businessScopeData";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { company, ...currentUser } = await requireCompanyContext();
@@ -58,10 +59,26 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // not serialise them: it is a cookie read, not a round trip.
   const today = await viewerToday();
 
+  // WHICH ROUTES THE ANSWERS WOULD HIDE, AND WHICH OF THOSE THE COMPANY
+  // ALREADY HAS ROWS BEHIND. The first half is pure (lib/businessScope.ts)
+  // and free; the second is one query, and asking it only when the first
+  // half found something is most of the cost saving. Every company that
+  // skipped the onboarding prompt — which is every company that predates it
+  // — hides nothing, so `candidates` is empty and no query runs at all.
+  //
+  // The rows win over the answers: a company that logged backcharges under
+  // a GC and later answered "direct for owners" keeps the door to disputes
+  // it is still inside of. See lib/businessScopeData.ts for why, and for
+  // why one raw EXISTS statement rather than four findFirsts — this layout
+  // renders CONCURRENTLY with the page beneath it and `DATABASE_URL`
+  // carries connection_limit=5, so extra parallel probes are pool slots at
+  // the tightest moment.
+  const scopeCandidates = routesHiddenByAnswers(businessScope);
+
   // The two money queries are settled, not awaited bare: a query that
   // chokes on one strange invoice must cost its own region, never the page.
   // See lib/shell-region-failure.ts for why the alert count is NOT settled.
-  const [financials, alertCount, moneyRailStages] = await Promise.all([
+  const [financials, alertCount, moneyRailStages, routesWithData] = await Promise.all([
     loadCompanyFinancials(company.id).catch(shellQueryFailed("metricbar", null)),
     // In the layout, so the count is on every screen. Derived on each
     // render like everything else here — there is no stored unread count
@@ -85,6 +102,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     can(principal, "VIEW_COMPANY_FINANCIALS")
       ? getMoneyRailStages(company.id).catch(shellQueryFailed("sidebar", []))
       : Promise.resolve([]),
+    // In the same Promise.all as the three above so it costs no extra
+    // wall-clock latency, and skipped entirely when nothing would be
+    // hidden. NOT settled with shellQueryFailed: this is not a region's
+    // figures, it is an input to which links the rail draws, and
+    // `loadRoutesWithData` already fails OPEN on its own — a probe that
+    // throws reports every route as having data, so the rail shows
+    // everything rather than hiding a door it could not check. See its own
+    // comment for why that is the safe direction.
+    scopeCandidates.length > 0 ? loadRoutesWithData(company.id) : Promise.resolve<string[]>([]),
   ]);
   return (
     // h-screen with the content column scrolling inside it, so the metric
@@ -129,6 +155,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         principal={principal}
         showsInternal={showsInternal}
         businessScope={businessScope}
+        routesWithData={routesWithData}
         stages={moneyRailStages}
       />
       <div className="flex min-w-0 flex-1 flex-col">
@@ -138,6 +165,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           principal={principal}
           showsInternal={showsInternal}
           businessScope={businessScope}
+          routesWithData={routesWithData}
           // Resolved HERE, on the server: lib/help-config.ts reads
           // process.env and imports the @prova/integrations barrel, neither
           // of which belongs in a browser bundle. The topbar is a client

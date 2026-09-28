@@ -201,6 +201,7 @@ export function Sidebar({
   principal,
   showsInternal = false,
   businessScope,
+  routesWithData,
   stages,
 }: {
   companyName: string;
@@ -210,13 +211,17 @@ export function Sidebar({
   /** The three onboarding questions' answers, or undefined for "hide
    * nothing" — see navGroupsFor in navItems.tsx. */
   businessScope?: BusinessScopeAnswers;
+  /** The hrefs this company already has rows behind, out of the ones the
+   * answers could hide — gathered server-side and handed down as data, so
+   * a route with live records behind it keeps its door. See navGroupsFor. */
+  routesWithData?: readonly string[];
   /** The five money-pipeline figures, loaded server-side by the layout
    * with getMoneyRailStages. Never computed here. */
   stages: MoneyRailStage[];
 }) {
   // Filtered here rather than in the layout so the desktop rail and
   // the mobile drawer run the same function on the same input.
-  const groups = navGroupsFor(principal, { showsInternal, businessScope });
+  const groups = navGroupsFor(principal, { showsInternal, businessScope, routesWithData });
   const footer = navFooterFor(principal);
   const pathname = usePathname();
   const activeFooter = activeFooterHref(footer, pathname);

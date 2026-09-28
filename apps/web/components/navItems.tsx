@@ -855,18 +855,34 @@ const INTERNAL_NAV_GROUP: NavGroup = {
  * Omitted entirely (no second argument), it defaults to "hide nothing" —
  * the same as every company that predates this feature or skipped the
  * prompt, per `hasNoScopeAnswers`.
+ *
+ * `routesWithData` is the SAME filter's escape hatch, and it is data rather
+ * than a query on purpose: the hrefs this company already has rows behind,
+ * gathered server-side by lib/businessScopeData.ts and handed down through
+ * app/(app)/layout.tsx. An answer says what work a company intends to take;
+ * a row says what it has already done, and a rail that hides the door to
+ * money somebody is still owed is worse than a rail with one extra label on
+ * it. Both nav surfaces get it from the one layout for the same reason they
+ * get `businessScope` from there — a filter applied to the desktop rail and
+ * forgotten on the phone is the drift this whole function exists to stop.
  */
 export function navGroupsFor(
   user: Principal,
-  options: { showsInternal?: boolean; businessScope?: BusinessScopeAnswers } = {},
+  options: {
+    showsInternal?: boolean;
+    businessScope?: BusinessScopeAnswers;
+    routesWithData?: readonly string[];
+  } = {},
 ): NavGroup[] {
   const groups = options.showsInternal ? [...NAV_GROUPS, INTERNAL_NAV_GROUP] : NAV_GROUPS;
   const scope = options.businessScope;
+  const withData = options.routesWithData ?? [];
   return groups
     .map((group) => ({
       ...group,
       items: group.items.filter(
-        (item) => canReach(user, item.href) && !(scope && isHiddenByBusinessScope(item.href, scope)),
+        (item) =>
+          canReach(user, item.href) && !(scope && isHiddenByBusinessScope(item.href, scope, withData)),
       ),
     }))
     .filter((group) => group.items.length > 0);

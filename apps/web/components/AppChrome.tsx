@@ -85,12 +85,16 @@ export function SidebarRegion({
   principal,
   showsInternal,
   businessScope,
+  routesWithData,
   stages,
 }: {
   companyName: string;
   principal: Principal;
   showsInternal: boolean;
   businessScope: BusinessScopeAnswers;
+  /** See Sidebar's own prop doc: the hrefs this company has rows behind, so
+   * the answers cannot hide a door to records that already exist. */
+  routesWithData: readonly string[];
   stages: MoneyRailStage[];
 }) {
   return (
@@ -100,6 +104,7 @@ export function SidebarRegion({
         principal={principal}
         showsInternal={showsInternal}
         businessScope={businessScope}
+        routesWithData={routesWithData}
         stages={stages}
       />
     </ShellRegion>
@@ -112,6 +117,7 @@ export function TopbarRegion({
   principal,
   showsInternal,
   businessScope,
+  routesWithData,
   helpChannel,
 }: {
   companyName: string;
@@ -119,6 +125,8 @@ export function TopbarRegion({
   principal: Principal;
   showsInternal: boolean;
   businessScope: BusinessScopeAnswers;
+  /** Same list the rail gets, from the same layout — see SidebarRegion. */
+  routesWithData: readonly string[];
   /** Resolved on the SERVER by `helpChannelFromEnv()` and passed down as
    * plain data. It cannot be read here: `lib/help-config.ts` reads
    * `process.env` and pulls in the `@prova/integrations` barrel, neither of
@@ -133,6 +141,7 @@ export function TopbarRegion({
         principal={principal}
         showsInternal={showsInternal}
         businessScope={businessScope}
+        routesWithData={routesWithData}
         helpChannel={helpChannel}
       />
     </ShellRegion>
