@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
@@ -748,7 +749,17 @@ export async function assignCrewMember(jobId: string, formData: FormData) {
   // rather than waiting to be found on the schedule. Best-effort — a push
   // failure never blocks the assignment.
   if (assigned) {
-    void pushToUser(userId, "New job assignment", `You're assigned to ${job.name}`, { jobId });
+    // `after` rather than `void`, and this one was ARRIVING — which is the
+    // reason it still had to change. A floating promise in a server action
+    // lives only until the response is sent; this push is a single HTTP
+    // call, so its window is milliseconds and it usually wins. The alert
+    // digest's push makes five database round-trips first, so its window
+    // is hundreds of milliseconds and it never won once. Same bug, two
+    // different odds — and odds are not a design. See the long note in
+    // `actions/notifications.ts` for how the pair of them named it.
+    after(() =>
+      pushToUser(userId, "New job assignment", `You're assigned to ${job.name}`, { jobId }),
+    );
   }
 
   revalidatePath(`/jobs/${jobId}`);
