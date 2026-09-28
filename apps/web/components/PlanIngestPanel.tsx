@@ -51,11 +51,6 @@ const MAX_IDLE_SLICES = 3;
 
 export type PlanIngestPanelProps = {
   planId: string;
-  /** The count the VIEWER read off the document — the server has no PDF library
-   *  to read it with, which is why `TakeoffPlan` has no `pageCount` column.
-   *  Null when the document has not been opened yet, which is the ordinary case
-   *  on a freshly uploaded set. */
-  pageCount: number | null;
   /** An unfinished run over this set, if one exists, so a reload picks up where
    *  it left off rather than offering to start a second one. */
   existing: IngestView | null;
@@ -63,7 +58,7 @@ export type PlanIngestPanelProps = {
 
 type Failure = { pageNumber: number; attempts: number; error: string | null };
 
-export function PlanIngestPanel({ planId, pageCount, existing }: PlanIngestPanelProps) {
+export function PlanIngestPanel({ planId, existing }: PlanIngestPanelProps) {
   const [view, setView] = useState<IngestView | null>(existing);
   const [error, setError] = useState<string | null>(null);
   const [failures, setFailures] = useState<Failure[]>([]);
@@ -135,12 +130,12 @@ export function PlanIngestPanel({ planId, pageCount, existing }: PlanIngestPanel
   function onStart() {
     setError(null);
     startTransition(async () => {
-      // `pageCount === null` cannot reach here — the button is disabled and the
-      // sentence is rendered as guidance instead. Kept as a guard because a
-      // disabled button is a UI fact rather than a contract, and this call
-      // creates rows.
-      if (pageCount === null) return;
-      const started = await startPlanIngest(planId, "PAGE_INVENTORY", pageCount);
+      // NO PAGE COUNT IS PASSED ANY MORE. `startPlanIngest` reads the file and
+      // counts the sheets itself, so there is nothing here for a browser to be
+      // wrong about — and it used to be wrong in a specific way: this panel was
+      // handed `plan.pages.length`, the number of CALIBRATED sheets, which is
+      // zero on a set nobody has measured yet.
+      const started = await startPlanIngest(planId, "PAGE_INVENTORY");
       if (!started.ok) return setError(started.error);
       setView(started.value);
       setRunning(true);
@@ -177,27 +172,29 @@ export function PlanIngestPanel({ planId, pageCount, existing }: PlanIngestPanel
 
       {!view && (
         <>
-          {/* DERIVED FROM `pageCount`, NOT WRITTEN INTO ERROR STATE AFTER A
-              CLICK — a fix a person found by clicking this on 2026-09-27. The
-              sentence used to be set as an `error` when somebody pressed the
-              button with no sheet on file, and NOTHING CLEARED IT: they went
-              and set a scale, the header updated to "1 sheet worked on", and
-              the panel still told them to open the plan set in the viewer
-              first. The advice was stale and the app looked like it had not
-              noticed.
-
-              As guidance it cannot go stale — the prop changes, the sentence
-              goes. The same reasoning as this repo's rule that derived state is
-              never stored, applied to a sentence rather than a figure. */}
+          {/* THE "OPEN IT IN THE VIEWER FIRST" SENTENCE IS GONE, and so is the
+              condition it hung on.
+              
+              It existed because this panel was handed the number of CALIBRATED
+              sheets and could not start without one — zero on a freshly uploaded
+              set, so the button was disabled and the advice was to go and set a
+              scale. Diego pressed it on 2026-09-27 and got exactly that. The
+              advice was not wrong about the mechanism; it was asking somebody to
+              do unrelated work to satisfy a limitation that no longer exists,
+              because the server counts the file's own sheets now.
+              
+              Two fixes went into that sentence before it was deleted — it was an
+              `error` nothing cleared, then derived guidance — which is worth
+              remembering as a shape: a message that needs fixing twice is usually
+              a message that should not need to exist. */}
           <p className="mb-3 text-sm text-ink-body">
-            {pageCount === null
-              ? "Open this plan set in the viewer first, so C Stream knows how many sheets it has. Setting a sheet's scale is what puts it on file."
-              : "C Stream can walk this plan set sheet by sheet. It stops and resumes safely, so you can close this page and come back."}
+            C Stream can walk this plan set sheet by sheet, reading what each one says. It stops and resumes safely,
+            so you can close this page and come back.
           </p>
           <button
             type="button"
             onClick={onStart}
-            disabled={isPending || pageCount === null}
+            disabled={isPending}
             className="min-h-[48px] rounded-md bg-neutral-800 px-4 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50"
           >
             {isPending ? "Starting…" : "Read the sheets"}

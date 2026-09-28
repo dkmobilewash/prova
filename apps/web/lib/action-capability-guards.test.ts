@@ -1648,6 +1648,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // not the capability that door takes; this suite named all four and the page,
   // which is how it was caught rather than shipped.
   planIngest: () => import("./actions/planIngest"),
+  // Accepting and rejecting what a title-block reading proposed. Reachable from
+  // /jobs/[id]/takeoff, the same door as the plan-ingest actions above, so it takes
+  // the same capability — `VIEW_JOB_COSTS`, which is what that page is hard-gated
+  // on and not the `MANAGE_ESTIMATING` a plan set sounds like it should need.
+  planSheets: () => import("./actions/planSheets"),
   // Reading a sub's quote, reachable from /bids alone, which withholds on
   // MANAGE_ESTIMATING. `readBidQuoteDocument` asserts the same — and unlike the
   // plan-ingest entry above, this one was right first time, because the

@@ -1,5 +1,5 @@
 import { prisma } from "@prova/db";
-import { documentUrlProblem } from "@/lib/document-uploads";
+import { readPlanBytes } from "./planBytes";
 import { hasTextLayer, openPlanPdf, titleBlockText, type PlanPdf } from "./planPdf";
 import type { StageCtx, StageWork } from "./stages";
 
@@ -143,30 +143,9 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
 
 /** The real ports. Kept at the bottom so the stage above reads as logic. */
 const realDeps: PageInventoryDeps = {
-  readPlanBytes: async (planId, companyId) => {
-    const plan = await prisma.takeoffPlan.findFirst({
-      where: { id: planId, companyId },
-      select: { fileUrl: true, jobId: true },
-    });
-    if (!plan) return { ok: false, error: "That plan set is no longer on file, so nothing was read." };
-
-    // THE URL IS RE-VALIDATED ON THE WAY OUT, not trusted because it is in our own
-    // database. `uploadComplianceDocument` and `readBidQuoteDocument` both do this
-    // and for the same reason: read the other way round, this is a server-side
-    // request to an address a caller once chose.
-    const problem = documentUrlProblem(plan.fileUrl, "plan-takeoff", plan.jobId, process.env);
-    if (problem) return { ok: false, error: problem };
-
-    // NOT THROUGH `/api/takeoff/plan/[planId]`, which is the obvious-looking seam
-    // and the wrong one: that route authenticates with `requireCompanyContext`, and
-    // the cron has no session and never will. The tenancy check is the `findFirst`
-    // above, which is the same check that route makes.
-    const upstream = await fetch(plan.fileUrl);
-    if (!upstream.ok) {
-      return { ok: false, error: "The plan file could not be fetched just now, so this sheet wasn't read." };
-    }
-    return { ok: true, bytes: Buffer.from(await upstream.arrayBuffer()) };
-  },
+  // Shared with `startPlanIngest`, which counts the set's pages from the same
+  // bytes — see `planBytes.ts` for why neither goes through the viewer's route.
+  readPlanBytes,
 
   openPdf: openPlanPdf,
 

@@ -3,7 +3,9 @@
 import { prisma, type PlanIngestStage } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
+import { pdfPageCount } from "@/lib/ask/pageCount";
 import { claimPorts, closeIfSettled, ingestViewOf } from "@/lib/plan-ingest/claim";
+import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
 import { runIngest, MAX_ATTEMPTS, type IngestView } from "@/lib/plan-ingest/runner";
 import { isRunnableStage, stageWork } from "@/lib/plan-ingest/stages";
 import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "./shared";
@@ -73,19 +75,25 @@ async function planInCompany(planId: string, companyId: string) {
 }
 
 /**
- * Create a run over `pageCount` pages, or hand back the one already running.
+ * Create a run over the set's pages, or hand back the one already running.
  *
- * THE PAGE COUNT COMES FROM THE BROWSER, and it has to: `TakeoffPlan` has no
- * `pageCount` column because the server has no PDF library to read one with —
- * the viewer knows it because `pdfjs-dist` renders the document there. So this
- * takes the count as an argument and bounds it, rather than trusting it: a
- * client that asked for a million pages would otherwise create a million rows.
+ * THE SERVER COUNTS THE PAGES NOW, and this used to take the count as an argument
+ * because "the server has no PDF library to read one with". That was never true:
+ * `lib/ask/pageCount.ts` has counted PDF pages server-side for billing since it was
+ * written — a regex over the page tree with a `zlib.inflateSync` pass for PDF 1.5
+ * object streams, no pdfjs and no canvas.
+ *
+ * WHAT THE BROWSER ACTUALLY PASSED WAS WORSE THAN A GUESS. The takeoff page handed
+ * over `plan.pages.length` — the number of `TakeoffPlanPage` rows, which exist only
+ * for sheets somebody has already CALIBRATED. On a freshly uploaded set that is
+ * zero, so the button was disabled and the panel said "open this plan set in the
+ * viewer first", which is not a thing anybody needed to do and not what the message
+ * described. Diego hit exactly that on 2026-09-27.
+ *
+ * So the count comes out of the file. It is still bounded, because a file can lie
+ * about its own page tree and 2,000 task rows is the ceiling either way.
  */
-export async function startPlanIngest(
-  planId: string,
-  stage: PlanIngestStage,
-  pageCount: number,
-): Promise<ActionResultWith<IngestView>> {
+export async function startPlanIngest(planId: string, stage: PlanIngestStage): Promise<ActionResultWith<IngestView>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(NOT_YOURS) as ActionResultWith<IngestView>;
   const companyId = context.company.id;
@@ -102,11 +110,26 @@ export async function startPlanIngest(
     return { ok: false, error: "That kind of plan reading isn't built yet." };
   }
 
-  // A count the browser supplied, bounded both ends. Zero is legitimate (an
-  // empty PDF is reachable) and produces a job that completes immediately,
-  // which `ingestProgress` calls 100% rather than dividing by zero.
-  if (!Number.isInteger(pageCount) || pageCount < 0 || pageCount > 2_000) {
-    return { ok: false, error: "That plan set's page count doesn't look right, so nothing was started." };
+  const file = await readPlanBytes(planId, companyId);
+  if (!file.ok) return { ok: false, error: file.error };
+
+  const pageCount = pdfPageCount(file.bytes);
+  if (pageCount === null) {
+    // `pdfPageCount` returns null when the page tree cannot be read, which is a
+    // real state rather than a fault — the same one the Ask box charges a flat ten
+    // pages for. Here there is nothing to charge and nothing to enumerate, so it
+    // refuses and says which file to look at rather than starting a run over a
+    // number nobody could verify.
+    return {
+      ok: false,
+      error: "C Stream couldn't read how many sheets are in that file, so nothing was started. It may not be a PDF, or it may be damaged.",
+    };
+  }
+  // Still bounded, because a file can lie about its own page tree. Zero is
+  // legitimate — an empty PDF is reachable — and produces a job that completes
+  // immediately, which `ingestProgress` calls 100% rather than dividing by zero.
+  if (pageCount > 2_000) {
+    return { ok: false, error: `That file says it has ${pageCount} sheets, which is more than one plan set can hold.` };
   }
 
   // AN UNFINISHED RUN IS REUSED, NOT DUPLICATED. Two people opening the same
