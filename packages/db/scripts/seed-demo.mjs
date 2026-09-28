@@ -842,7 +842,7 @@ async function main() {
       appliedAt: day(-27),
     },
   });
-  await prisma.changeOrderProposal.create({
+  const co1Proposal = await prisma.changeOrderProposal.create({
     data: {
       changeOrderId: co1.id,
       changeType: "ADD",
@@ -852,6 +852,52 @@ async function main() {
       unitPrice: "24.5",
       budgetedUnitCost: "16.8",
       currentEstimatedUnitCost: "16.8",
+    },
+  });
+
+  // ------------------------------------------- what APPROVING actually does
+  //
+  // THIS LINE ITEM IS THE WHOLE POINT OF CO #1 AND IT WAS MISSING. The block
+  // above says CO #1's "scope IS in the contract value above". It was not,
+  // for as long as this seed has existed: contract value is quantity ×
+  // unitPrice summed over a job's non-deleted JobLineItems, and no line item
+  // was ever written for these soffits. So Riverside showed $267,870.00 — the
+  // four base lines and nothing else — while an EXECUTED change order sat on
+  // the same screen for $7,595.00, under a paragraph that tells the reader in
+  // the app's own words that an executed change order "has already moved it".
+  //
+  // The cause is the shape to learn from rather than the number. This script
+  // writes the ChangeOrder row DIRECTLY with status APPROVED and an
+  // `appliedAt`, which is a state the app can only reach through
+  // `approveChangeOrder` — and that action does two things: it flips the
+  // status AND, for every ADD proposal, creates the JobLineItem. Setting the
+  // status by hand performed half of an operation and recorded it as whole.
+  //
+  // So this mirrors the ADD branch of `lib/actions/changeOrders.ts` field for
+  // field, `originChangeOrderId` included: that column is what makes the
+  // contract table draw its amber "CO #1" chip, so without it the line would
+  // have appeared as if it had been bid that way.
+  //
+  // `tradeScope` is set here and is NOT in the action's ADD branch, which
+  // copies `proposal.tradeScope` — null on this proposal. It is set because
+  // every other framing line on this job carries it and a demo line with no
+  // trade reads as an oversight on screen. That is a deliberate difference
+  // between this fixture and the code path, named so nobody "corrects" it
+  // into a mismatch later.
+  //
+  // Found 2026-09-28 by adding the numbers up before filming, which is the
+  // only instrument that has ever caught anything in this file.
+  await prisma.jobLineItem.create({
+    data: {
+      jobId: riverside.id,
+      description: co1Proposal.description,
+      unit: co1Proposal.unit,
+      quantity: co1Proposal.quantity,
+      unitPrice: co1Proposal.unitPrice,
+      budgetedUnitCost: co1Proposal.budgetedUnitCost,
+      currentEstimatedUnitCost: co1Proposal.currentEstimatedUnitCost,
+      tradeScope: "METAL_FRAMING_DRYWALL",
+      originChangeOrderId: co1.id,
     },
   });
 
