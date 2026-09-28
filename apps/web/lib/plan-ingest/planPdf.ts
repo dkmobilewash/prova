@@ -80,11 +80,26 @@ export type PlanPdf = {
  * THE IMPORT IS DYNAMIC AND THAT IS NOT A STYLE CHOICE. `TakeoffPlanViewer.tsx`
  * imports pdfjs inside a `useEffect` specifically to keep it "out of every server
  * graph so the `Can't resolve 'canvas'` build failure cannot arise" — pdfjs
- * declares `@napi-rs/canvas` as an OPTIONAL dependency, and a bundler resolving it
- * statically fails the build. Here we do want it on the server, so it is required
- * at call time AND `pdfjs-dist` is named in `serverExternalPackages` so Next
- * leaves it to Node instead of bundling it. Change either half and the build
- * breaks in a way no unit test can catch.
+ * declares `@napi-rs/canvas` as an OPTIONAL dependency. Requiring it at call time
+ * rather than at module scope is what keeps this out of the client graph.
+ *
+ * AND IT NEEDS NOTHING IN `next.config.mjs`, WHICH THE FIRST VERSION GOT WRONG AND
+ * CI CAUGHT. That version added `serverExternalPackages: ["pdfjs-dist"]`, reasoning
+ * that the optional `canvas` import would fail resolution if webpack tried to bundle
+ * it. That reasoning was untested, and it was wrong twice over. It was unnecessary —
+ * the compile passes without it, because pdfjs's optional dependency does not break
+ * resolution — and it was ACTIVELY BREAKING, because `serverExternalPackages` is
+ * package-global: marking pdfjs external stopped webpack emitting the worker asset
+ * the VIEWER references with `new URL("pdfjs-dist/legacy/build/pdf.worker.mjs",
+ * import.meta.url)`, and the build failed in `TakeoffPlanViewer.tsx` — a file this
+ * change never touched.
+ *
+ * Three CI jobs went red on it, all one root cause, and none of it was reachable
+ * locally from `typecheck`, `lint` or 8,236 unit tests: a unit test imports this
+ * through vitest and never through webpack. The build is the only instrument, and it
+ * IS runnable here — it reaches `✓ Compiled successfully` before it exits on the
+ * missing Clerk key, so the compile can be checked without any credentials at all.
+ * Do that before touching how this module is loaded.
  *
  * EVERY POSITION IS PUT THROUGH THE VIEWPORT TRANSFORM, and this is a correctness
  * fix rather than tidiness. `getTextContent()` returns each item's `transform` in

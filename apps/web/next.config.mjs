@@ -6,23 +6,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@prova/ui", "@prova/db"],
-  // pdfjs-dist is required at RUNTIME by the plan-ingest stage that reads a plan
-  // set's text server-side, and it must not be bundled.
-  //
-  // The reason is a build failure, not a preference. pdfjs declares
-  // `@napi-rs/canvas` as an OPTIONAL dependency — its Node rasterisation backend,
-  // which we never call — and a bundler that tries to resolve that import
-  // statically fails with `Can't resolve 'canvas'`. That failure is why
-  // `TakeoffPlanViewer.tsx` imports pdfjs inside a `useEffect` and says so at
-  // length: it was keeping the package out of every server graph. Naming it here
-  // is what lets a server module import it instead — Next leaves the require to
-  // Node, the optional dependency is never resolved, and the tracer still copies
-  // the package into the deployed function.
-  //
-  // Paired with the dynamic `await import()` in `lib/plan-ingest/planPdf.ts`.
-  // Remove either half and the build breaks in a way no unit test can catch,
-  // because a unit test imports it through vitest and never through webpack.
-  serverExternalPackages: ["pdfjs-dist"],
   // The floating N badge is dev-only chrome, and this branch gets filmed for
   // the demo video — nothing that says "dev server" can be in frame.
   devIndicators: false,
