@@ -53,6 +53,7 @@ export const AI_FEATURES = {
   DRAFT_ESTIMATE_LINES: "draft-estimate-lines",
   BID_RESEARCH: "bid-research",
   LEAD_SEARCH: "lead-search",
+  QUOTE_EXTRACT: "quote-extract",
   PLAN_INGESTION: "plan-ingestion",
 } as const;
 
@@ -72,6 +73,12 @@ const FEATURE_MODEL: Record<AiFeatureKey, string> = {
   DRAFT_ESTIMATE_LINES: OPUS_5,
   BID_RESEARCH: OPUS_5,
   LEAD_SEARCH: OPUS_5,
+  // Opus, and worth saying why when the neighbour below is Haiku: this reads ONE
+  // document per bid, not three hundred pages, so the cheap model buys almost
+  // nothing — and what it would risk is a misread price on the number an
+  // estimator is about to level two subs against. Volume is what justifies
+  // Haiku for ingestion; there is no volume here.
+  QUOTE_EXTRACT: OPUS_5,
   // The one cheap default, at Diego's direction, subject to the eval. Three
   // hundred calls per plan set is where a fifth of the price is worth having.
   PLAN_INGESTION: HAIKU_4_5,

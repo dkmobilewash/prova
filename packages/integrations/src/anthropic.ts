@@ -35,7 +35,16 @@ type AnthropicUsage = {
   cache_creation_input_tokens?: number | null;
 };
 
-async function reportUsage(
+/**
+ * EXPORTED so a model caller in another file can report the same way.
+ *
+ * It was private until `quotes.ts` needed it, and the alternative was a second
+ * copy of "report before checking the result, because a call that produced
+ * nothing usable still cost the money". Two copies of that rule is how one of
+ * them stops being true — the same argument that kept feature 5 off a second
+ * quote model. One helper, one place, whatever file the caller lives in.
+ */
+export async function reportUsage(
   onUsage: ModelUsageReporter | undefined,
   usage: AnthropicUsage | null | undefined,
 ): Promise<void> {

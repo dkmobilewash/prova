@@ -31,12 +31,17 @@ const ENV = { BLOB_READ_WRITE_TOKEN: `vercel_blob_rw_${OURS}_s3cr3t` };
 const url = (store: string, path: string) =>
   `https://${store}.public.blob.vercel-storage.com/${path}`;
 
-group("the six purposes and where each one lands", () => {
+group("every purpose and where each one lands", () => {
   it("gives every purpose a target, and no purpose is missing one", () => {
     // Guards the table itself: every assertion below reads through it, and
     // a table that quietly lost an entry would make them all vacuous.
     expect(Object.keys(DOCUMENT_UPLOAD_TARGETS).sort()).toEqual([...DOCUMENT_UPLOAD_PURPOSES].sort());
-    expect(DOCUMENT_UPLOAD_PURPOSES).toHaveLength(6);
+    // SEVEN since `bid-quote` (feature 5). The count is here as a tripwire on
+    // the table above rather than as a fact about the product — if a purpose is
+    // added without a target, or a target without a purpose, the assertion
+    // above is what fails; this one only stops the LIST silently shrinking to
+    // nothing, which would make every assertion below vacuous.
+    expect(DOCUMENT_UPLOAD_PURPOSES).toHaveLength(7);
   });
 
   it("puts each kind in the folder its existing documents already live in", () => {
@@ -65,11 +70,19 @@ group("the six purposes and where each one lands", () => {
     expect(DOCUMENT_UPLOAD_TARGETS["executed-subcontract"].capability).toBe("MANAGE_JOBS");
   });
 
-  it("scopes exactly one purpose to the company rather than to a job", () => {
+  it("scopes to the company only what has no job to belong to", () => {
     const companyScoped = DOCUMENT_UPLOAD_PURPOSES.filter(
       (p) => DOCUMENT_UPLOAD_TARGETS[p].scope === "company",
     );
-    expect(companyScoped).toEqual(["compliance-document"]);
+    // TWO now, and the second one follows its row rather than a preference:
+    // `bid-quote` files against a `BidInvitation`, which is company-scoped and
+    // carries no `jobId` at all — on a bid the company has not won there is no
+    // job to name, so a job prefix would be a path with nothing to put in it.
+    //
+    // The test's NAME changed with it. It used to say "exactly one", which read
+    // as a rule about the product when it was a count of the rows that happened
+    // to exist; a second legitimate entry should not look like a violation.
+    expect(companyScoped.sort()).toEqual(["bid-quote", "compliance-document"]);
   });
 
   it("accepts only a purpose on the list, and refuses anything else", () => {

@@ -40,6 +40,16 @@ enum AiFeature {
   BID_RESEARCH
   /// `findLeads` — web search for pursuits.
   LEAD_SEARCH
+  /// `extractBidQuote` — reading a sub's quote document into the fields a
+  /// `BidQuote` already holds, for the estimator to correct before saving.
+  ///
+  /// ITS OWN MEMBER RATHER THAN REUSING `COMPLIANCE_EXTRACT`, which is the
+  /// obvious saving and the wrong one. A contractor perfectly happy for us to
+  /// read their own lien waivers may not be happy for us to read a
+  /// competitor's pricing — that is a different question about a different
+  /// kind of document, and the whole reason this switch is per feature rather
+  /// than one flag is so the two can be answered differently.
+  QUOTE_EXTRACT
   /// Plan-set ingestion: split, classify, title blocks, sheet index. Not
   /// built yet; the member exists so the switch is ready before the feature
   /// is, rather than being retrofitted onto six call sites afterwards.

@@ -1648,6 +1648,13 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // not the capability that door takes; this suite named all four and the page,
   // which is how it was caught rather than shipped.
   planIngest: () => import("./actions/planIngest"),
+  // Reading a sub's quote, reachable from /bids alone, which withholds on
+  // MANAGE_ESTIMATING. `readBidQuoteDocument` asserts the same — and unlike the
+  // plan-ingest entry above, this one was right first time, because the
+  // capability was copied from the neighbour it sits beside (`saveBidQuote`)
+  // rather than chosen from the feature's name. Worth the two lines: "what does
+  // this door take" beats "what does this feature sound like", twice over now.
+  quoteRead: () => import("./actions/quoteRead"),
   // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it
   // is reachable from /settings/assistant alone, which demands
   // MANAGE_COMPLIANCE. The card actions (confirm, cancel, settle, load)
