@@ -224,3 +224,47 @@ export function sheetWithTitleBlock(opts: {
 export function scannedSheet(): SyntheticSheet {
   return { ...ARCH_D, items: [] };
 }
+
+/**
+ * A sheet composed line by line: whatever you want in the DRAWING area, and
+ * whatever you want in the TITLE BLOCK.
+ *
+ * `sheetWithTitleBlock` above is one canned sheet and is what the unit tests want —
+ * they are checking the region filter and the rotation transform, so the content
+ * barely matters. The EVAL wants the opposite: the same geometry every time and
+ * wildly different content, because what it measures is judgement. A sheet whose
+ * drawing area says "SEE A-501" while its own number is A-102 is the case that
+ * separates a reader from a pattern match, and it cannot be built from a function
+ * that hard-codes its own lines.
+ *
+ * Positions are DISPLAYED coordinates and converted, for the reason
+ * `userFromDisplayed` documents at length: a real title block appears bottom-right
+ * as somebody looks at the sheet, whatever `/Rotate` says.
+ */
+export function sheetOf(opts: {
+  /** Lines in the upper-left, where the drawing is. Often the trap. */
+  drawing?: string[];
+  /** Lines in the bottom-right, where the title block is. */
+  block: string[];
+  rotation?: 0 | 90 | 180 | 270;
+}): SyntheticSheet {
+  const rotation = opts.rotation ?? 0;
+  const { widthPt: W, heightPt: H } = ARCH_D;
+  const shown = displayedSize(rotation, W, H);
+  const at = (displayedX: number, displayedY: number, text: string): PlacedText => {
+    const { x, y } = userFromDisplayed(displayedX, displayedY, rotation, W, H);
+    return { x, y, text };
+  };
+  return {
+    widthPt: W,
+    heightPt: H,
+    rotation: opts.rotation,
+    items: [
+      ...(opts.drawing ?? []).map((line, i) => at(200, 200 + i * 60, line)),
+      // 26pt apart, bottom upwards, so the block reads top-down in the order given
+      // — the order a person would read it, which is what the extractor's sort
+      // reproduces and what the model is therefore handed.
+      ...opts.block.map((line, i) => at(shown.widthPt - 520, shown.heightPt - 320 + i * 26, line)),
+    ],
+  };
+}
