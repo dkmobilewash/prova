@@ -32,22 +32,44 @@ import { uploadDocumentFile } from "@/lib/document-upload-client";
 export function QuoteReader({
   bidInvitationId,
   companyId,
+  note,
   onRead,
 }: {
   bidInvitationId: string;
   /** The upload is scoped to the COMPANY, not a job: a `BidInvitation` carries
    *  no `jobId`, and on a bid nobody has won there is no job to name. */
   companyId: string;
+  /**
+   * What the last read cost, HELD BY THE PARENT AND PASSED DOWN — never kept in
+   * this component's own state.
+   *
+   * THIS WAS A REAL DEFECT AND THE REASON IS WORTH THE PARAGRAPH. It was
+   * `useState` here, set from `read.value.note` one line before `onRead`. But
+   * `onRead` bumps `formKey` in `QuoteForm`, and that key sits on the
+   * `ActionForm` that CONTAINS this component — so React unmounted this subtree
+   * and mounted a fresh copy whose state was back to `null`. The sentence was
+   * computed correctly, returned correctly, set correctly, and thrown away
+   * microseconds later by the very remount that fills the fields in. A person
+   * was charged a page of their monthly allowance and told nothing.
+   *
+   * WHAT MADE IT INVISIBLE is the asymmetry: a FAILED read never calls `onRead`,
+   * so `formKey` never changes, so `error` below renders perfectly. Every
+   * refusal and every failure worked. Only the success message was unreachable,
+   * and only on a real mount — so it was invisible to `next dev` reasoning and
+   * to every unit test, and it took a click-through on a preview to find.
+   *
+   * A prop cannot be lost this way: the parent's state survives the remount and
+   * flows back in. Do not move it back.
+   */
+  note: string | null;
   onRead: (suggestion: QuoteSuggestion) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
 
   function onPick(file: File) {
     setError(null);
-    setNote(null);
     startTransition(async () => {
       // The bytes go straight to the blob store under a one-shot token — never
       // through a Server Action, whose body Next caps at 1MB against a scanned
@@ -64,9 +86,10 @@ export function QuoteReader({
         return;
       }
 
-      // The allowance sentence, passed on exactly as /compliance shows it, so a
-      // person learns what a read cost them in the place it cost it.
-      setNote(read.value.note);
+      // The allowance sentence rides on the suggestion and is rendered from the
+      // parent's copy of it — see the `note` prop above for why it is not set
+      // here. `onRead` remounts this component, so anything set here would not
+      // survive the next line.
       onRead(read.value);
       // Cleared so choosing the SAME file again re-reads it. Without this the
       // input holds the file and `change` never fires a second time, which reads
@@ -96,7 +119,13 @@ export function QuoteReader({
             : "C Stream fills the fields in and you check them. Nothing is saved until you press the button."}
         </span>
       </label>
-      {note && (
+      {/* Suppressed while a read is in flight, and while the latest one failed:
+          the sentence describes a charge that already happened, and standing it
+          beside a fresh error would read as that error having cost money. A
+          refusal costs nothing — `aiGate` returns before the allowance is
+          claimed — and that was confirmed on the preview, allowance unchanged
+          across a refused upload. */}
+      {note && !isPending && !error && (
         <p className="text-xs text-ink-body" data-quote-reader="note">
           {note}
         </p>

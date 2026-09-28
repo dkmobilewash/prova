@@ -384,7 +384,16 @@ function DeclineButton({
  * carries no `requestedOn`/`dueBy`, cannot erase the record of having asked at
  * the moment the answer arrives.
  */
-function QuoteForm({
+/**
+ * EXPORTED FOR ONE TEST, and the reason is the defect it guards.
+ *
+ * `quoteReaderNote.test.tsx` has to mount this component rather than
+ * `QuoteReader`, because the bug it pins does not exist in either component
+ * alone — `QuoteReader` kept its own message correctly and this form remounted
+ * correctly. It was the COMPOSITION: a `key` here, state there. A test of either
+ * half passes while the feature is broken, which is why the export is worth it.
+ */
+export function QuoteForm({
   bidInvitationId,
   companyId,
   quote,
@@ -444,6 +453,13 @@ function QuoteForm({
           <QuoteReader
             bidInvitationId={bidInvitationId}
             companyId={companyId}
+            /* HELD HERE BECAUSE THIS STATE IS ABOVE THE `key`. `setFormKey`
+               below remounts everything inside the ActionForm, so a message
+               kept in `QuoteReader` itself is destroyed by the same call that
+               fills the fields in — which is exactly what shipped, and what a
+               click-through on the preview caught. `suggestion` survives for
+               this reason and the allowance sentence rides on it. */
+            note={suggestion?.note ?? null}
             onRead={(read) => {
               setSuggestion(read);
               setFormKey((n) => n + 1);
