@@ -102,6 +102,12 @@ model PlanIngestJob {
 
   tasks PlanIngestTask[]
 
+  /// What a `TITLE_BLOCK` run proposed, one row per page. Empty for every other
+  /// stage — `PAGE_INVENTORY` writes `PlanSheetText`, which is keyed on the PLAN
+  /// rather than on a run because the text of a page of an immutable file does not
+  /// depend on which run read it.
+  sheetProposals PlanSheetProposal[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -216,4 +222,216 @@ model PlanIngestTask {
   @@index([nextAttemptAt])
   /// The reclaim query's index: expired claims across all jobs.
   @@index([claimExpiresAt])
+}
+
+/// WHAT PAGE N OF THIS PLAN SET SAYS — the evidence a proposal is made from.
+///
+/// TWO MODELS RATHER THAN ONE, AND THE ARCHITECTURE FORCES IT. `PlanIngestJob`
+/// is one job per STAGE per plan, so `PAGE_INVENTORY` and `TITLE_BLOCK` are two
+/// different job rows. A single model keyed on the ingest job would therefore put
+/// the extracted text and the proposal made from it on different rows, which is
+/// not a design, it is a bug. So the split follows what each one IS.
+///
+/// THIS ONE IS KEYED ON THE PLAN, and that is correct rather than convenient:
+/// the text of page N of a PDF is a property of an IMMUTABLE FILE. Re-running
+/// `PAGE_INVENTORY` reads the same bytes and writes the same words, so an upsert
+/// here is idempotent and overwriting costs nothing. The proposal below cannot say
+/// that about itself, which is why it is keyed differently.
+///
+/// AND IT IS STORED DERIVED STATE, DELIBERATELY. This schema's rule is that
+/// derived state is never stored, and `TakeoffPlan` refuses a `pageCount` column
+/// on exactly that ground. The distinction: a `pageCount` from the browser could
+/// only ever hold a CLIENT'S CLAIM the server had no way to check, whereas this is
+/// the server's own read of a file that cannot change. It is kept because it is
+/// the EVIDENCE THE PROPOSAL WAS MADE FROM — without it `proposedReason` is a
+/// sentence nobody can check, and `intake.prisma`'s standard for a reason is that
+/// it must be checkable. It also means `TITLE_BLOCK` never re-opens the PDF: the
+/// expensive stage reads rows, so a retry costs one model call and no parse.
+model PlanSheetText {
+  id String @id @default(cuid())
+
+  /// CASCADEs from the plan, which is what keeps this model out of
+  /// `HANDLED_MODELS` and both cleanup `del()` orders — the trick `TakeoffPlan`'s
+  /// own `jobId` comment documents. One `takeoffPlan.deleteMany({ jobId })`
+  /// reaches it.
+  planId String
+  plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  /// 1-based, the way the viewer, the runner and the title block all count.
+  pageNumber Int
+
+  /// Whether there is a text layer to read at all.
+  ///
+  /// FALSE IS A FACT, NOT A FAILURE, and the difference is money. A scanned sheet
+  /// has no vector text and never will, so a stage reporting it as `{ok: false}`
+  /// would fail three times with backoff, spend three sheet claims, and leave a
+  /// row whose Retry button can never succeed. A wholly scanned 300-page set
+  /// would produce 900 claims and a 300-row retry list. So it is recorded here,
+  /// the page is never sent to a model, and the review screen says this sheet
+  /// needs its number typed in.
+  hasTextLayer Boolean
+
+  /// The title block's words, in reading order, or null when there is no text
+  /// layer. What the model is given — never the file, never an image.
+  titleBlockText String?
+
+  /// Whether those words came from the title-block REGION or from the whole page.
+  ///
+  /// A sheet whose block sits somewhere the region filter does not expect would
+  /// otherwise hand the model an almost-empty region, which is indistinguishable
+  /// from a scan. Falling back to the whole page costs tokens and answers
+  /// correctly. Recorded so a reader can see which happened, because a proposal
+  /// made from a whole page deserves more scepticism than one made from the block.
+  wholePageFallback Boolean @default(false)
+
+  /// The sheet AS DISPLAYED, in points, and its own `/Rotate`. 72 points to the
+  /// inch, so 2592 is a 36" sheet. Taken from the viewport rather than the
+  /// MediaBox, so a rotated landscape sheet reports landscape — the distinction
+  /// `planPdf.ts` exists to get right and the one a raw x/y filter got wrong.
+  widthPt  Float
+  heightPt Float
+  rotation Int   @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  proposals PlanSheetProposal[]
+
+  /// One row per page of a plan. Safe to upsert — see the header.
+  @@unique([planId, pageNumber])
+  @@index([planId, hasTextLayer])
+}
+
+/// WHAT THE MODEL READ OFF ONE TITLE BLOCK, and what a person said about it.
+///
+/// THE ROW IS THE PROPOSAL, NOT THE FILING — `intake.prisma`'s rule, copied
+/// rather than re-argued. Accepting one records the acceptance HERE and writes no
+/// `TakeoffPlanPage`, builds no sheet index elsewhere, and changes nothing a
+/// quantity depends on. `lib/intake/review.ts` states why: "a label promising it
+/// before it exists is how a demo becomes a lie."
+///
+/// KEYED ON THE RUN, NOT THE PAGE — the opposite of `PlanSheetText` above, and
+/// the reason is re-running. A job may legitimately run `TITLE_BLOCK` again: a
+/// better prompt, a newer model. Keyed on `(planId, pageNumber)` the second run
+/// would OVERWRITE the first proposal, including one an estimator had already
+/// accepted beside, and the pair of columns exists precisely so "how often did a
+/// person change the answer" stays answerable. So this is APPEND-ONLY per run,
+/// the shape `TakeoffScaleCalibration` already uses in `takeoff.prisma`:
+/// "Recalibrating a sheet INSERTS a row; the newest row is the active one (derived
+/// from `createdAt`, not stored)". The index reads the newest proposal per page.
+model PlanSheetProposal {
+  id String @id @default(cuid())
+
+  /// The run that produced it. CASCADEs, so deleting a run takes its proposals.
+  ingestJobId String
+  ingestJob   PlanIngestJob @relation(fields: [ingestJobId], references: [id], onDelete: Cascade)
+
+  /// Denormalised for the read — "the newest proposal for each page of this plan"
+  /// is the query the index is built from, and it must not have to walk every run
+  /// to answer it. Also the Cascade that keeps this out of the cleanup scripts.
+  planId String
+  plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  pageNumber Int
+
+  /// The evidence this was read from, so a reviewer can see the words the
+  /// proposal came out of rather than taking `proposedReason` on trust.
+  sheetTextId String?
+  sheetText   PlanSheetText? @relation(fields: [sheetTextId], references: [id], onDelete: SetNull)
+
+  /// THE PROPOSAL, exactly as the model made it, at the moment it made it.
+  ///
+  /// STORED RATHER THAN RE-DERIVED, the same deliberate exception `intake.prisma`
+  /// takes and for its reason: "a newer classifier would then quietly rewrite the
+  /// reason a person was shown when they made their decision. A proposal is a
+  /// thing that happened, like a `capturedAt`." Never updated after insert.
+  ///
+  /// Null means THE TITLE BLOCK DID NOT SAY, which is a real answer and distinct
+  /// from an empty string. The prompt's first rule is never to invent a sheet
+  /// number.
+  proposedSheetNumber String?
+  proposedTitle       String?
+  proposedDiscipline  String?
+  proposedScale       String?
+
+  /// THE REVISION AND DATE PRINTED ON THIS SHEET, named so they cannot be
+  /// mistaken for `TakeoffPlan.revisionLabel` and `sheetIssuedOn` — which are
+  /// per-PLAN, ENTERED by a person, and what `lib/takeoff-currency.ts` runs on.
+  /// NOTHING IN `takeoff-currency.ts` READS THESE, and nothing should: a
+  /// model-proposed per-page date becoming a second source of "is this takeoff
+  /// current" is how two surfaces start disagreeing about whether somebody may
+  /// build from a drawing. Text, not a date, because a date on a drawing is
+  /// characters until a person confirms them.
+  titleBlockRevisionText  String?
+  titleBlockIssueDateText String?
+
+  /// The sentence shown in the review table, in words a person can check against
+  /// the title block beside it — "Sheet number read from the lower right of the
+  /// title block". Never "AI determined": a reason nobody can check is a reason
+  /// nobody can overrule.
+  proposedReason String
+
+  proposedConfidence PlanSheetConfidence
+
+  /// Which model and which prompt produced this. `AskUsage.promptVersion` has had
+  /// no writer since it was added, and `docs/ai/DECISIONS.md` says the guard ships
+  /// WITH the first prompt file rather than after it — this is that first prompt
+  /// file. Together these two are what make a change in output attributable to a
+  /// change we made rather than to the weather.
+  model         String
+  promptVersion String
+
+  /// WHAT THE PERSON SAID IT WAS. Null until they accept.
+  ///
+  /// ONLY THE TWO FIELDS SOMETHING DOWNSTREAM CONSUMES ARE PAIRED, which is what
+  /// `intake.prisma` actually does rather than what a first reading of it
+  /// suggests: it pairs `proposedKind`/`acceptedKind`, the one value that drives
+  /// an action, and leaves `revisionHint` and `jobHint` unpaired. Discipline,
+  /// scale, revision and date are shown and correctable but unpaired for the same
+  /// reason — six pairs would be twelve columns holding nulls forever, and the
+  /// eval measures calibration against the title block, not against what somebody
+  /// edited.
+  acceptedSheetNumber String?
+  acceptedTitle       String?
+
+  status PlanSheetProposalStatus @default(PROPOSED)
+
+  /// WHO accepted it and WHEN. `DocumentIntake` records neither and its own notes
+  /// flag that as worth deciding consciously; decided the other way here, because
+  /// a sheet number is a thing a GC may later dispute and "who said this sheet was
+  /// A-101" is then worth being able to answer.
+  acceptedByUserId String?
+  acceptedBy       User?     @relation("PlanSheetProposalAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  acceptedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One proposal per page per run.
+  @@unique([ingestJobId, pageNumber])
+  /// The index's own query: the proposals for a plan, newest run first.
+  @@index([planId, pageNumber, createdAt])
+  @@index([planId, status])
+}
+
+/// How sure the reading was.
+///
+/// LOW SORTS TO THE TOP of the review list and HIGH to the bottom, which is
+/// `DocumentIntakeConfidence`'s choice and its reasoning: it "is what makes
+/// over-claiming it the expensive mistake". An honest "I am not sure" is the
+/// correct answer, and the eval grades calibration as well as correctness because
+/// a sheet number that is 85% right and reads as certain is a wrong bid.
+enum PlanSheetConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+/// A rejected proposal STAYS, so the same set ingested again is not proposed
+/// afresh as though nobody had looked at it — `intake.prisma`'s reason for keeping
+/// a DISMISSED row.
+enum PlanSheetProposalStatus {
+  PROPOSED
+  ACCEPTED
+  REJECTED
 }

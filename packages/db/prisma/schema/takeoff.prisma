@@ -110,6 +110,18 @@ model TakeoffPlan {
   /// `takeoffPlan.deleteMany({ jobId })` still reaches all of it.
   ingestJobs PlanIngestJob[]
 
+  /// What ingestion read off each page, and what it proposed about each sheet —
+  /// both in plan-ingest.prisma. CASCADEd from here for the reason the comment
+  /// above gives, so neither needs registering anywhere.
+  ///
+  /// NEITHER IS A SHEET INDEX FOR THE JOB. `sheetProposals` is a proposal an
+  /// estimator reviews so they can find the sheet they mean to measure; the job's
+  /// paper trail is still `DrawingSet`/`DrawingRevision`, and `label` on
+  /// `TakeoffPlanPage` is still typed by a person. Accepting a proposal writes
+  /// neither.
+  sheetTexts     PlanSheetText[]
+  sheetProposals PlanSheetProposal[]
+
   createdAt DateTime @default(now())
 
   @@index([jobId, createdAt])
