@@ -40,20 +40,36 @@ export type QuoteFixture = {
  * case — so no fixture can be added without it, and it sits at the foot of the
  * page instead of in the middle of a company name.
  *
- * IT USED TO BE THE FIRST LINE, FUSED TO THE VENDOR: `ZZ SYNTHETIC — Cascade
- * Interior Systems`. That made the eval measure its own harness. The first run
- * (2026-09-28) came back 7 of 7 correct on amounts, and **all seven readingNotes
- * discussed the marker** — one of them advising the reader to "verify the quote
- * is genuine", which is sound about the document it was handed and meaningless
- * about any real one. The model was resolving a vendor-name ambiguity that exists
- * nowhere but here, correctly, every time, and spending a sentence of a
- * warning panel on it.
+ * IT IS A REFERENCE CODE AND NOT A SENTENCE, and that is the whole point of its
+ * current shape. This marking has now corrupted the eval's own measurement TWICE,
+ * both times because it put something in the document body that a competent
+ * reader is right to react to:
  *
- * On its own line at the foot it still marks the document, `quoteFixtures.test.ts`
- * still proves it reaches the rendered text, and it no longer competes with the
- * vendor name for the reader's attention.
+ *   1. It was the first line, fused to the vendor — `ZZ SYNTHETIC — Cascade
+ *      Interior Systems`. All seven readings spent part of their caution panel
+ *      resolving a vendor-name ambiguity that exists nowhere but here. Correctly,
+ *      every time.
+ *   2. Moved to its own footer it read `ZZ SYNTHETIC FIXTURE - invented for
+ *      testing, not a real quote`, and the two CLEAN cases each came back with a
+ *      caution saying to confirm the document was a genuine bid before comparing
+ *      prices. **That reading is correct.** A document stating it is not a real
+ *      quote bears directly on whether the price is real, which is the one
+ *      exception rule 8 of the prompt deliberately carves out. Tightening the
+ *      prompt to suppress it would teach the reader to ignore exactly the red
+ *      flag it should raise on a real document — a worse product in exchange for
+ *      a greener eval.
+ *
+ * So the fixture stops making claims about itself inside the page. A reference
+ * code is the most ignorable thing on a quote: it is greppable for hygiene, it
+ * cannot be acted on, and it says nothing about whether the price is genuine.
+ *
+ * Appended by the WRITER rather than written into each case, so no fixture can be
+ * added without it. If a future run still reports an `UNWANTED` note on a clean
+ * case *because of this line*, the next step is to drop it from those two cases
+ * and say why — a document that announces it is fake cannot be the fixture that
+ * proves the panel stays quiet on a clean quote.
  */
-const SYNTHETIC_FOOTER = ["", "ZZ SYNTHETIC FIXTURE - invented for testing, not a real quote"];
+const SYNTHETIC_FOOTER = ["", "Ref: ZZ SYNTHETIC 0001"];
 
 /** Escapes the three characters a PDF string literal cannot carry raw. */
 function pdfString(text: string): string {
