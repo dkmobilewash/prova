@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 
 import { ActionForm } from "@/components/ActionForm";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { AddendumFindings, type AddendumReadingView } from "@/components/AddendumFindings";
+import type { AddendumDecision, AddendumItem } from "@/lib/addenda-overlap";
 import { SubmitButton } from "@/components/SubmitButton";
 import {
   acknowledgeBidAddendum,
@@ -32,7 +34,15 @@ import {
  * in from it, and on a document submitted once that difference is the bid.
  */
 
-export type AddendumRow = AddendumInput & { notes: string | null };
+export type AddendumRow = AddendumInput & {
+  notes: string | null;
+  fileName: string | null;
+  hasFile: boolean;
+  /** The NEWEST reading only — older ones are superseded and never shown. */
+  reading: AddendumReadingView | null;
+  readCount: number;
+  decisions: { normalisedReference: string; decision: AddendumDecision }[];
+};
 export type RequirementRow = RequirementInput & { notes: string | null };
 
 const KIND_LABELS: Record<string, string> = {
@@ -47,12 +57,16 @@ const KIND_LABELS: Record<string, string> = {
 
 export function BidCompliance({
   bidInvitationId,
+  companyId,
   addenda,
   requirements,
   lines,
   today,
 }: {
   bidInvitationId: string;
+  /** The upload is scoped to the COMPANY, not a job: a `BidInvitation` carries
+   *  no `jobId`, and on a bid nobody has won there is no job to name. */
+  companyId: string;
   addenda: AddendumRow[];
   requirements: RequirementRow[];
   /** Read-only here: the bid lines drive the derived half of the checks. */
@@ -67,6 +81,15 @@ export function BidCompliance({
   const [rowError, setRowError] = useState<string | null>(null);
 
   const result = bidResponsiveness({ lines, addenda, requirements });
+
+  // Derived once from the SAME rows the list below renders, so the overlap and
+  // the items a person is looking at cannot disagree about what an addendum says.
+  const overlapScope = addenda.map((a) => ({
+    addendumId: a.id,
+    reference: a.reference,
+    items: (a.reading?.items ?? []) as AddendumItem[],
+    decisions: a.decisions,
+  }));
 
   const run = (work: () => Promise<{ ok: boolean; error?: string } | void>) => {
     setRowError(null);
@@ -188,6 +211,25 @@ export function BidCompliance({
                       </p>
                     )}
                     {row.notes && <p className="mt-1 text-xs text-ink-muted">{row.notes}</p>}
+
+                    {/* WHAT THE LETTER SAYS IT CHANGED, collapsed. Below the row's
+                        own facts on purpose: this panel already says a flagged
+                        addendum twice — once in the reprice warning at the top,
+                        once on the line above — and a third block expanded by
+                        default would push the outstanding list, which is what
+                        decides whether anybody reads the bid at all, off screen.
+                        Nothing inside it writes the checkbox above. */}
+                    <AddendumFindings
+                      addendumId={row.id}
+                      addendumReference={row.reference}
+                      companyId={companyId}
+                      fileName={row.fileName}
+                      hasFile={row.hasFile}
+                      reading={row.reading}
+                      readCount={row.readCount}
+                      decisions={row.decisions}
+                      overlapScope={overlapScope}
+                    />
                   </div>
 
                   <RowActions

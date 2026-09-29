@@ -9,6 +9,7 @@ import { summariseWonValue, valueIsPartial } from "@/lib/bid-pipeline";
 import { BidLevelling, type BidQuoteRow } from "@/components/BidLevelling";
 import { viewerToday } from "@/lib/viewerToday";
 import { BidLines, type BidLineRow } from "@/components/BidLines";
+import type { AddendumItem } from "@/lib/addenda-overlap";
 import { BidCompliance, type AddendumRow, type RequirementRow } from "@/components/BidCompliance";
 import { BidJobLink } from "@/components/BidJobLink";
 import { bidRecord, settledSentence } from "@/lib/bid-outcome";
@@ -94,7 +95,19 @@ export default async function BidsPage({
       lines: { orderBy: { sortOrder: "asc" } },
       // Addenda oldest first: they are read as a sequence, and the one you
       // have not acknowledged is usually the newest.
-      addenda: { orderBy: [{ issuedOn: "asc" }, { createdAt: "asc" }] },
+      addenda: {
+        orderBy: [{ issuedOn: "asc" }, { createdAt: "asc" }],
+        include: {
+          // THE NEWEST READING ONLY. Readings are append-only — a re-read
+          // inserts rather than overwrites, so a proposal an estimator worked
+          // through is never rewritten — and the newest is the current one.
+          // `_count` is what lets the button say how many times this has been
+          // read BEFORE somebody presses it again and is charged again.
+          readings: { orderBy: { createdAt: "desc" }, take: 1 },
+          decisions: { select: { normalisedReference: true, decision: true } },
+          _count: { select: { readings: true } },
+        },
+      },
       requirements: { orderBy: { createdAt: "asc" } },
     },
   });
@@ -320,6 +333,7 @@ export default async function BidsPage({
                   unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
                   accepted: line.accepted,
                 }))}
+                companyId={company.id}
                 addenda={bid.addenda.map(
                   (row): AddendumRow => ({
                     id: row.id,
@@ -329,6 +343,27 @@ export default async function BidsPage({
                     affectsPricedScope: row.affectsPricedScope,
                     impactNote: row.impactNote,
                     notes: row.notes,
+                    fileName: row.fileName,
+                    // The URL itself never reaches the browser: the row only
+                    // needs to know whether there IS one, and a public blob
+                    // address is not something to hand out with the page.
+                    hasFile: row.fileUrl !== null,
+                    reading: row.readings[0]
+                      ? {
+                          id: row.readings[0].id,
+                          items: (row.readings[0].items ?? []) as AddendumItem[],
+                          readingReason: row.readings[0].readingReason,
+                          proposedIssueDateText: row.readings[0].proposedIssueDateText,
+                          proposedBidDateText: row.readings[0].proposedBidDateText,
+                          // Rendered here, in UTC, like every other date on this
+                          // page — `dateRenderCensus` fails a date the browser
+                          // formats for itself.
+                          readOn: day(row.readings[0].createdAt) ?? "",
+                          pagesCharged: row.readings[0].pagesCharged,
+                        }
+                      : null,
+                    readCount: row._count.readings,
+                    decisions: row.decisions,
                   }),
                 )}
                 requirements={bid.requirements.map(
