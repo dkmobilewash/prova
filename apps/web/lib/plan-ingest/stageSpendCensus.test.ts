@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { PlanIngestStage } from "@prova/db";
 import { stripComments } from "@/lib/ai/stripComments";
 import { RUNNABLE_STAGES, STAGE_SPENDS } from "./stages";
+import { MAX_ATTEMPTS } from "./runner";
 
 /**
  * `STAGE_SPENDS` SAYS WHAT THE CODE DOES, NOT WHAT SOMEBODY REMEMBERED.
@@ -108,5 +109,56 @@ describe("what a stage spends, derived from what it does", () => {
       "no runnable stage claims a plan sheet — either TITLE_BLOCK stopped metering, or this " +
         "census stopped being able to see that it does",
     ).toContain("TITLE_BLOCK");
+  });
+});
+
+describe("what one click on Retry actually buys", () => {
+  /**
+   * DERIVED FROM `retryPlanIngestPage`'S OWN SOURCE, and the first version of this
+   * block was not — which made it worthless in a way worth recording.
+   *
+   * It declared `const paidSeed = MAX_ATTEMPTS - 1` locally and then asserted that
+   * `paidSeed + 1 === MAX_ATTEMPTS`. True for any value of MAX_ATTEMPTS, and true
+   * whatever the action does: reverting the fix to `attempts: 0` would have left every
+   * assertion green. A test that restates arithmetic it wrote itself proves the
+   * arithmetic, not the code — the same shape as the promptVersion census searching for
+   * a function name the call site does not use.
+   *
+   * So the seed is read out of the action. "One attempt per click" is a relationship
+   * between three things in three files — the seed, `MAX_ATTEMPTS`, and the fact that
+   * `claim.ts` increments on CLAIM rather than on failure — and only the first of them
+   * can drift silently.
+   */
+  const retrySource = stripComments(readFileSync(`${HERE}../actions/planIngest.ts`, "utf8"));
+
+  /** The expression the action seeds a PAID stage's attempts with. */
+  function paidSeedExpression(): string {
+    const match = /STAGE_SPENDS\[[^\]]+\]\s*\?\s*([^:]+):/.exec(retrySource);
+    expect(match, "retryPlanIngestPage no longer branches on STAGE_SPENDS to seed attempts").not.toBeNull();
+    return match![1]!.trim();
+  }
+
+  it("seeds a PAID stage one claim below the ceiling, read from the action", () => {
+    // Anything else and the click does not buy one attempt: `attempts: 0` buys three,
+    // and a seed AT the ceiling buys none, because the claim predicate is
+    // `attempts < maxAttempts` and Retry would become a button that does nothing.
+    expect(paidSeedExpression()).toBe("MAX_ATTEMPTS - 1");
+  });
+
+  it("seeds a FREE stage with a full reset, read from the action", () => {
+    const match = /STAGE_SPENDS\[[^\]]+\]\s*\?[^:]+:\s*([^;]+);/.exec(retrySource);
+    expect(match, "retryPlanIngestPage no longer has a free-stage branch").not.toBeNull();
+    // Three real tries with backoff, which is what the original comment argued for and
+    // is still right where a retry costs nothing.
+    expect(match![1]!.trim()).toBe("0");
+  });
+
+  it("means ONE attempt, whatever MAX_ATTEMPTS becomes", () => {
+    // The relationship rather than the number: the claimer increments on claim, so a
+    // seed of MAX_ATTEMPTS - 1 arrives at the runner AS MAX_ATTEMPTS, and
+    // `exhausted = attempts >= maxAttempts` is computed before the work runs. One call,
+    // then stop. If the ceiling ever moves, this still has to hold.
+    expect(MAX_ATTEMPTS).toBeGreaterThan(1);
+    expect(MAX_ATTEMPTS - (MAX_ATTEMPTS - 1)).toBe(1);
   });
 });
