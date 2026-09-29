@@ -119,3 +119,47 @@ Migration `20260928210000_add_plan_sheet_proposals` is additive: two tables, two
 enums, five indexes, five foreign keys, nothing dropped. Both tables CASCADE from
 `TakeoffPlan`, which keeps them out of `HANDLED_MODELS` and both cleanup `del()`
 orders — the trick that model's own comment documents.
+
+## The 15MB cap, and an OOM I was wrong about
+
+A plan set is now allowed 250MB. Only a plan set: `DocumentUploadTarget` grew a
+REQUIRED `maxBytes`, so the compiler made all seven purposes decide, and the other
+six are unchanged at 15MB. `uploadMaxBytesFor(purpose)` is the one resolver, and the
+token route — the only place a ceiling is actually ENFORCED, since the browser's
+check is advisory and Next's 1MB body cap put the in-action guards out of reach —
+reads it per purpose.
+
+**The reason this did not ship with the ceiling in step 0 was a claim of mine, and
+it was wrong.** I wrote that a 250MB buffer plus pdfjs overhead would OOM a Vercel
+function, that the fix was a ranged read, and that the ranged path was unproven.
+Both halves measured instead of argued:
+
+| | |
+| --- | --- |
+| a 119MB, 900-page set, 200 pages read | **peak RSS never rose above the process baseline at all**, while extracting 112,092 characters |
+| the ranged read, pdfjs over HTTP with `disableAutoFetch` | **203 Range requests serving 25.8MB for a 12.9MB file** |
+
+So the thing I proposed as the fix bounds nothing — it fetches the whole document in
+pieces, and pays for the round trips — and the thing I said needed fixing was not a
+problem. pdfjs is LAZY: it parses only what a page needs and `page.cleanup()`
+releases it, so the cost is the buffer, not the document, and it does not grow with
+how many pages a slice reads.
+
+One real bug came out of writing that down. `openPlanPdf` passed
+`new Uint8Array(bytes)`, which **copies** — a Node Buffer already is a Uint8Array,
+so that constructor allocates a second one the same size. At 15MB nobody notices; at
+250MB it is 250MB of avoidable peak, and it would have made the measurement above
+off by a factor of two. It is a view now.
+
+Four tests, three mutations. The one worth naming reads the token route's own source
+and requires `maximumSizeInBytes` to come from the resolver: the other three can all
+be green while that single line hard-codes the default and silently caps plan sets at
+15MB again. It asserts the call site EXISTS before asserting anything about its
+argument, because a renamed SDK option would otherwise make it pass on nothing —
+this branch has already shipped one census that searched for a function name the call
+site does not use.
+
+What the measurement does not cover, and the PR says so rather than implying
+otherwise: a Vercel function's real memory ceiling, which cannot be tested from a
+laptop. If a large set ever kills an invocation, this number is the one to change,
+and the ranged read is not the alternative.

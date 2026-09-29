@@ -1,9 +1,12 @@
+import { readFile } from "node:fs/promises";
 import { describe as group, expect, it } from "vitest";
 import {
   DOCUMENT_UPLOAD_CONTENT_TYPES,
   DOCUMENT_UPLOAD_MAX_BYTES,
   DOCUMENT_UPLOAD_PURPOSES,
   DOCUMENT_UPLOAD_TARGETS,
+  PLAN_SET_UPLOAD_MAX_BYTES,
+  uploadMaxBytesFor,
   documentDisplayFileName,
   documentFileProblem,
   documentUploadErrorMessage,
@@ -14,6 +17,7 @@ import {
   isAllowedDocumentType,
   isDocumentBlobUrl,
   isDocumentUploadPathname,
+  type DocumentUploadPurpose,
 } from "./document-uploads";
 
 /**
@@ -131,6 +135,56 @@ group("what may be uploaded, and how much of it", () => {
       size: DOCUMENT_UPLOAD_MAX_BYTES + 1,
     });
     expect(tooBig).toContain("15.0 MB");
+  });
+
+  it("lets a plan set be 250MB and holds every other purpose at 15", () => {
+    expect(PLAN_SET_UPLOAD_MAX_BYTES).toBe(250 * 1024 * 1024);
+    expect(uploadMaxBytesFor("plan-takeoff")).toBe(PLAN_SET_UPLOAD_MAX_BYTES);
+    // The exemption is for ONE purpose. Written as a loop over the registry
+    // rather than a list of six names, so adding a purpose is covered the
+    // moment it exists -- a hand-written list is the "second list nobody
+    // imports" shape, and this file is the registry's own test.
+    for (const purpose of Object.keys(DOCUMENT_UPLOAD_TARGETS) as DocumentUploadPurpose[]) {
+      if (purpose === "plan-takeoff") continue;
+      expect(uploadMaxBytesFor(purpose)).toBe(DOCUMENT_UPLOAD_MAX_BYTES);
+    }
+    // No purpose named: the conservative number, because a caller that does
+    // not know what it is uploading must not be handed the plan-set ceiling.
+    expect(uploadMaxBytesFor()).toBe(DOCUMENT_UPLOAD_MAX_BYTES);
+    expect(uploadMaxBytesFor(undefined)).toBe(DOCUMENT_UPLOAD_MAX_BYTES);
+  });
+
+  it("refuses a 40MB file for a lien waiver and accepts it for a plan set", () => {
+    const fortyMb = { type: "application/pdf", size: 40 * 1024 * 1024 };
+    // The SAME file, the only difference being the purpose. This is the
+    // sentence a real estimator saw on 2026-09-27, and the one that must
+    // not come back: a 40MB drawing set is an ordinary drawing set.
+    expect(documentFileProblem(fortyMb, "compliance-document")).toContain("15.0 MB");
+    expect(documentFileProblem(fortyMb, "plan-takeoff")).toBeNull();
+    expect(documentFileProblem(fortyMb)).toContain("15.0 MB");
+    // And the ceiling still bites for a plan set, one byte over.
+    expect(
+      documentFileProblem({ type: "application/pdf", size: PLAN_SET_UPLOAD_MAX_BYTES + 1 }, "plan-takeoff"),
+    ).toContain("250.0 MB");
+  });
+
+  it("makes the TOKEN ROUTE resolve the ceiling per purpose, not from the default", async () => {
+    // The check that the three above cannot make. `uploadMaxBytesFor` can be
+    // perfectly correct while the only place that ENFORCES a ceiling ignores
+    // it -- the token route's `maximumSizeInBytes` is the one number the
+    // store obeys, and the browser pre-check is advisory. Revert that one
+    // line to the default constant and plan sets silently cap at 15MB again
+    // with every other test in this file still green.
+    const route = await readFile(
+      new URL("../app/api/documents/upload/route.ts", import.meta.url),
+      "utf8",
+    );
+    const call = /maximumSizeInBytes:\s*([^,\n]+)/.exec(route);
+    // Assert the SITE exists before asserting anything about it: a renamed
+    // SDK option would make a bare `not.toContain` pass on nothing.
+    expect(call, "the upload route no longer sets maximumSizeInBytes").not.toBeNull();
+    expect(call?.[1]).toContain("uploadMaxBytesFor(");
+    expect(call?.[1]).not.toContain("DOCUMENT_UPLOAD_MAX_BYTES");
   });
 });
 

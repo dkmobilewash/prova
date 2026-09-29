@@ -31,13 +31,27 @@ import type { Buffer } from "node:buffer";
  * one that can read a title block at all. The vector text is already in the file;
  * rasterising throws away the thing we came for.
  *
- * WHY THE WHOLE FILE IS HELD IN MEMORY, and what bounds it. Uploads are capped at
- * 15MB (`DOCUMENT_UPLOAD_MAX_BYTES`), and that cap is what makes this safe — a
- * 250MB set would need pdfjs opened with range support so memory stays bounded,
- * which is unproven here and is why the 250MB ceiling is deliberately not in this
- * change. This is read ONCE PER INVOCATION by `PAGE_INVENTORY`, which makes no
- * model call and therefore gets the whole 45-second budget: the fetch is amortised
- * over many pages rather than over the one or two a model-calling stage would fit.
+ * WHY THE WHOLE FILE IS HELD IN MEMORY, AND WHY THAT IS SAFE AT 250MB — measured,
+ * after an earlier version of this comment asserted the opposite.
+ *
+ * It said a 250MB set "would need pdfjs opened with range support so memory stays
+ * bounded, which is unproven here". Both halves turned out wrong. Ranging was tried:
+ * pdfjs over HTTP with `disableAutoFetch` DOES issue Range requests and then fetches
+ * the whole document anyway — 203 requests and 25.8MB served for a 12.9MB file — so it
+ * bounds nothing. And the memory it was supposed to bound is not the problem:
+ *
+ *   119MB file, 900 pages, 200 pages read: peak RSS never rose above the process
+ *   baseline, while genuinely extracting 112,092 characters.
+ *
+ * pdfjs is LAZY. It parses the objects a page needs, `page.cleanup()` releases them,
+ * and the cost does not grow with how many pages a slice reads. So what is held is the
+ * buffer, and `Buffer.from(arrayBuffer)` is a view rather than a copy, so the fetch
+ * does not transiently double it. `PLAN_SET_UPLOAD_MAX_BYTES` carries the number and
+ * the caveat the measurement cannot cover: a Vercel function's real ceiling.
+ *
+ * This is read ONCE PER INVOCATION by `PAGE_INVENTORY`, which makes no model call and
+ * therefore gets the whole 45-second budget: the fetch is amortised over many pages
+ * rather than over the one or two a model-calling stage would fit.
  */
 
 /** One string as it is printed on the page, positioned in VIEWPORT space. */
@@ -113,7 +127,12 @@ export type PlanPdf = {
 export async function openPlanPdf(bytes: Buffer): Promise<PlanPdf> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const doc = await pdfjs.getDocument({
-    data: new Uint8Array(bytes),
+    // A VIEW, NOT A COPY, and at 250MB the difference is 250MB. `new Uint8Array(buf)`
+    // COPIES — a Node Buffer is already a Uint8Array, so that constructor allocates a
+    // second one the same size and holds both until the first is collected. This form
+    // shares the bytes. Found while raising the upload ceiling, at which point the
+    // measurement this file rests on would have been off by a factor of two.
+    data: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
     // The base-fourteen fonts need no embedding, and glyph outlines are only
     // needed to DRAW text. `getTextContent` reads the content stream's string
     // operators, so the missing-standard-fonts warning is irrelevant here — the
