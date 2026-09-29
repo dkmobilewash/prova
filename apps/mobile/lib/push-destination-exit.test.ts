@@ -1,76 +1,59 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * EVERY screen a notification can cold-start must offer a way out.
+ * EVERY screen a notification can cold-start must be given a way out BY THE
+ * LAYOUT.
  *
- * Written because #548 fixed ONE of them. A tap that launches the app from
- * a killed state leaves its destination alone on the stack — no back
- * chevron, because there is genuinely nothing behind it, and no tab bar if
- * the screen lives outside `(tabs)`. `/alerts` was the screen somebody
- * happened to be trapped on, so `/alerts` got a Home button. `/job/<id>`
- * is the OTHER destination `targetFromData` can return, it is also outside
- * `(tabs)`, and it had nothing — on the one push that reliably arrives
- * (`assignCrewMember`, which is not gated by the milestone ledger the
- * digest is).
+ * **Rewritten after this census passed on an app that was broken.** Its
+ * first version asserted that each destination's SCREEN file contained
+ * `canGoBack` and `HeaderHomeButton`. Both files did. Both were green. And
+ * on a real phone neither screen offered anything, because
+ * `<Stack.Screen options={{ headerLeft }} />` INSIDE a page delegates to a
+ * `navigation.setOptions` call that a cold deep-link launch silently skips
+ * (expo-router 57.0.21, `views/Screen.js`; `StackScreen.js` says as much in
+ * its own warning and docstring). The code was written, it ran, and the
+ * framework discarded it.
  *
- * That is CLAUDE.md's "a guard that a list is complete cannot notice a
- * second list", one turn further out again: #548 was not even a guard, it
- * was a fix applied to the member of the set that had been observed. So
- * this file asks the only question that generalises — **not "is `/alerts`
- * fixed" but "is every destination fixed"** — and it derives the set of
- * destinations from the routing function rather than from a list kept here,
- * so adding a third push target extends the census with no edit to this
- * file.
+ * So the lesson is not "assert harder", it is **assert about the mechanism
+ * that actually delivers**. A census pointed at the wrong location cannot
+ * be saved by a size or a scope assertion: both of those ask whether the
+ * set is complete, and this set was complete and irrelevant. Same family as
+ * the `content`-glob scope scar and the second-list scar, arriving from a
+ * third side — *nothing is ever missing from a question nobody is asking.*
  *
- * TWO assertions guard the derivation itself, because a check that derives
- * its input can be wrong in two ways and only one of them looks like a
- * failure:
+ * The delivery half is `app/_layout.tsx`, where `title` demonstrably
+ * renders on these very screens. The decision half is pure and is tested
+ * directly in `screens/way-home.test.tsx`.
  *
- *   - SIZE — the routes parsed must equal the routes counted by a second
- *     expression sharing no regex with the first. A pattern that silently
- *     stops matching otherwise passes everything downstream, since nothing
- *     is ever missing from an empty set.
- *   - SCOPE — every parsed route must resolve to a screen file that
- *     EXISTS. A route whose file cannot be found is not a small set, it is
- *     absent from the set, and no size assertion can see that.
+ * The two derivation guards are kept, because they still earn their place:
  *
- * COMMENTS ARE STRIPPED BEFORE MATCHING, and that is load-bearing rather
- * than tidy: `job/[jobId].tsx` explains this defect in a comment that
- * quotes `canGoBack`, so a raw-text census would pass a screen that merely
- * TALKS about having an exit. #185's shape, and the version of it this repo
- * has paid for twice.
+ *   - SIZE — routes parsed must equal routes counted by a second
+ *     expression sharing no regex with the first.
+ *   - SCOPE — every parsed route must resolve to a screen file that EXISTS.
+ *
+ * Comments are stripped before matching. Load-bearing: `wayHome.tsx` and
+ * this file both discuss `headerLeft` and `canGoBack` at length, and the
+ * layout carries a comment explaining the whole defect.
  */
 
 const APP = join(__dirname, "..", "app");
 const ROUTER = join(__dirname, "push-target.ts");
+const LAYOUT = join(APP, "_layout.tsx");
 
 /** JS/TS comments removed, so a census cannot be satisfied by prose. */
 function stripComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 }
 
-/**
- * Every route `targetFromData` can return, read out of the function.
- *
- * Captures the VALUE of each string/template return whose content starts
- * with a slash — `return "/alerts"` and `` return `/job/${data.jobId}` ``.
- * `return null` yields nothing, which is correct: it means the tap opens
- * the app where it was, and there is no destination to strand anyone on.
- */
+/** Every route `targetFromData` can return, read out of the function. */
 function pushDestinations(source: string): string[] {
   const found = [...source.matchAll(/return\s+(["'`])(\/[^"'`]*)\1/g)].map((m) => m[2]);
   return [...new Set(found)];
 }
 
-/**
- * The same count reached a different way, so the two cannot drift together.
- *
- * Counts LINES by a negative property — a `return` that is not `return
- * null` — rather than extracting a value. If the extractor's regex rots,
- * these two numbers diverge and the size test says so by name.
- */
+/** The same count reached a different way, so the two cannot drift together. */
 function routeReturningLineCount(source: string): number {
   return source
     .split("\n")
@@ -78,22 +61,13 @@ function routeReturningLineCount(source: string): number {
     .length;
 }
 
-/**
- * The screen file a route renders, or null if none can be found.
- *
- * A segment containing `${` is an expo-router dynamic segment, which on
- * disk is a bracketed filename — `/job/${data.jobId}` is
- * `app/job/[jobId].tsx`. Matched by SHAPE rather than by the parameter's
- * name, so renaming `[jobId]` to `[id]` does not silently empty the set.
- */
+/** The screen file a route renders, or null if none can be found. */
 function screenFileFor(route: string): string | null {
   const segments = route.split("/").filter(Boolean);
   if (segments.length === 0) return null;
 
   let dir = APP;
-  for (let i = 0; i < segments.length - 1; i++) {
-    dir = join(dir, segments[i]);
-  }
+  for (let i = 0; i < segments.length - 1; i++) dir = join(dir, segments[i]);
   if (!existsSync(dir)) return null;
 
   const last = segments[segments.length - 1];
@@ -105,14 +79,34 @@ function screenFileFor(route: string): string | null {
   return existsSync(file) ? file : null;
 }
 
+/**
+ * The expo-router route name for a screen file — what `<Stack.Screen name>`
+ * must say. Derived from the file's own path so a rename cannot leave this
+ * census looking for something that no longer exists.
+ */
+function routeNameFor(file: string): string {
+  return relative(APP, file).replace(/\.tsx$/, "");
+}
+
+/**
+ * The `options={...}` text the layout declares for one route name.
+ *
+ * Returns null when the route is not declared at all, which is its own
+ * failure and must not read as "declared without a way home".
+ */
+function layoutOptionsFor(layout: string, routeName: string): string | null {
+  const at = layout.indexOf(`name="${routeName}"`);
+  if (at === -1) return null;
+  const end = layout.indexOf("/>", at);
+  return end === -1 ? null : layout.slice(at, end);
+}
+
 const routerSource = readFileSync(ROUTER, "utf8");
 const destinations = pushDestinations(routerSource);
+const layoutSource = stripComments(readFileSync(LAYOUT, "utf8"));
 
-describe("every push destination has a way out of a cold start", () => {
+describe("every push destination is given a way out by the layout", () => {
   it("parses the same number of routes the router returns", () => {
-    // The size assertion. Not decoration: a regex that matches nothing
-    // passes every test below it, because nothing is missing from an empty
-    // list and nothing is unfixed in it either.
     expect(
       destinations.length,
       "the route extractor and the line count disagree — one of the two patterns has drifted",
@@ -120,14 +114,10 @@ describe("every push destination has a way out of a cold start", () => {
   });
 
   it("finds more than one destination, so the census is not vacuous", () => {
-    // If this ever drops to 1 the census has stopped being able to catch
-    // the bug it was written for, which was precisely a SECOND destination.
     expect(destinations.length).toBeGreaterThan(1);
   });
 
   it("resolves every destination to a screen file that exists", () => {
-    // The scope assertion. A route whose file cannot be found is not a
-    // small set — it is not in the set, and the size test cannot see it.
     for (const route of destinations) {
       expect(screenFileFor(route), `no screen file on disk for push destination ${route}`).not.toBe(
         null,
@@ -135,26 +125,44 @@ describe("every push destination has a way out of a cold start", () => {
     }
   });
 
-  it("gives every destination a Home button when nothing is behind it", () => {
+  it("declares every destination in the layout with a way home", () => {
     for (const route of destinations) {
       const file = screenFileFor(route);
       expect(file, `no screen file for ${route}`).not.toBe(null);
-      const source = stripComments(readFileSync(file as string, "utf8"));
+      const name = routeNameFor(file as string);
+
+      const options = layoutOptionsFor(layoutSource, name);
+      expect(
+        options,
+        `${route} (${name}) is not declared in app/_layout.tsx — a push can open a screen the layout has never configured`,
+      ).not.toBe(null);
 
       expect(
-        source,
-        `${route} never asks canGoBack() — a cold notification tap strands it with no way to Home`,
-      ).toContain("canGoBack");
-      expect(
-        source,
-        `${route} asks canGoBack() but renders no HeaderHomeButton, so the answer goes nowhere`,
-      ).toContain("HeaderHomeButton");
+        options,
+        `${name} is declared without wayHomeOptions, so a cold notification tap strands it. ` +
+          `Do NOT "fix" this by putting <Stack.Screen options> back inside the screen — that is ` +
+          `the exact thing that shipped twice and did nothing (see components/wayHome.tsx).`,
+      ).toContain("wayHomeOptions");
     }
   });
 
-  it("still has the button component the screens reach for", () => {
-    // Otherwise the assertion above is satisfied by an import of something
-    // that no longer exists, which typechecks nowhere but greps fine.
+  it("keeps the decision out of the screens, where it did not work", () => {
+    // The regression that matters most, because it is the one that looks
+    // like a fix. A screen-level `<Stack.Screen options>` is not merely
+    // redundant now — it is the broken mechanism, and someone re-adding it
+    // would believe they had restored something.
+    for (const route of destinations) {
+      const file = screenFileFor(route);
+      const source = stripComments(readFileSync(file as string, "utf8"));
+      expect(
+        source,
+        `${route} sets header options from inside the screen again — that call is silently ` +
+          `dropped on a cold launch. The way home belongs in app/_layout.tsx.`,
+      ).not.toContain("Stack.Screen");
+    }
+  });
+
+  it("still has the button component the layout reaches for", () => {
     const button = join(__dirname, "..", "components", "HeaderHomeButton.tsx");
     expect(existsSync(button), "HeaderHomeButton.tsx is gone").toBe(true);
     expect(stripComments(readFileSync(button, "utf8"))).toContain("replace");

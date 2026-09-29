@@ -1,25 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "@/lib/api";
-import { deviceStore, goOffline, setCanGoBack, stackScreenOptions } from "./setup";
+import { deviceStore, goOffline } from "./setup";
 import { mount } from "./render";
 
 /**
- * The job hub's way out of a cold notification tap.
+ * The job hub — the second of the two screens a notification can
+ * cold-start (`push-target.ts:19`, from `assignCrewMember`'s `{ jobId }`).
  *
- * `/job/<id>` is the SECOND of the two destinations a push can open
- * (`push-target.ts:19`, from `assignCrewMember`'s `{ jobId }`), and it sits
- * outside `(tabs)` exactly as `/alerts` does. #548 fixed the dead end on
- * `/alerts` because that was the screen somebody got trapped on; this
- * screen had the identical defect and nothing had looked.
+ * **The way-out assertions that used to live here have been deleted, and
+ * the deletion is the point.** They mounted this screen, set `canGoBack`
+ * false, and checked that it recorded a `headerLeft` option — which it did,
+ * honestly, in a mock. On a real phone React Navigation dropped that call,
+ * so the test vouched for a fix that did nothing. A green test asserting on
+ * a mechanism the framework ignores is worse than no test: it is why two
+ * releases shipped believing this was fixed.
  *
- * It is the more likely of the two to be met in the wild, which is the part
- * worth knowing: the digest push is gated by the milestone ledger and fires
- * once per rung over a document's life, while the assignment push has no
- * ledger at all and goes out every time somebody is added to a job.
+ * The way home now lives in `app/_layout.tsx` and is covered in two halves
+ * that can each actually fail: the DECISION in `screens/way-home.test.tsx`
+ * (pure, no navigator) and the DELIVERY in
+ * `lib/push-destination-exit.test.ts` (the layout declares it for every
+ * push destination, and the screens must not take it back).
  *
- * Pinned in the same shape as `alerts.test.tsx` on purpose — a stranded
- * case and a NOT-stranded control — so the two screens cannot drift into
- * disagreeing about what a cold start means.
+ * What is left here is what this suite can honestly see: the screen renders
+ * its features. Keep it — the cheapest wrong fix to a header problem is one
+ * that quietly breaks the body.
  */
 
 const FOREMAN = {
@@ -39,56 +43,14 @@ beforeEach(async () => {
   vi.mocked(api.getMe).mockResolvedValue(FOREMAN as never);
 });
 
-async function open() {
-  const { default: JobHub } = await import("@/app/job/[jobId]");
-  return mount(<JobHub />);
-}
-
-describe("getting out of the job hub", () => {
-  it("offers a way home when a cold tap left nothing to go back to", async () => {
-    stackScreenOptions.length = 0;
-    setCanGoBack(false);
-    const screen = await open();
-
-    // "At least one", not "exactly one": the screen re-renders as its own
-    // reads resolve, so how many times it states its options is a fact
-    // about React rather than about the header.
-    const withHeader = stackScreenOptions.filter((o) => "headerLeft" in o);
-    expect(
-      withHeader.length,
-      "stranded on /job/<id> after an assignment push — no back chevron, no tab bar, and this is the push that actually arrives",
-    ).toBeGreaterThan(0);
-    expect(typeof withHeader[0].headerLeft).toBe("function");
-    screen.unmount();
-  });
-
-  it("leaves the ordinary Back alone when there IS history behind it", async () => {
-    // The control, and it is the half that stops the fix applying itself
-    // everywhere: opening a job from the jobs list gives a real back
-    // chevron, and two competing ways out of one screen is its own
-    // confusion. Without this test, `stranded = true` would pass.
-    stackScreenOptions.length = 0;
-    setCanGoBack(true);
-    const screen = await open();
-
-    expect(
-      stackScreenOptions.filter((o) => "headerLeft" in o),
-      "overrode the back chevron on a screen that already had one",
-    ).toEqual([]);
-    screen.unmount();
-  });
-
-  it("still renders the job's features either way", async () => {
-    // A guard against the cheapest wrong fix: wrapping the screen in a
-    // fragment and breaking what it was already doing. If this screen ever
-    // renders empty, the two assertions above would still both pass.
-    stackScreenOptions.length = 0;
-    setCanGoBack(false);
-    const screen = await open();
+describe("the job hub", () => {
+  it("renders the job's field features", async () => {
+    const { default: JobHub } = await import("@/app/job/[jobId]");
+    const screen = await mount(<JobHub />);
 
     // Row titles rather than the section headings: `SectionHeader`
-    // uppercases its text, so asserting "The day" would be pinning a
-    // styling decision and would fail for a reason that is not this fix.
+    // uppercases its text, so asserting "The day" would pin a styling
+    // decision and fail for a reason that is not about this screen.
     expect(screen.text()).toContain("Field reports");
     expect(screen.text()).toContain("Punch list");
     screen.unmount();
