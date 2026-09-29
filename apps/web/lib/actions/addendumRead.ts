@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
+import { deleteDocument } from "@/lib/blob";
 import { extractAddendum, ADDENDUM_PROMPT_VERSION } from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
@@ -81,12 +82,31 @@ export async function attachAddendumDocument(
   const problem = documentUrlProblem(url, "bid-addendum", company.id, process.env);
   if (problem) return actionFail(problem);
 
-  // The id in the argument is a claim; this is the check.
+  // The id in the argument is a claim; this is the check. The existing file is
+  // read in the same breath because REPLACING one strands it otherwise.
+  const existing = await prisma.bidAddendum.findFirst({
+    where: { id: bidAddendumId, companyId: company.id },
+    select: { fileUrl: true },
+  });
+  if (!existing) return actionFail("That addendum is no longer on this bid. Reload the page.");
+
   const updated = await prisma.bidAddendum.updateMany({
     where: { id: bidAddendumId, companyId: company.id },
     data: { fileUrl: url, fileName: documentDisplayFileName(fileNameRaw) },
   });
   if (updated.count === 0) return actionFail("That addendum is no longer on this bid. Reload the page.");
+
+  // THE FILE THIS ONE REPLACES, for the reason `deleteBidAddendum` deletes the
+  // file it removes: a blob is `access: "public"`, so an unreferenced one stays
+  // readable forever by anyone who ever had the URL and nothing will ever
+  // collect it. Attaching the right PDF after attaching the wrong one is an
+  // ordinary thing to do, and doing it twice should not leave two.
+  //
+  // Guarded on inequality because re-attaching the SAME url — a double-submit,
+  // or the same file picked again — must not delete the file the row now points
+  // at. That would leave a row whose document 404s, which is worse than a
+  // stranded blob: the reading's evidence would be gone with nothing saying so.
+  if (existing.fileUrl && existing.fileUrl !== url) await deleteDocument(existing.fileUrl);
 
   revalidatePath("/bids");
   return actionOk;
