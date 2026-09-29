@@ -6,6 +6,7 @@ import { GroupedList } from "@/components/GroupedList";
 import { GroupedRow } from "@/components/GroupedRow";
 import { Skeleton } from "@/components/Skeleton";
 import { SyncStatus } from "@/components/SyncStatus";
+import { WayHome } from "@/components/wayHome";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
@@ -105,6 +106,10 @@ export default function AlertsScreen() {
         />
       }
     >
+      {/* Above everything, including the sync banner: if a cold tap left no
+          way off this screen, the way off is the first thing on it. Renders
+          nothing when there is a real back chevron. */}
+      <WayHome />
       <SyncStatus state={offline} />
       {!loaded ? (
         <View style={styles.skeletonGroup}>
