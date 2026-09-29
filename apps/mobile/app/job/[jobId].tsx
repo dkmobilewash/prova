@@ -7,6 +7,7 @@ import { GroupedRow } from "@/components/GroupedRow";
 import { Icon } from "@/components/Icon";
 import { SectionHeader } from "@/components/SectionHeader";
 import { StatusBadge } from "@/components/StatusBadge";
+import { WayHome } from "@/components/wayHome";
 import { SCREEN_CAPABILITY } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
 import { useMe } from "@/lib/use-me";
@@ -67,6 +68,9 @@ export default function JobHubScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      {/* First thing on the screen when a cold notification tap left no way
+          off it. Renders nothing when there is a real back chevron. */}
+      <WayHome />
       <View style={styles.header}>
         <Text style={styles.name}>{name ?? "Job"}</Text>
         {status ? <StatusBadge status={status} /> : null}
