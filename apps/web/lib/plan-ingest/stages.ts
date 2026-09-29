@@ -1,39 +1,38 @@
 import type { PlanIngestStage } from "@prova/db";
 import type { RunnerPorts } from "./runner";
+import { STAGE_SPENDS } from "./stageCost";
 import { pageInventoryWork } from "./pageInventory";
 import { titleBlockWork } from "./titleBlock";
 
 /**
  * What each stage's per-page work actually is.
  *
- * ONE STAGE IS IMPLEMENTED AND IT DELIBERATELY DOES NOTHING, which is the part
- * of this PR most likely to be read as an oversight, so it is stated plainly
- * here rather than defended later.
+ * TWO STAGES ARE IMPLEMENTED, and the split between them is where the money is.
+ * `PAGE_INVENTORY` reads the PDF and calls no model; `TITLE_BLOCK` calls the model
+ * and never opens the PDF. `pageInventory.ts` argues that at length — in short, a
+ * stage doing both is paced by the model, which means one or two pages a slice and
+ * the whole file refetched for each pair.
  *
- * `PAGE_INVENTORY` records that a page was reached and nothing else. It makes no
- * model call, reads no PDF and writes no domain row. Its output is the RUN — the
- * task rows, their claims, their attempts, the progress derived from them — and
- * that is the whole point of shipping it before ingestion: a 300-page run's
- * resumability, its attempt ceiling, its backoff and its stuck-lease reclaim are
- * all properties of the machinery, not of the work, and they are far cheaper to
- * get wrong here than three hundred paid calls later.
+ * THIS HEADER SAID THE OPPOSITE UNTIL 2026-09-29, and the correction is worth
+ * keeping rather than quietly replacing. It read: "the server GENUINELY CANNOT do
+ * more than this yet… a server-side stage cannot open the file at all until
+ * something rasterises it… any stage that claims to read a page today would be
+ * claiming something this process cannot do."
  *
- * AND THE SERVER GENUINELY CANNOT DO MORE THAN THIS YET, which is worth knowing
- * before somebody tries to make this stage useful. `TakeoffPlan`'s own schema
- * comment says there is no `pageCount` column because "the server has no PDF
- * library to read it with" — the viewer knows the count because it renders the
- * document with `pdfjs-dist` in the BROWSER. So a server-side stage cannot open
- * the file at all until something rasterises it, which is the rasterisation
- * question the step-1 plan flagged as the one genuinely undecided piece. Any
- * stage that claims to read a page today would be claiming something this
- * process cannot do.
+ * Every part of that was wrong, and it is why `PAGE_INVENTORY` shipped as
+ * `async () => ({ ok: true })`. It conflated READING a PDF with RASTERISING one:
+ * `lib/ask/pageCount.ts` had been parsing PDFs server-side for billing the whole
+ * time, and `pdfjs-dist` in Node gives page count, sheet size, rotation and
+ * positioned text. Only `page.render()` needs a canvas, and nothing here calls it.
  *
- * WHAT THIS IS NOT: a placeholder to be filled in. When `CLASSIFY` lands it
- * gets its own entry here, gated on `PLAN_INGESTION` through `aiGate` — the
- * feature key #533 put in the enum ahead of the feature precisely so it would
- * not be retrofitted onto a call site afterwards. `PAGE_INVENTORY` stays a
- * no-op, because "did the runner reach every page" stays worth being able to
- * ask on its own.
+ * The sentence was not careless — it cited `TakeoffPlan`'s own comment, which said
+ * the same thing. That is what made it expensive: a false claim with a citation
+ * reads as settled, and it deferred three stages for a fortnight. Both are corrected
+ * now, and `planPdf.ts` carries the measurements rather than an assertion.
+ *
+ * WHAT THIS IS NOT: a placeholder to be filled in. `CLASSIFY` and `SHEET_INDEX`
+ * stay null for reasons given on `STAGE_WORK` itself, and neither is "not got round
+ * to yet".
  */
 
 /** A stage's work, or null when that stage is not built. */
@@ -93,6 +92,8 @@ const STAGE_WORK: Record<PlanIngestStage, ((ctx: StageCtx) => StageWork) | null>
   TITLE_BLOCK: titleBlockWork,
   SHEET_INDEX: null,
 };
+
+export { STAGE_SPENDS };
 
 /** Which stages a run may actually be started for. Derived, so it cannot
  *  disagree with the map above. */

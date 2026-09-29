@@ -10,6 +10,7 @@ import {
 // The TYPE from the database-free module, never from claim.ts — see its comment
 // on IngestView. A client component that could reach prisma fails the build.
 import type { IngestView } from "@/lib/plan-ingest/runner";
+import { STAGE_SPENDS } from "@/lib/plan-ingest/stageCost";
 
 /**
  * Reading a plan set, and watching it happen.
@@ -272,7 +273,24 @@ export function PlanIngestPanel({ planId, existing }: PlanIngestPanelProps) {
                 disabled={isPending}
                 className="min-h-[48px] rounded-md border border-line-card px-3 text-sm text-ink hover:bg-canvas disabled:opacity-50"
               >
-                Retry
+                {/* THE BUTTON SAYS WHAT IT COSTS, on a stage that costs something.
+                    `retryPlanIngestPage` used to reset the attempt counter to 0 for
+                    every stage, with a comment arguing that a person clicking Retry
+                    is not the automatic loop the ceiling exists to bound — true, and
+                    true only while every stage was free. `TITLE_BLOCK` claims a plan
+                    sheet before each model call, so one click bought THREE paid
+                    attempts, and because each retry reset the counter again there was
+                    no ceiling at all.
+
+                    A paid stage now grants exactly one attempt per click. The "reads
+                    as a broken button" objection that argued for the reset is
+                    answered here instead — by telling somebody what they are
+                    spending, which is the thing the reset was quietly avoiding. */}
+                {/* `view` can be null here in principle — the failure list sits
+                    outside the guard above — and in that case there is nothing to
+                    retry, so the plain label is the honest fallback rather than a
+                    cost claim about a stage nobody knows. */}
+                {view && STAGE_SPENDS[view.stage] ? "Retry — uses 1 sheet" : "Retry"}
               </button>
             </li>
           ))}

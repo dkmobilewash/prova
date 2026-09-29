@@ -7,7 +7,7 @@ import { pdfPageCount } from "@/lib/ask/pageCount";
 import { claimPorts, closeIfSettled, ingestViewOf } from "@/lib/plan-ingest/claim";
 import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
 import { runIngest, MAX_ATTEMPTS, type IngestView } from "@/lib/plan-ingest/runner";
-import { isRunnableStage, stageWork } from "@/lib/plan-ingest/stages";
+import { isRunnableStage, stageWork, STAGE_SPENDS } from "@/lib/plan-ingest/stages";
 import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "./shared";
 
 /**
@@ -247,13 +247,22 @@ export async function advancePlanIngest(ingestJobId: string): Promise<ActionResu
 }
 
 /**
- * Give one failed page its attempts back.
+ * Give one failed page another go — how many depends on whether the stage spends.
  *
- * WHY THIS RESETS `attempts` RATHER THAN NUDGING IT. The ceiling exists to stop
- * an automatic loop spending without end; a person clicking Retry is not that
- * loop, and they have read the error. Decrementing by one would give them a
- * single try and then refuse again with the same message, which reads as a
- * broken button.
+ * THIS USED TO RESET `attempts` TO 0 FOR EVERY STAGE, and the reasoning was sound
+ * when every stage was free: the ceiling exists to stop an automatic loop spending
+ * without end, a person clicking Retry is not that loop, and "decrementing by one
+ * would give them a single try and then refuse again with the same message, which
+ * reads as a broken button."
+ *
+ * `TITLE_BLOCK` made it wrong. It claims a plan sheet before each model call, so a
+ * full reset turns ONE CLICK INTO THREE PAID ATTEMPTS — and because each retry reset
+ * the counter again, there was no ceiling at all. A page could be charged without
+ * limit, with nothing on screen saying it cost anything.
+ *
+ * So `STAGE_SPENDS` decides: a free stage still gets its three back, and a paid one
+ * gets ONE attempt per click. The "broken button" objection is answered by the button
+ * saying what it costs rather than by quietly buying two more tries.
  *
  * It refuses a page that is currently being worked on rather than yanking the
  * claim out from under a live worker — the one case where a person's click and
@@ -265,11 +274,14 @@ export async function retryPlanIngestPage(ingestJobId: string, pageNumber: numbe
 
   const job = await prisma.planIngestJob.findFirst({
     where: { id: ingestJobId, companyId: context.company.id },
-    select: { id: true, planId: true, plan: { select: { jobId: true } } },
+    select: { id: true, stage: true, planId: true, plan: { select: { jobId: true } } },
   });
   if (!job) return actionFail("That plan reading could not be found.");
 
   const at = new Date();
+  // A paid stage gets exactly one more attempt, so the click and the charge are one
+  // to one and the ceiling cannot be reset away. A free one gets the full three.
+  const attempts = STAGE_SPENDS[job.stage] ? MAX_ATTEMPTS - 1 : 0;
   const reset = await prisma.planIngestTask.updateMany({
     where: {
       jobId: job.id,
@@ -279,7 +291,7 @@ export async function retryPlanIngestPage(ingestJobId: string, pageNumber: numbe
       // fair game — that worker is gone.
       OR: [{ claimedAt: null }, { claimExpiresAt: { lt: at } }],
     },
-    data: { attempts: 0, error: null, claimedAt: null, claimExpiresAt: null, nextAttemptAt: null },
+    data: { attempts, error: null, claimedAt: null, claimExpiresAt: null, nextAttemptAt: null },
   });
 
   if (reset.count !== 1) {

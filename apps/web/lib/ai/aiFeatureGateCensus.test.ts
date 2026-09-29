@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { stripComments } from "./stripComments";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { AI_FEATURE_KEYS } from "./settings";
@@ -50,55 +51,6 @@ const REPO = join(HERE, "..", "..", "..", "..");
 const PACKAGE_SRC = join(REPO, "packages", "integrations", "src");
 const APP = join(REPO, "apps", "web");
 
-/**
- * Comments out, string contents kept.
- *
- * A regex would do this wrong in a way that matters: `"https://..."` contains
- * `//`, and cutting from there to end of line would delete the rest of a real
- * line of code — which fails OPEN, since less text means fewer matches means a
- * smaller set means nothing missing. So this walks characters and tracks which
- * of the five states it is in. Proved against a fixture at the bottom of this
- * file rather than assumed.
- */
-export function stripComments(source: string): string {
-  let out = "";
-  let i = 0;
-  while (i < source.length) {
-    const two = source.slice(i, i + 2);
-    if (two === "//") {
-      while (i < source.length && source[i] !== "\n") i += 1;
-      continue;
-    }
-    if (two === "/*") {
-      i += 2;
-      while (i < source.length && source.slice(i, i + 2) !== "*/") i += 1;
-      i += 2;
-      continue;
-    }
-    const quote = source[i];
-    if (quote === '"' || quote === "'" || quote === "`") {
-      out += quote;
-      i += 1;
-      while (i < source.length) {
-        if (source[i] === "\\") {
-          out += source.slice(i, i + 2);
-          i += 2;
-          continue;
-        }
-        out += source[i];
-        if (source[i] === quote) {
-          i += 1;
-          break;
-        }
-        i += 1;
-      }
-      continue;
-    }
-    out += source[i];
-    i += 1;
-  }
-  return out;
-}
 
 /** Every `.ts` under a directory, recursively, tests excluded. */
 function sourceFiles(root: string): string[] {

@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { stripComments } from "./aiFeatureGateCensus.test";
+import { stripComments } from "./stripComments";
 
 /**
  * A VERSIONED PROMPT'S USAGE ROWS MUST CARRY THE VERSION.
