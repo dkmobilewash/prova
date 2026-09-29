@@ -588,6 +588,15 @@ const INPUT_EXCEPTIONS: Record<string, { reason: string }> = {
       "The same, for the page box's width in PDF points, which pdf.js reports and nobody types. " +
       "It is used only to NAME the paper scale back to the estimator; no quantity depends on it.",
   },
+  "apps/web/components/PlanSheetReview.tsx (unnamed)": {
+    reason:
+      "TWO BOXES, BOTH FREE TEXT, and one of them is the reason this entry needs a sentence rather " +
+      "than a shrug. A sheet number is 'A-101', 'S2.1', 'M-201' — letters, a separator and digits — " +
+      "so a numeric keypad would be the WRONG keyboard, not a missing one, and `inputMode=\"decimal\"` " +
+      "on it would hide the letters a person has to type. The other is what the sheet is ('FIRST FLOOR " +
+      "PLAN'). Neither is a figure and no quantity depends on either: they are what an estimator calls " +
+      "the sheet, which is the same thing `TakeoffPlanPage.label` holds and types by hand.",
+  },
   "apps/web/components/TimeEntryFields.tsx hours": {
     reason:
       "ANOTHER BRANCH'S FILE. `components/TimeEntryFields.tsx` and `lib/actions/labor.ts` were " +

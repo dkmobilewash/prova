@@ -60,6 +60,11 @@ export const notYetRegistered: Exclusion[] = [
       "The plan-ingestion runner. Starting a run spends the company's plan-sheet allowance a page at a time, and retrying resets an attempt ceiling that exists to bound that spend — so a model must be able to do neither. The person uploads a plan set and the panel on the job drives the run; the model is never the thing that decides three hundred pages are worth reading.",
   },
   {
+    action: "planSheets.*",
+    reason:
+      "Accepting or rejecting what a title-block reading proposed. The whole point of the proposal row is that a PERSON decides whether 'A-101' is really sheet 12 — a model accepting its own reading closes the only loop that makes the reading checkable, and it would do it three hundred rows at a time. The accepted number is also what an estimator will later label their measured quantities by, so a wrong one that nobody confirmed is exactly the failure `TakeoffPlanPage.label` refuses to allow. Reviewed where the sheets are shown. Never a command.",
+  },
+  {
     action: "quoteRead.*",
     reason:
       "Reading a sub's quote. It spends the company's paid document allowance on a file, and what it returns is a SUGGESTION a person corrects in the form before saving — so a command would either spend money on a prompt's say-so or hand the model's own reading straight to `saveBidQuote`, which is the one thing this feature is built not to do. The estimator uploads the quote where they log it. Never a command.",
