@@ -235,6 +235,73 @@ corrected `actions/planIngest.ts` and the takeoff page reported six comments
 corrected when four had been, and this was one of the two still standing. Grep for
 the sentence, not for the intention.
 
+## Step 3 — reading a bid addendum (2026-09-29)
+
+### The reader writes nothing any other module reads
+
+Not `BidAddendum.affectsPricedScope`, not `acknowledgedOn`, not `issuedOn`, not
+`BidInvitation.dueDate`. It produces a list of what the document says it changed;
+every assertion about the bid stays the estimator's.
+
+**Why, and it was already decided.** `lib/ask/commands/estimating.ts` refused
+`saveBidAddendum` to the assistant because "whether it changed work you already
+priced is an estimator's judgement about drawings the assistant has not seen".
+Reading the addendum gives the model the addendum — not the drawings, not the
+estimate — so the objection stands unchanged.
+
+**The design that was rejected, because the reasoning transfers.** The first
+version proposed `affectsPricedScope` beside the human's tick, the
+`DocumentIntake` pattern, and Diego approved it on that framing. A review asked
+what the write would DO:
+
+- accepting `false` overwrote a person's own tick, and the reprice warning plus
+  the job's supersession banner both vanished — a model clearing a warning on a
+  job somebody is building, with nothing recording it happened;
+- accepting `true` did nothing, because `takeoff-currency.ts:141` supersedes only
+  when `issuedOn` is set and a model-proposed date is deliberately inert text.
+
+Destructive one way, a no-op the other. **Every decision that design quoted was
+quoted correctly; none of them said what the write would do once made.**
+
+### A decision belongs to the scope, not to the reading
+
+`@@unique([bidAddendumId, normalisedReference])`. `PlanSheetProposal` can key on
+the run because `pageNumber` is stable across runs; an addendum's items are not —
+`ordinal` is per-run and the text is reworded on a second pass. Keying decisions
+to a reading would discard them all on every re-read, which `plan-ingest.prisma`
+and `intake.prisma` both refuse in their own words.
+
+Proved in `addenda-readings.dbtest.ts` rather than argued: decide, re-read with a
+different spelling, and the decision is still attached to the new item.
+
+### Addendum pages are metered separately — a fourth unit
+
+`AskAllowancePeriod.addendumPagesUsed` / `failedAddendumPages`, and
+`CompanyAiSettings.addendumPagesPerMonth` (600).
+
+**Why not the document-page ledger**, which `quoteRead.ts` argues for and which
+was the plan's first answer: it checks the per-document CEILING and never the
+MONTH. An addendum is ~8 pages against a 100-page ceiling, so one fits — but 20
+bids with 3 addenda each is ~480 pages against a 300-page month shared with Ask
+and with the compliance paperwork the won job needs. This is the plan-sheet
+argument arriving again; the two differ only in how the volume shows up.
+
+**600 is a figure, not a measurement**, exactly as 1,500 was for sheets.
+
+### Opus, not Haiku, and the volume test is why
+
+An addendum reader is 2-6 documents per bid against the quote reader's one, so it
+is more volume — but `models.ts`'s rule is not "more than one", it is that every
+feature is Opus unless Diego asked otherwise, and he asked for one thing:
+high-volume page work. Three documents is not three hundred pages, and the
+per-document stakes are a quote's. An eval may reverse it; this entry may not.
+
+### The whole PDF goes to the model, not extracted text
+
+GC addenda are routinely scanned and a scan has no text layer. `plan-ingest`
+reads text instead, and that is a COST rule about 300 pages per set rather than a
+capability — at one document per click there is nothing to save.
+
 ## Open questions
 
 Recorded so nobody re-derives them, and so a later claim can be checked against
@@ -243,47 +310,85 @@ what was actually known.
 - **Cost per plan sheet is unmeasured.** The $15–$40 classification estimate in
   the step 1 plan was made on an Opus basis and needs redoing for Haiku before
   anybody quotes it.
-- **Whether Haiku 4.5 is accurate enough for sheet classification and title
-  blocks.** The eval decides. Nothing is known yet.
-- **The 250MB upload ceiling for plan sets is not built, and this entry exists
-  because it was simply dropped.** Diego approved it as part of step 0 — 250MB
-  for plan sets only, direct-to-storage — and step 0 shipped without it and
-  without recording it, which is the failure this file is supposed to prevent.
-  It surfaced only because he asked whether step 0 was complete.
+- ~~**Whether Haiku 4.5 is accurate enough for sheet classification and title
+  blocks.** The eval decides. Nothing is known yet.~~ **ANSWERED 2026-09-29, and
+  it had been answered for a day before anybody wrote it here.** The eval ran on
+  `plan-title-block.1` against nine synthetic sheets:
 
-  What it actually takes, checked rather than assumed: it is **not** a constant
-  bump. `DOCUMENT_UPLOAD_MAX_BYTES` is a single global 15MB, and
-  `DOCUMENT_UPLOAD_TARGETS` carries `root`/`scope`/`capability`/`refusal` per
-  target with **no per-target byte cap** — so "plan sets only" means adding
-  per-target ceilings plus a plan-set target that does not exist yet. Job media
-  already caps per kind (25MB a photo, 200MB a video, enforced at the moment
-  the token is minted), so there is prior art to copy rather than invent.
+  ```
+  requested 9, returned 9
+  sheet number: 9 correct, 0 INVENTED, 0 WRONG, 0 missed
+  calibration:  0 OVERCLAIMED
+  other fields: 1 off (reported, not fatal)
+  ```
 
-  It rides with ingestion deliberately, because a raised ceiling with nothing
-  uploading a plan set is a number no test can exercise. **Carrying it is safe
-  in a way the entry below is not: if it is forgotten, the first real plan set
-  is refused at 15MB with a sentence on screen.** It announces itself.
+  `requested 9, returned 9` first, so the numbers are over the whole suite rather
+  than over however many cases survived. **Nothing over-claimed** is the one that
+  matters, because this file says the metric is false confidence rather than
+  accuracy: a count that is 85% accurate and reads as certain is a wrong bid.
 
-- **`promptVersion` has no writer, and forgetting THAT is silent.** It gets one
-  when prompts become versioned files, in the step that first changes a prompt.
+  Bounded the way the eval's own header bounds it: clean, digitally generated
+  sheets. What it measures is the JUDGEMENT — a reference mistaken for the
+  sheet's own number, a missing number invented, a date reformatted.
 
-  The asymmetry with the entry above is the point, and it changes what has to
-  be built alongside it. A missing cap shouts; a missing prompt version does
-  not — rows accumulate with `null`, nothing breaks, and the first time somebody
-  claims a prompt change made anything better, the rows cannot be attributed to
-  either version. That is this repo's most expensive recurring shape.
+  **The delay is the lesson, not the result.** The eval ran, it answered this
+  file's own open question, the answer went into a PR body, and the file whose
+  entire charter is "a claim here carries a date and the evidence" was left
+  saying nothing was known. A question marked open long after it closed is the
+  same defect as a claim left standing after it went false — it just fails in the
+  direction nobody checks.
+- ~~**The 250MB upload ceiling for plan sets is not built.**~~ **BUILT, #551,
+  2026-09-28.** This entry existed because the ceiling had simply been dropped,
+  and it predicted its own ending correctly: "if it is forgotten, the first real
+  plan set is refused at 15MB with a sentence on screen. It announces itself." It
+  did, on 2026-09-27.
 
-  So the guard is built WITH the first prompt file, not after it: a census that
-  fails the build if a usage row can be written for a feature whose prompt is
-  versioned without carrying a version. A note in this file is not sufficient
-  and saying so here is not a contradiction — CLAUDE.md's own lesson is that
-  "nobody has fixed X" is a claim with an expiry date, and this paragraph is
-  one. The test is what outlives it.
-- **A manual-entry path for compliance documents**, so switching document
-  reading off does not stop filing. Not built.
-- **Whether the Ask loop's `recordProposal` should carry a company's model
-  override.** It records `ASK_DEFAULT_MODEL` — the process-wide default — as
-  "which model proposed this write". With an override in play that is wrong,
-  and threading the resolved model through `CommandContext` for an audit column
-  was judged out of scope for step 0. It is a known small inaccuracy, not an
-  oversight.
+  It was right about the shape of the work too — not a constant bump, but a
+  per-target ceiling. `DocumentUploadTarget.maxBytes` is REQUIRED now, so the
+  compiler makes a new purpose decide rather than inherit, and only
+  `plan-takeoff` moves. **So the paragraph this entry used to carry, describing
+  `DOCUMENT_UPLOAD_TARGETS` as having "no per-target byte cap", is also retired:
+  it does.**
+
+  **What it got WRONG is the part worth keeping.** It said the deferral was safe
+  because a 250MB buffer "would OOM a Vercel function" and needed a ranged pdfjs
+  read first. Both measured, both false:
+
+  | | |
+  | --- | --- |
+  | 119MB set, 900 pages, 200 read | peak RSS never rose above the process baseline, while extracting 112,092 characters |
+  | the ranged read, `disableAutoFetch` | 203 Range requests serving 25.8MB for a 12.9MB file |
+
+  The proposed fix bounds nothing — it fetches the whole document in pieces and
+  pays for the round trips — and the hazard it was for does not exist, because
+  pdfjs is lazy and `page.cleanup()` releases what a page needed. The cost is the
+  buffer, not the document.
+
+  Writing that down found a real bug before it shipped: `openPlanPdf` passed
+  `new Uint8Array(bytes)`, which COPIES a Node Buffer. Invisible at 15MB, 250MB of
+  avoidable peak at the new ceiling — enough to make the measurement above wrong
+  by a factor of two.
+
+  Still uncovered, and no laptop can cover it: a Vercel function's real memory
+  ceiling. If a large set kills an invocation, that constant is the number to
+  change and the ranged read is not the alternative.
+
+- ~~**`promptVersion` has no writer, and forgetting THAT is silent.**~~
+  **WRITTEN, #551.** `titleBlock.ts` passes `PLAN_SHEET_PROMPT_VERSION` on every
+  usage row, and `promptVersionCensus.test.ts` is the guard this entry asked for:
+  a versioned prompt whose usage rows omit the version fails the build. It
+  anchors on `feature: "..."` inside the object literal rather than on
+  `recordAskUsage(`, because the first draft did the latter and went green — the
+  call site is `deps.recordUsage(...)`.
+
+  This entry asked to be replaced by a test rather than kept as a note, and said
+  why: "'nobody has fixed X' is a claim with an expiry date, and this paragraph
+  is one. The test is what outlives it." It did.
+
+- **What a plan set should cost, and whether it belongs inside the $399 plan or
+  is metered.** Unanswered. The figures in this file — 1,500 plan sheets, 600
+  addendum pages — are Diego's for the $399 plan and neither is a measurement.
+
+- **Whether symbol-counting can reach a precision an estimator would accept.**
+  Unanswered, and it gates the takeoff-from-drawings work rather than anything
+  shipped.
