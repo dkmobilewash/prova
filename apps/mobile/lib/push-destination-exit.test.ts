@@ -142,26 +142,28 @@ describe("every push destination renders a way out in its body", () => {
     ).not.toContain("headerLeft");
   });
 
-  it("still has a WayHome that renders unconditionally and leaves rather than stacks", () => {
+  it("still has a WayHome that decides, and leaves rather than stacks", () => {
     // Otherwise the assertion above is satisfied by an import of something
     // that renders nothing, which typechecks and greps fine.
     expect(existsSync(WAY_HOME), "components/wayHome.tsx is gone").toBe(true);
     const source = stripComments(readFileSync(WAY_HOME, "utf8"));
 
-    // UNCONDITIONAL on purpose, fourth attempt. An early `return null` is
-    // how this control renders nothing, and "renders nothing" is precisely
-    // the failure that shipped three times. Whether `canGoBack()` is false
-    // on a cold tap is an INFERENCE nothing here has observed — so the
-    // control does not bet on it. Re-add a condition only after somebody
-    // has confirmed on a phone that this renders at all.
     expect(
       source,
-      "WayHome gained an early return — it can now render nothing, which is the exact failure " +
-        "that shipped three times. Confirm on a device before making this conditional again.",
-    ).not.toContain("return null");
+      "WayHome no longer asks canGoBack — it would appear beside a real back chevron on warm taps",
+    ).toContain("canGoBack");
 
     expect(source, "WayHome must replace, not push — a push keeps the dead end underneath").toContain(
       'replace("/(tabs)")',
     );
+
+    // NOTE ON WHAT THIS FILE CANNOT DO, because the answer used to live here
+    // and was wrong. Whether the control actually RENDERS is not a question
+    // any census can answer — that is the whole reason three releases
+    // shipped a header button that did nothing while a census went green.
+    // Both directions are pinned behaviourally in
+    // `screens/way-home.test.tsx`, which mounts it: present when the stack
+    // is empty, absent when it is not. Do not try to strengthen this
+    // assertion into covering that; strengthen the mount test instead.
   });
 });

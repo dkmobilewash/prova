@@ -43,19 +43,23 @@ describe("the way home", () => {
     screen.unmount();
   });
 
-  it("renders it even when the stack CAN go back", async () => {
-    // Unconditional on purpose, and this is the assertion that pins it.
-    // Whether `canGoBack()` is false on a cold tap is an inference nothing
-    // here has observed; three releases have already shipped a control that
-    // rendered nothing. A redundant button beside a back chevron is
-    // cosmetic — a person trapped on the screen is not.
+  it("renders nothing when the stack can already go back", async () => {
+    // The control, and the half that keeps the fix from applying itself
+    // everywhere: a WARM tap pushed this on top of real history and the
+    // native chevron is the right way out. Two exits from one screen is its
+    // own small confusion.
+    //
+    // This assertion is only safe because the one ABOVE exists. Together
+    // they pin both directions, which is what makes a conditional control
+    // defensible after three releases of one that rendered nothing —
+    // "hides when it should not" now fails in node rather than on a phone.
     setCanGoBack(true);
     const screen = await mount(<WayHome />);
 
     expect(
       document.querySelector('[role="button"][aria-label="Home"]'),
-      "WayHome vanished when canGoBack() was true — that is the failure mode that shipped three times",
-    ).toBeTruthy();
+      "offered a second way out on a screen that already had a back chevron",
+    ).toBe(null);
     screen.unmount();
   });
 

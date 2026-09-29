@@ -35,32 +35,41 @@ import { usePalette } from "@/lib/use-palette";
  * iOS-conventional than a header button, and conventions are worth less
  * than a control that exists.
  *
- * **UNCONDITIONAL, deliberately, and this is the fourth attempt so the
- * reasoning matters.** Earlier versions rendered only when
- * `router.canGoBack()` was false — the idea being that a warm tap already
- * has a back chevron and two exits from one screen is its own confusion.
- * That reasoning is still correct, and it is not worth the risk.
+ * **Conditional again as of 2026-09-29, and the order of events is the
+ * point.** #555 shipped this unconditional on purpose: whether
+ * `canGoBack()` is false on a cold tap was an INFERENCE drawn from the
+ * missing back chevron, and after three fixes that rendered nothing, a
+ * control that could hide itself was not a bet worth taking. Always
+ * rendering costs a redundant button on a warm tap, which is cosmetic; the
+ * inference being wrong costs somebody trapped for a fourth release.
  *
- * `canGoBack()` being false on a cold tap is an INFERENCE (drawn from the
- * missing back chevron), not something anything here has observed. If it is
- * wrong, a conditional control renders nothing and the screen is a dead end
- * again. Weigh the two failures honestly:
+ * The inference is now an OBSERVATION. Diego tapped a notification from a
+ * cold start on build 6 and reported the Home button present **and no back
+ * chevron beside it** — which is `canGoBack()` returning false, seen rather
+ * than reasoned. So the condition comes back, and it is a refinement on
+ * working code rather than another attempt at a fix.
  *
- *   - always render  → a redundant button beside a back chevron on a warm
- *                      tap. Cosmetic.
- *   - condition wrong → somebody is trapped on this screen, for the fourth
- *                      release running.
+ * What it buys: a warm tap pushed this on top of real history and that Back
+ * is the right way out. Two exits from one screen is its own small
+ * confusion, and the native chevron is the one that belongs to the stack.
  *
- * So the condition is gone. Both of these screens are push destinations and
- * a way Home is defensible on either at any time. Put the condition back
- * only once somebody has confirmed on a real phone that this renders at
- * all — and then it is a refinement, not a fix.
+ * **The guard that makes this safe is behavioural, not structural.**
+ * `screens/way-home.test.tsx` mounts the component both ways and asserts
+ * what renders — so "hides when it should not" fails here, in node, rather
+ * than on somebody's phone four releases later. A census could never have
+ * caught the original defect and cannot catch this one; only mounting it
+ * can.
  */
 export function WayHome() {
   const router = useRouter();
   const { t } = useT();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
+
+  // Observed false on a cold notification tap (build 6, 2026-09-29): no
+  // back chevron, so the stack has nothing behind this screen and the
+  // control is the only way off it.
+  if (router.canGoBack()) return null;
 
   return (
     <PressableScale
