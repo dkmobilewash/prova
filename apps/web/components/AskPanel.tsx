@@ -26,6 +26,7 @@ import {
 } from "@/lib/actions";
 import { upload } from "@vercel/blob/client";
 import { intakeUploadErrorMessage } from "@/lib/intake/upload";
+import { firstPageTextPreview } from "@/lib/intake/pdf-text";
 import {
   ASK_ATTACHMENT_ACCEPT,
   askAttachmentTypeOrSizeProblem,
@@ -309,6 +310,14 @@ export function AskPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadSeq = useRef(0);
   const sentAttachmentRef = useRef<AskAttachmentRef | null>(null);
+  /* The attached PDF's first page, read in this tab while it uploaded, for
+     the free classifier if the person later taps to file it in the tray.
+     Deliberately BESIDE the ref rather than on it: `AskAttachmentRef` is
+     parsed back out of a request body by `attachmentRefOf`, so a field added
+     there widens a validated trust boundary, and this text is of no use to
+     the question itself — the model is handed the whole document. Keyed by
+     blob URL so a second attachment cannot inherit the first one's text. */
+  const attachmentTextRef = useRef<{ url: string; text: string } | null>(null);
 
   // The scrollback, and the clock the staleness marks are measured against.
   // Both start empty and are filled in an effect: the server renders no
@@ -562,6 +571,7 @@ export function AskPanel() {
     uploadSeq.current += 1;
     setAttachment(null);
     setAttachError(null);
+    attachmentTextRef.current = null;
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -587,13 +597,20 @@ export function AskPanel() {
     try {
       // The intake route, unchanged: it signs a token for this company's
       // intake folder only. See app/api/intake/upload/route.ts.
-      const blob = await upload(prepared.value.pathname, file, {
-        access: "public",
-        contentType: file.type,
-        handleUploadUrl: "/api/intake/upload",
-        clientPayload: JSON.stringify({ contentType: file.type }),
-      });
+      // Read the first page alongside the upload, not after it: this is the
+      // only moment the File itself is in hand. `fileInIntake` runs later,
+      // from a tap, with nothing but a ref — by then the bytes are gone.
+      const [blob, textPreview] = await Promise.all([
+        upload(prepared.value.pathname, file, {
+          access: "public",
+          contentType: file.type,
+          handleUploadUrl: "/api/intake/upload",
+          clientPayload: JSON.stringify({ contentType: file.type }),
+        }),
+        firstPageTextPreview(file),
+      ]);
       if (seq !== uploadSeq.current) return;
+      attachmentTextRef.current = textPreview ? { url: blob.url, text: textPreview } : null;
       setAttachment({
         status: "ready",
         name: file.name,
@@ -615,6 +632,11 @@ export function AskPanel() {
       formData.set("fileName", ref.name);
       formData.set("contentType", ref.contentType);
       formData.set("byteSize", String(ref.size));
+      // Only for the file this text was read from, and only when there was
+      // any. A mismatch or a null means the row is classified on its
+      // filename, which is what every row got before this existed.
+      const captured = attachmentTextRef.current;
+      if (captured && captured.url === ref.url) formData.set("textPreview", captured.text);
       const result = await recordIntakeDocument(formData);
       setFiled(
         result.ok
