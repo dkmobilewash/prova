@@ -141,6 +141,7 @@ export const DOCUMENT_UPLOAD_PURPOSES = [
   "compliance-document",
   "plan-takeoff",
   "bid-quote",
+  "bid-addendum",
 ] as const;
 
 export type DocumentUploadPurpose = (typeof DOCUMENT_UPLOAD_PURPOSES)[number];
@@ -260,6 +261,26 @@ export const DOCUMENT_UPLOAD_TARGETS: Record<DocumentUploadPurpose, DocumentUplo
     // person who cannot use it never moves the bytes either.
     capability: "MANAGE_ESTIMATING",
     refusal: "Estimating isn't part of your job function.",
+    maxBytes: DOCUMENT_UPLOAD_MAX_BYTES,
+  },
+  "bid-addendum": {
+    root: "bid-addenda",
+    // COMPANY-scoped for the reason `bid-quote` above gives and the same one
+    // `BidAddendum` gives in the schema: it hangs off a `BidInvitation`, which
+    // carries no `jobId` at all. On a bid nobody has won there is no job to
+    // name, and a job prefix would be a path with nothing to put in it.
+    scope: "company",
+    // Gated, mirroring `readBidAddendumDocument`: the action this token feeds
+    // sends the whole file to a model against the company's allowance, so a
+    // person who cannot use it never moves the bytes and never strands a blob.
+    capability: "MANAGE_ESTIMATING",
+    refusal: "Estimating isn't part of your job function.",
+    // 15MB, the default, and NOT the plan-set ceiling — which matters because
+    // an addendum that reissues a whole set of drawings would sail past this.
+    // That refusal is correct rather than unfortunate: a re-issued drawing set
+    // is a plan set, it belongs on the takeoff uploader where it can be read
+    // per sheet, and reading it as one document would charge a month's addendum
+    // allowance for a single letter.
     maxBytes: DOCUMENT_UPLOAD_MAX_BYTES,
   },
   "compliance-document": {

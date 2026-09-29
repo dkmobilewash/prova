@@ -30,6 +30,7 @@ export type AiSettings = {
   aiEnabled: boolean;
   disabledFeatures: AiFeature[];
   planSheetsPerMonth: number;
+  addendumPagesPerMonth: number;
   modelOverride: string | null;
 };
 
@@ -49,6 +50,7 @@ export const AI_SETTINGS_DEFAULTS: AiSettings = {
   aiEnabled: true,
   disabledFeatures: [],
   planSheetsPerMonth: 1500,
+  addendumPagesPerMonth: 600,
   modelOverride: null,
 };
 
@@ -75,6 +77,7 @@ export const AI_FEATURE_LABEL: Record<AiFeatureKey, string> = {
   LEAD_SEARCH: "Lead search",
   QUOTE_EXTRACT: "Reading a sub's quote",
   PLAN_INGESTION: "Reading plan sets",
+  ADDENDUM_READ: "Reading addenda",
 };
 
 /**
@@ -101,7 +104,9 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
   QUOTE_EXTRACT:
     "Reading a quote a sub or supplier sent you, and filling in the amount, date and exclusions for you to check. Nothing is saved until you press save, and with this off you can still type a quote in by hand.",
   PLAN_INGESTION:
-    "Reading an uploaded plan set: splitting it into sheets, classifying them and indexing the title blocks. Not built yet — the switch is here first so it is not retrofitted later.",
+    "Reading an uploaded plan set: per sheet, whether it has selectable text and what its title block says, proposed as a sheet index you confirm or correct. With this off, sheets are still labelled by typing them in.",
+  ADDENDUM_READ:
+    "Reading an addendum a GC issued on a bid, and listing what it says it changed for you to check against the document. It never decides whether something affects work you have already priced — that stays your tick on the addendum — and with this off you can still log addenda by hand.",
 };
 
 /**

@@ -8,6 +8,7 @@ export * from "./expo-push";
 export * from "./research";
 export * from "./leads";
 export * from "./quotes";
+export * from "./addenda";
 export * from "./planSheets";
 export * from "./jobber";
 export * from "./docusign";
