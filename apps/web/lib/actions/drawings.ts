@@ -11,6 +11,7 @@ import {
   isUniqueConstraintError,
   runAction,
   type ActionResult,
+  optionalLinkOrThrow,
 } from "./shared";
 import { can } from "@/lib/permissions";
 
@@ -73,20 +74,6 @@ function requiredDate(formData: FormData, key: string, label: string): Date {
  * for every real set while passing for a test file. Only http(s) is
  * accepted; a `javascript:` or `data:` URL rendered as a link would be an
  * injection vector, since this string is put straight into an href. */
-function optionalLink(formData: FormData, key: string): string | null {
-  const raw = text(formData, key);
-  if (!raw) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    throw new InputError("The link needs to be a full URL, starting with https://");
-  }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new InputError("The link needs to start with https://");
-  }
-  return parsed.toString();
-}
 
 function isoDay(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -217,7 +204,7 @@ export async function recordDrawingRevision(setId: string, formData: FormData): 
           issuedOn,
           receivedOn,
           description: text(formData, "description") || null,
-          fileUrl: optionalLink(formData, "fileUrl"),
+          fileUrl: optionalLinkOrThrow(formData, "fileUrl"),
           fileName: text(formData, "fileName") || null,
           recordedByUserId: user.id,
         },
@@ -264,7 +251,7 @@ export async function updateDrawingRevision(revisionId: string, formData: FormDa
       data: {
         receivedOn,
         description: text(formData, "description") || null,
-        fileUrl: optionalLink(formData, "fileUrl"),
+        fileUrl: optionalLinkOrThrow(formData, "fileUrl"),
         fileName: text(formData, "fileName") || null,
       },
     });

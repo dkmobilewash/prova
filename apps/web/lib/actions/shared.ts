@@ -521,3 +521,95 @@ export function joinWithConjunction(parts: string[]): string {
   if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
   return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
 }
+
+/**
+ * A LINK A PERSON TYPED, CHECKED ONCE, IN ONE PLACE.
+ *
+ * WHY THIS EXISTS, and it is a security fix rather than a tidy-up. Five
+ * modules had their own `optionalLink` — `drawings.ts`, `closeout.ts`,
+ * `emr.ts`, `certifications.ts` and `prevailingWage.ts`. Three were
+ * byte-identical, `prevailingWage`'s was BETTER (it named the field in the
+ * refusal), and the worse version won three-to-one. That is the shape
+ * CLAUDE.md's #526 entry describes: one canonical thing and several
+ * hand-written copies, where a completeness test cannot see a consumer that
+ * stopped reading the shared one.
+ *
+ * AND TWO FIELDS HAD NO CHECK AT ALL, which is the part that mattered.
+ * `ApprenticeshipCommittee.sourceUrl` (`dasForms.ts`) and
+ * `PrevailingWageDetermination.sourceUrl` (`labor.ts`) were read with a bare
+ * `text()`/`String(...)` and then rendered straight into an `href` —
+ * `ApprenticeshipCommitteePanel.tsx` and the job compliance tab. Both inputs
+ * carry `type="url"`, and that is a BROWSER hint and nothing more: a Server
+ * Action receives whatever the POST body contains. So a member could store
+ * `javascript:…` and it became a script in a colleague's session on click.
+ * `lib/ask/webSuggestions.ts` already had the rule written down — "Absolute
+ * http(s) links only. A stored source is rendered as a link on the job page,
+ * and a `javascript:` URL there would be a script" — and these two fields
+ * were the places it was not applied.
+ *
+ * WHY IT RETURNS A RESULT INSTEAD OF THROWING, which is the whole reason it
+ * could not simply be one of the old copies moved up here. Every old copy
+ * threw `InputError`, which is correct ONLY inside `runAction`.
+ * `uploadPrevailingWageDetermination` is NOT wrapped in `runAction` — it
+ * returns `actionFail(...)` directly — so a throw there would reach a real
+ * user as the redacted digest production turns thrown Server Action messages
+ * into. Handing every caller a value to branch on lets each one refuse in
+ * the idiom its own function already uses, and makes the throwing decision
+ * the caller's rather than this helper's.
+ *
+ * HTTP IS ACCEPTED, AND THE SENTENCE NOW SAYS SO. Every old copy admitted
+ * `http:` while telling the person it needed `https://`, which is a small
+ * lie that costs somebody a confused minute on a GC portal that is still
+ * plain HTTP. The behaviour is unchanged — breaking stored `http:` links
+ * would be a worse trade — and only the wording is honest now.
+ */
+export type LinkFromForm = { ok: true; value: string | null } | { ok: false; error: string };
+
+export function optionalLinkFromForm(
+  formData: FormData,
+  key: string,
+  label = "That link",
+): LinkFromForm {
+  const raw = String(formData.get(key) ?? "").trim();
+  if (!raw) return { ok: true, value: null };
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return { ok: false, error: `${label} needs to be a full web address, starting with https://` };
+  }
+  // The allow-list is the point. A deny-list would have to guess at every
+  // scheme a browser will execute, and `javascript:` is only the obvious one.
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    return {
+      ok: false,
+      error: `${label} needs to start with https:// or http:// — ${parsed.protocol} links are not stored.`,
+    };
+  }
+  return { ok: true, value: parsed.toString() };
+}
+
+/**
+ * The same check, for the older actions that refuse by THROWING.
+ *
+ * TWO FUNCTIONS, ONE IMPLEMENTATION, and the pair is deliberate — it is the
+ * `ownerRefusal` / `assertOwner` split this file already documents, for the
+ * same reason. An action that declares `Promise<ActionResult>` and refuses
+ * inside its own body must RETURN the sentence, because production redacts a
+ * thrown Server Action message to a digest. An action wrapped in
+ * `runAction`, which catches `InputError` and turns it into that same
+ * `ActionResult`, may throw. Both are correct in their own place, and the
+ * validation itself happens once either way.
+ *
+ * `optionalLinkFromForm` is the one to reach for in anything new.
+ */
+export function optionalLinkOrThrow(
+  formData: FormData,
+  key: string,
+  label = "That link",
+): string | null {
+  const result = optionalLinkFromForm(formData, key, label);
+  if (!result.ok) throw new InputError(result.error);
+  return result.value;
+}
