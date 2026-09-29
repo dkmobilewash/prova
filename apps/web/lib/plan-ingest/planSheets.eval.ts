@@ -36,9 +36,15 @@ import { openPlanPdf, titleBlockText } from "./planPdf";
  *              the top of the review list and gets looked at; the same answer marked
  *              HIGH sorts to the bottom and is trusted.
  *
- * UNDER-claiming — correct, but LOW — is reported and allowed. A reader that hedges
- * everything is useless, but it is useless in the safe direction, and the number is
- * on screen so it can be argued about rather than assumed away.
+ * UNDER-claiming — a number read CORRECTLY but marked LOW — is reported and allowed.
+ * A reader that hedges everything is useless, but useless in the safe direction, and
+ * the figure is on screen so it can be argued about rather than assumed away.
+ *
+ * It applies only where a confident answer was available. Answering LOW about a sheet
+ * that prints no number is not hedging, it is the correct reading — and `not-a-sheet`
+ * carries `ceiling: "LOW"` to require exactly that. The first run counted those two
+ * as hedged, so the report was demanding LOW and scoring it as a weakness three lines
+ * apart.
  *
  * ── WHAT RUNS, END TO END ──
  *
@@ -160,7 +166,13 @@ describe("reading a title block, against synthetic sheets", () => {
         number,
         // CONFIDENT AND WRONG — the failure this eval is named for.
         overclaimed: (badNumber && read.confidence === "HIGH") || RANK[read.confidence] > RANK[ceiling],
-        underclaimed: number === "correct" && read.confidence === "LOW",
+        // ONLY WHERE A CONFIDENT ANSWER WAS AVAILABLE, which the first run showed
+        // this had wrong. It counted `no-number` and `not-a-sheet` as "hedged when
+        // right" for answering LOW — but on a sheet that prints no number, LOW IS
+        // the right answer, and `not-a-sheet` has `ceiling: "LOW"` precisely to
+        // require it. The report was demanding LOW and then scoring it as a
+        // weakness, in the same three lines. A null answer cannot be under-claimed.
+        underclaimed: number === "correct" && one.sheetNumber !== null && read.confidence === "LOW",
         got: read.sheetNumber,
         want: one.sheetNumber,
         confidence: read.confidence,

@@ -168,7 +168,10 @@ export async function extractSheetTitleBlock(params: {
   return {
     sheetNumber: text(input.sheetNumber),
     title: text(input.title),
-    discipline: text(input.discipline),
+    // Normalised here rather than at the call site, so every consumer — the stage,
+    // the review screen, the eval — sees the one vocabulary and none of them has to
+    // remember to. See `normaliseDiscipline` for what the eval found.
+    discipline: normaliseDiscipline(text(input.discipline)),
     scale: text(input.scale),
     revision: text(input.revision),
     issueDate: text(input.issueDate),
@@ -183,4 +186,51 @@ function text(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * The discipline prefixes a sheet number uses, and the word each one means.
+ *
+ * DETERMINISTIC ON PURPOSE, and the eval is why. The first run came back 9 of 9 on
+ * sheet numbers with nothing over-claimed, and one field off: `S2.1` produced a
+ * discipline of `"S"` where the sheet index wants `"STRUCTURAL"`. The prompt's own
+ * rule is the cause — it lists the mapping as `(A architectural, S structural, …)`,
+ * which reads as a legend, so returning the KEY is a fair reading of it.
+ *
+ * The fix is not a better sentence in the prompt. A sheet that spells "STRUCTURAL"
+ * out would give the word while one identified only by its prefix would give the
+ * letter, so the column would hold whichever the draughtsman happened to print —
+ * and an index that shows "A" on one row and "ARCHITECTURAL" on the next is one
+ * nobody can filter. This is a finite lookup, so it is a lookup: the model is left
+ * the judgement (which discipline is this sheet?) and code takes the vocabulary.
+ * ARCHITECTURE.md's rule, applied to a field rather than to a number.
+ */
+const DISCIPLINES: Record<string, string> = {
+  A: "ARCHITECTURAL",
+  S: "STRUCTURAL",
+  M: "MECHANICAL",
+  E: "ELECTRICAL",
+  P: "PLUMBING",
+  FP: "FIRE PROTECTION",
+  FA: "FIRE ALARM",
+  C: "CIVIL",
+  L: "LANDSCAPE",
+  ID: "INTERIOR DESIGN",
+  Q: "EQUIPMENT",
+  T: "TELECOMMUNICATIONS",
+};
+
+/**
+ * One vocabulary for the discipline, whether the model gave a prefix or a word.
+ *
+ * AN UNRECOGNISED VALUE IS KEPT, NOT DISCARDED. A set can carry a discipline this
+ * list has never heard of — "AV", "SECURITY", a consultant's own code — and dropping
+ * it to null would lose what the sheet actually said in order to keep the column
+ * tidy. Upper-cased so the index groups, and that is as far as it goes.
+ */
+export function normaliseDiscipline(value: string | null): string | null {
+  if (value === null) return null;
+  const trimmed = value.trim().toUpperCase();
+  if (trimmed.length === 0) return null;
+  return DISCIPLINES[trimmed] ?? trimmed;
 }
