@@ -50,10 +50,37 @@ enum AiFeature {
   /// kind of document, and the whole reason this switch is per feature rather
   /// than one flag is so the two can be answered differently.
   QUOTE_EXTRACT
-  /// Plan-set ingestion: split, classify, title blocks, sheet index. Not
-  /// built yet; the member exists so the switch is ready before the feature
-  /// is, rather than being retrofitted onto six call sites afterwards.
+  /// Plan-set ingestion: per page, whether it carries selectable text and what
+  /// its title block says, proposed as a sheet index an estimator confirms.
+  ///
+  /// THIS SAID "Not built yet" UNTIL 2026-09-29 and it shipped in #551. The
+  /// member did exist before the feature, deliberately and for the reason the
+  /// old comment gave — but a sentence describing a capability as ABSENT is the
+  /// direction that stops the next person looking, and it outlived the build by
+  /// three weeks. `titleBlock.ts:174` holds the real `aiGate(…, "PLAN_INGESTION")`.
+  /// It also listed "split, classify", neither of which exists: classify was
+  /// folded into the title-block read so one page is one paid call.
+  ///
+  /// `aiFeatureGateCensus`'s `notBuilt` list is `[]` now, so a member added ahead
+  /// of its feature fails the build rather than waiting for somebody to notice.
   PLAN_INGESTION
+
+  /// `extractAddendum` — reading a bid addendum the GC issued, and listing what
+  /// it changed for the estimator to judge.
+  ///
+  /// ITS OWN MEMBER, for `QUOTE_EXTRACT`'s reason one line up and a third turn of
+  /// it: a contractor happy for us to read their own paperwork may not be happy
+  /// for us to read a competitor's pricing, and an addendum is neither — it is
+  /// the GC's own document, arriving on a bid that has not been won. Three kinds
+  /// of document, three questions somebody may answer differently, which is the
+  /// whole point of a switch that is per feature rather than one flag.
+  ///
+  /// WHAT IT MAY NOT DO, recorded here because the switch is where somebody looks
+  /// to find out what this feature touches: it writes nothing that
+  /// `takeoff-currency.ts` or `bid-responsiveness.ts` read. Not
+  /// `affectsPricedScope`, not `acknowledgedOn`, not `issuedOn`. It lists what a
+  /// document says; the assertions on the bid stay the estimator's.
+  ADDENDUM_READ
 }
 
 /// One row per company. Absent means every default below.
@@ -112,6 +139,17 @@ model CompanyAiSettings {
   /// Whether it is sustainable is a question about measured cost, and step 2
   /// answers it with real numbers rather than my estimate.
   planSheetsPerMonth Int @default(1500)
+
+  /// Pages of bid addenda included a month. `ask-allowance.prisma` carries the
+  /// argument for why this is not the document-page allowance; the short of it
+  /// is that a heavy bidding month is ~480 pages against a 300-page month, so
+  /// sharing would spend a job's compliance allowance on its bid.
+  ///
+  /// 600 is a figure, not a measurement, exactly as 1,500 is above it. It is not
+  /// editable by the company — absent from the settings form and from the upsert
+  /// — because it is what the plan includes rather than a preference, the same
+  /// call `planSheetsPerMonth` records.
+  addendumPagesPerMonth Int @default(600)
 
   /// Override the model for every feature on this company, e.g. a customer who
   /// wants the cheapest option on everything.
