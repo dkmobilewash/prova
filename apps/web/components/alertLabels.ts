@@ -21,6 +21,17 @@ export const ALERT_KIND_LABELS: Record<AlertKind, string> = {
   // one drawing set, so the singular would misname what the row is about.
   DRAWING_REVISION_UNRECEIVED: "Drawings",
   LIEN_DEADLINE: "Lien deadline",
+  // The four field kinds. Each names the THING rather than the failure —
+  // "Delivery" not "Late delivery" — because the severity chip beside it
+  // already says whether it is overdue, and saying it twice reads as two
+  // problems. The same reason "Submittal" above is not "Overdue submittal".
+  MATERIAL_DELIVERY_LATE: "Delivery",
+  PUNCH_ITEM_AGING: "Punch item",
+  EQUIPMENT_OUT_LONG: "Equipment",
+  // Not "Delay": the alert is not about the delay, which is recorded and
+  // fine. It is about the NOTICE that is missing, which is the thing a
+  // person can still act on.
+  DELAY_GC_NOT_TOLD: "GC notice",
 };
 
 export function kindLabel(kind: AlertKind) {

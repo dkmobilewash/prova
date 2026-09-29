@@ -53,6 +53,7 @@ import {
 // alert all read lienDeadlineState, so "overdue" and "due soon" cannot mean
 // one thing on /lien-deadlines and another in the bell.
 import { DUE_SOON_DAYS as LIEN_DUE_SOON_DAYS, lienDeadlineState, lienKindLabel } from "@/lib/lien-deadlines";
+import { formatHours } from "@/lib/render-hours";
 
 export type AlertKind =
   | "RENEWAL"
@@ -68,7 +69,13 @@ export type AlertKind =
   | "RFI_UNANSWERED"
   | "SUBMITTAL_OVERDUE"
   | "DRAWING_REVISION_UNRECEIVED"
-  | "LIEN_DEADLINE";
+  | "LIEN_DEADLINE"
+  // The field four, added together because they are one capability: the
+  // rows a crew produces get chased the way the office rows always have.
+  | "MATERIAL_DELIVERY_LATE"
+  | "PUNCH_ITEM_AGING"
+  | "EQUIPMENT_OUT_LONG"
+  | "DELAY_GC_NOT_TOLD";
 
 /** Three levels, not five. OVERDUE is "a date has passed"; DUE_SOON is "a
  * date is coming"; STANDING is a condition with no deadline attached to
@@ -127,6 +134,13 @@ export const ALERT_CAPABILITY: Record<AlertKind, Capability> = {
   // Same gate as the interactions/bid-invitations section it comes from on
   // /contacts/[id] -- relationship work, not billing or compliance.
   CONTACT_FOLLOW_UP: "MANAGE_ESTIMATING",
+  // All four field kinds take the capability ROUTE_CAPABILITY already
+  // gives the pages they point at — /material-orders, /punch-lists,
+  // /equipment and the job's field-reports tab are all MANAGE_FIELD.
+  MATERIAL_DELIVERY_LATE: "MANAGE_FIELD",
+  PUNCH_ITEM_AGING: "MANAGE_FIELD",
+  EQUIPMENT_OUT_LONG: "MANAGE_FIELD",
+  DELAY_GC_NOT_TOLD: "MANAGE_FIELD",
   // The same capability /intake itself requires (lib/permissions.ts). An
   // alert is a summary of the thing it points at, so a person who cannot
   // open the tray is not told what is in it.
@@ -226,6 +240,20 @@ export const ALERT_HORIZON_DAYS: Partial<Record<AlertKind, number>> = {
   // bell and the page cannot disagree about which deadlines are close. A
   // REMINDER horizon — it says nothing about how long any statute allows.
   LIEN_DEADLINE: LIEN_DUE_SOON_DAYS,
+  // SEVEN, and this started as THREE on the reasoning that a delivery is a
+  // near-term thing and a week of warning on one is noise. That argument is
+  // about the bell and it ignored the digest: `week` fires at days<=7 and
+  // `approaching` fires off severity, so a horizon under the rung makes
+  // `week` cross FIRST and the approaching mail silently never sends. A
+  // 3-day horizon would have shipped a notification that no code path can
+  // reach — this repo's "written, documented, and never called" shape
+  // wearing a number. The floor test in alerts.test.ts caught it, which is
+  // exactly what it is for.
+  MATERIAL_DELIVERY_LATE: 7,
+  PUNCH_ITEM_AGING: 7,
+  // EQUIPMENT_OUT_LONG and DELAY_GC_NOT_TOLD get no horizon ON PURPOSE —
+  // neither has a date to be early against, so both are STANDING and a
+  // horizon here would imply a deadline this app has never been told.
 };
 
 /**
@@ -1751,6 +1779,302 @@ export function lienDeadlineAlerts(sources: LienDeadlineAlertSource[], todayIso:
       href: "/lien-deadlines",
       dueOn: row.dueOn,
       daysUntil: days,
+      amount: null,
+    });
+  }
+
+  return alerts;
+}
+
+/* ------------------------------------------- the field, chased at last */
+
+/**
+ * FOUR THINGS THE FIELD PRODUCES THAT NOTHING EVER CHASED.
+ *
+ * WHY THESE FOUR AND WHY NOW. Every alert above this line is about paper
+ * or money — a COI expiring, a backcharge unanswered, retainage sitting,
+ * a submittal with the GC. The office side of this app has been chased
+ * since the bell was built. The field side produced rows that nobody was
+ * ever told about: a delivery that never came, a punch item nobody came
+ * back for, equipment still out on a job that finished, and a delay the
+ * GC was never told about. All four are deadlines a sub eats money on,
+ * and all four were derivable from rows that already existed.
+ *
+ * NONE OF THIS IS AI, and that is the point. The instinct was to reach
+ * for a model to "notice" these. Every one is a date compared against
+ * today, which is a `severityForDate` call — the same call the eleven
+ * kinds above make. A model here would cost money to be worse.
+ *
+ * THE RULE ALL FOUR OBEY, and it is the one that decides what they do NOT
+ * say. `lib/notification-digest.ts` states it for the digest and it holds
+ * here: nothing invents a sentence about urgency. Where a date exists the
+ * alert is DATED and says how late. Where no date exists it is STANDING
+ * and says what it does not know, because "overdue" against a date nobody
+ * recorded is a claim about a contract this app has never read. That is
+ * why the late-delivery alert is silent on an order with no promised date
+ * rather than guessing one — `operations.prisma` says it outright: "a
+ * guessed date is worse than no date, because 'late' would then be
+ * measured against a guess".
+ *
+ * ALL FOUR TAKE `MANAGE_FIELD`, matching `ROUTE_CAPABILITY`'s gate on the
+ * pages they point at. An alert is a summary of the thing it points at, so
+ * somebody who cannot open `/punch-lists` is not told what is on it.
+ */
+
+/** An order with no delivery after this long is worth a look even where
+ * the vendor never promised a date. Deliberately short: a delivery is a
+ * near-term thing, and three weeks of silence on materials is a job about
+ * to stop. */
+export const DELIVERY_CHASE_DAYS = 21;
+/** An OPEN punch item with no due date, this long after it was raised.
+ * The same fortnight `RFI_CHASE_DAYS` uses, for the same reason: it is
+ * long enough that nobody can call it nagging. */
+export const PUNCH_CHASE_DAYS = 14;
+/** Equipment still out this long after it went to a job. A scissor lift
+ * on rent is money leaving every day it sits somewhere nobody needs it. */
+export const EQUIPMENT_OUT_DAYS = 30;
+/** A delay the GC was never told about, this long after the day it
+ * happened. Two days rather than zero: a delay logged this morning has
+ * not failed anything yet, and an alert that fires the moment a foreman
+ * files his report teaches people to ignore the bell. */
+export const DELAY_NOTICE_GRACE_DAYS = 2;
+
+export type MaterialDeliveryAlertSource = {
+  id: string;
+  number: number;
+  description: string;
+  jobName: string;
+  vendorName: string;
+  /** The date the VENDOR promised, or null. Never inferred. */
+  promisedFor: string | null;
+  orderedOn: string;
+  /** True once any delivery on this order is marked as completing it.
+   * Partial deliveries deliberately do NOT clear the alert: an order that
+   * is half here is an order the crew cannot finish with. */
+  isComplete: boolean;
+};
+
+export function materialDeliveryAlerts(
+  sources: MaterialDeliveryAlertSource[],
+  todayIso: string,
+): Alert[] {
+  const horizon = ALERT_HORIZON_DAYS.MATERIAL_DELIVERY_LATE ?? 7;
+  const alerts: Alert[] = [];
+
+  for (const order of sources) {
+    if (order.isComplete) continue;
+    const where = `Order ${order.number} on ${order.jobName}`;
+
+    if (order.promisedFor) {
+      const severity = severityForDate(order.promisedFor, todayIso, horizon);
+      if (!severity) continue;
+      const days = daysUntilIso(order.promisedFor, todayIso);
+      alerts.push({
+        key: alertKey("MATERIAL_DELIVERY_LATE", order.id, order.promisedFor),
+        kind: "MATERIAL_DELIVERY_LATE",
+        severity,
+        title: days < 0 ? `${where} has not arrived` : `${where} is due in`,
+        detail:
+          days < 0
+            ? `${order.description} from ${order.vendorName} — promised ${agoPhrase(days)} and nothing is recorded as delivered.`
+            : `${order.description} from ${order.vendorName} — promised ${aheadPhrase(days)}.`,
+        href: "/material-orders",
+        dueOn: order.promisedFor,
+        daysUntil: days,
+        amount: null,
+      });
+      continue;
+    }
+
+    // NO PROMISED DATE. The order date is the only thing left to measure
+    // from, and this alert will not call an order late against a date
+    // nobody gave us. It says how long it has been silent instead.
+    const out = -daysUntilIso(order.orderedOn, todayIso);
+    if (out < DELIVERY_CHASE_DAYS) continue;
+
+    alerts.push({
+      key: alertKey("MATERIAL_DELIVERY_LATE", order.id, order.orderedOn),
+      kind: "MATERIAL_DELIVERY_LATE",
+      severity: "STANDING",
+      title: `${where} has nothing recorded as delivered`,
+      detail: `${order.description} from ${order.vendorName} — ordered ${agoPhrase(-out)} with no promised date recorded, and no delivery logged.`,
+      href: "/material-orders",
+      dueOn: order.orderedOn,
+      daysUntil: -out,
+      amount: null,
+    });
+  }
+
+  return alerts;
+}
+
+export type PunchItemAlertSource = {
+  id: string;
+  description: string;
+  jobName: string;
+  area: string | null;
+  /** OPEN only reaches here — see the builder. */
+  dueOn: string | null;
+  raisedOn: string;
+};
+
+/**
+ * An OPEN punch item nobody has come back for.
+ *
+ * OPEN only, and that is a decision rather than a filter. READY_FOR_REVIEW
+ * is somebody else's move — the crew has done it and it is waiting on a
+ * signature, which `/punch-lists` already shows — and VERIFIED is finished.
+ * Chasing either would be chasing ourselves, and it would bury the items
+ * nobody has touched, which are the ones that cost a sub his retainage.
+ */
+export function punchItemAlerts(sources: PunchItemAlertSource[], todayIso: string): Alert[] {
+  const horizon = ALERT_HORIZON_DAYS.PUNCH_ITEM_AGING ?? 7;
+  const alerts: Alert[] = [];
+
+  for (const item of sources) {
+    const where = item.area ? `${item.jobName} — ${item.area}` : item.jobName;
+
+    if (item.dueOn) {
+      const severity = severityForDate(item.dueOn, todayIso, horizon);
+      if (!severity) continue;
+      const days = daysUntilIso(item.dueOn, todayIso);
+      alerts.push({
+        key: alertKey("PUNCH_ITEM_AGING", item.id, item.dueOn),
+        kind: "PUNCH_ITEM_AGING",
+        severity,
+        title: days < 0 ? `Punch item overdue on ${where}` : `Punch item due on ${where}`,
+        detail:
+          days < 0
+            ? `"${item.description}" — due ${agoPhrase(days)} and still open.`
+            : `"${item.description}" — due ${aheadPhrase(days)}.`,
+        href: "/punch-lists",
+        dueOn: item.dueOn,
+        daysUntil: days,
+        amount: null,
+      });
+      continue;
+    }
+
+    const open = -daysUntilIso(item.raisedOn, todayIso);
+    if (open < PUNCH_CHASE_DAYS) continue;
+
+    alerts.push({
+      key: alertKey("PUNCH_ITEM_AGING", item.id, item.raisedOn),
+      kind: "PUNCH_ITEM_AGING",
+      severity: "STANDING",
+      title: `Punch item still open on ${where}`,
+      detail: `"${item.description}" — raised ${agoPhrase(-open)} with no due date recorded, and nobody has marked it ready.`,
+      href: "/punch-lists",
+      dueOn: item.raisedOn,
+      daysUntil: -open,
+      amount: null,
+    });
+  }
+
+  return alerts;
+}
+
+export type EquipmentOutAlertSource = {
+  id: string;
+  equipmentName: string;
+  jobName: string;
+  jobIsFinished: boolean;
+  sentOutOn: string;
+};
+
+/**
+ * Equipment still out, long after it went to a job.
+ *
+ * STANDING always, never dated, because NOTHING IN THE SCHEMA RECORDS A
+ * PROMISED RETURN. `EquipmentAssignment` has `sentOutOn` and a nullable
+ * `returnedOn` and no expectation between them, so there is no date to be
+ * late against and this alert does not invent one.
+ *
+ * A job that has FINISHED is the one case worth saying differently: the
+ * lift is not merely out a long time, it is out on a job nobody is working
+ * any more, which is a different sentence and a worse fact.
+ */
+export function equipmentOutAlerts(sources: EquipmentOutAlertSource[], todayIso: string): Alert[] {
+  const alerts: Alert[] = [];
+
+  for (const row of sources) {
+    const out = -daysUntilIso(row.sentOutOn, todayIso);
+    if (!row.jobIsFinished && out < EQUIPMENT_OUT_DAYS) continue;
+
+    alerts.push({
+      key: alertKey("EQUIPMENT_OUT_LONG", row.id, row.sentOutOn),
+      kind: "EQUIPMENT_OUT_LONG",
+      severity: "STANDING",
+      title: row.jobIsFinished
+        ? `${row.equipmentName} is still out on a finished job`
+        : `${row.equipmentName} has been out a long time`,
+      detail: row.jobIsFinished
+        ? `Sent to ${row.jobName} ${agoPhrase(-out)} and never recorded as back, on a job that is no longer running.`
+        : `Sent to ${row.jobName} ${agoPhrase(-out)} and nothing records it coming back.`,
+      href: "/equipment",
+      dueOn: row.sentOutOn,
+      daysUntil: -out,
+      amount: null,
+    });
+  }
+
+  return alerts;
+}
+
+export type DelayNoticeAlertSource = {
+  id: string;
+  jobId: string;
+  jobName: string;
+  /** The day the delay happened, entered by a person. */
+  date: string;
+  description: string;
+  hoursLost: number | null;
+};
+
+/**
+ * A logged delay the GC was never told about.
+ *
+ * WHY THIS IS THE MOST VALUABLE OF THE FOUR. A delay is what a claim or a
+ * change order is argued from, and what makes one collectible is that the
+ * GC was told AT THE TIME. A delay sitting in this app with `gcNotifiedAt`
+ * null is evidence the sub has already paid for and cannot use. The read
+ * tool `daily_field_reports` has counted `delaysTheGcWasNotTold` all
+ * along — the derivation existed and nothing surfaced it.
+ *
+ * STANDING, NEVER OVERDUE, and this is the line not to cross. Subcontracts
+ * carry notice periods and this app has never read one, so there is no
+ * date to be late against. The same rule that keeps `createLienDeadline`
+ * out of the Ask commands applies here: the deadline is legal advice and
+ * the app refuses to generate it. What it CAN say is how long ago the day
+ * was, which is a fact about a row.
+ */
+export function delayNoticeAlerts(sources: DelayNoticeAlertSource[], todayIso: string): Alert[] {
+  const alerts: Alert[] = [];
+
+  for (const delay of sources) {
+    const since = -daysUntilIso(delay.date, todayIso);
+    if (since < DELAY_NOTICE_GRACE_DAYS) continue;
+
+    // Through `formatHours` like every other hours figure in the app, not
+    // interpolated raw. `hoursLost` is Decimal(7,2) and `parseDelay`
+    // COMPUTES it from workers x minutes / 60, so it is exactly the
+    // floating-point sum `render-hours.ts` exists for: 4 men x 200 minutes
+    // is 13.333333333333334 without it. `hoursRenderCensus.test.ts` caught
+    // this as a bare render, which is what it is for.
+    const lost =
+      delay.hoursLost != null && delay.hoursLost > 0
+        ? `${formatHours(delay.hoursLost)} crew hours lost. `
+        : "";
+
+    alerts.push({
+      key: alertKey("DELAY_GC_NOT_TOLD", delay.id, delay.date),
+      kind: "DELAY_GC_NOT_TOLD",
+      severity: "STANDING",
+      title: `A delay on ${delay.jobName} has no notice to the GC recorded`,
+      detail: `${delay.date}, ${agoPhrase(-since)}: "${delay.description}" ${lost}Nothing records the GC being told. Whether notice is still worth giving is a question about your subcontract, not one this app can answer.`,
+      href: `/jobs/${delay.jobId}/field-reports`,
+      dueOn: delay.date,
+      daysUntil: -since,
       amount: null,
     });
   }
