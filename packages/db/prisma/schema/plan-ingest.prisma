@@ -27,21 +27,50 @@
 /// "99%" with one invisible task left is indistinguishable from a job that
 /// finished. A member here cannot be misspelled.
 ///
-/// `PAGE_INVENTORY` is the whole of this PR and does NO model call: it records
-/// that a page exists and whether it carries a text layer. It is the trivial
-/// stage the runner is proved on. The rest are declared now and unreachable
-/// until the pass that implements them lands — the same argument
-/// `AiFeature.PLAN_INGESTION` made in #533, and the same reason: a stage added
-/// to the enum later is a migration plus a retrofit onto every call site,
-/// where a stage that is merely unused costs nothing.
+/// DO NOT ASK THIS FILE WHICH STAGES ARE BUILT. Ask `STAGE_WORK` in
+/// `apps/web/lib/plan-ingest/stages.ts`: it is a total `Record` over this enum,
+/// so a member with no entry fails to compile, and `RUNNABLE_STAGES` is DERIVED
+/// from it by filtering the nulls. A status written here is a copy that nothing
+/// checks, and it has already been wrong.
+///
+/// It said, until 2026-09-28: `PAGE_INVENTORY` "is the whole of this PR", the
+/// rest "declared now and unreachable until the pass that implements them
+/// lands", and `CLASSIFY`/`TITLE_BLOCK`/`SHEET_INDEX` each "Not built". Every
+/// word of that was true for #538 and the phrase "this PR" is what rotted it:
+/// the pass it was waiting for is the one that added these lines' replacement.
+/// A comment that says a capability is MISSING is the expensive direction,
+/// because it is the one that stops the next person looking — `stages.ts:34`
+/// had meanwhile been saying these nulls are "neither 'not got round to yet'",
+/// and this file disagreed with it and lost, exactly as CLAUDE.md's
+/// `Sidebar.tsx` entry describes.
+///
+/// WHY THE ENUM STILL CARRIES A MEMBER NOTHING RUNS. Unchanged from #538 and
+/// still the reason: a stage added later is a migration plus a retrofit onto
+/// every call site, where a declared-but-unused member costs nothing. What
+/// changed is that two of them are now unused ON PURPOSE and permanently, which
+/// is a different fact from unfinished. The argument for each is on `STAGE_WORK`
+/// and, for the index, at the top of `lib/plan-ingest/sheetIndex.ts`.
 enum PlanIngestStage {
-  /// Per page: it exists, and does it have selectable text. No model call.
+  /// Per page: does it exist, does it carry selectable text, and — since the
+  /// title-block pass — the rotation-corrected text of the title-block region,
+  /// stored as `PlanSheetText`. Opens the PDF. Still NO model call, which is
+  /// what lets it read ~100 pages in a cron tick.
   PAGE_INVENTORY
-  /// Per page: what kind of sheet is this. Not built.
+  /// Folded into `TITLE_BLOCK` and deliberately never built: reading the title
+  /// block yields the sheet number, the title AND the discipline, so a separate
+  /// classify stage would be a second paid model call per page for an answer the
+  /// first one already returned.
   CLASSIFY
-  /// Per page: read the title block. Not built.
+  /// Per page: read the stored title-block text and propose a sheet number,
+  /// title, discipline, scale, revision and issue date. The only stage that
+  /// calls a model, and it never opens the PDF — so a retry costs one model call
+  /// and no parse.
   TITLE_BLOCK
-  /// Whole set: assemble the sheet index. Not built.
+  /// Computed at READ TIME and deliberately never a stage — ordering, duplicate
+  /// numbers and what still needs a person are pure computation over rows that
+  /// already exist. As a per-page job it would run once per sheet over the whole
+  /// set, or need a one-task job whose `pageCount` disagreed with its task count
+  /// by design. See `lib/plan-ingest/sheetIndex.ts`.
   SHEET_INDEX
 }
 
