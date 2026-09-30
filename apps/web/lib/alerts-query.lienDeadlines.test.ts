@@ -64,6 +64,15 @@ vi.mock("@prova/db", () => ({
     punchListItem: { findMany: empty },
     equipmentAssignment: { findMany: empty },
     delayEvent: { findMany: empty },
+    // The two apprenticeship forms, empty for the same reason as the four
+    // above. Worth noting what happens without these two lines: the fake
+    // returns `undefined` for a model it has no entry for, `loadAlerts`
+    // reads `.findMany` off it, and all six tests in this file die with
+    // `Cannot read properties of undefined` — which is the fake being
+    // honest. A fake that quietly answered every unknown model would have
+    // let a new query into the alert engine with nothing exercising it.
+    das140Notice: { findMany: empty },
+    das142Request: { findMany: empty },
     lienDeadline: {
       findMany: async ({ where }: { where: Record<string, unknown> }) => {
         lienWheres.push(where);

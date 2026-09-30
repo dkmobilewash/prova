@@ -5,6 +5,8 @@ import {
   certifiedPayrollAlerts,
   closeoutAlerts,
   contactFollowUpAlerts,
+  das140Alerts,
+  das142Alerts,
   delayNoticeAlerts,
   drawingRevisionAlerts,
   equipmentOutAlerts,
@@ -205,6 +207,8 @@ export async function loadAlerts(
     punchItems,
     equipmentOut,
     unnotifiedDelays,
+    das140Notices,
+    das142Requests,
   ] = await Promise.all([
     renewalSourcesForCompany(companyId),
 
@@ -393,6 +397,54 @@ export async function loadAlerts(
         description: true,
         hoursLost: true,
         job: { select: { name: true } },
+      },
+    }),
+
+    /* The two apprenticeship forms, company-wide.
+     *
+       Scoped through the job rather than a `companyId` column, because
+       neither model has one — `das-forms.prisma` hangs both off `Job`, so
+       the job IS the tenancy boundary and `job: { companyId }` is the only
+       correct filter. Getting that wrong here would leak another company's
+       committee names into this company's bell.
+
+       NOT filtered by status or sent-ness in the query. An unsent notice
+       whose deadline is still a fortnight away is a row the builder is
+       meant to see and stay quiet about, and pre-filtering here would move
+       that decision out of the module where the reason for it is written
+       down. A company has tens of these, not thousands.
+
+       `firstWorkerOnSiteOn` is NOT queried: it is the earliest time entry
+       on the job, and `loadAlertJobs` has already loaded every time entry
+       with its date for the certified-payroll and job-cost alerts. Reading
+       it from those rows rather than firing `loadFirstWorkerDay` per job is
+       the difference between one query and one per job, and it cannot
+       disagree with the payroll because it IS the payroll. */
+    prisma.das140Notice.findMany({
+      where: { job: { companyId } },
+      select: {
+        id: true,
+        jobId: true,
+        craftName: true,
+        contractExecutedOn: true,
+        sentOn: true,
+        job: { select: { name: true } },
+        committee: { select: { name: true } },
+      },
+    }),
+
+    prisma.das142Request.findMany({
+      where: { job: { companyId } },
+      select: {
+        id: true,
+        jobId: true,
+        craftName: true,
+        apprenticesRequested: true,
+        neededFrom: true,
+        requestedOn: true,
+        outcome: true,
+        job: { select: { name: true } },
+        committee: { select: { name: true } },
       },
     }),
 
@@ -666,8 +718,6 @@ export async function loadAlerts(
     ),
   );
 
-  const permitted = visibleToPrincipal(alerts, (capability) => can(principal, capability));
-
   const acks: Acknowledgement[] = acknowledgements.map((a) => ({
     alertKey: a.alertKey,
     snoozedUntil: isoDate(a.snoozedUntil),
@@ -735,6 +785,81 @@ export async function loadAlerts(
       todayIso,
     ),
   );
+
+  /* The first day anybody logged an hour, per job — the second bound on the
+     DAS 140 deadline, and the earlier of the two is the one that governs.
+
+     Built from `jobs`, which already carries every time entry with its
+     date. `loadFirstWorkerDay` in das-query.ts answers the same question
+     with its own query and is what the job screens use; calling it here
+     would be one round trip per job for a value already in memory. The
+     DERIVATION is identical — the minimum entry date — and that is the part
+     that must not differ from the payroll, which it cannot, since both read
+     the same rows. */
+  const firstWorkerDayByJob = new Map<string, string | null>();
+  for (const job of jobs) {
+    let earliest: string | null = null;
+    for (const entry of job.timeEntries) {
+      const day = isoDate(entry.date);
+      if (day !== null && (earliest === null || day < earliest)) earliest = day;
+    }
+    firstWorkerDayByJob.set(job.id, earliest);
+  }
+
+  alerts.push(
+    ...das140Alerts(
+      das140Notices.map((notice) => ({
+        id: notice.id,
+        jobId: notice.jobId,
+        jobName: notice.job.name,
+        committeeName: notice.committee.name,
+        craftName: notice.craftName,
+        // `contractExecutedOn` is non-null in the schema, so the fallback is
+        // unreachable rather than a guess being smuggled in — it exists
+        // because `isoDate` is the one date converter in this file and it is
+        // nullable for the columns that are.
+        contractExecutedOn: isoDate(notice.contractExecutedOn) ?? todayIso,
+        sentOn: isoDate(notice.sentOn),
+        firstWorkerOnSiteOn: firstWorkerDayByJob.get(notice.jobId) ?? null,
+      })),
+      todayIso,
+    ),
+  );
+
+  alerts.push(
+    ...das142Alerts(
+      das142Requests.map((request) => ({
+        id: request.id,
+        jobId: request.jobId,
+        jobName: request.job.name,
+        committeeName: request.committee.name,
+        craftName: request.craftName,
+        apprenticesRequested: request.apprenticesRequested,
+        neededFrom: isoDate(request.neededFrom) ?? todayIso,
+        requestedOn: isoDate(request.requestedOn),
+        outcome: request.outcome,
+      })),
+      todayIso,
+    ),
+  );
+
+  /* LAST, AND THAT IS THE WHOLE POINT — after every push, not in the middle
+     of them.
+
+     `visibleToPrincipal` returns a NEW array. Computed earlier in the
+     function it is a SNAPSHOT, and every alert pushed after it is silently
+     dropped: built correctly, capability-checked correctly, and never
+     returned. That is what was happening on main. The four field kinds —
+     late delivery, aging punch item, equipment still out, a delay the GC was
+     never told — were assembled below the snapshot and thrown away, so the
+     bell and the alerts page had never once shown one. Nothing failed.
+     Nothing could: the builders were called, their unit tests passed on
+     their own inputs, and the only broken thing was the ORDER of two
+     statements.
+
+     `alertAssemblyOrder.test.ts` now fails the build if any push lands
+     after this line. */
+  const permitted = visibleToPrincipal(alerts, (capability) => can(principal, capability));
 
   return partitionAlerts(permitted, acks, todayIso);
 }
