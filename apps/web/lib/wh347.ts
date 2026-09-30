@@ -286,9 +286,26 @@ export interface Wh347CompanyInput {
 
 export interface Wh347JobInput {
   name: string;
-  /** Neither is on the Job model yet; both are accepted so the caller
-   * that gains them does not change this module's shape. */
+  /** THE JOB'S LOCATION, and this comment used to say the column did not
+   * exist. It read "Neither is on the Job model yet; both are accepted so
+   * the caller that gains them does not change this module's shape" — true
+   * when written, and false from the moment `Job.siteAddress` and
+   * `Job.projectLocation` landed. Nothing broke. The page simply went on
+   * passing neither, so this field stayed null, stayed in `blocking`, and
+   * the message beside it went on telling people to record a site address
+   * that this module could not see. A sentence saying the app does not hold
+   * something is exactly as perishable as one saying it does, and it is the
+   * direction that stops anybody checking.
+   *
+   * The caller resolves it through `lib/job-form-location.ts`, shared with
+   * the DAS 140 and DAS 142 forms so two government documents for one job
+   * cannot name different places. */
   location?: string | null;
+  /** STILL genuinely absent: no column for a contract or project number
+   * exists anywhere in `packages/db/prisma/schema`, which is why
+   * `WH347_BLOCKING_REASON.contractNumber` says a job does not record one
+   * rather than telling somebody where to type it. Verified, not inherited —
+   * the sentence above is what happens when this kind of claim is not. */
   contractNumber?: string | null;
 }
 

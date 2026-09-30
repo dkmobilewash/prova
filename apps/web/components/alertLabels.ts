@@ -32,6 +32,13 @@ export const ALERT_KIND_LABELS: Record<AlertKind, string> = {
   // fine. It is about the NOTICE that is missing, which is the thing a
   // person can still act on.
   DELAY_GC_NOT_TOLD: "GC notice",
+  // The FORM NUMBER, not "Apprenticeship": these are the two names a
+  // contractor and an enforcement officer both use, they are printed at the
+  // top of the documents themselves, and a chip reading "Apprenticeship" on
+  // two different deadlines would make them indistinguishable in a list
+  // where the difference is which form has to go out.
+  DAS140_NOTICE: "DAS 140",
+  DAS142_DISPATCH: "DAS 142",
 };
 
 export function kindLabel(kind: AlertKind) {

@@ -41,6 +41,7 @@
  * looking — is the honest version of a feature that gets you 90% of the way.
  */
 
+import { jobFormLocation } from "@/lib/job-form-location";
 import { formatCalendarDay } from "./render-date";
 import {
   committeeDeliverability,
@@ -255,7 +256,13 @@ function committeeBlock(committee: DasCommitteeInput): DasCommitteeBlock {
 function projectBlock(job: DasJobInput, identifier: string | null): DasProjectBlock {
   return {
     name: job.name,
-    location: job.siteAddress ?? job.projectLocation ?? null,
+    // Through `jobFormLocation` rather than a `??` chain here. Same order
+    // this line always had — street address first — now shared with the
+    // WH-347, which resolved it nowhere at all, and blank-safe, which the
+    // `??` was not: an emptied `siteAddress` returned "" and skipped the
+    // looser location, and `project.location === null` below then called
+    // that empty box filled in.
+    location: jobFormLocation(job),
     awardingBody: job.awardingBody,
     county: job.siteCounty,
     identifier,
