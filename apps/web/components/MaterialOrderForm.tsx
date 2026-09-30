@@ -11,6 +11,7 @@ import {
   type VendorOption,
 } from "@/components/MaterialOrderFields";
 import { localToday } from "@/components/localToday";
+import { Spinner } from "@/components/Spinner";
 
 /** An order needs both a job to belong to and a vendor to be owed by, so
  * either one missing is a dead end with a way out rather than a form that
@@ -139,7 +140,14 @@ export function MaterialOrderForm({
           disabled={isPending}
           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Save order"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save order"
+          )}
         </button>
         <button
           type="button"

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
+import { Spinner } from "@/components/Spinner";
 import { deleteEstimateJob, updateJobDetails } from "@/lib/actions";
 
 type Contact = { id: string; name: string };
@@ -167,7 +168,14 @@ export function JobDetailsForm({
             disabled={pending}
             className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 disabled:opacity-60"
           >
-            {pending ? "Saving…" : "Save details"}
+            {pending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Saving…
+              </span>
+            ) : (
+              "Save details"
+            )}
           </button>
           {saved && !error && <span className="text-sm text-ink-muted">Saved.</span>}
         </div>

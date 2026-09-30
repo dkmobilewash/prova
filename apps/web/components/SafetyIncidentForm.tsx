@@ -8,6 +8,7 @@ import {
 } from "@/components/SafetyIncidentFields";
 import { localToday } from "@/components/localToday";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 
 export function SafetyIncidentForm({ jobs, today }: { jobs: JobOption[]; today: string }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -81,7 +82,14 @@ export function SafetyIncidentForm({ jobs, today }: { jobs: JobOption[]; today: 
           disabled={isPending}
           className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Record incident"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Record incident"
+          )}
         </button>
         <button
           type="button"

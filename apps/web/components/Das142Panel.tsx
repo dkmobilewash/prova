@@ -21,6 +21,7 @@ import {
 import { formatCalendarDay } from "@/lib/render-date";
 import type { Das142Row } from "@/lib/das-query";
 import type { CommitteeOption } from "@/components/Das140Panel";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * DAS 142 on a job — the request to dispatch an apprentice.
@@ -329,7 +330,14 @@ function RequestCard({
               disabled={isPending}
               className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
-              {isPending ? "Saving…" : "Record it sent"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Record it sent"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
               Cancel
@@ -397,7 +405,14 @@ function RequestCard({
               disabled={isPending}
               className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
-              {isPending ? "Saving…" : "Save the reply"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save the reply"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
               Cancel
@@ -450,7 +465,14 @@ function RequestCard({
               disabled={isPending}
               className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
-              {isPending ? "Saving…" : "Save request"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save request"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
               Cancel
@@ -555,7 +577,14 @@ export function Das142Panel({
               disabled={isPending}
               className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isPending ? "Saving…" : "Start the request"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Start the request"
+              )}
             </button>
             <button
               type="button"

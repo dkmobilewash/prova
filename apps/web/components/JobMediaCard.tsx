@@ -18,6 +18,7 @@ import { JobMediaMarks, type JobMediaMark } from "@/components/JobMediaMarks";
 import { JobMediaAnnotator } from "@/components/JobMediaAnnotator";
 import { annotationSummary } from "@/lib/job-media-annotations";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 
 /** Everything the card needs, already formatted on the server.
  *
@@ -402,7 +403,14 @@ export function JobMediaCard({
                 disabled={isPending}
                 className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
               >
-                {isPending ? "Saving…" : "Save"}
+                {isPending ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Spinner />
+                    Saving…
+                  </span>
+                ) : (
+                  "Save"
+                )}
               </button>
               <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
                 Cancel

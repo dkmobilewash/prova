@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { updateJobComplianceFacts } from "@/lib/actions";
 import { PUBLIC_WORKS_OPTIONS } from "@/lib/determination-facts";
 import { formatCalendarDay } from "@/lib/render-date";
+import { Spinner } from "@/components/Spinner";
 
 export type JobComplianceFacts = {
   siteCounty: string | null;
@@ -139,7 +140,14 @@ export function JobComplianceFactsForm({ jobId, facts }: { jobId: string; facts:
           disabled={pending}
           className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {pending ? "Saving…" : "Save facts"}
+          {pending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save facts"
+          )}
         </button>
         <button
           type="button"

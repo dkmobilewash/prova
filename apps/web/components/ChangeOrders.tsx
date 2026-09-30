@@ -30,6 +30,7 @@ import {
 } from "@/components/changeOrderStates";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { DocuSignPanel, type DocuSignEnvelopeView } from "@/components/DocuSignPanel";
+import { Spinner } from "@/components/Spinner";
 import type { DocuSignCardState } from "@/lib/docusign/setup";
 
 /** "Send with DocuSign" on a submitted change order — optional, and absent
@@ -562,7 +563,14 @@ function DraftActions({ changeOrder, today }: { changeOrder: ChangeOrderView } &
             disabled={submit.isPending || changeOrder.proposals.length === 0}
             className={primaryBtn}
           >
-            {submit.isPending ? "Sending…" : "Send to GC"}
+            {submit.isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Sending…
+              </span>
+            ) : (
+              "Send to GC"
+            )}
           </button>
           {submit.error && <p className="w-full text-xs text-tag-rose-ink">{submit.error}</p>}
         </form>

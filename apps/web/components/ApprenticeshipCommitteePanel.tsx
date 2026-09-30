@@ -8,6 +8,7 @@ import {
   updateApprenticeshipCommittee,
 } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 import {
   ApprenticeshipCommitteeFields,
   EMPTY_COMMITTEE,
@@ -175,7 +176,14 @@ function CommitteeRowCard({
               disabled={isPending}
               className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
-              {isPending ? "Saving…" : "Save committee"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save committee"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setEditing(false)} className={btn}>
               Cancel
@@ -267,7 +275,14 @@ export function ApprenticeshipCommitteePanel({
               disabled={isPending}
               className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isPending ? "Saving…" : "Add committee"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Add committee"
+              )}
             </button>
             <button
               type="button"

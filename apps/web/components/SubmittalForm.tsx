@@ -6,6 +6,7 @@ import { createSubmittal } from "@/lib/actions";
 import { inputClass, labelClass, type JobOption } from "@/components/RfiFields";
 import { SubmittalFields } from "@/components/SubmittalFields";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 
 export function SubmittalForm({ jobs, defaultJobId }: { jobs: JobOption[]; defaultJobId?: string }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -105,7 +106,14 @@ export function SubmittalForm({ jobs, defaultJobId }: { jobs: JobOption[]; defau
           disabled={isPending}
           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Save submittal"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save submittal"
+          )}
         </button>
         <button
           type="button"

@@ -12,6 +12,7 @@ import {
   type RegisterOverrides,
 } from "@/lib/payroll-register-import";
 import { ExistingList, Problems } from "@/components/SpreadsheetImport";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * Paste or upload a weekly payroll register (Gusto, ADP RUN, Sage 100
@@ -344,11 +345,16 @@ export function PayrollRegisterImport({ crew, existing }: Props) {
               aria-busy={pending || undefined}
               className="min-h-11 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {pending
-                ? "Saving…"
-                : changedCount === 0
-                  ? "Nothing new to save"
-                  : `Confirm — save ${changedCount} ${changedCount === 1 ? "line" : "lines"}`}
+              {pending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : changedCount === 0 ? (
+                "Nothing new to save"
+              ) : (
+                `Confirm — save ${changedCount} ${changedCount === 1 ? "line" : "lines"}`
+              )}
             </button>
             {tooLarge && <span className="text-xs text-tag-rose-ink">{TOO_LARGE_MESSAGE}</span>}
             <span className="text-xs text-ink-muted">Up to {MAX_IMPORT_ROWS} rows at a time.</span>

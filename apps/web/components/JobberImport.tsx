@@ -5,6 +5,7 @@ import { confirmJobberImport, previewJobberImport } from "@/lib/actions";
 import type { JobberJobClient, JobberPlan, LeftOut } from "@/lib/jobber-import";
 import { MAX_IMPORT_ROWS } from "@/lib/jobber-import";
 import { ExistingList, Problems } from "@/components/SpreadsheetImport";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * "Import from Jobber" → preview → Confirm, on the Jobber card.
@@ -298,11 +299,16 @@ export function JobberImport() {
               aria-busy={saving || undefined}
               className="min-h-11 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {saving
-                ? "Saving…"
-                : total === 0
-                  ? "Nothing new to add"
-                  : `Confirm — add ${clientsNew} ${clientsNew === 1 ? "client" : "clients"} and ${jobsNew} ${jobsNew === 1 ? "job" : "jobs"}`}
+              {saving ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : total === 0 ? (
+                "Nothing new to add"
+              ) : (
+                `Confirm — add ${clientsNew} ${clientsNew === 1 ? "client" : "clients"} and ${jobsNew} ${jobsNew === 1 ? "job" : "jobs"}`
+              )}
             </button>
             <span className="text-xs text-ink-muted">
               Nothing already in C Stream is changed. Up to {MAX_IMPORT_ROWS} new clients and {MAX_IMPORT_ROWS} new

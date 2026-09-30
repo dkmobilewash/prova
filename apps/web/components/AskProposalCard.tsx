@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { ProposalView } from "@/lib/ask/answer";
+import { Spinner } from "@/components/Spinner";
 
 /** What a confirmed card shows in place of its buttons. */
 export type ProposalOutcome = { message: string; created?: { label: string; href: string } };
@@ -200,7 +201,14 @@ export function AskProposalCard({
               aria-busy={pending || undefined}
               className={PRIMARY}
             >
-              {pending ? "Working…" : proposal.button}
+              {pending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Working…
+                </span>
+              ) : (
+                proposal.button
+              )}
             </button>
           )}
         </div>
