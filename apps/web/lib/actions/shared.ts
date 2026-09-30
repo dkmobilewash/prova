@@ -495,6 +495,32 @@ export function isUniqueConstraintError(err: unknown): boolean {
   );
 }
 
+/** True when a write depended on a row that was not there (Prisma P2025).
+ *
+ * The sibling of the guard above, and duck-typed for exactly the same
+ * measured reason — read that docstring before changing either.
+ *
+ * P2002 is "somebody else inserted it first"; P2025 is "somebody else
+ * DELETED it first". Both are the same event seen from different sides, and
+ * `adoptCompanyContext` meets both in one race: two tabs consuming one
+ * invite, where the loser's `invite.delete` fails on a row the winner has
+ * already consumed. Its recovery admitted only P2002, so that arm escaped
+ * as a 500 — while the comment above the catch named the case in words.
+ *
+ * Admitting this code is only safe because the recovery it gates is
+ * evidence-based: it RETURNS only if a re-read actually finds the row, and
+ * rethrows the original error untouched otherwise. Widening the entry
+ * condition therefore cannot swallow a genuine bug — a P2025 with nothing
+ * behind it still escapes, exactly as it did before.
+ */
+export function isMissingRecordError(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { code?: unknown }).code === "P2025"
+  );
+}
+
 /** "1 job" / "3 bid invitations" — for messages that name a count.
  * Originally local to unionCompliance.ts; moved here (#76) so a second
  * caller doesn't grow its own copy. */
