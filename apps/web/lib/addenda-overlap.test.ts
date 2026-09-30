@@ -44,6 +44,31 @@ function addendum(
 }
 
 group("normalising a reference so two spellings of one scope meet", () => {
+  it("matches the spellings a real reader produced — from the eval", () => {
+    // EVERY LEFT-HAND STRING HERE CAME OUT OF A REAL MODEL RUN, and six of the
+    // seven failed against the first version of this function. They are the
+    // reason it strips qualifiers repeatedly and drops a spaced-dash title.
+    //
+    // Not cosmetic: this function groups scopes for the overlap report and keys
+    // `BidAddendumItemDecision`. Every "NO MATCH" below was an overlap that
+    // would never have been flagged and a decision that would not have survived
+    // a re-read.
+    const pairs: [string, string][] = [
+      ["Specification Section 09 21 16 - Gypsum Board Assemblies", "09 21 16"],
+      ["Specification Section 09 51 13 - Acoustical Panel Ceilings", "09 51 13"],
+      ["Section 07 24 00 - EIFS", "07 24 00"],
+      ["Drawing Sheet A-201", "A-201"],
+      ["Sheet A-301", "A-301"],
+      ["The Finish Schedule", "Finish Schedule"],
+      ["Subcontractor List form", "Subcontractor List"],
+    ];
+    for (const [produced, meant] of pairs) {
+      expect(normaliseReference(produced), `"${produced}" must mean "${meant}"`).toBe(
+        normaliseReference(meant),
+      );
+    }
+  });
+
   it("strips the words a GC puts in front of a number", () => {
     // The case the feature exists for. If these stop matching, an addendum that
     // says "Sheet A-201" and one that says "A-201" become two scopes and the
@@ -61,6 +86,31 @@ group("normalising a reference so two spellings of one scope meet", () => {
     expect(normaliseReference("  09 21 16  ")).toBe("092116");
   });
 
+  it("keeps distinct scopes distinct after all that stripping", () => {
+    // The stripping above is the risk this pins. A looser normaliser that
+    // collapsed two different sections into one key would flag an overlap that
+    // does not exist and send somebody to re-check the wrong thing — which the
+    // module's own header says is worse than a miss.
+    expect(normaliseReference("09 21 16")).not.toBe(normaliseReference("09 22 16"));
+    expect(normaliseReference("Sheet A-201")).not.toBe(normaliseReference("Sheet A-301"));
+    expect(normaliseReference("Finish Schedule")).not.toBe(normaliseReference("Door Schedule"));
+    // Two titles on the SAME section still group, and that is correct: the
+    // section is the scope, and a GC writing its name differently is not a
+    // different section.
+    expect(normaliseReference("Section 09 21 16 - Gypsum Board")).toBe(
+      normaliseReference("09 21 16 - Board Assemblies"),
+    );
+  });
+
+  it("empties a reference that is only a qualifier", () => {
+    // "Section" alone is not a scope. If it survived, every such item would
+    // collect into one group and report a scope called "section" touched by
+    // three addenda.
+    for (const bare of ["Section", "The", "Sheet", "Specification", "  -  "]) {
+      expect(normaliseReference(bare), `${JSON.stringify(bare)} is not a scope`).toBe("");
+    }
+  });
+
   it("does NOT collapse a sub-section into its parent", () => {
     // Deliberate, and the module says why: a sub-section is a narrower scope and
     // truncating would assert a relationship the document did not. Pinned so the
@@ -74,7 +124,12 @@ group("normalising a reference so two spellings of one scope meet", () => {
     // Grouping is not validating: whatever the GC wrote, two identical strings
     // must meet, and nothing is rejected for being unfamiliar.
     expect(normaliseReference("Bulletin 4 attachment C")).toBe("bulletin4attachmentc");
-    expect(normaliseReference("the north stair")).toBe("thenorthstair");
+    // "northstair", not "thenorthstair": the leading "the" is a qualifier now.
+    // This assertion said the latter and was right about the OLD function — it
+    // is updated rather than deleted because the thing it is really pinning is
+    // that an unfamiliar reference still normalises to SOMETHING rather than
+    // being rejected for not looking like a spec number.
+    expect(normaliseReference("the north stair")).toBe("northstair");
     expect(normaliseReference("ZZ-99")).toBe(normaliseReference("zz 99"));
   });
 });

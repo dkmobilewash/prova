@@ -152,9 +152,15 @@ export const ADDENDUM_CASES: AddendumCase[] = [
     ],
     expected: [{ reference: "bid due date", kind: "BID_PROCESS" }],
     issueDateText: "October 3, 2026",
-    // AS PRINTED. A reader that helpfully returns "2026-10-16" has converted it,
+    // AS PRINTED, and the eval corrected me on what that means. This expected
+    // "October 16, 2026"; the reader returned "October 16, 2026 at 2:00 PM local
+    // time", which is what the document actually says — and on a bid the TIME is
+    // not decoration, it is the difference between a bid being accepted and
+    // handed back. The reader was more faithful to the rule than the case was.
+    //
+    // A reader that returned "2026-10-16" WOULD be wrong: that is a conversion,
     // and `bid-addenda.prisma` keeps these as text precisely so nothing converts.
-    bidDateText: "October 16, 2026",
+    bidDateText: "October 16, 2026 at 2:00 PM local time",
     mustSend: ["October 16, 2026", "October 9, 2026", "pre-bid meeting minutes"],
   },
 

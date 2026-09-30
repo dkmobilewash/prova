@@ -57,12 +57,38 @@ export type AddendumItem = {
 /**
  * THE GROUPING KEY.
  *
- * Whitespace, case and punctuation removed, and a leading "Sheet"/"Section"/
- * "Spec" stripped — because a GC writes the same scope three ways across two
- * letters and the whole feature turns on those three being one thing:
+ * Whitespace, case and punctuation removed; leading qualifiers stripped
+ * REPEATEDLY; and a spaced-dash title suffix dropped — because a GC and a reader
+ * write the same scope several ways and the whole feature turns on those being
+ * one thing:
  *
- *     "Sheet A-201"      "A-201"          -> a201
- *     "Section 09 21 16" "09 21 16"       -> 092116
+ *     "Sheet A-201"                                       -> a201
+ *     "Drawing Sheet A-201"                               -> a201
+ *     "Section 09 21 16"                                  -> 092116
+ *     "Specification Section 09 21 16 - Gypsum Board …"    -> 092116
+ *     "The Finish Schedule"                               -> finishschedule
+ *
+ * ── WHY IT LOOKS LIKE THAT, WHICH IS NOT GUESSWORK ──
+ *
+ * The first version stripped ONE leading word and nothing else, and it was
+ * written against spellings I invented. Then the eval ran the real reader over
+ * seven letters and SIX OF SEVEN references failed to match what the case
+ * expected — not because the reader was wrong, but because it returns
+ * "Specification Section 09 21 16 - Gypsum Board Assemblies" where I had
+ * imagined "09 21 16".
+ *
+ * That is a production defect rather than a scoring one, and it is worth being
+ * explicit about what it would have cost: this function is what groups scopes
+ * for the overlap report AND what keys `BidAddendumItemDecision`. So two
+ * addenda naming the same section would not have been flagged — the one thing
+ * the overlap exists to catch — and an estimator's decision would NOT have
+ * survived a re-read that worded the reference more fully, which is the exact
+ * bug `addenda-readings.dbtest.ts` was written to prevent. That test passed
+ * because its three spellings were also mine.
+ *
+ * Every pair in `addenda-overlap.test.ts` marked "from the eval" is a string a
+ * real model produced. A normaliser tested only against invented input is
+ * tested against its author's assumptions.
  *
  * IT DOES NOT VALIDATE AGAINST MASTERFORMAT, and that is a decision this repo
  * has already made four times — `jobs.prisma` on phase codes, `estimating.prisma`
@@ -84,11 +110,31 @@ export type AddendumItem = {
  * here: a wrong "these are the same scope" sends somebody to re-check the wrong
  * thing and teaches them to distrust the flag.
  */
+/** Words a GC puts IN FRONT of an identifier, stripped repeatedly because
+ *  "Specification Section 09 21 16" carries two of them. `(\s+|$)` so a
+ *  reference that is only a qualifier empties out rather than becoming a scope
+ *  called "section". */
+const QUALIFIER = /^(the|a|specification|spec|section|sheet|drawing|detail)(\s+|$)/;
+
+/** Words appended to a document's name without changing which document it is. */
+const TRAILING_NOUN = /\s+(form|forms)$/;
+
 export function normaliseReference(raw: string): string {
-  return raw
-    .toLowerCase()
-    .replace(/^\s*(sheet|section|spec|specification)\b/, "")
-    .replace(/[^a-z0-9]/g, "");
+  let s = raw.toLowerCase().trim();
+
+  for (let i = 0; i < 4; i += 1) {
+    const next = s.replace(QUALIFIER, "");
+    if (next === s) break;
+    s = next.trim();
+  }
+
+  // A SPACED dash separates an identifier from its TITLE — "09 21 16 - Gypsum
+  // Board Assemblies" — and the title is not part of which section it is. An
+  // UNSPACED one is part of the identifier, which is why "A-201" survives.
+  s = s.split(/\s+[-–—]\s+/)[0]!.trim();
+  s = s.replace(TRAILING_NOUN, "").trim();
+
+  return s.replace(/[^a-z0-9]/g, "");
 }
 
 /**
