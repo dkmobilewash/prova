@@ -274,6 +274,7 @@ model User {
   sharedJobMedia                       JobMedia[]                    @relation("JobMediaSharedBy")
   jobMediaAnnotations                  JobMediaAnnotation[]          @relation("JobMediaAnnotationBy")
   takeoffPlansUploaded                 TakeoffPlan[]                 @relation("TakeoffPlanUploadedBy")
+  planSheetProposalsAccepted           PlanSheetProposal[]           @relation("PlanSheetProposalAcceptedBy")
   planIngestJobsStarted                PlanIngestJob[]
   takeoffCalibrations                  TakeoffScaleCalibration[]     @relation("TakeoffCalibrationBy")
   takeoffMeasurements                  TakeoffMeasurement[]          @relation("TakeoffMeasurementBy")

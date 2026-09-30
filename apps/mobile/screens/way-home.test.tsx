@@ -1,57 +1,79 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { router } from "expo-router";
-import { wayHomeOptions } from "@/components/wayHome";
-import "./setup";
+import { WayHome } from "@/components/wayHome";
+import { setCanGoBack } from "./setup";
 import { mount } from "./render";
 
 /**
- * The decision behind the way out of a cold notification tap.
+ * The way out of a screen a notification cold-started.
  *
- * **This test exists because the previous two attempts were untestable and
- * both shipped broken.** #548 and its follow-up put
- * `<Stack.Screen options={{ headerLeft }} />` inside the screen component.
- * The code was written, it ran, and React Navigation discarded it on a cold
- * launch — and nothing here could see that, because the only instrument was
- * a phone. Two releases went out claiming a fix that did nothing.
+ * **This is the first version of this test that can fail for the real
+ * reason.** Three previous fixes put the control in the header, and every
+ * test written for them asserted that a screen RECORDED a `headerLeft`
+ * option — which it did, in a mock, while React Navigation discarded the
+ * real one. Three releases shipped green.
  *
- * Moving the decision into a PURE function is the whole point: what to
- * render is now answerable in node, and only the delivery (a layout option)
- * needs a device. The census in `lib/push-destination-exit.test.ts` covers
- * the delivery half structurally.
+ * A view in the screen body is rendered by React, so "is there a control"
+ * is a question this suite can actually answer: mount it and look for the
+ * pressable. That is the whole reason the control moved.
+ *
+ * What this still cannot see is LAYOUT — happy-dom does no layout and
+ * returns zeros from `getBoundingClientRect`, so the 56pt target is a token
+ * (`hitTargetPrimary`) checked by `touch-targets.test.ts`, never measured
+ * here.
  */
 
-describe("the way home, as an options fragment", () => {
-  it("adds nothing when the stack can already go back", () => {
-    // The control, and the half that stops the fix applying itself
-    // everywhere: a WARM tap pushed this on top of real history and that
-    // Back is the right way out. Two exits from one screen is its own
-    // confusion. Without this, `headerLeft` unconditionally would pass.
-    expect(wayHomeOptions({ canGoBack: () => true })).toEqual({});
-  });
+beforeEach(() => {
+  vi.mocked(router.replace).mockClear();
+  vi.mocked(router.push).mockClear();
+  document.body.innerHTML = "";
+});
 
-  it("offers a header button when there is nothing behind the screen", () => {
-    const options = wayHomeOptions({ canGoBack: () => false });
-    expect(
-      "headerLeft" in options,
-      "a cold notification tap leaves no back chevron and no tab bar — without headerLeft the screen is a dead end",
-    ).toBe(true);
-    expect(typeof (options as { headerLeft: unknown }).headerLeft).toBe("function");
-  });
+describe("the way home", () => {
+  it("renders a pressable Home control", async () => {
+    setCanGoBack(false);
+    const screen = await mount(<WayHome />);
 
-  it("renders a Home button that replaces rather than pushes", async () => {
-    // `replace`, not `push`: leaving here is LEAVING, and a push would
-    // stack Home on top of the screen the person was trying to escape.
-    vi.mocked(router.replace).mockClear();
-    vi.mocked(router.push).mockClear();
-
-    const options = wayHomeOptions({ canGoBack: () => false }) as {
-      headerLeft: () => React.ReactElement;
-    };
-    const screen = await mount(options.headerLeft());
     expect(screen.text()).toContain("Home");
-
     const node = document.querySelector('[role="button"][aria-label="Home"]');
-    expect(node, "the way home rendered no pressable control").toBeTruthy();
+    expect(
+      node,
+      "a cold notification tap leaves no back chevron and no tab bar — without this the screen is a dead end",
+    ).toBeTruthy();
+    screen.unmount();
+  });
+
+  it("renders nothing when the stack can already go back", async () => {
+    // The control, and the half that keeps the fix from applying itself
+    // everywhere: a WARM tap pushed this on top of real history and the
+    // native chevron is the right way out. Two exits from one screen is its
+    // own small confusion.
+    //
+    // This assertion is only safe because the one ABOVE exists. Together
+    // they pin both directions, which is what makes a conditional control
+    // defensible after three releases of one that rendered nothing —
+    // "hides when it should not" now fails in node rather than on a phone.
+    setCanGoBack(true);
+    const screen = await mount(<WayHome />);
+
+    expect(
+      document.querySelector('[role="button"][aria-label="Home"]'),
+      "offered a second way out on a screen that already had a back chevron",
+    ).toBe(null);
+    screen.unmount();
+  });
+
+  it("leaves rather than stacking, so the dead end is not kept underneath", async () => {
+    setCanGoBack(false);
+    const screen = await mount(<WayHome />);
+
+    // The BUTTON, not the first node whose text happens to match. On a tree
+    // this small the whole document's text IS the label, so a textContent
+    // search returns <html>, and clicking that bubbles upward and never
+    // reaches the control — a green test asserting on an event that never
+    // fired. react-native-web gives the control role + aria-label.
+    const node = document.querySelector('[role="button"][aria-label="Home"]');
+    expect(node).toBeTruthy();
     node!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(vi.mocked(router.replace)).toHaveBeenCalledWith("/(tabs)");

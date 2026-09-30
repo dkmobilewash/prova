@@ -1976,6 +1976,76 @@ anything about SIZE.
   new Clerk widget added, a `content` glob pointed at a directory that does
   not exist, and `<UserButton>` reached through a namespace import.
 
+- **A HEADER OPTION IN expo-router CAN BE DISCARDED IN SILENCE, AND THREE
+  FIXES SHIPPED GREEN BECAUSE OF IT.** 2026-09-28/29, on the phone. The
+  fourth member of the family directly above, and the one that finally says
+  what the other three were circling.
+
+  A notification tap that launches the app from a killed state lands on a
+  screen with nothing behind it — no back chevron, and outside `(tabs)` no
+  tab bar either. `/alerts` and `/job/<id>` are the only two such
+  destinations (`push-target.ts`). Three PRs gave them a way out and **not
+  one of them rendered**:
+
+  | | approach | result |
+  | --- | --- | --- |
+  | #548 | `<Stack.Screen options={{ headerLeft }} />` inside `/alerts` | nothing rendered |
+  | #553 | the same, copied to `/job/<id>` | nothing rendered |
+  | #554 | moved to the LAYOUT as an options FUNCTION | nothing rendered |
+  | #555 | a `<WayHome />` view in the screen BODY | **works, confirmed on a phone** |
+
+  **Why, read out of the installed expo-router 57.0.21 rather than guessed.**
+  `Stack.Screen` is two components wearing one name. In a layout its props
+  are read by the navigator — that is how `title` reaches these screens, and
+  `title` was visibly rendering throughout. Inside a PAGE it delegates to
+  `views/Screen.js`, which calls `navigation.setOptions` from a layout effect
+  behind `const isFocused = navigation.isFocused()` — read at render and
+  never subscribed — plus an `isPreloaded` check. A cold deep-link launch is
+  exactly where those are unsettled. And a FUNCTION passed as layout
+  `options` is spread with `{ ...props.options }` (`StackScreen.js:78`);
+  a function has no enumerable own properties, so it becomes `{}`.
+  `StackScreen.js` warns about the first in its own source and its docstring
+  points at `Stack.Title`/`Stack.Header` for page-level header config —
+  all three fixes did the thing the library documents against.
+
+  **THE EXPENSIVE PART WAS NOT THE FRAMEWORK, IT WAS THAT NO CHECK HERE
+  COULD SEE IT.** `push-destination-exit.test.ts` asserted the screens
+  CONTAINED `canGoBack` and `HeaderHomeButton`. They did. It passed with its
+  **size and scope assertions both holding**, on a broken app. Rewritten to
+  assert the LAYOUT wired those options: it did, it passed again, nothing
+  rendered again. So:
+
+      A census can tell you the code is THERE.
+      It can never tell you a framework HONOURS it.
+
+  That is the fourth member of the set, and it is not a failure of rigour —
+  it is the limit of the instrument. Beside "nothing is missing from a
+  directory you do not walk" and "nothing is missing from a list nobody
+  imports", put **"nothing is ever missing from a question nobody is
+  asking."**
+
+  **So the rule is about where a fix LIVES, not how hard it is asserted.**
+  Anything that must be visible on a cold-start screen goes in the screen
+  BODY, where React renders it like every other pixel: a navigator cannot
+  drop it, it cannot depend on focus or preload timing, and a test can
+  assert it. Prefer a fix that is checkable over one that is conventional —
+  three plausible unverifiable fixes are worth less than one verifiable one.
+
+  **The mutation that distinguishes them is `make it render nothing`.**
+  Every test written for #548, #553 and #554 stayed green under it, because
+  each was asserting that a screen RECORDED an option, in a mock, while the
+  framework threw the real one away. Under #555 the same mutation reds the
+  census and all three screen tests. If that mutation leaves a suite green,
+  the suite is measuring a mock.
+
+  One smaller thing fell out and is worth keeping: `HeaderHomeButton`
+  coloured its label `brand` — #facc15 on a near-white rail — which
+  `tailwind`-side and `theme.ts` both forbid in as many words ("As TEXT,
+  `link` is the readable amber — never `brand`"). `theme-contrast.test.ts`
+  never caught it and neither did anyone else, **because the button it sat
+  on never appeared.** A defect inside dead code is invisible to every
+  instrument, including the ones written for that exact defect.
+
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.
 - `CHANGELOG.md`: newest first; says why decisions were made and the

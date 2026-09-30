@@ -656,6 +656,20 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     models: ["TakeoffPlan", "TakeoffPlanPage", "TakeoffScaleCalibration", "TakeoffMeasurement"],
   },
   {
+    key: "plan-sheet-index",
+    title: "What ingestion read off each plan sheet, and the sheet numbers confirmed from it",
+    detail:
+      "When a plan set is ingested, the words lifted off each sheet's title block are kept, " +
+      "along with what was proposed about that sheet — its number, title, discipline, scale — " +
+      "and which of those an estimator then confirmed. Not exported yet. The words are text " +
+      "off a PDF this file does not contain and are re-read from it at no cost. The CONFIRMED " +
+      "sheet numbers are a different matter: that is a person's own work and it is the part " +
+      "worth exporting, as the table of contents of a drawing set. It is omitted here because " +
+      "no dataset has been written for it, not because it would be meaningless — and this line " +
+      "exists so that is stated rather than quietly true.",
+    models: ["PlanSheetText", "PlanSheetProposal"],
+  },
+  {
     key: "retainage-and-backcharges",
     title: "Retainage releases and backcharges",
     detail:

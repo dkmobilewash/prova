@@ -87,7 +87,7 @@ test.describe("plan-ingestion runner", () => {
     await page?.context().close();
   });
 
-  test("1. a plan set with no sheet on file refuses honestly rather than starting", async () => {
+  test("1. a plan set is readable as soon as it is uploaded", async () => {
     await signInAs(page, PERSONAS.planIngest.email);
     await landOnDashboard(page, monitor);
     jobId = await startJob(page, monitor, { name: JOB_NAME, gcName: GC_NAME });
@@ -106,26 +106,31 @@ test.describe("plan-ingestion runner", () => {
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 30_000 });
     await expectHealthy(page, "takeoff tab after uploading a sheet", { monitor });
 
-    // A plan with NO calibrated sheet: the panel appears, says what is missing,
-    // and the button is DISABLED rather than clickable-then-refusing.
+    // THIS STEP ASSERTED THE OPPOSITE UNTIL 2026-09-28, and the change is the
+    // point of it rather than a detail.
     //
-    // THIS ASSERTION CHANGED AFTER A PERSON CLICKED IT on 2026-09-27. The first
-    // version set that sentence as an `error` when the button was pressed, and
-    // nothing cleared it — so after they went and set a scale, the panel still
-    // told them to open the plan set in the viewer first. The advice was stale
-    // and the app looked like it had not noticed. Derived from the prop it can
-    // only be true while it is true, and the spec asserts the shape that cannot
-    // go stale rather than the one that could.
+    // It used to require the panel to say "Open this plan set in the viewer
+    // first" and the button to be DISABLED, because the page handed the panel
+    // `plan.pages.length` — the number of CALIBRATED sheets, which is zero on a
+    // freshly uploaded set. So a person who had just uploaded a plan set was told
+    // to go and set a scale before anything could read it, which is unrelated work
+    // to satisfy a limitation that did not exist: the server has been able to
+    // count a PDF's pages since `lib/ask/pageCount.ts` was written.
+    //
+    // `startPlanIngest` counts the file's own sheets now and takes no count
+    // argument, so there is nothing to be missing and nothing to advise. The
+    // sentence is gone, and this asserts it is gone — a removed message is
+    // exactly the kind of thing a spec keeps alive by still looking for it.
     await expect(panel()).toBeVisible();
     await expect(
       panel().getByText(/Open this plan set in the viewer first/),
-      "the panel should say what is missing before anybody presses anything",
-    ).toBeVisible();
+      "that advice existed only because the panel was handed the wrong count; it must not come back",
+    ).toHaveCount(0);
     await expect(
       panel().getByRole("button", { name: "Read the sheets" }),
-      "with no sheet on file there is nothing to run over, so the button is refused up front",
-    ).toBeDisabled();
-    await expectHealthy(page, "ingest panel with no sheets on file", { monitor });
+      "an uploaded plan set is readable immediately — nothing has to be calibrated first",
+    ).toBeEnabled();
+    await expectHealthy(page, "ingest panel on a freshly uploaded set", { monitor });
   });
 
   test("2. set a scale, which is what puts a sheet on file", async () => {
@@ -150,47 +155,60 @@ test.describe("plan-ingestion runner", () => {
     await expectHealthy(page, "takeoff tab after setting the scale", { monitor });
   });
 
-  test("3. the run advances to completion, driven by the page itself", async () => {
-    await page.reload();
-    await expectHealthy(page, "takeoff tab with one sheet on file", { monitor });
-
-    await expect(panel()).toBeVisible();
-    // The guidance from step 1 is GONE now a sheet exists, and the button is
-    // live. This is the other half of the staleness fix: the sentence tracks
-    // the prop in both directions, not just on first render.
-    await expect(panel().getByText(/Open this plan set in the viewer first/)).toHaveCount(0);
-    await expect(panel().getByRole("button", { name: "Read the sheets" })).toBeEnabled();
+  test("3. reading refuses honestly when the plan file cannot be fetched", async () => {
+    // WHAT THIS STEP CAN AND CANNOT PROVE, stated first because the honest
+    // version of it is narrower than it looks.
+    //
+    // `PAGE_INVENTORY` reads the PDF SERVER-SIDE, and in this environment the
+    // plan file is not fetchable from the server at all: `stubDocumentUpload`
+    // hands the app a URL on `<store>.public.blob.vercel-storage.com`, a host
+    // that does not exist, and `page.route` can only intercept the BROWSER's
+    // requests. That is why the viewer renders — its fetch goes through the
+    // browser — while a server-side fetch cannot. The URL guard requires an
+    // https host under the blob domain and this repo deliberately gives its
+    // guards no env-var escape hatch, so pointing the stub at localhost is not
+    // available either.
+    //
+    // So this asserts the REFUSAL PATH, end to end and for real: the action
+    // runs, the fetch fails, and a sentence a person can act on reaches the
+    // screen instead of a half-started run or a silent nothing. That is the
+    // wiring — action, guard, fetch, sentence — which is exactly what only an
+    // e2e can check.
+    //
+    // WHAT IT DOES NOT COVER is the reading itself. That is covered where it can
+    // be: `lib/plan-ingest/pageInventory.test.ts` drives the real stage over real
+    // multi-page PDFs through the real pdfjs, including rotated sheets, and
+    // `planPdf.test.ts` mutation-proves the rotation handling. One real plan set
+    // read end to end remains a CLICK-THROUGH item — and it is blocked anyway
+    // until the 250MB ceiling lands, because a real set does not clear the 15MB
+    // upload cap. Diego's call, 2026-09-28.
     await panel().getByRole("button", { name: "Read the sheets" }).click();
 
-    // THE ASSERTION THIS FILE EXISTS FOR. Nothing polls on a timer and nothing
-    // interpolates: the panel reaches 100% only because it asked the server for
-    // slices until the server said there was nothing left. A cron could not
-    // have done this — it runs once a day on this plan.
-    await expect(panel().getByText("Every sheet read.")).toBeVisible({ timeout: 60_000 });
+    await expect(
+      panel().getByText(/plan file couldn't be fetched/),
+      "a fetch that fails must say so on screen, not leave the panel looking idle",
+    ).toBeVisible({ timeout: 30_000 });
 
-    // The figure is the two numbers, and they agree with each other. One sheet
-    // is on file, so "1 of 1 sheet (100%)" — singular, because a progress line
-    // that says "1 sheets" is the kind of thing a person reads as a bug.
-    await expect(panel().locator('[data-plan-ingest="progress"]')).toContainText("1 of 1");
-    await expect(panel().locator('[data-plan-ingest="progress"]')).toContainText("100%");
-    await expect(panel().locator('[data-plan-ingest="progress"]')).toContainText("sheet (100%)");
-
-    // Nothing failed, so no retry list and no amber count.
+    // NOTHING WAS HALF-STARTED. `startPlanIngest` counts the file's pages before
+    // it creates a single task row, so a refusal at that point leaves no job, no
+    // tasks and no progress figure — which is the difference between a refusal
+    // and a broken run, and it is invisible from the sentence alone.
+    await expect(panel().locator('[data-plan-ingest="progress"]')).toHaveCount(0);
     await expect(panel().getByRole("button", { name: "Retry" })).toHaveCount(0);
-    await expect(panel().getByText(/couldn't be read/)).toHaveCount(0);
-    await expectHealthy(page, "takeoff tab after a completed run", { monitor });
+    await expectHealthy(page, "takeoff tab after a refused read", { monitor });
   });
 
-  test("4. a reload after completion offers a fresh start, not a stale bar", async () => {
+  test("4. a reload after the refusal offers a fresh start, not a stuck panel", async () => {
     await page.reload();
-    await expectHealthy(page, "takeoff tab reloaded after a completed run", { monitor });
+    await expectHealthy(page, "takeoff tab reloaded after a refused read", { monitor });
 
-    // `unfinishedIngestFor` must return null for a FINISHED job. If it returned
-    // the finished run instead, the panel would render a permanent 100% bar and
-    // the set could never be read again — which is the failure this step exists
-    // to catch, and it is invisible from the run itself.
+    // `unfinishedIngestFor` must find nothing, because nothing was created. If a
+    // job HAD been created before the refusal, this is where it would show — as a
+    // permanent 0% bar over a run nobody could finish, with no way to start
+    // again. That failure is invisible from the run itself, which is why the step
+    // survives the change from asserting completion to asserting a refusal.
     await expect(panel()).toBeVisible();
-    await expect(panel().getByRole("button", { name: "Read the sheets" })).toBeVisible();
+    await expect(panel().getByRole("button", { name: "Read the sheets" })).toBeEnabled();
     await expect(panel().locator('[data-plan-ingest="progress"]')).toHaveCount(0);
   });
 

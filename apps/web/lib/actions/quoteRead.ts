@@ -12,7 +12,8 @@ import {
   documentDisplayFileName,
   documentUrlProblem,
   isAllowedDocumentType,
-  DOCUMENT_UPLOAD_MAX_BYTES,
+  formatDocumentSize,
+  uploadMaxBytesFor,
   type DocumentUploadContentType,
 } from "@/lib/document-uploads";
 import { actionFail, type ActionResultWith } from "./shared";
@@ -224,8 +225,9 @@ async function readStoredQuote(
   const buffer = Buffer.from(await response.arrayBuffer());
   // The signed token already bound the transfer to this ceiling. This is the
   // second look, taken before the bytes are base64'd and sent on.
-  if (buffer.byteLength === 0 || buffer.byteLength > DOCUMENT_UPLOAD_MAX_BYTES) {
-    return { ok: false, error: `That file is over the ${Math.floor(DOCUMENT_UPLOAD_MAX_BYTES / (1024 * 1024))}MB limit.` };
+  const max = uploadMaxBytesFor("bid-quote");
+  if (buffer.byteLength === 0 || buffer.byteLength > max) {
+    return { ok: false, error: `That file is over the ${formatDocumentSize(max)} limit.` };
   }
   return { ok: true, buffer, mediaType: served };
 }

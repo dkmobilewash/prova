@@ -68,10 +68,20 @@ model TakeoffPlan {
   fileUrl  String
   fileName String?
 
-  /// NO `pageCount` COLUMN. The page count is in the file; the server has no
-  /// PDF library to read it with, and the viewer knows it the moment the
-  /// document opens. A column here could only ever hold a client's claim,
-  /// gone stale.
+  /// NO `pageCount` COLUMN, and the conclusion is unchanged while its reason is
+  /// not. This said "the server has no PDF library to read it with", which was
+  /// never true — `lib/ask/pageCount.ts` has counted PDF pages server-side for
+  /// billing since it was written, and `startPlanIngest` counts a plan set's
+  /// sheets that way now.
+  ///
+  /// The reason that actually holds is the schema's own rule: a count here would
+  /// be DERIVED STATE, and derived state is never stored. It is in the file, the
+  /// file cannot change, and reading it is cheap — so a column could only ever
+  /// disagree with the document it claims to describe.
+  ///
+  /// `PlanSheetText` in `plan-ingest.prisma` is the deliberate exception and
+  /// argues itself: it stores what a page SAYS, because that is the evidence a
+  /// proposal was made from rather than a number anybody could re-derive.
   /// WHICH ISSUE OF THE DRAWINGS THIS IS, off the title block — "Rev 2",
   /// "ASI-12", "Bulletin 5" — and the date printed beside it.
   ///
@@ -109,6 +119,18 @@ model TakeoffPlan {
   /// out of `HANDLED_MODELS` and the two cleanup `del()` orders: one
   /// `takeoffPlan.deleteMany({ jobId })` still reaches all of it.
   ingestJobs PlanIngestJob[]
+
+  /// What ingestion read off each page, and what it proposed about each sheet —
+  /// both in plan-ingest.prisma. CASCADEd from here for the reason the comment
+  /// above gives, so neither needs registering anywhere.
+  ///
+  /// NEITHER IS A SHEET INDEX FOR THE JOB. `sheetProposals` is a proposal an
+  /// estimator reviews so they can find the sheet they mean to measure; the job's
+  /// paper trail is still `DrawingSet`/`DrawingRevision`, and `label` on
+  /// `TakeoffPlanPage` is still typed by a person. Accepting a proposal writes
+  /// neither.
+  sheetTexts     PlanSheetText[]
+  sheetProposals PlanSheetProposal[]
 
   createdAt DateTime @default(now())
 

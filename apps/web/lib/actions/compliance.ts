@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import {
-  DOCUMENT_UPLOAD_MAX_BYTES,
+  formatDocumentSize,
+  uploadMaxBytesFor,
   DOCUMENT_UPLOAD_TARGETS,
   documentDisplayFileName,
   documentUrlProblem,
@@ -410,8 +411,12 @@ async function readStoredDocument(
   const buffer = Buffer.from(await response.arrayBuffer());
   // The signed token already bound the TRANSFER to this ceiling. This is
   // the second look, taken before the bytes are base64'd and sent on.
-  if (buffer.byteLength === 0 || buffer.byteLength > DOCUMENT_UPLOAD_MAX_BYTES) {
-    return { ok: false, error: "That file is over the 15MB limit." };
+  const max = uploadMaxBytesFor("compliance-document");
+  if (buffer.byteLength === 0 || buffer.byteLength > max) {
+    // The number comes from the target rather than the sentence, so raising a
+    // ceiling cannot leave a refusal quoting the old one — which is what "over the
+    // 15MB limit" would have done the moment any purpose moved.
+    return { ok: false, error: `That file is over the ${formatDocumentSize(max)} limit.` };
   }
 
   return { ok: true, buffer, mediaType: served };

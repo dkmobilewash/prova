@@ -4,7 +4,7 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import {
-  DOCUMENT_UPLOAD_MAX_BYTES,
+  uploadMaxBytesFor,
   DOCUMENT_UPLOAD_TARGETS,
   documentUploadPurpose,
   isAllowedDocumentType,
@@ -158,10 +158,15 @@ export async function POST(request: Request): Promise<NextResponse> {
           // (@vercel/blob@2.8.0 dist/chunk-YYMLUMXS.js:653 maps exactly
           // that response), so a client that declares a PDF and sends
           // something else costs itself an upload and nothing more. Unlike
-          // site capture there is no per-kind ceiling to choose between:
-          // all four document types share one number.
+          // THE CEILING IS THE PURPOSE'S NOW. This comment used to say "there is
+          // no per-kind ceiling to choose between: all four document types share
+          // one number", which was true while every purpose carried paperwork and
+          // stopped being true when a DRAWING SET shared it — 15MB refuses every
+          // real one. `uploadMaxBytesFor` resolves it, and this is the ENFORCEMENT:
+          // the store applies it to the transfer itself, so a client that lies about
+          // a file's size loses the upload rather than the bytes landing.
           allowedContentTypes: [declaredType],
-          maximumSizeInBytes: DOCUMENT_UPLOAD_MAX_BYTES,
+          maximumSizeInBytes: uploadMaxBytesFor(purpose),
           addRandomSuffix: true,
           // Echoed ONLY to `onUploadCompleted`, which this route
           // deliberately does not implement, so nothing reads it today.

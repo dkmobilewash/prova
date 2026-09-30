@@ -93,7 +93,15 @@ model CompanyAiSettings {
   disabledFeatures AiFeature[]
 
   /// Plan sheets included per calendar month, metered by
-  /// `AskAllowancePeriod.planSheetsUsed`.
+  /// `AskAllowancePeriod.planSheetsUsed` — which `claimPlanSheet` in
+  /// `lib/ask/planSheetSpend.ts` increments, one sheet at a time, before each
+  /// title-block read.
+  ///
+  /// THAT SENTENCE WAS ASPIRATIONAL UNTIL 2026-09-28 and read as settled fact.
+  /// The columns existed from step 0 and nothing incremented them; a reader
+  /// checking whether plan-set reading was metered would have concluded yes. The
+  /// claimer names itself here now so the next such claim can be followed to a
+  /// function rather than taken on trust.
   ///
   /// Per company rather than a constant so a plan can move it without a
   /// migration — `ASK_MONTHLY_ALLOWANCE` is a constant today and

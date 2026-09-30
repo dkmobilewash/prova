@@ -194,7 +194,18 @@ export type AskUsageFeature =
    *  it replaces its cost ESTIMATE with what these rows and the log line
    *  below measure, before any scheduling decision is made. Not "ask", so
    *  a pass never costs a person one of their hourly questions. */
-  | "lead-search";
+  | "lead-search"
+  /** One sheet's title block, read during plan-set ingestion
+   *  (lib/plan-ingest/titleBlock.ts). Its own row rather than folded into
+   *  `compliance-extract` or `quote-extract`, because it spends a DIFFERENT
+   *  LEDGER: plan sheets are metered on `AskAllowancePeriod.planSheetsUsed`
+   *  against a 1,500-a-month ceiling, not on the 300 document pages the other
+   *  two share. A bill that could not tell them apart could not answer the
+   *  question this feature exists to make answerable — what a plan set costs to
+   *  ingest — which `docs/ai/DECISIONS.md` records as unmeasured. And the rows
+   *  are the measurement: hundreds per set, so they are the first place in this
+   *  app where per-feature spend is a volume question rather than a unit price. */
+  | "plan-ingestion";
 
 export type AskUsageRecord = {
   companyId: string;
@@ -357,6 +368,7 @@ const FEATURE_LABELS: Record<string, string> = {
   "draft-estimate-lines": "Estimate drafting",
   "bid-research": "Bid research (web)",
   "lead-search": "Lead search (web)",
+  "plan-ingestion": "Plan sheet reading",
 };
 
 /** The last thirty days for the settings page, grouped by who asked.

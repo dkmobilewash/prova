@@ -200,13 +200,40 @@ Deriving it from `updatedAt` was the first design and is wrong: that column move
 for reasons that are not attempts. Without `nextAttemptAt`, three attempts can be
 spent in three seconds inside one loop, or as fast as a person clicks Retry.
 
-### The first stage does no model work, and the server cannot do more yet
+### The server CAN read a plan set — corrected 2026-09-29, and the shape of the error is the lesson
 
-`PAGE_INVENTORY` records that a page was reached. `TakeoffPlan` has no
-`pageCount` column because the server has no PDF library — the viewer knows the
-count because `pdfjs-dist` runs in the browser. **So no server-side stage can
+This section said: *"`PAGE_INVENTORY` records that a page was reached. `TakeoffPlan`
+has no `pageCount` column because the server has no PDF library — the viewer knows
+the count because `pdfjs-dist` runs in the browser. **So no server-side stage can
 open a plan file at all until something rasterises it**, which remains the one
-genuinely undecided piece of the ingestion design.
+genuinely undecided piece of the ingestion design."*
+
+**It was false, and it deferred three stages for a fortnight.** It conflates READING
+a PDF with RASTERISING one. Measured rather than argued:
+
+- `lib/ask/pageCount.ts` has parsed PDFs server-side, in production, for billing
+  since it was written — a regex over the page tree with a `zlib.inflateSync` pass
+  for 1.5 object streams. No pdfjs, no canvas.
+- `pdfjs-dist` in **Node** gives `numPages`, the page box, the page's `/Rotate`, and
+  `getTextContent()` with a position on every item. Only `page.render()` fails, and
+  that is the one thing needing a canvas.
+
+So `PAGE_INVENTORY` reads the file now and makes no model call; `TITLE_BLOCK` calls
+the model over the stored text and never opens the PDF. Rasterisation is not merely
+undecided — for a title block it is the WRONG instrument: an ARCH D sheet fitted to
+the high-resolution tier's 2576px long edge is 65 DPI, which puts 1/8" lettering at
+about eight pixels.
+
+**Why it is worth this many words.** The sentence cited `TakeoffPlan`'s own schema
+comment, which said the same thing — so it read as settled rather than as a guess,
+and nobody re-checked it. A false claim with a citation is the most expensive kind
+this file can hold. Four places repeated it and all four are corrected;
+`lib/plan-ingest/planPdf.ts` now carries the measurements instead of the assertion.
+
+The claim ALSO survived a correction pass that said it had been fixed: the PR that
+corrected `actions/planIngest.ts` and the takeoff page reported six comments
+corrected when four had been, and this was one of the two still standing. Grep for
+the sentence, not for the intention.
 
 ## Open questions
 

@@ -88,6 +88,37 @@ export function isAllowedDocumentType(
 export const DOCUMENT_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
 
 /**
+ * PLAN SETS ONLY — 250MB, because 15MB refuses every real one.
+ *
+ * A drawing set is 20–100MB and routinely more; the step-1 plan says so and Diego
+ * approved 250MB for this purpose alone as part of step 0. It then shipped without it
+ * and `docs/ai/DECISIONS.md` recorded the omission, noting that forgetting it was the
+ * SAFE direction because the first real set would be refused at 15MB with a sentence
+ * on screen. It was, on 2026-09-27.
+ *
+ * WHY IT IS SAFE TO HOLD ONE IN MEMORY, measured rather than assumed — and my own
+ * earlier claim that it would OOM was wrong. `PAGE_INVENTORY` buffers the whole file
+ * per invocation, so the question is what that costs:
+ *
+ *   119MB file, 900 pages, 200 pages read: peak RSS never rose above the process
+ *   baseline at all, while genuinely extracting 112,092 characters.
+ *
+ * pdfjs is LAZY — it parses the objects a page needs and `page.cleanup()` releases
+ * them — so the cost is the buffer, not the document, and it does not grow with how
+ * many pages a slice reads. `Buffer.from(arrayBuffer)` is a VIEW rather than a copy,
+ * so the fetch does not transiently double it either. A 250MB set is therefore about
+ * 250MB of RSS on top of the function's baseline, which fits.
+ *
+ * WHAT THE MEASUREMENT DOES NOT COVER: a Vercel function's real ceiling, which cannot
+ * be tested from a laptop. If a large set ever kills an invocation, the number to
+ * change is this one — and the ranged read is NOT the fix. That was tried:
+ * pdfjs over HTTP with `disableAutoFetch` issued Range requests and then fetched the
+ * whole document anyway (203 requests, 25.8MB served for a 12.9MB file), so ranging
+ * bounds nothing here.
+ */
+export const PLAN_SET_UPLOAD_MAX_BYTES = 250 * 1024 * 1024;
+
+/**
  * WHAT IS BEING UPLOADED, which is not the same question as where it goes.
  *
  * Two purposes share the `contracts/<jobId>/` folder — an ordinary
@@ -118,6 +149,20 @@ export type DocumentUploadPurpose = (typeof DOCUMENT_UPLOAD_PURPOSES)[number];
  * compliance documents, which is the one that needed its own reasoning —
  * see `DOCUMENT_UPLOAD_TARGETS`. */
 export type DocumentUploadScope = "job" | "company";
+
+/**
+ * The ceiling for one purpose, or the default when no purpose is known.
+ *
+ * ONE PLACE, so the token route, the browser's pre-check and the server's re-check
+ * after fetching the bytes back cannot disagree. They did once in the other
+ * direction: `document-uploads.ts`'s own header records five in-action 15MB guards
+ * that were unreachable behind Next's 1MB Server Action body cap, which is what
+ * moving the enforcement to the token minting fixed.
+ */
+export function uploadMaxBytesFor(purpose?: DocumentUploadPurpose): number {
+  if (!purpose) return DOCUMENT_UPLOAD_MAX_BYTES;
+  return DOCUMENT_UPLOAD_TARGETS[purpose].maxBytes;
+}
 
 export type DocumentUploadTarget = {
   /** The store folder, without the owner id and without a trailing slash. */
@@ -153,6 +198,19 @@ export type DocumentUploadTarget = {
    * reaches the browser through the SDK (see `documentUploadErrorMessage`),
    * but it is what a server log and any non-SDK caller get. */
   readonly refusal: string;
+  /**
+   * The biggest file this purpose accepts.
+   *
+   * REQUIRED, so a new purpose decides rather than inheriting. One global number was
+   * fine while every purpose carried paperwork — a lien waiver and a certified payroll
+   * run are tens of pages — and it stopped being fine the moment a DRAWING SET shared
+   * it. `job-media` already caps per kind for the same reason (25MB a photo, 200MB a
+   * video), so this is copied prior art rather than a new idea.
+   *
+   * Raising one of these raises what a single request can move into the store, so it
+   * is a per-purpose decision and not a constant to bump.
+   */
+  readonly maxBytes: number;
 };
 
 export const DOCUMENT_UPLOAD_TARGETS: Record<DocumentUploadPurpose, DocumentUploadTarget> = {
@@ -161,18 +219,21 @@ export const DOCUMENT_UPLOAD_TARGETS: Record<DocumentUploadPurpose, DocumentUplo
     scope: "job",
     capability: null,
     refusal: "Dispatch slips aren't part of your job function.",
+    maxBytes: DOCUMENT_UPLOAD_MAX_BYTES,
   },
   "prevailing-wage": {
     root: "prevailing-wage",
     scope: "job",
     capability: null,
     refusal: "Wage determinations aren't part of your job function.",
+    maxBytes: DOCUMENT_UPLOAD_MAX_BYTES,
   },
   "contract-document": {
     root: "contracts",
     scope: "job",
     capability: null,
     refusal: "Contract documents aren't part of your job function.",
+    maxBytes: DOCUMENT_UPLOAD_MAX_BYTES,
   },
   "executed-subcontract": {
     root: "contracts",
@@ -183,6 +244,7 @@ export const DOCUMENT_UPLOAD_TARGETS: Record<DocumentUploadPurpose, DocumentUplo
     // key of this table.
     capability: "MANAGE_JOBS",
     refusal: "Managing jobs isn't part of your job function.",
+    maxBytes: DOCUMENT_UPLOAD_MAX_BYTES,
   },
   "bid-quote": {
     root: "bid-quotes",
@@ -198,6 +260,7 @@ export const DOCUMENT_UPLOAD_TARGETS: Record<DocumentUploadPurpose, DocumentUplo
     // person who cannot use it never moves the bytes either.
     capability: "MANAGE_ESTIMATING",
     refusal: "Estimating isn't part of your job function.",
+    maxBytes: DOCUMENT_UPLOAD_MAX_BYTES,
   },
   "compliance-document": {
     root: "compliance",
@@ -208,6 +271,7 @@ export const DOCUMENT_UPLOAD_TARGETS: Record<DocumentUploadPurpose, DocumentUplo
     // the company's paid monthly allowance.
     capability: "MANAGE_COMPLIANCE",
     refusal: "Compliance documents aren't part of your job function.",
+    maxBytes: DOCUMENT_UPLOAD_MAX_BYTES,
   },
   "plan-takeoff": {
     root: "plan-takeoff",
@@ -219,6 +283,11 @@ export const DOCUMENT_UPLOAD_TARGETS: Record<DocumentUploadPurpose, DocumentUplo
     // as every other write on that tab).
     capability: "VIEW_JOB_COSTS",
     refusal: "A job's costs and pricing aren't part of your job function.",
+    // THE ONE PURPOSE THAT IS NOT 15MB. A drawing set is 20-100MB and often more,
+    // so the shared ceiling refused every real one — see PLAN_SET_UPLOAD_MAX_BYTES
+    // for the measurement that says holding one in memory is safe, and for what was
+    // tried instead and did not work.
+    maxBytes: PLAN_SET_UPLOAD_MAX_BYTES,
   },
 };
 
@@ -507,12 +576,23 @@ export function formatDocumentSize(bytes: number): string {
  * failed PUT, and so the two numbers are stated in one place instead of
  * being retyped into five components.
  */
-export function documentFileProblem(file: { type: string; size: number }): string | null {
+export function documentFileProblem(
+  file: { type: string; size: number },
+  /**
+   * Which purpose the file is for, so the ceiling is the one that will actually be
+   * applied. OPTIONAL so every existing caller is unchanged and keeps the default —
+   * but a caller that omits it on a plan set would tell somebody their 40MB drawing
+   * set is over a 15MB limit that the token is about to allow, which is a worse
+   * failure than no check at all.
+   */
+  purpose?: DocumentUploadPurpose,
+): string | null {
   if (!isAllowedDocumentType(file.type)) {
     return `That file type isn't supported (${file.type || "the browser did not say what it is"}) — upload a PDF, PNG, JPEG, or WEBP.`;
   }
-  if (file.size > DOCUMENT_UPLOAD_MAX_BYTES) {
-    return `That file is ${formatDocumentSize(file.size)}, over the ${formatDocumentSize(DOCUMENT_UPLOAD_MAX_BYTES)} limit.`;
+  const max = uploadMaxBytesFor(purpose);
+  if (file.size > max) {
+    return `That file is ${formatDocumentSize(file.size)}, over the ${formatDocumentSize(max)} limit.`;
   }
   if (file.size === 0) {
     return "That file is empty.";

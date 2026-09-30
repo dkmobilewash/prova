@@ -6,6 +6,8 @@ import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { TakeoffMeasurementList } from "@/components/TakeoffMeasurementList";
 import { TakeoffPlanUploader } from "@/components/TakeoffPlanUploader";
 import { PlanIngestPanel } from "@/components/PlanIngestPanel";
+import { PlanSheetReview } from "@/components/PlanSheetReview";
+import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { unfinishedIngestFor } from "@/lib/plan-ingest/claim";
 import { TakeoffCurrencyBanner } from "@/components/TakeoffCurrencyBanner";
 import { TakeoffPlanRevisionForm } from "@/components/TakeoffPlanRevisionForm";
@@ -182,21 +184,23 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
       {/* READING THE SHEETS, above the viewer because it is about the whole set
           rather than one sheet.
 
-          `pageCount` is the number of sheets ON FILE, not the PDF's page count,
-          and the difference is deliberate rather than a shortcut: `TakeoffPlan`
-          has no `pageCount` column because the server has no PDF library to read
-          one with — the viewer knows it because `pdfjs-dist` renders the document
-          in the BROWSER. So this first stage walks the sheets C Stream already
-          knows about, which is well defined and honest. The real page count
-          arrives with rasterisation, which the step-1 plan flagged as the one
-          genuinely undecided piece. */}
+          NO PAGE COUNT IS PASSED, and this comment used to explain at length why
+          one had to be: "the server has no PDF library to read one with", so the
+          panel was handed the number of sheets already CALIBRATED and the real
+          count "arrives with rasterisation". Both halves were wrong.
+          `lib/ask/pageCount.ts` has counted PDF pages server-side for billing
+          since it was written, and reading a PDF was never the same capability as
+          rasterising one. `startPlanIngest` counts the file's own sheets now. */}
       {isEstimateStage && (
-        <PlanIngestPanel
-          planId={plan.id}
-          pageCount={plan.pages.length > 0 ? plan.pages.length : null}
-          existing={await unfinishedIngestFor(plan.id, "PAGE_INVENTORY")}
-        />
+        <PlanIngestPanel planId={plan.id} existing={await unfinishedIngestFor(plan.id, "PAGE_INVENTORY")} />
       )}
+
+      {/* WHAT WAS READ, AND WHAT SOMEBODY SAYS IT IS — below the panel that reads
+          it, because it only has anything to show once that has run. Rendered at
+          all times rather than behind a condition: an empty index says so in one
+          sentence, which is more useful than a section that appears from nowhere
+          the first time a run finishes. */}
+      {isEstimateStage && <PlanSheetReview rows={await sheetIndexFor(plan.id, company.id)} />}
 
       <TakeoffPlanViewer jobId={job.id} planId={plan.id} sheets={sheets} />
 
