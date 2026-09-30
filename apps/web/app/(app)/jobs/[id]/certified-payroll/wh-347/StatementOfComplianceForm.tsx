@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 
 import { saveWh347Statement } from "@/lib/actions";
+import { Spinner } from "@/components/Spinner";
 import { WH347_FRINGE_MODE_LABEL, type Wh347FringeMode } from "@/lib/wh347-statement";
 
 /**
@@ -181,7 +182,14 @@ export function StatementOfComplianceForm({
           disabled={pending}
           className="min-h-11 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-60"
         >
-          {pending ? "Saving…" : "Save page 2"}
+          {pending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save page 2"
+          )}
         </button>
         {error && <p className="text-xs text-tag-rose-ink">{error}</p>}
       </div>
