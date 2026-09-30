@@ -163,6 +163,33 @@ export default async function AssistantAuditPage() {
                 Contact C Stream if you need more before {allowance.resetsOn}.
               </p>
             )}
+            {/* THE OTHER TWO UNITS, and they were metered and never shown until
+                2026-09-30. `planSheetSpend.ts` and `addendumSpend.ts` each tell a
+                person on screen that "the account owner can see the month on
+                Settings → Assistant" — and this page carried questions and
+                document pages only, so for plan sheets (#551) and addendum pages
+                both sentences were false. A browser click-through found it by
+                looking for a figure it had been told would be here.
+
+                A SEPARATE LINE rather than folded into the sentence above,
+                because these are separate ceilings: running out of plan sheets
+                does not stop the Ask box, and running out of questions does not
+                stop a plan set being read. One sentence would imply one pot. */}
+            <p className="mb-3 text-sm text-ink-body" data-ask="allowance-units">
+              Separately, and on their own ceilings:{" "}
+              <span className="text-ink-label">
+                {allowance.planSheetsLeft} of {allowance.planSheetCeiling} plan sheets
+              </span>{" "}
+              and{" "}
+              <span className="text-ink-label">
+                {allowance.addendumPagesLeft} of {allowance.addendumPageCeiling} addendum pages
+              </span>{" "}
+              left. Used so far: {allowance.planSheetsUsed}{" "}
+              {allowance.planSheetsUsed === 1 ? "sheet" : "sheets"} and {allowance.addendumPagesUsed}{" "}
+              {allowance.addendumPagesUsed === 1 ? "page" : "pages"}. These do not come out of the
+              questions or document pages above, so reading a drawing set or a GC&apos;s addendum
+              cannot spend the allowance the same job&apos;s paperwork needs.
+            </p>
             <p className="mb-3 text-sm text-ink-body">
               A question costs one question. A file costs its real page count on top — a PDF is counted
               page by page, a photo is one page, and a PDF whose page count can&apos;t be read is charged
@@ -175,6 +202,20 @@ export default async function AssistantAuditPage() {
                 for something that then failed to answer. It is counted rather than quietly given back, because
                 an allowance that hands itself back whenever a call fails is not a cap — contact C Stream and
                 a person will credit it.
+              </p>
+            )}
+            {/* The same disclosure for the other two units. Both ledgers MARK a
+                failure rather than releasing it, and both tell the person so at
+                the time — "the account owner can see them on Settings →
+                Assistant". This is where that has to be true. */}
+            {(allowance.failedPlanSheets > 0 || allowance.failedAddendumPages > 0) && (
+              <p className="mb-3 text-sm text-ink-body" data-ask="allowance-failed-units">
+                {allowance.failedPlanSheets}{" "}
+                {allowance.failedPlanSheets === 1 ? "plan sheet" : "plan sheets"} and{" "}
+                {allowance.failedAddendumPages}{" "}
+                {allowance.failedAddendumPages === 1 ? "addendum page" : "addendum pages"} were claimed for
+                a read that then failed. Counted rather than given back, for the same reason — contact
+                C Stream and a person will credit it.
               </p>
             )}
           </>
