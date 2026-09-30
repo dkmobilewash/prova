@@ -451,6 +451,39 @@ describe("certifiedPayrollAlerts", () => {
     expect(alert.key).toBe("CERTIFIED_PAYROLL:job_1:2026-08-17");
   });
 
+  /* THE HREF IS THE POINT OF THE ALERT, AND IT USED TO BE A DEAD END.
+     It read `/compliance` — a real page, which is why nothing caught this,
+     and one with no certified-payroll sheet on it and no link to one. So
+     the most time-critical weekly filing in the product raised an alert
+     that cost six clicks to act on: /compliance, back to the dashboard,
+     the job, Crew & time, certified payroll, the week.
+
+     Pinned as a regression rather than as a census, deliberately. A census
+     that every alert href resolves to a real route would have passed on the
+     bug — `/compliance` resolves. The defect is semantic (this page cannot
+     do the thing the alert is about) and nothing mechanical sees that, so
+     this is an explicit pin with the reason attached rather than a guard
+     pretending to more reach than it has. */
+  it("points at the week it is about, not at a page that cannot file it", () => {
+    const [alert] = certifiedPayrollAlerts([week], TODAY);
+    expect(alert.href).toBe("/jobs/job_1/certified-payroll?weekStart=2026-08-23");
+  });
+
+  it("hands a monthly filer the last week of the late period, not an unparseable month", () => {
+    // `openingCertifiedPayrollWeek` snaps whatever it gets to the containing
+    // week, so a period END is a safe thing to send — a weekly filer lands on
+    // exactly the late week, a monthly filer on the last week of the period.
+    const augustWeeks = [
+      { jobId: "job_1", jobName: "Mercy Tower", weekStart: "2026-08-17", weekEnd: "2026-08-23" },
+      { jobId: "job_1", jobName: "Mercy Tower", weekStart: "2026-08-24", weekEnd: "2026-08-30" },
+    ].map((w) => ({ ...w, filingFrequency: "MONTHLY" as const, filingDueDays: 10 }));
+    // Well past the 10-day window, so the period is definitely late. Spelled
+    // out rather than reaching for the nested LATER_TODAY, which belongs to
+    // the filing-frequency describe below and is not in scope here.
+    const [alert] = certifiedPayrollAlerts(augustWeeks, "2026-09-20");
+    expect(alert.href).toBe("/jobs/job_1/certified-payroll?weekStart=2026-08-31");
+  });
+
   it("does not chase a week that is still running", () => {
     // The report covers a closed week. Being told off on the Wednesday for
     // not having filed Friday's payroll is how a list gets ignored.

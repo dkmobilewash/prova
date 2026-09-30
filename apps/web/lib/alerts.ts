@@ -925,7 +925,23 @@ export function certifiedPayrollAlerts(
         days < 0
           ? `Hours were logged in that period and nothing covering it has been filed. ${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} past ${window}.`
           : "Hours were logged in that period and nothing covering it has been filed yet.",
-      href: "/compliance",
+      /* STRAIGHT AT THE WEEK THIS IS ABOUT, not at /compliance.
+         That page has no certified-payroll sheet on it and no link to one,
+         so the alert about the most time-critical weekly filing in the
+         product landed on a dead end and cost six clicks to act on:
+         /compliance, back to the dashboard, the job, Crew & time, certified
+         payroll, the week. Every id it needed was already in scope here.
+
+         `periodEnd` rather than a computed week start, because
+         `openingCertifiedPayrollWeek` SNAPS whatever it is given to the
+         containing week (`certifiedPayrollWeekStart`) and falls back to its
+         default on a date it cannot parse. So a weekly filer lands on
+         exactly the week that is late, a monthly filer lands on the last
+         week of the period that is late, and a malformed value degrades to
+         the page's own default rather than to a wrong week. Computing the
+         start here would be a second implementation of a rule that module
+         already owns. */
+      href: `/jobs/${period.jobId}/certified-payroll?weekStart=${period.periodEnd}`,
       dueOn,
       daysUntil: days,
       amount: null,
