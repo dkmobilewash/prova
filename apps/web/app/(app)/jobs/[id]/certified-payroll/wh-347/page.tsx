@@ -16,6 +16,7 @@
 // indistinguishable from a zero to everyone except the person who filled
 // it in. See lib/wh347.ts.
 
+import { jobFormLocation } from "@/lib/job-form-location";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { formatHours, formatHoursOrNull } from "@/lib/render-hours";
@@ -278,7 +279,13 @@ export default async function Wh347Page({
       hqState: company.hqState,
       hqZip: company.hqZip,
     },
-    job: { name: job.name },
+    // `location` was never passed, so the header's PROJECT AND LOCATION was
+    // always blank and always blocking — while the message on screen told the
+    // reader to record the job's site address, which changed nothing. Both
+    // columns were on the row this page already loads. Through the same
+    // helper the DAS forms use, so two government documents for one job
+    // cannot disagree about where it is.
+    job: { name: job.name, location: jobFormLocation(job) },
     weekStart,
     entries: wh347Entries,
     fringeSchedulesByCraft,
