@@ -45,10 +45,23 @@ import { addendumPdf } from "./addendumFixtures";
  *
  * ── HOW TO RUN IT, AND WHAT IT COSTS ──
  *
- *     ANTHROPIC_API_KEY=… pnpm --filter @prova/web exec \
- *       vitest run --config vitest.eval.config.mts lib/addenda/addenda.eval.ts
+ *     ANTHROPIC_API_KEY=sk-ant-… pnpm eval:addenda
  *
- * NAME THE FILE. `pnpm ask:eval` runs every `*.eval.ts` — five of them now.
+ * ONE SHORT LINE, AND THAT IS THE POINT RATHER THAN CONVENIENCE. This header used
+ * to print the underlying command — `pnpm --filter @prova/web exec vitest run
+ * --config … lib/addenda/addenda.eval.ts` — across two lines with a backslash
+ * continuation, and the first person to run it got `zsh: command not found:
+ * --filter`, because a newline survived the paste between `pnpm` and its first
+ * flag. The shell ran `pnpm` alone and then tried to execute `--filter`.
+ *
+ * A script name cannot break that way, cannot be pasted half-wrapped, and cannot
+ * drift from the file it runs: `eval:addenda` in the root `package.json` names
+ * this path, so moving or renaming this file breaks the script loudly instead of
+ * leaving instructions that quietly run nothing.
+ *
+ * `pnpm ask:eval` still runs every `*.eval.ts` — five of them now — which is the
+ * reason this one has its own script rather than a note telling you to name the
+ * file.
  *
  * ONE OPUS CALL PER CASE in `addendumCases.ts`. The count lives in that list
  * rather than in this sentence, because a number written into prose rots faster
