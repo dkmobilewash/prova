@@ -103,7 +103,7 @@ model Job {
   /// the note that it came from the web.
   bidResearch Json?
 
-  /// Four ENTERED public-works facts, recorded on the job's Compliance tab.
+  /// FIVE ENTERED public-works facts, recorded on the job's Compliance tab.
   /// Nothing derives them: the geocoder guesses a county and a prevailing-
   /// wage determination area is not a guess; whether a job is public works
   /// is what the awarding body said, not what the GC's name suggests.
@@ -121,6 +121,22 @@ model Job {
   bidAdvertisedOn DateTime?
   /// The awarding body, as written on the call for bids. Free text.
   awardingBody    String?
+  /// The contract or project number the awarding body assigned, as written
+  /// on the contract. Free text, because it is a string somebody else chose
+  /// and every agency formats it differently.
+  ///
+  /// THIS COLUMN EXISTS BECAUSE THE WH-347 HEADER ASKS FOR IT AND NOTHING
+  /// HELD IT. `lib/wh347.ts` reported `contractNumber` as BLOCKING with the
+  /// sentence "A job does not record one" — which was true, and meant the
+  /// federal form could never be filed by anybody, for any week, however
+  /// complete the rest of it was. Page 2 landing without this column would
+  /// have left the form one unfixable field short of fileable, which is
+  /// worse than being obviously unbuilt.
+  ///
+  /// Entered here rather than on the WH-347 page: it is a fact about the
+  /// job, not about a payroll week, and the other four public-works facts
+  /// are already entered where they are read.
+  contractNumber  String?
 
   /// The Jobber job or quote this was imported from (Jobber ids are global
   /// and name their type, so one column holds both). Null for everything
@@ -174,6 +190,7 @@ model Job {
   contractDocumentVersionCounter ContractDocumentVersionCounter?
   wh347PayrollNumbers            Wh347PayrollNumber[]
   wh347PayrollCounter            Wh347PayrollCounter?
+  wh347Statements                Wh347Statement[]
   das140Notices                  Das140Notice[]
   das142Requests                 Das142Request[]
   rfiCounter                     RfiCounter?

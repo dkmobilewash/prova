@@ -17,6 +17,13 @@
 // it in. See lib/wh347.ts.
 
 import { jobFormLocation } from "@/lib/job-form-location";
+import {
+  WH347_STATEMENT_BLOCKING_REASON,
+  buildWh347Statement,
+  wh347StatementCitation,
+} from "@/lib/wh347-statement";
+import { loadWh347Statement } from "@/lib/wh347-statement-query";
+import { StatementOfComplianceForm } from "./StatementOfComplianceForm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { formatHours, formatHoursOrNull } from "@/lib/render-hours";
@@ -132,7 +139,7 @@ export default async function Wh347Page({
   const nearbyWindowEnd = new Date(weekEnding);
   nearbyWindowEnd.setUTCDate(nearbyWindowEnd.getUTCDate() + 45);
 
-  const [entries, craftClassifications, crew, registerRows, issuedNumber, nearbyRegisterRows] = await Promise.all([
+  const [entries, craftClassifications, crew, registerRows, issuedNumber, nearbyRegisterRows, statementRow] = await Promise.all([
     loadCertifiedPayrollWeekEntries(company.id, job.id, weekStart),
     prisma.craftClassification.findMany({
       where: { unionLocal: { companyAgreements: { some: { companyId: company.id } } } },
@@ -184,7 +191,25 @@ export default async function Wh347Page({
         crewMember: { select: { linkedUserId: true, id: true } },
       },
     }),
+    // Page 2's own row. Null when nobody has filled it in, which is the
+    // ordinary state and not an error — buildWh347Statement reports every
+    // fact as blocking and the form below opens empty.
+    loadWh347Statement(job.id, weekStart),
   ]);
+
+  // Built BEFORE buildWh347, because page 1's blocking list asks this whether
+  // page 2 is ready. The payroll period is the same two dates page 1 prints,
+  // handed over rather than derived again: a period computed twice is a period
+  // free to disagree with itself across two pages of one filing.
+  const statement = buildWh347Statement({
+    contractorName: company.dbaName ?? company.name,
+    projectName: job.name,
+    projectLocation: jobFormLocation(job),
+    payrollNumber: issuedNumber?.number ?? null,
+    periodStart: weekStart,
+    periodEnd: weekEnding,
+    statement: statementRow,
+  });
 
   const identifyingNumbers = new Map<string, string>();
   for (const c of crew) {
@@ -285,7 +310,19 @@ export default async function Wh347Page({
     // columns were on the row this page already loads. Through the same
     // helper the DAS forms use, so two government documents for one job
     // cannot disagree about where it is.
-    job: { name: job.name, location: jobFormLocation(job) },
+    job: {
+      name: job.name,
+      location: jobFormLocation(job),
+      // The header's CONTRACT NO. This blocked unconditionally until
+      // `Job.contractNumber` existed, and the sentence beside it said "A job
+      // does not record one" — true, and it meant no week could ever be filed
+      // however complete the grid was.
+      contractNumber: job.contractNumber,
+    },
+    // Page 2's facts, from the one module that decides whether they are all
+    // there. Page 1's banner and page 2's own list cannot disagree, because
+    // both read this.
+    statementComplete: statement.complete,
     weekStart,
     entries: wh347Entries,
     fringeSchedulesByCraft,
@@ -320,25 +357,54 @@ export default async function Wh347Page({
             first thing on the page and names every column that is not
             ready, because the alternative is an office manager signing a
             form with an empty box in it. */}
-        <div className="mt-5 rounded-lg border border-red-300 bg-tag-rose p-4">
-          <p className="text-sm font-semibold text-tag-rose-ink">
-            This is not ready to file. {form.blocking.length}{" "}
-            {form.blocking.length === 1 ? "thing is" : "things are"} missing.
-          </p>
-          <p className="mt-1 text-xs text-tag-rose-ink/80">
-            The grid below is real — your hours are in the right boxes for the right days. What
-            follows is every field the form requires that C Stream cannot fill in yet.
-          </p>
-          <ul className="mt-3 flex flex-col gap-1.5">
-            {form.blocking.map((field) => (
-              <li key={field} className="text-xs leading-snug text-tag-rose-ink">
-                {field === "hoursOutsideWeek"
-                  ? `${formatHours(form.hoursOutsideWeek)} ${form.hoursOutsideWeek === 1 ? "hour falls" : "hours fall"} outside this week's grid. ${WH347_BLOCKING_FIELD_REASON[field]}`
-                  : WH347_BLOCKING_FIELD_REASON[field]}
-              </li>
-            ))}
-          </ul>
-        </div>
+        {form.blocking.length > 0 ? (
+          <div className="mt-5 rounded-lg border border-red-300 bg-tag-rose p-4">
+            <p className="text-sm font-semibold text-tag-rose-ink">
+              This is not ready to file. {form.blocking.length}{" "}
+              {form.blocking.length === 1 ? "thing is" : "things are"} missing.
+            </p>
+            <p className="mt-1 text-xs text-tag-rose-ink/80">
+              The grid below is real — your hours are in the right boxes for the right days. What
+              follows is every field the form requires that C Stream cannot fill in yet.
+            </p>
+            <ul className="mt-3 flex flex-col gap-1.5">
+              {form.blocking.map((field) => (
+                <li key={field} className="text-xs leading-snug text-tag-rose-ink">
+                  {field === "hoursOutsideWeek"
+                    ? `${formatHours(form.hoursOutsideWeek)} ${form.hoursOutsideWeek === 1 ? "hour falls" : "hours fall"} outside this week's grid. ${WH347_BLOCKING_FIELD_REASON[field]}`
+                    : WH347_BLOCKING_FIELD_REASON[field]}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          /* THE OTHER BRANCH, which no code path could reach until page 2
+             existed. The banner above was rendered unconditionally, so the
+             first week that cleared would have printed "This is not ready to
+             file. 0 things are missing." over an empty list — a red panel
+             saying nothing is wrong. Nothing would have caught it: `fileable`
+             had never once been true. */
+          <div className="mt-5 rounded-lg border border-green-800 bg-tag-green p-4">
+            <p className="text-sm font-semibold text-tag-green-ink">
+              Every field this form needs is filled in.
+            </p>
+            <p className="mt-1 text-xs text-tag-green-ink/80">
+              Print it, read page 2, and sign it. C Stream has not checked page 2&rsquo;s wording
+              against the current form from the Department of Labor — the paragraphs below are
+              reproduced, not transcribed, so read them before you sign.
+            </p>
+          </div>
+        )}
+
+        <StatementOfComplianceForm
+          jobId={job.id}
+          weekStartIso={isoDate(weekStart)}
+          signatoryName={statement.signatoryName}
+          signatoryTitle={statement.signatoryTitle}
+          fringeMode={statement.fringeMode}
+          remarks={statement.remarks}
+          exceptions={statementRow?.exceptions ?? []}
+        />
       </div>
 
       {/* The form sheet. White, black text, printed borders — this is the
@@ -598,16 +664,138 @@ export default async function Wh347Page({
           {hoursCell(form.totalHours)}
         </p>
 
-        {/* Page 2 does not exist. Saying so on the sheet, where somebody
-            about to file will look for it, rather than only in the banner
-            at the top of a scrolled page. */}
-        <div className="mt-6 border-t-2 border-black pt-3">
-          <p className="text-[11px] font-bold uppercase">Statement of Compliance</p>
-          <p className="mt-1 text-[10px] text-red-600">
-            Page 2 is not built yet. It is signed under penalty of perjury and states how fringe
-            benefits were paid — 4(a) to approved plans, 4(b) in cash, 4(c) exceptions. Until it
-            exists, this form cannot be filed no matter how complete the grid above looks.
+        {/* PAGE 2, on its own sheet of paper.
+            `print:break-before-page` is the convention this repo already uses
+            for one document per page — union-compliance/remittance does the
+            same per local. On screen it reads as a continuation; on paper it
+            is the second page the filing needs. */}
+        <div className="mt-8 border-t-2 border-black pt-4 print:mt-0 print:break-before-page print:border-t-0 print:pt-0">
+          <p className="text-center text-[11px] font-bold uppercase">Statement of Compliance</p>
+
+          <p className="mt-3 text-[10px]">
+            Date <span className="border-b border-black px-8">&nbsp;</span>
           </p>
+
+          {/* The opening line, with the two facts the app holds printed into
+              it. `Missing` is the page's own red in-place refusal, reused so an
+              unfilled box reads the same here as in the grid above. */}
+          <p className="mt-3 text-[10px] leading-relaxed">
+            I,{" "}
+            <span className="font-semibold underline">
+              {statement.signatoryName ?? <Missing>{WH347_STATEMENT_BLOCKING_REASON.signatoryName}</Missing>}
+            </span>
+            ,{" "}
+            <span className="font-semibold underline">
+              {statement.signatoryTitle ?? <Missing>{WH347_STATEMENT_BLOCKING_REASON.signatoryTitle}</Missing>}
+            </span>
+            , do hereby state:
+          </p>
+
+          <p className="mt-2 text-[10px] leading-relaxed">
+            (1) That I pay or supervise the payment of the persons employed by{" "}
+            <span className="font-semibold">{statement.contractorName}</span> on the{" "}
+            <span className="font-semibold">{statement.projectName}</span>; that during the payroll
+            period commencing on the{" "}
+            <span className="font-semibold">{shortDate(isoDate(statement.periodStart))}</span> and ending
+            the <span className="font-semibold">{shortDate(isoDate(statement.periodEnd))}</span>, all
+            persons employed on said project have been paid the full weekly wages earned, that no
+            rebates have been or will be made either directly or indirectly to or on behalf of said
+            contractor or subcontractor from the full weekly wages earned by any person, and that no
+            deductions have been made either directly or indirectly from the full wages earned by any
+            person, other than permissible deductions as defined in Regulations, Part 3 (29 CFR
+            Subtitle A), issued by the Secretary of Labor under the Copeland Act, as amended.
+          </p>
+
+          <p className="mt-2 text-[10px] leading-relaxed">
+            {wh347StatementCitation("paragraph-2").text}
+          </p>
+          <p className="mt-2 text-[10px] leading-relaxed">
+            {wh347StatementCitation("paragraph-3").text}
+          </p>
+
+          {/* Section 4 prints the ELECTED paragraph and only that one. Printing
+              both would leave a reader to decide which applies, which is the
+              contractor's statement to make. */}
+          <p className="mt-2 text-[10px] leading-relaxed">
+            {statement.fringeParagraph ? (
+              statement.fringeParagraph.text
+            ) : (
+              <Missing>{WH347_STATEMENT_BLOCKING_REASON.fringeMode}</Missing>
+            )}
+          </p>
+
+          <div className="mt-3">
+            <p className="text-[10px] font-bold uppercase">(4)(c) Exceptions</p>
+            {statement.exceptions.length === 0 ? (
+              <p className="mt-1 text-[10px]">None.</p>
+            ) : (
+              <table className="mt-1 w-full border border-black text-[10px]">
+                <thead>
+                  <tr>
+                    <th className="border border-black px-1 py-0.5 text-left font-bold uppercase">
+                      Exception (craft)
+                    </th>
+                    <th className="border border-black px-1 py-0.5 text-left font-bold uppercase">
+                      Explanation
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {statement.exceptions.map((exception, index) => (
+                    <tr key={`${exception.craftName}-${index}`}>
+                      <td className="border border-black px-1 py-0.5 align-top">
+                        {exception.craftName}
+                      </td>
+                      <td className="border border-black px-1 py-0.5 align-top">
+                        {exception.explanation ?? (
+                          <Missing>{WH347_STATEMENT_BLOCKING_REASON.exceptionExplanation}</Missing>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="mt-3">
+            <p className="text-[10px] font-bold uppercase">Remarks</p>
+            <p className="mt-1 min-h-[2.5rem] whitespace-pre-wrap border-b border-black text-[10px]">
+              {statement.remarks ?? ""}
+            </p>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-6 text-[10px]">
+            <div>
+              <p className="border-b border-black pb-4">
+                {statement.signatoryName ?? ""}
+                {statement.signatoryTitle ? `, ${statement.signatoryTitle}` : ""}
+              </p>
+              <p className="mt-0.5 font-bold uppercase">Name and title</p>
+            </div>
+            <div>
+              {/* Deliberately blank. Nothing in this app records that anybody
+                  signed a federal certification — see lib/wh347-statement.ts. */}
+              <p className="border-b border-black pb-4">&nbsp;</p>
+              <p className="mt-0.5 font-bold uppercase">Signature</p>
+            </div>
+          </div>
+
+          <p className="mt-4 text-[9px] font-bold uppercase leading-snug">
+            {wh347StatementCitation("falsification-warning").text}
+          </p>
+
+          {/* The disclosure, printed rather than screen-only, and the same call
+              the pay application makes about being G702/G703-STYLE: the reader
+              who signs this is the one who needs to know it was reproduced. */}
+          {statement.proseUnverified && (
+            <p className="mt-3 border-t border-black pt-2 text-[9px] leading-snug">
+              The paragraphs above are reproduced by C Stream and have NOT been checked against the
+              current Form WH-347 published by the U.S. Department of Labor. Read them against the
+              official form before signing. This is a WH-347-style Statement of Compliance, not the
+              government form itself.
+            </p>
+          )}
         </div>
       </div>
     </div>

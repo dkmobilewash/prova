@@ -411,7 +411,19 @@ describe("fileable", () => {
     expect(form.blocking.length).toBeGreaterThan(0);
   });
 
-  it("always blocks on the statement of compliance, because page 2 is not built", () => {
+  it("blocks on the statement of compliance until page 2's facts are recorded", () => {
+    // This test used to read "always blocks … because page 2 is not built",
+    // and `blocking.add("statementOfCompliance")` was unconditional to match.
+    // Both were honest then and both were wrong the moment page 2 shipped.
+    const form = build([entry()]);
+    expect(form.blocking).toContain("statementOfCompliance");
+  });
+
+  it("defaults statementComplete to FALSE, so a caller that forgets it under-reports", () => {
+    // The direction of the default is the whole point. A caller that omits it
+    // says "not ready to file" about a form that might be ready — annoying. A
+    // default of true would say "ready to file" about a federal certification
+    // whose signatory nobody recorded. Only one of those is survivable.
     const form = build([entry()]);
     expect(form.blocking).toContain("statementOfCompliance");
   });
@@ -458,6 +470,26 @@ describe("fileable", () => {
     });
     expect(withRegister.blocking).toEqual(["statementOfCompliance"]);
     expect(withRegister.fileable).toBe(false);
+
+    // AND THE SAME WEEK ONCE PAGE 2'S FACTS ARE RECORDED. This is the first
+    // time `fileable` can be true since this module was written: every branch
+    // downstream of it has, until now, only ever seen false. The one thing
+    // that changed is `statementComplete`.
+    const filed = buildWh347({
+      company: COMPANY,
+      job: { name: JOB.name, location: "123 Main St, Sacramento, CA", contractNumber: "C-4021" },
+      weekStart: WEEK_START,
+      entries: [entry()],
+      fringeSchedulesByCraft: schedules,
+      payrollNumber: 7,
+      identifyingNumbers: new Map([["u1", "…4321"]]),
+      registerMoney: new Map([
+        ["u1", { deductions: { fica: 30, withholdingTax: 40, other: 5, total: 75 }, netWages: 245 }],
+      ]),
+      statementComplete: true,
+    });
+    expect(filed.blocking).toEqual([]);
+    expect(filed.fileable).toBe(true);
 
     // The contrast: without any of that, every one of them blocks.
     const withoutRegister = build([entry()]);

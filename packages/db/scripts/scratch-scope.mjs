@@ -157,6 +157,16 @@ export const HANDLED_MODELS = [
   // their scratch job the way the other per-job counters do.
   "Wh347PayrollNumber",
   "Wh347PayrollCounter",
+  // WH-347 page 2, the Statement of Compliance. Required `jobId`, so
+  // RESTRICT on Job and nothing else's delete reaches it — the #227 shape.
+  //
+  // `Wh347StatementException` is DELIBERATELY NOT HERE, and the reason is the
+  // loop in clean-test-jobs.mjs: it issues `deleteMany({ where: { jobId } })`
+  // for every model in this list, and the exception has no `jobId`. It hangs
+  // off its statement with `onDelete: Cascade`, so deleting the statement
+  // takes its exceptions with it. Giving it a `jobId` purely to satisfy this
+  // list would denormalise a column to feed a script.
+  "Wh347Statement",
   // The two California apprenticeship notices (das-forms.prisma). Required
   // `jobId`, so RESTRICT on Job, and nothing else's delete reaches them — the
   // #227 shape, which is why they are here AND in both scripts' del() order.

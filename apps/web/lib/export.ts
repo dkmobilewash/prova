@@ -82,7 +82,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "projectLocation", "grossAreaSqFt", "siteAddress", "siteCounty",
       "siteLatitude", "siteLongitude", "siteTimeZone", "siteGeocodedAt",
       "bidDueDate", "bidAdvertisedOn", "bidResearch", "publicWorks",
-      "awardingBody", "jobberId",
+      "awardingBody", "contractNumber", "jobberId",
       "createdAt", "updatedAt",
     ],
     scope: byCompany,
@@ -751,6 +751,15 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       // yet -- see Wh347PayrollCounter below for the counter that issues
       // it.
       "Wh347PayrollNumber",
+      // WH-347 page 2 and its section 4(c) exceptions. Withheld for the same
+      // reason as the payroll number above and one of its own: the statement
+      // is half a document. It is meaningless without the page 1 grid it
+      // certifies, and this export has no WH-347 dataset to pair it with — so
+      // exporting it alone would hand somebody a signature block with no
+      // payroll attached. If a certified-payroll filing dataset is ever added,
+      // these three move into it together.
+      "Wh347Statement",
+      "Wh347StatementException",
     ],
   },
   {

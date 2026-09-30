@@ -1571,6 +1571,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // spreadsheet importers beside the register import on /settings/import.
   // See lib/actions/payrollRegister.ts's own doc comment for why.
   payrollRegister: () => import("./actions/payrollRegister"),
+  // WH-347 page 2, the Statement of Compliance. Same MANAGE_COMPLIANCE gate
+  // as the payroll number beside it and for the same reason: it is submitted
+  // from a page that already demands the capability, so an ungated action
+  // here would be a door around that page's own wall.
+  wh347Statement: () => import("./actions/wh347Statement"),
   // Phase codes — the company's own cost-coding vocabulary. All three
   // writes are reachable only from /settings, which demands
   // MANAGE_COMPLIANCE, so the walk puts all three in MUST_ASSERT and every

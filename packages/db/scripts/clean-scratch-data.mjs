@@ -331,6 +331,10 @@ async function main() {
     // HANDLED_MODELS AND in seed-demo.mjs.
     await del("wh347PayrollNumber", () => prisma.wh347PayrollNumber.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("wh347PayrollCounter", () => prisma.wh347PayrollCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // Page 2's statement. Its exceptions cascade from it, so there is no
+    // second del() for them — and scratch-cleanup-order.test.ts agrees,
+    // because a Cascade edge is not a RESTRICT blocker.
+    await del("wh347Statement", () => prisma.wh347Statement.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("dispatchSlip", () => prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }));
     // DAS 140 / DAS 142 notices: jobId-keyed RESTRICT children of Job that
     // nothing else's delete reaches (#227 shape). The app refuses to delete a

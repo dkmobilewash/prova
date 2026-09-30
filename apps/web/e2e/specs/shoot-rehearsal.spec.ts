@@ -728,23 +728,43 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // AND THE RUN SHEET'S FALLBACK FOR THIS BEAT IS UNREACHABLE.
+    // THE RUN SHEET'S FALLBACK FOR THIS BEAT IS REACHABLE NOW, AND THIS
+    // COMMENT SAID THE OPPOSITE.
     //
-    // The sheet says: "Nothing is red → a payroll register was imported. That
-    // is a better take, not a worse one." It cannot happen. `lib/wh347.ts`
-    // adds `statementOfCompliance` to the blocking set unconditionally —
-    // page 2 of the form, the bit signed under penalty of perjury, is not
-    // built — so `fileable` is false on every week of every job, register or
-    // no register. Its sentence is the one asserted here, and it is the one
-    // that no import can clear.
+    // It read: the sheet's "Nothing is red → a payroll register was imported"
+    // branch "cannot happen", because `lib/wh347.ts` added
+    // `statementOfCompliance` to the blocking set unconditionally, so
+    // `fileable` was false on every week of every job, register or no
+    // register. Every word of that was true when it was written, and it is
+    // the reason the assertion under it pinned the sentence "It is not built
+    // yet." Page 2 is built, that sentence is gone, and this assertion was
+    // RED the moment it went.
     //
-    // Good news for tomorrow: the redness beat A is built on cannot vanish.
-    // But a shooter reading that fallback would be rehearsing a line he can
-    // never deliver.
+    // What is true now: the blocker clears when page 2's facts are recorded
+    // (who signs, their title, the section 4 fringe election) AND the job
+    // carries a contract number. The demo job has neither, so beat A's
+    // redness still holds for the shoot — but it is now a state somebody can
+    // leave rather than one nothing can reach, so the shooter's fallback is a
+    // line he could actually deliver on a job that has been filled in.
+    //
+    // Pinned on the NEW sentence, which names what to do instead of saying
+    // the feature does not exist.
     // ════════════════════════════════════════════════════════════════════
     await expect(
-      page.getByText("Page 2 is signed under penalty of perjury and names how fringes were paid. It is not built yet."),
-      "the statement-of-compliance blocker is unconditional, so the sheet's 'nothing is red' branch describes a state the product cannot reach",
+      page.getByText(/Page 2, the Statement of Compliance, needs the person who will sign it/),
+      "the statement-of-compliance blocker should now say what to fill in, not that page 2 is unbuilt",
+    ).toBeVisible();
+
+    // AND THE FORM THAT CLEARS IT IS ON THE PAGE. The blocker naming a thing
+    // to do is only useful if the thing is reachable from here — this whole
+    // session has been about features that work and cannot be reached.
+    await expect(
+      page.getByRole("heading", { name: "Page 2 — Statement of Compliance" }),
+      "the blocker tells the reader to fill page 2 in below, so it has to be below",
+    ).toBeVisible();
+    await expect(
+      page.getByText("Paid to approved plans, funds or programs — section 4(a)"),
+      "the section 4 election is the fact C Stream cannot derive, so the form must offer it",
     ).toBeVisible();
 
     // SEVEN DATED DAY COLUMNS — the other half of beat A's promise, and the

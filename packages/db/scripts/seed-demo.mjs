@@ -2837,6 +2837,9 @@ async function undo(companyId) {
     await del("wh347PayrollCounter", () =>
       prisma.wh347PayrollCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    await del("wh347Statement", () =>
+      prisma.wh347Statement.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     await del("dispatchSlip", () =>
       prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
