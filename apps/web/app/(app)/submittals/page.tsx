@@ -79,6 +79,8 @@ export default async function SubmittalsPage({
       returnedOn: isoDate(rev.returnedOn),
       outcome: rev.outcome,
       responseNotes: rev.responseNotes,
+      responseUrl: rev.responseUrl,
+      responseFileName: rev.responseFileName,
     })),
   }));
 

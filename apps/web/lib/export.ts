@@ -440,9 +440,15 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     columns: [
       "id", "jobId", "number", "subject", "question", "drawingReference",
       "specSection", "status", "sentOn", "dueBy", "answeredOn", "answer",
+      "answerUrl", "answerFileName",
       "costImpact", "scheduleImpact", "askedByUserId", "createdAt", "updatedAt",
     ],
-    note: "Including the answer, which is the half that matters in a dispute.",
+    note:
+      "Including the answer, which is the half that matters in a dispute — and the link to the " +
+      "GC's own letter it was written from. EXPORTED rather than withheld: it is not a credential, " +
+      "it is a note of where the customer's own evidence lives, and opening it still needs the " +
+      "GC's own login. A customer leaving with the summary and no way to find the original has " +
+      "been given the weaker half.",
     scope: byCompany,
   },
   {

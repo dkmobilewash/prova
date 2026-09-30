@@ -1634,6 +1634,8 @@ describe("submittalAlerts", () => {
     returnedOn: null,
     outcome: null,
     responseNotes: null,
+    responseUrl: null,
+    responseFileName: null,
     ...over,
   });
   const submittal = (revisions = [rev()]) => ({
