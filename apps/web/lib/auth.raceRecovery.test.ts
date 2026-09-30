@@ -40,18 +40,36 @@ let db = new FakeDb();
  * seed `raceWinnerRow` at that moment — simulating a concurrent request
  * that won the race between this function's own reads and its insert. */
 let failUserCreateWithCode: string | null = null;
+
+/** The invite arm fails inside `$transaction`, not in `user.create` — the
+ * transaction runs `invite.delete` FIRST, and that is the statement a
+ * concurrent winner has already made impossible. Simulated separately for
+ * that reason: a test that failed `user.create` would be exercising a
+ * different statement than the one that actually breaks. */
+let failTransactionWithCode: string | null = null;
 let raceWinnerRow: Record<string, unknown> | null = null;
 
 vi.mock("@prova/db", () => ({
   Prisma: {},
   get prisma() {
     const client = db.client() as unknown as Record<string, Record<string, unknown>>;
-    if (!failUserCreateWithCode) return client as never;
-    const code = failUserCreateWithCode;
+    if (!failUserCreateWithCode && !failTransactionWithCode) return client as never;
     return new Proxy(client, {
       get(target, property) {
         const model = target[property as string];
-        if (property !== "user") return model;
+
+        if (property === "$transaction" && failTransactionWithCode) {
+          const code = failTransactionWithCode;
+          return () => {
+            if (raceWinnerRow) db.seed("user", raceWinnerRow as { id: string });
+            const error = new Error(`simulated database error: ${code}`);
+            (error as Error & { code?: string }).code = code;
+            throw error;
+          };
+        }
+
+        if (property !== "user" || !failUserCreateWithCode) return model;
+        const code = failUserCreateWithCode;
         return {
           ...model,
           create: () => {
@@ -86,6 +104,7 @@ function identity(over: Partial<Parameters<typeof adoptCompanyContext>[0]> = {})
 beforeEach(() => {
   db = new FakeDb();
   failUserCreateWithCode = null;
+  failTransactionWithCode = null;
   raceWinnerRow = null;
 });
 
@@ -132,6 +151,60 @@ describe("adoptCompanyContext — concurrent first sign-in", () => {
 
   it("a failure that is NOT a unique-constraint collision still escapes", async () => {
     failUserCreateWithCode = "P2025";
+    raceWinnerRow = null;
+
+    await expect(adoptCompanyContext(identity())).rejects.toThrow(
+      "simulated database error: P2025",
+    );
+  });
+});
+
+/**
+ * THE ARM THIS CATCH DESCRIBED IN WORDS AND COULD NOT REACH.
+ *
+ * The invite path runs `prisma.$transaction([invite.delete(...),
+ * user.create(...)])`, and the DELETE goes first. `Invite.email` is unique,
+ * so an invite belongs to exactly one address — which makes a concurrent
+ * consumption the same person in two tabs, not two people. The loser's
+ * delete hits a row the winner has already consumed: that is **P2025**, not
+ * P2002, so `isUniqueConstraintError` returned false and a recoverable
+ * double-click left as a 500.
+ *
+ * The sentence "or someone else consuming the same invite first" has been
+ * sitting three lines above a guard that could not see it — a comment
+ * describing a case the code does not handle, which is this repo's most
+ * repeated shape.
+ */
+describe("adoptCompanyContext — two tabs consuming one invite", () => {
+  it("re-reads the winner's row instead of 500ing on the vanished invite", async () => {
+    db.seed("invite", { id: "inv_1", email: "sam@example.com", companyId: "co_invited" });
+    failTransactionWithCode = "P2025";
+    // The winner landed between this call's own reads and its transaction —
+    // seeded at the instant the transaction throws, which is exactly when a
+    // concurrent winner's insert would have committed. Seeding it earlier
+    // would be answered by the very first `existing` read and this test
+    // would never reach the catch at all.
+    raceWinnerRow = {
+      id: "user_1",
+      clerkId: "clerk_sam",
+      email: "sam@example.com",
+      name: "Sam Reyes",
+      role: "MEMBER",
+      companyId: "co_invited",
+    };
+
+    const result = await adoptCompanyContext(identity());
+
+    expect(result).toMatchObject({ id: "user_1", companyId: "co_invited" });
+  });
+
+  it("still escapes when the invite vanished and no winner row exists", async () => {
+    // The control, and the reason widening the guard to P2025 is safe: the
+    // recovery is EVIDENCE-BASED. It returns only if a re-read finds a row,
+    // and rethrows the original error untouched otherwise. A genuine P2025
+    // with nothing behind it must not be swallowed into a silent retry.
+    db.seed("invite", { id: "inv_1", email: "sam@example.com", companyId: "co_invited" });
+    failTransactionWithCode = "P2025";
     raceWinnerRow = null;
 
     await expect(adoptCompanyContext(identity())).rejects.toThrow(
