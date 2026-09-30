@@ -5,10 +5,14 @@ import {
   certifiedPayrollAlerts,
   closeoutAlerts,
   contactFollowUpAlerts,
+  delayNoticeAlerts,
   drawingRevisionAlerts,
+  equipmentOutAlerts,
   lienDeadlineAlerts,
+  materialDeliveryAlerts,
   partitionAlerts,
   renewalAlert,
+  punchItemAlerts,
   rfiAlerts,
   submittalAlerts,
   visibleToPrincipal,
@@ -197,6 +201,10 @@ export async function loadAlerts(
     fringeSchedulesByCraft,
     employerBurdenRates,
     lienDeadlines,
+    materialOrders,
+    punchItems,
+    equipmentOut,
+    unnotifiedDelays,
   ] = await Promise.all([
     renewalSourcesForCompany(companyId),
 
@@ -287,6 +295,8 @@ export async function loadAlerts(
             returnedOn: true,
             outcome: true,
             responseNotes: true,
+            responseUrl: true,
+            responseFileName: true,
           },
         },
       },
@@ -330,6 +340,62 @@ export async function loadAlerts(
         job: { select: { name: true } },
       },
     }),
+
+    /* THE FIELD FOUR. Each is narrowed in the DATABASE only by facts that
+       need no judgement — an order with no completing delivery, an OPEN
+       punch item, an assignment with no return, a delay with no notice —
+       and every date comparison still happens in lib/alerts.ts, so
+       "overdue" means one thing across the whole app. */
+    prisma.materialOrder.findMany({
+      where: { companyId, deliveries: { none: { completesOrder: true } } },
+      select: {
+        id: true,
+        number: true,
+        description: true,
+        orderedOn: true,
+        promisedFor: true,
+        job: { select: { name: true } },
+        vendor: { select: { name: true } },
+      },
+    }),
+
+    prisma.punchListItem.findMany({
+      where: { companyId, status: "OPEN" },
+      select: {
+        id: true,
+        description: true,
+        area: true,
+        dueOn: true,
+        createdAt: true,
+        job: { select: { name: true } },
+      },
+    }),
+
+    prisma.equipmentAssignment.findMany({
+      where: { companyId, returnedOn: null },
+      select: {
+        id: true,
+        sentOutOn: true,
+        equipment: { select: { name: true } },
+        job: { select: { name: true, status: true } },
+      },
+    }),
+
+    /* `gcNotifiedAt: null` is the whole population — a delay the GC was
+       never told about. The grace window is applied in the builder, not
+       here, so the number lives beside the sentence that explains it. */
+    prisma.delayEvent.findMany({
+      where: { companyId, gcNotifiedAt: null },
+      select: {
+        id: true,
+        jobId: true,
+        date: true,
+        description: true,
+        hoursLost: true,
+        job: { select: { name: true } },
+      },
+    }),
+
   ]);
 
   const alerts: Alert[] = [];
@@ -554,6 +620,8 @@ export async function loadAlerts(
           returnedOn: isoDate(rev.returnedOn),
           outcome: rev.outcome,
           responseNotes: rev.responseNotes,
+          responseUrl: rev.responseUrl,
+          responseFileName: rev.responseFileName,
         })),
       })),
       todayIso,
@@ -605,6 +673,68 @@ export async function loadAlerts(
     snoozedUntil: isoDate(a.snoozedUntil),
     acknowledgedSeverity: a.acknowledgedSeverity,
   }));
+
+  alerts.push(
+    ...materialDeliveryAlerts(
+      materialOrders.map((order) => ({
+        id: order.id,
+        number: order.number,
+        description: order.description,
+        jobName: order.job.name,
+        vendorName: order.vendor.name,
+        promisedFor: isoDate(order.promisedFor),
+        orderedOn: isoDate(order.orderedOn) ?? todayIso,
+        // The query already excluded orders with a completing delivery, so
+        // anything here is incomplete. Stated rather than recomputed, so
+        // the two cannot drift apart.
+        isComplete: false,
+      })),
+      todayIso,
+    ),
+  );
+
+  alerts.push(
+    ...punchItemAlerts(
+      punchItems.map((item) => ({
+        id: item.id,
+        description: item.description,
+        jobName: item.job.name,
+        area: item.area,
+        dueOn: isoDate(item.dueOn),
+        raisedOn: isoDate(item.createdAt) ?? todayIso,
+      })),
+      todayIso,
+    ),
+  );
+
+  alerts.push(
+    ...equipmentOutAlerts(
+      equipmentOut.map((row) => ({
+        id: row.id,
+        equipmentName: row.equipment.name,
+        jobName: row.job.name,
+        jobIsFinished: row.job.status === "COMPLETE",
+        sentOutOn: isoDate(row.sentOutOn) ?? todayIso,
+      })),
+      todayIso,
+    ),
+  );
+
+  alerts.push(
+    ...delayNoticeAlerts(
+      unnotifiedDelays.map((delay) => ({
+        id: delay.id,
+        jobId: delay.jobId,
+        jobName: delay.job.name,
+        date: isoDate(delay.date) ?? todayIso,
+        description: delay.description,
+        // Decimal -> number at the edge, like every other money-shaped
+        // value crossing out of Prisma in this file.
+        hoursLost: delay.hoursLost != null ? Number(delay.hoursLost) : null,
+      })),
+      todayIso,
+    ),
+  );
 
   return partitionAlerts(permitted, acks, todayIso);
 }

@@ -231,6 +231,32 @@ export function SubmittalRow({
             />
           </label>
 
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className={labelClass}>
+              Link to the stamped submittal
+              <input
+                type="url"
+                name="responseUrl"
+                defaultValue={latest?.responseUrl ?? ""}
+                placeholder="https://…"
+                className={inputClass}
+              />
+              <span className="text-xs text-ink-muted">
+                Wherever it actually lives — Procore, Box, the GC&apos;s portal. The stamp stays
+                theirs; this records where to find it.
+              </span>
+            </label>
+            <label className={labelClass}>
+              Link label
+              <input
+                name="responseFileName"
+                defaultValue={latest?.responseFileName ?? ""}
+                placeholder="Stamped 08-12 Rev 2.pdf"
+                className={inputClass}
+              />
+            </label>
+          </div>
+
           {error && <p className="text-sm text-red-400">{error}</p>}
 
           <div className="flex gap-2">
@@ -294,6 +320,19 @@ export function SubmittalRow({
                     )}
                     {rev.responseNotes && (
                       <span className="text-ink-muted"> — {rev.responseNotes}</span>
+                    )}
+                    {rev.responseUrl && (
+                      <>
+                        {" · "}
+                        <a
+                          href={rev.responseUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-link hover:underline"
+                        >
+                          {rev.responseFileName || "the stamped submittal"}
+                        </a>
+                      </>
                     )}
                   </li>
                 );

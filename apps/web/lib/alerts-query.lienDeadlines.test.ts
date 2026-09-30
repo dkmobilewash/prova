@@ -57,6 +57,13 @@ vi.mock("@prova/db", () => ({
     rfi: { findMany: empty },
     submittal: { findMany: empty },
     drawingSet: { findMany: empty },
+    // The four field kinds. Empty here on purpose — this file is about lien
+    // deadlines, and a fixture for somebody else's alert would make the
+    // assertions below depend on a population they are not describing.
+    materialOrder: { findMany: empty },
+    punchListItem: { findMany: empty },
+    equipmentAssignment: { findMany: empty },
+    delayEvent: { findMany: empty },
     lienDeadline: {
       findMany: async ({ where }: { where: Record<string, unknown> }) => {
         lienWheres.push(where);

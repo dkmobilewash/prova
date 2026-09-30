@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
 import { recordIntakeDocument } from "@/lib/actions";
+import { firstPageTextPreview } from "@/lib/intake/pdf-text";
 import {
   INTAKE_ACCEPT_ATTRIBUTE,
   INTAKE_MAX_FILES,
@@ -195,18 +196,32 @@ export function IntakeDropZone({ companyId }: { companyId: string }) {
       }
 
       try {
-        const blob = await upload(pathname, file, {
-          access: "public",
-          contentType,
-          handleUploadUrl: "/api/intake/upload",
-          clientPayload: JSON.stringify({ contentType }),
-        });
+        // Read the first page WHILE the bytes go up rather than before them.
+        // The classifier wants the text, but the person should not wait for
+        // it: `firstPageTextPreview` never rejects and never outlives its own
+        // timeout, so the slower of the two is the upload in every normal
+        // case and the drop feels exactly as it did.
+        const [blob, textPreview] = await Promise.all([
+          upload(pathname, file, {
+            access: "public",
+            contentType,
+            handleUploadUrl: "/api/intake/upload",
+            clientPayload: JSON.stringify({ contentType }),
+          }),
+          firstPageTextPreview(file),
+        ]);
 
         const formData = new FormData();
         formData.set("blobUrl", blob.url);
         formData.set("fileName", file.name);
         formData.set("contentType", contentType);
         formData.set("byteSize", String(file.size));
+        // Only when there is something to send. The action reads a missing
+        // key as null, which is the filename-only classification this app
+        // did for every file until now — so an image, a scan with no text
+        // layer, or a PDF that would not open all land exactly where they
+        // used to rather than somewhere new.
+        if (textPreview) formData.set("textPreview", textPreview);
 
         const result = await recordIntakeDocument(formData);
         record(

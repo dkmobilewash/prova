@@ -12,6 +12,7 @@ import {
   ownerRefusal,
   runAction,
   type ActionResult,
+  optionalLinkOrThrow,
 } from "./shared";
 
 /** Every entry point to these records is a page guarded by MANAGE_JOBS,
@@ -258,6 +259,12 @@ export async function answerRfi(rfiId: string, formData: FormData): Promise<Acti
       where: { id: rfi.id },
       data: {
         answer,
+        // Where the GC's own letter lives. `answer` is the summary somebody
+        // typed; this is the document it came off. Through the shared
+        // validator because it is rendered as an `href`, and throwing rather
+        // than returning because this body is inside `runAction`.
+        answerUrl: optionalLinkOrThrow(formData, "answerUrl", "The link to the GC's answer"),
+        answerFileName: text(formData, "answerFileName") || null,
         // The date the answer came back, not the date it was typed in — an
         // answer entered a week late must not read as a week-late response.
         answeredOn: answeredAt,

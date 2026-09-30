@@ -14,6 +14,7 @@ import {
   craftClassificationIdFromForm,
   joinWithConjunction,
   type ActionResult,
+  optionalLinkFromForm,
 } from "./shared";
 import {
   parseTimeEntryFigures,
@@ -531,7 +532,16 @@ export async function uploadPrevailingWageDetermination(
     return actionFail("Name the jurisdiction this determination came from.");
   }
 
-  const sourceUrl = String(formData.get("sourceUrl") ?? "").trim();
+  // CHECKED, because this value is rendered as `href={determination.sourceUrl}`
+  // on the job compliance tab. The form's `type="url"` is a browser hint and
+  // this action takes whatever the POST body holds, so an unchecked value
+  // here was a `javascript:` link waiting to run in a colleague's session.
+  // Returned rather than thrown, like every other refusal in this function —
+  // it is not wrapped in `runAction`, so a throw would reach a real user as
+  // the digest production redacts a thrown Server Action message into.
+  const source = optionalLinkFromForm(formData, "sourceUrl", "The source link");
+  if (!source.ok) return actionFail(source.error);
+  const sourceUrl = source.value ?? "";
   const note = String(formData.get("note") ?? "").trim();
 
   // Already uploaded by the browser; the URL is re-checked here against

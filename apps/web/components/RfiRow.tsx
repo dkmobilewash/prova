@@ -18,6 +18,9 @@ export type RfiRowData = RfiDefaults & {
   sentOn: string | null;
   answeredOn: string | null;
   answer: string | null;
+  /** Where the GC's own letter lives; `answer` is the summary typed from it. */
+  answerUrl: string | null;
+  answerFileName: string | null;
   costImpact: boolean;
   scheduleImpact: boolean;
   askedByName: string | null;
@@ -154,6 +157,32 @@ export function RfiRow({
             />
           </label>
 
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className={labelClass}>
+              Link to the GC&apos;s answer
+              <input
+                type="url"
+                name="answerUrl"
+                defaultValue={rfi.answerUrl ?? ""}
+                placeholder="https://…"
+                className={fieldInputClass}
+              />
+              <span className="text-xs text-ink-body">
+                Wherever it actually lives. What you typed above is the summary; this is the
+                document it came off.
+              </span>
+            </label>
+            <label className={labelClass}>
+              Link label
+              <input
+                name="answerFileName"
+                defaultValue={rfi.answerFileName ?? ""}
+                placeholder="RFI 014 response.pdf"
+                className={fieldInputClass}
+              />
+            </label>
+          </div>
+
           <label className={labelClass}>
             Date the answer came back
             <input
@@ -256,6 +285,18 @@ export function RfiRow({
 
         {rfi.answer && (
           <p className="mt-2 border-l-2 border-line-card pl-3 text-sm text-ink-body">{rfi.answer}</p>
+        )}
+        {rfi.answerUrl && (
+          <p className="mt-1 border-l-2 border-line-card pl-3 text-xs">
+            <a
+              href={rfi.answerUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-link hover:underline"
+            >
+              {rfi.answerFileName || "the GC's written answer"}
+            </a>
+          </p>
         )}
 
         {/* ink-body, not ink-muted: the muted level is under the 4.5 text floor. */}

@@ -151,7 +151,28 @@ export default async function SettingsPage({
     return (
       <PageShell width="reading">
         <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
-        <p className="text-sm text-ink-body" data-tour="settings-owner-only">Only the account owner can manage integrations.</p>
+        {/* NAMES WHAT IS BEHIND THE DOOR. It said "Only the account owner
+            can manage integrations", which describes ONE of this page's ten
+            sections — the rest are the company profile that prints on the
+            WH-347, contractor licences, insurance policies, bonds, company
+            locations, employer burden rates, phase codes and default markup.
+
+            That mattered to one role in particular: `RENEWAL` alerts are
+            gated on MANAGE_COMPLIANCE, and `lib/renewals.ts` sends licence,
+            policy and bond expiries here. So a compliance member is shown
+            "Licence 8821 — expires in 9 days" and lands on a sentence about
+            integrations, which reads as the wrong page rather than the right
+            page they lack access to.
+
+            The page still refuses, and widening it is a permissions decision
+            nobody has made. This only stops the refusal being misleading
+            while that decision is pending. */}
+        <p className="text-sm text-ink-body" data-tour="settings-owner-only">
+          Only the account owner can open Settings. Licences, insurance,
+          bonds, the company profile, burden rates and the QuickBooks
+          connection all live here — ask them to make the change, or to give
+          you owner access.
+        </p>
       </PageShell>
     );
   }
@@ -618,7 +639,7 @@ export default async function SettingsPage({
         </details>
       </section>
 
-      <section className="mb-10" data-tour="settings-licences">
+      <section id="licences" className="mb-10" data-tour="settings-licences">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Contractor licences</h2>
         <p className="mb-4 text-sm text-ink-body">
           One row per licence you hold, not per state — some jurisdictions have no state licence at
@@ -702,7 +723,7 @@ export default async function SettingsPage({
         />
       </section>
 
-      <section className="mb-10" data-tour="settings-insurance">
+      <section id="insurance" className="mb-10" data-tour="settings-insurance">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Insurance policies</h2>
         <p className="mb-4 text-sm text-ink-body">
           This company&apos;s own coverage — the source data per-job certificates of insurance would
@@ -795,7 +816,7 @@ export default async function SettingsPage({
         </details>
       </section>
 
-      <section data-tour="settings-bonding">
+      <section id="bonding" data-tour="settings-bonding">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Bonding</h2>
         <p className="mb-4 text-sm text-ink-body">
           Licence bonds and overall performance/payment bonding capacity, and who to contact to

@@ -136,6 +136,8 @@ const rfi = {
   dueBy: "2026-09-15",
   answeredOn: "2026-09-11",
   answer: "Use detail 4/A-501.",
+  answerUrl: null,
+  answerFileName: null,
   costImpact: false,
   scheduleImpact: false,
   askedByName: "Tester",
@@ -165,6 +167,8 @@ const sentSubmittal = {
       returnedOn: null,
       outcome: null,
       responseNotes: null,
+      responseUrl: null,
+      responseFileName: null,
     },
   ],
 };
