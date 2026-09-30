@@ -67,6 +67,7 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
           publicWorks: true,
           bidAdvertisedOn: true,
           awardingBody: true,
+          contractNumber: true,
           status: true,
         },
       }),
@@ -140,6 +141,7 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
               publicWorks: job.publicWorks,
               bidAdvertisedOn: isoDay(job.bidAdvertisedOn),
               awardingBody: job.awardingBody,
+              contractNumber: job.contractNumber,
             }}
           />
         </section>

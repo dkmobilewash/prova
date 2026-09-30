@@ -119,6 +119,15 @@ export const notYetRegistered: Exclusion[] = [
   // penalty of perjury. Issuing a payroll number is a button on the page
   // whose sequence it advances; nothing to resolve by name.
   { action: "payrollRegister.*", reason: "A pasted payroll register and a preview a person reads before confirming; the deductions and net wages it writes land on a WH-347 signed under penalty of perjury, so it is page only." },
+  // Page 2 of the same form, and the strongest page-only case in this file.
+  // The Statement of Compliance is CERTIFIED by a named person under penalty
+  // of perjury, and the two facts it needs are the ones C Stream is least
+  // entitled to supply: who signs it, and whether fringe benefits went to
+  // approved plans or were paid in cash. A model proposing either — even for
+  // a person to tap — is the app drafting somebody's sworn statement about
+  // their own payroll practice. It is read off a form, on the page, by the
+  // person whose name goes on it.
+  { action: "wh347Statement.*", reason: "The WH-347 Statement of Compliance is certified by a named person under penalty of perjury, and the facts it needs are who signs it and how fringes were paid — neither is a fact C Stream holds or should draft. Page only, always." },
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },

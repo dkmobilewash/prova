@@ -120,3 +120,109 @@ model Wh347PayrollCounter {
 
   updatedAt DateTime @updatedAt
 }
+
+/// WH-347 PAGE 2 — the Statement of Compliance for one job-week.
+///
+/// Page 1 is a grid this app DERIVES. Page 2 is a certification a person
+/// signs under penalty of perjury, and the difference is why this model
+/// exists at all: the facts on it are not derivable from any other table,
+/// so they are recorded here or the form is not fileable.
+///
+/// Keyed [jobId, weekStart] exactly like Wh347PayrollNumber above, and
+/// anchored on the same certifiedPayrollWeekWindow Sunday at UTC midnight.
+/// One statement per job-week, because one WH-347 covers one job-week.
+///
+/// WHAT IS DELIBERATELY NOT HERE, and each absence is a decision:
+///
+///   - NO signedAt, signature image or e-sign link. The page prints a line
+///     for wet ink. C Stream holds an e-signature capability, and a row
+///     here saying a named person certified a federal filing would be this
+///     database asserting a legal act happened. signatoryName and
+///     signatoryTitle are who WILL sign, so the NAME AND TITLE box prints
+///     instead of being hand-lettered. They are not evidence anybody did.
+///   - NO copy of the statutory paragraphs. Those live in
+///     apps/web/lib/wh347-statement.ts, every one `verified: false`
+///     because none was read off a DOL page, and a database column would
+///     make a reproduction look like a record.
+///   - NO derived fringe flag. See fringeMode below.
+model Wh347Statement {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  /// The certified-payroll week's Sunday, UTC midnight — the same weekStart
+  /// Wh347PayrollNumber and certifiedPayrollWeekWindow anchor on.
+  weekStart DateTime
+
+  /// Who signs, and as what. ENTERED, never taken from the session: the
+  /// person logged in is not necessarily the person who signs a federal
+  /// certification, and an owner, an office manager and a payroll clerk
+  /// sign different things.
+  signatoryName  String?
+  signatoryTitle String?
+
+  /// Section 4's election: fringe benefits paid to approved plans, funds or
+  /// programs (4(a)), or paid in cash with the wage (4(b)).
+  ///
+  /// ENTERED, NEVER INFERRED, and this is the load-bearing comment on this
+  /// model. FringeRateSchedule holds four RATE columns — pension, vacation,
+  /// health and welfare, training — and no column saying where the money
+  /// goes. Inferring 4(a) from the existence of the fringe-remittance
+  /// feature, or from fringeCreditFor treating fringes as a credit, would be
+  /// C Stream asserting how a company pays its people, on a document that
+  /// company signs under penalty of perjury, off a column nobody ever asked
+  /// that question of. Null until stated, and the form is not fileable
+  /// while it is null.
+  fringeMode Wh347FringeMode?
+
+  /// The REMARKS box. Free text, and free text is right: it is the place a
+  /// contractor explains something the form has no field for.
+  remarks String?
+
+  exceptions Wh347StatementException[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([jobId, weekStart])
+  @@index([jobId])
+}
+
+/// Section 4(c) — one excepted craft and why.
+///
+/// A CHILD TABLE rather than JSON on the statement, for the reason
+/// ARCHITECTURE.md gives about line-item data: the form prints these as rows
+/// with two columns, something will eventually want to count or group them,
+/// and a JSON blob is a structure no query can reach and no constraint can
+/// check. Cascades from its statement — an exception with no statement is
+/// not a record of anything.
+model Wh347StatementException {
+  id          String         @id @default(cuid())
+  statementId String
+  statement   Wh347Statement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+
+  /// The craft, as the form's EXCEPTION (CRAFT) column wants it. Free text
+  /// rather than a CraftClassification link: an exception can name a craft
+  /// this company has no classification row for, and a filing must be able
+  /// to say so.
+  craftName String
+
+  /// The form's EXPLANATION column. Required at the database because an
+  /// exception that explains nothing is the box that looks filled in —
+  /// buildWh347Statement blocks on a blank one, and this makes the blank
+  /// unstorable rather than merely reported.
+  explanation String
+
+  createdAt DateTime @default(now())
+
+  @@index([statementId])
+}
+
+/// Which section of WH-347 paragraph 4 the contractor elects. Exactly two
+/// members, because the form offers two.
+enum Wh347FringeMode {
+  /// 4(a) — paid to approved plans, funds or programs.
+  PAID_TO_PLANS
+  /// 4(b) — paid in cash with the wage.
+  PAID_IN_CASH
+}
