@@ -89,6 +89,8 @@ type Verdict = {
   id: string;
   why: string;
   found: string[];
+  /** Items naming an expectation already matched — legitimate, reported. */
+  duplicates: string[];
   invented: string[];
   missed: string[];
   extra: string[];
@@ -148,7 +150,19 @@ async function runCase(kase: AddendumCase): Promise<void> {
   const expectedKeys = new Map(kase.expected.map((e) => [key(e.reference), e.kind]));
   const forbidden = new Set((kase.absent ?? []).map(key));
 
+  // DISTINCT EXPECTATIONS MATCHED, not items that matched one. The first version
+  // counted per item and printed "items: 10 of 9 expected references found",
+  // which cannot be true and is the kind of number that teaches a reader to
+  // distrust the whole report.
+  //
+  // The cause was legitimate and worth reporting rather than collapsing: the
+  // `odd-numbering` letter amends Section 07 24 00 in TWO items — 2a adds a
+  // mock-up requirement, 2b deletes a paragraph — so the reader correctly
+  // returned two items naming one section. That is a real shape in real addenda,
+  // so it has its own line instead of inflating the numerator.
+  const matched = new Set<string>();
   const found: string[] = [];
+  const duplicates: string[] = [];
   const invented: string[] = [];
   const extra: string[] = [];
   const wrongKind: string[] = [];
@@ -165,7 +179,12 @@ async function runCase(kase: AddendumCase): Promise<void> {
       // An invented item carried confidently is the thing this eval exists for.
       if (item.confidence === "HIGH") overclaimed.push(`invented "${item.reference}" at HIGH`);
     } else if (expectedKeys.has(k)) {
-      found.push(item.reference);
+      if (matched.has(k)) {
+        duplicates.push(`${item.reference} — ${item.summary}`);
+      } else {
+        matched.add(k);
+        found.push(item.reference);
+      }
       const want = expectedKeys.get(k)!;
       if (item.referenceKind !== want) {
         wrongKind.push(`${item.reference}: got ${item.referenceKind}, wanted ${want}`);
@@ -215,6 +234,7 @@ async function runCase(kase: AddendumCase): Promise<void> {
     id: kase.id,
     why: kase.why,
     found,
+    duplicates,
     invented,
     missed,
     extra,
@@ -246,6 +266,7 @@ afterAll(() => {
   const wrongKind = verdicts.flatMap((v) => v.wrongKind);
   const dateNotes = verdicts.flatMap((v) => v.dateNotes);
   const foundCount = verdicts.reduce((n, v) => n + v.found.length, 0);
+  const duplicates = verdicts.flatMap((v) => v.duplicates);
   const wanted = ADDENDUM_CASES.reduce((n, k) => n + k.expected.length, 0);
 
   const lines: string[] = [];
@@ -256,6 +277,7 @@ afterAll(() => {
   // and four passed must not read as a clean four.
   lines.push(`  requested ${ADDENDUM_CASES.length}, returned ${verdicts.length}`);
   lines.push(`  items:       ${foundCount} of ${wanted} expected references found, ${missed.length} missed`);
+  lines.push(`  amended twice: ${duplicates.length}   (one scope named by two items — real, not an error)`);
   lines.push(`  INVENTED:    ${invented.length}   (a change the letter does not make — fatal)`);
   lines.push(`  OVERCLAIMED: ${overclaimed.length}   (the metric that matters)`);
   lines.push(`  bad labels:  ${badLabel.length}   (an item number the document does not contain)`);
@@ -271,6 +293,7 @@ afterAll(() => {
     if (v.overclaimed.length) lines.push(`    OVERCLAIMED: ${v.overclaimed.join(" | ")}`);
     if (v.badLabel.length) lines.push(`    BAD LABEL: ${v.badLabel.join(" | ")}`);
     if (v.missed.length) lines.push(`    missed: ${v.missed.join(", ")}`);
+    if (v.duplicates.length) lines.push(`    amended twice: ${v.duplicates.join(" | ")}`);
     if (v.extra.length) lines.push(`    extra: ${v.extra.join(" | ")}`);
     if (v.wrongKind.length) lines.push(`    wrong kind: ${v.wrongKind.join(" | ")}`);
     if (v.dateNotes.length) lines.push(`    dates: ${v.dateNotes.join(" | ")}`);
