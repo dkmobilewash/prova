@@ -93,8 +93,22 @@ const verdicts: Verdict[] = [];
 function requireApiKey(): void {
   // The posture every eval here takes, for the reason they all give: absence of
   // a failure is not a pass.
-  if (!process.env.ANTHROPIC_API_KEY?.trim()) {
+  const key = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!key) {
     throw new Error("ANTHROPIC_API_KEY is not set: the addendum eval did not run. It is not a pass.");
+  }
+  // AND NOT THE PLACEHOLDER. The run command in this file's header writes the key
+  // as `…`, and pasting it unedited sets the variable to one character — which
+  // satisfies "is it set" perfectly and then fails forty seconds later as an
+  // authentication error against the API, which reads like a broken eval rather
+  // than an unedited command. Checked by LENGTH rather than by an `sk-ant-`
+  // prefix, so a gateway or proxy key is not refused for not looking like one.
+  // The key itself is never printed.
+  if (key.length < 20) {
+    throw new Error(
+      `ANTHROPIC_API_KEY is set to ${key.length} character(s), which is too short to be a key: the addendum ` +
+        `eval did not run. If you pasted the command with its "…" placeholder still in it, that is this.`,
+    );
   }
 }
 
