@@ -55,6 +55,7 @@ export const AI_FEATURES = {
   LEAD_SEARCH: "lead-search",
   QUOTE_EXTRACT: "quote-extract",
   PLAN_INGESTION: "plan-ingestion",
+  ADDENDUM_READ: "addendum-read",
 } as const;
 
 export type AiFeatureKey = keyof typeof AI_FEATURES;
@@ -82,6 +83,17 @@ const FEATURE_MODEL: Record<AiFeatureKey, string> = {
   // The one cheap default, at Diego's direction, subject to the eval. Three
   // hundred calls per plan set is where a fifth of the price is worth having.
   PLAN_INGESTION: HAIKU_4_5,
+  // Opus, and the argument cuts closer here than anywhere else on this list.
+  // An addendum reader is 2-6 documents per bid rather than the quote reader's
+  // one, so it IS more volume — but the test this file applies is not "more
+  // than one", it is the one in the header: every feature is Opus unless Diego
+  // asked otherwise, and he asked for exactly one thing, "high-volume page
+  // work (classification, title blocks)". Three documents is not three hundred
+  // pages, and the per-document stakes are the quote's rather than a sheet's:
+  // a missed item on a GC's letter is a scope change nobody re-priced, on a
+  // document submitted once. The eval is what may reverse this, not this
+  // comment.
+  ADDENDUM_READ: OPUS_5,
 };
 
 /** `ANTHROPIC_MODEL_PLAN_INGESTION` etc. — the per-feature env override. */

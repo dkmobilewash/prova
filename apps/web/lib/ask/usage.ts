@@ -205,7 +205,14 @@ export type AskUsageFeature =
    *  ingest — which `docs/ai/DECISIONS.md` records as unmeasured. And the rows
    *  are the measurement: hundreds per set, so they are the first place in this
    *  app where per-feature spend is a volume question rather than a unit price. */
-  | "plan-ingestion";
+  | "plan-ingestion"
+  /** Reading a bid addendum (lib/actions/addendumRead.ts). Its own row rather
+   *  than folded into `quote-extract`, though both are one whole file into one
+   *  request: they are switched separately and they spend DIFFERENT ledgers — a
+   *  quote costs document pages, an addendum costs addendum pages — so a bill
+   *  that could not tell them apart could not answer either "what did the thing
+   *  we turned off cost us" or "which allowance did this month go on". */
+  | "addendum-read";
 
 export type AskUsageRecord = {
   companyId: string;
@@ -369,6 +376,7 @@ const FEATURE_LABELS: Record<string, string> = {
   "bid-research": "Bid research (web)",
   "lead-search": "Lead search (web)",
   "plan-ingestion": "Plan sheet reading",
+  "addendum-read": "Addendum reading",
 };
 
 /** The last thirty days for the settings page, grouped by who asked.

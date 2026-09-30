@@ -63,6 +63,11 @@ model BidInvitation {
   addenda      BidAddendum[]
   requirements BidRequirement[]
 
+  /// Readings of the addenda on this bid — see bid-addenda.prisma. Reached from
+  /// here rather than only through each addendum because the overlap report asks
+  /// a per-BID question: which scopes has more than one addendum touched.
+  addendumReadings BidAddendumReading[]
+
   /// THE JOB THIS BID BECAME, when it was won and somebody linked it.
   ///
   /// Nullable and SET NULL, never required: most invitations never become a

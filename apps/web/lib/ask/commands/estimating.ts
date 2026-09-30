@@ -664,6 +664,15 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "saveBidAddendum", reason: "What the GC issued and when is read off their letter, and whether it changed work you already priced is an estimator's judgement about drawings the assistant has not seen." },
   { action: "acknowledgeBidAddendum", reason: "Acknowledging an addendum is an assertion on a bid document the GC holds you to. A wrong tick makes a bid look responsive when it is not — the failure this feature exists to prevent." },
   { action: "deleteBidAddendum", reason: "Deletes are never commands (T5)." },
+  // Reading the addendum document. NOT commands either, and the reason is a turn
+  // of the one above rather than a new one. The objection to `saveBidAddendum`
+  // was that the assistant "has not seen" the addendum — reading it fixes that
+  // and changes nothing, because what these produce is a LIST OF WHAT THE
+  // DOCUMENT SAYS, which a person then judges. Handing the judging to the
+  // assistant as a command would put back exactly what was refused.
+  { action: "attachAddendumDocument", reason: "Which PDF is which addendum is something a person has in front of them; attaching the wrong one makes every later reading of that bid wrong about a document nobody rechecks." },
+  { action: "readBidAddendumDocument", reason: "It spends the company's monthly addendum allowance on a document the assistant cannot see beforehand, and the result is a proposal to be checked rather than an answer. Reading is a button on the addendum, where the person can see what it will cost." },
+  { action: "decideAddendumReference", reason: "Whether a scope an addendum touches is this trade's problem is the estimator's judgement about their own bid — the same judgement `saveBidAddendum` is excluded for, one level down." },
   { action: "saveBidRequirement", reason: "These are the ITB items nothing in the data can verify, transcribed from the GC's own form; a misread requirement is one nobody goes and satisfies." },
   { action: "satisfyBidRequirement", reason: "Recording the bond as obtained or the form as signed is a person vouching for something off-screen. The assistant cannot see whether it happened." },
   { action: "deleteBidRequirement", reason: "Deletes are never commands (T5)." },

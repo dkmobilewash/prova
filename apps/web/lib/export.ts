@@ -356,9 +356,9 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "acknowledgedOn means NOT acknowledged -- on a public bid that is the most common reason a " +
       "low bid is rejected unread. affectsPricedScope is somebody's judgement that the addendum " +
       "changed work already priced; it is not derived from anything and nothing re-prices " +
-      "automatically. reference is whatever the GC called it and is never parsed.",
+      "automatically -- reading the addendum document does not set it, and is not allowed to. reference is whatever the GC called it and is never parsed. fileName is the document attached to the row when somebody had it; the file itself is not in this export and its stored address is deliberately withheld.",
     columns: [
-      "id", "bidInvitationId", "reference", "issuedOn", "acknowledgedOn", "affectsPricedScope",
+      "id", "bidInvitationId", "reference", "fileName", "issuedOn", "acknowledgedOn", "affectsPricedScope",
       "impactNote", "notes", "createdAt", "updatedAt",
     ],
     scope: byCompany,
@@ -428,7 +428,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "Whether the assistant is on for your company, any features you switched off, " +
       "and your monthly plan-sheet allowance. Absent means every default was in use.",
     columns: [
-      "id", "aiEnabled", "disabledFeatures", "planSheetsPerMonth", "modelOverride",
+      "id", "aiEnabled", "disabledFeatures", "planSheetsPerMonth", "addendumPagesPerMonth", "modelOverride",
       "updatedByUserId", "createdAt", "updatedAt",
     ],
     scope: byCompany,
@@ -668,6 +668,21 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "no dataset has been written for it, not because it would be meaningless — and this line " +
       "exists so that is stated rather than quietly true.",
     models: ["PlanSheetText", "PlanSheetProposal"],
+  },
+  {
+    key: "bid-addendum-readings",
+    title: "What was read off each bid addendum, and the scopes an estimator ruled in or out",
+    detail:
+      "When a GC's addendum is read, what the model said it changed is kept as one row per " +
+      "reading, along with the estimator's decision about each scope it names. Not exported " +
+      "yet, and the two halves are not the same kind of thing. The reading is a record of what " +
+      "a model said about a PDF this file does not contain, and re-reading is what produces a " +
+      "current one. The DECISIONS are a person's own work — which parts of an addendum are " +
+      "this trade's problem — and that is the half worth exporting one day. It is omitted " +
+      "because no dataset has been written for it, not because it would be meaningless. " +
+      "Nothing here is an assertion about the bid: whether an addendum changed work already " +
+      "priced is the estimator's own tick on the addendum itself, which IS exported.",
+    models: ["BidAddendumReading", "BidAddendumItemDecision"],
   },
   {
     key: "retainage-and-backcharges",
@@ -928,6 +943,17 @@ export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
   clientUpdatedAt:
     "offline-sync bookkeeping: when the phone last touched the row, used to resolve a " +
     "conflict against the server's own updatedAt, which IS exported",
+  fileUrl:
+    "the stored document's address in the blob store, and the one entry on this list that is " +
+    "NOT plumbing. Every upload is public-access: the URL is unguessable, but anyone holding " +
+    "it can fetch the file forever, with no sign-in -- which is why the app serves documents " +
+    "through an authenticated route instead, and why #195 found that a blob URL is not proof " +
+    "of whose file it is. A CSV is a file that gets forwarded, so exporting this would hand " +
+    "out a permanent key to a customer's own bid documents. It is not in EXPORT_WITHHELD " +
+    "because that list is held to names that read as credentials (token, secret, password, " +
+    "apiKey) and this does not -- see export-coverage.test.ts. The file itself is on the row " +
+    "in the app, where a person who wants it can open it; fileName IS exported, so an export " +
+    "still says which document a row is about.",
 };
 
 export const EXPORT_INTERNAL_MODELS: Record<string, string> = {

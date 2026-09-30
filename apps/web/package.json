@@ -13,7 +13,8 @@
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "test:e2e:local": "node e2e/run.mjs",
     "test:e2e:public": "node e2e/run.mjs --public",
-    "ask:eval": "vitest run --config vitest.eval.config.mts"
+    "ask:eval": "vitest run --config vitest.eval.config.mts",
+    "eval:addenda": "vitest run --config vitest.eval.config.mts lib/addenda/addenda.eval.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.9.6",

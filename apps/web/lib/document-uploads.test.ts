@@ -45,7 +45,7 @@ group("every purpose and where each one lands", () => {
     // added without a target, or a target without a purpose, the assertion
     // above is what fails; this one only stops the LIST silently shrinking to
     // nothing, which would make every assertion below vacuous.
-    expect(DOCUMENT_UPLOAD_PURPOSES).toHaveLength(7);
+    expect(DOCUMENT_UPLOAD_PURPOSES).toHaveLength(8);
   });
 
   it("puts each kind in the folder its existing documents already live in", () => {
@@ -86,7 +86,7 @@ group("every purpose and where each one lands", () => {
     // The test's NAME changed with it. It used to say "exactly one", which read
     // as a rule about the product when it was a count of the rows that happened
     // to exist; a second legitimate entry should not look like a violation.
-    expect(companyScoped.sort()).toEqual(["bid-quote", "compliance-document"]);
+    expect(companyScoped.sort()).toEqual(["bid-addendum", "bid-quote", "compliance-document"]);
   });
 
   it("accepts only a purpose on the list, and refuses anything else", () => {

@@ -100,6 +100,31 @@ model AskAllowancePeriod {
   /// for exactly the reasons the two fields above are.
   failedPlanSheets Int @default(0)
 
+  /// PAGES OF BID ADDENDA READ THIS MONTH — a fourth unit, and the argument is
+  /// the third unit's argument arriving again rather than a new one.
+  ///
+  /// The obvious answer was to spend `pagesUsed`: an addendum is eight pages and
+  /// the single-document ceiling is a hundred, so one fits comfortably. That
+  /// checks the CEILING and never checks the MONTH. An estimator bidding twenty
+  /// jobs with three addenda each at eight pages is ~480 pages against a 300-page
+  /// month — one and a half times the whole allowance, spent on bids, leaving
+  /// nothing for the lien waivers and certificates the won job then needs. Which
+  /// is word for word why plan sheets are not pages, two fields up.
+  ///
+  /// The two are not the same product either. A document page is something
+  /// somebody hands the assistant once; an addendum arrives on every bid, several
+  /// times per bid, whether or not anybody wanted it that week.
+  ///
+  /// 600 a month is Diego's figure and A FIGURE IS NOT A MEASUREMENT — 480 is the
+  /// modelled heavy month and 600 leaves room to re-read. Per-company on
+  /// `CompanyAiSettings.addendumPagesPerMonth` so a plan can move it without a
+  /// migration, and reaching the claim the way `planSheetsPerMonth` does: out of
+  /// the `AiSettings` the gate already returned, never a second query.
+  addendumPagesUsed   Int @default(0)
+  /// Of those, pages whose model call then failed — marked, never released, for
+  /// the reasons every other failure field here gives.
+  failedAddendumPages Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

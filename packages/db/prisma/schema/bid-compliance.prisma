@@ -94,6 +94,35 @@ model BidAddendum {
 
   notes String?
 
+  /// The addendum document itself, when somebody has it.
+  ///
+  /// BOTH NULLABLE, and that is load-bearing rather than lenient: logging an
+  /// addendum WITHOUT the PDF is the flow this model shipped with and the common
+  /// one — a GC's letter gets read in an email client and the fact of it typed in
+  /// here. `DrawingRevision.fileUrl` is optional for the same stated reason, "a
+  /// record that Rev 3 was issued on a date and reached us on another is worth
+  /// keeping even when nobody has the PDF to hand."
+  ///
+  /// Checked on the way in by `documentUrlProblem(url, "bid-addendum", companyId,
+  /// env)` — both halves, our own store and this company's own path prefix. A
+  /// blob URL is not proof of whose file it is (#195), which is also why this is
+  /// the one column on this model the CSV export withholds.
+  fileUrl  String?
+  fileName String?
+
+  /// What was read off the document, one row per run, and what the estimator
+  /// decided about each scope it names — both in `bid-addenda.prisma`. CASCADEd
+  /// from here, so like this model they carry no `jobId`, reach no cleanup script
+  /// and need no `HANDLED_MODELS` entry.
+  ///
+  /// NEITHER IS AN ASSERTION ABOUT THE BID. `affectsPricedScope` above stays the
+  /// estimator's own tick and no reading writes it: whether an addendum changed
+  /// work already priced is a judgement about drawings and an estimate the model
+  /// has not seen, which `lib/ask/commands/estimating.ts` had already decided when
+  /// it refused this action to the assistant.
+  readings  BidAddendumReading[]
+  decisions BidAddendumItemDecision[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
