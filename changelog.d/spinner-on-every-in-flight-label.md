@@ -14,11 +14,22 @@ spinner is `aria-hidden`, so the label is the whole of what a screen reader
 gets and the only thing that says *what* is happening.
 
 **The two that mattered most were not in the hundred and thirty**, because
-they had no word to find. `SubmitButton` — 48 create buttons across 22 files
-— disabled itself, set `aria-busy`, and changed nothing you can see. It
-greyed out. There was no static label for a census to catch, so this was the
-one place where the fix and the check both had to be written from scratch.
-One edit covers all 48.
+they had no word to find. `SubmitButton` — 48 call sites across 22 files —
+disabled itself, set `aria-busy`, and changed nothing you can see. It greyed
+out. There was no static label for a census to catch, so this was the one
+place where the fix and the check both had to be written from scratch.
+
+**44 of the 48, not all 48, and the four exceptions are the interesting
+part.** `useFormStatus` reports the nearest enclosing form, so the spinner
+fires only where that form is driven by a server action. Measured rather than
+assumed: 19 of the 22 files are, through `<ActionForm>` (which renders
+`<form action={…}>`) or a literal one. The other three — `ContactEditForm`,
+`SalesLeadEditForm`, `TakeoffPlanUploader` — are `onSubmit` forms where
+`pending` is always false, so `SubmitButton` contributes nothing there. They
+are not a gap: each already carries its own `disabled={isPending}`, so the
+duplicate-submit protection this component exists for is intact, and each got
+a label-level spinner in the sweep. That also means they cannot double-spin,
+which was the risk worth checking. The 48th is the armed confirm below.
 
 **One button deliberately did not get one, and that is the interesting
 half.** `ConfirmDelete`'s armed confirm is reached by 67 `pendingLabel` call
