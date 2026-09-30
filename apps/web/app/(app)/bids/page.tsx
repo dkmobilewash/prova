@@ -7,7 +7,8 @@ import { money } from "@/lib/money";
 import { formatCalendarDate } from "@/lib/render-date";
 import { summariseWonValue, valueIsPartial } from "@/lib/bid-pipeline";
 import { BidLevelling, type BidQuoteRow } from "@/components/BidLevelling";
-import { viewerToday } from "@/lib/viewerToday";
+import { viewerToday, viewerTimeZone } from "@/lib/viewerToday";
+import { todayInZone } from "@/lib/viewer-timezone";
 import { BidLines, type BidLineRow } from "@/components/BidLines";
 import type { AddendumItem } from "@/lib/addenda-overlap";
 import { BidCompliance, type AddendumRow, type RequirementRow } from "@/components/BidCompliance";
@@ -67,6 +68,14 @@ export default async function BidsPage({
   // outcome". Computed on the server from request data, so the markup
   // matches on both sides and the localToday hydration trap does not apply.
   const today = await viewerToday();
+  // THE READER'S ZONE, NOT THE SERVER'S, and this is a correction rather than a
+  // flourish. `day()` above UTC-slices, which is right for every DATE field in
+  // this app because those are stored at UTC midnight on purpose. A reading's
+  // `createdAt` is a TIMESTAMP, and UTC-slicing one shows tomorrow's date to
+  // anybody west of UTC in the evening: a browser click-through on the Pacific
+  // evening of 2026-09-29 was told "Read 2026-09-30", which is a date that had
+  // not happened where they were sitting.
+  const zone = await viewerTimeZone();
 
   const [vendors, outcomesByBid, linkableJobs] = await Promise.all([
     prisma.vendor.findMany({
@@ -358,7 +367,7 @@ export default async function BidsPage({
                           // Rendered here, in UTC, like every other date on this
                           // page — `dateRenderCensus` fails a date the browser
                           // formats for itself.
-                          readOn: day(row.readings[0].createdAt) ?? "",
+                          readOn: todayInZone(zone, row.readings[0].createdAt),
                           pagesCharged: row.readings[0].pagesCharged,
                         }
                       : null,
