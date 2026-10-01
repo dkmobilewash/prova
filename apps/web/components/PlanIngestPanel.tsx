@@ -151,6 +151,38 @@ export function PlanIngestPanel({ planId, existing }: PlanIngestPanelProps) {
     void pump(view.jobId, 0);
   }
 
+  /**
+   * THE SECOND STAGE, WHICH NOTHING STARTED UNTIL NOW.
+   *
+   * `startPlanIngest` had exactly one call site in this app and it hardcoded
+   * `PAGE_INVENTORY`. Nothing chained stages server-side either. So #551 shipped
+   * a prompt, an extractor, a spend ledger, an eval scoring 9/9, a review table
+   * and an accept action — with no caller, and the panel sat at a green "Every
+   * sheet read" above a review surface saying "Nothing has been read from this
+   * plan set yet". Found by clicking it, which nobody had.
+   *
+   * A SEPARATE BUTTON RATHER THAN A CHAIN, Diego's call. The first stage is free
+   * — it opens the file and records what each page is. This one claims a plan
+   * sheet per page before every model call, so a 300-sheet set is 300 sheets off
+   * the month. Chaining would make one click spend that, with the figure only
+   * visible afterwards on `/settings/assistant`.
+   *
+   * And the button says the number, which is the house rule the Retry button
+   * beside it already follows: a control that spends somebody's allowance tells
+   * them what it costs BEFORE they press it, not after.
+   */
+  function onStartTitleBlocks() {
+    setError(null);
+    startTransition(async () => {
+      const started = await startPlanIngest(planId, "TITLE_BLOCK");
+      if (!started.ok) return setError(started.error);
+      setView(started.value);
+      setFailures([]);
+      setRunning(true);
+      void pump(started.value.jobId, 0);
+    });
+  }
+
   function onRetry(pageNumber: number) {
     if (!view) return;
     setError(null);
@@ -257,6 +289,34 @@ export function PlanIngestPanel({ planId, existing }: PlanIngestPanelProps) {
             >
               Keep reading
             </button>
+          )}
+
+          {/* THE TITLE-BLOCK STAGE, offered once the free pass has finished and
+              only when the finished pass IS the free one — otherwise this would
+              offer to re-read the title blocks it has just read, and charge for
+              it. `STAGE_SPENDS` is what decides, rather than the stage name, so
+              a third stage added later inherits the rule instead of the label. */}
+          {view.complete && view.stage === "PAGE_INVENTORY" && !running && (
+            <div className="mt-1 border-t border-line-card pt-3" data-plan-ingest="next-stage">
+              <p className="mb-2 text-sm text-ink-body">
+                Nothing was charged for that — it only opened the file and recorded what is on each page.
+              </p>
+              <button
+                type="button"
+                onClick={onStartTitleBlocks}
+                disabled={isPending}
+                className="min-h-[48px] rounded-md bg-neutral-800 px-4 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50"
+              >
+                {isPending
+                  ? "Starting…"
+                  : `Read the title blocks — uses ${view.total} ${view.total === 1 ? "sheet" : "sheets"}`}
+              </button>
+              <p className="mt-2 text-sm text-ink-muted">
+                Reads each sheet&apos;s title block and proposes a sheet number, title and discipline for you to
+                confirm or correct. A sheet with no selectable text is reported as a scan rather than guessed at,
+                and costs nothing.
+              </p>
+            </div>
           )}
         </>
       )}
