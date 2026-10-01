@@ -191,7 +191,15 @@ export function sheetIndexSentence(counts: SheetIndexCounts): string {
   const parts: string[] = [];
   if (counts.awaiting > 0) parts.push(`${counts.awaiting} to check`);
   if (counts.noReading > 0) {
-    parts.push(`${counts.noReading} ${counts.noReading === 1 ? "needs" : "need"} its number typed in`);
+    // The POSSESSIVE agrees too, not just the verb. This read "5 need its number
+    // typed in" — the verb was pluralised and "its" was not — and a browser
+    // tester reported it before any test did, because no test asserted the
+    // sentence for a count above one.
+    parts.push(
+      counts.noReading === 1
+        ? "1 needs its number typed in"
+        : `${counts.noReading} need their numbers typed in`,
+    );
   }
   if (counts.accepted > 0) parts.push(`${counts.accepted} confirmed`);
   if (counts.rejected > 0) parts.push(`${counts.rejected} rejected`);
