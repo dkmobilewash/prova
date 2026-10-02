@@ -56,23 +56,76 @@ async function loadLink(companyId: string, jobId: string) {
   });
 }
 
+/**
+ * Stamp the link's sync trio — AND STAMP IT ON FAILURE TOO.
+ *
+ * Until now every call site wrote `SUCCESS` and nothing ever wrote `FAILURE`,
+ * so a push or a refresh that threw left the previous success standing. The
+ * card would read "synced 2 minutes ago · ok" when the last attempt had in fact
+ * failed, which is the precise outcome `bluebeam.prisma` says these three
+ * columns exist to prevent: "an integration that fails silently is
+ * indistinguishable from one nobody used."
+ *
+ * `lib/companycam/import.ts` already does this for its own link row; this
+ * brings Bluebeam to the same standard.
+ */
+async function recordSync(
+  linkId: string,
+  companyId: string,
+  status: "SUCCESS" | "FAILURE",
+  message: string,
+) {
+  await prisma.bluebeamStudioSession.updateMany({
+    where: { id: linkId, companyId },
+    data: { lastSyncedAt: new Date(), lastSyncStatus: status, lastSyncMessage: message },
+  });
+}
+
+/** The readable half of a thrown error. Bluebeam's own client throws sentences
+ *  (see `withBluebeam`'s reconnect message), so this is already user-facing
+ *  prose rather than a stack. */
+const reasonOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
 /** Create a new Studio Session for a job and link it. One session per
  * job, same shape as ProcoreProjectLink/CompanyCamProjectLink. */
 export async function linkJobToBluebeamStudio(companyId: string, jobId: string, jobName: string, linkedByUserId: string, deps: BluebeamDeps = {}) {
   const existing = await loadLink(companyId, jobId);
   if (existing) throw new Error("This job already has a Bluebeam Studio Session. Unlink it first.");
 
-  const session = await withBluebeam(companyId, (target) => createBluebeamSession(target, jobName), deps);
+  const session = await withBluebeam(
+    companyId,
+    (target) => createBluebeamSession(target, jobName, deps.fetchImpl),
+    deps,
+  );
 
-  return prisma.bluebeamStudioSession.create({
-    data: {
-      companyId,
-      jobId,
-      bluebeamSessionId: session.id,
-      bluebeamSessionName: session.name,
-      linkedByUserId,
-    },
-  });
+  try {
+    return await prisma.bluebeamStudioSession.create({
+      data: {
+        companyId,
+        jobId,
+        bluebeamSessionId: session.id,
+        bluebeamSessionName: session.name,
+        linkedByUserId,
+      },
+    });
+  } catch (cause) {
+    /* THE SESSION ALREADY EXISTS AT BLUEBEAM AND WE ARE ABOUT TO FORGET ITS ID.
+       Two steps that cannot be one: the session is created remotely, then the
+       row is written here. If the write loses, an empty Studio Session is left
+       in the owner's Bluebeam account that this app has no record of and no way
+       to reach — it will not appear in any list here, and nothing will ever
+       clean it up.
+       DocuSign handles the same hazard by naming the envelope id and telling
+       the user to void it by hand (`lib/actions/docusign.ts`). Do the same
+       rather than swallow it: the id is the only thing that makes the orphan
+       findable. */
+    throw new Error(
+      `The Studio Session was created in Bluebeam (“${session.name}”, id ${session.id}) but ` +
+        `linking it to this job failed, so C Stream has no record of it. Delete that session ` +
+        `in Bluebeam Studio by hand before trying again, or you will collect empty sessions.`,
+      { cause },
+    );
+  }
 }
 
 /** Push one PDF into the job's linked session. Nothing about the file is
@@ -91,12 +144,19 @@ export async function pushDocumentToBluebeamSession(
   const link = await loadLink(companyId, jobId);
   if (!link) throw new Error("This job has no Bluebeam Studio Session. Link one first.");
 
-  const uploaded = await withBluebeam(companyId, (target) => uploadFileToBluebeamSession(target, link.bluebeamSessionId, file), deps);
+  let uploaded: Awaited<ReturnType<typeof uploadFileToBluebeamSession>>;
+  try {
+    uploaded = await withBluebeam(
+      companyId,
+      (target) => uploadFileToBluebeamSession(target, link.bluebeamSessionId, file, deps.fetchImpl),
+      deps,
+    );
+  } catch (error) {
+    await recordSync(link.id, companyId, "FAILURE", `Couldn't push “${file.name}”. ${reasonOf(error)}`);
+    throw error;
+  }
 
-  await prisma.bluebeamStudioSession.updateMany({
-    where: { id: link.id, companyId },
-    data: { lastSyncedAt: new Date(), lastSyncStatus: "SUCCESS", lastSyncMessage: `Pushed "${file.name}" to the session.` },
-  });
+  await recordSync(link.id, companyId, "SUCCESS", `Pushed “${file.name}” to the session.`);
 
   return { fileId: uploaded.fileId, sessionName: link.bluebeamSessionName };
 }
@@ -107,16 +167,24 @@ export async function refreshBluebeamStudioSession(companyId: string, jobId: str
   const link = await loadLink(companyId, jobId);
   if (!link) throw new Error("This job has no Bluebeam Studio Session. Link one first.");
 
-  const { files, markups } = await withBluebeam(companyId, async (target) => {
-    const files = await listBluebeamSessionFiles(target, link.bluebeamSessionId, deps.fetchImpl);
-    const markups = await summarizeBluebeamSessionMarkups(target, link.bluebeamSessionId, deps.fetchImpl);
-    return { files, markups };
-  }, deps);
+  let files: Awaited<ReturnType<typeof listBluebeamSessionFiles>>;
+  let markups: Awaited<ReturnType<typeof summarizeBluebeamSessionMarkups>>;
+  try {
+    ({ files, markups } = await withBluebeam(
+      companyId,
+      async (target) => {
+        const files = await listBluebeamSessionFiles(target, link.bluebeamSessionId, deps.fetchImpl);
+        const markups = await summarizeBluebeamSessionMarkups(target, link.bluebeamSessionId, deps.fetchImpl);
+        return { files, markups };
+      },
+      deps,
+    ));
+  } catch (error) {
+    await recordSync(link.id, companyId, "FAILURE", `Couldn't read the session. ${reasonOf(error)}`);
+    throw error;
+  }
 
   const message = markupSummarySentence(files.length, markups);
-  await prisma.bluebeamStudioSession.updateMany({
-    where: { id: link.id, companyId },
-    data: { lastSyncedAt: new Date(), lastSyncStatus: "SUCCESS", lastSyncMessage: message },
-  });
+  await recordSync(link.id, companyId, "SUCCESS", message);
   return { message };
 }
