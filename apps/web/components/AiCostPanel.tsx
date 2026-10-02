@@ -9,11 +9,19 @@ import type { CostReport } from "@/lib/ask/cost-query";
  *
  * ── AN UNKNOWN COST SAYS SO, AND NEVER SHOWS A ZERO ──
  *
- * Three of the five rates are not confirmed yet, and a model routed somewhere
- * new will have none. `$0.00` on a cost screen reads as "that was free", which
- * is the one reading that stops anybody asking — so an unpriced row is counted
- * apart and named, and a figure that could not be computed is a dash with a
- * reason rather than a number.
+ * All five rates are recorded as of 2026-10-02, so nothing a currently-routed
+ * model writes reads unknown today. That is a fact about this week rather than
+ * a property of the panel: a model routed somewhere new arrives with no rate at
+ * all, and a price change recorded for only some token kinds arrives with a
+ * partial one. `$0.00` on a cost screen reads as "that was free", which is the
+ * one reading that stops anybody asking — so an unpriced row is counted apart
+ * and named, and a figure that could not be computed says so in words rather
+ * than as a number.
+ *
+ * (That sentence said "three of the five rates are not confirmed yet" until
+ * 2026-10-02, which was true when it was written and false the hour the rates
+ * were filled in. Left standing, it would have told the next reader this panel
+ * cannot price cache tokens and sent them looking for a gap that is closed.)
  *
  * ── AND IT SAYS WHEN A TOTAL IS A FLOOR ──
  *
@@ -28,6 +36,10 @@ import type { CostReport } from "@/lib/ask/cost-query";
 /** The window this panel reports on, so the page and the query agree on it. */
 export function thirtyDaysAgo(now: Date): Date {
   return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+}
+
+function tok(value: number): string {
+  return value.toLocaleString("en-US");
 }
 
 function usd(value: number): string {
@@ -64,6 +76,24 @@ export function CostPanel({ report }: { report: CostReport }) {
               </>
             )}
             .
+          </p>
+          {/* WHAT THE TOTAL WAS COMPUTED FROM. The panel shipped without this
+              and a CORRECT $0.43 read as a 1,000x rate error, because the usage
+              block above shows only two of the four token kinds this charges
+              for — the cache tokens, which Ask generates on every pass, were
+              invisible. `tokensOver`'s header has the full account. */}
+          <p className="mb-2 text-xs text-ink-muted" data-ask="cost-inputs">
+            From {tok(report.totalTokens.inputTokens)} in · {tok(report.totalTokens.outputTokens)} out
+            {report.totalTokens.cacheWriteTokens > 0 && <> · {tok(report.totalTokens.cacheWriteTokens)} cache written</>}
+            {report.totalTokens.cacheReadTokens > 0 && <> · {tok(report.totalTokens.cacheReadTokens)} cache read</>}
+            {report.totalTokens.webSearches > 0 && (
+              <>
+                {" "}
+                · {tok(report.totalTokens.webSearches)}{" "}
+                {report.totalTokens.webSearches === 1 ? "web search" : "web searches"}
+              </>
+            )}
+            . Cached tokens are most of a repeat question&apos;s cost and are not in the usage figures above.
           </p>
           {report.total.understated && (
             // Not a footnote. A total that is a floor and does not say so is the
@@ -106,6 +136,18 @@ export function CostPanel({ report }: { report: CostReport }) {
       <h3 className="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-ink-label">
         Cost per unit of work
       </h3>
+      {report.straddled && (
+        // Same rule as the FLOOR note above: qualified, never quietly wrong.
+        // An allowance period is a calendar month and its counters are
+        // per-period, so the earliest one contributes days before this window
+        // began. Nothing records which day a unit was claimed on, so it cannot
+        // be apportioned — the denominator is a little too big and these
+        // figures are therefore a little too LOW.
+        <p className="mb-2 text-xs text-ink-muted">
+          These are slight UNDER-estimates: an allowance period that began before this window counts in
+          full, because the ledger counts units per month rather than per day.
+        </p>
+      )}
       <ul className="divide-y divide-line-row text-sm" data-ask="cost-per-unit">
         {report.units.map((unit) => (
           <li key={unit.key} className="flex justify-between gap-3 py-1">

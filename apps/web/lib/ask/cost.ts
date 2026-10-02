@@ -162,6 +162,152 @@ export function spendOver(rows: readonly PricedRow[], lookup: RateLookup = rateF
   return { usd, priced, unpriced, missing: [...missing].sort(), understated };
 }
 
+/** The tokens and searches a figure was computed from. */
+export type Tokens = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  webSearches: number;
+};
+
+/**
+ * What a total was computed FROM, so a person can check it.
+ *
+ * ── A COST NOBODY CAN RECONCILE IS A COST NOBODY SHOULD TRUST ──
+ *
+ * Added 2026-10-02 from a click-through of the panel this module feeds. The
+ * screen showed `$0.43` while the usage block directly above it read
+ * "1,285 tokens in, 267 out" — which multiplies out to about a cent. The $0.43
+ * was CORRECT: roughly 67,000 cache-WRITE tokens at $6.25/MTok, from Ask
+ * caching its system prompt and tool definitions at four breakpoints. But the
+ * screen displayed only two of the four token kinds it charges for, so the
+ * figure could not be checked from the page, and the tester's first conclusion
+ * was that a rate had been entered per-1,000 instead of per-million — which
+ * would have meant every figure on a money screen was 1,000x overstated.
+ *
+ * That is the failure worth preventing. The arithmetic was never wrong; the
+ * screen made a right answer indistinguishable from a catastrophic one, and the
+ * only way to tell them apart was to read the database. A cost figure whose
+ * inputs are invisible gets distrusted when it is right and trusted when it is
+ * wrong, and both directions are expensive.
+ *
+ * Counted over the rows that were PRICED only, deliberately: the total is a sum
+ * over those rows, so showing tokens from unpriced rows beside it would
+ * reintroduce exactly the mismatch this function exists to close.
+ */
+export function tokensOver(rows: readonly PricedRow[], lookup: RateLookup = rateFor): Tokens {
+  const sum: Tokens = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    webSearches: 0,
+  };
+  for (const row of rows) {
+    if (!costOf(row, lookup).known) continue;
+    sum.inputTokens += row.inputTokens;
+    sum.outputTokens += row.outputTokens;
+    sum.cacheReadTokens += row.cacheReadTokens;
+    sum.cacheWriteTokens += row.cacheWriteTokens;
+    sum.webSearches += row.webSearches;
+  }
+  return sum;
+}
+
+/** The usage counters a period carries, structurally — so this module needs no
+ *  Prisma import and the straddle case below is testable without a database. */
+export type PeriodUsage = {
+  periodStart: Date;
+  questionsUsed: number;
+  pagesUsed: number;
+  planSheetsUsed: number;
+  addendumPagesUsed: number;
+  failedQuestions: number;
+  failedPages: number;
+  failedPlanSheets: number;
+  failedAddendumPages: number;
+};
+
+export type AllowanceUsage = Omit<PeriodUsage, "periodStart"> & {
+  /** True when a period reaching back BEFORE the window contributed its whole
+   *  count, so every per-unit figure derived from this is an UNDER-estimate. */
+  straddled: boolean;
+};
+
+/** Midnight UTC on the first of `date`'s month — where a period begins. */
+export function startOfUtcMonth(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+/**
+ * The units claimed across every allowance period overlapping the window.
+ *
+ * ── A COST OVER 30 DAYS DIVIDED BY THE UNITS OF ONE PERIOD IS NOT A COST PER
+ *    UNIT, AND THAT IS WHAT SHIPPED ──
+ *
+ * Found by clicking the panel on 2026-10-02. The numerator was every row in the
+ * last 30 days; the denominator was `findFirst` over allowance periods — ONE
+ * period. Two separate defects in that one line:
+ *
+ *   - **It fails blank.** With no period starting inside the window, `findFirst`
+ *     returns null, every count reads 0, and every row says "no questions this
+ *     month" while the usage block above shows calls in the same window. That is
+ *     the symptom the click-through actually hit.
+ *   - **It fails LOUD on the 1st of a month.** Thirty days of spend over two
+ *     days of usage renders a confident per-sheet figure, with an "a month would
+ *     be" line under it — up to ~15x too high, and it is the number that feeds
+ *     the $399 pricing decision `DECISIONS.md` has open. `costPerUnit`'s own
+ *     docstring calls an invented per-unit figure "the most confidently wrong
+ *     number on the page". It was producing one, systematically, monthly.
+ *
+ * So the denominator now covers the same window as the numerator: every period
+ * overlapping it, summed. A period is a UTC calendar MONTH with no end column
+ * (`ask-allowance.prisma`), so the periods that can overlap are those starting
+ * at or after the first of the window's own month.
+ *
+ * ── THE STRADDLE IS REAL AND IS REPORTED RATHER THAN HIDDEN ──
+ *
+ * The earliest period can begin BEFORE `from` — a 30-day window opening 2 Oct
+ * reaches back into September, whose period began 1 Sept — and its counters are
+ * per-period, not per-day, so it contributes September 1st as well. There is no
+ * way to apportion it: nothing records which day a unit was claimed on. That
+ * makes the denominator slightly too LARGE and every per-unit figure slightly
+ * too SMALL, so the error is an under-estimate rather than an over-estimate,
+ * which is the right direction for a figure someone will quote as a cost.
+ *
+ * `straddled` says so, and the panel prints it. Option B — narrowing the
+ * numerator to the period instead — was rejected: on the 2nd of a month it would
+ * report a cost per sheet from two days of data, which is a worse measurement
+ * than a slightly conservative one over thirty, and it answers a question nobody
+ * asked ("what did it cost since Tuesday") instead of the one they did.
+ */
+export function allowanceOver(periods: readonly PeriodUsage[], from: Date): AllowanceUsage {
+  const sum: AllowanceUsage = {
+    questionsUsed: 0,
+    pagesUsed: 0,
+    planSheetsUsed: 0,
+    addendumPagesUsed: 0,
+    failedQuestions: 0,
+    failedPages: 0,
+    failedPlanSheets: 0,
+    failedAddendumPages: 0,
+    straddled: false,
+  };
+  for (const period of periods) {
+    if (period.periodStart < from) sum.straddled = true;
+    sum.questionsUsed += period.questionsUsed;
+    sum.pagesUsed += period.pagesUsed;
+    sum.planSheetsUsed += period.planSheetsUsed;
+    sum.addendumPagesUsed += period.addendumPagesUsed;
+    sum.failedQuestions += period.failedQuestions;
+    sum.failedPages += period.failedPages;
+    sum.failedPlanSheets += period.failedPlanSheets;
+    sum.failedAddendumPages += period.failedAddendumPages;
+  }
+  return sum;
+}
+
 /**
  * Cost per unit of work — the figure step 2 exists to produce.
  *

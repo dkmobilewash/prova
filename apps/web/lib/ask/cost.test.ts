@@ -1,10 +1,14 @@
 import { describe as group, expect, it } from "vitest";
 import {
+  allowanceOver,
   costAtAllowance,
   costOf,
   costPerUnit,
   spendOver,
+  startOfUtcMonth,
+  tokensOver,
   WEB_SEARCHES_RECORDED_FROM,
+  type PeriodUsage,
   type PricedRow,
   type RateLookup,
 } from "./cost";
@@ -176,6 +180,128 @@ group("adding up a set of rows", () => {
   it("adds up to nothing, priced, over no rows at all", () => {
     const spend = spendOver([]);
     expect(spend).toMatchObject({ usd: 0, priced: 0, unpriced: 0, understated: false });
+  });
+});
+
+group("what the total was computed from", () => {
+  it("reports the cache tokens the usage block does not show", () => {
+    // The click-through defect: $0.43 beside "1,285 in, 267 out" looked like a
+    // 1,000x rate error, because the cache tokens doing most of the charging
+    // were invisible. The arithmetic was right and unverifiable.
+    const tokens = tokensOver([
+      row({ inputTokens: 1_000, outputTokens: 200, cacheWriteTokens: 66_000 }),
+      row({ inputTokens: 285, outputTokens: 67, cacheReadTokens: 500 }),
+    ]);
+    expect(tokens).toEqual({
+      inputTokens: 1_285,
+      outputTokens: 267,
+      cacheReadTokens: 500,
+      cacheWriteTokens: 66_000,
+      webSearches: 0,
+    });
+  });
+
+  it("counts ONLY the rows the total could price", () => {
+    // Otherwise the breakdown explains a bigger number than the total beside
+    // it, which reintroduces the exact mismatch it was added to close.
+    const tokens = tokensOver([
+      row({ inputTokens: 1_000 }),
+      row({ model: "claude-nope", inputTokens: 999_999, cacheWriteTokens: 999_999 }),
+    ]);
+    expect(tokens.inputTokens).toBe(1_000);
+    expect(tokens.cacheWriteTokens).toBe(0);
+  });
+
+  it("adds up to nothing over no rows", () => {
+    expect(tokensOver([])).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      webSearches: 0,
+    });
+  });
+});
+
+group("the denominator covers the same window as the numerator", () => {
+  // A period is a UTC calendar month (`ask-allowance.prisma`), counters only.
+  const period = (start: string, over: Partial<PeriodUsage> = {}): PeriodUsage => ({
+    periodStart: new Date(start),
+    questionsUsed: 0,
+    pagesUsed: 0,
+    planSheetsUsed: 0,
+    addendumPagesUsed: 0,
+    failedQuestions: 0,
+    failedPages: 0,
+    failedPlanSheets: 0,
+    failedAddendumPages: 0,
+    ...over,
+  });
+
+  it("sums EVERY overlapping period, which is the bug this replaced", () => {
+    // What shipped was `findFirst` — one period. A 30-day window reaching back
+    // into last month divided its whole spend by this month's units alone.
+    const claimed = allowanceOver(
+      [
+        period("2026-09-01T00:00:00Z", { planSheetsUsed: 900, questionsUsed: 40 }),
+        period("2026-10-01T00:00:00Z", { planSheetsUsed: 100, questionsUsed: 5 }),
+      ],
+      new Date("2026-09-02T00:00:00Z"),
+    );
+    expect(claimed.planSheetsUsed).toBe(1_000);
+    expect(claimed.questionsUsed).toBe(45);
+  });
+
+  it("THE STRADDLE: flags a period that began before the window", () => {
+    // 1 Sept is before a window opening 2 Sept, and its counters are per-month,
+    // so it contributes 1 Sept too. Nothing records which day a unit was claimed
+    // on, so this cannot be apportioned — it can only be DECLARED.
+    const claimed = allowanceOver([period("2026-09-01T00:00:00Z", { planSheetsUsed: 900 })], new Date("2026-09-02T00:00:00Z"));
+    expect(claimed.straddled).toBe(true);
+  });
+
+  it("does NOT flag a straddle when the window opens exactly on a period start", () => {
+    // The one case with no error to declare. Claiming one anyway would train
+    // somebody to ignore the warning, which is how a real one gets missed.
+    const claimed = allowanceOver([period("2026-09-01T00:00:00Z", { planSheetsUsed: 900 })], new Date("2026-09-01T00:00:00Z"));
+    expect(claimed.straddled).toBe(false);
+  });
+
+  it("the straddle makes a per-unit figure too LOW, never too high", () => {
+    // The direction matters more than the magnitude: this figure gets quoted as
+    // a cost, and an under-estimate of a cost is the survivable error.
+    const spend = spendOver([row({ inputTokens: 1_000_000 })]); // $5.00
+    const straddled = allowanceOver(
+      [period("2026-09-01T00:00:00Z", { planSheetsUsed: 1_000 }), period("2026-10-01T00:00:00Z", { planSheetsUsed: 500 })],
+      new Date("2026-09-02T00:00:00Z"),
+    );
+    const narrow = allowanceOver([period("2026-10-01T00:00:00Z", { planSheetsUsed: 500 })], new Date("2026-10-01T00:00:00Z"));
+    const wide = costPerUnit(spend, straddled.planSheetsUsed)!;
+    const tooHigh = costPerUnit(spend, narrow.planSheetsUsed)!;
+    expect(wide).toBeLessThan(tooHigh);
+    // And the rejected shape is quantified rather than asserted: dividing the
+    // same spend by one period's units is 3x here, and ~15x on the 1st.
+    expect(tooHigh / wide).toBeCloseTo(3, 6);
+  });
+
+  it("reads zero over no periods at all, and claims no straddle", () => {
+    // The OTHER half of the shipped bug: `findFirst` returned null whenever no
+    // period started inside the window, so every row read "no questions this
+    // month" while the window was full of usage. Zero is still the right answer
+    // for a company with no periods — but it must not also assert a straddle it
+    // cannot have seen.
+    const claimed = allowanceOver([], new Date("2026-09-02T00:00:00Z"));
+    expect(claimed.questionsUsed).toBe(0);
+    expect(claimed.straddled).toBe(false);
+  });
+
+  it("startOfUtcMonth reaches back far enough to FIND the straddling period", () => {
+    // The query filters on this, so if it returned the window's own day the
+    // straddling period would never be fetched and the bug would survive the
+    // fix — green, because `allowanceOver` would be summing a list that was
+    // already short.
+    expect(startOfUtcMonth(new Date("2026-09-02T12:00:00Z")).toISOString()).toBe("2026-09-01T00:00:00.000Z");
+    expect(startOfUtcMonth(new Date("2026-01-31T23:59:59Z")).toISOString()).toBe("2026-01-01T00:00:00.000Z");
   });
 });
 

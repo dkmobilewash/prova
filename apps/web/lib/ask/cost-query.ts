@@ -1,6 +1,16 @@
 import { prisma } from "@prova/db";
-import { AI_FEATURE_LABEL } from "@/lib/ai/features";
-import { costPerUnit, costAtAllowance, spendOver, type PricedRow, type Spend } from "./cost";
+import { askFeatureLabel } from "@/lib/ai/features";
+import {
+  allowanceOver,
+  costAtAllowance,
+  costPerUnit,
+  spendOver,
+  startOfUtcMonth,
+  tokensOver,
+  type PricedRow,
+  type Spend,
+  type Tokens,
+} from "./cost";
 
 /**
  * The row-reading half of step 2 — what a company's AI actually cost.
@@ -62,7 +72,15 @@ export type CostReport = {
   from: Date;
   byFeature: FeatureSpend[];
   total: Spend;
+  /** What `total` was computed from, so the figure can be checked on screen —
+   *  see `tokensOver`. The panel shipped without this and a correct $0.43
+   *  looked like a 1,000x rate error. */
+  totalTokens: Tokens;
   units: UnitCost[];
+  /** True when an allowance period reaching back before the window contributed
+   *  its whole count, making every per-unit figure a slight UNDER-estimate.
+   *  Printed rather than hidden — see `allowanceOver`. */
+  straddled: boolean;
   /** Distinct reasons anything could not be priced, for one sentence at the top
    *  rather than the same words repeated per row. */
   missing: string[];
@@ -88,7 +106,7 @@ const ROW_FIELDS = {
  * models is not a cost — it is a number that looks like one.
  */
 export async function loadCostReport(companyId: string, from: Date): Promise<CostReport> {
-  const [rows, period, settings] = await Promise.all([
+  const [rows, periods, settings] = await Promise.all([
     prisma.askUsage.findMany({
       where: { companyId, createdAt: { gte: from } },
       select: ROW_FIELDS,
@@ -98,9 +116,16 @@ export async function loadCostReport(companyId: string, from: Date): Promise<Cos
       take: 20_000,
       orderBy: { createdAt: "desc" },
     }),
-    prisma.askAllowancePeriod.findFirst({
-      where: { companyId, periodStart: { gte: from } },
-      orderBy: { periodStart: "desc" },
+    // EVERY period overlapping the window, not one. `findFirst` with
+    // `periodStart >= from` shipped on 2026-10-02 and divided a 30-day spend by
+    // a single period's counts — blank when no period started inside the window,
+    // and up to ~15x too high on the 1st of a month. `allowanceOver`'s header
+    // has the full account. A period is a UTC calendar month with no end
+    // column, so the ones that can overlap start at or after the first of the
+    // window's own month.
+    prisma.askAllowancePeriod.findMany({
+      where: { companyId, periodStart: { gte: startOfUtcMonth(from) } },
+      orderBy: { periodStart: "asc" },
     }),
     prisma.companyAiSettings.findUnique({ where: { companyId } }),
   ]);
@@ -115,16 +140,18 @@ export async function loadCostReport(companyId: string, from: Date): Promise<Cos
   const byFeature: FeatureSpend[] = [...byFeatureRows.entries()]
     .map(([feature, featureRows]) => ({
       feature,
-      // An unlabelled feature appears under its own key rather than being
-      // dropped — the rule `/settings/assistant` already follows for a fifth
-      // caller nobody has named yet.
-      label: AI_FEATURE_LABEL[feature as keyof typeof AI_FEATURE_LABEL] ?? feature,
+      // `askFeatureLabel` translates the LEDGER's kebab spelling to the label
+      // map's SCREAMING_SNAKE key. Reading `AI_FEATURE_LABEL` directly here is
+      // what shipped on 2026-10-02 and rendered every row's raw database key on
+      // a money screen; that function's header has the whole story.
+      label: askFeatureLabel(feature),
       calls: featureRows.length,
       spend: spendOver(featureRows),
     }))
     .sort((a, b) => b.spend.usd - a.spend.usd || b.calls - a.calls);
 
   const total = spendOver(rows);
+  const claimed = allowanceOver(periods, from);
 
   const unitDefs: Unit[] = [
     {
@@ -132,8 +159,8 @@ export async function loadCostReport(companyId: string, from: Date): Promise<Cos
       label: "Plan sheets read",
       noun: "sheet",
       features: ["plan-ingestion"],
-      used: period?.planSheetsUsed ?? 0,
-      failed: period?.failedPlanSheets ?? 0,
+      used: claimed.planSheetsUsed,
+      failed: claimed.failedPlanSheets,
       allowance: settings?.planSheetsPerMonth ?? null,
     },
     {
@@ -141,8 +168,8 @@ export async function loadCostReport(companyId: string, from: Date): Promise<Cos
       label: "Addendum pages read",
       noun: "page",
       features: ["addendum-read"],
-      used: period?.addendumPagesUsed ?? 0,
-      failed: period?.failedAddendumPages ?? 0,
+      used: claimed.addendumPagesUsed,
+      failed: claimed.failedAddendumPages,
       allowance: settings?.addendumPagesPerMonth ?? null,
     },
     {
@@ -152,8 +179,8 @@ export async function loadCostReport(companyId: string, from: Date): Promise<Cos
       // The shared document ledger: compliance uploads and quote reads both
       // claim against `pagesUsed`, so their cost shares the denominator.
       features: ["compliance-extract", "quote-extract"],
-      used: period?.pagesUsed ?? 0,
-      failed: period?.failedPages ?? 0,
+      used: claimed.pagesUsed,
+      failed: claimed.failedPages,
       allowance: null,
     },
     {
@@ -161,8 +188,8 @@ export async function loadCostReport(companyId: string, from: Date): Promise<Cos
       label: "Assistant questions",
       noun: "question",
       features: ["ask"],
-      used: period?.questionsUsed ?? 0,
-      failed: period?.failedQuestions ?? 0,
+      used: claimed.questionsUsed,
+      failed: claimed.failedQuestions,
       allowance: null,
     },
   ];
@@ -184,5 +211,13 @@ export async function loadCostReport(companyId: string, from: Date): Promise<Cos
     };
   });
 
-  return { from, byFeature, total, units, missing: total.missing };
+  return {
+    from,
+    byFeature,
+    total,
+    totalTokens: tokensOver(rows),
+    units,
+    straddled: claimed.straddled,
+    missing: total.missing,
+  };
 }
