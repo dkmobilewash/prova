@@ -157,6 +157,8 @@ export const EN = {
   "drawings.empty.body": "Sets and revisions are recorded on the web, off the transmittal.",
   "schedule.empty.title": "Nobody is scheduled on this job.",
   "schedule.empty.body": "Days are planned on the web, under Deployment.",
+  "jobs.noMatch": "No jobs match that",
+  "jobs.search": "Search jobs",
   "jobs.onThisJob": "On this job",
   "jobs.empty.title": "No jobs yet",
   "jobs.empty.body": "Jobs appear here once they're created in the office.",

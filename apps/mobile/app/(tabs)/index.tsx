@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppHeader } from "@/components/AppHeader";
-import { Card } from "@/components/Card";
+import { JobCard } from "@/components/JobCard";
 import { GroupedList } from "@/components/GroupedList";
 import { GroupedRow } from "@/components/GroupedRow";
 import { Icon } from "@/components/Icon";
@@ -12,7 +12,6 @@ import { JobContextChip } from "@/components/JobContextChip";
 import { QuickActions } from "@/components/QuickActions";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Skeleton } from "@/components/Skeleton";
-import { StatusBadge } from "@/components/StatusBadge";
 import { SyncStatus } from "@/components/SyncStatus";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
@@ -259,16 +258,27 @@ export default function HomeScreen() {
               ))}
             </GroupedList>
 
+            {/* The same card the Jobs tab draws, and now PRESSABLE — this
+                was a plain <Card>, so the one job on Home was a picture of
+                a job you could not open. Found by tapping it on a device
+                and watching nothing happen. */}
             {jobSummary ? (
-              <Card style={styles.jobCard}>
-                <View style={styles.jobCardHead}>
-                  <Text style={styles.jobCardName} numberOfLines={1}>
-                    {jobSummary.name}
-                  </Text>
-                  <StatusBadge status={jobSummary.status} />
-                </View>
-                {dateRange ? <Text style={styles.jobCardMeta}>{dateRange}</Text> : null}
-              </Card>
+              <JobCard
+                name={jobSummary.name}
+                status={jobSummary.status}
+                meta={dateRange ?? undefined}
+                current
+                onPress={() =>
+                  router.push({
+                    pathname: "/job/[jobId]",
+                    params: {
+                      jobId: jobSummary.id,
+                      name: jobSummary.name,
+                      status: jobSummary.status,
+                    },
+                  })
+                }
+              />
             ) : null}
 
             {todayPhotos.length > 0 ? (
@@ -368,15 +378,6 @@ function makeStyles(p: Palette) {
       fontWeight: typography.weight.semibold,
     },
     emptyBody: { color: p.colors.inkBody, fontSize: typography.size.sm, lineHeight: 22 },
-    jobCard: { marginTop: space.sm, gap: space.xs },
-    jobCardHead: { flexDirection: "row", alignItems: "center", gap: space.sm },
-    jobCardName: {
-      color: p.colors.ink,
-      fontSize: typography.size.md,
-      fontWeight: typography.weight.semibold,
-      flex: 1,
-    },
-    jobCardMeta: { color: p.colors.inkMuted, fontSize: typography.size.sm },
     stripRow: { flexDirection: "row", gap: space.xs, marginTop: space.sm },
     moreTile: {
       width: 72,

@@ -208,3 +208,58 @@ delete me` on ZZQB-TEST, created to make the band renderable at all. The
 job had none, which is itself the finding — the hero is invisible on a job
 with an empty punch list, exactly as designed, and that is most jobs for
 most of their life. Mirroring dropped before it could be removed.
+
+---
+
+### The rest of the reference, and the three pieces of it that have no data
+
+**Built.** `JobCard` — the reference's job row as its own card: a tinted
+square holding a glyph, the name, a quiet meta line, the status and a
+chevron. Not a `GroupedRow`, for two reasons and the second is the real
+one: the reference draws these as separate cards with air between them
+rather than one grouped slab, and `GroupedRow`'s icon slot is 28pt against
+the reference's 37, so fitting a tile would have widened it for every row
+in the app including the three on Home that hold a 10pt dot. Depth comes
+from `cardSurface`, so it inherits the palette's decision rather than
+making a fourth one.
+
+**`SearchBar`** on the Jobs tab, filtering by name. The reference's is a
+static `div` that cannot be typed into; this one searches, because a
+search bar that does not search is the same class of object as its donut
+that does not measure.
+
+**The activity grid is one slab now, not four floating cards.** The
+reference's block is a single rounded container whose cells are separated
+by 1px gaps with a grey ground showing through — the gap IS the divider,
+the container painted `lineCard` and each cell `surface`. Four cards with
+12pt between them read as four separate things; one slab with hairlines
+reads as a table of the job, which is what it is. `flexGrow` rather than a
+fixed 48%, so the two cells divide what a 1pt gap leaves (no percentage
+can spell that) and an odd fifth cell fills its row instead of leaving a
+stripe of bare grey.
+
+**`design-tokens.test.ts` caught the hairline** the moment it was written
+as a bare `1`. `space.one` exists for exactly this — it is one of the two
+deliberate half-steps the scale documents — and the census would not take
+the literal. Correct refusal; the token says what the number means.
+
+**A DEAD CARD ON HOME, found by tapping it.** Home's job card was a plain
+`<Card>` — no `onPress`. A card showing a job, on the home screen, that
+does nothing when you touch it. It is a `JobCard` now and opens the job.
+Nothing could have caught this either: an absent handler is not an error,
+it is a component rendering exactly what it was asked to.
+
+**NOT BUILT, AND THE REASON IS DATA RATHER THAN EFFORT.** Three pieces of
+the reference have nothing behind them on this phone:
+
+| piece | what it needs | what exists |
+| --- | --- | --- |
+| job card meta `RC-1775 · Austin, TX` | a code and a location | `Job` is `{id, name, status, startDate, endDate}`; `/api/v1/jobs` selects exactly those five |
+| job card progress bar | a percent-complete | no progress field anywhere in the mobile types |
+| handoff card + crew stack | today's handover and its crew | no handover or crew cache key; `CrewMember` is `{id, name}` |
+
+Inventing a number for that bar would have made every card look
+informative and tell you nothing — the same defect as the reference's
+fixed-geometry donut, which this branch already refused once. Each of the
+three is a small API change in the web lane and a cache key here; none is
+a design question. They are listed rather than guessed.

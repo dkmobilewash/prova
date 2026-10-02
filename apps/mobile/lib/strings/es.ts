@@ -158,6 +158,8 @@ export const ES: Record<keyof typeof EN, string> = {
   "drawings.empty.body": "Los juegos y sus revisiones se registran en la computadora, desde el transmittal.",
   "schedule.empty.title": "Nadie está programado en esta obra.",
   "schedule.empty.body": "Los días se programan en la computadora, en Deployment.",
+  "jobs.noMatch": "Ninguna obra coincide",
+  "jobs.search": "Buscar obras",
   "jobs.onThisJob": "En esta obra",
   "jobs.empty.title": "Todavía no hay obras",
   "jobs.empty.body": "Las obras aparecen aquí cuando se crean en la oficina.",

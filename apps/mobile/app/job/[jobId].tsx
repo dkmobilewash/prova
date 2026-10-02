@@ -394,10 +394,34 @@ function makeStyles(p: Palette) {
       fontSize: typography.size.md,
       fontWeight: typography.weight.semibold,
     },
-    grid: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+    /**
+     * THE REFERENCE'S UNIFIED GRID, not a row of floating cards. Its
+     * activity block is ONE rounded container whose cells are separated by
+     * 1px gaps with a grey ground showing through — the same trick its
+     * settings list uses. Four cards with 12pt air between them read as
+     * four separate things; one slab with hairlines reads as a table of
+     * the job, which is what it is.
+     *
+     * The gap IS the divider: the container is painted `lineCard` and each
+     * cell is painted `surface`, so the 1pt it cannot cover is the line.
+     * `overflow: hidden` is what keeps the corners rounded over it.
+     */
+    grid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: space.one,
+      borderRadius: radius.card,
+      overflow: "hidden",
+      backgroundColor: p.colors.lineCard,
+    },
     tile: {
-      ...cardSurface(p),
-      width: "48%",
+      // flexGrow rather than a fixed 48%: with a 1pt gap the two cells have
+      // to divide what is left, which no percentage can spell. It also
+      // means an odd last cell fills its row instead of leaving a stripe of
+      // the grey ground where a second cell would have been.
+      flexBasis: "45%",
+      flexGrow: 1,
+      backgroundColor: p.colors.surface,
       minHeight: hitTarget * 1.5,
       padding: space.sm,
       justifyContent: "space-between",
