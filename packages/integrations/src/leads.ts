@@ -152,6 +152,13 @@ export type LeadSearch =
 export const LEAD_MAX_SEARCHES = 3;
 export const MAX_LEADS = 8;
 const MAX_CONTINUATIONS = 2;
+/**
+ * So a later claim that this prompt got better can be attributed to one side of
+ * the change. `promptVersionCensus.test.ts` fails the build if a usage row for
+ * this feature omits it, and this file resolves `LEAD_SEARCH` and nothing else.
+ */
+export const LEAD_PROMPT_VERSION = "lead-search.1";
+
 const RECORD_TOOL = "record_leads";
 
 /**

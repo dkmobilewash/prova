@@ -8,7 +8,7 @@ import { TakeoffPlanUploader } from "@/components/TakeoffPlanUploader";
 import { PlanIngestPanel } from "@/components/PlanIngestPanel";
 import { PlanSheetReview } from "@/components/PlanSheetReview";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
-import { unfinishedIngestFor } from "@/lib/plan-ingest/claim";
+import { latestIngestFor } from "@/lib/plan-ingest/claim";
 import { TakeoffCurrencyBanner } from "@/components/TakeoffCurrencyBanner";
 import { TakeoffPlanRevisionForm } from "@/components/TakeoffPlanRevisionForm";
 import { loadTakeoffCurrency } from "@/lib/takeoff-currency-query";
@@ -192,7 +192,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           since it was written, and reading a PDF was never the same capability as
           rasterising one. `startPlanIngest` counts the file's own sheets now. */}
       {isEstimateStage && (
-        <PlanIngestPanel planId={plan.id} existing={await unfinishedIngestFor(plan.id, "PAGE_INVENTORY")} />
+        <PlanIngestPanel planId={plan.id} existing={await latestIngestFor(plan.id)} />
       )}
 
       {/* WHAT WAS READ, AND WHAT SOMEBODY SAYS IT IS — below the panel that reads

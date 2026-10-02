@@ -81,6 +81,45 @@ export const AI_FEATURE_LABEL: Record<AiFeatureKey, string> = {
 };
 
 /**
+ * The on-screen name for a feature as the USAGE LEDGER spells it.
+ *
+ * ── THIS EXISTS BECAUSE THE TWO HALVES OF THE APP SPELL A FEATURE
+ *    DIFFERENTLY, AND A LOOKUP THAT NEVER MATCHED SHIPPED ──
+ *
+ * `AiFeatureKey` is SCREAMING_SNAKE (`PLAN_INGESTION`) because it is a
+ * TypeScript union and a settings column. `AskUsage.feature` is kebab
+ * (`plan-ingestion`) because it is a ledger string — see `AskUsageFeature` in
+ * `lib/ask/usage.ts`. Both spellings are deliberate and neither is changing.
+ *
+ * The cost panel shipped on 2026-10-02 reading `AI_FEATURE_LABEL[row.feature]`
+ * with the ledger's spelling, which is `undefined` for EVERY feature, and fell
+ * through to a `?? feature` fallback — so every row on a money screen rendered
+ * its raw database key. Found by clicking it, not by any test. Two things of
+ * mine hid it, and both looked like care at the time:
+ *
+ *   - an `as keyof typeof` cast, which silenced the one type error that would
+ *     have caught it at compile time;
+ *   - the fallback itself, written so an unnamed feature would not be DROPPED,
+ *     which turned a total failure into something that reads as a rare edge
+ *     case.
+ *
+ * So the mapping is DERIVED rather than written out a second time — a hand-kept
+ * second list is the defect #526 collapsed (a completeness guard cannot see a
+ * consumer that stopped reading the canonical list). The transform is
+ * mechanical, and `askFeatureLabelCensus.test.ts` asserts every member of
+ * `AskUsageFeature` resolves to a real label, so the fallback can never again
+ * be the normal path.
+ */
+export function askFeatureLabel(ledgerFeature: string): string {
+  const key = ledgerFeature.toUpperCase().replace(/-/g, "_") as AiFeatureKey;
+  // The fallback is kept, and is now genuinely for the unknown case only: a
+  // tenth caller that writes a ledger row before anybody names it appears under
+  // its own key rather than vanishing from a bill. The census is what makes
+  // that a rare case rather than every case.
+  return AI_FEATURE_LABEL[key] ?? ledgerFeature;
+}
+
+/**
  * What each feature actually DOES, in one line, for the settings screen.
  *
  * Not decoration. An owner deciding whether to switch something off needs to

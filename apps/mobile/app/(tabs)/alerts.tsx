@@ -1,12 +1,13 @@
 import { useAuth } from "@clerk/expo";
-import { Redirect, Stack, useRouter } from "expo-router";
+import { Redirect } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { GroupedList } from "@/components/GroupedList";
+import { LargeTitle } from "@/components/LargeTitle";
 import { GroupedRow } from "@/components/GroupedRow";
 import { Skeleton } from "@/components/Skeleton";
 import { SyncStatus } from "@/components/SyncStatus";
-import { WayHome } from "@/components/wayHome";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
@@ -48,7 +49,6 @@ export default function AlertsScreen() {
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const severity = useMemo(() => severityStyles(palette), [palette]);
-  const router = useRouter();
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [offline, setOffline] = useState<string | "nothing" | null>(null);
@@ -91,60 +91,73 @@ export default function AlertsScreen() {
   });
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          tintColor={palette.colors.inkMuted}
-          onRefresh={async () => {
-            setRefreshing(true);
-            await load();
-            setRefreshing(false);
-          }}
-        />
-      }
-    >
-      {/* Above everything, including the sync banner: if a cold tap left no
-          way off this screen, the way off is the first thing on it. Renders
-          nothing when there is a real back chevron. */}
-      <WayHome />
-      <SyncStatus state={offline} />
-      {!loaded ? (
-        <View style={styles.skeletonGroup}>
-          <Skeleton height={64} />
-          <Skeleton height={64} />
-          <Skeleton height={64} />
-        </View>
-      ) : alerts.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>{empty.emptyTitle}</Text>
-          {empty.emptyDescription ? (
-            <Text style={styles.emptyBody}>{empty.emptyDescription}</Text>
-          ) : null}
-        </View>
-      ) : (
-        <GroupedList>
-          {alerts.map((item, i) => {
-            const tone = severity[item.severity];
-            return (
-              <GroupedRow
-                key={item.key}
-                title={item.title}
-                subtitle={item.detail}
-                trailing={
-                  <View style={[styles.tag, { backgroundColor: tone.bg }]}>
-                    <Text style={[styles.tagLabel, { color: tone.ink }]}>{t(tone.label)}</Text>
-                  </View>
-                }
-                divider={i > 0}
-              />
-            );
-          })}
-        </GroupedList>
-      )}
-    </ScrollView>
+    <SafeAreaView edges={["top"]} style={styles.screen}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            tintColor={palette.colors.inkMuted}
+            onRefresh={async () => {
+              setRefreshing(true);
+              await load();
+              setRefreshing(false);
+            }}
+          />
+        }
+      >
+        {/* The tab draws its own large title inside the safe area, the way
+            Home, Jobs and Settings do. It used to take the root stack's
+            header, which this screen no longer has — a tab with
+            `headerShown: false` and no title of its own is a page that
+            opens with no name on it. */}
+        <LargeTitle>{t("nav.alerts")}</LargeTitle>
+
+        {/* `<WayHome />` used to be the first thing here, and it is gone
+            because this screen is a TAB now. The dead end it existed for —
+            a cold notification tap landing with no back chevron and no tab
+            bar — cannot happen on a tab: the bar is always rendered, so the
+            way out is structural rather than something a screen has to
+            remember. Keeping it would have put a redundant Home button at
+            the top of this tab on every visit, since `canGoBack()` is false
+            at a tab root. It stays on /job/[jobId], which is still outside
+            the group. push-destination-exit.test.ts asserts that split. */}
+        <SyncStatus state={offline} />
+        {!loaded ? (
+          <View style={styles.skeletonGroup}>
+            <Skeleton height={64} />
+            <Skeleton height={64} />
+            <Skeleton height={64} />
+          </View>
+        ) : alerts.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>{empty.emptyTitle}</Text>
+            {empty.emptyDescription ? (
+              <Text style={styles.emptyBody}>{empty.emptyDescription}</Text>
+            ) : null}
+          </View>
+        ) : (
+          <GroupedList>
+            {alerts.map((item, i) => {
+              const tone = severity[item.severity];
+              return (
+                <GroupedRow
+                  key={item.key}
+                  title={item.title}
+                  subtitle={item.detail}
+                  trailing={
+                    <View style={[styles.tag, { backgroundColor: tone.bg }]}>
+                      <Text style={[styles.tagLabel, { color: tone.ink }]}>{t(tone.label)}</Text>
+                    </View>
+                  }
+                  divider={i > 0}
+                />
+              );
+            })}
+          </GroupedList>
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 

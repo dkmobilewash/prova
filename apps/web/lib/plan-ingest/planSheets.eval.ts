@@ -3,6 +3,7 @@ import { extractSheetTitleBlock, PLAN_SHEET_PROMPT_VERSION, type SheetTitleBlock
 import { planSetPdf, type SyntheticSheet } from "./planFixtures";
 import { SHEET_CASES, sameish } from "./planSheetCases";
 import { openPlanPdf, titleBlockText } from "./planPdf";
+import { requireEvalApiKey } from "@/lib/ai/evalApiKey";
 
 /**
  * IS THE READER HONEST ABOUT WHAT IT DOES NOT KNOW? — the question worth paying for.
@@ -101,11 +102,12 @@ type Verdict = {
 const verdicts: Verdict[] = [];
 
 function requireApiKey(): void {
-  // The posture `quoteRead.eval.ts` and `lib/ask/eval/harness.ts` both take, for the
-  // reason their comments give: absence of a failure is not a pass.
-  if (!process.env.ANTHROPIC_API_KEY?.trim()) {
-    throw new Error("ANTHROPIC_API_KEY is not set: the plan-sheet eval did not run. It is not a pass.");
-  }
+  // Shared with every other eval — see `lib/ai/evalApiKey.ts`. It also rejects
+  // the PLACEHOLDER from this file's own run instructions, which the local copy
+  // this replaced did not: "is the variable set" is satisfied perfectly by a
+  // single character, and the run then dies at the API looking like a broken
+  // eval rather than an unedited command.
+  requireEvalApiKey("plan-sheet eval");
 }
 
 /** The fixture, through the real extraction, as text. */

@@ -78,6 +78,14 @@ export type ProjectResearchInput = {
   client?: Pick<Anthropic, "messages">;
 };
 
+/**
+ * So a later claim that this prompt got better can be attributed to one side of
+ * the change. `promptVersionCensus.test.ts` fails the build if a usage row for
+ * this feature omits it — and this file resolves `BID_RESEARCH` and nothing else,
+ * so it means this prompt alone, unlike the three in `anthropic.ts`.
+ */
+export const RESEARCH_PROMPT_VERSION = "bid-research.1";
+
 export const RESEARCH_MAX_SEARCHES = 3;
 const MAX_VALUE_CHARS = 300;
 const MAX_SOURCES_PER_FIELD = 3;

@@ -1482,6 +1482,12 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // — two modules because they sit behind two different doors.
   procore: () => import("./actions/procore"),
   procoreFeed: () => import("./actions/procoreFeed"),
+  projectLookup: () => import("./actions/projectLookup"),
+  // Finding public projects out to bid, reachable from /pipeline alone, which
+  // withholds on MANAGE_ESTIMATING. The capability is the DOOR's, copied from
+  // the neighbour it sits beside rather than chosen from the feature's name —
+  // the lesson the plan-ingest entry below paid for.
+  leadSearch: () => import("./actions/leadSearch"),
   // ACC (Autodesk Construction Cloud): same two-door shape as Procore's —
   // the Integrations card's four (MANAGE_COMPLIANCE, then owner) and the
   // feed refresh on /rfis and /submittals (MANAGE_JOBS).

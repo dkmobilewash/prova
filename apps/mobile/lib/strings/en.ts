@@ -204,12 +204,13 @@ export const EN = {
   "nav.drawings": "Drawings",
   "nav.schedule": "Schedule",
   "nav.outbox": "Waiting to send",
+  "nav.tab.outbox": "Outbox",
   "nav.alerts": "Alerts",
 
   // The More tab. In scope for a reason that is almost circular: it is
   // where the language switch lives, and making somebody read an English
   // screen to find "Idioma" is the whole problem in miniature.
-  "settings.title": "More",
+  "settings.title": "Settings",
   "settings.account": "Account",
   "settings.account.owner": "Account owner — everything on this phone is yours to see",
   "settings.account.role":

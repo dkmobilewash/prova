@@ -65,6 +65,16 @@ export const notYetRegistered: Exclusion[] = [
       "Accepting or rejecting what a title-block reading proposed. The whole point of the proposal row is that a PERSON decides whether 'A-101' is really sheet 12 — a model accepting its own reading closes the only loop that makes the reading checkable, and it would do it three hundred rows at a time. The accepted number is also what an estimator will later label their measured quantities by, so a wrong one that nobody confirmed is exactly the failure `TakeoffPlanPage.label` refuses to allow. Reviewed where the sheets are shown. Never a command.",
   },
   {
+    action: "projectLookup.*",
+    reason:
+      "Looking a project up on the public web, from /pipeline. Already reachable from the Ask box and deliberately not a SECOND way in: `researchProject` runs inside the start-a-bid command, where it is attached to the one write it informs. On its own it writes nothing at all, so there is no proposal for a person to confirm and nothing for the propose-then-confirm shape to do — an Ask command whose whole effect is to print what it found is a question, and Ask already answers questions. It also bills a per-search web charge, so a command would spend money on a prompt's say-so with no row to show for it. The person types the two things that leave the app, which is the privacy boundary of the feature and is worth keeping visible on a form rather than assembled from a sentence. Never a command.",
+  },
+  {
+    action: "leadSearch.*",
+    reason:
+      "Searching public bid boards for work out to bid, from /pipeline. Already reachable from the Ask box as `find_bid_leads` and deliberately not a SECOND command for the same pass. It writes nothing, so there is no proposal to confirm and nothing for propose-then-confirm to do. And the form is the point rather than a wrapper around one: every field is a CHOICE over an enum — five trades, a two-letter state, a size band — because `leadQueryTurn` renders the entire outgoing query from a fixed template and refuses anything that does not fit, which is what makes it provable that no company data leaves. A command would reach that boundary through a sentence a model composed, which is the one input shape the boundary exists to exclude. It also bills a per-search web charge. Never a command.",
+  },
+  {
     action: "quoteRead.*",
     reason:
       "Reading a sub's quote. It spends the company's paid document allowance on a file, and what it returns is a SUGGESTION a person corrects in the form before saving — so a command would either spend money on a prompt's say-so or hand the model's own reading straight to `saveBidQuote`, which is the one thing this feature is built not to do. The estimator uploads the quote where they log it. Never a command.",

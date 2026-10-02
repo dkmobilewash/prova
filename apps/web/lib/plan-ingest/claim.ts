@@ -279,15 +279,39 @@ export async function ingestViewOf(jobId: string, stage: IngestView["stage"]): P
   };
 }
 
-/** The unfinished run over this plan set for this stage, or null — what a page
- *  hands the panel so a reload resumes rather than offering a second run. */
-export async function unfinishedIngestFor(
-  planId: string,
-  stage: IngestView["stage"],
-): Promise<IngestView | null> {
+/**
+ * THE NEWEST RUN over this plan set, finished or not — what a page hands the
+ * panel so a reload shows where the set actually got to.
+ *
+ * ── WHAT THIS REPLACED, AND WHY IT WAS WRONG TWICE ──
+ *
+ * It was `unfinishedIngestFor(planId, stage)`, called as
+ * `unfinishedIngestFor(plan.id, "PAGE_INVENTORY")`, and it could only ever
+ * restore an IN-PROGRESS run of the FIRST stage.
+ *
+ * So a finished pass was forgotten on reload: the panel fell back to its
+ * untouched state and offered "Read the sheets" again, directly above a sheet
+ * index that plainly knew all five sheets and which of them was a scan. Two
+ * parts of one screen disagreeing about whether anything had been read.
+ *
+ * And it made the second stage unreachable in the normal case. The control that
+ * starts `TITLE_BLOCK` is offered when a COMPLETED free pass is in view — which
+ * this could never return. Read the sheets, close the page, come back, and there
+ * was no way forward at all. The fix for the missing stage control was real and
+ * still only worked inside the one page load that started it.
+ *
+ * ── WHY NEWEST-WINS NEEDS NO STAGE ORDER ──
+ *
+ * The obvious version of this asks for the FURTHEST stage, which means keeping a
+ * stage ordering here and remembering to extend it. It is not needed: the flow is
+ * sequential, so the most recently created run IS the furthest along. And when
+ * somebody deliberately re-runs an earlier stage, the newest run is that one —
+ * which is also what they should be looking at.
+ */
+export async function latestIngestFor(planId: string): Promise<IngestView | null> {
   const job = await prisma.planIngestJob.findFirst({
-    where: { planId, stage, finishedAt: null },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    where: { planId },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: { id: true, stage: true },
   });
   if (!job) return null;

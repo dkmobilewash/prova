@@ -138,6 +138,24 @@ describe("the sentence at the top", () => {
     expect(sentence).not.toMatch(/identified|indexed|automatically/i);
   });
 
+  it("agrees in number — the possessive as well as the verb", () => {
+    // "5 need its number typed in" shipped and a browser tester reported it. The
+    // existing case above has exactly ONE unread sheet, so it only ever exercised
+    // the singular and the plural was never looked at by anything. A count of one
+    // is the worst possible fixture for a pluralisation bug.
+    const many = [
+      row({ pageNumber: 1, hasTextLayer: false, proposal: null }),
+      row({ pageNumber: 2, hasTextLayer: false, proposal: null }),
+      row({ pageNumber: 3, hasTextLayer: false, proposal: null }),
+    ];
+    const sentence = sheetIndexSentence(countSheets(many));
+    expect(sentence).toContain("3 need their numbers typed in");
+    expect(sentence, "the singular possessive must not survive into the plural").not.toContain("need its");
+
+    const one = [row({ pageNumber: 1, hasTextLayer: false, proposal: null })];
+    expect(sheetIndexSentence(countSheets(one))).toContain("1 needs its number typed in");
+  });
+
   it("says so plainly when there is nothing to do", () => {
     const rows = [row({ pageNumber: 1, proposal: { ...row({ pageNumber: 1 }).proposal!, status: "ACCEPTED" } })];
     expect(sheetIndexSentence(countSheets(rows))).toContain("1 confirmed");

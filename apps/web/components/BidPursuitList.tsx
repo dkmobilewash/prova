@@ -92,9 +92,60 @@ const STAGE_STYLE: Record<BidPursuitStage, string> = {
 const inputClass =
   "mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted";
 
+/**
+ * Values a caller can start the form with when there is no pursuit yet.
+ *
+ * `PursuitRow` is deliberately NOT what this is. That type carries an id and
+ * half a dozen derived flags (`goneQuiet`, `bidDatePassed`, `daysSinceUpdate`),
+ * so a caller with nothing but a project name would have to invent an id to
+ * reuse this form — and an id that matches no row is exactly the kind of
+ * convenient lie that ends up passed to a query.
+ *
+ * `expectedBidDate` IS HERE, AND THE FIRST VERSION OF THIS TYPE LEFT IT OUT ON
+ * PURPOSE — the correction is worth more than the field.
+ *
+ * That version argued, at length and with a test pinning it, that a date read
+ * off the web must never reach this column: dates that matter are ENTERED, the
+ * value is free text as printed, and a wrong bid date is how a bid is rejected
+ * unread. Every one of those sentences is still true. What was missing is that
+ * `executeFindBidLeads` in `lib/ask/commands/leads.ts` has been writing
+ * `expectedBidDate: lead.bidDay` the whole time, guarded to "only when the
+ * page's date read as a full calendar day" — so the Ask card and this form
+ * disagreed about one field, which is worse than either answer.
+ *
+ * Diego's call, 2026-10-02: match Ask. A caller passes a date ONLY when it
+ * parsed to a whole calendar day (`readBidDay`), never the raw text, and the raw
+ * text goes in the note either way — so "late spring" leaves this column empty
+ * rather than being silently dropped to null by the form parser.
+ *
+ * THE TWO CALLERS DIFFER, AND BOTH ARE RIGHT. `LeadSearch` passes a parsed day
+ * when a bid board printed one, which is a lead's whole appeal. `ProjectLookup`
+ * passes NOTHING here: `research.ts` returns `bidDate` as prose off a plan-room
+ * page rather than a solicitation's closing date, so there is nothing to parse
+ * with the same confidence. A caller with only free text puts it in `note`.
+ */
+export type BidPursuitPrefill = {
+  projectName?: string;
+  owner?: string;
+  architect?: string;
+  expectedGcs?: string;
+  note?: string;
+  /** An ISO day and nothing else. A caller that has only free text passes
+   *  nothing here and puts the text in `note`. */
+  expectedBidDate?: string;
+};
+
 /** The one set of fields, for create AND edit — the list-page convention,
  * so the two forms cannot drift apart. */
-function BidPursuitFields({ pursuit, minBidDate }: { pursuit?: PursuitRow; minBidDate?: string }) {
+export function BidPursuitFields({
+  pursuit,
+  minBidDate,
+  prefill,
+}: {
+  pursuit?: PursuitRow;
+  minBidDate?: string;
+  prefill?: BidPursuitPrefill;
+}) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       <label className="block text-sm sm:col-span-2">
@@ -103,25 +154,25 @@ function BidPursuitFields({ pursuit, minBidDate }: { pursuit?: PursuitRow; minBi
           name="projectName"
           required
           maxLength={200}
-          defaultValue={pursuit?.projectName}
+          defaultValue={pursuit?.projectName ?? prefill?.projectName ?? ""}
           placeholder="St. Mary's Hospital east wing"
           className={inputClass}
         />
       </label>
       <label className="block text-sm">
         <span className="text-ink-label">Owner / developer (optional)</span>
-        <input name="owner" maxLength={200} defaultValue={pursuit?.owner ?? ""} className={inputClass} />
+        <input name="owner" maxLength={200} defaultValue={pursuit?.owner ?? prefill?.owner ?? ""} className={inputClass} />
       </label>
       <label className="block text-sm">
         <span className="text-ink-label">Architect (optional)</span>
-        <input name="architect" maxLength={200} defaultValue={pursuit?.architect ?? ""} className={inputClass} />
+        <input name="architect" maxLength={200} defaultValue={pursuit?.architect ?? prefill?.architect ?? ""} className={inputClass} />
       </label>
       <label className="block text-sm">
         <span className="text-ink-label">Expected GC(s) (optional)</span>
         <input
           name="expectedGcs"
           maxLength={300}
-          defaultValue={pursuit?.expectedGcs ?? ""}
+          defaultValue={pursuit?.expectedGcs ?? prefill?.expectedGcs ?? ""}
           placeholder="Nobody yet, or e.g. Turner, McCarthy"
           className={inputClass}
         />
@@ -141,8 +192,8 @@ function BidPursuitFields({ pursuit, minBidDate }: { pursuit?: PursuitRow; minBi
         <input
           type="date"
           name="expectedBidDate"
-          defaultValue={pursuit?.expectedBidDate ?? ""}
-          // NOT pre-filled: an expected bid date is somebody's estimate, and
+          defaultValue={pursuit?.expectedBidDate ?? prefill?.expectedBidDate ?? ""}
+          // NOT pre-filled FROM TODAY: an expected bid date is somebody's estimate, and
           // today is never the right guess. On create the USER'S today is the
           // floor, since a new pursuit expecting a bid that already passed is
           // almost always a typo. "Passed" on /pipeline and in the Ask tool is
@@ -193,7 +244,7 @@ function BidPursuitFields({ pursuit, minBidDate }: { pursuit?: PursuitRow; minBi
         <input
           name="note"
           maxLength={500}
-          defaultValue={pursuit?.note ?? ""}
+          defaultValue={pursuit?.note ?? prefill?.note ?? ""}
           placeholder="Met their PM at the AGC dinner; bid docs expected in spring"
           className={inputClass}
         />

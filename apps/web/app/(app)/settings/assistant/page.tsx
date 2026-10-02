@@ -4,6 +4,8 @@ import { NoAccess } from "@/components/NoAccess";
 import { anthropicIsConfigured, ASK_DEFAULT_MODEL } from "@prova/integrations";
 import { auditSummary, listAskProposals, OUTCOME_LABEL, type AuditOutcome } from "@/lib/ask/audit";
 import { ASK_LIMITS, MIGRATE_COMMAND, usageSummary } from "@/lib/ask/usage";
+import { loadCostReport } from "@/lib/ask/cost-query";
+import { CostPanel, thirtyDaysAgo } from "@/components/AiCostPanel";
 import { allowanceSummary } from "@/lib/ask/allowance";
 import { AssistantConnectionCheck } from "@/components/AssistantConnectionCheck";
 import { AiSettingsForm } from "@/components/AiSettingsForm";
@@ -64,9 +66,10 @@ export default async function AssistantAuditPage() {
   }
 
   const now = new Date();
-  const [rows, usage, allowance, aiSettings] = await Promise.all([
+  const [rows, usage, cost, allowance, aiSettings] = await Promise.all([
     listAskProposals(company.id, now),
     usageSummary(company.id, now),
+    loadCostReport(company.id, thirtyDaysAgo(now)),
     allowanceSummary(company.id, now),
     aiSettingsFor(company.id),
   ]);
@@ -328,6 +331,13 @@ export default async function AssistantAuditPage() {
           </ul>
         )}
       </section>
+
+      {/* STEP 2 OF THE AI PLAN. The section above says how many tokens; this
+          one says what they cost, and what one unit of work costs — which is
+          the figure `docs/ai/DECISIONS.md` says is needed to answer whether
+          1,500 plan sheets and 600 addendum pages a month are sustainable.
+          Both were written down as "a figure, not a measurement". */}
+      <CostPanel report={cost} />
 
       <StatusLine report={assistantStatus({ proposed: summary.proposed, done: summary.done, notDone: summary.notDone })} />
 
