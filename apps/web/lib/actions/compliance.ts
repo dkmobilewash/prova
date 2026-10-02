@@ -533,6 +533,17 @@ export async function deleteComplianceDocument(documentId: string) {
 
   await prisma.complianceDocument.delete({ where: { id: documentId } });
 
+  // AFTER THE ROW IS GONE, and in that order on purpose — the shape
+  // `deleteBidAddendum` and `deleteContractDocument` already use. If the file
+  // went first and the row delete then failed, the row would survive pointing
+  // at a file that no longer exists, which is a dead link on a filed document.
+  // This way round the worst case is a stranded file, which is what the rest of
+  // this change is about and is the lesser of the two.
+  //
+  // `deleteDocument` swallows its own failures (`lib/blob.ts`), so a store that
+  // will not delete cannot turn a completed delete into an error.
+  if (document.fileUrl) await deleteDocument(document.fileUrl);
+
   revalidatePath("/compliance");
 }
 

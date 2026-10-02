@@ -32,6 +32,7 @@ import {
   type ActionResult,
 } from "./shared";
 import { optionalDateFromString } from "@/lib/bid-pursuits";
+import { deleteDocument } from "@/lib/blob";
 
 /**
  * The Estimate tab's refusal, in the house voice. The estimate tab and the
@@ -335,16 +336,50 @@ export async function recordTakeoffPlan(jobId: string, formData: FormData): Prom
   return actionOk;
 }
 
-/** Removes a plan and everything traced on it. The blob itself is left alone:
- * a dangling file costs storage, and a delete that half-succeeded costs a
- * drawing somebody was working from. */
+/**
+ * Removes a plan and everything traced on it, INCLUDING the uploaded file.
+ *
+ * ── THIS COMMENT ARGUED THE OPPOSITE, AND THE ARGUMENT WAS HALF RIGHT ──
+ *
+ * It read: "The blob itself is left alone: a dangling file costs storage, and a
+ * delete that half-succeeded costs a drawing somebody was working from."
+ *
+ * The second half is a real hazard and it is why the order below matters. The
+ * first half understates it by a lot. A plan set is uploaded `access: "public"`
+ * like every other document here, so what was left behind is not storage — it
+ * is a GC's drawings at a permanent unauthenticated address, with no row left in
+ * the database that would let anybody find it again to remove it. That is the
+ * same defect #559 reported against the quote reader, and `TakeoffPlan.fileUrl`
+ * is a REQUIRED column, so it happened on every plan delete rather than on a
+ * failure path.
+ *
+ * ── THE ORDER IS WHAT ANSWERS THE OLD COMMENT'S WORRY ──
+ *
+ * The URL is read first, the ROW goes second, the file goes last. A
+ * half-succeeded delete can now only strand a file, never leave a row pointing
+ * at a file that is gone — which is the "drawing somebody was working from"
+ * case, and the one worth protecting. `deleteBidAddendum` and
+ * `deleteContractDocument` already do it in exactly this order.
+ */
 export async function deleteTakeoffPlan(jobId: string, planId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company } = context;
 
+  // Read BEFORE the delete: `deleteMany` returns a count, not the row, so after
+  // it runs there is nothing left to learn the URL from.
+  const plan = await prisma.takeoffPlan.findFirst({
+    where: planScope(planId, jobId, company.id),
+    select: { fileUrl: true },
+  });
+
   const deleted = await prisma.takeoffPlan.deleteMany({ where: planScope(planId, jobId, company.id) });
   if (deleted.count === 0) return actionFail("That plan is no longer on this job. Reload the page.");
+
+  // Only once the row is confirmed gone. Failures are swallowed by
+  // `deleteDocument`, so a store that will not delete cannot turn a completed
+  // delete into an error for somebody who just removed a plan.
+  if (plan?.fileUrl) await deleteDocument(plan.fileUrl);
 
   revalidatePath(`/jobs/${jobId}/takeoff`);
   return actionOk;

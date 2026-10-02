@@ -84,9 +84,9 @@ that question finds three more sites:
 | --- | --- |
 | `bidAddendum` (`estimating.ts`) | yes |
 | `contractDocument` (`billing.ts`) | yes |
-| `complianceDocument` (`compliance.ts`) | **no** |
-| `takeoffPlan` (`takeoff.ts`) | **no** |
-| `drawingRevision` (`drawings.ts`) | **no** |
+| `complianceDocument` (`compliance.ts`) | **no — fixed here** |
+| `takeoffPlan` (`takeoff.ts`) | **no — fixed here** |
+| `drawingRevision` (`drawings.ts`) | **no — fixed here** |
 
 So two of the five already did it right, which is why the pattern looked
 established. `TakeoffPlan.fileUrl` is a required column, so deleting a plan set
@@ -110,10 +110,30 @@ target production and preview with the same store id), which contradicts a
 written decision and means browser testing on a preview has been writing into the
 production store all along.
 
-**ALSO NOT FIXED HERE, deliberately:** the three row-deletes in the table above.
-`complianceDocument` and `takeoffPlan` are this lane and are small;
-`drawingRevision` is the other lane and becomes an issue rather than a PR, per
-the working agreement. They are left out so that what this change DOES fix stays
-reviewable, and named here so the gap is a decision rather than an oversight.
+**ALL THREE ROW-DELETES ARE FIXED HERE TOO.** They were going to be left out —
+`drawingRevision` is the other lane, which the working agreement says becomes an
+issue rather than a PR. Diego took estimating, takeoff and now drawings back into
+this lane on 2026-10-02, so there is no lane boundary left to respect and
+splitting one defect across a PR and two issues would just be three places to
+forget it.
 
-Checked: `typecheck`, `lint`, **8,501 unit tests over 539 files**, all green.
+Each deletes the file AFTER the row, never before, which is the order
+`deleteBidAddendum` and `deleteContractDocument` already used. The other way
+round can leave a row pointing at a file that is gone — a dead link on a document
+somebody is working from, which is strictly worse than a stranded file because it
+breaks something that still looks fine. `deleteTakesTheFile.test.ts` asserts the
+SEQUENCE rather than just that both happened.
+
+**`deleteTakeoffPlan` had a comment arguing for the old behaviour, and half of it
+was right.** It read: *"The blob itself is left alone: a dangling file costs
+storage, and a delete that half-succeeded costs a drawing somebody was working
+from."* The second half is a real hazard and is exactly why the order above
+matters. The first half called a public leak a storage cost — `TakeoffPlan.fileUrl`
+is a REQUIRED column, so every plan delete stranded a whole plan set, a GC's
+drawings at a permanent unauthenticated address. The comment is replaced with
+what changed and why rather than deleted.
+
+Mutation-proven in one pass: removing all three deletes reds exactly the three
+"deletes the row and then the file" cases and leaves the six guard cases green.
+
+Checked: `typecheck`, `lint`, and the full unit suite, all green.
