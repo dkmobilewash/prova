@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { GroupedList } from "@/components/GroupedList";
 import { GroupedRow } from "@/components/GroupedRow";
+import { LargeTitle } from "@/components/LargeTitle";
 import { SectionHeader } from "@/components/SectionHeader";
 import { useT } from "@/lib/i18n";
 import { type Palette, radius, space, typography } from "@/lib/theme";
@@ -89,105 +91,111 @@ export default function OutboxScreen() {
   const nothingHeld = items.length === 0 && refused.length === 0;
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      {nothingHeld ? (
-        <EmptyState
-          title={t("outbox.empty.title")}
-          description={t("outbox.empty.body")}
-        />
-      ) : null}
+    <SafeAreaView edges={["top"]} style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.content}>
+        {/* Its own large title inside the safe area, the way every
+            other tab draws one. This screen used to take the root
+            stack header; as a tab it has none. */}
+        <LargeTitle>{t("nav.outbox")}</LargeTitle>
+        {nothingHeld ? (
+          <EmptyState
+            title={t("outbox.empty.title")}
+            description={t("outbox.empty.body")}
+          />
+        ) : null}
 
-      {items.length > 0 ? (
-        <>
-          <SectionHeader uppercase={false}>{t("outbox.waiting")}</SectionHeader>
-          <GroupedList>
-            {items.map((item, i) => (
-              <GroupedRow
-                key={item.opId}
-                icon={<View style={styles.waitingDot} />}
-                title={item.title}
-                subtitle={item.detail}
-                detail={statusOf(item)}
-                note={
-                  item.attempts > 0
-                    ? triesLeft(item) === 1
-                      ? t("outbox.triesLeft.one")
-                      : t("outbox.triesLeft.many", { count: triesLeft(item) })
-                    : undefined
-                }
-                divider={i > 0}
-                chevron={false}
-              >
-                <View style={styles.rowActions}>
-                  <Button
-                    variant="secondary"
-                    onPress={async () => {
-                      await removeQueued(item.opId);
-                      await load();
-                    }}
-                  >
-                    {t("outbox.remove")}
-                  </Button>
-                </View>
-              </GroupedRow>
-            ))}
-          </GroupedList>
-        </>
-      ) : null}
-
-      {refused.length > 0 ? (
-        <>
-          <SectionHeader uppercase={false}>{t("outbox.needsAttention")}</SectionHeader>
-          <Text style={styles.detail}>{t("outbox.needsAttention.body")}</Text>
-          <GroupedList>
-            {refused.map((entry, index) => {
-              const { title, detail } = describeRefused(entry, names);
-              return (
+        {items.length > 0 ? (
+          <>
+            <SectionHeader uppercase={false}>{t("outbox.waiting")}</SectionHeader>
+            <GroupedList>
+              {items.map((item, i) => (
                 <GroupedRow
-                  key={`${entry.at}-${index}`}
-                  icon={<View style={styles.refusedDot} />}
-                  title={title}
-                  subtitle={detail}
-                  note={t("outbox.serverSaid", { error: entry.error })}
-                  divider={index > 0}
+                  key={item.opId}
+                  icon={<View style={styles.waitingDot} />}
+                  title={item.title}
+                  subtitle={item.detail}
+                  detail={statusOf(item)}
+                  note={
+                    item.attempts > 0
+                      ? triesLeft(item) === 1
+                        ? t("outbox.triesLeft.one")
+                        : t("outbox.triesLeft.many", { count: triesLeft(item) })
+                      : undefined
+                  }
+                  divider={i > 0}
                   chevron={false}
-                />
-              );
-            })}
-          </GroupedList>
-          <View style={styles.row}>
-            <Button
-              variant="secondary"
-              onPress={async () => {
-                await retryRefused();
-                await load();
-              }}
-            >
-              {t("outbox.putBack")}
-            </Button>
-            <Button
-              variant="secondary"
-              onPress={async () => {
-                await clearRefused();
-                await load();
-              }}
-            >
-              {t("outbox.letGo")}
+                >
+                  <View style={styles.rowActions}>
+                    <Button
+                      variant="secondary"
+                      onPress={async () => {
+                        await removeQueued(item.opId);
+                        await load();
+                      }}
+                    >
+                      {t("outbox.remove")}
+                    </Button>
+                  </View>
+                </GroupedRow>
+              ))}
+            </GroupedList>
+          </>
+        ) : null}
+
+        {refused.length > 0 ? (
+          <>
+            <SectionHeader uppercase={false}>{t("outbox.needsAttention")}</SectionHeader>
+            <Text style={styles.detail}>{t("outbox.needsAttention.body")}</Text>
+            <GroupedList>
+              {refused.map((entry, index) => {
+                const { title, detail } = describeRefused(entry, names);
+                return (
+                  <GroupedRow
+                    key={`${entry.at}-${index}`}
+                    icon={<View style={styles.refusedDot} />}
+                    title={title}
+                    subtitle={detail}
+                    note={t("outbox.serverSaid", { error: entry.error })}
+                    divider={index > 0}
+                    chevron={false}
+                  />
+                );
+              })}
+            </GroupedList>
+            <View style={styles.row}>
+              <Button
+                variant="secondary"
+                onPress={async () => {
+                  await retryRefused();
+                  await load();
+                }}
+              >
+                {t("outbox.putBack")}
+              </Button>
+              <Button
+                variant="secondary"
+                onPress={async () => {
+                  await clearRefused();
+                  await load();
+                }}
+              >
+                {t("outbox.letGo")}
+              </Button>
+            </View>
+          </>
+        ) : null}
+
+        {note ? <Text style={styles.note}>{note}</Text> : null}
+
+        {items.length > 0 ? (
+          <View style={styles.sendRow}>
+            <Button fullWidth disabled={busy} onPress={send}>
+              {busy ? t("outbox.sending") : t("outbox.sendNow")}
             </Button>
           </View>
-        </>
-      ) : null}
-
-      {note ? <Text style={styles.note}>{note}</Text> : null}
-
-      {items.length > 0 ? (
-        <View style={styles.sendRow}>
-          <Button fullWidth disabled={busy} onPress={send}>
-            {busy ? t("outbox.sending") : t("outbox.sendNow")}
-          </Button>
-        </View>
-      ) : null}
-    </ScrollView>
+        ) : null}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 

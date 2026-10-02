@@ -81,15 +81,15 @@ const screens = listFiles(join(root, "app"))
  */
 const TRANSLATED = [
   "(tabs)/_layout.tsx",
+  "(tabs)/alerts.tsx",
   "(tabs)/index.tsx",
   "(tabs)/jobs.tsx",
+  "(tabs)/outbox.tsx",
   "(tabs)/settings.tsx",
   "_layout.tsx",
-  "alerts.tsx",
   "drawings/[jobId].tsx",
   "handover.tsx",
   "materials/[jobId].tsx",
-  "outbox.tsx",
   "photos/[jobId].tsx",
   "punch-list/[jobId].tsx",
   "reports/[jobId].tsx",

@@ -37,7 +37,7 @@ const HOURS = {
 };
 
 async function open() {
-  const { default: Outbox } = await import("@/app/outbox");
+  const { default: Outbox } = await import("@/app/(tabs)/outbox");
   return mount(<Outbox />);
 }
 
