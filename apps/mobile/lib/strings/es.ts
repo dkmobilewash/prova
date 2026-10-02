@@ -158,6 +158,8 @@ export const ES: Record<keyof typeof EN, string> = {
   "drawings.empty.body": "Los juegos y sus revisiones se registran en la computadora, desde el transmittal.",
   "schedule.empty.title": "Nadie está programado en esta obra.",
   "schedule.empty.body": "Los días se programan en la computadora, en Deployment.",
+  "jobs.noMatch": "Ninguna obra coincide",
+  "jobs.search": "Buscar obras",
   "jobs.onThisJob": "En esta obra",
   "jobs.empty.title": "Todavía no hay obras",
   "jobs.empty.body": "Las obras aparecen aquí cuando se crean en la oficina.",
@@ -444,9 +446,6 @@ export const ES: Record<keyof typeof EN, string> = {
   "schedule.noHours": "Sin horas registradas",
 
   // home-today
-  "home.greeting.morning": "Buenos días",
-  "home.greeting.afternoon": "Buenas tardes",
-  "home.greeting.evening": "Buenas noches",
   "home.today": "Hoy",
   "common.loading": "Cargando…",
   "home.empty.notYours.title": "Esta pantalla no es para ti",
@@ -494,6 +493,8 @@ export const ES: Record<keyof typeof EN, string> = {
   "common.throwAway": "Descartar",
   "common.notSavedItems.one": "1 registro no se guardó",
   "common.notSavedItems.many": "{count} registros no se guardaron",
+  "brand.wordmark": "C STREAM",
+  "header.avatar.a11y": "Abrir ajustes",
   "job.chip.on": "En esta obra",
   "job.chip.none": "Sin obra seleccionada",
   "job.chip.choose": "Escoge una para empezar",

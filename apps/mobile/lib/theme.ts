@@ -1,12 +1,22 @@
 // The field app's design tokens.
 //
-// TWO palettes now, and the dark one is still the web's: source of truth
-// for `dark` is apps/web/tailwind.config.ts, the approved "MainVision /
-// Money Rail" set, copied exactly with matching token names.
+// THE PROSE AUTHORITY FOR EVERYTHING HERE IS /DESIGN.md. This file is
+// the executable copy; where the two disagree, this file is what renders
+// and DESIGN.md is the bug. Read it before changing a value.
 //
-// The LIGHT palette is the mobile app's own set, derived from Apple's HIG
-// system colours (systemGroupedBackground, label/secondaryLabel,
-// systemFill rows) so the phone reads as a native iOS app in light mode.
+// THREE palettes over one vocabulary: light, dark, outdoor.
+//
+// `dark` is still the web's: source of truth is
+// apps/web/tailwind.config.ts, the approved "MainVision / Money Rail"
+// set, copied exactly with matching token names.
+//
+// `light` is the FieldLink monochrome reference — white surfaces,
+// #111111 type, yellow actions — extracted 2026-10-02 from
+// cstream-mobile-design-ui. It used to be an Apple-HIG-derived set with a
+// darker canvas; that is gone deliberately, not lost. The reference
+// separates a card from the page with a 1px hairline instead of a canvas
+// step, which is why `light` is now `flat` (see `cardSurface`).
+//
 // It is NOT copied from the web — the web is dark-only, and there is no
 // light web theme to copy. Do not "fix" the asymmetry by making the two
 // sides match; they are different products on different surfaces.
@@ -19,9 +29,12 @@
 // for. If the field complains about glare, dark is one Settings toggle
 // away — that was the point of keeping the vocabulary identical.
 //
-// What did NOT change, because none of it was about colour: body text
-// stays 17px, nothing below 13, every tappable target stays at least 44pt.
-// Those are the parts of the field design that earn their keep in gloves.
+// What the reference did NOT get to change, because none of it was about
+// colour: body text stays 17px, nothing below 13, and every tappable
+// target stays at least 48pt. The reference runs 9-13px type on 40pt
+// targets; those are the parts of the field design that earn their keep
+// in gloves, so its hierarchy was adopted and its sizes were not
+// (DESIGN.md deviations 3 and 4).
 //
 // Rules that survive every palette:
 //  - `brand` (#facc15) is a FILL and always carries the dark `brandInk`
@@ -34,24 +47,29 @@
 
 export const palettes = {
   light: {
-    /** Cards are lifted off the canvas with `shadow.card`. */
-    depth: "lifted" as const,
+    /** FLAT. White cards on a white page, told apart by a 1px `lineCard`
+     * hairline — the reference design's central move (DESIGN.md, "Depth").
+     * This replaced a darker canvas with elevated cards: with no canvas
+     * step there is nothing for a shadow to fall on, so the border does
+     * all the separating and a shadow on top would only read as a box
+     * someone drew a shadow under. */
+    depth: "flat" as const,
     colors: {
-      canvas: "#e5e7ee", // page background — DARKER than HIG's #f2f2f7 on purpose:
-      // against a #ffffff surface that is a ~4% step, which reads as flat on a
-      // phone. This is ~11%, so a white card visibly sits ON something. ink
-      // 13.8:1, inkBody 7.4:1, link 5.7:1 — every floor still clear.
-      surface: "#ffffff", // grouped-list surface
-      rail: "#f9f9f9", // chrome: headers and the tab bar, lifted off the canvas
-      railHover: "#e9e9ec", // pressed-row fill (HIG cell highlight)
+      canvas: "#ffffff", // the page — the same white as `surface` on purpose
+      surface: "#ffffff", // cards, grouped rows
+      rail: "#ffffff", // header and tab bar, separated by a 1px top border
+      railHover: "#f1f1f1", // pressed row — the reference's search-field ground
 
-      lineCard: "#e2e2e7", // 1px soft grey outlines — never white, never black
-      lineRow: "#ececef", // row dividers inside groups
+      lineCard: "#e5e5e5", // the hairline that does ALL the separating here
+      lineRow: "#e5e5e5", // row dividers — drawn as 1px gaps over this ground
 
-      ink: "#1c1c1e", // primary text
-      inkLabel: "#3c3c43", // labels, section headers
-      inkBody: "#48484a", // secondary text
-      inkMuted: "#6f6f6f", // placeholders/disabled — optional text only
+      ink: "#111111", // primary text — 18.88:1
+      inkLabel: "#4d4d4d", // labels, section headers — 8.45:1
+      inkBody: "#6b6b6b", // secondary text — 5.33:1
+      // Optional text only: placeholders, disabled controls. 4.74:1.
+      // SUBSTITUTED: the reference's #858585 is 3.69:1 and fails the 4.5:1
+      // floor — at 9px, in the tab bar. See DESIGN.md deviation 1.
+      inkMuted: "#737373",
 
       brand: "#facc15", // yellow fill (buttons, chips) — never as text on it
       brandInk: "#171717", // dark label on a brand fill
@@ -81,8 +99,9 @@ export const palettes = {
       tagSlate: "#e4e4e7",
       tagSlateInk: "#3f3f46",
 
-      /** Soft brand chip: light gold ground, dark amber ink. */
-      tagBrandSoft: "#fef9c3",
+      /** Soft brand chip: light gold ground, dark amber ink. The
+       * reference's yellow tint, used for every soft yellow ground. */
+      tagBrandSoft: "#fff6c9",
       tagBrandSoftInk: "#854d0e",
     },
   },
@@ -297,9 +316,9 @@ export const space = {
 
 /** Corner radii, by the shape they belong to rather than a number. */
 export const radius = {
-  field: 10,
-  card: 12,
-  sheet: 20,
+  field: 11,
+  card: 15,
+  sheet: 24,
   pill: 999,
   checkbox: 8,
   /** Small media corners — the photo preview, the signature paper. */

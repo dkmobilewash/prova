@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GroupedList } from "@/components/GroupedList";
-import { LargeTitle } from "@/components/LargeTitle";
+import { AppHeader } from "@/components/AppHeader";
 import { GroupedRow } from "@/components/GroupedRow";
 import { Skeleton } from "@/components/Skeleton";
 import { SyncStatus } from "@/components/SyncStatus";
@@ -111,7 +111,7 @@ export default function AlertsScreen() {
             header, which this screen no longer has — a tab with
             `headerShown: false` and no title of its own is a page that
             opens with no name on it. */}
-        <LargeTitle>{t("nav.alerts")}</LargeTitle>
+        <AppHeader title={t("nav.alerts")} />
 
         {/* `<WayHome />` used to be the first thing here, and it is gone
             because this screen is a TAB now. The dead end it existed for —

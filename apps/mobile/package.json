@@ -37,17 +37,18 @@
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4",
     "react-native-view-shot": "5.1.0",
     "react-native-web": "~0.21.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@types/react": "~19.2.17",
+    "@types/react-dom": "~19.2.3",
     "eslint": "^9.17.0",
     "eslint-config-expo": "~57.0.2",
+    "happy-dom": "^20.14.0",
     "typescript": "^5.7.2",
-    "vitest": "^3.2.7",
-    "@types/react-dom": "~19.2.3",
-    "happy-dom": "^20.14.0"
+    "vitest": "^3.2.7"
   }
 }

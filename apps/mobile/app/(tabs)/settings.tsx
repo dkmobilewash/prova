@@ -6,7 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { GroupedList } from "@/components/GroupedList";
 import { GroupedRow } from "@/components/GroupedRow";
 import { Icon } from "@/components/Icon";
-import { LargeTitle } from "@/components/LargeTitle";
+import { AppHeader } from "@/components/AppHeader";
 import { SectionHeader } from "@/components/SectionHeader";
 import { clearCurrentJob } from "@/lib/current-job";
 import { APPEARANCE_CHOICES, setAppearance, useAppearance, type Appearance } from "@/lib/appearance";
@@ -67,7 +67,7 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView edges={["top"]} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
-        <LargeTitle>{t("settings.title")}</LargeTitle>
+        <AppHeader title={t("settings.title")} showAvatar={false} />
 
         <SectionHeader>{t("settings.account")}</SectionHeader>
         <GroupedList>

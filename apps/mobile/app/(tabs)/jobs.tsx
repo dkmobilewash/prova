@@ -3,12 +3,10 @@ import { Redirect, router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { GroupedList } from "@/components/GroupedList";
-import { GroupedRow } from "@/components/GroupedRow";
-import { Icon } from "@/components/Icon";
-import { LargeTitle } from "@/components/LargeTitle";
+import { AppHeader } from "@/components/AppHeader";
+import { JobCard } from "@/components/JobCard";
+import { SearchBar } from "@/components/SearchBar";
 import { Skeleton } from "@/components/Skeleton";
-import { StatusBadge } from "@/components/StatusBadge";
 import { SyncStatus } from "@/components/SyncStatus";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
@@ -34,9 +32,16 @@ export default function JobsScreen() {
   const { job: current } = useCurrentJob();
   const getToken = useStableGetToken();
   const { t } = useT();
+  const [query, setQuery] = useState("");
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  // Name is the only thing a job carries that a person would search by:
+  // this phone's Job has no code and no location (see JobCard's note).
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? jobs.filter((j) => j.name.toLowerCase().includes(q)) : jobs;
+  }, [query, jobs]);
   const [loaded, setLoaded] = useState(false);
   const [offline, setOffline] = useState<string | "nothing" | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -91,7 +96,7 @@ export default function JobsScreen() {
           />
         }
       >
-        <LargeTitle>{t("nav.jobs")}</LargeTitle>
+        <AppHeader title={t("nav.jobs")} />
         <SyncStatus state={offline} />
         {!loaded ? (
           <View style={styles.skeletonGroup}>
@@ -105,43 +110,46 @@ export default function JobsScreen() {
             {empty.emptyDescription ? <Text style={styles.emptyBody}>{empty.emptyDescription}</Text> : null}
           </View>
         ) : (
-          <GroupedList>
-            {jobs.map((item, i) => {
-              const isCurrent = current?.id === item.id;
-              const range =
-                item.startDate && item.endDate
-                  ? `${shortDay(item.startDate)} – ${shortDay(item.endDate)}`
-                  : null;
-              return (
-                <GroupedRow
-                  key={item.id}
-                  title={item.name}
-                  subtitle={
-                    [range, isCurrent ? t("jobs.onThisJob") : null].filter(Boolean).join(" · ") ||
-                    undefined
-                  }
-                  trailing={
-                    isCurrent ? (
-                      <View style={styles.currentRow}>
-                        <StatusBadge status={item.status} />
-                        <Icon name="checkCircle" size={18} color={palette.colors.brand} />
-                      </View>
-                    ) : (
-                      <StatusBadge status={item.status} />
-                    )
-                  }
-                  divider={i > 0}
-                  onPress={async () => {
-                    await setCurrentJob({ id: item.id, name: item.name, status: item.status });
-                    router.push({
-                      pathname: "/job/[jobId]",
-                      params: { jobId: item.id, name: item.name, status: item.status },
-                    });
-                  }}
-                />
-              );
-            })}
-          </GroupedList>
+          <>
+            {/* The reference's search field. Only once there is a list
+                worth filtering — a search bar over an empty state is a
+                control that cannot do anything. */}
+            <SearchBar value={query} onChangeText={setQuery} placeholder={t("jobs.search")} />
+            {shown.length === 0 ? (
+              <View style={styles.empty}>
+                <Text style={styles.emptyTitle}>{t("jobs.noMatch")}</Text>
+              </View>
+            ) : (
+              <View style={styles.stack}>
+                {shown.map((item) => {
+                  const isCurrent = current?.id === item.id;
+                  const range =
+                    item.startDate && item.endDate
+                      ? `${shortDay(item.startDate)} – ${shortDay(item.endDate)}`
+                      : null;
+                  return (
+                    <JobCard
+                      key={item.id}
+                      name={item.name}
+                      status={item.status}
+                      meta={
+                        [range, isCurrent ? t("jobs.onThisJob") : null].filter(Boolean).join(" · ") ||
+                        undefined
+                      }
+                      current={isCurrent}
+                      onPress={async () => {
+                        await setCurrentJob({ id: item.id, name: item.name, status: item.status });
+                        router.push({
+                          pathname: "/job/[jobId]",
+                          params: { jobId: item.id, name: item.name, status: item.status },
+                        });
+                      }}
+                    />
+                  );
+                })}
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -154,6 +162,7 @@ function makeStyles(p: Palette) {
     loading: { color: p.colors.ink, fontSize: typography.size.md, padding: space.md },
     content: { paddingHorizontal: space.md, paddingBottom: space.scrollBottom },
     skeletonGroup: { gap: space.sm, marginTop: space.sm },
+    stack: { gap: space.xs, marginTop: space.sm },
     currentRow: { flexDirection: "row", alignItems: "center", gap: space.xs },
     empty: { gap: space.xs, paddingTop: space.xl, alignItems: "center" },
     emptyTitle: {

@@ -74,6 +74,14 @@ vi.mock("expo-router", async () => {
 // The icon font is a native asset; the glyph names are covered by
 // icon-names.test.ts.
 vi.mock("@expo/vector-icons/Ionicons", () => ({ default: () => null }));
+// Untranspiled ESM in the published package — the screens suite only ever
+// asserts text, and the ring's geometry is tested as pure maths in
+// lib/progress-arc.test.ts rather than through a render.
+vi.mock("react-native-svg", () => ({
+  default: () => null,
+  Svg: () => null,
+  Circle: () => null,
+}));
 
 // Clerk. A token that resolves is the ONLINE case; a test that wants the
 // offline one makes the API reject, which is what a phone does.

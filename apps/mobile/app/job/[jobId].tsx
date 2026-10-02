@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { setCurrentJob } from "@/lib/current-job";
 import { Icon } from "@/components/Icon";
+import { JobProgressBanner } from "@/components/JobProgressBanner";
 import { SectionHeader } from "@/components/SectionHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { WayHome } from "@/components/wayHome";
@@ -14,7 +15,7 @@ import { useMe } from "@/lib/use-me";
 import type { IconName } from "@/lib/icon-glyphs";
 import { shortDay } from "@/lib/local-today";
 import { cardSurface, hitTarget, type Palette, radius, space, statusPair, typography } from "@/lib/theme";
-import type { Job } from "@/lib/types";
+import type { Job, PunchListItem } from "@/lib/types";
 import { usePalette } from "@/lib/use-palette";
 
 // One tile per field feature, grouped the way a day groups them: the four
@@ -109,6 +110,25 @@ async function countsFromCache(jobId: string): Promise<Counts> {
   return out;
 }
 
+/** The three punch states, from the rows the Punch list tile already
+ * counts — `cacheGet`, no request, same key. `null` when the cache holds
+ * nothing (offline and never synced) or the job has no items: a job with
+ * no punch list has not failed to close any, and a 0% ring would say it
+ * had. Null is not zero, which is the rule the tiles already follow. */
+type Punch = { open: number; ready: number; verified: number; total: number };
+
+async function punchBreakdown(jobId: string): Promise<Punch | null> {
+  const cached = await cacheGet<PunchListItem[]>(cacheKeys.punchList(jobId));
+  const rows = cached?.rows;
+  if (!rows?.length) return null;
+  return {
+    open: rows.filter((r) => r.status === "OPEN").length,
+    ready: rows.filter((r) => r.status === "READY_FOR_REVIEW").length,
+    verified: rows.filter((r) => r.status === "VERIFIED").length,
+    total: rows.length,
+  };
+}
+
 /**
  * The hub for one job: what the job IS at a glance, then every field
  * feature as a tile carrying how much of it there is.
@@ -145,6 +165,7 @@ export default function JobHubScreen() {
   }>();
   const [counts, setCounts] = useState<Counts>({});
   const [summary, setSummary] = useState<Job | null>(null);
+  const [punch, setPunch] = useState<Punch | null>(null);
 
   // Opening a job is how you choose one. The jobs list sets this too, but
   // a notification or a link lands here without passing through it, and
@@ -161,6 +182,7 @@ export default function JobHubScreen() {
       if (!jobId) return;
       void (async () => {
         setCounts(await countsFromCache(jobId));
+        setPunch(await punchBreakdown(jobId));
         // The dates live on the jobs list, which the Jobs tab keeps warm —
         // the same read Home does for its job card, and the same reason:
         // the route params carry a name and a status and nothing else.
@@ -200,6 +222,29 @@ export default function JobHubScreen() {
           source StatusBadge uses — so the band and any badge elsewhere on
           the screen physically cannot disagree about what a status means. */}
       {status ? <StatusBand status={status} /> : null}
+
+      {/* WHERE THE REFERENCE PUTS `Job value $12,092.64` AND `Balance due
+          $5,046.32`. Same band, same ring, no money — this phone carries no
+          figures by product rule. The ring is the share of the punch list
+          VERIFIED and the two stats are the other two states, because punch
+          items have three and the middle one is the one somebody has to act
+          on (lib/types.ts says so).
+          *
+          * It renders nothing at all without punch items rather than an
+          * empty ring, which is the same lesson the Scheduled card below
+          * learned the hard way: a card that collapses to one fact on a job
+          * that has none reads as a stray box. And unlike the "Punch items"
+          * line a phone killed, this is not the Punch list tile's number
+          * again — a total is a quantity, and open-vs-awaiting-check is a
+          * state. The tile says how much; this says what needs you. */}
+      {punch ? (
+        <JobProgressBanner
+          value={punch.total ? punch.verified / punch.total : null}
+          left={{ label: "Open", value: String(punch.open) }}
+          right={{ label: "Awaiting check", value: String(punch.ready) }}
+          empty="No punch items on this job yet"
+        />
+      ) : null}
 
       {/* WHERE THE REFERENCE PUTS JOB VALUE AND BALANCE DUE, this says WHEN
           the job runs — the one fact about a job that the grid below cannot
@@ -349,16 +394,43 @@ function makeStyles(p: Palette) {
       fontSize: typography.size.md,
       fontWeight: typography.weight.semibold,
     },
-    grid: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+    /**
+     * THE REFERENCE'S UNIFIED GRID, not a row of floating cards. Its
+     * activity block is ONE rounded container whose cells are separated by
+     * 1px gaps with a grey ground showing through — the same trick its
+     * settings list uses. Four cards with 12pt air between them read as
+     * four separate things; one slab with hairlines reads as a table of
+     * the job, which is what it is.
+     *
+     * The gap IS the divider: the container is painted `lineCard` and each
+     * cell is painted `surface`, so the 1pt it cannot cover is the line.
+     * `overflow: hidden` is what keeps the corners rounded over it.
+     */
+    grid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: space.one,
+      borderRadius: radius.card,
+      overflow: "hidden",
+      backgroundColor: p.colors.lineCard,
+    },
     tile: {
-      ...cardSurface(p),
-      width: "48%",
+      // flexGrow rather than a fixed 48%: with a 1pt gap the two cells have
+      // to divide what is left, which no percentage can spell. It also
+      // means an odd last cell fills its row instead of leaving a stripe of
+      // the grey ground where a second cell would have been.
+      flexBasis: "45%",
+      flexGrow: 1,
+      backgroundColor: p.colors.surface,
       minHeight: hitTarget * 1.5,
       padding: space.sm,
       justifyContent: "space-between",
       gap: space.xs,
     },
-    tilePressed: { backgroundColor: p.colors.rail },
+    // `railHover`, not `rail`: on the light palette `rail` is the same
+    // white as the tile, so a pressed tile would show no feedback at all.
+    // GroupedRow and JobContextChip use railHover for exactly this.
+    tilePressed: { backgroundColor: p.colors.railHover },
     tileHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     tileCount: {
       color: p.colors.ink,

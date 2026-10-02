@@ -341,6 +341,22 @@ scrollback gets broken by whoever didn't scroll far enough.
 
 ## Hard-won technical rules
 
+- **ALL UI MUST FOLLOW `DESIGN.md`. Don't use default shadcn styling.**
+  `DESIGN.md` is the prose authority; `apps/mobile/lib/theme.ts` is its
+  executable copy and wins where they disagree. It governs the PHONE —
+  `apps/web` is dark-only and keeps its own tokens in
+  `apps/web/tailwind.config.ts`, which `DESIGN.md` deliberately does not
+  touch. Two things that make the shadcn clause concrete rather than
+  decorative: shadcn is **not installed here** (no `components.json`, no
+  `@/components/ui` imports), and the reference design this system was
+  extracted from shipped an untouched default shadcn `button.tsx` that its
+  own pages never imported. So if v0, a generator or a copied snippet
+  brings `bg-primary`/`text-primary-foreground` in, retoken it to
+  `DESIGN.md` before it lands — those semantic names resolve to nothing in
+  this repo and render unstyled. `DESIGN.md`'s deviations table records
+  where we deliberately diverge from the reference and why; read it before
+  "fixing" one back.
+
 - **Sequence numbers** come from a counter row that only increments,
   bumped inside the same transaction as the insert. Never `max(n)+1`,
   never `count()+1` — anything derived from surviving rows is reissued
