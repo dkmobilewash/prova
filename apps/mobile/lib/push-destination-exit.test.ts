@@ -45,6 +45,7 @@ import { describe, expect, it } from "vitest";
 const APP = join(__dirname, "..", "app");
 const ROUTER = join(__dirname, "push-target.ts");
 const LAYOUT = join(APP, "_layout.tsx");
+const TAB_LAYOUT = join(APP, "(tabs)", "_layout.tsx");
 const WAY_HOME = join(__dirname, "..", "components", "wayHome.tsx");
 
 /** JS/TS comments removed, so a census cannot be satisfied by prose. */
@@ -67,21 +68,43 @@ function routeReturningLineCount(source: string): number {
 }
 
 /** The screen file a route renders, or null if none can be found. */
+/** The route groups a URL can be hiding inside. expo-router strips these
+ * from the path — `app/(tabs)/alerts.tsx` IS `/alerts` — so a resolver that
+ * only walks literal segments reports "no screen file" for a screen that
+ * exists and renders. Derived from the directory listing rather than
+ * hardcoded, so adding a group does not silently shrink this census. */
+function routeGroups(): string[] {
+  return readdirSync(APP).filter((name) => /^\(.+\)$/.test(name));
+}
+
 function screenFileFor(route: string): string | null {
   const segments = route.split("/").filter(Boolean);
   if (segments.length === 0) return null;
 
-  let dir = APP;
-  for (let i = 0; i < segments.length - 1; i++) dir = join(dir, segments[i]);
-  if (!existsSync(dir)) return null;
+  // Try the literal path first, then the same path inside each route group.
+  for (const prefix of [null, ...routeGroups()]) {
+    let dir = prefix ? join(APP, prefix) : APP;
+    for (let i = 0; i < segments.length - 1; i++) dir = join(dir, segments[i]);
+    if (!existsSync(dir)) continue;
 
-  const last = segments[segments.length - 1];
-  if (last.includes("${")) {
-    const match = readdirSync(dir).find((name) => /^\[.+\]\.tsx$/.test(name));
-    return match ? join(dir, match) : null;
+    const last = segments[segments.length - 1];
+    if (last.includes("${")) {
+      const match = readdirSync(dir).find((name) => /^\[.+\]\.tsx$/.test(name));
+      if (match) return join(dir, match);
+      continue;
+    }
+    const file = join(dir, `${last}.tsx`);
+    if (existsSync(file)) return file;
   }
-  const file = join(dir, `${last}.tsx`);
-  return existsSync(file) ? file : null;
+  return null;
+}
+
+/** Whether a destination is a TAB. A tab's way out is the tab bar, which
+ * the navigator always renders; a stack destination has only whatever the
+ * screen itself draws. That distinction is the whole of the rule below. */
+function isTabDestination(route: string): boolean {
+  const file = screenFileFor(route);
+  return file != null && routeGroups().some((group) => file.includes(`${group}/`));
 }
 
 const routerSource = readFileSync(ROUTER, "utf8");
@@ -107,11 +130,47 @@ describe("every push destination renders a way out in its body", () => {
     }
   });
 
-  it("renders <WayHome /> on every destination", () => {
+  it("gives every destination a way out — a tab bar, or <WayHome /> in its body", () => {
+    // THE RULE SPLIT WHEN /alerts BECAME A TAB, AND IT IS NOW STRICTER
+    // RATHER THAN LOOSER.
+    //
+    // The old rule was one blanket sentence: every destination renders
+    // <WayHome />. That was right while every destination was a bare stack
+    // screen. It stops being right the moment a destination is a TAB,
+    // because the dead end it guards cannot occur there — the navigator
+    // renders the bar on every frame, cold launch included, which is a
+    // stronger guarantee than a view a screen has to remember to draw.
+    //
+    // Worse, keeping it would have been actively wrong: `WayHome` renders
+    // when `canGoBack()` is false, which at a tab root is ALWAYS, so a
+    // redundant Home button would sit at the top of the Alerts tab forever.
+    //
+    // So each destination is asserted against the mechanism it actually
+    // has, and neither case is unchecked:
+    //   TAB   -> must be declared in the tab layout, and must NOT draw
+    //            WayHome (the redundant-button regression).
+    //   STACK -> must draw WayHome in its body, exactly as before.
+    const tabLayout = stripComments(readFileSync(TAB_LAYOUT, "utf8"));
+
     for (const route of destinations) {
       const file = screenFileFor(route);
       expect(file, `no screen file for ${route}`).not.toBe(null);
       const source = stripComments(readFileSync(file as string, "utf8"));
+
+      if (isTabDestination(route)) {
+        const name = route.replace(/^\//, "");
+        expect(
+          tabLayout,
+          `${route} resolves inside a route group but the tab layout declares no "${name}" screen. ` +
+            `Then it has neither a tab bar nor a WayHome, which is the dead end in a new costume.`,
+        ).toContain(`name="${name}"`);
+        expect(
+          source,
+          `${route} is a tab and still draws <WayHome />. canGoBack() is false at a tab root, so ` +
+            `that renders a redundant Home button on every visit. The tab bar is the way out.`,
+        ).not.toContain("<WayHome />");
+        continue;
+      }
 
       expect(
         source,
@@ -119,6 +178,20 @@ describe("every push destination renders a way out in its body", () => {
           `Put it in the BODY — three header-based attempts shipped and none rendered.`,
       ).toContain("<WayHome />");
     }
+  });
+
+  it("still has at least one of each kind, so neither branch is vacuous", () => {
+    // A split rule can be satisfied by an empty branch. Today /alerts is
+    // the tab and /job/[jobId] is the stack screen; if either side reaches
+    // zero the assertion above has quietly stopped testing something.
+    const tabs = destinations.filter(isTabDestination);
+    const stacks = destinations.filter((route) => !isTabDestination(route));
+    expect(tabs.length, "no tab destinations — the tab branch above tests nothing").toBeGreaterThan(0);
+    expect(
+      stacks.length,
+      "no stack destinations — the WayHome branch above tests nothing, and that is the branch four " +
+        "releases were spent on",
+    ).toBeGreaterThan(0);
   });
 
   it("keeps the way out of the header, in both places it already failed", () => {
