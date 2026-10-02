@@ -12,6 +12,11 @@ import {
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { boundLeadFinder } from "@/lib/ask/leadFinder";
+// THE ASK COMMAND'S OWN JUDGING, imported rather than reimplemented. Three of
+// these four were already exported and one was private; a second copy of any of
+// them is how the two controls start disagreeing.
+import { knownRecords, placeAgainstKnown, pursuitNoteFor } from "@/lib/ask/commands/leads";
+import { bidDayFor } from "@/lib/leads/bidDay";
 import { viewerToday } from "@/lib/viewerToday";
 import type { ActionResultWith } from "@/lib/actions/shared";
 
@@ -65,7 +70,62 @@ import type { ActionResultWith } from "@/lib/actions/shared";
 const NOT_YOURS =
   "Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.";
 
-export type LeadSearchFound = { leads: FoundLead[] };
+/**
+ * One lead, with everything the screen needs already decided HERE.
+ *
+ * ── WHY THE SERVER DECIDES ALL OF IT, AND NOT THE COMPONENT ──
+ *
+ * The judging helpers live in `lib/ask/commands/leads.ts`, which imports
+ * `prisma` — so a client component cannot import them without dragging the
+ * database client into the browser, which `client-boundary.test.ts` exists to
+ * refuse. Computing the placement, the note and the parsed day here means the
+ * panel renders plain data and needs no new imports at all.
+ *
+ * ── AND WHY THESE THREE FIELDS EXIST, WHICH IS THE HONEST PART ──
+ *
+ * The first version of this action returned `{ leads }` and nothing else. A
+ * browser run on 2026-10-02 found all three gaps, none of which any test here
+ * could see, and each was a thing the Ask command had been doing all along:
+ *
+ *   `already`  — `placeAgainstKnown` tells you a lead is already on the
+ *                pipeline, a job or a bid, by URL, by name and fuzzily. Without
+ *                it the panel offered "Track this as a pursuit" on a lead that
+ *                was already tracked, and `createBidPursuit` has no
+ *                duplicate-name guard, so that makes a real duplicate row.
+ *   `note`     — `pursuitNoteFor` already existed and was already exported. A
+ *                second implementation shipped in `lib/lead-search.ts` anyway,
+ *                which is CLAUDE.md's "nothing is ever missing from a list
+ *                nobody imports" with me as the author. It is deleted.
+ *   `bidDay`   — the Ask path writes `expectedBidDate` when the page's date
+ *                reads as a full calendar day, and leaves it blank otherwise.
+ *                This action refused to ever write it, and argued the point at
+ *                length. Two controls disagreeing about one field is worse than
+ *                either answer, so this now does what Ask does, by Diego's call
+ *                on 2026-10-02. The raw text still goes in the note either way,
+ *                so an unparseable "late spring" is never silently dropped.
+ */
+export type PlacedLead = {
+  lead: FoundLead;
+  /** Something this company already has that looks like this lead, when the
+   *  match was close but not certain. An exact match is dropped instead — see
+   *  `hiddenAlreadyKnown`. */
+  already: { kind: "pipeline" | "job" | "bid"; name: string; href: string } | null;
+  /** What the pursuit form's note should start with. */
+  note: string;
+  /** ISO day, ONLY when the page's date read as a whole calendar day. */
+  bidDay: string | null;
+};
+
+export type LeadSearchFound = {
+  leads: PlacedLead[];
+  /** Web searches this pass billed. Shown, because it is the unit the bill is
+   *  counted in and the project look-up already shows it. */
+  searches: number;
+  /** Dropped because the company already has them, exactly. Counted rather
+   *  than listed: "nothing new" is the useful sentence, not a list of things
+   *  the person already owns. */
+  hiddenAlreadyKnown: number;
+};
 
 function tradesFrom(formData: FormData): LeadTrade[] {
   const raw = formData.getAll("trades").filter((value): value is string => typeof value === "string");
@@ -102,14 +162,18 @@ export async function searchBidLeads(formData: FormData): Promise<ActionResultWi
     return { ok: false, error: "Give the state as a two-letter code, like NV." };
   }
 
+  // The SERVER'S idea of the viewer's today, used for the search floor and
+  // again below to keep a stale date out of the form.
+  const today = await viewerToday();
+
   const finder = boundLeadFinder({ companyId: context.company.id, userId: context.id });
   const result = await finder({
     trades,
     region: { city, state },
     sizeBand: sizeBandFrom(formData),
     publicWorkOnly: formData.get("publicWorkOnly") === "on" ? true : undefined,
-    // The SERVER'S idea of the viewer's today, never the form's.
-    bidsAfter: await viewerToday(),
+    // Never the form's: a browser-supplied "today" is a browser-supplied filter.
+    bidsAfter: today,
   });
 
   if (!result.ok) {
@@ -130,5 +194,41 @@ export async function searchBidLeads(formData: FormData): Promise<ActionResultWi
     };
   }
 
-  return { ok: true, value: { leads: result.leads } };
+  // THE SAME SET THE ASK COMMAND JUDGES AGAINST, from the same query, so the
+  // two controls cannot disagree about what counts as "already have it".
+  const known = await knownRecords(context.company.id);
+
+  const leads: PlacedLead[] = [];
+  let hiddenAlreadyKnown = 0;
+  for (const lead of result.leads) {
+    const placement = placeAgainstKnown(
+      { projectName: lead.fields.projectName, sourceUrl: lead.source.url },
+      known,
+    );
+    // THE HIDE/BADGE ASYMMETRY IS COPIED DELIBERATELY, not reinvented: an exact
+    // match on the URL or the name is dropped, a fuzzy one is shown with a
+    // badge. `placeAgainstKnown`'s own comment calls that asymmetry the part
+    // worth a test, and having it one way here and another way in Ask would be
+    // the second list this feature has already been caught growing.
+    if (placement.hidden) {
+      hiddenAlreadyKnown += 1;
+      continue;
+    }
+    leads.push({
+      lead,
+      already: placement.like
+        ? { kind: placement.like.kind, name: placement.like.name, href: placement.like.href }
+        : null,
+      note: pursuitNoteFor({
+        sourceUrl: lead.source.url,
+        location: lead.fields.location ?? null,
+        scopeSummary: lead.fields.scopeSummary ?? null,
+        sizeText: lead.fields.sizeText ?? null,
+        deliveryMethod: lead.fields.deliveryMethod ?? null,
+      }),
+      bidDay: bidDayFor(lead.fields.bidDate, today),
+    });
+  }
+
+  return { ok: true, value: { leads, searches: result.searches, hiddenAlreadyKnown } };
 }

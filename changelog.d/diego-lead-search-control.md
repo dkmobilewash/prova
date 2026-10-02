@@ -31,14 +31,13 @@ those rows existing is exactly what a duplicate quietly breaks. So the action is
 validation plus a call, and everything about spend and switching off is shared
 with Ask.
 
-**The bid date is never written to `expectedBidDate`**, the same refusal the
-project look-up makes and more tempting here, because a lead's whole appeal IS
-its bid date. A date a bid board printed is not the user's assertion about when
-their bid is due, the value is free text as printed, and `bid-responsiveness.ts`
-exists because a late bid is rejected unread. It is shown prominently, carried
-into the note with its source, and the person types the one they will be held to.
-`lead-search.test.ts` pins it, because that refusal is the single most likely
-thing for somebody to "fix" without reading why.
+**The bid date reaches `expectedBidDate` only when the page stated a whole
+calendar day**, which is what `executeFindBidLeads` has always done — see the
+revision note below for how this paragraph got there, because it said the
+opposite first. "October 07, 2026, 02:00 PM" fills the field; "late spring" and
+"October 3" leave it blank and keep their text in the note, so nothing the page
+said is silently turned into null. A day already past is also dropped.
+`lib/leads/bidDay.test.ts` pins both gates.
 
 **The eval, which queries the live web.**
 
@@ -83,16 +82,62 @@ has it the other way round. It now derives the expected order from the enum,
 because a test that restates the thing under test from memory is a test that can
 disagree with it.
 
-Checked: `typecheck`, `lint`, **8,454 unit tests over 532 files**, all green.
+Checked after the revision: `typecheck`, `lint`, **8,452 unit tests over 532 files**, all green.
 `pnpm eval:lead-search` runs the eval by hand with a key.
+
+**REVISED 2026-10-02 AFTER A BROWSER RUN, AND THE THREE THINGS IT FOUND WERE ALL
+MINE.** None was visible to any test in this repo, and each was something the Ask
+command had been doing correctly all along:
+
+- **The panel offered "Track this as a pursuit" on a lead already on the chase
+  list.** `placeAgainstKnown` has been exported from the leads command the whole
+  time — it matches a lead against the company's pipeline, jobs and bids by URL,
+  by name and fuzzily — and the Ask path HIDES those, saying "nothing new". This
+  panel showed them raw, and `createBidPursuit` has no duplicate-name guard, so
+  the tester could have made a real duplicate row. The action now places every
+  lead against the same set from the same query: an exact match is dropped and
+  counted, a fuzzy one gets a badge naming what it looks like. The hide/badge
+  asymmetry is copied rather than reinvented, because `placeAgainstKnown`'s own
+  comment calls that asymmetry the part worth a test.
+- **`pursuitNoteFor` already existed, and I shipped a second one.** It was
+  already exported and builds a pursuit note from the same five fields.
+  `lib/lead-search.ts` was a third implementation of one rule — and this entry's
+  own last section warned about duplicating #579's note builder while missing
+  that a copy was already in the repo. That is "nothing is ever missing from a
+  list nobody imports" with me as the author. The module and its test are
+  deleted and the action calls the original.
+- **The search count was dropped.** `findLeads` returns it, `boundLeadFinder`
+  discarded it, and the panel printed nothing where the project look-up prints
+  "Found on the web in 2 searches". Web search is billed PER SEARCH, so this
+  panel was spending money with nothing on screen saying how much. `LeadFinder`
+  now carries `searches` out to its caller — the Ask command ignores the field,
+  which is why adding it broke nothing — and the panel prints it.
+
+**And the bid date is now prefilled when it parses, which REVERSES this entry's
+own argument.** The paragraph above said a found bid date must never reach
+`expectedBidDate`, with a test pinning it. Every sentence of that reasoning is
+still true, and it was still the wrong answer: `executeFindBidLeads` has been
+writing `expectedBidDate: lead.bidDay` all along, guarded to "only when the
+page's date read as a full calendar day". So the Ask card and this form
+disagreed about one field, which is worse than either answer on its own. Diego's
+call, 2026-10-02: match Ask. `bidDayFor` applies that guard plus one more — a day
+already PAST is dropped, because the create form carries `min={localToday()}` and
+a filled field the browser silently refuses to submit is worse than a blank one.
+The raw text still goes in the note either way, so "late spring" is never
+silently turned into null.
+
+`bidDayFor` lives in `lib/leads/bidDay.ts` rather than in the action, and that is
+a trap worth recording: `leadSearch.ts` is `"use server"`, where only async
+functions may be exported, and a sync export from one fails at BUILD and not at
+typecheck. It would have passed every check run locally and gone red in CI.
 
 **Two follow-ups, named rather than implied.**
 
-`lib/lead-search.ts` and `lib/project-lookup.ts` (#579) each build a note from
-labelled facts with sources and clip it to the same column limit. That is two
-implementations of one rule, which is how one of them stops being true. They are
-separate only because neither branch may be based on the other; unifying them is
-a follow-up once both are on `main`, not a reason to leave the second unwritten.
+**Half of the note-builder duplication is closed and half is not.**
+`lib/lead-search.ts` is gone and this panel uses `pursuitNoteFor`. #579's
+`lib/project-lookup.ts` still has its own builder, so there are two rather than
+three; unifying the last pair is a follow-up once both are on `main`, since
+neither branch may be based on the other.
 
 And the guard that would have caught this entire class — a census asserting every
 `AiFeature` is reachable from a product SURFACE, the `stageReachableCensus` shape

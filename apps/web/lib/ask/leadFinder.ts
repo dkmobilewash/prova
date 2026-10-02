@@ -86,6 +86,6 @@ export function boundLeadFinder(
       });
     }
     if (!result.ok) return { ok: false, reason: result.reason };
-    return { ok: true, leads: result.leads };
+    return { ok: true, leads: result.leads, searches: result.searches };
   };
 }

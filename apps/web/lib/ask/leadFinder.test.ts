@@ -47,7 +47,13 @@ describe("boundLeadFinder", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const d = deps({ ok: true, leads: [], searches: 3, usage });
     const result = await boundLeadFinder(actor, d)(input);
-    expect(result).toEqual({ ok: true, leads: [] });
+    // `searches` is CARRIED OUT, not just recorded in the ledger, so a caller
+    // can show what the pass cost. It is the billed unit: web search is charged
+    // per search on top of tokens. The /pipeline control shipped without
+    // showing it while the project look-up showed it, and a browser tester
+    // caught that before any test here could — this is the assertion that keeps
+    // it reaching a caller at all.
+    expect(result).toEqual({ ok: true, leads: [], searches: 3 });
     expect(d.recordAskUsage).toHaveBeenCalledTimes(1);
     expect(d.recordAskUsage).toHaveBeenCalledWith({
       companyId: "co-1",
@@ -149,7 +155,7 @@ describe("boundLeadFinder", () => {
       vi.spyOn(console, "log").mockImplementation(() => {});
       aiSettingsRow = { aiEnabled: true, disabledFeatures: ["COMPLIANCE_EXTRACT"], planSheetsPerMonth: 1500, modelOverride: null };
       const d = deps({ ok: true, leads: [], searches: 1, usage });
-      expect(await boundLeadFinder(actor, d)(input)).toEqual({ ok: true, leads: [] });
+      expect(await boundLeadFinder(actor, d)(input)).toEqual({ ok: true, leads: [], searches: 1 });
       expect(d.findLeads).toHaveBeenCalledTimes(1);
     });
 

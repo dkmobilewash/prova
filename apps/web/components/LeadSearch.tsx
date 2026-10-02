@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { LEAD_SIZE_BANDS, LEAD_TRADES, type FoundLead, type LeadSizeBand, type LeadTrade } from "@prova/integrations";
+import { LEAD_SIZE_BANDS, LEAD_TRADES, type LeadSizeBand, type LeadTrade } from "@prova/integrations";
 import { createBidPursuit } from "@/lib/actions";
-import { searchBidLeads } from "@/lib/actions/leadSearch";
+import { searchBidLeads, type PlacedLead } from "@/lib/actions/leadSearch";
 import { BidPursuitFields } from "@/components/BidPursuitList";
 import { localToday } from "@/components/localToday";
-import { leadPrefillFrom } from "@/lib/lead-search";
 
 /**
  * FIND PUBLIC PROJECTS OUT TO BID.
@@ -49,7 +48,9 @@ const inputClass =
 
 export function LeadSearch() {
   const [open, setOpen] = useState(false);
-  const [leads, setLeads] = useState<FoundLead[] | null>(null);
+  const [leads, setLeads] = useState<PlacedLead[] | null>(null);
+  const [searches, setSearches] = useState(0);
+  const [alreadyKnown, setAlreadyKnown] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [tracking, setTracking] = useState<number | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -109,6 +110,8 @@ export function LeadSearch() {
               return;
             }
             setLeads(result.value.leads);
+            setSearches(result.value.searches);
+            setAlreadyKnown(result.value.hiddenAlreadyKnown);
           });
         }}
         className="mt-3"
@@ -178,16 +181,53 @@ export function LeadSearch() {
 
       {leads !== null && leads.length === 0 && (
         <p className="mt-3 text-sm text-ink-body" role="status">
-          Nothing came back with a source behind it. That is the honest answer rather than a guess —
-          try a wider size band, or a bigger city nearby.
+          {alreadyKnown > 0
+            ? `Nothing new. ${alreadyKnown} ${alreadyKnown === 1 ? "project" : "projects"} came back in ${searches} ${
+                searches === 1 ? "search" : "searches"
+              } and you already have every one of them on your pipeline, jobs or bids.`
+            : `Nothing came back with a source behind it, in ${searches} ${
+                searches === 1 ? "search" : "searches"
+              }. That is the honest answer rather than a guess — try a wider size band, or a bigger city nearby.`}
         </p>
       )}
 
       {leads !== null && leads.length > 0 && (
-        <ul className="mt-4 space-y-3 border-t border-line-card pt-3">
-          {leads.map((lead, index) => (
+        <div className="mt-4 border-t border-line-card pt-3">
+          {/* THE SEARCH COUNT IS ON SCREEN because it is the unit the bill is
+              counted in — web search is charged per search on top of tokens.
+              This panel shipped without it while the project look-up showed it,
+              and a browser tester noticed before any test could. */}
+          <p className="text-sm text-ink-body">
+            {`Found in ${searches} ${searches === 1 ? "search" : "searches"}. Nothing is saved yet.`}
+            {alreadyKnown > 0 &&
+              ` ${alreadyKnown} more ${alreadyKnown === 1 ? "was" : "were"} left out — you already have ${
+                alreadyKnown === 1 ? "it" : "them"
+              }.`}
+          </p>
+        <ul className="mt-2 space-y-3">
+          {leads.map((one, index) => {
+            const lead = one.lead;
+            return (
             <li key={`${lead.source.url}-${index}`} className="text-sm">
               <p className="font-medium text-ink">{lead.fields.projectName}</p>
+              {/* A CLOSE-BUT-NOT-CERTAIN match against what the company already
+                  has. An EXACT match never reaches here — the action drops those
+                  and counts them, which is the hide/badge asymmetry the Ask
+                  command already had and this panel was missing. */}
+              {one.already && (
+                <p className="mt-0.5 text-xs text-ink-body">
+                  Looks like{" "}
+                  <a href={one.already.href} className="underline hover:text-link">
+                    {one.already.name}
+                  </a>
+                  , {one.already.kind === "pipeline"
+                    ? "already on your pipeline"
+                    : one.already.kind === "job"
+                      ? "already one of your jobs"
+                      : "already a logged bid invitation"}
+                  . Check before you add it again.
+                </p>
+              )}
               <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
                 {lead.fields.owner && (
                   <>
@@ -255,11 +295,23 @@ export function LeadSearch() {
                   className="mt-2 rounded-md border border-line-card p-3"
                 >
                   <p className="mb-3 text-sm text-ink-body">
-                    The same form as &ldquo;Add a pursuit&rdquo; below. The bid date is deliberately
-                    blank — the one found on the web is in the note, and this field is the date you
-                    are willing to be held to.
+                    The same form as &ldquo;Add a pursuit&rdquo; below.{" "}
+                    {one.bidDay
+                      ? "The bid date read as a whole day on the page, so it is filled in — check it against the source before you save."
+                      : "The bid date is blank because the page did not state a whole day; what it did say is in the note, for you to read and type."}
                   </p>
-                  <BidPursuitFields prefill={leadPrefillFrom(lead)} minBidDate={localToday()} />
+                  <BidPursuitFields
+                    prefill={{
+                      projectName: lead.fields.projectName,
+                      owner: lead.fields.owner ?? undefined,
+                      note: one.note,
+                      // ONLY a whole calendar day, decided on the server by
+                      // `readBidDay` — "late spring" leaves this blank and
+                      // stays in the note. Matches what the Ask card does.
+                      expectedBidDate: one.bidDay ?? undefined,
+                    }}
+                    minBidDate={localToday()}
+                  />
                   {saveError && (
                     <p className="mt-3 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink" role="status">
                       {saveError}
@@ -295,8 +347,10 @@ export function LeadSearch() {
                 </button>
               )}
             </li>
-          ))}
+            );
+          })}
         </ul>
+        </div>
       )}
     </section>
   );
