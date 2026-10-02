@@ -7,6 +7,7 @@ import { valueIsPartial, winRateLabel } from "@/lib/bid-pipeline";
 import { money } from "@/lib/money";
 import { loadBidPursuits, loadLinkableInvitations } from "@/lib/bid-pursuits-query";
 import { BidPursuitList } from "@/components/BidPursuitList";
+import { ProjectLookup } from "@/components/ProjectLookup";
 import { viewerToday } from "@/lib/viewerToday";
 
 /**
@@ -64,6 +65,13 @@ export default async function PipelinePage() {
         and a status or an amount is changed on the GC&apos;s own contact record, under
         &ldquo;Bid invitations&rdquo;, not on the Bids list, which only filters and reads.
       </p>
+
+      {/* AHEAD OF THE CHASE LIST, because it is what feeds it: a project name
+          heard from somebody, looked up on the public web, and then tracked.
+          BID_RESEARCH had no control anywhere until this — it ran only inside
+          one Ask command. It writes nothing itself; the pursuit form below is
+          still the only writer on this page. */}
+      <ProjectLookup />
 
       <BidPursuitList
         pursuits={pursuits}

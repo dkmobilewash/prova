@@ -14,6 +14,7 @@
     "test:db": "pnpm --filter @prova/web run test:db",
     "eval:addenda": "pnpm --filter @prova/web run eval:addenda",
     "eval:draft-lines": "pnpm --filter @prova/web run eval:draft-lines",
+    "eval:bid-research": "pnpm --filter @prova/web run eval:bid-research",
     "test:e2e": "pnpm --filter @prova/web run test:e2e:local",
     "test:e2e:public": "pnpm --filter @prova/web run test:e2e:public",
     "db:generate": "pnpm --filter @prova/db generate",
