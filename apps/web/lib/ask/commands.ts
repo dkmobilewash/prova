@@ -124,7 +124,13 @@ export type LeadFinderInput = Pick<LeadSearchInput, "trades" | "region" | "sizeB
 export type LeadFinder = (
   input: LeadFinderInput,
 ) => Promise<
-  | { ok: true; leads: FoundLead[] }
+  /** `searches` is the billed unit — web search costs per search on top of
+   *  tokens — and it is carried out here so a caller can SHOW it. The
+   *  /pipeline control shipped without it and a browser tester noticed the
+   *  project look-up printing a search count where lead search printed none;
+   *  money spent with nothing on screen saying so is the defect. The Ask
+   *  command ignores this field, which is why adding it broke nothing. */
+  | { ok: true; leads: FoundLead[]; searches: number }
   /** `off` is the per-company AI switch, and it is the ONE failure that
    *  carries its own `sentence`: every other reason is a code the command
    *  turns into prose, but the switch's wording names who can turn it back

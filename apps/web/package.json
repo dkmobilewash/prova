@@ -16,7 +16,8 @@
     "ask:eval": "vitest run --config vitest.eval.config.mts",
     "eval:addenda": "vitest run --config vitest.eval.config.mts lib/addenda/addenda.eval.ts",
     "eval:draft-lines": "vitest run --config vitest.eval.config.mts lib/estimating/draftLines.eval.ts",
-    "eval:bid-research": "vitest run --config vitest.eval.config.mts lib/research/bidResearch.eval.ts"
+    "eval:bid-research": "vitest run --config vitest.eval.config.mts lib/research/bidResearch.eval.ts",
+    "eval:lead-search": "vitest run --config vitest.eval.config.mts lib/leads/leadSearch.eval.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.9.6",

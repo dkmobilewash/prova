@@ -8,6 +8,7 @@ import { money } from "@/lib/money";
 import { loadBidPursuits, loadLinkableInvitations } from "@/lib/bid-pursuits-query";
 import { BidPursuitList } from "@/components/BidPursuitList";
 import { ProjectLookup } from "@/components/ProjectLookup";
+import { LeadSearch } from "@/components/LeadSearch";
 import { viewerToday } from "@/lib/viewerToday";
 
 /**
@@ -72,6 +73,13 @@ export default async function PipelinePage() {
           one Ask command. It writes nothing itself; the pursuit form below is
           still the only writer on this page. */}
       <ProjectLookup />
+      {/* AHEAD OF THE CHASE LIST, because it is what feeds it: public projects
+          out to bid that nobody has invited us to. LEAD_SEARCH had no control
+          anywhere until this — it ran only inside one Ask command. Collapsed by
+          default: /pipeline's job is the chase list, and each press is a billed
+          set of web searches. It writes nothing itself; the pursuit form below
+          is still the only writer on this page. */}
+      <LeadSearch />
 
       <BidPursuitList
         pursuits={pursuits}
