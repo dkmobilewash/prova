@@ -4,6 +4,7 @@ import { prisma } from "@prova/db";
 import { extractBidQuote } from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
+import { deleteDocument } from "@/lib/blob";
 import { aiGate } from "@/lib/ai/settings";
 import { recordAskUsage } from "@/lib/ask/usage";
 import { claimDocumentPages } from "@/lib/ask/documentSpend";
@@ -100,91 +101,131 @@ export async function readBidQuoteDocument(
   if (problem) return { ok: false, error: problem };
   const fileName = documentDisplayFileName(fileNameRaw);
 
-  // THE PER-COMPANY AI SWITCH, before the bytes are fetched back out of the
-  // store, let alone sent anywhere. A company that has switched quote reading
-  // off has said a competitor's pricing must not reach a model.
+  // ─────────────────────────────────────────────────────────────────────
+  // THE UPLOADED FILE IS DELETED ON EVERY PATH OUT OF HERE — issue #559.
   //
-  // UNLIKE THE COMPLIANCE UPLOAD, THIS REFUSAL COSTS NOTHING, and the difference
-  // is worth stating: `uploadComplianceDocument` is the only path that files a
-  // compliance document, so switching that off stops filing entirely. Logging a
-  // quote by hand has always worked and still does — this only fills the form
-  // in. So the sentence can be short, because nothing is lost.
-  const gate = await aiGate(company.id, "QUOTE_EXTRACT");
-  if (!gate.ok) return { ok: false, error: `${gate.error} You can still type the quote in yourself.` };
-
-  const read = await readStoredQuote(url);
-  if (!read.ok) return { ok: false, error: read.error };
-
-  // Counted from the BYTES and claimed BEFORE the call, never from anything the
-  // browser said. A refused claim is the hard stop: the sentence says what ran
-  // out, nothing is charged, and the model is never reached.
-  const spend = await claimDocumentPages(company.id, read.mediaType, read.buffer);
-  if (!spend.ok) return { ok: false, error: spend.error };
-
-  let extraction: Awaited<ReturnType<typeof extractBidQuote>>;
+  // Until now this action took the URL as an argument and recorded it
+  // nowhere, so every read left a PDF in the store that nothing pointed at
+  // and nothing would ever collect. Blobs are uploaded `access: "public"`:
+  // the URL is unguessable, but anybody who ever holds it can fetch a
+  // competitor's pricing forever with no sign-in, which is why documents
+  // normally reach a browser through an authenticated route instead. A
+  // stranded one had no row in the database that would let anybody find it
+  // again to remove it.
+  //
+  // A `finally` RATHER THAN A DELETE AT EACH RETURN, and that is the whole
+  // point: there are five ways out of the code below — the switch being
+  // off, the store not serving the bytes, the allowance refusing, the
+  // extractor throwing, and success — and every one of them stranded the
+  // file. Five call sites would be five chances to forget, and a sixth exit
+  // added later would strand it again with nothing to say so.
+  //
+  // SAFE TO DELETE BECAUSE OF THE LINE ABOVE, not because the caller said
+  // so. `documentUrlProblem` has already proved this URL is in our own blob
+  // store AND under this company's own `bid-quote` folder, so it cannot be
+  // an addendum's stored file, a contract document, or another tenant's —
+  // #195's rule that a blob URL is not proof of whose file it is cuts both
+  // ways, and deleting by an unvalidated URL would be the dangerous half.
+  //
+  // NOTHING IS LOST THAT EXISTS TODAY. The browser uploads straight to the
+  // store, calls this once, hands the suggestion to its parent and never
+  // touches the URL again (`QuoteReader`'s `onRead` remounts the component),
+  // and no model has a column for it. The person still has their own file.
+  // If the quote PDF should later be kept as evidence beside its `BidQuote`
+  // row, that is an additive change — a column, a write, and this `finally`
+  // comes out — not a reason to leave an orphan in the meantime.
   try {
-    extraction = await extractBidQuote({
-      fileBase64: read.buffer.toString("base64"),
-      mediaType: read.mediaType,
-      fileName: fileName ?? "quote",
-      model: gate.model,
-      onUsage: (usage) =>
-        recordAskUsage({
-          companyId: company.id,
-          userId: user.id,
-          model: gate.model,
-          usage,
-          outcome: "answered",
-          feature: "quote-extract",
-        }),
-    });
-  } catch (err) {
-    // MARKED, NOT RELEASED — the same rule the compliance upload and the Ask
-    // box follow. A unit you can get back by making calls fail is not a cap,
-    // and the provider bills a request that died halfway anyway. The mark is
-    // what lets an owner see failed reads on /settings/assistant and ask for a
-    // credit; nothing here adjusts an allowance by itself.
-    await markAskAllowanceFailure(spend.claim);
-    console.error("[quote-read] the extractor failed after its allowance was claimed", {
-      companyId: company.id,
-      bidInvitationId: bid.id,
-      err,
-    });
+    // THE PER-COMPANY AI SWITCH, before the bytes are fetched back out of the
+    // store, let alone sent anywhere. A company that has switched quote reading
+    // off has said a competitor's pricing must not reach a model.
+    //
+    // UNLIKE THE COMPLIANCE UPLOAD, THIS REFUSAL COSTS NOTHING, and the difference
+    // is worth stating: `uploadComplianceDocument` is the only path that files a
+    // compliance document, so switching that off stops filing entirely. Logging a
+    // quote by hand has always worked and still does — this only fills the form
+    // in. So the sentence can be short, because nothing is lost.
+    const gate = await aiGate(company.id, "QUOTE_EXTRACT");
+    if (!gate.ok) return { ok: false, error: `${gate.error} You can still type the quote in yourself.` };
+
+    const read = await readStoredQuote(url);
+    if (!read.ok) return { ok: false, error: read.error };
+
+    // Counted from the BYTES and claimed BEFORE the call, never from anything the
+    // browser said. A refused claim is the hard stop: the sentence says what ran
+    // out, nothing is charged, and the model is never reached.
+    const spend = await claimDocumentPages(company.id, read.mediaType, read.buffer);
+    if (!spend.ok) return { ok: false, error: spend.error };
+
+    let extraction: Awaited<ReturnType<typeof extractBidQuote>>;
+    try {
+      extraction = await extractBidQuote({
+        fileBase64: read.buffer.toString("base64"),
+        mediaType: read.mediaType,
+        fileName: fileName ?? "quote",
+        model: gate.model,
+        onUsage: (usage) =>
+          recordAskUsage({
+            companyId: company.id,
+            userId: user.id,
+            model: gate.model,
+            usage,
+            outcome: "answered",
+            feature: "quote-extract",
+          }),
+      });
+    } catch (err) {
+      // MARKED, NOT RELEASED — the same rule the compliance upload and the Ask
+      // box follow. A unit you can get back by making calls fail is not a cap,
+      // and the provider bills a request that died halfway anyway. The mark is
+      // what lets an owner see failed reads on /settings/assistant and ask for a
+      // credit; nothing here adjusts an allowance by itself.
+      await markAskAllowanceFailure(spend.claim);
+      console.error("[quote-read] the extractor failed after its allowance was claimed", {
+        companyId: company.id,
+        bidInvitationId: bid.id,
+        err,
+      });
+      return {
+        ok: false,
+        error:
+          "That quote couldn't be read. Its pages are recorded as a failed read on this month's allowance — the " +
+          "account owner can see them on Settings → Assistant. Type the quote in instead; nothing was saved.",
+      };
+    }
+
+    // A DATE IS VALIDATED, NOT TRUSTED. The model is asked for `YYYY-MM-DD` and
+    // mostly obliges; anything else becomes null rather than reaching a date input
+    // as a string it will silently reject. A quote whose date could not be read is
+    // a quote the person dates themselves, which is this app's rule for dates that
+    // matter anyway.
+    const quotedOn = isoDateOrNull(extraction.quotedOn);
+
     return {
-      ok: false,
-      error:
-        "That quote couldn't be read. Its pages are recorded as a failed read on this month's allowance — the " +
-        "account owner can see them on Settings → Assistant. Type the quote in instead; nothing was saved.",
+      ok: true,
+      value: {
+        vendorName: extraction.vendorName.trim(),
+        packageLabel: extraction.packageLabel?.trim() || null,
+        // A NEGATIVE OR NON-FINITE AMOUNT IS DROPPED rather than shown. The model
+        // is told never to invent one, and this is the second of the two checks:
+        // a quote cannot be for less than nothing, and `NaN` in a money box is a
+        // figure somebody might save.
+        amount:
+          typeof extraction.amount === "number" && Number.isFinite(extraction.amount) && extraction.amount >= 0
+            ? extraction.amount
+            : null,
+        quotedOn,
+        exclusions: extraction.exclusions?.trim() || null,
+        readingNotes: extraction.readingNotes?.trim() || null,
+        note: spend.note,
+        pagesLeft: spend.pagesLeft,
+      },
     };
+  } finally {
+    // Swallows its own failures by design (see `lib/blob.ts`), so a store
+    // that will not delete cannot turn a successful read into an error for
+    // the person. It logs; the read still returns what it found.
+    await deleteDocument(url);
   }
-
-  // A DATE IS VALIDATED, NOT TRUSTED. The model is asked for `YYYY-MM-DD` and
-  // mostly obliges; anything else becomes null rather than reaching a date input
-  // as a string it will silently reject. A quote whose date could not be read is
-  // a quote the person dates themselves, which is this app's rule for dates that
-  // matter anyway.
-  const quotedOn = isoDateOrNull(extraction.quotedOn);
-
-  return {
-    ok: true,
-    value: {
-      vendorName: extraction.vendorName.trim(),
-      packageLabel: extraction.packageLabel?.trim() || null,
-      // A NEGATIVE OR NON-FINITE AMOUNT IS DROPPED rather than shown. The model
-      // is told never to invent one, and this is the second of the two checks:
-      // a quote cannot be for less than nothing, and `NaN` in a money box is a
-      // figure somebody might save.
-      amount:
-        typeof extraction.amount === "number" && Number.isFinite(extraction.amount) && extraction.amount >= 0
-          ? extraction.amount
-          : null,
-      quotedOn,
-      exclusions: extraction.exclusions?.trim() || null,
-      readingNotes: extraction.readingNotes?.trim() || null,
-      note: spend.note,
-      pagesLeft: spend.pagesLeft,
-    },
-  };
 }
 
 /** `YYYY-MM-DD` or null. Rejects a real-looking string that is not a real day —
