@@ -340,7 +340,7 @@ export async function accGet(
       continue;
     }
     if (response.status === 404) {
-      throw new AccApiError(`Autodesk couldn't find ${describePath(path)} — it may have been removed, or you were taken off the project.`);
+      throw new AccApiError(notFoundMessage(path));
     }
     if (!response.ok) throw new AccApiError(`Autodesk answered ${response.status} for ${describePath(path)}.`);
 
@@ -352,6 +352,41 @@ export async function accGet(
     }
     return { body, headers: response.headers };
   }
+}
+
+/**
+ * A 404 ON A PATH THIS APP CHOSE IS NOT EVIDENCE ABOUT THE USER'S ACCESS.
+ *
+ * This used to say, for every path: "it may have been removed, or you were
+ * taken off the project." For `/hubs` and `/users/@me` that is a fair reading.
+ * For the two feed paths it is not, and the NOT VERIFIED block at the bottom of
+ * this file is the reason: `/construction/rfis/v2/…` and
+ * `/construction/submittals/v2/…` were resolved from reference pages and never
+ * confirmed against a live project, and Autodesk's own blog says the RFI v2 API
+ * has been superseded. Those two paths ARE the whole feed.
+ *
+ * So the likeliest cause of a 404 there is that C Stream asked at the wrong
+ * address — and the old sentence sent a subcontractor to ring the GC's account
+ * admin about a permission problem that does not exist. That is worse than an
+ * unhelpful error: it spends the sub's credibility with their customer on our
+ * bug. Say which it probably is, and say it plainly.
+ *
+ * When those paths are confirmed against a live project, delete `UNCONFIRMED`
+ * and this split goes with it.
+ */
+const UNCONFIRMED = /\/construction\/(rfis|submittals)\/v2\//;
+
+function notFoundMessage(path: string): string {
+  if (UNCONFIRMED.test(path)) {
+    return (
+      `Autodesk didn't recognise the request for ${describePath(path)}. ` +
+      `This is more likely C Stream asking at the wrong address than anything ` +
+      `about your access — the Autodesk endpoints for RFIs and submittals have ` +
+      `not been confirmed against a live project yet. Report it rather than ` +
+      `chasing the GC.`
+    );
+  }
+  return `Autodesk couldn't find ${describePath(path)} — it may have been removed, or you were taken off the project.`;
 }
 
 function describePath(path: string): string {
