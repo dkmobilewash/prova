@@ -104,3 +104,75 @@ group("the synthetic sheet is a real PDF", () => {
     expect(Object.keys(SHEETS).sort()).toEqual(["ARCH_D", "DETAIL"]);
   });
 });
+
+group("the clutter actually lands on the page", () => {
+  /**
+   * THE HARDENED ARM IS WORTH NOTHING UNLESS THE CLUTTER IS REALLY THERE.
+   *
+   * `DECISIONS.md` bounded the 2026-10-02 result: *"the next measurement — the
+   * one that would justify building anything — needs sheets with competing
+   * geometry on them."* A `clutter` array that silently drew nothing would
+   * produce a cluttered arm identical to the clean one, scoring 8/8 and reading
+   * as "competing geometry does not break it" — a confident wrong answer to the
+   * exact question the arm was added to ask.
+   *
+   * That is this repo's failed-control scar: three arms of the #418
+   * investigation produced wrong numbers and every one was caught by its own
+   * control. So the clutter is asserted by OPERATOR COUNT, which cannot be
+   * satisfied by a flag being set.
+   */
+  it("hatching, dimensions and notes each ADD drawing operators", async () => {
+    const bare = sheet({ clutter: [] });
+    const ops = async (spec: SheetSpec) =>
+      (await (await openSheet(spec)).getPage(1).then((p) => p.getOperatorList())).fnArray.length;
+
+    const plain = await ops(bare);
+    const hatched = await ops(sheet({ clutter: ["hatching"] }));
+    const dimensioned = await ops(sheet({ clutter: ["dimensions"] }));
+    const noted = await ops(sheet({ clutter: ["notes"] }));
+    const everything = await ops(sheet({ clutter: ["hatching", "dimensions", "notes"] }));
+
+    // Each one on its own, so a single broken generator cannot hide behind the
+    // other two.
+    expect(hatched, "hatching drew nothing").toBeGreaterThan(plain);
+    expect(dimensioned, "dimension strings drew nothing").toBeGreaterThan(plain);
+    expect(noted, "keynotes drew nothing").toBeGreaterThan(plain);
+    // And hatching must be the heavy one — it is the stroke-level competition
+    // with a door leaf, which is the whole point of including it.
+    expect(hatched - plain).toBeGreaterThan(50);
+    expect(everything).toBeGreaterThan(hatched);
+  });
+
+  it("a second symbol kind is drawn, and `trueCount` does NOT count it", async () => {
+    // The discrimination test's own control. If `trueCount` counted both kinds
+    // the eval would grade against the wrong total and score a correct reading
+    // as OVERCLAIMED — punishing the model for being right, which is worse than
+    // not testing discrimination at all.
+    const spec = sheet({
+      symbols: [
+        { kind: "columnBubble", count: 6 },
+        { kind: "wallTag", count: 9 },
+      ],
+    });
+    expect(trueCount(spec, "columnBubble")).toBe(6);
+    expect(trueCount(spec, "wallTag")).toBe(9);
+    expect(trueCount(spec)).toBe(15);
+
+    const one = await ops1(sheet({ symbols: [{ kind: "columnBubble", count: 6 }] }));
+    const two = await ops1(spec);
+    expect(two, "the competing kind was not drawn").toBeGreaterThan(one);
+  });
+
+  it("stays reproducible with clutter on", () => {
+    // The jitter is seeded and the clutter is deterministic, so a measurement is
+    // repeatable. Two runs that differ would make a result depend on which
+    // invocation it was.
+    const spec = sheet({ clutter: ["hatching", "dimensions", "notes"] });
+    expect(synthesiseSheet(spec).equals(synthesiseSheet(spec))).toBe(true);
+  });
+});
+
+async function ops1(spec: SheetSpec): Promise<number> {
+  const page = await (await openSheet(spec)).getPage(1);
+  return (await page.getOperatorList()).fnArray.length;
+}

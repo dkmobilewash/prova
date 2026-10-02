@@ -69,6 +69,28 @@ export type SymbolSpec = {
   count: number;
 };
 
+/**
+ * COMPETING GEOMETRY — the second measurement, and the reason the first one is
+ * only a floor.
+ *
+ * The 2026-10-02 run scored Opus 8/8 on sheets carrying one symbol kind and
+ * nothing else, and `docs/ai/DECISIONS.md` bounded that in its own words: *"the
+ * next measurement — the one that would justify building anything — needs sheets
+ * with competing geometry on them."* Building a feature on the clean result would
+ * be building on evidence this repo had already labelled insufficient.
+ *
+ * So these are the things a real drawing has that a blank sheet does not, each
+ * chosen because it competes with a symbol rather than because it looks busy:
+ *
+ *   `hatching`   — parallel diagonal strokes (wall poché, concrete fill). At 44
+ *                  DPI a hatch line and a door leaf are both one thin stroke.
+ *   `dimensions` — dimension strings: a run with tick marks and a number. The
+ *                  same two-strokes-and-a-digit shape as a wall tag.
+ *   `notes`      — keynote text over the drawing, so the page has words that are
+ *                  not the symbols' own labels.
+ */
+export type Clutter = "hatching" | "dimensions" | "notes";
+
 export type SheetSpec = {
   id: string;
   sheetSize: SheetSize;
@@ -76,7 +98,24 @@ export type SheetSpec = {
    *  rather than a page of shapes — a model shown an obviously synthetic target
    *  may behave differently from one shown something plan-shaped. */
   sheetNumber: string;
+  /**
+   * Every symbol kind drawn on the sheet. A case asks for ONE of them, and
+   * `trueCount(spec, kind)` is the truth for that one.
+   *
+   * SEVERAL KINDS ON ONE SHEET IS THE DISCRIMINATION TEST, and it is deliberately
+   * done this way rather than with same-kind "decoys". A decoy of the kind being
+   * counted is indistinguishable from the real thing except by a label, so a
+   * reader who counted all of them would be RIGHT and the eval would score it
+   * wrong — a measurement that punishes a correct reading is worse than no
+   * measurement. Different kinds have no such ambiguity: asked for doors on a
+   * sheet of doors and wall tags, 11 is the only correct answer.
+   *
+   * `symbols.ts`'s prompt rule 3 says to count only what was asked for and to
+   * decline when two marks cannot be told apart. This is how that rule gets
+   * SCORED instead of hoped for.
+   */
   symbols: SymbolSpec[];
+  clutter?: Clutter[];
 };
 
 /** Escape nothing: every string here is generated, ASCII, and controlled. */
@@ -133,6 +172,32 @@ function drawSymbol(kind: SymbolSpec["kind"], x: number, y: number, label: strin
   ].join("\n");
 }
 
+/** Diagonal parallel strokes over a band of the sheet — wall poché. */
+function hatchBand(x: number, y: number, w: number, h: number): string {
+  const ops: string[] = ["0.5 w"];
+  for (let offset = 0; offset < w + h; offset += 6) {
+    const x1 = x + Math.max(0, offset - h);
+    const y1 = y + Math.min(offset, h);
+    const x2 = x + Math.min(offset, w);
+    const y2 = y + Math.max(0, offset - w);
+    ops.push(`${num(x1)} ${num(y1)} m ${num(x2)} ${num(y2)} l S`);
+  }
+  return ops.join("\n");
+}
+
+/** A dimension string: a run, tick marks at each end, and a figure above it. */
+function dimensionString(x: number, y: number, w: number, label: string): string {
+  return [
+    "0.5 w",
+    `${num(x)} ${num(y)} m ${num(x + w)} ${num(y)} l S`,
+    `${num(x)} ${num(y - 4)} m ${num(x)} ${num(y + 4)} l S`,
+    `${num(x + w)} ${num(y - 4)} m ${num(x + w)} ${num(y + 4)} l S`,
+    "BT /F1 7 Tf",
+    `${num(x + w / 2 - 10)} ${num(y + 3)} Td (${label}) Tj`,
+    "ET",
+  ].join("\n");
+}
+
 /**
  * The page's content stream: a border, a title block, and the symbols laid out
  * on a loose grid with deliberate jitter so they are not trivially countable by
@@ -164,6 +229,38 @@ function contentStream(spec: SheetSpec): string {
   const usableW = width - marginX * 2 - 240;
   const usableH = height - marginY * 2;
 
+  // CLUTTER FIRST, so the symbols sit ON TOP of it the way a plan's annotation
+  // layer sits over its poché. Drawn under, it would be competing geometry a
+  // reader could simply ignore as background.
+  const clutter = spec.clutter ?? [];
+  if (clutter.includes("hatching")) {
+    // Two bands rather than one, in different parts of the sheet, so a reader
+    // cannot discount "the hatched corner" and count the rest cleanly.
+    ops.push(hatchBand(marginX, marginY, usableW * 0.45, usableH * 0.35));
+    ops.push(hatchBand(marginX + usableW * 0.5, marginY + usableH * 0.55, usableW * 0.4, usableH * 0.3));
+  }
+  if (clutter.includes("dimensions")) {
+    for (let i = 0; i < 8; i += 1) {
+      const y = marginY + (usableH / 8) * (i + 0.5);
+      ops.push(dimensionString(marginX + 10, y, usableW * 0.3, `${12 + i}'-${i}"`));
+    }
+  }
+  if (clutter.includes("notes")) {
+    const NOTES = [
+      "1. ALL PARTITIONS TYPE X U.N.O.",
+      "2. SEE A-501 FOR HEAD OF WALL",
+      "3. FIRE RATING PER SCHEDULE",
+      "4. VERIFY IN FIELD",
+      "5. GYP BD BOTH SIDES",
+    ];
+    NOTES.forEach((note, i) => {
+      ops.push("BT /F1 7 Tf", `${num(marginX + usableW * 0.55)} ${num(marginY + usableH - i * 11)} Td (${note}) Tj`, "ET");
+    });
+  }
+
+  // Every kind on the same jittered grid, so one kind is not separable from
+  // another by position — which would make the discrimination test answerable
+  // without resolving the marks.
   for (const symbol of spec.symbols) {
     const perRow = Math.ceil(Math.sqrt(symbol.count));
     for (let i = 0; i < symbol.count; i += 1) {

@@ -624,6 +624,73 @@ what was actually known.
   Nothing here should be read as drawing takeoff being ready; `FEATURE-AUDIT.md`
   keeps it as Missing.
 
+  ### That measurement has now been run, and the clean 8/8 does not survive it
+
+  **2026-10-02, later the same day. The bound above was the right bound and the
+  feature does NOT clear it.** Sixteen cases: the eight clean ones unchanged as a
+  CONTROL, and eight carrying poché, dimension strings, keynotes and a second
+  symbol kind to tell the asked-for one apart from.
+
+  | arm | correct | declined | OVERCLAIMED |
+  | --- | --- | --- | --- |
+  | CLEAN / ARCH_D | 4 / 4 | 0 | 0 |
+  | CLEAN / DETAIL | 4 / 4 | 0 | 0 |
+  | CLUTTERED / ARCH_D | 0 / 4 | 3 | **1** |
+  | CLUTTERED / DETAIL | 3 / 4 | 0 | **1** |
+
+  **THE CONTROL HELD AT 8/8, WHICH IS THE ONLY REASON THE REST IS READABLE.** The
+  clean arm is kept rather than replaced precisely so a drop is attributable: had
+  the fixtures simply been made harder, a regression in the prompt, the model, the
+  PDF writer or the grader would be indistinguishable from the clutter working as
+  intended. The clean arm scoring exactly what it scored before, in the same run,
+  is what makes "the clutter did this" a measurement rather than a guess.
+
+  **THE CONFIDENCE SIGNAL DOES NOT DISCRIMINATE UNDER CLUTTER, and that is the
+  finding that matters more than the two wrong counts.** On cluttered sheets
+  MEDIUM was right three times and wrong once; LOW declined three times and
+  answered wrong once. Nothing scored HIGH. So a feature **cannot** be made safe
+  by showing only high-confidence counts — the band that was wrong is the same
+  band that was right, and the one wrong MEDIUM was the worst answer in the whole
+  run (said 8 against a truth of 11, a 27% undercount).
+
+  **WHAT ACTUALLY FAILS IS ONE SYMBOL SHAPE, in both sizes: the thin-stroke one.**
+  Doors — a leaf line plus a swing arc — overclaimed on both cluttered arms (8
+  against 11, and 10 against 11). Circles-with-a-letter and filled squares were
+  either correct or honestly declined. At 44 DPI a hatch stroke and a door leaf
+  are both one thin line, which is the competition that was added on purpose.
+
+  **AND OPUS'S SELF-REPORT WAS ACCURATE, WHICH IS A DIFFERENT FAILURE FROM
+  HAIKU'S AND HAS TO BE SAID SEPARATELY.** Haiku fabricated reassurance — *"All
+  14 are plainly resolved… I examined the entire sheet and counted each one."*
+  Opus named the real cause, correctly, and then returned a number anyway:
+
+  > *"two large cross-hatched blocks (upper right and lower left) could
+  > completely conceal additional door swings drawn inside or beneath the hatch,
+  > and I could not verify those areas."*
+
+  That is true — the hatch bands are drawn over the symbol grid. So this is not a
+  model that does not know; it is a model that knows, says so in words an
+  estimator could act on, and still fills in `count` instead of declining. The
+  schema already makes declining free (`countable: false`, `count: null`) and the
+  prompt invites it in capitals in its first rule.
+
+  **WHAT FOLLOWS, AND IT IS A REFUSAL TO BUILD PHASE 1 AS DESIGNED.** A real
+  drawing has poché, dimension strings and more than one symbol kind on every
+  sheet; those are not edge cases, they are what a sheet IS. Two confident wrong
+  counts in eight, in a world still far easier than a real sheet — no scanner
+  noise, no xrefs, no overlapping symbols, one sheet at a time — is not a
+  foundation for a quantity that reaches a bid. The clean 8/8 was real and it was
+  measuring the wrong world.
+
+  Three things that would change the answer, in order of cost: a prompt that
+  refuses rather than estimates when it can name an occlusion (the model already
+  produces the sentence, so this is cheap and testable); restricting a first
+  feature to closed/filled symbols and refusing thin-stroke ones outright; or
+  tiling, which the clean arm had appeared to rule out and which the hatch result
+  puts back on the table for a different reason than resolution.
+
+  `FEATURE-AUDIT.md` keeps drawing takeoff as **Missing**, and this entry is why.
+
   `countSymbols` (`packages/integrations/src/symbols.ts`) is an INSTRUMENT, not a
   feature: no action calls it, it is not in `AI_FEATURES`, it is not metered, and
   `aiFeatureGateCensus.test.ts` now pins that state — an eval must import it and
