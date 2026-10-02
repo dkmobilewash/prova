@@ -303,6 +303,14 @@ export async function recordAskUsage(record: AskUsageRecord): Promise<void> {
         outputTokens: usage.outputTokens,
         cacheReadTokens: usage.cacheReadTokens,
         cacheWriteTokens: usage.cacheWriteTokens,
+        // THE FIFTH BILLED UNIT, and it was being dropped here. Web search
+        // charges per search on top of tokens; the totals object has carried
+        // the count since lead search shipped and this insert never took it,
+        // so every searched pass has a row that understates what it cost.
+        // `?? 0` because the field is optional on the totals type — a caller
+        // that never enables web search has none, which is not the same as
+        // zero searches on a caller that does, but both cost nothing.
+        webSearches: usage.webSearches ?? 0,
         outcome: record.outcome,
         jobId: record.jobId ?? null,
         promptVersion: record.promptVersion ?? null,
