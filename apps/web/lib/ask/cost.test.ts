@@ -1,18 +1,36 @@
 import { describe as group, expect, it } from "vitest";
-import { costAtAllowance, costOf, costPerUnit, spendOver, WEB_SEARCHES_RECORDED_FROM, type PricedRow } from "./cost";
+import {
+  costAtAllowance,
+  costOf,
+  costPerUnit,
+  spendOver,
+  WEB_SEARCHES_RECORDED_FROM,
+  type PricedRow,
+  type RateLookup,
+} from "./cost";
 import { WEB_SEARCH_PER_1K } from "@prova/integrations";
 
 /**
  * The read-time arithmetic of step 2, and the shapes it must refuse to produce.
  *
- * These pass with the rate table as it stands — three of the five rates are not
- * yet confirmed — because the whole point of the result type is that an
- * unconfirmed rate yields an explicit "unknown" rather than a number. A test
- * suite that only worked once every rate was filled would be testing the
- * easy half.
+ * ── THREE OF THESE TESTS CHANGED SHAPE WHEN THE RATES ARRIVED, AND THE REASON
+ * IS WORTH MORE THAN THE DIFF ──
  *
- * `pricing.test.ts` is the other half and is DELIBERATELY RED until the rates
- * are pasted in. That is the gate on the PR, not a broken build.
+ * This suite was written while three of the five rates were `UNSET`, and it
+ * reached the "a rate this row needs is missing" branch through the REAL table:
+ * a row with cached tokens was unpriceable because nobody had recorded a cache
+ * rate. Filling all five in on 2026-10-02 made that branch unreachable from
+ * `RATES`, so the three tests that depended on the gap went red — not because
+ * the behaviour regressed, but because the fixture they leaned on stopped
+ * existing.
+ *
+ * The branch still matters. It is what a tenth model routed in next month hits
+ * before anybody prices it, which is exactly the moment nobody is looking. So
+ * it is reached two ways now, both of which survive a complete rate table:
+ * an injected `lookup` returning a partial rate, and a model id that is not in
+ * the table at all. Deleting the tests because the real table stopped
+ * triggering them would have been the `#185` shape — a guard disarmed by the
+ * code getting better.
  */
 
 const row = (over: Partial<PricedRow> = {}): PricedRow => ({
@@ -24,6 +42,20 @@ const row = (over: Partial<PricedRow> = {}): PricedRow => ({
   cacheWriteTokens: 0,
   webSearches: 0,
   ...over,
+});
+
+/**
+ * A model priced for tokens it bills for and NOT for the cached ones — the
+ * shape of a rate somebody half-filled. Not a hypothetical: it is the state
+ * `claude-opus-5` and `claude-haiku-4-5` were both in until 2026-10-02.
+ */
+const partialRate: RateLookup = () => ({
+  from: "2026-01-01",
+  inputPerMTok: 5,
+  outputPerMTok: 25,
+  cacheReadPerMTok: null,
+  cacheWritePerMTok: null,
+  source: "a fixture standing in for a rate nobody has finished recording",
 });
 
 group("what a recorded pass cost", () => {
@@ -42,12 +74,27 @@ group("what a recorded pass cost", () => {
     if (opus.known && haiku.known) expect(opus.usd / haiku.usd).toBeCloseTo(5, 6);
   });
 
-  it("reports UNKNOWN rather than zero when a rate it needs is unset", () => {
+  it("reports UNKNOWN rather than zero when a rate it needs is missing", () => {
     // The failure that matters. A zero here reads as "this call was free",
     // which is indistinguishable from a cheap call and stops anybody asking.
-    const cost = costOf(row({ cacheReadTokens: 500_000 }));
+    //
+    // THIS USED TO NEED NO INJECTED LOOKUP. While three rates were unset the
+    // real table reached this branch on its own; filling them in on 2026-10-02
+    // made it unreachable through `RATES`. The branch still matters — it is
+    // what a tenth model routed in next month hits — so the lookup is injected
+    // rather than the test deleted.
+    const cost = costOf(row({ cacheReadTokens: 500_000 }), partialRate);
     expect(cost.known).toBe(false);
     if (!cost.known) expect(cost.missing.join(" ")).toContain("cache read");
+  });
+
+  it("prices cache reads and writes now that those rates are recorded", () => {
+    // Opus 5: cache read $0.50/MTok, 5-minute cache write $6.25/MTok. The 5m
+    // rate is the right one because `ask.ts` requests `{ type: "ephemeral" }`
+    // with no TTL; the 1-hour rate is $10, a 60% difference.
+    const cost = costOf(row({ cacheReadTokens: 1_000_000, cacheWriteTokens: 1_000_000 }));
+    expect(cost.known).toBe(true);
+    if (cost.known) expect(cost.usd).toBeCloseTo(6.75, 6);
   });
 
   it("does NOT need a rate for a token kind the row never used", () => {
@@ -75,17 +122,20 @@ group("what a recorded pass cost", () => {
     expect(cost.known).toBe(false);
   });
 
-  it("treats a searched row as unpriceable while the search rate is unset", () => {
-    // Lead search is MOSTLY search charge, so "tokens only" presented as a
-    // cost would be the same defect as a zero.
+  it("charges per search on top of tokens, and refuses the row if that rate goes away", () => {
+    // Lead search is MOSTLY search charge, so "tokens only" presented as a cost
+    // would be the same defect as a zero. Written both ways deliberately: the
+    // rate is $10/1k as of 2026-10-02, and this assertion is what catches it
+    // being removed or reverted to UNSET rather than silently dropping the
+    // charge from every lead-search row.
     const cost = costOf(row({ inputTokens: 1_000, webSearches: 3 }));
     if (WEB_SEARCH_PER_1K === null) {
       expect(cost.known).toBe(false);
       if (!cost.known) expect(cost.missing).toContain("web search rate");
     } else {
-      // Once the rate is filled in, this row prices and the assertion above
-      // stops applying — written both ways so filling it in does not red this.
+      // 3 searches at $10/1k = $0.03, plus $0.005 of input.
       expect(cost.known).toBe(true);
+      if (cost.known) expect(cost.usd).toBeCloseTo(0.005 + (3 * WEB_SEARCH_PER_1K) / 1_000, 9);
     }
   });
 });
@@ -94,10 +144,13 @@ group("adding up a set of rows", () => {
   it("keeps what it could not price beside what it could", () => {
     // `absence of a failure is not a pass` applied to arithmetic: a total over
     // four rows that could only price two must not look like a total over four.
+    //
+    // Two DIFFERENT unknown models, so `missing` has to hold more than one
+    // reason — a Set that collapsed them would pass with one.
     const spend = spendOver([
       row({ inputTokens: 1_000_000 }),
       row({ inputTokens: 1_000_000 }),
-      row({ cacheWriteTokens: 1_000 }),
+      row({ model: "claude-also-nope", inputTokens: 1 }),
       row({ model: "claude-nope", inputTokens: 1 }),
     ]);
     expect(spend.priced).toBe(2);
@@ -141,7 +194,11 @@ group("cost per unit of work — the figure step 2 exists for", () => {
   });
 
   it("returns null when nothing in the set could be priced", () => {
-    const spend = spendOver([row({ cacheReadTokens: 10 })]);
+    // Not zero. A month of calls nobody can price has no cost per unit, and a
+    // $0.0000 per sheet would be read as "this is free at any volume" — which
+    // is the exact decision step 2 exists to inform.
+    const spend = spendOver([row({ model: "claude-nope", inputTokens: 10 })]);
+    expect(spend.priced).toBe(0);
     expect(costPerUnit(spend, 100)).toBeNull();
   });
 

@@ -14,29 +14,31 @@ import {
 /**
  * EVERY MODEL A LIVE FEATURE RUNS ON HAS A COMPLETE, SOURCED PRICE.
  *
- * ⚠️ THIS FILE IS RED ON PURPOSE RIGHT NOW, AND IT IS THE GATE ON STEP 2 ⚠️
+ * ── THIS FILE WAS THE GATE ON STEP 2, AND IT HAS BEEN SATISFIED ──
  *
- * Three of the five rates a cost needs are not recorded anywhere in this repo:
- * cache-read and cache-write per MTok, and the per-search web charge. Only Opus
- * 5's $5/$25 and Haiku 4.5's $1/$5 are, in `docs/ai/DECISIONS.md:102`.
+ * Two of the nine assertions below were RED ON PURPOSE while three of the five
+ * rates a cost needs — cache read, cache write, and the per-search web charge —
+ * were recorded nowhere in this repo. They were filled in on 2026-10-02 off the
+ * official pricing page, every rate carries its `source`, and all nine pass.
  *
- * `pricing.ts` will not invent the rest. The entire output of that module is a
+ * The two are still titled `GATE:` because that is what they do for the NEXT
+ * model: a feature routed to something unpriced, or a price change recorded for
+ * only some token kinds, fails them exactly the same way. Nothing about them was
+ * weakened to go green, which is the only thing that would have made the red
+ * worthless.
+ *
+ * `pricing.ts` will not invent a rate. The entire output of that module is a
  * dollar figure somebody multiplies out to decide whether 1,500 plan sheets a
  * month is sustainable, and a confident wrong price is worse than no price —
  * it is the one kind of error nobody re-checks.
  *
- * **TO MAKE THIS GREEN:** open `packages/integrations/src/pricing.ts` and replace
- * each `UNSET` with the real number from the Anthropic console, extending the
- * `source` string to say where it came from and the day it was read. Then set
- * `WEB_SEARCH_PER_1K` and `WEB_SEARCH_SOURCE` the same way. The failure messages
- * below name exactly which ones are outstanding.
- *
- * **DO NOT make it green by weakening an assertion.** The point of a red build
- * here is that the PR carrying step 2 cannot merge while any figure on the cost
- * screen would be a guess. `main` never goes red — the gate sits on the change.
- * Once the rates are in, this file stops being a gate and becomes an ordinary
- * census: a model routed somewhere unpriced, or a price with no provenance, will
- * fail it from then on.
+ * **IF ONE OF THESE GOES RED:** open `packages/integrations/src/pricing.ts` and
+ * replace the `UNSET` it names with the real number, extending that rate's
+ * `source` string to say where it came from and the day it was read. The failure
+ * messages name exactly which figures are outstanding. **DO NOT make it green by
+ * weakening an assertion** — a red here means a figure on the cost screen would
+ * otherwise be a guess, and the whole design of `cost.ts` is that a guess is
+ * reported as "unknown" instead.
  *
  * ── WHY IT IS A CENSUS AND NOT A CHECKLIST ──
  *
@@ -104,8 +106,8 @@ group("every model a live feature runs on has a price", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // THE GATE. These two are the ones that are red until the console numbers
-  // are pasted in. Everything above already passes.
+  // THE GATE. These two were the red ones until the rates were recorded on
+  // 2026-10-02. They stay, unweakened, for the next model routed here.
   // ─────────────────────────────────────────────────────────────────────────
 
   it("GATE: every live model's rate is complete", () => {
@@ -119,12 +121,12 @@ group("every model a live feature runs on has a price", () => {
     }
     expect(
       outstanding,
-      "STEP 2 IS GATED ON THESE RATES.\n" +
+      "A LIVE MODEL HAS NO COMPLETE PRICE.\n" +
         outstanding.map((line) => `  - ${line}`).join("\n") +
-        "\n\nPaste the real numbers into RATES in packages/integrations/src/pricing.ts and extend each " +
+        "\n\nPut the real numbers into RATES in packages/integrations/src/pricing.ts and extend each " +
         "`source` with where they came from and the day you read them. Until then the cost screen shows " +
-        '"unknown" for any row that uses an unset rate, which is correct — but the PR must not merge ' +
-        "with a cost feature that cannot price its own commonest call. Do not weaken this assertion.",
+        '"unknown" for any row that uses an unset rate, which is correct — but a cost feature that ' +
+        "cannot price its own commonest call must not ship. Do not weaken this assertion.",
     ).toEqual([]);
   });
 

@@ -32,9 +32,9 @@ prepends an entry and every historical figure stays true; one mutable rate would
 silently restate last quarter's bill.
 
 **AN UNKNOWN COST IS A RESULT, NEVER A ZERO.** Only two of the five rates were
-recorded anywhere in this repo — Opus 5 at $5/$25 per MTok and Haiku 4.5 at
-$1/$5, in DECISIONS.md. `pricing.ts` does not invent the other three: the entire
-output of that module is a dollar figure somebody multiplies out to decide
+recorded anywhere in this repo when this started — Opus 5 at $5/$25 per MTok and
+Haiku 4.5 at $1/$5, in DECISIONS.md. `pricing.ts` does not invent a rate: the
+entire output of that module is a dollar figure somebody multiplies out to decide
 whether an allowance is sustainable, and a confident wrong price is the one kind
 of error nobody re-checks. An unset rate is `null`, not 0, because a zero
 multiplies out to "this call was free" — indistinguishable from a cheap call and
@@ -46,22 +46,45 @@ requiring all five would make every row read unknown until the last one was
 filled, and the per-unit figures this exists for would stay unavailable for no
 reason.
 
-**THIS PR SHIPS WITH A RED BUILD, ON PURPOSE.** `pricingCensus.test.ts` fails
-while any rate a live feature needs is unset, and names which:
+**THE GATE WAS RED AND IS NOW SATISFIED.** `pricingCensus.test.ts` fails while
+any rate a live feature needs is unset and names which, and two of its nine
+assertions were red by design for exactly that reason. All five rates are now
+recorded, read off the official pricing page on 2026-10-02:
 
-    STEP 2 IS GATED ON THESE RATES.
-      - claude-opus-5: cache read, cache write
-      - claude-haiku-4-5: cache read, cache write
-    ...plus WEB_SEARCH_PER_1K
+| | input | output | cache read | cache write (5m) |
+| --- | --- | --- | --- | --- |
+| Opus 5 | $5 | $25 | $0.50 | $6.25 |
+| Haiku 4.5 | $1 | $5 | $0.10 | $1.25 |
 
-So the PR cannot merge until the real numbers are pasted in from the Anthropic
-console. `main` never goes red — the gate sits on the change rather than on the
-branch everybody shares, which is the shape that makes a forcing function
-survivable. Once the rates are in it becomes an ordinary census: a model routed
-somewhere unpriced, a rate with no provenance, or a history that is not
-newest-first fails it from then on. Every rate carries a `source` saying where
-the figure came from and the day it was read, so a number cannot arrive
-anonymously and cannot be checked against an invoice later without one.
+plus web search at **$10 per 1,000 searches**. Nothing was weakened to go green,
+which is the only thing that would have made the red worthless — the two tests
+keep their `GATE:` titles because a model routed somewhere unpriced next month
+fails them the same way. Every rate carries a `source` string saying where the
+figure came from and the day it was read, so a number cannot arrive anonymously
+and cannot be checked against an invoice later without one.
+
+**THE CACHE-WRITE RATE IS THE ONE THAT CAN BE WRONG QUIETLY,** and it is recorded
+with the reason rather than just the number. Anthropic publishes two — a 5-minute
+TTL and a 1-hour TTL — and for Opus 5 they are $6.25 and $10 per MTok, a 60%
+difference on the same token. The 5-minute figure is correct here because
+`ask.ts:54` sends `cache_control: { type: "ephemeral" }` with no `ttl` across all
+four of its breakpoints, and that is the 5-minute default. If anybody adds
+`ttl: "1h"`, these rates understate the bill and nothing in the repo will say so:
+there is no per-row record of which TTL a cache write used. Written into the
+`source` strings and `pricing.ts`'s header so the next person reads the
+dependency rather than the number.
+
+**THREE COST TESTS CHANGED SHAPE WHEN THE RATES ARRIVED, AND THEY WERE NOT
+DELETED.** `cost.test.ts` was written against the gap: it reached the "a rate
+this row needs is missing" branch through the real table, because a row with
+cached tokens genuinely could not be priced. Filling all five in made that branch
+unreachable from `RATES` and the three tests went red — not a regression, the
+fixture they leaned on stopped existing. Deleting them would have been the #185
+shape, a guard disarmed by the code getting better. They reach the branch two
+ways now that survive a complete table: an injected rate lookup returning a
+half-filled rate, and a model id that is not in the table at all. Mutation-proven
+— `missing.length > 0` → `> 99` reds the injected-lookup test and nothing else,
+so it is the sole guard on that branch and it is live.
 
 **The denominator comes from the allowance ledger, not from a row count.**
 `planSheetsUsed`, `addendumPagesUsed`, `pagesUsed` and `questionsUsed` already
@@ -89,5 +112,23 @@ announced in `#prova-build` before the push. Written by hand rather than through
 `migrate diff`: the `--from-migrations` form needs a shadow database, which is
 the one thing CLAUDE.md forbids after it dropped `ep-icy-hat`.
 
-Checked: `typecheck`, `lint`, and the full unit suite — **8,533 passing, with the
-two pricing gates red by design and nothing else.**
+**THE RECONCILIATION AGAINST A REAL BILL DOES NOT FULLY CLOSE, AND THAT IS
+RECORDED RATHER THAN ROUNDED.** Diego's console figures for the last 30 days —
+2,385,121 tokens in, 43,035 out, 26 web searches, **$21.53 actually billed** —
+multiply out against the rates above to about **$13.26** if every token were
+uncached Opus input. **$8.27 is unexplained.** About 1.3M tokens of cache WRITE
+at $6.25/MTok would account for it and is the leading candidate, since a cache
+write bills at 1.25× input and the console's "tokens in" does not separate it;
+16.5M cache reads would also arithmetically fit and is implausible at this
+volume. Not closed, and deliberately not presented as closed.
+
+What the attempt did establish, which is worth more than the gap: **the console
+is a SUPERSET of what `AskUsage` holds.** An eval run passes no usage reporter,
+so it bills Anthropic and writes no ledger row — 12 of the 26 searches were my
+own eval runs during this work. So a console total will always exceed the app's
+own total, by an amount that is not a defect and is not recoverable, and the
+screen's figures are the app's spend rather than the account's. `DECISIONS.md`
+carries the arithmetic and both candidates.
+
+Checked: `typecheck`, `lint`, and the full unit suite — **all green, with all
+nine pricing-census assertions passing on real rates.**

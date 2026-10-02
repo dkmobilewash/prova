@@ -21,20 +21,31 @@ import { AI_FEATURES, modelFor, type AiFeatureKey } from "./models";
  *
  * ── UNSET IS A VALUE, AND IT FAILS THE BUILD ──
  *
- * Only two of the five rates are recorded anywhere in this repo — Opus 5 at
- * $5/$25 per MTok and Haiku 4.5 at $1/$5, in `DECISIONS.md:102`. Cache reads,
- * cache writes and web searches are not, and this file will not invent them: the
- * entire output of this module is a dollar figure somebody multiplies out, and a
- * confident wrong price is worse than no price at all.
+ * All five rates are recorded, read off the official pricing page on
+ * 2026-10-02, and each carries a `source` string saying so. `pricingCensus.test.ts`
+ * FAILS while any rate a live feature needs is unset — that assertion was the
+ * gate on this PR, with two of its nine tests red by design until the real
+ * numbers arrived, and it is now an ordinary census: it is what catches a model
+ * routed somewhere unpriced, a rate with no provenance, or a history that is not
+ * newest-first.
  *
- * So they are `UNSET`, and `pricing.test.ts` FAILS while any rate a live feature
- * needs is unset. That is deliberate and it is not a broken build: it means the
- * PR carrying this cannot merge until the real numbers are pasted in from the
- * Anthropic console. `main` never goes red; the gate sits on the change.
+ * `UNSET` stays, and is not vestigial. The next model routed here starts with
+ * it, and a price change that moves only some of the four token figures records
+ * the ones it knows and leaves the rest `UNSET` rather than carrying an old
+ * number forward under a new `from` date. This file will not invent a rate: the
+ * entire output of the module is a dollar figure somebody multiplies out to
+ * decide whether an allowance is sustainable, and a confident wrong price is
+ * worse than no price at all.
  *
- * Fill one in by replacing `UNSET` with the number and its source — the test
- * also requires every rate to carry a `source` saying where it came from and
- * when it was read, so a figure cannot arrive anonymously.
+ * ── THE CACHE-WRITE RATE IS THE ONE THAT CAN BE WRONG QUIETLY ──
+ *
+ * Anthropic publishes two: a 5-minute TTL and a 1-hour TTL, and for Opus 5 they
+ * are $6.25 and $10 per MTok — a 60% difference on the same token. The 5-minute
+ * figure is the right one here because `ask.ts` sends `cache_control: { type:
+ * "ephemeral" }` with no `ttl`, which is the 5-minute default. If anybody adds
+ * `ttl: "1h"` to a cache breakpoint, the rates below silently understate the
+ * bill and nothing in this repo will say so — there is no per-row record of
+ * which TTL a cache write used.
  */
 
 /**
@@ -70,8 +81,11 @@ export type Rate = {
  * search costs the same whichever model asked for it. `lead-search` and
  * `bid-research` are the only two features that can incur it.
  */
-export const WEB_SEARCH_PER_1K: number | null = UNSET;
-export const WEB_SEARCH_SOURCE = "";
+export const WEB_SEARCH_PER_1K: number | null = 10;
+export const WEB_SEARCH_SOURCE =
+  "platform.claude.com/docs/en/about-claude/pricing, read 2026-10-02: \"Web search is available on " +
+  "the Claude API for $10 per 1,000 searches, plus standard token costs\". Quoted in the same unit this " +
+  "constant uses, so no conversion. A search that errors is not billed.";
 
 /**
  * Rates per model id, NEWEST FIRST.
@@ -86,9 +100,10 @@ export const RATES: Record<string, Rate[]> = {
       from: "2026-01-01",
       inputPerMTok: 5,
       outputPerMTok: 25,
-      cacheReadPerMTok: UNSET,
-      cacheWritePerMTok: UNSET,
-      source: "input/output: docs/ai/DECISIONS.md:102, recorded 2026-09-26. Cache rates not yet confirmed.",
+      cacheReadPerMTok: 0.5,
+      cacheWritePerMTok: 6.25,
+      source:
+        "platform.claude.com/docs/en/about-claude/pricing, read 2026-10-02. Input/output also match docs/ai/DECISIONS.md:102. Cache write is the 5-MINUTE rate ($6.25); the 1-hour rate is $10 and does not apply because `ask.ts` requests `{ type: \"ephemeral\" }` with no TTL, which is the 5m default. Ask is the only call site that caches at all.",
     },
   ],
   "claude-haiku-4-5": [
@@ -96,9 +111,10 @@ export const RATES: Record<string, Rate[]> = {
       from: "2026-01-01",
       inputPerMTok: 1,
       outputPerMTok: 5,
-      cacheReadPerMTok: UNSET,
-      cacheWritePerMTok: UNSET,
-      source: "input/output: docs/ai/DECISIONS.md:102, recorded 2026-09-26. Cache rates not yet confirmed.",
+      cacheReadPerMTok: 0.1,
+      cacheWritePerMTok: 1.25,
+      source:
+        "platform.claude.com/docs/en/about-claude/pricing, read 2026-10-02. Input/output also match docs/ai/DECISIONS.md:102. Cache write is the 5-MINUTE rate ($1.25); the 1-hour rate is $2. Plan ingestion sets no cache_control, so these cache rates are currently unreachable for this model and are here for completeness.",
     },
   ],
 };

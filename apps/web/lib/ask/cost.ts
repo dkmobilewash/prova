@@ -18,12 +18,15 @@ import { rateFor, missingTokenRates, WEB_SEARCH_PER_1K } from "@prova/integratio
  *
  * ── AN UNKNOWN COST IS A RESULT, NOT A ZERO ──
  *
- * Three of the five rates are not yet confirmed (see `pricing.ts`), and a
- * future model will arrive with none at all. Both must read as "unknown", never
- * as "$0.00": a zero on a cost screen says the call was free, which is the one
- * reading that stops anybody asking. So `costOf` returns a discriminated
- * result, and every caller has to render the unknown case — the type makes that
- * unavoidable rather than optional.
+ * All five rates are recorded as of 2026-10-02 (see `pricing.ts`), so no row
+ * written by a currently-routed model reads unknown today. That is a fact about
+ * this week, not a property of the design: a model routed in next month arrives
+ * with no rate at all, and a price change recorded for only some token kinds
+ * arrives with a partial one. Both must read as "unknown", never as "$0.00" — a
+ * zero on a cost screen says the call was free, which is the one reading that
+ * stops anybody asking. So `costOf` returns a discriminated result, and every
+ * caller has to render the unknown case; the type makes that unavoidable rather
+ * than optional, and it stays that way after the table is complete.
  *
  * ── AND THE HISTORY IS HONEST ABOUT BEING A FLOOR ──
  *
@@ -54,6 +57,19 @@ export type Cost =
   /** What is missing, in words a person can act on. */
   | { known: false; missing: string[] };
 
+/**
+ * How a rate is found. Injectable for ONE reason, which is the reason
+ * `leadFinder.ts` gives for its own ports: a branch that cannot be reached is a
+ * branch that is not tested.
+ *
+ * While three rates were unset, "a rate this row needs is missing" was
+ * reachable with the real table. Now that all five are filled, the only way a
+ * row hits that branch is a model added later with a partial rate — which is
+ * exactly when it matters and exactly when nobody is looking. Production passes
+ * nothing and uses `rateFor`.
+ */
+export type RateLookup = (model: string, day: string) => ReturnType<typeof rateFor>;
+
 const PER_MTOK = 1_000_000;
 const PER_1K = 1_000;
 
@@ -68,9 +84,9 @@ function isoDay(date: Date): string {
  * "tokens only" — a partial figure presented as a cost is the same defect as a
  * zero, and lead search is mostly search charge.
  */
-export function costOf(row: PricedRow): Cost {
+export function costOf(row: PricedRow, lookup: RateLookup = rateFor): Cost {
   const day = isoDay(row.createdAt);
-  const rate = rateFor(row.model, day);
+  const rate = lookup(row.model, day);
   if (!rate) {
     return { known: false, missing: [`no rate recorded for ${row.model} on ${day}`] };
   }
@@ -124,7 +140,7 @@ export type Spend = {
  * look like the second. So `priced` and `unpriced` come back with it and the
  * screen prints both.
  */
-export function spendOver(rows: readonly PricedRow[]): Spend {
+export function spendOver(rows: readonly PricedRow[], lookup: RateLookup = rateFor): Spend {
   let usd = 0;
   let priced = 0;
   let unpriced = 0;
@@ -133,7 +149,7 @@ export function spendOver(rows: readonly PricedRow[]): Spend {
 
   for (const row of rows) {
     if (isoDay(row.createdAt) < WEB_SEARCHES_RECORDED_FROM) understated = true;
-    const cost = costOf(row);
+    const cost = costOf(row, lookup);
     if (cost.known) {
       usd += cost.usd;
       priced += 1;

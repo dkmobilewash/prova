@@ -301,6 +301,57 @@ not newest-first will fail it from then on. Every rate must carry a `source`
 saying where the figure came from and the day it was read, so a number cannot
 arrive anonymously and cannot be checked against an invoice later without one.
 
+### The rates, and a reconciliation that does NOT fully close
+
+All five came off `platform.claude.com/docs/en/about-claude/pricing` on
+2026-10-02, and two of them are a check rather than an addition: the page gives
+Opus 5 at $5/$25 and Haiku 4.5 at $1/$5, exactly what this file recorded in
+step 0. Two for two on the figures that could be checked is the reason the other
+three are trusted.
+
+    Opus 5     input $5     output $25   cache read $0.50  cache write $6.25
+    Haiku 4.5  input $1     output $5    cache read $0.10  cache write $1.25
+    web search $10 per 1,000
+
+**Cache write is the 5-MINUTE rate, and that is a code fact rather than a
+preference.** The page lists two — $6.25 and $10 for Opus, a 60% difference —
+and `ask.ts` requests `{ type: "ephemeral" }` with no TTL, which is the 5m
+default. `ask.ts` is also the ONLY call site that sets `cache_control` at all, so
+cache tokens arise on Ask rows and nowhere else.
+
+**The reconciliation against a real bill is PARTIAL, and saying so is the point.**
+Diego's console for the 30 days to 2026-10-02: 2,385,121 tokens in, 43,035 out,
+26 web searches, billed $21.53. Those three figures at the rates above come to
+$13.26, leaving **$8.27 unexplained**.
+
+The gap being POSITIVE is what makes it readable. If cache reads were hiding
+inside "tokens in" at a tenth the price, the bill would be LOWER than predicted,
+not higher — so there is billed volume the three figures do not include. About
+1.3M cache-write tokens would account for it exactly; 16.5M cache reads would
+also, and is not credible. Ask caches its system prompt and tool definitions on
+every pass, so cache writes in that order over a month are unremarkable.
+
+**And the console is a SUPERSET of what the app can ever report**, which is the
+part worth carrying forward:
+
+  - **The evals spend real money and write no ledger row.** None of
+    `draftLines.eval.ts`, `bidResearch.eval.ts` or `leadSearch.eval.ts` passes a
+    usage reporter, so every eval run bills Anthropic and leaves `AskUsage`
+    untouched. 12 of those 26 web searches were eval runs on 2026-10-02 alone.
+  - The key is org-wide. Anything else on it lands in the console and not in the
+    app's rows.
+
+So `/settings/assistant` reports what the PRODUCT cost, and the Anthropic
+invoice reports that plus development. They are different questions and the
+first will always read lower. A future step could report eval spend by passing a
+reporter under a `feature: "eval"`, which would make the two reconcilable — it is
+not done here, and the gap is recorded rather than left to be rediscovered as a
+discrepancy.
+
+**Status of the figures: sourced and dated, partially reconciled.** The next real
+invoice with cache tokens broken out closes it. The `source` string on each rate
+is what makes that check possible.
+
 ### The denominator comes from the allowance ledger
 
 A cost per unit needs the unit the allowance is denominated in, and those counts
