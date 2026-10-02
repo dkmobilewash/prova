@@ -358,7 +358,10 @@ function makeStyles(p: Palette) {
       justifyContent: "space-between",
       gap: space.xs,
     },
-    tilePressed: { backgroundColor: p.colors.rail },
+    // `railHover`, not `rail`: on the light palette `rail` is the same
+    // white as the tile, so a pressed tile would show no feedback at all.
+    // GroupedRow and JobContextChip use railHover for exactly this.
+    tilePressed: { backgroundColor: p.colors.railHover },
     tileHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     tileCount: {
       color: p.colors.ink,
