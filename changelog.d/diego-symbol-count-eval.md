@@ -76,6 +76,54 @@ A pass is a **FLOOR**: Opus can count marks it can see and knows roughly how sur
 it is. It does not mean Opus can take off a real drawing set, and the measurement
 that would justify building anything needs sheets with competing geometry.
 
+### That measurement was then run, and the clean 8/8 does not survive it
+
+Sixteen cases: the eight clean ones kept unchanged as a **control**, plus eight
+carrying poché, dimension strings, keynotes and a second symbol kind.
+
+| arm | correct | declined | OVERCLAIMED |
+| --- | --- | --- | --- |
+| CLEAN (control) | **8 / 8** | 0 | 0 |
+| CLUTTERED | 3 / 8 | 3 | **2** |
+
+**The control held at 8/8, which is the only reason the rest is readable.** The
+clean arm is kept rather than replaced so a drop is attributable: had the fixtures
+simply been hardened, a regression in the prompt, the model, the PDF writer or the
+grader would be indistinguishable from the clutter working as intended. A control
+that is not run is not a control.
+
+**The confidence signal does not discriminate under clutter, and that matters
+more than the two wrong counts.** MEDIUM was right three times and wrong once;
+LOW declined three times and answered wrong once; nothing scored HIGH. So a
+feature cannot be made safe by showing only confident counts — the band that was
+wrong is the band that was right, and the worst answer in the run was a MEDIUM
+(said 8 against a truth of 11).
+
+**What fails is one symbol shape, in both sizes: the thin-stroke one.** Doors — a
+leaf line plus a swing arc — overclaimed on both cluttered arms. Circles and
+filled squares were either correct or honestly declined. At 44 DPI a hatch stroke
+and a door leaf are both one thin line, which is the competition added on purpose.
+
+**And Opus's self-report was accurate, which is a different failure from Haiku's.**
+Haiku fabricated reassurance. Opus named the real cause — *"two large
+cross-hatched blocks could completely conceal additional door swings drawn inside
+or beneath the hatch, and I could not verify those areas"* — which is true, the
+hatch is drawn over the symbol grid, and then returned a number anyway. Not a
+model that does not know; a model that knows, says so usefully, and fills in
+`count` instead of declining.
+
+**So phase 1 is NOT built, deliberately.** Two confident wrong counts in eight, in
+a world still far easier than a real sheet, is not a foundation for a quantity
+that reaches a bid. `FEATURE-AUDIT.md` keeps drawing takeoff as Missing.
+
+The fixture generator grew `clutter` and multi-kind sheets, and
+`syntheticSheet.test.ts` asserts the clutter **lands** — each kind adds drawing
+operators, hatching adds more than fifty, and `trueCount` counts only the asked-for
+kind. A `clutter` array that silently drew nothing would have produced a cluttered
+arm identical to the clean one, scored 8/8, and read as "competing geometry does
+not break it" — a confident wrong answer to the exact question the arm was added
+to ask.
+
 **And the eval guard had the scope bug its own comment warns about.**
 `harness.test.ts` says, in these words, *"this walks the directory rather than a
 list — nothing is ever missing from a directory you do not walk"* — and
