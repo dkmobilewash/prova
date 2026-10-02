@@ -1,5 +1,5 @@
 import { prisma } from "@prova/db";
-import { draftEstimateLineItems } from "@prova/integrations";
+import { draftEstimateLineItems, DRAFT_LINES_PROMPT_VERSION } from "@prova/integrations";
 import type { ActionResultWith } from "@/lib/actions/shared";
 import { aiGate } from "@/lib/ai/settings";
 import { recordAskUsage } from "@/lib/ask/usage";
@@ -108,6 +108,10 @@ export async function draftLinesFromScope(
         usage,
         outcome: "answered",
         feature: "draft-estimate-lines",
+        // So a later claim that a prompt change improved the draft can be
+        // attributed to one version or the other. `promptVersionCensus` fails
+        // the build if this is dropped.
+        promptVersion: DRAFT_LINES_PROMPT_VERSION,
       }),
     gate.model,
     );
