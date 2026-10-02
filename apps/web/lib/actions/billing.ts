@@ -12,7 +12,14 @@ import { can } from "@/lib/permissions";
 import { viewerToday } from "@/lib/viewerToday";
 import { money as formatMoney } from "@/lib/money";
 import { prisma, Prisma } from "@prova/db";
-import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
+import {
+  revokeToken,
+  refreshTokens,
+  getCompanyInfo,
+  generateWipNarrative,
+  WIP_NARRATIVE_PROMPT_VERSION,
+  type QuickBooksCompanyInfo,
+} from "@prova/integrations";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
@@ -1061,6 +1068,7 @@ export async function generateJobWipNarrative(
       usage,
       outcome: "answered",
       feature: "wip-narrative",
+      promptVersion: WIP_NARRATIVE_PROMPT_VERSION,
     }),
     gate.model,
   );

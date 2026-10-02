@@ -14,7 +14,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { aiGate } from "@/lib/ai/settings";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
-import { extractComplianceDocument } from "@prova/integrations";
+import { extractComplianceDocument, COMPLIANCE_PROMPT_VERSION } from "@prova/integrations";
 import { recordAskUsage } from "@/lib/ask/usage";
 import { markAskAllowanceFailure } from "@/lib/ask/allowance";
 import { claimDocumentPages } from "@/lib/ask/documentSpend";
@@ -317,6 +317,7 @@ export async function uploadComplianceDocument(
           usage,
           outcome: "answered",
           feature: "compliance-extract",
+          promptVersion: COMPLIANCE_PROMPT_VERSION,
         }),
     });
   } catch (err) {
