@@ -102,11 +102,12 @@ const inputClass =
  *
  * `expectedBidDate` is ABSENT FROM THIS SHAPE ON PURPOSE, and the comment on
  * that field below is the reason: a bid date is somebody's estimate, entered and
- * never stamped. `ProjectLookup` can find a bid date printed on a plan-room page
- * and still must not fill this in — a date read off the web is not the user's
- * assertion about when the bid is due, and `bid-responsiveness.ts` exists
- * because a wrong bid date is how a bid gets rejected unread. It is offered as
- * text in the note instead, with its source, for a person to read and type.
+ * never stamped. Both callers can find one on the web — `ProjectLookup` off a
+ * plan-room page, `LeadSearch` off a bid board, which is a lead's whole appeal —
+ * and neither may fill this in, because a date a web page printed is not the
+ * user's assertion about when their bid is due and `bid-responsiveness.ts`
+ * exists because a late bid is rejected unread. It is carried as text in the
+ * note instead, with its source, for a person to read and type.
  */
 export type BidPursuitPrefill = {
   projectName?: string;

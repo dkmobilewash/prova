@@ -1,6 +1,7 @@
 import {
   findLeads as liveFindLeads,
   LEAD_MAX_SEARCHES,
+  LEAD_PROMPT_VERSION,
   type LeadSearch,
   type LeadSearchInput,
 } from "@prova/integrations";
@@ -78,6 +79,10 @@ export function boundLeadFinder(
         usage: result.usage,
         outcome: result.ok ? "answered" : `error:${result.reason}`,
         feature: "lead-search",
+        // One recording site for both callers — the Ask command and the
+        // /pipeline control both come through here, so the version cannot be
+        // on one path and missing from the other.
+        promptVersion: LEAD_PROMPT_VERSION,
       });
     }
     if (!result.ok) return { ok: false, reason: result.reason };

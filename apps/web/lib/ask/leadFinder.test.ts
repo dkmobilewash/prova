@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type LeadSearch } from "@prova/integrations";
+import { LEAD_PROMPT_VERSION, type LeadSearch } from "@prova/integrations";
 import { HAIKU_4_5, modelFor } from "@prova/integrations/src/models";
 import { boundLeadFinder } from "./leadFinder";
 
@@ -56,6 +56,13 @@ describe("boundLeadFinder", () => {
       usage,
       outcome: "answered",
       feature: "lead-search",
+      // The prompt's version, so a later claim that a prompt change improved
+      // lead quality can be attributed to one side of it. Both callers — the
+      // Ask command and the /pipeline control — come through this one
+      // recording site, which is why the version cannot be on one path and
+      // missing from the other. `promptVersionCensus` fails the build if it
+      // is dropped; this pins it to the exact value rather than its presence.
+      promptVersion: LEAD_PROMPT_VERSION,
     });
     for (const call of d.recordAskUsage.mock.calls) expect(call[0].feature).not.toBe("ask");
     expect(d.recordAskUsage.mock.calls[0][0].usage.webSearches).toBe(3);
