@@ -334,10 +334,16 @@ every pass, so cache writes in that order over a month are unremarkable.
 **And the console is a SUPERSET of what the app can ever report**, which is the
 part worth carrying forward:
 
-  - **The evals spend real money and write no ledger row.** None of
-    `draftLines.eval.ts`, `bidResearch.eval.ts` or `leadSearch.eval.ts` passes a
-    usage reporter, so every eval run bills Anthropic and leaves `AskUsage`
-    untouched. 12 of those 26 web searches were eval runs on 2026-10-02 alone.
+  - **The evals spend real money and write no ledger row.** There are eight
+    `*.eval.ts` files and **not one of them mentions usage at all** — verified by
+    grep rather than by naming three of them, because a roll-call of files is the
+    kind of claim this repo has watched rot. `draftLines.eval.ts:228` passes
+    `undefined` into the `onUsage?: ModelUsageReporter` slot
+    (`anthropic.ts:374`), which is the shape of all of them. So every eval run
+    bills Anthropic and leaves `AskUsage` untouched. 12 of those 26 web searches
+    were eval runs on 2026-10-02 alone.
+    Derive it rather than trust this: `grep -rl onUsage --include='*.eval.ts' .`
+    should print nothing.
   - The key is org-wide. Anything else on it lands in the console and not in the
     app's rows.
 
