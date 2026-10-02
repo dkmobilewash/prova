@@ -122,7 +122,13 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="outbox"
           options={{
-            title: t("nav.outbox"),
+            // `nav.tab.outbox`, NOT `nav.outbox`. A tab label and a screen
+            // title are different things and this is the proof: "Waiting to
+            // send" is a good large title on the screen itself, and in the
+            // bar it rendered as "Waiting t…" on a real phone — a truncated
+            // word is worse than a short one. The screen, the Settings row
+            // and the section header all still say "Waiting to send".
+            title: t("nav.tab.outbox"),
             headerShown: false,
             tabBarIcon: ({ color, focused }) => <Icon name="outbox" color={color} filled={focused} size={24} />,
           }}
