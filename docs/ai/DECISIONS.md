@@ -235,6 +235,94 @@ corrected `actions/planIngest.ts` and the takeoff page reported six comments
 corrected when four had been, and this was one of the two still standing. Grep for
 the sentence, not for the intention.
 
+## Step 2 — what it costs (2026-10-02)
+
+This section was MISSING for five days while two others referred to it. Step 0
+said *"Nothing prices that column today; the cost work coming next will"* and
+step 1's allowance note said *"1,500 is a figure, not a measurement. Whether it
+is sustainable depends on measured cost per sheet, which step 2 produces."*
+There was no step 2, and an audit on 2026-10-01 found that nothing in the repo
+computed a dollar cost for any model call. A reference to work that does not
+exist reads exactly like a reference to work that does.
+
+### A billed unit was counted and thrown away
+
+`AskUsageTotals.webSearches` has carried the per-search count since lead search
+shipped, with a comment on the field saying *"each one bills on top of tokens,
+which is why it is counted apart from them"* — and `recordAskUsage` never put it
+in the insert. So the two features that use web search, `lead-search` and
+`bid-research`, were exactly the two whose cost could not be worked out.
+
+`AskUsage.webSearches` exists now (migration
+`20261002200000_add_ask_usage_web_searches`, additive, default 0). Rows written
+before it read 0 whether any search ran or not, which is correct for the other
+seven features and a FLOOR for those two: the API reported the real number at
+the time and nothing wrote it down, so it is not recoverable. `cost.ts` knows
+that date and any total spanning it says it is a floor rather than a figure.
+
+### Rates are dated, and a cost is never stored
+
+CLAUDE.md's rule is that derived state is never stored, because a stored figure
+can disagree with what it was derived from. A cost is tokens times a rate, so it
+is computed at read time — against the rate in force ON THE ROW'S OWN DAY, not
+today's. Each model carries a LIST of rates with a `from` date; a price change
+prepends an entry and every historical figure stays true. One mutable rate would
+silently restate last quarter's bill.
+
+### An unknown cost is a result, never a zero
+
+Only two of the five rates were recorded anywhere in this repo — Opus 5 at
+$5/$25 per MTok and Haiku 4.5 at $1/$5, in the step 0 section above. Cache
+reads, cache writes and the per-search charge were not, and `pricing.ts` does
+not invent them: the entire output of that module is a dollar figure somebody
+multiplies out to decide whether an allowance is sustainable, and a confident
+wrong price is the one kind of error nobody re-checks.
+
+So an unset rate is `null`, not 0. A zero multiplies out to "this call was free",
+which is indistinguishable from a cheap call and stops anybody asking. `costOf`
+returns a discriminated result and every caller has to render the unknown case —
+the type makes that unavoidable rather than polite.
+
+It only needs the rates a row actually USED, which matters more than it sounds:
+requiring all five would make every row in the app read unknown until the last
+one was filled, and the per-unit figures this step exists for would stay
+unavailable for no reason.
+
+### The gate, and why a red build was the right shape
+
+`pricingCensus.test.ts` FAILS while any rate a live feature needs is unset. That
+is deliberate: it means the PR carrying step 2 cannot merge until the real
+numbers are pasted in from the Anthropic console. `main` never goes red — the
+gate sits on the change rather than on the branch everybody shares.
+
+Once the rates are in it stops being a gate and becomes an ordinary census: a
+model routed somewhere unpriced, a rate with no provenance, or a history that is
+not newest-first will fail it from then on. Every rate must carry a `source`
+saying where the figure came from and the day it was read, so a number cannot
+arrive anonymously and cannot be checked against an invoice later without one.
+
+### The denominator comes from the allowance ledger
+
+A cost per unit needs the unit the allowance is denominated in, and those counts
+already existed on `AskAllowancePeriod`: `planSheetsUsed`, `addendumPagesUsed`,
+`pagesUsed`, `questionsUsed`. Counting `AskUsage` rows instead would divide by
+the wrong thing for three of the four — a plan-sheet row happens to be one
+sheet, but one document read is one row and many pages, so a per-page figure
+taken from rows would be the per-CALL figure wearing the wrong label.
+
+`*Used` INCLUDES the failures, which is right for a cost: the claim increments it
+before the call and `markAskAllowanceFailure` adds to `failed*` without taking
+anything back, because a call that died halfway was still billed. The failed
+count rides along so the screen can say how much of the month produced nothing.
+
+### What this step does NOT decide
+
+Whether a plan set belongs inside the $399 plan or is metered. That is Diego's
+call and it was always going to be — this step exists to make it answerable
+rather than to answer it. The per-unit figures on `/settings/assistant` are the
+input; 1,500 sheets and 600 addendum pages remain figures rather than
+measurements until a real month has run through a complete rate table.
+
 ## Step 3 — reading a bid addendum (2026-09-29)
 
 ### The reader writes nothing any other module reads
@@ -307,9 +395,16 @@ capability — at one document per click there is nothing to save.
 Recorded so nobody re-derives them, and so a later claim can be checked against
 what was actually known.
 
-- **Cost per plan sheet is unmeasured.** The $15–$40 classification estimate in
+- ~~**Cost per plan sheet is unmeasured.** The $15–$40 classification estimate in
   the step 1 plan was made on an Opus basis and needs redoing for Haiku before
-  anybody quotes it.
+  anybody quotes it.~~ **MEASURABLE AS OF 2026-10-02, and not yet measured** —
+  which is a different state from either and worth the distinction. Step 2 above
+  computes cost per sheet from recorded tokens, and `/settings/assistant` shows
+  it. What it cannot do yet is report a number: three of the five rates are
+  unconfirmed, so the figure reads "not priced" until they are pasted in, and
+  then a real month has to run through them. The $15–$40 estimate is superseded
+  rather than corrected — it was a guess about a different model, and there is
+  now an instrument instead of a better guess.
 - ~~**Whether Haiku 4.5 is accurate enough for sheet classification and title
   blocks.** The eval decides. Nothing is known yet.~~ **ANSWERED 2026-09-29, and
   it had been answered for a day before anybody wrote it here.** The eval ran on
