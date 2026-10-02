@@ -1,3 +1,5 @@
+import { useUser } from "@clerk/expo";
+import { router } from "expo-router";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { useT } from "@/lib/i18n";
 import { hitTarget, radius, space, typography, type Palette } from "@/lib/theme";
@@ -23,19 +25,27 @@ const MARK = require("../assets/cstream-mark.webp");
  * below 13 (DESIGN.md, "Type"), so the hierarchy is carried by weight and
  * letter-spacing instead of by size.
  */
+/** Two letters for the avatar, or undefined when we know neither name —
+ * an empty circle is worse than no circle. */
+function initialsOf(first?: string | null, last?: string | null): string | undefined {
+  const a = first?.trim()?.[0] ?? "";
+  const b = last?.trim()?.[0] ?? "";
+  return `${a}${b}`.toUpperCase() || undefined;
+}
+
 export function AppHeader({
   title,
-  initials,
-  onPressAvatar,
+  showAvatar = true,
 }: {
   title: string;
-  /** Omitted renders no avatar — a screen with nowhere to send it. */
-  initials?: string;
-  onPressAvatar?: () => void;
+  /** Settings passes false: the avatar's only job is to go there. */
+  showAvatar?: boolean;
 }) {
   const p = usePalette();
   const { t } = useT();
+  const { user } = useUser();
   const s = makeStyles(p);
+  const initials = showAvatar ? initialsOf(user?.firstName, user?.lastName) : undefined;
 
   return (
     <View style={s.bar}>
@@ -52,7 +62,7 @@ export function AppHeader({
       </View>
       {initials ? (
         <Pressable
-          onPress={onPressAvatar}
+          onPress={() => router.push("/settings")}
           accessibilityRole="button"
           accessibilityLabel={t("header.avatar.a11y")}
           style={({ pressed }) => [s.avatar, pressed && s.avatarPressed]}

@@ -6,7 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { GroupedList } from "@/components/GroupedList";
 import { GroupedRow } from "@/components/GroupedRow";
 import { Icon } from "@/components/Icon";
-import { LargeTitle } from "@/components/LargeTitle";
+import { AppHeader } from "@/components/AppHeader";
 import { Skeleton } from "@/components/Skeleton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SyncStatus } from "@/components/SyncStatus";
@@ -91,7 +91,7 @@ export default function JobsScreen() {
           />
         }
       >
-        <LargeTitle>{t("nav.jobs")}</LargeTitle>
+        <AppHeader title={t("nav.jobs")} />
         <SyncStatus state={offline} />
         {!loaded ? (
           <View style={styles.skeletonGroup}>

@@ -1,4 +1,4 @@
-import { useAuth, useUser } from "@clerk/expo";
+import { useAuth } from "@clerk/expo";
 import { Redirect, router, useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -37,15 +37,6 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-/** Two letters for the avatar, or undefined when we know neither name —
- * an empty circle is worse than no circle. */
-function initialsOf(first?: string | null, last?: string | null): string | undefined {
-  const a = first?.trim()?.[0] ?? "";
-  const b = last?.trim()?.[0] ?? "";
-  const out = `${a}${b}`.toUpperCase();
-  return out || undefined;
-}
 
 /**
  * "Saturday, September 21" — the phone's calendar day, not UTC's — and
@@ -93,7 +84,6 @@ function longDate(iso: string, language: Language): string {
  */
 export default function HomeScreen() {
   const { isLoaded, isSignedIn } = useAuth();
-  const { user } = useUser();
   const getToken = useStableGetToken();
   const { job, loading } = useCurrentJob();
   // Home is four FIELD lists. Somebody who cannot read them must not be
@@ -204,11 +194,7 @@ export default function HomeScreen() {
             headings is one too many. The name did not vanish: it is the
             avatar, which is also the way into Settings. The date stays,
             because on a field app the day is a fact people check. */}
-        <AppHeader
-          title={t("nav.home")}
-          initials={initialsOf(user?.firstName, user?.lastName)}
-          onPressAvatar={() => router.push("/settings")}
-        />
+        <AppHeader title={t("nav.home")} />
         <Text style={styles.date}>{longDate(localToday(), language)}</Text>
 
         <View style={styles.chipRow}>

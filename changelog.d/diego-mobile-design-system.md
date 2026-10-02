@@ -158,3 +158,53 @@ alongside the fifteen already there.
 
 **Still phone-unverified.** 38 files / 325 tests and 15 / 74, typecheck
 clean, `expo lint` clean. Nobody has looked at any of it on a device.
+
+---
+
+### Two defects a phone found, and one the phone could not have
+
+**Build 11 on a real device, driven through iPhone Mirroring.** The band
+works: on ZZQB-TEST with one open punch item it rendered `Open 1` / a real
+`0%` ring / `Awaiting check 0`, and the Punch list tile moved 0 -> 1 in
+step. That is the hero verified against live data rather than argued.
+
+**THE 0% RING DREW A DOT.** `strokeLinecap="round"` paints a round cap even
+on a zero-length arc, so "nothing verified" rendered as a small yellow mark
+at twelve o'clock — which reads as *a little bit done* when the truth is
+none. The arc is now omitted entirely at zero rather than drawn with a cap.
+Nothing in this repo could have caught it: `arcDash` returns `filled: 0`
+correctly, which is what the unit test asserts; the defect was what a
+renderer did with that zero, and happy-dom does no layout.
+
+**THE BRAND LOCKUP WAS ON ONE SCREEN OUT OF FIVE.** `AppHeader` went into
+Home and nowhere else, so Jobs/Alerts/Outbox/Settings still drew a bare
+`LargeTitle`. All five tabs now use `AppHeader`; `LargeTitle` is deleted
+rather than left as a second way to title a screen.
+
+That swap fixed a **pre-existing misalignment** nobody had reported:
+`LargeTitle` carried its own `paddingHorizontal: space.md` AND sat inside a
+container that already padded by the same amount, so every tab's title was
+indented one gutter further than its own content. Visible in the build-11
+screenshots the moment two screens were compared side by side.
+
+`AppHeader` is now self-sufficient — it reads the name from Clerk and
+routes to Settings itself, so five call sites cannot drift on what the
+avatar does. Settings passes `showAvatar={false}`: the avatar's only job is
+to go where you already are.
+
+**And a census checked rather than assumed.** Moving titles from children
+(`<LargeTitle>{t(...)}</LargeTitle>`) to a prop (`<AppHeader title={...}/>`)
+could have put them outside what `strings-census.test.ts` can see. Probed
+with a positive control — hardcode `title="Jobs"` and run it — and the
+census went **RED**, so prop strings were already covered. The dead
+`LargeTitle` alternative was then removed from its regex and the control
+re-run, still RED. A pattern alternative matching a component that no
+longer exists is the empty-question failure this file keeps naming.
+
+Suites 38/325 and 15/74, typecheck and `expo lint` clean.
+
+**Left on production and owed back:** a punch item `ZZ-TEST banner check -
+delete me` on ZZQB-TEST, created to make the band renderable at all. The
+job had none, which is itself the finding — the hero is invisible on a job
+with an empty punch list, exactly as designed, and that is most jobs for
+most of their life. Mirroring dropped before it could be removed.

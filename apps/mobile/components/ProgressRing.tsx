@@ -48,18 +48,26 @@ export function ProgressRing({
     <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
       <Svg width={size} height={size} style={{ position: "absolute" }}>
         <Circle cx={size / 2} cy={size / 2} r={r} stroke={track} strokeWidth={stroke} fill="none" />
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          stroke={arc}
-          strokeWidth={stroke}
-          fill="none"
-          strokeLinecap="round"
-          strokeDasharray={`${filled} ${gap}`}
-          // Start at twelve o'clock rather than three.
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
+        {/* NOTHING VERIFIED DRAWS NOTHING. `strokeLinecap="round"` paints a
+            round cap even on a zero-length arc, so at 0% the ring showed a
+            yellow dot at twelve o'clock — a mark that reads as "a little
+            bit done" when the truth is none. Seen on a phone against a job
+            with one open item; happy-dom does no layout, so nothing here
+            could have rendered it to find out. */}
+        {filled > 0 ? (
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            stroke={arc}
+            strokeWidth={stroke}
+            fill="none"
+            strokeLinecap="round"
+            strokeDasharray={`${filled} ${gap}`}
+            // Start at twelve o'clock rather than three.
+            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          />
+        ) : null}
       </Svg>
       <Text
         style={{
