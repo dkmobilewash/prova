@@ -74,3 +74,87 @@ white-on-white is fine there; `handover.tsx`'s header draws **no** border
 and is now white on white, which matches the reference's own borderless
 topbar but has not been seen. Suites: 37 files / 319 tests and 15 / 74,
 typecheck clean.
+
+---
+
+### The reference's components, built — and the donut that measured nothing
+
+**A SECOND PASS, because the first one shipped a design SYSTEM and not a
+design.** The tokens above were correct and almost invisible: canvas
+`#e5e7ee` → `#ffffff` and card radius 12 → 15, on a phone pinned to the
+DARK palette, which this change never touched. Diego saw nothing and said
+so. The reference's identity was never in its stylesheet — it is in
+`page.tsx`, a file the first pass read **twelve lines of** (the import
+list) before deciding the tokens were the job.
+
+So this pass builds what that file actually renders.
+
+**`AppHeader`** — the brand lockup: mark, a tracked `C STREAM` overline,
+the screen name at 32pt. The reference also puts a notification bell up
+here; we do not. That mock has the same five tabs we do, so a header bell
+is a second door to the Alerts tab sitting one thumb-reach below it with
+its own unread badge. Two controls for one destination is chrome, and it
+costs a 48pt target in the row where titles live. The avatar stays and
+carries the name the greeting used to.
+
+**It costs the greeting**, which is a product change rather than a
+restyle: "Good afternoon, Diego" is warmer than "Home", but two stacked
+headings is one too many and the lockup is the most recognisable thing in
+the reference. The date stays — on a field app the day is a fact people
+check. The three `home.greeting.*` keys went with it, which
+`strings-census.test.ts` noticed before a human did: *"written, documented
+and never called — 3 keys nothing references."*
+
+**`QuickActions`** — the four-up row. The reference's four are mock labels
+("Create project", "Users & groups") and it tints each tile a different
+colour; ours are the four things that happen on a site TODAY — the same
+set the job hub groups as `day` — and all four tiles take one yellow.
+Four colours would be four meanings nobody assigned, on a row where the
+icon already says what the thing is. Status colour is spent on status.
+
+**`JobProgressBanner`** — and this is where the money was. The reference
+leads the job screen with `Job value $12,092.64` and `Balance due
+$5,046.32` either side of a donut. Diego's call: keep the band, drop the
+money. The ring is now the share of the punch list VERIFIED, flanked by
+the other two states — because punch items have **three**, and
+`lib/types.ts` already says the middle one is "the one a foreman needs to
+see". A band showing open-vs-done would hide exactly the state somebody
+has to act on. It reads the rows the Punch list tile already counts, via
+`cacheGet` — no request, no new key.
+
+It is **inverted rather than black**: the reference hardcodes `#111111`,
+which on our `#0f0f0f` canvas is a card you cannot see. Painting `ink` on
+`surface`-coloured text gives a solid band in light, a bright one in dark
+and true black in outdoor, with no new tokens — and the text pair is the
+inverse of `ink on surface`, which theme-contrast already holds at 7:1.
+
+**THE DONUT IN THE REFERENCE MEASURES NOTHING, AND THAT IS THE FINDING
+WORTH KEEPING.** Its CSS is `border: 8px solid #facc24;
+border-left-color: #111111` — three sides one colour, one side another,
+with "58%" printed in the middle. It draws an identical shape at 12% and
+at 94%. Ported faithfully it would have been decoration wearing a
+measurement's clothes, which is this repo's most expensive recurring
+shape.
+
+So the arc is derived, and the derivation lives in `lib/progress-arc.ts`
+where a plain-node test can hold it to the claim — `react-native-svg`
+cannot be imported by the lib suite and is mocked away in the screens
+suite, so a test routed through a render could only ever assert that
+nothing threw.
+
+| mutation | `progress-arc` |
+| --- | --- |
+| control | green |
+| **fixed quarter-ring (the reference's own donut)** | **RED** |
+| clamp removed (1.4 draws past the circle) | **RED** |
+| radius not inset by the stroke (ring clips flat) | **RED** |
+
+The first mutation is the reference implementation. A guard that goes red
+on the thing you were asked to copy is the point of writing it.
+
+**One new native dependency**, `react-native-svg@15.15.4` at the SDK-pinned
+version — an arc needs a renderer. It is mocked in `screens/setup.tsx`
+alongside the fifteen already there.
+
+**Still phone-unverified.** 38 files / 325 tests and 15 / 74, typecheck
+clean, `expo lint` clean. Nobody has looked at any of it on a device.
