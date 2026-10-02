@@ -72,10 +72,26 @@ partially connected (QuickBooks) or not started (see section 7).
   bg-slate-800"` instead of writing separate CSS files). Faster to work
   with when there's no dedicated designer building a component library
   from scratch.
-- **Anthropic API (Claude)** — powers the three AI features: turning a
-  job's WIP numbers into a plain-language summary, reading an uploaded
-  compliance document (a COI, lien waiver, etc.) into structured fields,
-  and turning pasted scope-of-work text into draft estimate line items.
+- **Anthropic API (Claude)** — powers **nine** AI features, each behind its
+  own per-company switch and its own model route (`AI_FEATURES` and
+  `FEATURE_MODEL` in `packages/integrations/src/models.ts` are the registry):
+  the Ask assistant; turning a job's WIP numbers into a plain-language
+  summary; reading an uploaded compliance document (a COI, lien waiver, etc.)
+  into structured fields; turning pasted scope-of-work text into draft
+  estimate line items; reading a sub's quote PDF into the bid-levelling form;
+  reading a GC's addendum and listing what it changed; reading a plan set's
+  title blocks into a sheet index; looking a project up on the public web; and
+  finding public projects out to bid. Eight run on Opus 5; plan-sheet reading
+  runs on Haiku 4.5, because it is the one workload that runs hundreds of
+  times per upload.
+
+  This said "the three AI features" until 2026-10-02, and
+  `FEATURE-AUDIT.md`'s header is explicit that these two files should always
+  tell the same story — so both were wrong together, in the same direction,
+  about the same six features. A reader here was being told this app has three
+  AI surfaces when it has nine. **Do not re-count them here by hand:** ask
+  `AI_FEATURES`, which `FEATURE_MODEL` is a total `Record` over, so it cannot
+  be short.
 
 ## 3. The mental model — what happens when someone uses the app
 
@@ -103,7 +119,7 @@ sequenceDiagram
     S-->>B: Tell Next.js this page's data changed
     B->>S: Re-fetches the page, now with fresh data
 
-    Note over S,AI: Only for the three AI features
+    Note over S,AI: Only for an AI feature, and only if its switch is on
     S->>AI: Send already-fetched data (never raw DB credentials)
     AI-->>S: Structured result (forced into a specific shape)
     S->>P: Save the result as an ordinary, editable row
@@ -280,8 +296,8 @@ hesitate to ask either.
 
 ## 7. What's actually done vs. half-done vs. not started
 
-**Solidly built:** company profile + multi-state licensing, trade-scope
-tagging, union affiliation records, insurance/bonding records,
+**Solidly built:** company profile + multi-state licensing, union
+affiliation records, insurance/bonding records,
 multi-location support, the estimate → contract → job-costing flow (one
 set of line items *is* the estimate, the budget, and the contract — see
 `ARCHITECTURE.md` for why), compliance document tracking with AI
@@ -293,16 +309,25 @@ by craft, estimate versioning, bid history, and the actual subcontract
 agreement file storage with amendment versioning.
 
 **Half-done / connected but shallow:**
-- **QuickBooks** — the OAuth connection works (you can link an account),
-  but nothing actually syncs data yet. It's a connection, not an
-  integration.
-- **E-signature** — covers signing the *initial* contract only. Change
-  orders and lien waivers aren't e-signable yet.
+- **QuickBooks** — ~~the OAuth connection works, but nothing actually
+  syncs data yet. It's a connection, not an integration.~~ **Struck
+  2026-10-02: it syncs.** Invoices and payments push one direction, the
+  record is read back to confirm what landed, and reconciliation reports
+  where the two disagree — verified against a sandbox company, with the
+  balance moving in QuickBooks rather than in Prova's own success message.
+  There is also a one-time read-only onboarding import (customers, vendors,
+  products → catalog). Still PARTIAL, for the reasons Sheet 24 gives: it is
+  deliberately not two-way, it runs on sandbox keys pending Intuit's app
+  assessment, and the import has only been run against a mock.
+- **E-signature** — the homegrown token flow covers the initial contract;
+  DocuSign (optional, per company) adds uploaded subcontract documents and
+  submitted change orders. **"Change orders aren't e-signable" is no longer
+  true**; lien waivers still are not, by either path.
 - **Multi-jurisdiction license data** — only CA/AZ/UT classification
   codes are seeded; Nevada was deliberately left empty rather than guess
   at incomplete public data.
 
-**Not started at all:** real payment processing (a "Payment" today is
+~~**Not started at all:** real payment processing (a "Payment" today is
 just a manual record, not a card/ACH charge), retainage tracking,
 certified payroll report generation, prevailing-wage rules, labor time
 tracking (field hours by employee/craft), safety/incident logging,
@@ -311,16 +336,60 @@ management, punch lists and warranty tracking, a notifications/alerts
 system of any kind (nothing proactively tells anyone a COI is about to
 expire — it only shows up if someone happens to look at the page), and
 any user role beyond "Owner" or "Member" (no separate estimator/PM/
-foreman/accounting permission levels yet).
+foreman/accounting permission levels yet).~~
 
-**Known shortcuts, said plainly so you don't find them cold:** there is
-no automated test suite anywhere — correctness is currently verified by
-hand (typecheck, lint, and manually clicking through the app) before
-every deploy. QuickBooks tokens are stored as plain database columns, not
-encrypted — fine for a sandbox connection, not fine before a real
-customer's QuickBooks account touches it. And until today, the two git
-branches were named after Claude session IDs instead of `main` — that's
-fixed now, but you may see the old names in commit history.
+**STRUCK 2026-10-02. ELEVEN OF THE TWELVE THINGS THAT LIST CALLED "NOT
+STARTED AT ALL" HAVE SHIPPED**, most of them weeks ago, and
+`FEATURE-AUDIT.md` has had rows for them the whole time — which is the
+drift this section's own header warns about, arriving at the worst place
+for it. Section 7 is the first thing a new engineer reads about where the
+product stands, so a reader was being told to expect a shell.
+
+Retainage, certified payroll (WH-347), prevailing-wage rules, labor time
+tracking, safety and incident logging, submittals, RFIs, drawing storage,
+equipment, vendors and material management, punch lists and warranty, and
+notifications/alerts are all built or partial — sheets 7, 8, 11, 16, 17,
+19, 20, 22, 25 and 26. There are also separate `ESTIMATOR`,
+`PROJECT_MANAGER` and `ACCOUNTING` roles with per-capability gates
+(`lib/permissions.ts`), which that list says do not exist.
+
+**Only one item on it is still true**, and it is left standing: real
+payment processing. A `Payment` is a manual record, not a card or ACH
+charge, and nothing in the repo moves money.
+
+**Do not re-enumerate the built list here by hand.** That is what rotted:
+a prose list of twelve things is twelve claims with twelve expiry dates,
+maintained in a second place. `FEATURE-AUDIT.md` is the itemised version
+and `plumbing.test.ts` holds its arithmetic to its own rows; this section
+should say where the product stands in shape, and point there for the
+line items.
+
+**Known shortcuts, said plainly so you don't find them cold:**
+
+- **QuickBooks tokens are stored as plain database columns, not
+  encrypted** — `QuickBooksConnection.accessToken` and `.refreshToken` are
+  bare `String` on `billing.prisma`, and open issue #353 names it. **This
+  one is STILL TRUE and was nearly "corrected" out of this file**, which is
+  the more useful half of that: the sentence beside it had gone false, so
+  the whole paragraph read stale. Note that the newer
+  `IntegrationConnection` shelf (Jobber, Procore, DocuSign) DOES encrypt at
+  rest with `lib/crypto.ts`; QuickBooks predates it and still runs on its
+  own tables, so "credentials are encrypted" is true of that shelf and not
+  of QuickBooks.
+- ~~there is no automated test suite anywhere — correctness is currently
+  verified by hand~~ **FALSE since long before this strike, and the most
+  expensive sentence in the file.** There are **589** test files; `pnpm
+  test` runs over eight thousand unit tests in about thirty seconds, there
+  is a db suite (`pnpm test:db`, scratch Postgres only, refuses a real
+  host), a browser journey (`pnpm test:e2e`), and CI runs test → lint →
+  typecheck → build plus two e2e jobs. A new engineer reading this would
+  hand-verify work that a thirty-second command already covers, and would
+  not know that a dozen censuses fail the build over exactly the mistakes
+  this repo keeps making. `CLAUDE.md`'s prime directive is still the rule —
+  green checks are necessary and nowhere near sufficient, and real bugs
+  here have only ever been found by loading the page and doing the thing.
+- ~~until today, the two git branches were named after Claude session IDs
+  instead of `main`~~ — long since true and no longer useful to anyone.
 
 ## 8. The 5 things most likely to confuse you
 
