@@ -14,6 +14,7 @@ import {
   optionalLinkOrThrow,
 } from "./shared";
 import { can } from "@/lib/permissions";
+import { deleteDocument } from "@/lib/blob";
 
 /** Every entry point to these records is a page guarded by MANAGE_JOBS,
  * so every write here answers to the same capability. A guarded page in
@@ -277,6 +278,22 @@ export async function deleteDrawingRevision(revisionId: string): Promise<ActionR
     if (!revision || revision.set.companyId !== context.company.id) return fail("Revision not found");
 
     await prisma.drawingRevision.delete({ where: { id: revision.id } });
+
+    // THE FILE GOES WITH THE ROW, and after it. Until now the revision was
+    // deleted and its PDF left in the store — uploaded `access: "public"` like
+    // every document here, so a GC's drawing stayed at a permanent
+    // unauthenticated address with nothing left in the database naming it. Same
+    // defect as #559's quote reader, found by asking which row-deletes drop a
+    // row that holds a `fileUrl`.
+    //
+    // AFTER the row, never before: the other order can leave a revision
+    // pointing at a file that is gone, which is a dead link on a drawing
+    // somebody is working from. `deleteBidAddendum` and
+    // `deleteContractDocument` use this order for the same reason, and
+    // `deleteDocument` swallows its own failures so a store that will not
+    // delete cannot fail a delete that already happened.
+    if (revision.fileUrl) await deleteDocument(revision.fileUrl);
+
     revalidatePath("/drawings");
     return ok;
   });
