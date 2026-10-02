@@ -44,4 +44,32 @@ describe("estimateStage", () => {
       }
     }
   });
+
+  /**
+   * WHAT "READY TO SEND" IS WORTH, pinned 2026-10-02 after an audit of the
+   * estimating workflow found the label claims more than the function checks.
+   *
+   * The point is not that the function is wrong — it does exactly what its
+   * signature allows, and two arguments is the whole of what it is given. The
+   * point is that "ready to send" is read by a person as "somebody checked
+   * this", and nothing did. A reader who needs to know what the words are worth
+   * should find a test rather than have to re-derive it from two parameters.
+   */
+  it("READY_TO_SEND is line items plus no signature request — and NOTHING else", () => {
+    // A job with one line, no cost on it, no markup applied, unacknowledged
+    // addenda and quantities measured off superseded paper is "Ready to send".
+    // Every one of those is invisible from here, because none of them is an
+    // argument to this function.
+    expect(estimateStage(1, []).key).toBe("READY_TO_SEND");
+    expect(estimateStage(500, []).key).toBe("READY_TO_SEND");
+
+    // The only two things that can move it off READY_TO_SEND.
+    expect(estimateStage(0, []).key).toBe("NEEDS_PRICING");
+    expect(estimateStage(1, ["PENDING"]).key).toBe("OUT_FOR_SIGNATURE");
+
+    // The signature of the function IS the claim's limit, and asserting it is
+    // what makes this test fail if somebody widens it without widening the
+    // label — or narrows the label without telling the jobs list.
+    expect(estimateStage.length).toBe(2);
+  });
 });
