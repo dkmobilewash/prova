@@ -200,13 +200,14 @@ export const ES: Record<keyof typeof EN, string> = {
   "nav.drawings": "Planos",
   "nav.schedule": "Programa",
   "nav.outbox": "Por enviar",
+  "nav.tab.outbox": "Envíos",
   "nav.alerts": "Avisos",
 
   // The More tab. `{role}` arrives from the API already in English
   // (OWNER, FOREMAN…) and is left that way on purpose — it is what the
   // office set on the Team page, and translating it here would name a
   // role nobody can find in the web app.
-  "settings.title": "Más",
+  "settings.title": "Ajustes",
   "settings.account": "Cuenta",
   "settings.account.owner": "Dueño de la cuenta — todo en este teléfono es suyo para ver",
   "settings.account.role":

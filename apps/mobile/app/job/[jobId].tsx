@@ -124,9 +124,10 @@ async function countsFromCache(jobId: string): Promise<Counts> {
  * WHAT THIS SCREEN DELIBERATELY DOES NOT SHOW: money. The reference
  * layouts lead with job value and balance due; this phone carries no
  * figures at all, by product rule, and `loadAlerts` already strips them
- * server-side per principal. The band and the two facts above the grid are
- * the operational equivalents — what the job IS, when it runs, and how
- * much is open on it.
+ * server-side per principal. The band and the Scheduled card are the
+ * operational equivalents — what the job IS, and when it runs. Everything
+ * else about it is a count, and counts belong on the tiles that open the
+ * thing they count.
  *
  * There is no site address here either, and that is a data limit rather
  * than a choice: the phone's `Job` type is `{id, name, status, startDate,
@@ -182,7 +183,6 @@ export default function JobHubScreen() {
       : summary?.startDate
         ? shortDay(summary.startDate)
         : null;
-  const openPunch = counts.punchList;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -201,24 +201,26 @@ export default function JobHubScreen() {
           the screen physically cannot disagree about what a status means. */}
       {status ? <StatusBand status={status} /> : null}
 
-      {/* Two operational facts where the reference puts job value and
-          balance due. Rendered only when known: a dash where a date should
-          be is better than a confident wrong one, and an absent row is
-          better than a dash. */}
-      {scheduled || openPunch != null ? (
+      {/* WHERE THE REFERENCE PUTS JOB VALUE AND BALANCE DUE, this says WHEN
+          the job runs — the one fact about a job that the grid below cannot
+          express, since every tile there is a count.
+          *
+          * IT USED TO CARRY A SECOND FACT, "Punch items", AND A PHONE KILLED
+          * IT. On a job with no dates the card collapsed to that one row and
+          * read as a stray box — and the number was already on screen, in
+          * the "Punch list" TILE eight points below it. A summary that
+          * repeats a thing it is sitting next to is not a summary. Nothing
+          * here could have caught that: happy-dom does no layout, so the
+          * duplication was only visible once both were rendered together.
+          *
+          * So the card is one fact, and no dates means no card at all —
+          * better than a box containing a dash. */}
+      {scheduled ? (
         <View style={styles.facts}>
-          {scheduled ? (
-            <View style={styles.fact}>
-              <Text style={styles.factLabel}>Scheduled</Text>
-              <Text style={styles.factValue}>{scheduled}</Text>
-            </View>
-          ) : null}
-          {openPunch != null ? (
-            <View style={styles.fact}>
-              <Text style={styles.factLabel}>Punch items</Text>
-              <Text style={styles.factValue}>{openPunch}</Text>
-            </View>
-          ) : null}
+          <View style={styles.fact}>
+            <Text style={styles.factLabel}>Scheduled</Text>
+            <Text style={styles.factValue}>{scheduled}</Text>
+          </View>
         </View>
       ) : null}
 
