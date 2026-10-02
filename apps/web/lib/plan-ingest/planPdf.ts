@@ -110,10 +110,22 @@ export type PlanPdf = {
  *
  * Three CI jobs went red on it, all one root cause, and none of it was reachable
  * locally from `typecheck`, `lint` or 8,236 unit tests: a unit test imports this
- * through vitest and never through webpack. The build is the only instrument, and it
- * IS runnable here — it reaches `✓ Compiled successfully` before it exits on the
- * missing Clerk key, so the compile can be checked without any credentials at all.
- * Do that before touching how this module is loaded.
+ * through vitest and never through webpack.
+ *
+ * **"THE BUILD IS THE ONLY INSTRUMENT" IS WHAT THIS PARAGRAPH USED TO SAY, AND IT
+ * WAS WRONG IN THE EXPENSIVE DIRECTION.** It said the compile reaching
+ * `✓ Compiled successfully` was the check to run before touching how this module
+ * is loaded. The compile passed. Every unit test passed. CI was green. And plan
+ * ingestion could not read a single sheet in a deployed runtime, from the day
+ * #551 merged until somebody opened a preview and watched it fail — see the
+ * worker import below for what was actually broken.
+ *
+ * A COMPILE PROVES A MODULE RESOLVES AT BUILD TIME. It says nothing about whether
+ * a file that resolution depends on is in the lambda, which is a different
+ * question that only a deployed runtime answers. The instrument for this module
+ * is a preview and its runtime log. Run the compile too — it is cheap and it
+ * catches the OTHER failure, the one that broke the viewer — but do not stop
+ * there, because that is precisely what was done and precisely what it cost.
  *
  * EVERY POSITION IS PUT THROUGH THE VIEWPORT TRANSFORM, and this is a correctness
  * fix rather than tidiness. `getTextContent()` returns each item's `transform` in
@@ -126,6 +138,37 @@ export type PlanPdf = {
  */
 export async function openPlanPdf(bytes: Buffer): Promise<PlanPdf> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  // THE WORKER, IMPORTED FOR ITS SIDE EFFECT, AND THIS LINE IS THE WHOLE FEATURE
+  // WORKING IN A DEPLOYED RUNTIME.
+  //
+  // Without it every sheet failed on Vercel with `Setting up fake worker failed:
+  // "Cannot find module '/var/task/apps/web/.next/server/chunks/pdf.worker.mjs'"`
+  // — read out of a preview's runtime log, because nothing else could see it.
+  //
+  // Read out of the installed pdfjs rather than guessed at. `pdf.mjs:17317`
+  // defaults `GlobalWorkerOptions.workerSrc` to the RELATIVE `"./pdf.worker.mjs"`,
+  // which resolves beside the server chunk and is not there; `:17511` then loads
+  // it with `await import(/*webpackIgnore: true*/ …)`, and webpackIgnore means
+  // webpack never bundles that file — so no amount of `outputFileTracingIncludes`
+  // reliably fixes it, which is where I was about to start.
+  //
+  // `:17507` is the way out: `_setupFakeWorkerGlobal` checks
+  // `globalThis.pdfjsWorker?.WorkerMessageHandler` FIRST and only falls through to
+  // the ignored import when it is absent. `pdf.worker.mjs:4686` sets exactly that
+  // global on import. So a plain dynamic import — which webpack DOES follow —
+  // puts the handler in place and the failing path is never reached.
+  //
+  // It must stay a dynamic import inside the function for the reason the
+  // paragraph above gives: at module scope it would pull pdfjs into graphs that
+  // must not have it.
+  // `@ts-expect-error` rather than `@ts-ignore`, deliberately: pdfjs ships no
+  // declaration for the worker build, and an expect-error FAILS if one ever
+  // appears — so this line removes itself from the build the day it stops being
+  // needed, instead of sitting here silently suppressing nothing.
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-expect-error pdfjs ships no types for the worker build; it is imported
+  // for its side effect of setting `globalThis.pdfjsWorker`, never for a value.
+  await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
   const doc = await pdfjs.getDocument({
     // A VIEW, NOT A COPY, and at 250MB the difference is 250MB. `new Uint8Array(buf)`
     // COPIES — a Node Buffer is already a Uint8Array, so that constructor allocates a
