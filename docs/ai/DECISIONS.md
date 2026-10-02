@@ -457,11 +457,22 @@ what was actually known.
   anybody quotes it.~~ **MEASURABLE AS OF 2026-10-02, and not yet measured** —
   which is a different state from either and worth the distinction. Step 2 above
   computes cost per sheet from recorded tokens, and `/settings/assistant` shows
-  it. What it cannot do yet is report a number: three of the five rates are
-  unconfirmed, so the figure reads "not priced" until they are pasted in, and
-  then a real month has to run through them. The $15–$40 estimate is superseded
-  rather than corrected — it was a guess about a different model, and there is
-  now an instrument instead of a better guess.
+  it. The $15–$40 estimate is superseded rather than corrected — it was a guess
+  about a different model, and there is now an instrument instead of a better
+  guess.
+
+  **What stands between MEASURABLE and MEASURED is now only usage, and this
+  entry said otherwise for a few hours.** It read: *"What it cannot do yet is
+  report a number: three of the five rates are unconfirmed, so the figure reads
+  'not priced' until they are pasted in, and then a real month has to run
+  through them."* The first half went false the same afternoon it was written —
+  all five rates were recorded on 2026-10-02 — and the second half is the whole
+  of what is left. A reader who believed the stale half would have gone to
+  `pricing.ts` to fill in rates that are already there, and concluded the
+  instrument was unfinished when it is merely unused.
+
+  So: the rates are in, and a real month of calls has to run through them. That
+  is the only remaining input, and nobody can build it.
 - ~~**Whether Haiku 4.5 is accurate enough for sheet classification and title
   blocks.** The eval decides. Nothing is known yet.~~ **ANSWERED 2026-09-29, and
   it had been answered for a day before anybody wrote it here.** The eval ran on
