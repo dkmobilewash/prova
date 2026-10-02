@@ -13,7 +13,7 @@ import { cacheGet } from "@/lib/offline-cache";
 import { useMe } from "@/lib/use-me";
 import type { IconName } from "@/lib/icon-glyphs";
 import { shortDay } from "@/lib/local-today";
-import { hitTarget, type Palette, radius, space, statusPair, typography } from "@/lib/theme";
+import { cardSurface, hitTarget, type Palette, radius, space, statusPair, typography } from "@/lib/theme";
 import type { Job } from "@/lib/types";
 import { usePalette } from "@/lib/use-palette";
 
@@ -332,11 +332,8 @@ function makeStyles(p: Palette) {
       marginTop: space.xxs,
     },
     facts: {
+      ...cardSurface(p),
       flexDirection: "row",
-      backgroundColor: p.colors.surface,
-      borderRadius: radius.card,
-      borderWidth: 1,
-      borderColor: p.colors.lineCard,
       paddingVertical: space.sm,
       paddingHorizontal: space.sm,
       marginTop: space.xxs,
@@ -354,12 +351,9 @@ function makeStyles(p: Palette) {
     },
     grid: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
     tile: {
+      ...cardSurface(p),
       width: "48%",
       minHeight: hitTarget * 1.5,
-      backgroundColor: p.colors.surface,
-      borderRadius: radius.card,
-      borderWidth: 1,
-      borderColor: p.colors.lineCard,
       padding: space.sm,
       justifyContent: "space-between",
       gap: space.xs,

@@ -34,8 +34,13 @@
 
 export const palettes = {
   light: {
+    /** Cards are lifted off the canvas with `shadow.card`. */
+    depth: "lifted" as const,
     colors: {
-      canvas: "#f2f2f7", // page background — HIG systemGroupedBackground
+      canvas: "#e5e7ee", // page background — DARKER than HIG's #f2f2f7 on purpose:
+      // against a #ffffff surface that is a ~4% step, which reads as flat on a
+      // phone. This is ~11%, so a white card visibly sits ON something. ink
+      // 13.8:1, inkBody 7.4:1, link 5.7:1 — every floor still clear.
       surface: "#ffffff", // grouped-list surface
       rail: "#f9f9f9", // chrome: headers and the tab bar, lifted off the canvas
       railHover: "#e9e9ec", // pressed-row fill (HIG cell highlight)
@@ -82,6 +87,9 @@ export const palettes = {
     },
   },
   dark: {
+    /** Lifted too — the shadow is near-invisible on a #0f0f0f canvas, and
+     * the surface step does the work there, but the vocabulary stays one. */
+    depth: "lifted" as const,
     colors: {
       canvas: "#0f0f0f", // page background
       surface: "#1a1a1a", // card background
@@ -147,6 +155,12 @@ export const palettes = {
    * full chroma is the one thing sunlight does not wash out.
    */
   outdoor: {
+    /** FLAT, and this is the reason the flag exists. A soft shadow is the
+     * first thing direct sunlight destroys; in glare a card is told apart
+     * by its BORDER, which is why lineCard here is #6b6b6b rather than a
+     * hairline. Elevating this palette would be decoration nobody outdoors
+     * can see, bought with the one cue they can. */
+    depth: "flat" as const,
     colors: {
       canvas: "#ffffff",
       surface: "#ffffff",
@@ -202,7 +216,10 @@ export type ColorKey = keyof (typeof palettes)["light"]["colors"];
  * strings. The hex LITERALS are widened on purpose — light and dark hold
  * different values over one vocabulary, and a type that pins the light
  * values would reject the dark palette outright. */
-export type Palette = { colors: Record<ColorKey, string> };
+/** `depth` is part of the vocabulary, not a colour: it says whether a
+ * card on this palette is told apart by a shadow or by a border. See
+ * `cardSurface`. */
+export type Palette = { depth: "lifted" | "flat"; colors: Record<ColorKey, string> };
 
 /** Big, heavy type. Body defaults to 17; nothing below 13, and 13 is only
  * for secondary metadata. Labels run semibold (600) — the gloved thumb is
@@ -215,8 +232,13 @@ export const typography = {
     lg: 20,
     xl: 24,
     xxl: 32,
-    /** The large title — screens' top block on headerless tabs. */
-    xl2: 34,
+    /** The large title — screens' top block on headerless tabs.
+     *
+     * 28, not iOS's 34. At 34 the greeting and the job name took the most
+     * valuable band on the screen to say the least operational thing on it,
+     * and every reference layout this was reviewed against runs its screen
+     * title nearer 28 and spends the difference on content. */
+    xl2: 28,
   },
   weight: {
     regular: "400" as const,
@@ -286,11 +308,22 @@ export const radius = {
   dayCell: 19,
 } as const;
 
-/** Elevation is used exactly once in this app — under the floating
- * capture button, where a 56pt circle over scrolling content is the one
- * surface that earns a shadow. Everything else stays flat: borders and
- * surface tones do the lifting, per the brief ("the interface should
- * feel almost flat until depth is needed"). */
+/**
+ * ELEVATION USED TO BE USED EXACTLY ONCE — under the floating capture
+ * button — and everything else was a 1px border. That was a deliberate
+ * choice and it is being revised deliberately, so the old reasoning is
+ * kept rather than deleted: "borders and surface tones do the lifting…
+ * the interface should feel almost flat until depth is needed."
+ *
+ * What changed is evidence. Against the field apps this was reviewed
+ * against, an outlined card reads as a BOX and an elevated one reads as a
+ * CARD sitting on the page — and with canvas and surface only ~4% apart
+ * the outline was doing all the separating on its own. Depth is needed.
+ *
+ * `card` is deliberately much softer than `floating`: a list of them has
+ * to look like a page of paper, not a stack of buttons. Opacity 0.06
+ * against 0.18, a tighter radius and a 1pt offset.
+ */
 export const shadow = {
   floating: {
     shadowColor: "#000000",
@@ -299,7 +332,42 @@ export const shadow = {
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
   },
+  card: {
+    shadowColor: "#000000",
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
 } as const;
+
+/**
+ * THE CARD TREATMENT FOR A PALETTE, in one place so nine screens cannot
+ * each decide and so `outdoor` cannot be forgotten by whoever adds the
+ * tenth.
+ *
+ * Lifted palettes get a soft shadow and NO border — an outline plus a
+ * shadow reads as a box someone drew a shadow under, which is the look
+ * this replaced. Flat palettes get the border and no shadow, because a
+ * shadow in direct sun is a cue that is not there.
+ *
+ * Returns a plain object: this module stays importable from plain node
+ * (the lib suite runs there), so nothing here may touch react-native.
+ */
+export function cardSurface(p: Palette) {
+  return p.depth === "lifted"
+    ? {
+        backgroundColor: p.colors.surface,
+        borderRadius: radius.card,
+        ...shadow.card,
+      }
+    : {
+        backgroundColor: p.colors.surface,
+        borderRadius: radius.card,
+        borderWidth: 1,
+        borderColor: p.colors.lineCard,
+      };
+}
 
 /**
  * Minimum touch target in points.
