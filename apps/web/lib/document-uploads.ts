@@ -119,6 +119,28 @@ export const DOCUMENT_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
 export const PLAN_SET_UPLOAD_MAX_BYTES = 250 * 1024 * 1024;
 
 /**
+ * A SPEC SECTION — 50MB, and a third ceiling rather than either of the two
+ * above, which is a decision with a wrong first answer behind it.
+ *
+ * The plan said 15MB on the grounds that a forty-page text PDF is small. That is
+ * true of an architect's own export and false of what a sub actually receives: a
+ * spec book handed over as a scan of a printed set runs thirty to eighty MB for
+ * one section, and 15MB would have refused the common case.
+ *
+ * And unlike the addendum ceiling next door, "refuse it, it belongs somewhere
+ * else" does not apply. That comment can send a re-issued drawing set to the
+ * takeoff uploader because a drawing set IS a plan set. A spec section has
+ * nowhere else to go — there is one surface that reads it, and a refusal here is
+ * a feature a contractor cannot use rather than a redirect.
+ *
+ * NOT the plan-set ceiling either, and that is the half worth stating: 250MB
+ * would let an entire drawing set through the spec door, where it would be read
+ * as ONE document and charge a month's spec allowance to a single call. The
+ * ceiling is what stops that, not a check on content.
+ */
+export const SPEC_SECTION_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
+
+/**
  * WHAT IS BEING UPLOADED, which is not the same question as where it goes.
  *
  * Two purposes share the `contracts/<jobId>/` folder — an ordinary
@@ -142,6 +164,7 @@ export const DOCUMENT_UPLOAD_PURPOSES = [
   "plan-takeoff",
   "bid-quote",
   "bid-addendum",
+  "bid-spec-section",
 ] as const;
 
 export type DocumentUploadPurpose = (typeof DOCUMENT_UPLOAD_PURPOSES)[number];
@@ -282,6 +305,24 @@ export const DOCUMENT_UPLOAD_TARGETS: Record<DocumentUploadPurpose, DocumentUplo
     // per sheet, and reading it as one document would charge a month's addendum
     // allowance for a single letter.
     maxBytes: DOCUMENT_UPLOAD_MAX_BYTES,
+  },
+  "bid-spec-section": {
+    root: "bid-spec-sections",
+    // COMPANY-scoped, for the reason the two bid purposes above give and the
+    // one `BidSpecSection` gives in the schema: it hangs off a `BidInvitation`,
+    // which carries no `jobId` at all. On a bid nobody has won there is no job
+    // to name, and a job prefix would be a path with nothing to put in it.
+    scope: "company",
+    // Gated, MIRRORING `readSpecSection` rather than invented: the action this
+    // token feeds sends the whole file to a model against the company's paid
+    // allowance, so a person who cannot use it never moves the bytes and never
+    // strands a blob.
+    capability: "MANAGE_ESTIMATING",
+    refusal: "Estimating isn't part of your job function.",
+    // 50MB, its own ceiling — `SPEC_SECTION_UPLOAD_MAX_BYTES` carries the
+    // argument, including why 15MB was the wrong first answer and why the
+    // plan-set ceiling would be the wrong second one.
+    maxBytes: SPEC_SECTION_UPLOAD_MAX_BYTES,
   },
   "compliance-document": {
     root: "compliance",

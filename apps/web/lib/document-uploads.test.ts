@@ -6,6 +6,7 @@ import {
   DOCUMENT_UPLOAD_PURPOSES,
   DOCUMENT_UPLOAD_TARGETS,
   PLAN_SET_UPLOAD_MAX_BYTES,
+  SPEC_SECTION_UPLOAD_MAX_BYTES,
   uploadMaxBytesFor,
   documentDisplayFileName,
   documentFileProblem,
@@ -40,12 +41,21 @@ group("every purpose and where each one lands", () => {
     // Guards the table itself: every assertion below reads through it, and
     // a table that quietly lost an entry would make them all vacuous.
     expect(Object.keys(DOCUMENT_UPLOAD_TARGETS).sort()).toEqual([...DOCUMENT_UPLOAD_PURPOSES].sort());
-    // SEVEN since `bid-quote` (feature 5). The count is here as a tripwire on
-    // the table above rather than as a fact about the product — if a purpose is
-    // added without a target, or a target without a purpose, the assertion
-    // above is what fails; this one only stops the LIST silently shrinking to
-    // nothing, which would make every assertion below vacuous.
-    expect(DOCUMENT_UPLOAD_PURPOSES).toHaveLength(8);
+    // A FLOOR RATHER THAN AN EQUALITY, changed 2026-10-03 when `bid-spec-section`
+    // made it nine and this line failed for the second time on a number.
+    //
+    // The comment it replaces had the intent exactly right — "a tripwire on the
+    // table above rather than a fact about the product… this one only stops the
+    // LIST silently shrinking to nothing" — and an equality is the wrong shape
+    // for that intent: it also fires every time somebody legitimately adds a
+    // purpose, which is a build failing over a number. `counterCensus.test.ts`
+    // holds a floor for this exact reason and CLAUDE.md calls it the right
+    // trade.
+    //
+    // The floor costs nothing here that it costs there. The real assertion is
+    // the line above — the target table's keys must EQUAL the purpose list — so
+    // a purpose added without a target still fails loudly, by name.
+    expect(DOCUMENT_UPLOAD_PURPOSES.length).toBeGreaterThanOrEqual(9);
   });
 
   it("puts each kind in the folder its existing documents already live in", () => {
@@ -78,15 +88,24 @@ group("every purpose and where each one lands", () => {
     const companyScoped = DOCUMENT_UPLOAD_PURPOSES.filter(
       (p) => DOCUMENT_UPLOAD_TARGETS[p].scope === "company",
     );
-    // TWO now, and the second one follows its row rather than a preference:
-    // `bid-quote` files against a `BidInvitation`, which is company-scoped and
-    // carries no `jobId` at all — on a bid the company has not won there is no
-    // job to name, so a job prefix would be a path with nothing to put in it.
+    // FOUR now, and every one past the first follows its ROW rather than a
+    // preference: `bid-quote`, `bid-addendum` and `bid-spec-section` all file
+    // against a `BidInvitation`, which is company-scoped and carries no `jobId`
+    // at all — on a bid the company has not won there is no job to name, so a
+    // job prefix would be a path with nothing to put in it.
     //
-    // The test's NAME changed with it. It used to say "exactly one", which read
-    // as a rule about the product when it was a count of the rows that happened
-    // to exist; a second legitimate entry should not look like a violation.
-    expect(companyScoped.sort()).toEqual(["bid-addendum", "bid-quote", "compliance-document"]);
+    // The test's NAME is the part worth keeping. It used to say "exactly one",
+    // which read as a rule about the product when it was a count of the rows
+    // that happened to exist; a legitimate addition should not look like a
+    // violation. That correction has now been needed three times on this list
+    // and once more on the ceilings test below, which is the signal that the
+    // shape — a name describing the current rows — is the thing that rots.
+    expect(companyScoped.sort()).toEqual([
+      "bid-addendum",
+      "bid-quote",
+      "bid-spec-section",
+      "compliance-document",
+    ]);
   });
 
   it("accepts only a purpose on the list, and refuses anything else", () => {
@@ -137,16 +156,29 @@ group("what may be uploaded, and how much of it", () => {
     expect(tooBig).toContain("15.0 MB");
   });
 
-  it("lets a plan set be 250MB and holds every other purpose at 15", () => {
+  it("gives three purposes their own ceiling and holds every other at 15", () => {
+    // THE NAME CHANGED WITH THE THIRD CEILING, 2026-10-03, and that is the same
+    // correction this file already made once for the company-scope test: a name
+    // saying "every OTHER purpose" read as a rule about the product when it was
+    // a description of the rows that happened to exist, so a second legitimate
+    // exemption looked like a violation.
     expect(PLAN_SET_UPLOAD_MAX_BYTES).toBe(250 * 1024 * 1024);
     expect(uploadMaxBytesFor("plan-takeoff")).toBe(PLAN_SET_UPLOAD_MAX_BYTES);
-    // The exemption is for ONE purpose. Written as a loop over the registry
-    // rather than a list of six names, so adding a purpose is covered the
-    // moment it exists -- a hand-written list is the "second list nobody
-    // imports" shape, and this file is the registry's own test.
+    expect(SPEC_SECTION_UPLOAD_MAX_BYTES).toBe(50 * 1024 * 1024);
+    expect(uploadMaxBytesFor("bid-spec-section")).toBe(SPEC_SECTION_UPLOAD_MAX_BYTES);
+    // And the three are DISTINCT, which is the assertion that stops somebody
+    // "tidying" them into one constant: each number answers a different
+    // question about what a single request may move into the store.
+    expect(new Set([DOCUMENT_UPLOAD_MAX_BYTES, SPEC_SECTION_UPLOAD_MAX_BYTES, PLAN_SET_UPLOAD_MAX_BYTES]).size).toBe(3);
+
+    // The exemptions are NAMED and the rest is a loop over the registry rather
+    // than a list of names, so adding a purpose is covered the moment it exists
+    // — a hand-written list is the "second list nobody imports" shape, and this
+    // file is the registry's own test.
+    const OWN_CEILING = new Set<DocumentUploadPurpose>(["plan-takeoff", "bid-spec-section"]);
     for (const purpose of Object.keys(DOCUMENT_UPLOAD_TARGETS) as DocumentUploadPurpose[]) {
-      if (purpose === "plan-takeoff") continue;
-      expect(uploadMaxBytesFor(purpose)).toBe(DOCUMENT_UPLOAD_MAX_BYTES);
+      if (OWN_CEILING.has(purpose)) continue;
+      expect(uploadMaxBytesFor(purpose), `${purpose} should be at the 15MB default`).toBe(DOCUMENT_UPLOAD_MAX_BYTES);
     }
     // No purpose named: the conservative number, because a caller that does
     // not know what it is uploading must not be handed the plan-set ceiling.

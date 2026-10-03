@@ -31,6 +31,7 @@ export type AiSettings = {
   disabledFeatures: AiFeature[];
   planSheetsPerMonth: number;
   addendumPagesPerMonth: number;
+  specPagesPerMonth: number;
   modelOverride: string | null;
 };
 
@@ -51,6 +52,11 @@ export const AI_SETTINGS_DEFAULTS: AiSettings = {
   disabledFeatures: [],
   planSheetsPerMonth: 1500,
   addendumPagesPerMonth: 600,
+  // 1,800 is Diego's figure, and it was 600 for about an hour until the page
+  // estimate behind it turned out to be wrong — a spec section is thirty-odd
+  // pages, not ten, so 600 was three bids a month rather than fifteen.
+  // `ask-allowance.prisma` carries the arithmetic.
+  specPagesPerMonth: 1800,
   modelOverride: null,
 };
 
@@ -78,6 +84,7 @@ export const AI_FEATURE_LABEL: Record<AiFeatureKey, string> = {
   QUOTE_EXTRACT: "Reading a sub's quote",
   PLAN_INGESTION: "Reading plan sets",
   ADDENDUM_READ: "Reading addenda",
+  SPEC_READ: "Reading spec sections",
 };
 
 /**
@@ -146,6 +153,8 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
     "Reading an uploaded plan set: per sheet, whether it has selectable text and what its title block says, proposed as a sheet index you confirm or correct. With this off, sheets are still labelled by typing them in.",
   ADDENDUM_READ:
     "Reading an addendum a GC issued on a bid, and listing what it says it changed for you to check against the document. It never decides whether something affects work you have already priced — that stays your tick on the addendum — and with this off you can still log addenda by hand.",
+  SPEC_READ:
+    "Reading a spec section from the bid documents and listing what in it costs money — finish levels, rated assemblies, mock-ups, testing, named products — for you to check against your number. It never says whether your bid already carries a cost, because it has not seen your estimate. With this off you read the section yourself, as you do today.",
 };
 
 /**

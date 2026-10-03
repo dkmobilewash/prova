@@ -212,7 +212,15 @@ export type AskUsageFeature =
    *  quote costs document pages, an addendum costs addendum pages — so a bill
    *  that could not tell them apart could not answer either "what did the thing
    *  we turned off cost us" or "which allowance did this month go on". */
-  | "addendum-read";
+  | "addendum-read"
+  /** Reading ONE spec section for what it demands that costs money
+   *  (`lib/actions/specRead.ts`). Its own row rather than folded into
+   *  `addendum-read`, though both are bid documents arriving on a bid nobody
+   *  has won: a section is thirty pages against a letter's eight, they are
+   *  switched separately, and they spend DIFFERENT ledgers — so a bill that
+   *  could not tell them apart could not answer either "what did the thing we
+   *  turned off cost us" or "which allowance did this month go on". */
+  | "spec-read";
 
 export type AskUsageRecord = {
   companyId: string;
@@ -385,6 +393,7 @@ const FEATURE_LABELS: Record<string, string> = {
   "lead-search": "Lead search (web)",
   "plan-ingestion": "Plan sheet reading",
   "addendum-read": "Addendum reading",
+  "spec-read": "Spec section reading",
 };
 
 /** The last thirty days for the settings page, grouped by who asked.

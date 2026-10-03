@@ -11,7 +11,13 @@ import { viewerToday, viewerTimeZone } from "@/lib/viewerToday";
 import { todayInZone } from "@/lib/viewer-timezone";
 import { BidLines, type BidLineRow } from "@/components/BidLines";
 import type { AddendumItem } from "@/lib/addenda-overlap";
-import { BidCompliance, type AddendumRow, type RequirementRow } from "@/components/BidCompliance";
+import {
+  BidCompliance,
+  type AddendumRow,
+  type RequirementRow,
+  type SpecSectionRow,
+} from "@/components/BidCompliance";
+import { findingsFromJson } from "@/lib/specs/spec-findings";
 import { BidJobLink } from "@/components/BidJobLink";
 import { bidRecord, settledSentence } from "@/lib/bid-outcome";
 import { loadBidOutcomes, loadLinkableJobs } from "@/lib/bid-outcome-query";
@@ -118,6 +124,18 @@ export default async function BidsPage({
         },
       },
       requirements: { orderBy: { createdAt: "asc" } },
+      // Spec sections by their own number, which is how a book is ordered and
+      // how an estimator asks for one. Same reading shape as the addenda above
+      // and for the same two reasons: readings are append-only so the newest is
+      // the current one, and `_count` is what lets the button say how many times
+      // this has been read BEFORE somebody is charged again.
+      specSections: {
+        orderBy: [{ sectionNumber: "asc" }, { createdAt: "asc" }],
+        include: {
+          readings: { orderBy: { createdAt: "desc" }, take: 1 },
+          _count: { select: { readings: true } },
+        },
+      },
     },
   });
 
@@ -383,6 +401,37 @@ export default async function BidsPage({
                     required: row.required,
                     satisfiedOn: day(row.satisfiedOn),
                     notes: row.notes,
+                  }),
+                )}
+                specSections={bid.specSections.map(
+                  (row): SpecSectionRow => ({
+                    id: row.id,
+                    sectionNumber: row.sectionNumber,
+                    title: row.title,
+                    notes: row.notes,
+                    fileName: row.fileName,
+                    // The URL itself never reaches the browser, for the reason
+                    // the addenda mapping gives above: the row only needs to
+                    // know whether there IS one, and a public blob address is
+                    // not something to hand out with the page.
+                    hasFile: row.fileUrl !== null,
+                    reading: row.readings[0]
+                      ? {
+                          id: row.readings[0].id,
+                          // NARROWED, not cast. `findings` is a `Json` column,
+                          // so a row written by an older prompt version would
+                          // otherwise reach the screen unchecked and render
+                          // "undefined" as a finding's kind on a bid page.
+                          findings: findingsFromJson(row.readings[0].findings),
+                          readingReason: row.readings[0].readingReason,
+                          // Rendered here, in UTC, like every other date on this
+                          // page — `dateRenderCensus` fails a date the browser
+                          // formats for itself.
+                          readOn: todayInZone(zone, row.readings[0].createdAt),
+                          pagesCharged: row.readings[0].pagesCharged,
+                        }
+                      : null,
+                    readCount: row._count.readings,
                   }),
                 )}
               />

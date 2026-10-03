@@ -131,6 +131,11 @@ const CONTROLS: Record<AiFeatureKey, Control> = {
     file: "components/AddendumFindings.tsx",
     why: "Attach a GC's addendum on /bids and list what it says it changed, per item with its source page.",
   },
+  SPEC_READ: {
+    kind: "component",
+    file: "components/SpecFindings.tsx",
+    why: "Attach a spec section on /bids and list what in it costs money — finish level, ratings, mock-ups, testing, named products — each with the sentence it was read from and a page to check it against.",
+  },
 };
 
 function filesUnder(dir: string, out: string[] = []): string[] {
