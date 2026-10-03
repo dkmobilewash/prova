@@ -10,6 +10,8 @@ import { money } from "@/lib/money";
 import { formatInstant } from "@/lib/render-date";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { groupProposalClauses, PROPOSAL_CLAUSE_HEADINGS } from "@/lib/proposal-clauses";
+import { bidRecap, RECAP_RATE_KEYS, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
+import { proposalPriceState, proposalPriceWarning } from "@/lib/estimating/proposal-recap-currency";
 
 /**
  * A job's bid proposal — the scope + price + exclusions document a sub sends
@@ -49,6 +51,23 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
     select: { id: true, kind: true, text: true },
   });
 
+  // THE RECAP, READ HERE FOR THE FIRST TIME — and the reason is the whole of
+  // `lib/estimating/proposal-recap-currency.ts`. This page is the document a
+  // GC acts on, its total is the line prices added up, and until 2026-10-02 it
+  // read `JobBidRecap` nowhere at all: a bid with markup, overhead, profit,
+  // bond and contingency configured printed none of them unless somebody had
+  // pressed "Apply to line prices" on the estimate tab first, with nothing
+  // saying so.
+  //
+  // It is read to WARN and never to re-price. The schedule of values below is
+  // a table a GC adds up, so substituting a different grand total under it
+  // would produce a document that does not reconcile with itself — which is
+  // worse than the defect. `applyBidRecap` is what moves the prices, and it
+  // keeps them adding up.
+  const recapRow = await prisma.jobBidRecap.findFirst({
+    where: { jobId: job.id, companyId: company.id },
+  });
+
   // A null unit price is a cost-only line (general conditions, overhead):
   // it prints with no price and counts $0 toward the bid total, the same
   // rule the contract value uses everywhere else.
@@ -61,6 +80,42 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
   const groups = groupProposalClauses(job.proposalClauses);
   const timeZone = await viewerTimeZone();
 
+  // `addedTotal` is what the rates WOULD add, recomputed here from the job's
+  // current lines rather than read off a column — the recap stores percentages
+  // and never money, because "a stored total is wrong the moment a line
+  // changes" (`bid-recap.prisma`).
+  // The same two conversions the estimate tab makes, deliberately identical —
+  // `budgetedUnitCost` and not `currentEstimatedUnitCost` (#512: the recap marks
+  // up COST, and the latter is the PM's live re-forecast), and the cost category
+  // narrowed rather than trusted.
+  //
+  // NOTE: the JOB's own recap row only, never `CompanyBidDefaults`. The estimate
+  // tab falls back to the defaults because it is a FORM pre-filling an unsaved
+  // row; this is a document asking "did the rates reach these prices", and
+  // company defaults a person has never opened on this job have not.
+  const recapState = proposalPriceState(
+    recapRow
+      ? {
+          addedTotal: bidRecap(
+            job.lineItems.map((line) => ({
+              id: line.id,
+              quantity: Number(line.quantity),
+              unitCost: line.budgetedUnitCost != null ? Number(line.budgetedUnitCost) : null,
+              unitPrice: line.unitPrice != null ? Number(line.unitPrice) : null,
+              costCategory: (line.costCategory as CostCategoryValue | null) ?? null,
+            })),
+            Object.fromEntries(
+              RECAP_RATE_KEYS.map((key) => [key, recapRow[key] != null ? Number(recapRow[key]) : null]),
+            ) as RecapRates,
+          ).addedTotal,
+          appliedAt: recapRow.appliedAt,
+          appliedTotal: recapRow.appliedTotal != null ? Number(recapRow.appliedTotal) : null,
+        }
+      : null,
+    bidTotal,
+  );
+  const priceWarning = proposalPriceWarning(recapState);
+
   return (
     // A document, so "reading" — and `print:p-0` so the printed page runs to
     // the browser's own margins, the way the G702/G703 does.
@@ -71,6 +126,18 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
         </Link>
         <PrintButton />
       </div>
+
+      {/* PRINT:HIDDEN, ADDRESSED TO THE SENDER AND NEVER TO THE GC. The
+          document itself stays exactly as it was — this is a sentence to the
+          person about to press Print, in the same place and the same style as
+          the recap panel's own two warnings about lines with no cost. A note on
+          the PRINTED page would be telling a customer our prices may be wrong,
+          which is a different and much worse sentence. */}
+      {priceWarning && (
+        <p className="mb-6 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink print:hidden">
+          {priceWarning}
+        </p>
+      )}
 
       <h1 className="text-xl font-semibold text-ink">Proposal — {job.name}</h1>
       <p className="mt-1 text-sm text-ink-muted">

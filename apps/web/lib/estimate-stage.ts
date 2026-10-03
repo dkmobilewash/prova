@@ -10,6 +10,32 @@
  * disagrees with the job the moment someone adds a line item or the client
  * signs — the same rule the rest of the app follows for overdue, recordable
  * and current-revision.
+ *
+ * ── WHAT "READY TO SEND" DOES NOT MEAN, WRITTEN DOWN 2026-10-02 ──
+ *
+ * It means `lineItemCount > 0` with no signature request. That is the whole of
+ * it, and the label claims more than the function checks — which is why this
+ * paragraph exists rather than the label being changed: the words are on the
+ * jobs list where they are useful, and the fix for an overstated label is to
+ * say what is behind it, not to rename it to something nobody can act on.
+ *
+ * It does NOT consult, and must not be read as having consulted:
+ *
+ *   - the bid recap — a job can be "ready to send" with no markup applied, and
+ *     the proposal would print un-marked-up prices
+ *     (`lib/estimating/proposal-recap-currency.ts` is the warning that catches
+ *     that, on the document itself);
+ *   - `bid-responsiveness.ts` — unacknowledged addenda, blank alternates, blank
+ *     unit prices, unsatisfied bid requirements;
+ *   - `takeoff-currency.ts` — whether the quantities were measured off paper
+ *     that has since been superseded;
+ *   - any cost figure at all. A job whose every line carries a price and no
+ *     cost reads $0 direct cost to the recap and "ready to send" here.
+ *
+ * `estimateStage.test.ts` pins that list, so a reader who needs to know what
+ * the words are worth has a test to read rather than a label to trust. Widening
+ * the function to take those inputs is a real option and a bigger change: it
+ * would make a jobs-list cell depend on three more queries per row.
  */
 
 export type EstimateStageKey = "NEEDS_PRICING" | "READY_TO_SEND" | "OUT_FOR_SIGNATURE" | "SIGNED";
