@@ -10,6 +10,7 @@ import {
 import { type ReportData, dayLabel } from "@/components/fieldReportWeeks";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 
 // Defined once so the row's controls can't drift back under 44px a button at
 // a time. `inline-flex` + `items-center` is what makes min-h centre the label
@@ -83,7 +84,14 @@ export function FieldReportEntry({
               disabled={isPending}
               className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
-              {isPending ? "Saving…" : "Save changes"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save changes"
+              )}
             </button>
             <button
               type="button"

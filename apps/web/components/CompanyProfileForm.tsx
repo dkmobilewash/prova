@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { updateCompanyProfile } from "@/lib/actions";
 import type { CompanyProfile, CompanyProfileGap } from "@/lib/company-profile";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * The company's own record, on /settings.
@@ -236,7 +237,14 @@ export function CompanyProfileForm({
           disabled={isPending}
           className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Save company record"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save company record"
+          )}
         </button>
         {/* The refusal, rendered. A thrown message would reach a real user
             as an opaque digest — see lib/actions/shared.ts. */}

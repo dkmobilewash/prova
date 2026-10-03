@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 
 import { SubmitButton } from "@/components/SubmitButton";
+import { Spinner } from "@/components/Spinner";
 import { uploadDocumentFile } from "@/lib/document-upload-client";
 import { PDF_MAGIC_BYTES, looksLikePdf } from "@/lib/pdf-bytes";
 import { recordTakeoffPlan } from "@/lib/actions";
@@ -77,7 +78,14 @@ export function TakeoffPlanUploader({ jobId }: { jobId: string }) {
           disabled={busy || isPending}
           className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-neutral-900 disabled:opacity-50"
         >
-          {busy ? "Uploading…" : "Add a drawing"}
+          {busy ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Uploading…
+            </span>
+          ) : (
+            "Add a drawing"
+          )}
         </SubmitButton>
       </div>
       <p className="text-xs text-ink-muted">

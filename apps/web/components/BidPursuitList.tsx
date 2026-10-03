@@ -22,6 +22,7 @@ import {
 import type { PursuitRow } from "@/lib/bid-pursuits-query";
 import { money } from "@/lib/money";
 import { ConceptualEstimateHelper } from "@/components/ConceptualEstimateHelper";
+import { Spinner } from "@/components/Spinner";
 import {
   applyPursuitChanges,
   draftPursuit,
@@ -339,7 +340,14 @@ function PursuitRowView({
               disabled={pending}
               className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
-              {pending ? "Saving…" : "Save"}
+              {pending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save"
+              )}
             </button>
             <button
               type="button"
@@ -438,7 +446,14 @@ function PursuitRowView({
               disabled={pending}
               className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label hover:border-link hover:text-link disabled:opacity-50"
             >
-              {pending ? "Saving…" : "Save link"}
+              {pending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save link"
+              )}
             </button>
             <button
               type="button"

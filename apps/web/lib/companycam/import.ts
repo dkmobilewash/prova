@@ -56,8 +56,14 @@ export type CompanyCamImportSummary = {
   /** Photos already on the job (by companycamPhotoId), or not ready
    * (still processing at CompanyCam). */
   skipped: number;
-  /** Photos whose file could not be fetched or stored. */
+  /** Photos whose file could not be FETCHED from CompanyCam. */
   failed: number;
+  /** Photos fetched successfully that this app could not STORE — the photo
+   *  store is unset or refused the write. Separate from `failed` because the
+   *  fault, the remedy and the person to tell are all different: `failed` is
+   *  about CompanyCam or one bad file, this is about our own storage, and when
+   *  it fires it usually fires on every photo in the press. */
+  unstorable: number;
   /** True when the project has more photos this press did not examine. */
   remaining: boolean;
   /** One sentence for the link's status line and the sync log. */
@@ -103,7 +109,7 @@ async function importOne(
   photo: CompanyCamPhoto,
   target: { companyId: string; jobId: string },
   deps: CompanyCamImportDeps,
-): Promise<"imported" | "skipped" | "failed"> {
+): Promise<"imported" | "skipped" | "failed" | "unstorable"> {
   const download = deps.downloadImpl ?? ((url: string) => fetch(url, { method: "GET" }));
   const putImpl = deps.putImpl ?? put;
 
@@ -132,11 +138,33 @@ async function importOne(
   const pathname = jobMediaUploadPathname(target.jobId, `companycam-${photo.id}.${fileExtension(contentType)}`);
   if (pathname === null) return "failed";
 
-  const stored = await putImpl(pathname, body, {
-    access: "public",
-    addRandomSuffix: true,
-    contentType,
-  });
+  /* THE ONE CALL IN THIS FUNCTION THAT USED TO BE OUTSIDE A TRY/CATCH, and
+     the consequences were out of proportion to the omission. Every other
+     failure here returns "failed"; this one threw, and the throw travelled
+     past `explain()` (which returns null for anything that is not a
+     CompanyCam error), out of the Server Action, and into production's
+     redaction — so the operator got a digest.
+
+     Worse than the message: the throw happened BEFORE the summary block at
+     the end of `runCompanyCamImport`, so `lastImportedAt`, `lastImportStatus`,
+     `lastImportMessage` and the sync-log row were never written, while rows
+     already stored in that press persisted. `companycam.prisma` says why
+     those three columns exist — "an import that fails silently is
+     indistinguishable from one nobody ran" — and this path defeated them.
+
+     `BLOB_READ_WRITE_TOKEN` is not in `COMPANYCAM_REQUIRED_ENV`, so a card can
+     read "Connected" and offer Import photos on an install with no store at
+     all, which is exactly when this fires — and then it fires on every photo. */
+  let stored: Awaited<ReturnType<typeof putImpl>>;
+  try {
+    stored = await putImpl(pathname, body, {
+      access: "public",
+      addRandomSuffix: true,
+      contentType,
+    });
+  } catch {
+    return "unstorable";
+  }
 
   try {
     await prisma.jobMedia.create({
@@ -203,6 +231,10 @@ export async function runCompanyCamImport(
   let imported = 0;
   let skipped = 0;
   let failed = 0;
+  /* Counted apart from `failed` on purpose: a photo this app could not STORE
+     is a different fault from one it could not FETCH, with a different remedy
+     and a different person to tell. */
+  let unstorable = 0;
   let remaining = false;
 
   await withCompanyCamToken(
@@ -237,6 +269,7 @@ export async function runCompanyCamImport(
             imported++;
             seen.add(photo.id);
           } else if (outcome === "skipped") skipped++;
+          else if (outcome === "unstorable") unstorable++;
           else failed++;
         }
         if (!hasNext) return;
@@ -250,11 +283,21 @@ export async function runCompanyCamImport(
   const parts = [`Imported ${imported} photo${imported === 1 ? "" : "s"} from ${link.companycamProjectName}`];
   if (skipped > 0) parts.push(`${skipped} already here or not ready`);
   if (failed > 0) parts.push(`${failed} couldn't be fetched`);
+  /* Deliberately a different sentence from the one above. These photos WERE
+     fetched; this app could not store them, which is its problem and not
+     CompanyCam's — and when the photo store is unset it is every photo, so the
+     count alone would read as a CompanyCam outage. */
+  if (unstorable > 0) {
+    parts.push(
+      `${unstorable} couldn't be saved — this app's photo storage looks unavailable, which is not a problem at CompanyCam`,
+    );
+  }
   if (remaining) parts.push("more remain — press Import photos again");
   const message = `${parts.join("; ")}.`;
 
   const now = new Date();
-  const status = failed > 0 && imported === 0 ? ("FAILURE" as const) : ("SUCCESS" as const);
+  const status =
+    (failed > 0 || unstorable > 0) && imported === 0 ? ("FAILURE" as const) : ("SUCCESS" as const);
   const connection = await prisma.integrationConnection.findUnique({
     where: { companyId_provider: { companyId, provider: "COMPANYCAM" } },
     select: { id: true },
@@ -275,5 +318,5 @@ export async function runCompanyCamImport(
     }
   });
 
-  return { imported, skipped, failed, remaining, message };
+  return { imported, skipped, failed, unstorable, remaining, message };
 }

@@ -7,6 +7,7 @@ import {
   saveQuickBooksAccountMapping,
 } from "@/lib/actions";
 import { QUICKBOOKS_ACCOUNT_PURPOSES } from "@/lib/quickbooks-constants";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * Which QuickBooks account each kind of money posts to.
@@ -65,7 +66,14 @@ export function QuickBooksMapping({ mappings }: { mappings: MappingRow[] }) {
           disabled={isPending}
           className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-800 disabled:opacity-50"
         >
-          {isPending ? "Loading…" : accounts ? "Reload accounts" : "Load accounts from QuickBooks"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Loading…
+            </span>
+          ) : (
+            accounts ? "Reload accounts" : "Load accounts from QuickBooks"
+          )}
         </button>
         {error && <p className="text-xs text-tag-rose-ink">{error}</p>}
       </div>

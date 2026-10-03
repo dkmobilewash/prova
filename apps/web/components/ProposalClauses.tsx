@@ -9,6 +9,7 @@ import {
   updateProposalClause,
 } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 import {
   PROPOSAL_CLAUSE_KINDS,
   PROPOSAL_CLAUSE_LABELS,
@@ -130,7 +131,14 @@ export function ProposalClauseRow({
           className={`${field} min-w-[220px] flex-1`}
         />
         <button type="submit" disabled={save.isPending} className="rounded-md bg-neutral-800 px-2 py-1 text-xs font-medium text-ink hover:bg-neutral-700 disabled:opacity-50">
-          {save.isPending ? "Saving…" : "Save"}
+          {save.isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save"
+          )}
         </button>
         <ErrorLine error={save.error} />
       </form>

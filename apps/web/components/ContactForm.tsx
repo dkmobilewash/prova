@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createContact } from "@/lib/actions";
 import { ContactFields, ContactStandingTermsFields } from "@/components/ContactFields";
+import { Spinner } from "@/components/Spinner";
 
 export function ContactForm() {
   const [isOpen, setIsOpen] = useState(false);
@@ -73,7 +74,14 @@ export function ContactForm() {
           disabled={isPending}
           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Save contact"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save contact"
+          )}
         </button>
         <button
           type="button"

@@ -8,6 +8,7 @@ import { Hint } from "@/components/Hint";
 import { BackchargeFields } from "@/components/BackchargeFields";
 import type { JobOption } from "@/components/RfiFields";
 import { localToday } from "@/components/localToday";
+import { Spinner } from "@/components/Spinner";
 
 export function BackchargeForm({
   jobs,
@@ -121,7 +122,14 @@ export function BackchargeForm({
             disabled={isPending}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
           >
-            {isPending ? "Saving…" : "Save backcharge"}
+            {isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Saving…
+              </span>
+            ) : (
+              "Save backcharge"
+            )}
           </button>
         </Hint>
         <button

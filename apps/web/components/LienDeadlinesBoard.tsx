@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 import { localToday } from "@/components/localToday";
+import { Spinner } from "@/components/Spinner";
 import {
   clearLienDeadlineServed,
   createLienDeadline,
@@ -313,7 +314,14 @@ function DeadlineRow({
           </label>
           <div className="flex gap-2">
             <button type="submit" disabled={pending} className={primaryButton}>
-              {pending ? "Saving…" : "Mark served"}
+              {pending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Mark served"
+              )}
             </button>
             <button type="button" className={smallButton} onClick={() => setMode("view")}>
               Cancel
@@ -330,7 +338,14 @@ function DeadlineRow({
           <LienDeadlineFields jobs={jobs} editing={row} />
           <div className="flex gap-2">
             <button type="submit" disabled={pending} className={primaryButton}>
-              {pending ? "Saving…" : "Save"}
+              {pending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save"
+              )}
             </button>
             <button type="button" className={smallButton} onClick={() => setMode("view")}>
               Cancel
@@ -404,7 +419,14 @@ export function LienDeadlinesBoard({
               </p>
             )}
             <button type="submit" disabled={pending} className={primaryButton}>
-              {pending ? "Saving…" : "Save deadline"}
+              {pending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save deadline"
+              )}
             </button>
           </form>
         )}

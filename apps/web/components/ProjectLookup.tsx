@@ -1,9 +1,13 @@
 "use client";
 
+import { Spinner } from "@/components/Spinner";
 import { useState, useTransition } from "react";
 import { createBidPursuit } from "@/lib/actions";
 import { lookUpProject } from "@/lib/actions/projectLookup";
-import { BidPursuitFields, type BidPursuitPrefill } from "@/components/BidPursuitList";
+import {
+  BidPursuitFields,
+  type BidPursuitPrefill,
+} from "@/components/BidPursuitList";
 import { localToday } from "@/components/localToday";
 import type { WebSuggestion } from "@/lib/ask/webSuggestions";
 import { pursuitPrefillFrom, NOTE_ONLY_FIELDS } from "@/lib/project-lookup";
@@ -87,15 +91,22 @@ export function ProjectLookup() {
   const prefill: BidPursuitPrefill = pursuitPrefillFrom(name, kept);
 
   return (
-    <section className="mb-6 rounded-lg border border-line-card bg-surface-raised p-4" data-pipeline="project-lookup">
+    <section
+      className="mb-6 rounded-lg border border-line-card bg-surface p-4"
+      data-pipeline="project-lookup"
+    >
       <h2 className="text-sm font-semibold text-ink">Look up a project</h2>
       <p className="mt-1 text-sm text-ink-body">
-        Heard about a job and have nothing but a name? This searches the public web for who owns it,
-        who designed it, which GCs are bidding and where the plans are — and shows the page every
-        answer came from, so you can check it yourself.
+        Heard about a job and have nothing but a name? This searches the public
+        web for who owns it, who designed it, which GCs are bidding and where
+        the plans are — and shows the page every answer came from, so you can
+        check it yourself.
       </p>
 
-      <form onSubmit={onLookUp} className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+      <form
+        onSubmit={onLookUp}
+        className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
+      >
         <label className="block text-sm">
           <span className="text-ink-label">Project name</span>
           <input
@@ -127,34 +138,47 @@ export function ProjectLookup() {
           disabled={isPending}
           className="h-10 rounded-md bg-brand px-4 text-sm font-medium text-neutral-900 disabled:opacity-60"
         >
-          {isPending ? "Looking…" : "Look it up"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Looking…
+            </span>
+          ) : (
+            "Look it up"
+          )}
         </button>
       </form>
 
       <p className="mt-2 text-xs text-ink-muted">
-        Only the name and location you typed above are sent to the search — never your company
-        name, your GCs, or anything from your jobs.
+        Only the name and location you typed above are sent to the search —
+        never your company name, your GCs, or anything from your jobs.
       </p>
 
       {error && (
-        <p className="mt-3 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink" role="status">
+        <p
+          className="mt-3 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink"
+          role="status"
+        >
           {error}
         </p>
       )}
 
       {found !== null && found.length === 0 && (
         <p className="mt-3 text-sm text-ink-body" role="status">
-          Nothing solid came back for that — {searches} {searches === 1 ? "search" : "searches"} and
-          no fact with a source behind it. That is the honest answer rather than a guess. Try the
-          name as the owner or architect writes it, or add the city.
+          Nothing solid came back for that — {searches}{" "}
+          {searches === 1 ? "search" : "searches"} and no fact with a source
+          behind it. That is the honest answer rather than a guess. Try the name
+          as the owner or architect writes it, or add the city.
         </p>
       )}
 
       {found !== null && found.length > 0 && (
         <div className="mt-4 border-t border-line-card pt-3">
           <p className="text-sm text-ink-body">
-            Found on the web in {searches} {searches === 1 ? "search" : "searches"}. Nothing is saved
-            yet. Untick anything you do not believe — every line links the page it came from.
+            Found on the web in {searches}{" "}
+            {searches === 1 ? "search" : "searches"}. Nothing is saved yet.
+            Untick anything you do not believe — every line links the page it
+            came from.
           </p>
           <ul className="mt-2 space-y-2">
             {found.map((one) => (
@@ -191,15 +215,19 @@ export function ProjectLookup() {
                         </span>
                       ))}
                     </span>
-                    {(NOTE_ONLY_FIELDS as readonly string[]).includes(one.key) && (
+                    {(NOTE_ONLY_FIELDS as readonly string[]).includes(
+                      one.key,
+                    ) && (
                       <span className="block text-xs text-ink-muted">
-                        Goes in the note — the pursuit has no field of its own for this.
+                        Goes in the note — the pursuit has no field of its own
+                        for this.
                       </span>
                     )}
                     {one.key === "bidDate" && (
                       <span className="block text-xs text-ink-muted">
-                        Goes in the note, not the date field. Type the date you believe yourself —
-                        a date off a web page is not your bid date.
+                        Goes in the note, not the date field. Type the date you
+                        believe yourself — a date off a web page is not your bid
+                        date.
                       </span>
                     )}
                   </span>
@@ -215,7 +243,9 @@ export function ProjectLookup() {
               className="mt-3 rounded-md border border-line-card px-3 py-2 text-sm font-medium text-ink hover:bg-surface"
             >
               Track this as a pursuit
-              {kept.length > 0 ? ` — with the ${kept.length} ticked` : " — with nothing filled in"}
+              {kept.length > 0
+                ? ` — with the ${kept.length} ticked`
+                : " — with nothing filled in"}
             </button>
           ) : (
             <form
@@ -244,12 +274,15 @@ export function ProjectLookup() {
               className="mt-3 rounded-md border border-line-card p-3"
             >
               <p className="mb-3 text-sm text-ink-body">
-                Check it over — this is the same form as &ldquo;Add a pursuit&rdquo; below, filled in
-                from what you ticked.
+                Check it over — this is the same form as &ldquo;Add a
+                pursuit&rdquo; below, filled in from what you ticked.
               </p>
               <BidPursuitFields prefill={prefill} minBidDate={localToday()} />
               {saveError && (
-                <p className="mt-3 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink" role="status">
+                <p
+                  className="mt-3 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink"
+                  role="status"
+                >
                   {saveError}
                 </p>
               )}
@@ -259,7 +292,14 @@ export function ProjectLookup() {
                   disabled={isSaving}
                   className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-neutral-900 disabled:opacity-60"
                 >
-                  {isSaving ? "Saving…" : "Add to the chase list"}
+                  {isSaving ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Spinner />
+                      Saving…
+                    </span>
+                  ) : (
+                    "Add to the chase list"
+                  )}
                 </button>
                 <button
                   type="button"

@@ -18,6 +18,7 @@ import { JobMediaMarks, type JobMediaMark } from "@/components/JobMediaMarks";
 import { JobMediaAnnotator } from "@/components/JobMediaAnnotator";
 import { annotationSummary } from "@/lib/job-media-annotations";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 
 /** Everything the card needs, already formatted on the server.
  *
@@ -68,6 +69,11 @@ export type JobMediaCardData = {
   capturedAtInputValue: string;
   sizeLabel: string;
   capturedByName: string | null;
+  /** The service this photo was imported from, or null for one captured
+   *  here. Derived from the provenance column at read time, never stored as
+   *  a label — a second copy of a fact is a second thing that can disagree
+   *  with it. */
+  importedFrom: "CompanyCam" | null;
   /** Non-null only when the row's own two timestamps disagree — see
    * jobMediaClockWarning. Derived at read time, stored nowhere. */
   clockWarning: string | null;
@@ -402,7 +408,14 @@ export function JobMediaCard({
                 disabled={isPending}
                 className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
               >
-                {isPending ? "Saving…" : "Save"}
+                {isPending ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Spinner />
+                    Saving…
+                  </span>
+                ) : (
+                  "Save"
+                )}
               </button>
               <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
                 Cancel
@@ -614,7 +627,18 @@ export function JobMediaCard({
                 the who. */}
             <p className="text-sm text-ink-body">
               {media.capturedAtLabel}
-              {media.capturedByName ? ` · ${media.capturedByName}` : ""} · {media.sizeLabel}
+              {/* WHO, or — for an imported photo, which by definition has no
+                  `capturedByUserId` — WHERE IT CAME FROM. The two are
+                  mutually exclusive, so this fills a hole rather than adding
+                  a line: an import left this slot blank, and a photo whose
+                  origin is another system is exactly the case where "who
+                  took it" is the question a reader has. */}
+              {media.capturedByName
+                ? ` · ${media.capturedByName}`
+                : media.importedFrom
+                  ? ` · imported from ${media.importedFrom}`
+                  : ""}{" "}
+              · {media.sizeLabel}
             </p>
             {media.clockWarning && <p className="text-sm text-amber-400">{media.clockWarning}</p>}
             {/* WHERE, on the line under WHEN and WHO, because that is the

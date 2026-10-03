@@ -11,6 +11,7 @@ import {
   labelClass,
 } from "@/components/DailyFieldReports";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
+import { Spinner } from "@/components/Spinner";
 import { defaultFieldReportJobId } from "@/lib/field-report-jobs";
 
 /** Was its own `{ id, name }` declaration — the fourth in the app, and the
@@ -196,7 +197,14 @@ export function FieldReportComposer({
           disabled={isPending}
           className="rounded-md bg-brand px-5 py-3 text-base font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Save report"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save report"
+          )}
         </button>
         <button
           type="button"

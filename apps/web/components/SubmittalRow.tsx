@@ -24,6 +24,7 @@ import {
 import { localToday } from "@/components/localToday";
 import { formatCalendarDay } from "@/lib/render-date";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 
 export type SubmittalRowData = SubmittalDefaults & {
   id: string;
@@ -102,7 +103,14 @@ export function SubmittalRow({
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
-              {isPending ? "Saving…" : "Save changes"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save changes"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
               Cancel
@@ -157,7 +165,14 @@ export function SubmittalRow({
 
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
-              {isPending ? "Saving…" : "Record as sent"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Record as sent"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
               Cancel
@@ -261,7 +276,14 @@ export function SubmittalRow({
 
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
-              {isPending ? "Saving…" : "Record response"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Record response"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
               Cancel

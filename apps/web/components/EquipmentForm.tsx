@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { createEquipment } from "@/lib/actions";
 import { EquipmentFields } from "@/components/EquipmentFields";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 
 /** Collapsed by default — same reasoning as VendorForm: the list is why
  * you came, adding is occasional.
@@ -70,7 +71,14 @@ export function EquipmentForm() {
             disabled={isPending}
             className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
           >
-            {isPending ? "Saving…" : "Add equipment"}
+            {isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Saving…
+              </span>
+            ) : (
+              "Add equipment"
+            )}
           </button>
           <button
             type="button"

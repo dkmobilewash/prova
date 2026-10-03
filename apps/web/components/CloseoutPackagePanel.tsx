@@ -12,6 +12,7 @@ import type { ActionResult } from "@/lib/actions/shared";
 import { inputClass, labelClass } from "@/components/RfiFields";
 import { localToday } from "@/components/localToday";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 import { money } from "@/lib/money";
 import type { CloseoutReadiness } from "@/lib/closeout-readiness";
 import {
@@ -209,7 +210,14 @@ export function CloseoutPackagePanel({
                   {error && <p className="text-sm text-red-400">{error}</p>}
                   <div className="flex gap-2">
                     <button type="submit" disabled={isPending} className={primaryBtn}>
-                      {isPending ? "Saving…" : "Record response"}
+                      {isPending ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Spinner />
+                          Saving…
+                        </span>
+                      ) : (
+                        "Record response"
+                      )}
                     </button>
                     <button
                       type="button"
@@ -317,7 +325,14 @@ export function CloseoutPackagePanel({
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
-              {isPending ? "Saving…" : "Record submission"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Record submission"
+              )}
             </button>
             <button
               type="button"
