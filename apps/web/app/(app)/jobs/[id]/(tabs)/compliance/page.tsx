@@ -3,6 +3,7 @@ import { PageColumn } from "@prova/ui";
 import { RowActions, ConfirmDelete } from "@/components/RowActions";
 import { PrevailingWageDeterminationForm } from "@/components/PrevailingWageDeterminationForm";
 import { DeterminationWageRates } from "@/components/DeterminationWageRates";
+import { PageAlerts } from "@/components/PageAlerts";
 import { JobComplianceFactsForm } from "@/components/JobComplianceFactsForm";
 import { DeterminationFactsEditor } from "@/components/DeterminationFactsEditor";
 import { DeterminationStandingLine } from "@/components/DeterminationStandingLine";
@@ -149,6 +150,19 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
   // layout above is `working`; see PageColumn.
   return (
       <PageColumn width="reading">
+        {/* The apprenticeship and certified-payroll deadlines this tab is
+            about. They were computed correctly and reached only /alerts —
+            which lib/alerts.ts says of DAS-140 itself: it "reached nobody
+            who was not already looking at that job's compliance tab". This
+            is that tab. Scoped by href to THIS job, from the same
+            loadAlerts call the list uses, and renders nothing when there
+            is nothing. */}
+        <PageAlerts
+          companyId={company.id}
+          user={{ id: currentUser.id, role: currentUser.role, jobFunction: currentUser.jobFunction }}
+          kinds={["APPRENTICE_RATIO", "CERTIFIED_PAYROLL", "DAS140_NOTICE", "DAS142_DISPATCH"]}
+          jobHref={`/jobs/${jobRef.id}`}
+        />
         <section className="mb-8">
           <h2 className="mb-1 text-lg font-semibold text-ink">Public-works facts</h2>
           <p className="mb-3 text-sm text-ink-muted">
