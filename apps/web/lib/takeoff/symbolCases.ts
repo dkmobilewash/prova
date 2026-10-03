@@ -85,26 +85,65 @@ const CASES: SymbolCase[] = [
   },
 ];
 
-/** Every case, on both sheet sizes — the paired arms. */
-export const SYMBOL_CASES: (SymbolCase & { sheet: SheetSpec })[] = CASES.flatMap((one) => [
-  {
-    ...one,
-    id: `${one.id}@ARCH_D`,
-    sheet: {
-      id: `${one.id}-arch-d`,
-      sheetSize: "ARCH_D" as const,
-      sheetNumber: "A-201",
-      symbols: [{ kind: one.kind, count: one.count }],
+/** The kind drawn alongside, so one sheet carries two kinds and the model has
+ *  to count only the one it was asked for. Never the same kind as the ask. */
+const COMPETING: Record<SymbolSpec["kind"], SymbolSpec> = {
+  columnBubble: { kind: "wallTag", count: 9 },
+  door: { kind: "columnBubble", count: 7 },
+  wallTag: { kind: "door", count: 6 },
+};
+
+/**
+ * Every case, on both sheet sizes AND in both conditions — four arms.
+ *
+ * ── WHY THE CLEAN ARM IS KEPT RATHER THAN REPLACED ──
+ *
+ * The 2026-10-02 run measured Opus 8/8 on clean sheets, and `DECISIONS.md`
+ * bounded it: *"the next measurement — the one that would justify building
+ * anything — needs sheets with competing geometry on them."* The obvious move is
+ * to swap the fixtures for hard ones. That would be a mistake, and the reason is
+ * this repo's own two-arm argument one level out:
+ *
+ * A drop from 8/8 to 4/8 on hardened sheets only means "the clutter did it" if
+ * the clean arm still scores 8/8 IN THE SAME RUN. Replace the fixtures and a
+ * regression in the prompt, the model, the PDF writer or the grader is
+ * indistinguishable from the clutter working as intended. The clean arm is the
+ * control, and a control that is not run is not a control.
+ *
+ * So: `CLEAN` is what was measured before, unchanged, and `CLUTTERED` is the new
+ * question. Sixteen cases, four per symbol.
+ */
+export const SYMBOL_CASES: (SymbolCase & { sheet: SheetSpec; arm: "CLEAN" | "CLUTTERED" })[] = CASES.flatMap((one) => {
+  const sizes = [
+    { size: "ARCH_D" as const, sheetNumber: "A-201" },
+    { size: "DETAIL" as const, sheetNumber: "A-501" },
+  ];
+  return sizes.flatMap(({ size, sheetNumber }) => [
+    {
+      ...one,
+      id: `${one.id}@${size}`,
+      arm: "CLEAN" as const,
+      sheet: {
+        id: `${one.id}-${size}-clean`,
+        sheetSize: size,
+        sheetNumber,
+        symbols: [{ kind: one.kind, count: one.count }],
+      },
     },
-  },
-  {
-    ...one,
-    id: `${one.id}@DETAIL`,
-    sheet: {
-      id: `${one.id}-detail`,
-      sheetSize: "DETAIL" as const,
-      sheetNumber: "A-501",
-      symbols: [{ kind: one.kind, count: one.count }],
+    {
+      ...one,
+      id: `${one.id}@${size}+clutter`,
+      arm: "CLUTTERED" as const,
+      why: `${one.why} — now with poché, dimension strings, keynotes and ${COMPETING[one.kind].count} ${COMPETING[one.kind].kind}s to tell it apart from.`,
+      sheet: {
+        id: `${one.id}-${size}-cluttered`,
+        sheetSize: size,
+        sheetNumber,
+        // The asked-for kind FIRST, so `trueCount(spec, kind)` is unambiguous
+        // and the competing kind is a second entry rather than a modifier.
+        symbols: [{ kind: one.kind, count: one.count }, COMPETING[one.kind]],
+        clutter: ["hatching", "dimensions", "notes"],
+      },
     },
-  },
-]);
+  ]);
+});

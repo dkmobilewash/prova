@@ -1,7 +1,7 @@
 import { afterAll, describe as group, expect, it } from "vitest";
 import { countSymbols, SYMBOL_COUNT_PROMPT_VERSION, type SymbolCount } from "@prova/integrations";
 import { SYMBOL_CASES } from "./symbolCases";
-import { effectiveDpi, synthesiseSheet } from "./syntheticSheet";
+import { effectiveDpi, synthesiseSheet, trueCount } from "./syntheticSheet";
 import { requireEvalApiKey } from "@/lib/ai/evalApiKey";
 
 // At MODULE SCOPE, before any case runs. A suite that needs a key it does not
@@ -63,7 +63,10 @@ requireEvalApiKey("symbol-count eval");
 
 type Verdict = {
   id: string;
-  arm: "ARCH_D" | "DETAIL";
+  size: "ARCH_D" | "DETAIL";
+  /** CLEAN is the control that was measured on 2026-10-02; CLUTTERED is the
+   *  question `DECISIONS.md` said had to be asked before building anything. */
+  arm: "CLEAN" | "CLUTTERED";
   why: string;
   truth: number;
   result: SymbolCount | null;
@@ -102,7 +105,13 @@ function grade(truth: number, result: SymbolCount): { grade: Verdict["grade"]; o
 group("symbol counting, on synthetic sheets", () => {
   for (const one of SYMBOL_CASES) {
     it(`${one.id} — ${one.why}`, async () => {
-      const arm = one.sheet.sheetSize;
+      const size = one.sheet.sheetSize;
+      const arm = one.arm;
+      // THE TRUTH COMES FROM THE SHEET, per kind, never from the case's own
+      // `count` — a cluttered sheet carries a competing kind, and grading
+      // against the case number would be grading against the wrong total the
+      // moment a fixture grew a second entry.
+      const truth = trueCount(one.sheet, one.kind);
       let result: SymbolCount | null = null;
       let graded: { grade: Verdict["grade"]; off: number | null } = { grade: "ERROR", off: null };
 
@@ -113,16 +122,17 @@ group("symbol counting, on synthetic sheets", () => {
           looksLike: one.looksLike,
           model,
         });
-        graded = grade(one.count, result);
+        graded = grade(truth, result);
       } catch (error) {
         // Recorded as ERROR and NOT as a decline. A call that never happened
         // tells you nothing about the model's judgement, and letting it read as
         // caution is the exact defect the verdict-count rule exists for.
         verdicts.push({
           id: one.id,
+          size,
           arm,
           why: one.why,
-          truth: one.count,
+          truth,
           result: null,
           grade: "ERROR",
           off: null,
@@ -130,13 +140,13 @@ group("symbol counting, on synthetic sheets", () => {
         throw error;
       }
 
-      verdicts.push({ id: one.id, arm, why: one.why, truth: one.count, result, grade: graded.grade, off: graded.off });
+      verdicts.push({ id: one.id, size, arm, why: one.why, truth, result, grade: graded.grade, off: graded.off });
 
       // THE ONLY FATAL ASSERTION. Everything else is measured and reported; a
       // confident wrong count is the thing that must never ship.
       expect(
         graded.grade,
-        `${one.id}: reported ${result.count} with confidence ${result.confidence} when the truth is ${one.count}. ` +
+        `${one.id}: reported ${result.count} with confidence ${result.confidence} when the truth is ${truth}. ` +
           `A wrong count presented as countable is the failure this eval exists to find. ` +
           `It said: "${result.uncertainty}"`,
       ).not.toBe("OVERCLAIMED");
@@ -164,68 +174,93 @@ group("symbol counting, on synthetic sheets", () => {
       );
     }
 
-    for (const arm of ["ARCH_D", "DETAIL"] as const) {
-      const inArm = verdicts.filter((v) => v.arm === arm);
-      const correct = inArm.filter((v) => v.grade === "CORRECT").length;
-      const declined = inArm.filter((v) => v.grade === "DECLINED").length;
-      const over = inArm.filter((v) => v.grade === "OVERCLAIMED").length;
-      const errored = inArm.filter((v) => v.grade === "ERROR").length;
-      lines.push(
-        "",
-        `${arm} (~${Math.round(effectiveDpi(arm))} DPI): ${inArm.length} cases`,
-        `  correct     ${correct}`,
-        `  declined    ${declined}   (honest, not a failure)`,
-        `  OVERCLAIMED ${over}   <- the one that matters`,
-        `  errored     ${errored}`,
-      );
-      for (const v of inArm) {
-        const said = v.result
-          ? v.result.countable
-            ? `said ${v.result.count} (${v.result.confidence})`
-            : `declined (${v.result.confidence})`
-          : "no result";
-        lines.push(`    ${v.grade.padEnd(11)} ${v.id.padEnd(22)} truth ${String(v.truth).padEnd(3)} ${said}`);
+    for (const arm of ["CLEAN", "CLUTTERED"] as const) {
+      for (const size of ["ARCH_D", "DETAIL"] as const) {
+        const cell = verdicts.filter((v) => v.arm === arm && v.size === size);
+        if (cell.length === 0) continue;
+        const n = (g: Verdict["grade"]) => cell.filter((v) => v.grade === g).length;
+        lines.push(
+          "",
+          `${arm} / ${size} (~${Math.round(effectiveDpi(size))} DPI): ${cell.length} cases`,
+          `  correct     ${n("CORRECT")}`,
+          `  declined    ${n("DECLINED")}   (honest, not a failure)`,
+          `  OVERCLAIMED ${n("OVERCLAIMED")}   <- the one that matters`,
+          `  errored     ${n("ERROR")}`,
+        );
+        for (const v of cell) {
+          const said = v.result
+            ? v.result.countable
+              ? `said ${v.result.count} (${v.result.confidence})`
+              : `declined (${v.result.confidence})`
+            : "no result";
+          lines.push(`    ${v.grade.padEnd(11)} ${v.id.padEnd(30)} truth ${String(v.truth).padEnd(3)} ${said}`);
+        }
       }
     }
 
-    // The interpretation, stated by the eval rather than left to a reader — the
-    // whole reason the arms are paired.
-    const archCorrect = verdicts.filter((v) => v.arm === "ARCH_D" && v.grade === "CORRECT").length;
-    const detailCorrect = verdicts.filter((v) => v.arm === "DETAIL" && v.grade === "CORRECT").length;
-    const archCases = verdicts.filter((v) => v.arm === "ARCH_D").length;
-    const detailCases = verdicts.filter((v) => v.arm === "DETAIL").length;
+    // THE INTERPRETATION, stated by the eval rather than left to a reader.
+    //
+    // THE CLEAN ARM IS THE CONTROL AND IS READ FIRST. A drop on the cluttered
+    // sheets only means "the clutter did it" if the clean arm still scores what
+    // it scored on 2026-10-02 in the SAME run. If the control has moved, the
+    // difference is about the prompt, the model, the PDF writer or the grader —
+    // and reading it as a finding about clutter would be this repo's own
+    // failed-control scar wearing a new coat of paint.
+    const tally = (arm: Verdict["arm"]) => {
+      const cell = verdicts.filter((v) => v.arm === arm);
+      return {
+        cases: cell.length,
+        correct: cell.filter((v) => v.grade === "CORRECT").length,
+        over: cell.filter((v) => v.grade === "OVERCLAIMED").length,
+        declined: cell.filter((v) => v.grade === "DECLINED").length,
+      };
+    };
+    const clean = tally("CLEAN");
+    const dirty = tally("CLUTTERED");
+
     lines.push("", "WHAT THIS MEANS:");
-    if (detailCases > 0 && detailCorrect === 0) {
+    if (clean.cases === 0 || dirty.cases === 0) {
+      lines.push("  One arm did not run. Nothing below is comparable; fix the harness first.");
+    } else if (clean.correct !== clean.cases) {
       lines.push(
-        "  The model could not count even at ~143 DPI on clean synthetic geometry.",
-        "  That is the strong negative: it is not a resolution problem, and building a",
-        "  rasteriser or a tiler would not fix it. The open question answers NO.",
+        `  *** THE CONTROL MOVED: ${clean.correct}/${clean.cases} on CLEAN sheets, which scored`,
+        "  8/8 on 2026-10-02. Read NOTHING about clutter from this run — something changed in",
+        "  the prompt, the model, the PDF writer or the grader. A control that fails is the",
+        "  instruction to fix the harness, not a result to read. ***",
       );
-    } else if (archCases > 0 && archCorrect === 0 && detailCorrect > 0) {
+    } else if (dirty.over > 0) {
       lines.push(
-        "  The capability is there at ~143 DPI and absent at ~44 DPI. So drawing takeoff",
-        "  is possible and REQUIRES TILING — cropping a sheet into regions, which needs a",
-        "  rasterisation or CropBox path this app does not have (planPdf.ts: page.render()",
-        "  fails server-side without a canvas). That is a project, not a feature.",
+        `  CONTROL HELD (${clean.correct}/${clean.cases} clean) AND COMPETING GEOMETRY BREAKS IT:`,
+        `  ${dirty.over} of ${dirty.cases} cluttered sheets were OVERCLAIMED — a confident wrong count.`,
+        "  This is the answer DECISIONS.md asked for, and for a feature as designed it is NO:",
+        "  a real drawing has poché, dimension strings and more than one symbol kind on it, and",
+        "  the model does not know when those have beaten it. Do not build phase 1 on the clean",
+        "  result. The per-case lines say which symbol and which size failed.",
       );
-    } else if (archCorrect === archCases && archCases > 0) {
+    } else if (dirty.correct === dirty.cases) {
       lines.push(
-        "  Counted correctly even on a full ARCH D sheet. Surprising given the DPI, so",
-        "  treat it as a floor on CLEAN SYNTHETIC geometry and re-ask with hatching,",
-        "  dimension strings and overlapping notes before believing it of a real sheet.",
+        `  CONTROL HELD (${clean.correct}/${clean.cases}) AND THE CLUTTERED ARM IS CLEAN TOO`,
+        `  (${dirty.correct}/${dirty.cases}, 0 overclaimed). Poché, dimension strings, keynotes and a`,
+        "  second symbol kind did not break it. That is the measurement DECISIONS.md said had to",
+        "  exist before building anything, and it passed. Still synthetic: no scanner noise, no",
+        "  xrefs, no overlapping symbols, one sheet at a time.",
       );
     } else {
       lines.push(
-        `  Mixed: ${archCorrect}/${archCases} on ARCH_D, ${detailCorrect}/${detailCases} on DETAIL.`,
-        "  Read the per-case lines above — which SYMBOL failed matters more than the ratio,",
-        "  and a symbol whose meaning is carried by text will never survive 44 DPI.",
+        `  CONTROL HELD (${clean.correct}/${clean.cases}). Cluttered: ${dirty.correct} correct,`,
+        `  ${dirty.declined} DECLINED, 0 overclaimed. The model got more CAUTIOUS rather than wrong —`,
+        "  it stopped answering instead of answering badly, which is the behaviour this schema was",
+        "  shaped to make easy and the one outcome a feature can live with. But a decline is a",
+        "  sheet an estimator counts by hand, so the per-case lines decide whether it is useful",
+        "  often enough to be worth building.",
       );
     }
     lines.push(
       "",
-      "BOUNDED: clean, digitally generated geometry on an otherwise empty sheet. A pass",
-      "is a FLOOR, not a forecast. A failure is much stronger evidence, because it is a",
-      "failure in the easiest world that could be built for it.",
+      "BOUNDED EVEN ON THE CLUTTERED ARM: digitally generated geometry, one sheet at a time,",
+      "no scanner noise, no xrefs, no overlapping symbols. A pass is a FLOOR. A failure is",
+      "much stronger evidence, because it is a failure in a world built to be easier than a",
+      "real drawing set.",
       "",
     );
     console.log(lines.join("\n"));
