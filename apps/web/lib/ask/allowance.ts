@@ -400,6 +400,10 @@ export type AllowanceSummary = {
   failedAddendumPages: number;
   addendumPagesLeft: number;
   addendumPageCeiling: number;
+  specPagesUsed: number;
+  failedSpecPages: number;
+  specPagesLeft: number;
+  specPageCeiling: number;
   /** "1 October" — when this month's figures go back to zero. */
   resetsOn: string;
   /** Either ceiling is down to a fifth or less. The warning threshold, kept
@@ -426,16 +430,18 @@ export async function allowanceSummary(
   let ceilings = {
     planSheetCeiling: AI_SETTINGS_DEFAULTS.planSheetsPerMonth,
     addendumPageCeiling: AI_SETTINGS_DEFAULTS.addendumPagesPerMonth,
+    specPageCeiling: AI_SETTINGS_DEFAULTS.specPagesPerMonth,
   };
   try {
     const settings = await prisma.companyAiSettings.findUnique({
       where: { companyId },
-      select: { planSheetsPerMonth: true, addendumPagesPerMonth: true },
+      select: { planSheetsPerMonth: true, addendumPagesPerMonth: true, specPagesPerMonth: true },
     });
     if (settings) {
       ceilings = {
         planSheetCeiling: settings.planSheetsPerMonth,
         addendumPageCeiling: settings.addendumPagesPerMonth,
+        specPageCeiling: settings.specPagesPerMonth,
       };
     }
   } catch (err) {
@@ -461,6 +467,9 @@ export async function allowanceSummary(
     addendumPagesUsed: 0,
     failedAddendumPages: 0,
     addendumPagesLeft: ceilings.addendumPageCeiling,
+    specPagesUsed: 0,
+    failedSpecPages: 0,
+    specPagesLeft: ceilings.specPageCeiling,
     resetsOn: resetSentence(now),
   };
   let row: {
@@ -472,6 +481,8 @@ export async function allowanceSummary(
     failedPlanSheets: number;
     addendumPagesUsed: number;
     failedAddendumPages: number;
+    specPagesUsed: number;
+    failedSpecPages: number;
   } | null;
   try {
     row = await prisma.askAllowancePeriod.findUnique({
@@ -485,6 +496,8 @@ export async function allowanceSummary(
         failedPlanSheets: true,
         addendumPagesUsed: true,
         failedAddendumPages: true,
+        specPagesUsed: true,
+        failedSpecPages: true,
       },
     });
   } catch (err) {
@@ -498,6 +511,7 @@ export async function allowanceSummary(
   const pagesLeft = Math.max(0, allowance.pages - row.pagesUsed);
   const planSheetsLeft = Math.max(0, ceilings.planSheetCeiling - row.planSheetsUsed);
   const addendumPagesLeft = Math.max(0, ceilings.addendumPageCeiling - row.addendumPagesUsed);
+  const specPagesLeft = Math.max(0, ceilings.specPageCeiling - row.specPagesUsed);
   return {
     readable: true,
     allowance,
@@ -514,6 +528,9 @@ export async function allowanceSummary(
     addendumPagesUsed: row.addendumPagesUsed,
     failedAddendumPages: row.failedAddendumPages,
     addendumPagesLeft,
+    specPagesUsed: row.specPagesUsed,
+    failedSpecPages: row.failedSpecPages,
+    specPagesLeft,
     resetsOn: resetSentence(now),
     // LOW STILL MEANS THE TWO SHARED UNITS ONLY, on purpose. Questions and
     // document pages are what every surface spends, and what runs out on somebody

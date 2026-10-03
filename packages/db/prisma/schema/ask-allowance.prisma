@@ -125,6 +125,32 @@ model AskAllowancePeriod {
   /// the reasons every other failure field here gives.
   failedAddendumPages Int @default(0)
 
+  /// PAGES OF SPEC SECTIONS READ THIS MONTH — a FIFTH unit, and the argument
+  /// above arriving a third time rather than a new one.
+  ///
+  /// Sharing `addendumPagesUsed` was the obvious saving and is the wrong call
+  /// for a reason the addendum entry above does not cover: the two units would
+  /// be spent by different features at wildly different rates. A spec section
+  /// runs thirty to sixty pages against an addendum's two to twenty, so three
+  /// sections on one bid is roughly a hundred pages — and twenty bids a month is
+  /// 1,800 against the addendum allowance of 600. Reading specs would silently
+  /// consume the allowance for reading addenda, three times over, with nothing on
+  /// screen able to tell a contractor which of the two spent their month.
+  ///
+  /// 1,800 a month is Diego's figure and A FIGURE IS NOT A MEASUREMENT. Worth
+  /// recording how it was arrived at, because the first number was wrong: it was
+  /// pitched as 600 on an estimate of "four ten-page sections per bid", and a
+  /// spec section is not ten pages. At thirty pages and three sections, 600 is
+  /// three bids a month rather than fifteen. 1,800 is twenty bids at three
+  /// thirty-page sections, and step 2's cost panel is what turns it into a
+  /// measurement.
+  ///
+  /// Per-company on `CompanyAiSettings.specPagesPerMonth`, reaching the claim out
+  /// of the `AiSettings` the gate already returned rather than a second query.
+  specPagesUsed   Int @default(0)
+  /// Of those, pages whose model call then failed — marked, never released.
+  failedSpecPages Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

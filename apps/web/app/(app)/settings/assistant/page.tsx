@@ -186,12 +186,18 @@ export default async function AssistantAuditPage() {
               and{" "}
               <span className="text-ink-label">
                 {allowance.addendumPagesLeft} of {allowance.addendumPageCeiling} addendum pages
+              </span>{", "}
+              and{" "}
+              <span className="text-ink-label">
+                {allowance.specPagesLeft} of {allowance.specPageCeiling} spec pages
               </span>{" "}
               left. Used so far: {allowance.planSheetsUsed}{" "}
-              {allowance.planSheetsUsed === 1 ? "sheet" : "sheets"} and {allowance.addendumPagesUsed}{" "}
-              {allowance.addendumPagesUsed === 1 ? "page" : "pages"}. These do not come out of the
-              questions or document pages above, so reading a drawing set or a GC&apos;s addendum
-              cannot spend the allowance the same job&apos;s paperwork needs.
+              {allowance.planSheetsUsed === 1 ? "sheet" : "sheets"}, {allowance.addendumPagesUsed}{" "}
+              {allowance.addendumPagesUsed === 1 ? "addendum page" : "addendum pages"} and{" "}
+              {allowance.specPagesUsed} {allowance.specPagesUsed === 1 ? "spec page" : "spec pages"}.
+              These do not come out of the questions or document pages above, and they do not come out
+              of each other — so reading a drawing set, a GC&apos;s addendum or a spec section cannot
+              spend the allowance the same job&apos;s paperwork needs.
             </p>
             <p className="mb-3 text-sm text-ink-body">
               A question costs one question. A file costs its real page count on top — a PDF is counted
@@ -211,12 +217,16 @@ export default async function AssistantAuditPage() {
                 failure rather than releasing it, and both tell the person so at
                 the time — "the account owner can see them on Settings →
                 Assistant". This is where that has to be true. */}
-            {(allowance.failedPlanSheets > 0 || allowance.failedAddendumPages > 0) && (
+            {(allowance.failedPlanSheets > 0 ||
+              allowance.failedAddendumPages > 0 ||
+              allowance.failedSpecPages > 0) && (
               <p className="mb-3 text-sm text-ink-body" data-ask="allowance-failed-units">
                 {allowance.failedPlanSheets}{" "}
-                {allowance.failedPlanSheets === 1 ? "plan sheet" : "plan sheets"} and{" "}
+                {allowance.failedPlanSheets === 1 ? "plan sheet" : "plan sheets"},{" "}
                 {allowance.failedAddendumPages}{" "}
-                {allowance.failedAddendumPages === 1 ? "addendum page" : "addendum pages"} were claimed for
+                {allowance.failedAddendumPages === 1 ? "addendum page" : "addendum pages"} and{" "}
+                {allowance.failedSpecPages}{" "}
+                {allowance.failedSpecPages === 1 ? "spec page" : "spec pages"} were claimed for
                 a read that then failed. Counted rather than given back, for the same reason — contact
                 C Stream and a person will credit it.
               </p>

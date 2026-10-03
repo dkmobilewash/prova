@@ -56,6 +56,7 @@ export const AI_FEATURES = {
   QUOTE_EXTRACT: "quote-extract",
   PLAN_INGESTION: "plan-ingestion",
   ADDENDUM_READ: "addendum-read",
+  SPEC_READ: "spec-read",
 } as const;
 
 export type AiFeatureKey = keyof typeof AI_FEATURES;
@@ -94,6 +95,7 @@ const FEATURE_MODEL: Record<AiFeatureKey, string> = {
   // document submitted once. The eval is what may reverse this, not this
   // comment.
   ADDENDUM_READ: OPUS_5,
+  SPEC_READ: OPUS_5,
 };
 
 /** `ANTHROPIC_MODEL_PLAN_INGESTION` etc. — the per-feature env override. */
