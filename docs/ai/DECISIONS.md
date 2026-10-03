@@ -552,6 +552,146 @@ what was actually known.
   is metered.** Unanswered. The figures in this file — 1,500 plan sheets, 600
   addendum pages — are Diego's for the $399 plan and neither is a measurement.
 
-- **Whether symbol-counting can reach a precision an estimator would accept.**
+- ~~**Whether symbol-counting can reach a precision an estimator would accept.**
   Unanswered, and it gates the takeoff-from-drawings work rather than anything
-  shipped.
+  shipped.~~ **MEASURED 2026-10-02, and the answer is YES ON OPUS AND NO ON
+  HAIKU — which is not the axis anybody expected it to turn on.**
+
+  `lib/takeoff/symbolCount.eval.ts`, eight cases on synthetic sheets, two runs:
+
+  | model | correct | OVERCLAIMED | declined |
+  | --- | --- | --- | --- |
+  | **claude-opus-5** | **8 / 8** | **0** | 0 |
+  | claude-haiku-4-5 | 4 / 8 | **4** | **0** |
+
+  Opus counted every case exactly, on both arms, and its confidence tracked the
+  actual difficulty: MEDIUM on every ARCH D sheet, HIGH only on the two easy
+  high-resolution cases. Reproduced on a second run, same 8/8.
+
+  **THE EXPECTED ANSWER WAS "IT NEEDS TILING", AND THAT IS REFUTED.** The eval
+  was built with two arms because `plan-ingest/planPdf.ts` had already measured
+  the constraint that made tiling look inevitable — an ARCH D sheet is 36 inches
+  wide, so it lands at ~44 DPI (1568px) or ~65 DPI (2576px), which is why title
+  blocks are read as vector text and never looked at. A 1/8" letter is eight
+  pixels. The prediction was that symbols would be countable on the letter-size
+  arm (~143 DPI) and not on the full sheet, making drawing takeoff a
+  rasterisation project before it could be a feature.
+
+  Opus counted a full ARCH D sheet at 44 DPI, four cases out of four. **So the
+  blocker is not resolution and the tiling work is not needed to find out.**
+  That is the expensive project the two-arm design was built to avoid starting
+  on a guess.
+
+  **WHAT HAIKU DID IS THE MORE IMPORTANT HALF, BECAUSE IT IS THE FAILURE A
+  FEATURE WOULD SHIP.** Not 4 wrong out of 8 — *4 wrong out of 8 at HIGH
+  confidence, with zero honest declines in sixteen opportunities,* and specific
+  fabricated reassurance attached:
+
+      doors-11@ARCH_D   said 10, truth 11, HIGH
+        "The symbols are clearly visible at this resolution and well-distributed
+         across the sheet with no overlaps. I have examined the entire floor plan
+         systematically."
+
+      doors-11@DETAIL   said 14, truth 11, HIGH
+        "All 14 are plainly resolved at this resolution with distinct
+         quarter-circle swing arcs. I examined the entire sheet and counted each
+         one."
+
+  The prompt invites a decline in its first rule, in capitals, and promises no
+  penalty for it. Haiku never took it once. And the DETAIL arm was **worse** than
+  ARCH_D for doors (14 against 10, truth 11), so more pixels did not help — this
+  is not a seeing problem, it is a not-knowing-it-cannot-count problem, and no
+  amount of resolution fixes that.
+
+  This is exactly the metric this file says to care about, arriving with evidence:
+  *"a count that is 85% accurate and reads as certain is a wrong bid."*
+
+  **WHAT FOLLOWS FOR THE FEATURE.** A symbol-counting feature must be Opus, and
+  must not inherit `PLAN_INGESTION`'s Haiku — that choice is a VOLUME decision
+  (hundreds of sheets per set) and symbol counting is one sheet an estimator
+  chose. The eval asked Haiku first only because plan ingestion was the closest
+  existing feature to borrow a model from, which was the wrong stand-in and is
+  the reason the eval now defaults to Opus with
+  `ANTHROPIC_MODEL_SYMBOL_COUNT` to re-measure.
+
+  **BOUNDED, and the bound is wide.** Clean, digitally generated geometry on an
+  otherwise empty synthetic sheet — no hatching, no dimension strings, no
+  overlapping notes, no xrefs, no scanner noise, and one symbol kind per sheet.
+  A real drawing has all of it. **This is a FLOOR, not a forecast:** it says Opus
+  can count marks it can see and knows roughly how sure it is. It does not say
+  Opus can take off a real drawing set, and the next measurement — the one that
+  would justify building anything — needs sheets with competing geometry on them.
+  Nothing here should be read as drawing takeoff being ready; `FEATURE-AUDIT.md`
+  keeps it as Missing.
+
+  ### That measurement has now been run, and the clean 8/8 does not survive it
+
+  **2026-10-02, later the same day. The bound above was the right bound and the
+  feature does NOT clear it.** Sixteen cases: the eight clean ones unchanged as a
+  CONTROL, and eight carrying poché, dimension strings, keynotes and a second
+  symbol kind to tell the asked-for one apart from.
+
+  | arm | correct | declined | OVERCLAIMED |
+  | --- | --- | --- | --- |
+  | CLEAN / ARCH_D | 4 / 4 | 0 | 0 |
+  | CLEAN / DETAIL | 4 / 4 | 0 | 0 |
+  | CLUTTERED / ARCH_D | 0 / 4 | 3 | **1** |
+  | CLUTTERED / DETAIL | 3 / 4 | 0 | **1** |
+
+  **THE CONTROL HELD AT 8/8, WHICH IS THE ONLY REASON THE REST IS READABLE.** The
+  clean arm is kept rather than replaced precisely so a drop is attributable: had
+  the fixtures simply been made harder, a regression in the prompt, the model, the
+  PDF writer or the grader would be indistinguishable from the clutter working as
+  intended. The clean arm scoring exactly what it scored before, in the same run,
+  is what makes "the clutter did this" a measurement rather than a guess.
+
+  **THE CONFIDENCE SIGNAL DOES NOT DISCRIMINATE UNDER CLUTTER, and that is the
+  finding that matters more than the two wrong counts.** On cluttered sheets
+  MEDIUM was right three times and wrong once; LOW declined three times and
+  answered wrong once. Nothing scored HIGH. So a feature **cannot** be made safe
+  by showing only high-confidence counts — the band that was wrong is the same
+  band that was right, and the one wrong MEDIUM was the worst answer in the whole
+  run (said 8 against a truth of 11, a 27% undercount).
+
+  **WHAT ACTUALLY FAILS IS ONE SYMBOL SHAPE, in both sizes: the thin-stroke one.**
+  Doors — a leaf line plus a swing arc — overclaimed on both cluttered arms (8
+  against 11, and 10 against 11). Circles-with-a-letter and filled squares were
+  either correct or honestly declined. At 44 DPI a hatch stroke and a door leaf
+  are both one thin line, which is the competition that was added on purpose.
+
+  **AND OPUS'S SELF-REPORT WAS ACCURATE, WHICH IS A DIFFERENT FAILURE FROM
+  HAIKU'S AND HAS TO BE SAID SEPARATELY.** Haiku fabricated reassurance — *"All
+  14 are plainly resolved… I examined the entire sheet and counted each one."*
+  Opus named the real cause, correctly, and then returned a number anyway:
+
+  > *"two large cross-hatched blocks (upper right and lower left) could
+  > completely conceal additional door swings drawn inside or beneath the hatch,
+  > and I could not verify those areas."*
+
+  That is true — the hatch bands are drawn over the symbol grid. So this is not a
+  model that does not know; it is a model that knows, says so in words an
+  estimator could act on, and still fills in `count` instead of declining. The
+  schema already makes declining free (`countable: false`, `count: null`) and the
+  prompt invites it in capitals in its first rule.
+
+  **WHAT FOLLOWS, AND IT IS A REFUSAL TO BUILD PHASE 1 AS DESIGNED.** A real
+  drawing has poché, dimension strings and more than one symbol kind on every
+  sheet; those are not edge cases, they are what a sheet IS. Two confident wrong
+  counts in eight, in a world still far easier than a real sheet — no scanner
+  noise, no xrefs, no overlapping symbols, one sheet at a time — is not a
+  foundation for a quantity that reaches a bid. The clean 8/8 was real and it was
+  measuring the wrong world.
+
+  Three things that would change the answer, in order of cost: a prompt that
+  refuses rather than estimates when it can name an occlusion (the model already
+  produces the sentence, so this is cheap and testable); restricting a first
+  feature to closed/filled symbols and refusing thin-stroke ones outright; or
+  tiling, which the clean arm had appeared to rule out and which the hatch result
+  puts back on the table for a different reason than resolution.
+
+  `FEATURE-AUDIT.md` keeps drawing takeoff as **Missing**, and this entry is why.
+
+  `countSymbols` (`packages/integrations/src/symbols.ts`) is an INSTRUMENT, not a
+  feature: no action calls it, it is not in `AI_FEATURES`, it is not metered, and
+  `aiFeatureGateCensus.test.ts` now pins that state — an eval must import it and
+  nothing else may.

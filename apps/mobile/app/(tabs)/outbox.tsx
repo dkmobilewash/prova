@@ -6,7 +6,7 @@ import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { GroupedList } from "@/components/GroupedList";
 import { GroupedRow } from "@/components/GroupedRow";
-import { LargeTitle } from "@/components/LargeTitle";
+import { AppHeader } from "@/components/AppHeader";
 import { SectionHeader } from "@/components/SectionHeader";
 import { useT } from "@/lib/i18n";
 import { type Palette, radius, space, typography } from "@/lib/theme";
@@ -96,7 +96,7 @@ export default function OutboxScreen() {
         {/* Its own large title inside the safe area, the way every
             other tab draws one. This screen used to take the root
             stack header; as a tab it has none. */}
-        <LargeTitle>{t("nav.outbox")}</LargeTitle>
+        <AppHeader title={t("nav.outbox")} />
         {nothingHeld ? (
           <EmptyState
             title={t("outbox.empty.title")}

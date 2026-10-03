@@ -310,7 +310,7 @@ describe("the scope of the translation", () => {
  * The first version of this only matched single-line bare text and let
  * `{busy ? "Saving…" : "Keep on phone"}` through on a screen it had just
  * declared clean. */
-const TEXT_ELEMENTS = /<(?:Text|LargeTitle|SectionHeader)(?:\s[^>]*)?>([\s\S]*?)<\/(?:Text|LargeTitle|SectionHeader)>/g;
+const TEXT_ELEMENTS = /<(?:Text|SectionHeader)(?:\s[^>]*)?>([\s\S]*?)<\/(?:Text|SectionHeader)>/g;
 const TEXT_PROPS =
   /\b(?:title|subtitle|label|placeholder|emptyTitle|emptyDescription|hint|accessibilityLabel|describe|confirmLabel)\s*=\s*"([^"]{3,})"/g;
 /** A double-quoted literal inside a text element's expressions. */

@@ -106,12 +106,18 @@ type Verdict = {
 
 const verdicts: Verdict[] = [];
 
-function requireApiKey(): void {
-  // Shared with every other eval — see `lib/ai/evalApiKey.ts`, which carries the
-  // reasoning this used to hold locally, including why the placeholder check
-  // exists and why it measures LENGTH rather than an `sk-ant-` prefix.
-  requireEvalApiKey("addendum eval");
-}
+// AT COLLECTION, not inside a case — corrected 2026-10-02, and this is the only
+// eval in the repo that had it wrong. `requireApiKey()` was called from INSIDE
+// the `it` body, so a run with no key started the suite and threw once per case:
+// four failures that read as a measurement which went badly, rather than a
+// measurement that never happened. `harness.test.ts`'s own comment has described
+// that exact placement as the thing to refuse since it was written — its walk
+// just could not see this folder. See the scope correction in that file.
+//
+// Shared helper rather than a local copy — see `lib/ai/evalApiKey.ts`, which
+// carries the reasoning this used to hold locally, including why the placeholder
+// check exists and why it measures LENGTH rather than an `sk-ant-` prefix.
+requireEvalApiKey("addendum eval");
 
 /** Compared the way the app compares them, so the eval cannot be kinder than
  *  production: `addenda-overlap.ts` is what groups these for real. */
@@ -236,7 +242,7 @@ async function runCase(kase: AddendumCase): Promise<void> {
 
 for (const kase of ADDENDUM_CASES) {
   it(`reads ${kase.id}`, async () => {
-    requireApiKey();
+
     await runCase(kase);
   }, 180_000);
 }
