@@ -238,9 +238,22 @@ model PrevailingWageDetermination {
   /// What the determination DOCUMENT says about itself, ENTERED off the
   /// document by a person. All nullable and additive: every row that
   /// existed before these columns has none of them and is reported as
-  /// "unchecked" rather than judged. Nothing here is a wage rate — there is
-  /// no rate column and none is planned; the rate is read off the linked
-  /// document by a person.
+  /// "unchecked" rather than judged.
+  ///
+  /// THIS BLOCK SAID "there is no rate column and none is planned; the rate
+  /// is read off the linked document by a person" UNTIL 2026-10-02, and the
+  /// reasoning was sound for what it described: these columns are what the
+  /// document says ABOUT ITSELF, and a rate is not that.
+  ///
+  /// It is reversed deliberately rather than quietly, by Diego, because it
+  /// was what blocked multi-state rates. Rates lived only in
+  /// `FringeRateSchedule`, which hangs off `CraftClassification` ->
+  /// `UnionLocal` — and a union local is not a jurisdiction, so one craft
+  /// could not hold a different rate in Nevada than in California. The
+  /// rates now live in `DeterminationWageRate`, a CHILD of this row rather
+  /// than a column on it, which keeps the original distinction intact: this
+  /// row is still the document, and the rates are still what a person read
+  /// off it.
   ///
   /// The document's own number, e.g. "SC-023-31-2, issue 2026-1".
   determinationRef String?
@@ -261,7 +274,62 @@ model PrevailingWageDetermination {
   uploadedByUser   User?    @relation(fields: [uploadedByUserId], references: [id])
   createdAt        DateTime @default(now())
 
+  /// What this determination publishes, one row per classification.
+  wageRates DeterminationWageRate[]
+
   @@index([jobId])
+}
+
+/// WHAT A DETERMINATION PUBLISHES, one row per classification on it.
+///
+/// Entered off the document by a person, exactly like the facts on the
+/// parent — this is not an ingestion of a government feed and does not
+/// pretend to be one.
+///
+/// MULTI-STATE FALLS OUT OF THIS WITHOUT A JURISDICTION COLUMN ANYWHERE
+/// NEW. A determination already carries `jurisdiction`, so its rates
+/// inherit it: the same craft in two states is two determinations with
+/// two rate sets, and nothing has to decide which is "the" rate.
+model DeterminationWageRate {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Cascade: these rows are the document's contents. A determination that
+  /// goes takes what it said with it.
+  determinationId String
+  determination   PrevailingWageDetermination @relation(fields: [determinationId], references: [id], onDelete: Cascade)
+
+  /// The classification AS THE DOCUMENT NAMES IT. Free text on purpose: a
+  /// federal or state determination names its own classifications
+  /// ("Drywall Finisher/Taper") and they do not match ours. Forcing the
+  /// mapping at entry would make somebody guess while they are copying a
+  /// government document, which is the worst moment to guess.
+  classification String
+
+  /// Our craft, once somebody has said which one this is. SetNull, not
+  /// Cascade: an unmapped rate is still a rate the document publishes, and
+  /// deleting one of our classifications must not delete what a government
+  /// document said.
+  craftClassificationId String?
+  craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id], onDelete: SetNull)
+
+  baseWage          Decimal  @db.Decimal(12, 2)
+  pensionRate       Decimal? @db.Decimal(12, 2)
+  vacationRate      Decimal? @db.Decimal(12, 2)
+  healthWelfareRate Decimal? @db.Decimal(12, 2)
+  trainingRate      Decimal? @db.Decimal(12, 2)
+
+  /// DELIBERATELY NO effectiveFrom/effectiveTo. The determination carries
+  /// `issuedOn` and `expiresOn` and `lib/determination-standing.ts` derives
+  /// the window from them. Dates here too would be a second source for one
+  /// window, and the two would disagree.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([determinationId])
+  @@index([companyId])
+  @@index([craftClassificationId])
 }
 
 /// The asterisk a DIR general prevailing wage determination prints after
@@ -398,6 +466,7 @@ model CraftClassification {
   createdAt DateTime @default(now())
 
   fringeRateSchedules       FringeRateSchedule[]
+  determinationWageRates    DeterminationWageRate[]
   jobLineItems              JobLineItem[]
   catalogEntries            LineItemCatalogEntry[]
   wallTypeComponents        WallTypeComponent[]
