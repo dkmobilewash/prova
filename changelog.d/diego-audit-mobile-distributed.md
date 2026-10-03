@@ -43,6 +43,13 @@ it is not evidence that a daily cron did not fire — the same rule this repo
 has written down after being caught by it twice. The remaining check is
 `NotificationDispatch` rows or Vercel's own cron history.
 
+**AND THE FIX FOR WHAT THE CORRECTION ITSELF GOT WRONG.** The first pass
+at point 3 pasted the same long paragraph into all five rows, which made
+one blocker look like five and buried the half that was already dealt
+with. It is stated ONCE now, under Sheet 26's heading, and each row points
+at it. A sheet that repeats a sentence five times is how a reader learns
+to skim the one place it mattered.
+
 **What this does NOT do:** flip any row's verdict. Every one of these rows
 was written by somebody who had a reason, and three of those reasons have
 expired while a fourth has not. Changing Partial to Built is a judgement
