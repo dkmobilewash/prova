@@ -73,37 +73,17 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Jobs",
     note: "Every job, at every stage, including completed ones.",
     columns: [
-      "id",
-      "contactId",
-      "name",
-      "scope",
-      "status",
-      "startDate",
-      "endDate",
-      "operatingLocationId",
-      "retainagePercent",
-      "substantialCompletionDate",
+      "id", "contactId", "name", "scope", "status", "startDate", "endDate",
+      "operatingLocationId", "retainagePercent", "substantialCompletionDate",
       // Added #525, all of it data the customer typed or the app geocoded from
       // what they typed, and none of it exported until a column-level census
       // went looking. The site's own address and the bid's own dates were
       // missing from the file a contractor downloads when they leave.
-      "projectLocation",
-      "grossAreaSqFt",
-      "siteAddress",
-      "siteCounty",
-      "siteLatitude",
-      "siteLongitude",
-      "siteTimeZone",
-      "siteGeocodedAt",
-      "bidDueDate",
-      "bidAdvertisedOn",
-      "bidResearch",
-      "publicWorks",
-      "awardingBody",
-      "contractNumber",
-      "jobberId",
-      "createdAt",
-      "updatedAt",
+      "projectLocation", "grossAreaSqFt", "siteAddress", "siteCounty",
+      "siteLatitude", "siteLongitude", "siteTimeZone", "siteGeocodedAt",
+      "bidDueDate", "bidAdvertisedOn", "bidResearch", "publicWorks",
+      "awardingBody", "contractNumber", "jobberId",
+      "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -116,22 +96,10 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "Includes lines marked deleted — isDeleted tells you which, and dropping them " +
       "here would erase the history that made a number what it is.",
     columns: [
-      "id",
-      "jobId",
-      "description",
-      "quantity",
-      "unit",
-      "laborHours",
-      "craftClassificationId",
-      "unitPrice",
-      "sortOrder",
-      "budgetedUnitCost",
-      "currentEstimatedUnitCost",
-      "estimatedCostToComplete",
-      "isDeleted",
-      "aiDrafted",
-      "sourceCatalogEntryId",
-      "originChangeOrderId",
+      "id", "jobId", "description", "quantity", "unit", "laborHours",
+      "craftClassificationId", "unitPrice", "sortOrder", "budgetedUnitCost",
+      "currentEstimatedUnitCost", "estimatedCostToComplete", "isDeleted",
+      "aiDrafted", "sourceCatalogEntryId", "originChangeOrderId",
       // Added #525, and two of these are mine: #512 gave the recap
       // `costCategory` to mark up by and #514 gave the line `productionRate`,
       // and neither PR added its column here — so the figures a bid is built
@@ -139,14 +107,9 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       // record. `priceBasis` says whether a price was a catalog match, a
       // past-bid inference or a guess, which is exactly the provenance a
       // person re-reading their own estimate needs.
-      "tradeScope",
-      "costCategory",
-      "productionRate",
-      "priceBasis",
-      "phaseCodeId",
-      "wallTypeComponentId",
-      "createdAt",
-      "updatedAt",
+      "tradeScope", "costCategory", "productionRate", "priceBasis",
+      "phaseCodeId", "wallTypeComponentId",
+      "createdAt", "updatedAt",
     ],
     scope: byJob,
   },
@@ -155,15 +118,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "estimateVersion",
     label: "Estimate versions",
     note: "Saved snapshots of the line items at a point in time. The snapshot column is JSON.",
-    columns: [
-      "id",
-      "jobId",
-      "versionNumber",
-      "note",
-      "snapshot",
-      "createdByUserId",
-      "createdAt",
-    ],
+    columns: ["id", "jobId", "versionNumber", "note", "snapshot", "createdByUserId", "createdAt"],
     scope: byJob,
   },
   {
@@ -172,20 +127,9 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Change orders",
     note: "Numbers come from a counter that only increments, so a gap means one was deleted.",
     columns: [
-      "id",
-      "jobId",
-      "number",
-      "title",
-      "description",
-      "status",
-      "submittedOn",
-      "decidedOn",
-      "decisionNotes",
-      "appliedAt",
-      "reopenedAt",
-      "reopenNote",
-      "supersedesId",
-      "createdAt",
+      "id", "jobId", "number", "title", "description", "status", "submittedOn",
+      "decidedOn", "decisionNotes", "appliedAt", "reopenedAt", "reopenNote",
+      "supersedesId", "createdAt",
     ],
     scope: byJob,
   },
@@ -195,17 +139,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Invoices / pay applications",
     // `status` added #525 — an invoice export with no status cannot tell a
     // draft from one a GC has been sent, on the file a person reconciles from.
-    columns: [
-      "id",
-      "jobId",
-      "number",
-      "description",
-      "amount",
-      "status",
-      "issuedAt",
-      "dueAt",
-      "retainageWithheld",
-    ],
+    columns: ["id", "jobId", "number", "description", "amount", "status", "issuedAt", "dueAt", "retainageWithheld"],
     note: "retainageWithheld is what was held on that application, not a running balance.",
     scope: byJob,
   },
@@ -214,13 +148,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "invoiceLineItem",
     label: "Invoice line items",
     note: "Joins an invoice to the job line item it billed against.",
-    columns: [
-      "id",
-      "invoiceId",
-      "lineItemId",
-      "thisPeriodBilled",
-      "materialsStoredValue",
-    ],
+    columns: ["id", "invoiceId", "lineItemId", "thisPeriodBilled", "materialsStoredValue"],
     scope: (companyId) => ({ invoice: { job: { companyId } } }),
   },
   {
@@ -229,16 +157,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Payments received",
     // `feeAmount`/`feeSource` added #525 — a payment net of a processor fee
     // reconciles to the wrong number without them.
-    columns: [
-      "id",
-      "invoiceId",
-      "amount",
-      "method",
-      "receivedAt",
-      "note",
-      "feeAmount",
-      "feeSource",
-    ],
+    columns: ["id", "invoiceId", "amount", "method", "receivedAt", "note", "feeAmount", "feeSource"],
     note: "What the GC actually paid, against which invoice.",
     scope: (companyId) => ({ invoice: { job: { companyId } } }),
   },
@@ -250,16 +169,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     // `category` and `tradeScope` added #525: category is what tells a LABOR
     // cost entry from a material one, which is the whole basis of the recap's
     // markup and of phase-code variance.
-    columns: [
-      "id",
-      "lineItemId",
-      "description",
-      "amount",
-      "category",
-      "tradeScope",
-      "incurredAt",
-      "createdAt",
-    ],
+    columns: ["id", "lineItemId", "description", "amount", "category", "tradeScope", "incurredAt", "createdAt"],
     scope: (companyId) => ({ lineItem: { job: { companyId } } }),
   },
   {
@@ -270,26 +180,13 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "Hours by employee, job and craft — the source certified payroll is built from. " +
       "Money is not on this row; rates live on the fringe and wage tables.",
     columns: [
-      "id",
-      "jobId",
-      "lineItemId",
-      "employeeUserId",
-      "craftClassificationId",
-      "date",
-      "hours",
-      "payType",
-      "perDiemAmount",
-      "travelPayAmount",
-      "note",
+      "id", "jobId", "lineItemId", "employeeUserId", "craftClassificationId",
+      "date", "hours", "payType", "perDiemAmount", "travelPayAmount", "note",
       // Added #525. The clock trail and the correction trail: on a certified
       // payroll this is the difference between an hours figure and an hours
       // figure somebody can defend.
-      "crewMemberId",
-      "clockStartedAt",
-      "clockEndedAt",
-      "clockBreakMinutes",
-      "lastCorrectedAt",
-      "lastCorrectedByUserId",
+      "crewMemberId", "clockStartedAt", "clockEndedAt", "clockBreakMinutes",
+      "lastCorrectedAt", "lastCorrectedByUserId",
       "createdAt",
     ],
     scope: byJob,
@@ -307,16 +204,8 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "in the labour file. Crew members without a login appear by id only, since crew " +
       "records are not exported.",
     columns: [
-      "id",
-      "jobId",
-      "workDate",
-      "scheduledUserId",
-      "crewMemberId",
-      "craftClassificationId",
-      "note",
-      "createdByUserId",
-      "createdAt",
-      "updatedAt",
+      "id", "jobId", "workDate", "scheduledUserId", "crewMemberId",
+      "craftClassificationId", "note", "createdByUserId", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -326,19 +215,9 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Material orders",
     note: "lineItemId is attribution only — no money is summed through it, by agreement.",
     columns: [
-      "id",
-      "jobId",
-      "number",
-      "vendorId",
-      "lineItemId",
-      "description",
-      "vendorReference",
-      "notes",
-      "orderedOn",
-      "promisedFor",
-      "orderedByUserId",
-      "createdAt",
-      "updatedAt",
+      "id", "jobId", "number", "vendorId", "lineItemId", "description",
+      "vendorReference", "notes", "orderedOn", "promisedFor", "orderedByUserId",
+      "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -350,25 +229,14 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "The client-portal token is deliberately NOT included — it is a live key to " +
       "that contact's portal, and a copy in a spreadsheet is a copy that leaks.",
     columns: [
-      "id",
-      "name",
-      "email",
-      "phone",
-      "address",
-      "defaultRetainagePercent",
-      "paymentTermsDays",
-      "standardFormsUsed",
+      "id", "name", "email", "phone", "address", "defaultRetainagePercent",
+      "paymentTermsDays", "standardFormsUsed",
       // Added #525. `portalRevokedAt` is deliberately here while `portalToken`
       // stays withheld: WHETHER a portal link was revoked, and when, is the
       // customer's own record; the link itself is a credential.
-      "status",
-      "accountType",
-      "portalRevokedAt",
-      "msaExpirationDate",
-      "prequalificationExpiresAt",
-      "jobberId",
-      "createdAt",
-      "updatedAt",
+      "status", "accountType", "portalRevokedAt", "msaExpirationDate",
+      "prequalificationExpiresAt", "jobberId",
+      "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -376,17 +244,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     key: "vendors",
     model: "vendor",
     label: "Vendors",
-    columns: [
-      "id",
-      "name",
-      "tradeScope",
-      "contactName",
-      "phone",
-      "email",
-      "notes",
-      "createdAt",
-      "updatedAt",
-    ],
+    columns: ["id", "name", "tradeScope", "contactName", "phone", "email", "notes", "createdAt", "updatedAt"],
     note: "Suppliers and the trades they cover.",
     scope: byCompany,
   },
@@ -396,18 +254,9 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Price book",
     note: "Your own catalog of standard line items and their default rates.",
     columns: [
-      "id",
-      "description",
-      "unit",
-      "tradeScope",
-      "defaultUnitPrice",
-      "defaultBudgetedUnitCost",
-      "defaultLaborHours",
-      "productionRate",
-      "costCategory",
-      "craftClassificationId",
-      "createdAt",
-      "updatedAt",
+      "id", "description", "unit", "tradeScope", "defaultUnitPrice",
+      "defaultBudgetedUnitCost", "defaultLaborHours", "productionRate", "costCategory", "craftClassificationId",
+      "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -424,15 +273,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "jobProposalClause",
     label: "Clauses on each job's proposal",
     note: "The exact wording each bid proposal carried — a copy taken when it was added, so it still reads as it was sent.",
-    columns: [
-      "id",
-      "jobId",
-      "kind",
-      "text",
-      "sortOrder",
-      "createdAt",
-      "updatedAt",
-    ],
+    columns: ["id", "jobId", "kind", "text", "sortOrder", "createdAt", "updatedAt"],
     scope: byCompany,
   },
   {
@@ -440,18 +281,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "wallType",
     label: "Wall types",
     note: "Your partition schedule — each wall type by its tag from the drawings.",
-    columns: [
-      "id",
-      "code",
-      "name",
-      "defaultHeightFt",
-      "sides",
-      "studSpacingIn",
-      "notes",
-      "sortOrder",
-      "createdAt",
-      "updatedAt",
-    ],
+    columns: ["id", "code", "name", "defaultHeightFt", "sides", "studSpacingIn", "notes", "sortOrder", "createdAt", "updatedAt"],
     scope: byCompany,
   },
   {
@@ -462,14 +292,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "The shape of a job this company bids often, saved once. Reference data that GENERATES " +
       "estimate lines -- it is not a second copy of line-item data, and applying a template " +
       "appends lines rather than linking to them, so nothing here tracks what it produced.",
-    columns: [
-      "id",
-      "name",
-      "tradeScope",
-      "description",
-      "createdAt",
-      "updatedAt",
-    ],
+    columns: ["id", "name", "tradeScope", "description", "createdAt", "updatedAt"],
     scope: byCompany,
   },
   {
@@ -482,15 +305,8 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "total look complete. catalogEntryId is a template link only: re-pricing the catalog never " +
       "reaches back into a line already on an estimate.",
     columns: [
-      "id",
-      "templateId",
-      "description",
-      "unit",
-      "defaultQuantity",
-      "catalogEntryId",
-      "sortOrder",
-      "createdAt",
-      "updatedAt",
+      "id", "templateId", "description", "unit", "defaultQuantity", "catalogEntryId",
+      "sortOrder", "createdAt", "updatedAt",
     ],
     scope: (companyId: string) => ({ template: { companyId } }),
   },
@@ -500,21 +316,8 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Wall type parts",
     note: "What each wall type is built from, and how each part is counted.",
     columns: [
-      "id",
-      "wallTypeId",
-      "description",
-      "unit",
-      "basis",
-      "factor",
-      "wastePercent",
-      "roundUp",
-      "catalogEntryId",
-      "productionRate",
-      "costCategory",
-      "craftClassificationId",
-      "sortOrder",
-      "createdAt",
-      "updatedAt",
+      "id", "wallTypeId", "description", "unit", "basis", "factor", "wastePercent", "roundUp",
+      "catalogEntryId", "productionRate", "costCategory", "craftClassificationId", "sortOrder", "createdAt", "updatedAt",
     ],
     scope: (companyId: string) => ({ wallType: { companyId } }),
   },
@@ -523,18 +326,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "wallRun",
     label: "Wall runs",
     note: "Each run of wall measured on a job — type, length, height, openings.",
-    columns: [
-      "id",
-      "jobId",
-      "wallTypeId",
-      "label",
-      "lengthFt",
-      "heightFt",
-      "openings",
-      "sortOrder",
-      "createdAt",
-      "updatedAt",
-    ],
+    columns: ["id", "jobId", "wallTypeId", "label", "lengthFt", "heightFt", "openings", "sortOrder", "createdAt", "updatedAt"],
     scope: byCompany,
   },
   {
@@ -550,20 +342,8 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "column before comparing the amounts: a quote that leaves work out is cheaper and is not " +
       "the same bid.",
     columns: [
-      "id",
-      "bidInvitationId",
-      "packageLabel",
-      "vendorId",
-      "vendorName",
-      "amount",
-      "quotedOn",
-      "requestedOn",
-      "dueBy",
-      "declinedAt",
-      "exclusions",
-      "notes",
-      "createdAt",
-      "updatedAt",
+      "id", "bidInvitationId", "packageLabel", "vendorId", "vendorName", "amount", "quotedOn",
+      "requestedOn", "dueBy", "declinedAt", "exclusions", "notes", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -578,17 +358,8 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "changed work already priced; it is not derived from anything and nothing re-prices " +
       "automatically -- reading the addendum document does not set it, and is not allowed to. reference is whatever the GC called it and is never parsed. fileName is the document attached to the row when somebody had it; the file itself is not in this export and its stored address is deliberately withheld.",
     columns: [
-      "id",
-      "bidInvitationId",
-      "reference",
-      "fileName",
-      "issuedOn",
-      "acknowledgedOn",
-      "affectsPricedScope",
-      "impactNote",
-      "notes",
-      "createdAt",
-      "updatedAt",
+      "id", "bidInvitationId", "reference", "fileName", "issuedOn", "acknowledgedOn", "affectsPricedScope",
+      "impactNote", "notes", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -603,15 +374,8 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "every addendum acknowledged. Those are computed from the bid lines and addenda on every " +
       "read, so there is no stored flag that could disagree with them.",
     columns: [
-      "id",
-      "bidInvitationId",
-      "kind",
-      "label",
-      "required",
-      "satisfiedOn",
-      "notes",
-      "createdAt",
-      "updatedAt",
+      "id", "bidInvitationId", "kind", "label", "required", "satisfiedOn", "notes",
+      "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -625,18 +389,8 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "is a deduct); a UNIT_PRICE is a rate with no total at all. Summing the amount column " +
       "across kinds gives a figure that means nothing.",
     columns: [
-      "id",
-      "bidInvitationId",
-      "kind",
-      "label",
-      "description",
-      "amount",
-      "unit",
-      "unitPrice",
-      "accepted",
-      "sortOrder",
-      "createdAt",
-      "updatedAt",
+      "id", "bidInvitationId", "kind", "label", "description", "amount", "unit", "unitPrice",
+      "accepted", "sortOrder", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -646,13 +400,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Bid recap per job",
     note: "The markup, overhead, profit, tax, bond and contingency rates each bid was built with — and when they were applied to the line prices.",
     columns: [
-      "id",
-      "jobId",
-      ...RECAP_RATE_KEYS,
-      "appliedAt",
-      "appliedTotal",
-      "createdAt",
-      "updatedAt",
+      "id", "jobId", ...RECAP_RATE_KEYS, "appliedAt", "appliedTotal", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -661,7 +409,9 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "companyBidDefaults",
     label: "Default markup rates",
     note: "Your standing markup, overhead and profit rates, which pre-fill a new job's recap.",
-    columns: ["id", ...RECAP_RATE_KEYS, "createdAt", "updatedAt"],
+    columns: [
+      "id", ...RECAP_RATE_KEYS, "createdAt", "updatedAt",
+    ],
     scope: byCompany,
   },
   {
@@ -678,15 +428,8 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "Whether the assistant is on for your company, any features you switched off, " +
       "and your monthly plan-sheet allowance. Absent means every default was in use.",
     columns: [
-      "id",
-      "aiEnabled",
-      "disabledFeatures",
-      "planSheetsPerMonth",
-      "addendumPagesPerMonth",
-      "modelOverride",
-      "updatedByUserId",
-      "createdAt",
-      "updatedAt",
+      "id", "aiEnabled", "disabledFeatures", "planSheetsPerMonth", "addendumPagesPerMonth", "modelOverride",
+      "updatedByUserId", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -695,25 +438,10 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "rfi",
     label: "RFIs",
     columns: [
-      "id",
-      "jobId",
-      "number",
-      "subject",
-      "question",
-      "drawingReference",
-      "specSection",
-      "status",
-      "sentOn",
-      "dueBy",
-      "answeredOn",
-      "answer",
-      "answerUrl",
-      "answerFileName",
-      "costImpact",
-      "scheduleImpact",
-      "askedByUserId",
-      "createdAt",
-      "updatedAt",
+      "id", "jobId", "number", "subject", "question", "drawingReference",
+      "specSection", "status", "sentOn", "dueBy", "answeredOn", "answer",
+      "answerUrl", "answerFileName",
+      "costImpact", "scheduleImpact", "askedByUserId", "createdAt", "updatedAt",
     ],
     note:
       "Including the answer, which is the half that matters in a dispute — and the link to the " +
@@ -729,17 +457,8 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Submittals",
     note: "Revisions are their own records and are not flattened into this one.",
     columns: [
-      "id",
-      "jobId",
-      "number",
-      "title",
-      "description",
-      "specSection",
-      "drawingReference",
-      "lastRevision",
-      "submittedByUserId",
-      "createdAt",
-      "updatedAt",
+      "id", "jobId", "number", "title", "description", "specSection",
+      "drawingReference", "lastRevision", "submittedByUserId", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -751,22 +470,9 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "OSHA case records, including employee names. Handle the file accordingly — " +
       "this is the most sensitive export here and it is included because it is yours.",
     columns: [
-      "id",
-      "jobId",
-      "caseNumber",
-      "caseYear",
-      "occurredAt",
-      "employeeName",
-      "jobTitle",
-      "location",
-      "description",
-      "classification",
-      "outcome",
-      "daysAway",
-      "daysRestricted",
-      "reportedByUserId",
-      "createdAt",
-      "updatedAt",
+      "id", "jobId", "caseNumber", "caseYear", "occurredAt", "employeeName",
+      "jobTitle", "location", "description", "classification", "outcome",
+      "daysAway", "daysRestricted", "reportedByUserId", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -811,17 +517,8 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Daily field reports",
     note: "Work performed, other trades on site, site conditions, the automatic weather, and older reports' typed delays — the daily record a delay claim rests on.",
     columns: [
-      "id",
-      "jobId",
-      "reportDate",
-      "crewPresent",
-      "workPerformed",
-      "weather",
-      "weatherAuto",
-      "delays",
-      "filedByUserId",
-      "createdAt",
-      "updatedAt",
+      "id", "jobId", "reportDate", "crewPresent", "workPerformed", "weather",
+      "weatherAuto", "delays", "filedByUserId", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -831,24 +528,9 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Delays",
     note: "Each delay logged on a job: cause, who caused it, times, workers and crew-hours lost, and who at the GC was told, how and when.",
     columns: [
-      "id",
-      "jobId",
-      "date",
-      "cause",
-      "responsibleParty",
-      "responsibleName",
-      "startMinute",
-      "endMinute",
-      "workersAffected",
-      "hoursLost",
-      "description",
-      "gcNotifiedHow",
-      "gcNotifiedWho",
-      "gcNotifiedAt",
-      "changeOrderId",
-      "loggedByUserId",
-      "createdAt",
-      "updatedAt",
+      "id", "jobId", "date", "cause", "responsibleParty", "responsibleName", "startMinute", "endMinute",
+      "workersAffected", "hoursLost", "description", "gcNotifiedHow", "gcNotifiedWho", "gcNotifiedAt",
+      "changeOrderId", "loggedByUserId", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -933,12 +615,7 @@ export const EXPORT_WITHHELD: ExportWithheld[] = [
     detail:
       "QuickBooks and other connection tokens. They are keys to another system, not a " +
       "record of your work, and a copy in a downloaded file is a copy that can leak.",
-    columns: [
-      "accessToken",
-      "refreshToken",
-      "encryptedAccessToken",
-      "encryptedRefreshToken",
-    ],
+    columns: ["accessToken", "refreshToken", "encryptedAccessToken", "encryptedRefreshToken"],
   },
   {
     key: "portal-and-signing-links",
@@ -982,17 +659,11 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "they traced on it. Deliberately not exported: these rows are coordinates on a PDF " +
       "this file does not contain, so on their own they measure nothing. The quantities " +
       "they produced are ordinary estimate line items and ARE in the line items dataset.",
-    models: [
-      "TakeoffPlan",
-      "TakeoffPlanPage",
-      "TakeoffScaleCalibration",
-      "TakeoffMeasurement",
-    ],
+    models: ["TakeoffPlan", "TakeoffPlanPage", "TakeoffScaleCalibration", "TakeoffMeasurement"],
   },
   {
     key: "plan-sheet-index",
-    title:
-      "What ingestion read off each plan sheet, and the sheet numbers confirmed from it",
+    title: "What ingestion read off each plan sheet, and the sheet numbers confirmed from it",
     detail:
       "When a plan set is ingested, the words lifted off each sheet's title block are kept, " +
       "along with what was proposed about that sheet — its number, title, discipline, scale — " +
@@ -1006,8 +677,7 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
   },
   {
     key: "bid-addendum-readings",
-    title:
-      "What was read off each bid addendum, and the scopes an estimator ruled in or out",
+    title: "What was read off each bid addendum, and the scopes an estimator ruled in or out",
     detail:
       "When a GC's addendum is read, what the model said it changed is kept as one row per " +
       "reading, along with the estimator's decision about each scope it names. Not exported " +
@@ -1031,8 +701,7 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
   },
   {
     key: "das-apprenticeship-notices",
-    title:
-      "DAS 140 and DAS 142 apprenticeship notices, and the committee directory",
+    title: "DAS 140 and DAS 142 apprenticeship notices, and the committee directory",
     detail:
       "The California award notices and dispatch requests recorded against a job, and the " +
       "apprenticeship committees they are addressed to. Deliberately not in this file: each one " +
@@ -1152,9 +821,9 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       // Researched facts about a prospect, each with the page it came from.
       // An omission rather than a dataset, for the same reason as the rest of
       // this line: it is the work of winning the deal, not a record of the
-      // customer's own business. It is also operator-only data — the models
-      // here are populated only on the Company with isProvaOperator — so a
-      // tenant's export would carry nothing from it even if it were a dataset.
+      // customer's own business. It is also operator-only data -- these
+      // models are populated only on the Company with isProvaOperator -- so a
+      // tenant's export would carry nothing from it even as a dataset.
       "SalesLeadSignal",
       "BidInvitation",
       "VendorPriceQuote",
@@ -1317,71 +986,42 @@ export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
 };
 
 export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
-  BackchargeCounter:
-    "sequence counter — the numbers it issued are on the rows themselves",
-  ChangeOrderCounter:
-    "sequence counter — the numbers it issued are on the exported change orders",
-  CloseoutSubmissionCounter:
-    "sequence counter — the numbers it issued are on the rows themselves",
-  ContractDocumentVersionCounter:
-    "sequence counter — the numbers it issued are on the rows themselves",
-  EstimateVersionCounter:
-    "sequence counter — the numbers it issued are on the exported estimate versions",
-  InvoiceCounter:
-    "sequence counter — the numbers it issued are on the exported invoices",
-  MaterialOrderCounter:
-    "sequence counter — the numbers it issued are on the exported material orders",
-  RfiCounter:
-    "sequence counter — the numbers it issued are on the exported RFIs",
-  SafetyCaseCounter:
-    "sequence counter — the numbers it issued are on the exported incidents",
-  SubmittalCounter:
-    "sequence counter — the numbers it issued are on the exported submittals",
-  Wh347PayrollCounter:
-    "sequence counter — the numbers it issued are on Wh347PayrollNumber, itself withheld above (payroll-rates)",
-  QuickBooksConnection:
-    "an integration connection: tokens into another system, withheld above",
-  IntegrationConnection:
-    "an integration connection: tokens into another system, withheld above",
-  QuickBooksAccountMapping:
-    "integration plumbing — which QuickBooks account a posting goes to, meaningless without that QuickBooks company",
-  QuickBooksEntityLink:
-    "integration plumbing — our id against QuickBooks' id for the same record",
-  QuickBooksSyncAttempt:
-    "sync log — each attempt to post a record to QuickBooks",
-  IntegrationSyncLog:
-    "sync log — each run of an integration, and what it moved",
-  ProcoreProjectLink:
-    "integration plumbing — which GC Procore project feeds which job, meaningless without that Procore login",
-  ProcoreItem:
-    "a cached copy of the GC's own Procore records — theirs, kept in Procore, not this company's",
-  AccProjectLink:
-    "integration plumbing — which GC Autodesk Construction Cloud project feeds which job, meaningless without that ACC login",
-  AccItem:
-    "a cached copy of the GC's own ACC records — theirs, kept in Autodesk Construction Cloud, not this company's",
-  CompanyCamProjectLink:
-    "integration plumbing — which CompanyCam project feeds which job, meaningless without that CompanyCam login. The photos it imports are ordinary JobMedia rows and export with every other photo.",
-  BluebeamStudioSession:
-    "integration plumbing — which job talks to which Bluebeam Studio Session, meaningless without that Bluebeam login. Nothing pushed to or read from Bluebeam is stored here.",
-  CalendarFeedToken:
-    "notification record — a person's own subscribable-calendar credential, not a record about the company's work",
-  NotificationDispatch:
-    "notification record — which alert was sent to whom, not the thing it was about",
-  AlertAcknowledgement:
-    "notification record — who dismissed or snoozed an alert",
-  DeviceToken:
-    "notification record — a phone's push address, and a credential in its own right",
+  BackchargeCounter: "sequence counter — the numbers it issued are on the rows themselves",
+  ChangeOrderCounter: "sequence counter — the numbers it issued are on the exported change orders",
+  CloseoutSubmissionCounter: "sequence counter — the numbers it issued are on the rows themselves",
+  ContractDocumentVersionCounter: "sequence counter — the numbers it issued are on the rows themselves",
+  EstimateVersionCounter: "sequence counter — the numbers it issued are on the exported estimate versions",
+  InvoiceCounter: "sequence counter — the numbers it issued are on the exported invoices",
+  MaterialOrderCounter: "sequence counter — the numbers it issued are on the exported material orders",
+  RfiCounter: "sequence counter — the numbers it issued are on the exported RFIs",
+  SafetyCaseCounter: "sequence counter — the numbers it issued are on the exported incidents",
+  SubmittalCounter: "sequence counter — the numbers it issued are on the exported submittals",
+  Wh347PayrollCounter: "sequence counter — the numbers it issued are on Wh347PayrollNumber, itself withheld above (payroll-rates)",
+  QuickBooksConnection: "an integration connection: tokens into another system, withheld above",
+  IntegrationConnection: "an integration connection: tokens into another system, withheld above",
+  QuickBooksAccountMapping: "integration plumbing — which QuickBooks account a posting goes to, meaningless without that QuickBooks company",
+  QuickBooksEntityLink: "integration plumbing — our id against QuickBooks' id for the same record",
+  QuickBooksSyncAttempt: "sync log — each attempt to post a record to QuickBooks",
+  IntegrationSyncLog: "sync log — each run of an integration, and what it moved",
+  ProcoreProjectLink: "integration plumbing — which GC Procore project feeds which job, meaningless without that Procore login",
+  ProcoreItem: "a cached copy of the GC's own Procore records — theirs, kept in Procore, not this company's",
+  AccProjectLink: "integration plumbing — which GC Autodesk Construction Cloud project feeds which job, meaningless without that ACC login",
+  AccItem: "a cached copy of the GC's own ACC records — theirs, kept in Autodesk Construction Cloud, not this company's",
+  CompanyCamProjectLink: "integration plumbing — which CompanyCam project feeds which job, meaningless without that CompanyCam login. The photos it imports are ordinary JobMedia rows and export with every other photo.",
+  BluebeamStudioSession: "integration plumbing — which job talks to which Bluebeam Studio Session, meaningless without that Bluebeam login. Nothing pushed to or read from Bluebeam is stored here.",
+  CalendarFeedToken: "notification record — a person's own subscribable-calendar credential, not a record about the company's work",
+  NotificationDispatch: "notification record — which alert was sent to whom, not the thing it was about",
+  AlertAcknowledgement: "notification record — who dismissed or snoozed an alert",
+  DeviceToken: "notification record — a phone's push address, and a credential in its own right",
   AskUsage: "AI usage metering",
   AskAllowancePeriod:
     "AI usage metering — how much of this month's included allowance has been claimed. Our bookkeeping about what we owe them, not a record of their work, and it is meaningless outside this app.",
-  AskProposal:
-    "AI usage — a change the assistant proposed and waited on; anything confirmed is in the real tables",
+  AskProposal: "AI usage — a change the assistant proposed and waited on; anything confirmed is in the real tables",
   PlanIngestJob:
     "processing bookkeeping — one run of plan-set ingestion, its stage and when it started and stopped. What the run PRODUCED is in the real tables and exports with them; this is the scaffolding, and it means nothing outside this app.",
   PlanIngestTask:
     "processing bookkeeping — one page of one ingestion run: which worker claimed it, how many attempts it took, and the sentence shown if it failed. Same argument as PlanIngestJob, and the failure sentence is transient: the plan set is still on file and a failed page is re-runnable, so the durable fact is the plan rather than the attempt at it.",
-  LicenseClassificationReference:
-    "shared reference table of licence classifications, the same for every company",
+  LicenseClassificationReference: "shared reference table of licence classifications, the same for every company",
 };
 
 /**
@@ -1453,10 +1093,7 @@ export function csvCell(value: unknown): string {
 }
 
 /** A whole CSV, header row first. Column order is the dataset's order. */
-export function toCsv(
-  columns: string[],
-  rows: Record<string, unknown>[],
-): string {
+export function toCsv(columns: string[], rows: Record<string, unknown>[]): string {
   const lines = [columns.map(csvCell).join(",")];
   for (const row of rows) {
     lines.push(columns.map((c) => csvCell(row[c])).join(","));
@@ -1467,10 +1104,6 @@ export function toCsv(
 
 /** `prova-export-jobs-2026-09-02.csv` — dated, so two exports do not collide
  * in a downloads folder and nobody has to guess which is newer. */
-export function exportFilename(
-  key: string,
-  today: Date,
-  extension: string,
-): string {
+export function exportFilename(key: string, today: Date, extension: string): string {
   return `prova-export-${key}-${today.toISOString().slice(0, 10)}.${extension}`;
 }
