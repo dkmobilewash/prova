@@ -728,6 +728,12 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       // it the hours file cannot be repriced to the figure this app shows.
       "EmployerBurdenRate",
       "PrevailingWageDetermination",
+      // What a determination PUBLISHES, per classification. Withheld for
+      // this bucket's own stated reason rather than a new one: it is the
+      // rate itself, and the whole point of holding these back is that the
+      // exported hours cannot be repriced somewhere else on their own.
+      // Exporting the determination's rates would hand over exactly that.
+      "DeterminationWageRate",
       "PrevailingWageRuleSet",
       "CompanyUnionAgreement",
       "UnionLocal",

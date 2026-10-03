@@ -2,6 +2,7 @@ import { prisma } from "@prova/db";
 import { PageColumn } from "@prova/ui";
 import { RowActions, ConfirmDelete } from "@/components/RowActions";
 import { PrevailingWageDeterminationForm } from "@/components/PrevailingWageDeterminationForm";
+import { DeterminationWageRates } from "@/components/DeterminationWageRates";
 import { JobComplianceFactsForm } from "@/components/JobComplianceFactsForm";
 import { DeterminationFactsEditor } from "@/components/DeterminationFactsEditor";
 import { DeterminationStandingLine } from "@/components/DeterminationStandingLine";
@@ -58,7 +59,7 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
   const { id } = await params;
   const { job: jobRef, company, currentUser } = await requireJob(id);
 
-  const [job, determinations, today, committees, notices140, requests142, firstWorkerDay, craftHours] =
+  const [job, determinations, today, committees, notices140, requests142, firstWorkerDay, craftHours, craftOptions] =
     await Promise.all([
       prisma.job.findUniqueOrThrow({
         where: { id: jobRef.id },
@@ -74,6 +75,19 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
       prisma.prevailingWageDetermination.findMany({
         where: { jobId: jobRef.id },
         orderBy: { createdAt: "desc" },
+        // The rates read off each document. Included rather than fetched
+        // per determination: a job rarely has more than a handful, and a
+        // query per row is how a compliance tab gets slow quietly.
+        include: {
+          wageRates: {
+            orderBy: { classification: "asc" },
+            include: {
+              craftClassification: {
+                select: { name: true, unionLocal: { select: { parentInternational: true, localNumber: true } } },
+              },
+            },
+          },
+        },
       }),
       viewerToday(),
       loadApprenticeshipCommittees(company.id),
@@ -81,6 +95,14 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
       loadDas142Requests(jobRef.id),
       loadFirstWorkerDay(jobRef.id),
       loadJobCraftHours(jobRef.id),
+      // The crafts a published rate can be mapped onto. Mapping is
+      // optional — a determination's classification names are its own —
+      // so this is a picker, never a requirement.
+      prisma.craftClassification.findMany({
+        where: { companyId: company.id },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, unionLocal: { select: { parentInternational: true, localNumber: true } } },
+      }),
     ]);
 
   // Standing is DERIVED on every read and stored nowhere, and it is derived
@@ -222,6 +244,33 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
                       expiresOn: isoDay(determination.expiresOn),
                       expirationMarker: determination.expirationMarker as DeterminationMarker | null,
                     }}
+                  />
+                  {/* What the document PUBLISHES. The schema carried no
+                      rates until 2026-10-02 and said none were planned;
+                      that was reversed because it is what kept rates tied
+                      to a union local rather than a jurisdiction. */}
+                  <DeterminationWageRates
+                    jobId={jobRef.id}
+                    determinationId={determination.id}
+                    crafts={craftOptions.map((craft) => ({
+                      id: craft.id,
+                      label: `${craft.unionLocal.parentInternational} ${craft.unionLocal.localNumber} — ${craft.name}`,
+                    }))}
+                    rates={determination.wageRates.map((rate) => ({
+                      id: rate.id,
+                      classification: rate.classification,
+                      craftLabel: rate.craftClassification
+                        ? `${rate.craftClassification.unionLocal.parentInternational} ${rate.craftClassification.unionLocal.localNumber} — ${rate.craftClassification.name}`
+                        : null,
+                      // Decimals cross the server/client boundary as strings;
+                      // the component parses them for display only.
+                      baseWage: String(rate.baseWage),
+                      pensionRate: rate.pensionRate == null ? null : String(rate.pensionRate),
+                      vacationRate: rate.vacationRate == null ? null : String(rate.vacationRate),
+                      healthWelfareRate:
+                        rate.healthWelfareRate == null ? null : String(rate.healthWelfareRate),
+                      trainingRate: rate.trainingRate == null ? null : String(rate.trainingRate),
+                    }))}
                   />
                 </li>
               );

@@ -91,6 +91,7 @@ model Company {
   craftClassifications      CraftClassification[]
   phaseCodes                PhaseCode[]
   fringeRateSchedules       FringeRateSchedule[]
+  determinationWageRates    DeterminationWageRate[]
   apprenticeRatioRules      ApprenticeRatioRule[]
   insurancePolicies         CompanyInsurancePolicy[]
   bonds                     CompanyBond[]
