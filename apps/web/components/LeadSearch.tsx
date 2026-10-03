@@ -1,7 +1,13 @@
 "use client";
 
+import { Spinner } from "@/components/Spinner";
 import { useState, useTransition } from "react";
-import { LEAD_SIZE_BANDS, LEAD_TRADES, type LeadSizeBand, type LeadTrade } from "@prova/integrations";
+import {
+  LEAD_SIZE_BANDS,
+  LEAD_TRADES,
+  type LeadSizeBand,
+  type LeadTrade,
+} from "@prova/integrations";
 import { createBidPursuit } from "@/lib/actions";
 import { searchBidLeads, type PlacedLead } from "@/lib/actions/leadSearch";
 import { BidPursuitFields } from "@/components/BidPursuitList";
@@ -73,13 +79,19 @@ export function LeadSearch() {
   }
 
   return (
-    <section className="mb-6 rounded-lg border border-line-card bg-surface-raised p-4" data-pipeline="lead-search">
+    <section
+      className="mb-6 rounded-lg border border-line-card bg-surface p-4"
+      data-pipeline="lead-search"
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-ink">Find projects out to bid</h2>
+          <h2 className="text-sm font-semibold text-ink">
+            Find projects out to bid
+          </h2>
           <p className="mt-1 text-sm text-ink-body">
-            Searches public bid boards and owners&apos; sites for work in your trades and area that
-            nobody has invited you to yet. Every result links the page it came from.
+            Searches public bid boards and owners&apos; sites for work in your
+            trades and area that nobody has invited you to yet. Every result
+            links the page it came from.
           </p>
         </div>
         <button
@@ -120,8 +132,16 @@ export function LeadSearch() {
           <legend className="text-sm text-ink-label">Trades</legend>
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-2">
             {LEAD_TRADES.map((trade) => (
-              <label key={trade} className="flex items-center gap-2 text-sm text-ink">
-                <input type="checkbox" name="trades" value={trade} className="h-4 w-4" />
+              <label
+                key={trade}
+                className="flex items-center gap-2 text-sm text-ink"
+              >
+                <input
+                  type="checkbox"
+                  name="trades"
+                  value={trade}
+                  className="h-4 w-4"
+                />
                 {TRADE_LABELS[trade]}
               </label>
             ))}
@@ -131,11 +151,23 @@ export function LeadSearch() {
         <div className="mt-3 grid gap-3 sm:grid-cols-4">
           <label className="block text-sm sm:col-span-2">
             <span className="text-ink-label">City</span>
-            <input name="city" required maxLength={60} placeholder="Reno" className={inputClass} />
+            <input
+              name="city"
+              required
+              maxLength={60}
+              placeholder="Reno"
+              className={inputClass}
+            />
           </label>
           <label className="block text-sm">
             <span className="text-ink-label">State</span>
-            <input name="state" required maxLength={2} placeholder="NV" className={inputClass} />
+            <input
+              name="state"
+              required
+              maxLength={2}
+              placeholder="NV"
+              className={inputClass}
+            />
           </label>
           <label className="block text-sm">
             <span className="text-ink-label">Size (optional)</span>
@@ -167,14 +199,17 @@ export function LeadSearch() {
       </form>
 
       <p className="mt-2 text-xs text-ink-muted">
-        Only the trades, city, state and size band you chose above are used to build the search.
-        Nothing about your company, your GCs or your jobs is sent — and there is deliberately no
-        free-text box here, because that is what keeps it that way. Bid dates before today are
-        skipped.
+        Only the trades, city, state and size band you chose above are used to
+        build the search. Nothing about your company, your GCs or your jobs is
+        sent — and there is deliberately no free-text box here, because that is
+        what keeps it that way. Bid dates before today are skipped.
       </p>
 
       {error && (
-        <p className="mt-3 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink" role="status">
+        <p
+          className="mt-3 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink"
+          role="status"
+        >
           {error}
         </p>
       )}
@@ -204,152 +239,180 @@ export function LeadSearch() {
                 alreadyKnown === 1 ? "it" : "them"
               }.`}
           </p>
-        <ul className="mt-2 space-y-3">
-          {leads.map((one, index) => {
-            const lead = one.lead;
-            return (
-            <li key={`${lead.source.url}-${index}`} className="text-sm">
-              <p className="font-medium text-ink">{lead.fields.projectName}</p>
-              {/* A CLOSE-BUT-NOT-CERTAIN match against what the company already
+          <ul className="mt-2 space-y-3">
+            {leads.map((one, index) => {
+              const lead = one.lead;
+              return (
+                <li key={`${lead.source.url}-${index}`} className="text-sm">
+                  <p className="font-medium text-ink">
+                    {lead.fields.projectName}
+                  </p>
+                  {/* A CLOSE-BUT-NOT-CERTAIN match against what the company already
                   has. An EXACT match never reaches here — the action drops those
                   and counts them, which is the hide/badge asymmetry the Ask
                   command already had and this panel was missing. */}
-              {one.already && (
-                <p className="mt-0.5 text-xs text-ink-body">
-                  Looks like{" "}
-                  <a href={one.already.href} className="underline hover:text-link">
-                    {one.already.name}
-                  </a>
-                  , {one.already.kind === "pipeline"
-                    ? "already on your pipeline"
-                    : one.already.kind === "job"
-                      ? "already one of your jobs"
-                      : "already a logged bid invitation"}
-                  . Check before you add it again.
-                </p>
-              )}
-              <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
-                {lead.fields.owner && (
-                  <>
-                    <dt className="text-ink-body">Owner</dt>
-                    <dd className="min-w-0 break-words text-ink">{lead.fields.owner}</dd>
-                  </>
-                )}
-                {lead.fields.location && (
-                  <>
-                    <dt className="text-ink-body">Location</dt>
-                    <dd className="min-w-0 break-words text-ink">{lead.fields.location}</dd>
-                  </>
-                )}
-                {lead.fields.bidDate && (
-                  <>
-                    <dt className="text-ink-body">Bid date</dt>
-                    <dd className="min-w-0 break-words text-ink">{lead.fields.bidDate}</dd>
-                  </>
-                )}
-                {lead.fields.sizeText && (
-                  <>
-                    <dt className="text-ink-body">Size</dt>
-                    <dd className="min-w-0 break-words text-ink">{lead.fields.sizeText}</dd>
-                  </>
-                )}
-                {lead.fields.deliveryMethod && (
-                  <>
-                    <dt className="text-ink-body">Delivery</dt>
-                    <dd className="min-w-0 break-words text-ink">{lead.fields.deliveryMethod}</dd>
-                  </>
-                )}
-                {lead.fields.scopeSummary && (
-                  <>
-                    <dt className="text-ink-body">Scope</dt>
-                    <dd className="min-w-0 break-words text-ink">{lead.fields.scopeSummary}</dd>
-                  </>
-                )}
-              </dl>
-              <p className="mt-1 text-xs">
-                <a
-                  href={lead.source.url}
-                  target="_blank"
-                  rel="noopener noreferrer nofollow"
-                  className="text-ink-body underline hover:text-link"
-                >
-                  {lead.source.title || "source"}
-                </a>
-              </p>
-
-              {tracking === index ? (
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const formData = new FormData(event.currentTarget);
-                    setSaveError(null);
-                    startSaving(async () => {
-                      const result = await createBidPursuit(formData);
-                      if (!result.ok) {
-                        setSaveError(result.error);
-                        return;
-                      }
-                      setTracking(null);
-                    });
-                  }}
-                  className="mt-2 rounded-md border border-line-card p-3"
-                >
-                  <p className="mb-3 text-sm text-ink-body">
-                    The same form as &ldquo;Add a pursuit&rdquo; below.{" "}
-                    {one.bidDay
-                      ? "The bid date read as a whole day on the page, so it is filled in — check it against the source before you save."
-                      : "The bid date is blank because the page did not state a whole day; what it did say is in the note, for you to read and type."}
-                  </p>
-                  <BidPursuitFields
-                    prefill={{
-                      projectName: lead.fields.projectName,
-                      owner: lead.fields.owner ?? undefined,
-                      note: one.note,
-                      // ONLY a whole calendar day, decided on the server by
-                      // `readBidDay` — "late spring" leaves this blank and
-                      // stays in the note. Matches what the Ask card does.
-                      expectedBidDate: one.bidDay ?? undefined,
-                    }}
-                    minBidDate={localToday()}
-                  />
-                  {saveError && (
-                    <p className="mt-3 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink" role="status">
-                      {saveError}
+                  {one.already && (
+                    <p className="mt-0.5 text-xs text-ink-body">
+                      Looks like{" "}
+                      <a
+                        href={one.already.href}
+                        className="underline hover:text-link"
+                      >
+                        {one.already.name}
+                      </a>
+                      ,{" "}
+                      {one.already.kind === "pipeline"
+                        ? "already on your pipeline"
+                        : one.already.kind === "job"
+                          ? "already one of your jobs"
+                          : "already a logged bid invitation"}
+                      . Check before you add it again.
                     </p>
                   )}
-                  <div className="mt-3 flex gap-2">
-                    <button
-                      type="submit"
-                      disabled={isSaving}
-                      className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-neutral-900 disabled:opacity-60"
+                  <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+                    {lead.fields.owner && (
+                      <>
+                        <dt className="text-ink-body">Owner</dt>
+                        <dd className="min-w-0 break-words text-ink">
+                          {lead.fields.owner}
+                        </dd>
+                      </>
+                    )}
+                    {lead.fields.location && (
+                      <>
+                        <dt className="text-ink-body">Location</dt>
+                        <dd className="min-w-0 break-words text-ink">
+                          {lead.fields.location}
+                        </dd>
+                      </>
+                    )}
+                    {lead.fields.bidDate && (
+                      <>
+                        <dt className="text-ink-body">Bid date</dt>
+                        <dd className="min-w-0 break-words text-ink">
+                          {lead.fields.bidDate}
+                        </dd>
+                      </>
+                    )}
+                    {lead.fields.sizeText && (
+                      <>
+                        <dt className="text-ink-body">Size</dt>
+                        <dd className="min-w-0 break-words text-ink">
+                          {lead.fields.sizeText}
+                        </dd>
+                      </>
+                    )}
+                    {lead.fields.deliveryMethod && (
+                      <>
+                        <dt className="text-ink-body">Delivery</dt>
+                        <dd className="min-w-0 break-words text-ink">
+                          {lead.fields.deliveryMethod}
+                        </dd>
+                      </>
+                    )}
+                    {lead.fields.scopeSummary && (
+                      <>
+                        <dt className="text-ink-body">Scope</dt>
+                        <dd className="min-w-0 break-words text-ink">
+                          {lead.fields.scopeSummary}
+                        </dd>
+                      </>
+                    )}
+                  </dl>
+                  <p className="mt-1 text-xs">
+                    <a
+                      href={lead.source.url}
+                      target="_blank"
+                      rel="noopener noreferrer nofollow"
+                      className="text-ink-body underline hover:text-link"
                     >
-                      {isSaving ? "Saving…" : "Add to the chase list"}
-                    </button>
+                      {lead.source.title || "source"}
+                    </a>
+                  </p>
+
+                  {tracking === index ? (
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const formData = new FormData(event.currentTarget);
+                        setSaveError(null);
+                        startSaving(async () => {
+                          const result = await createBidPursuit(formData);
+                          if (!result.ok) {
+                            setSaveError(result.error);
+                            return;
+                          }
+                          setTracking(null);
+                        });
+                      }}
+                      className="mt-2 rounded-md border border-line-card p-3"
+                    >
+                      <p className="mb-3 text-sm text-ink-body">
+                        The same form as &ldquo;Add a pursuit&rdquo; below.{" "}
+                        {one.bidDay
+                          ? "The bid date read as a whole day on the page, so it is filled in — check it against the source before you save."
+                          : "The bid date is blank because the page did not state a whole day; what it did say is in the note, for you to read and type."}
+                      </p>
+                      <BidPursuitFields
+                        prefill={{
+                          projectName: lead.fields.projectName,
+                          owner: lead.fields.owner ?? undefined,
+                          note: one.note,
+                          // ONLY a whole calendar day, decided on the server by
+                          // `readBidDay` — "late spring" leaves this blank and
+                          // stays in the note. Matches what the Ask card does.
+                          expectedBidDate: one.bidDay ?? undefined,
+                        }}
+                        minBidDate={localToday()}
+                      />
+                      {saveError && (
+                        <p
+                          className="mt-3 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink"
+                          role="status"
+                        >
+                          {saveError}
+                        </p>
+                      )}
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          type="submit"
+                          disabled={isSaving}
+                          className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-neutral-900 disabled:opacity-60"
+                        >
+                          {isSaving ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <Spinner />
+                              Saving…
+                            </span>
+                          ) : (
+                            "Add to the chase list"
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTracking(null)}
+                          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink hover:bg-surface"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
                     <button
                       type="button"
-                      onClick={() => setTracking(null)}
-                      className="rounded-md border border-line-card px-4 py-2 text-sm text-ink hover:bg-surface"
+                      onClick={() => {
+                        setSaveError(null);
+                        setTracking(index);
+                      }}
+                      className="mt-2 rounded-md border border-line-card px-3 py-1.5 text-sm text-ink hover:bg-surface"
                     >
-                      Cancel
+                      Track this as a pursuit
                     </button>
-                  </div>
-                </form>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSaveError(null);
-                    setTracking(index);
-                  }}
-                  className="mt-2 rounded-md border border-line-card px-3 py-1.5 text-sm text-ink hover:bg-surface"
-                >
-                  Track this as a pursuit
-                </button>
-              )}
-            </li>
-            );
-          })}
-        </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
     </section>

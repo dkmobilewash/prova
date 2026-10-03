@@ -1,8 +1,12 @@
 "use client";
 
+import { Spinner } from "@/components/Spinner";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { addDeterminationWageRate, deleteDeterminationWageRate } from "@/lib/actions";
+import {
+  addDeterminationWageRate,
+  deleteDeterminationWageRate,
+} from "@/lib/actions";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { money } from "@/lib/money";
 
@@ -68,7 +72,11 @@ export function DeterminationWageRates({
     const form = event.currentTarget;
     setError(null);
     start(async () => {
-      const result = await addDeterminationWageRate(jobId, determinationId, formData);
+      const result = await addDeterminationWageRate(
+        jobId,
+        determinationId,
+        formData,
+      );
       if (!result.ok) {
         setError(result.error);
         return;
@@ -84,8 +92,9 @@ export function DeterminationWageRates({
     <div className="mt-3">
       {rates.length === 0 ? (
         <p className="text-xs text-ink-muted">
-          No rates recorded off this determination yet. Without them the hours on this job are
-          priced from the craft&apos;s own fringe schedule, which is not jurisdiction-specific.
+          No rates recorded off this determination yet. Without them the hours
+          on this job are priced from the craft&apos;s own fringe schedule,
+          which is not jurisdiction-specific.
         </p>
       ) : (
         <table className="w-full text-left text-xs">
@@ -106,29 +115,43 @@ export function DeterminationWageRates({
                 <td className="py-1 pr-2 text-ink">
                   {rate.classification}
                   {rate.craftLabel ? (
-                    <span className="block text-ink-muted">= {rate.craftLabel}</span>
+                    <span className="block text-ink-muted">
+                      = {rate.craftLabel}
+                    </span>
                   ) : (
                     // Not an error: the document's names are not ours, and
                     // an unmapped rate is still what the document published.
-                    <span className="block text-ink-muted">not mapped to a craft</span>
+                    <span className="block text-ink-muted">
+                      not mapped to a craft
+                    </span>
                   )}
                 </td>
-                <td className="py-1 pr-2 text-ink">{money(Number(rate.baseWage))}</td>
-                {(["pensionRate", "vacationRate", "healthWelfareRate", "trainingRate"] as const).map(
-                  (key) => (
-                    <td key={key} className="py-1 pr-2 text-ink-body">
-                      {/* Blank is "the document does not say"; a printed 0
+                <td className="py-1 pr-2 text-ink">
+                  {money(Number(rate.baseWage))}
+                </td>
+                {(
+                  [
+                    "pensionRate",
+                    "vacationRate",
+                    "healthWelfareRate",
+                    "trainingRate",
+                  ] as const
+                ).map((key) => (
+                  <td key={key} className="py-1 pr-2 text-ink-body">
+                    {/* Blank is "the document does not say"; a printed 0
                           is "the document says none". They are different. */}
-                      {rate[key] == null ? "—" : money(Number(rate[key]))}
-                    </td>
-                  ),
-                )}
+                    {rate[key] == null ? "—" : money(Number(rate[key]))}
+                  </td>
+                ))}
                 <td className="py-1">
                   <ConfirmDeleteButton
                     label="Remove"
                     describe={`Removes the ${rate.classification} rate read off this determination. The determination itself stays.`}
                     action={async () => {
-                      const result = await deleteDeterminationWageRate(jobId, rate.id);
+                      const result = await deleteDeterminationWageRate(
+                        jobId,
+                        rate.id,
+                      );
                       if (!result.ok) setError(result.error);
                       else router.refresh();
                     }}
@@ -146,31 +169,66 @@ export function DeterminationWageRates({
         <form onSubmit={onSubmit} className="mt-3 grid gap-2 sm:grid-cols-3">
           <label className={`${lab} sm:col-span-3`}>
             Classification, as the determination names it
-            <input name="classification" className={field} placeholder="Drywall Finisher/Taper" required />
+            <input
+              name="classification"
+              className={field}
+              placeholder="Drywall Finisher/Taper"
+              required
+            />
           </label>
           <label className={lab}>
             Base wage
-            <input name="baseWage" className={field} placeholder="52.34" inputMode="decimal" required />
+            <input
+              name="baseWage"
+              className={field}
+              placeholder="52.34"
+              inputMode="decimal"
+              required
+            />
           </label>
           <label className={lab}>
             Pension
-            <input name="pensionRate" className={field} placeholder="optional" inputMode="decimal" />
+            <input
+              name="pensionRate"
+              className={field}
+              placeholder="optional"
+              inputMode="decimal"
+            />
           </label>
           <label className={lab}>
             Vacation
-            <input name="vacationRate" className={field} placeholder="optional" inputMode="decimal" />
+            <input
+              name="vacationRate"
+              className={field}
+              placeholder="optional"
+              inputMode="decimal"
+            />
           </label>
           <label className={lab}>
             Health &amp; welfare
-            <input name="healthWelfareRate" className={field} placeholder="optional" inputMode="decimal" />
+            <input
+              name="healthWelfareRate"
+              className={field}
+              placeholder="optional"
+              inputMode="decimal"
+            />
           </label>
           <label className={lab}>
             Training
-            <input name="trainingRate" className={field} placeholder="optional" inputMode="decimal" />
+            <input
+              name="trainingRate"
+              className={field}
+              placeholder="optional"
+              inputMode="decimal"
+            />
           </label>
           <label className={lab}>
             Our classification (optional)
-            <select name="craftClassificationId" className={field} defaultValue="">
+            <select
+              name="craftClassificationId"
+              className={field}
+              defaultValue=""
+            >
               <option value="">Not mapped</option>
               {crafts.map((craft) => (
                 <option key={craft.id} value={craft.id}>
@@ -187,7 +245,14 @@ export function DeterminationWageRates({
               // it measures 1.53:1. theme-contrast.test.ts fails the build on it.
               className="rounded-md bg-brand px-3 py-1 text-xs font-semibold text-neutral-900 disabled:opacity-60"
             >
-              {pending ? "Saving…" : "Save rate"}
+              {pending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save rate"
+              )}
             </button>
             <button
               type="button"
