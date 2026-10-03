@@ -6,6 +6,7 @@ import { SalesOpportunityForm } from "@/components/SalesOpportunityForm";
 import { SalesOpportunityRow } from "@/components/SalesOpportunityRow";
 import { SalesActivityForm } from "@/components/SalesActivityForm";
 import { SalesActivityRow } from "@/components/SalesActivityRow";
+import { SalesLeadSignals } from "@/components/SalesLeadSignals";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { openFollowUp, type LoggedActivity } from "@/lib/sales-activity";
 import { viewerToday } from "@/lib/viewerToday";
@@ -19,7 +20,11 @@ import {
   type RecordedStageChange,
 } from "@/lib/sales-stage-history";
 
-export default async function SalesLeadPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function SalesLeadPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
   const { company, ...currentUser } = await requireCompanyContext();
 
@@ -32,8 +37,8 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
       <div className="mx-auto max-w-2xl px-6 py-16">
         <h1 className="mb-2 text-xl font-semibold text-ink">Owner only</h1>
         <p className="text-sm text-ink-body">
-          The sales CRM is restricted to the account owner, same as Team management and billing
-          settings.
+          The sales CRM is restricted to the account owner, same as Team
+          management and billing settings.
         </p>
       </div>
     );
@@ -50,6 +55,10 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
         orderBy: [{ occurredOn: "desc" }, { createdAt: "desc" }],
         include: { loggedByUser: { select: { name: true, email: true } } },
       },
+      signals: {
+        orderBy: [{ foundAt: "desc" }, { createdAt: "desc" }],
+        include: { reviewedByUser: { select: { name: true, email: true } } },
+      },
     },
   });
 
@@ -63,14 +72,16 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
 
   const historyByOpportunity = new Map(
     lead.opportunities.map((opportunity) => {
-      const changes: RecordedStageChange[] = opportunity.stageChanges.map((change) => ({
-        id: change.id,
-        fromStage: change.fromStage,
-        toStage: change.toStage,
-        effectiveOn: toIsoDate(change.effectiveOn) as string,
-        note: change.note,
-        recordedAt: change.recordedAt.toISOString(),
-      }));
+      const changes: RecordedStageChange[] = opportunity.stageChanges.map(
+        (change) => ({
+          id: change.id,
+          fromStage: change.fromStage,
+          toStage: change.toStage,
+          effectiveOn: toIsoDate(change.effectiveOn) as string,
+          note: change.note,
+          recordedAt: change.recordedAt.toISOString(),
+        }),
+      );
 
       return [
         opportunity.id,
@@ -88,27 +99,33 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
   const opportunityOptions = lead.opportunities.map((opportunity) => ({
     id: opportunity.id,
     label: [
-      OPPORTUNITY_STAGE_OPTIONS.find((o) => o.value === opportunity.stage)?.label ?? opportunity.stage,
-      opportunity.estimatedMrr === null ? null : `$${opportunity.estimatedMrr.toString()}/mo`,
+      OPPORTUNITY_STAGE_OPTIONS.find((o) => o.value === opportunity.stage)
+        ?.label ?? opportunity.stage,
+      opportunity.estimatedMrr === null
+        ? null
+        : `$${opportunity.estimatedMrr.toString()}/mo`,
       toIsoDate(opportunity.expectedCloseDate),
     ]
       .filter(Boolean)
       .join(" · "),
   }));
 
-  const loggedActivities: LoggedActivity[] = lead.activities.map((activity) => ({
-    id: activity.id,
-    type: activity.type,
-    occurredOn: toIsoDate(activity.occurredOn) as string,
-    followUpOn: toIsoDate(activity.followUpOn),
-    createdAt: activity.createdAt.toISOString(),
-  }));
+  const loggedActivities: LoggedActivity[] = lead.activities.map(
+    (activity) => ({
+      id: activity.id,
+      type: activity.type,
+      occurredOn: toIsoDate(activity.occurredOn) as string,
+      followUpOn: toIsoDate(activity.followUpOn),
+      createdAt: activity.createdAt.toISOString(),
+    }),
+  );
 
   // Which row carries the live follow-up — asked of the same function
   // /sales asks, rather than re-deciding it from the ORDER BY. The two
   // must not be able to drift apart, and a future-dated row must not win
   // here either.
-  const liveFollowUpId = openFollowUp(loggedActivities, today)?.activityId ?? null;
+  const liveFollowUpId =
+    openFollowUp(loggedActivities, today)?.activityId ?? null;
 
   const activityRows = lead.activities.map((activity) => ({
     id: activity.id,
@@ -117,10 +134,25 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
     summary: activity.summary,
     followUpOn: toIsoDate(activity.followUpOn),
     opportunityId: activity.opportunityId,
-    loggedByName: activity.loggedByUser?.name ?? activity.loggedByUser?.email ?? null,
+    loggedByName:
+      activity.loggedByUser?.name ?? activity.loggedByUser?.email ?? null,
     // Rows created before createSalesActivity refused future dates. They
     // are read as not-yet-happened everywhere else, so they say so here.
     hasOccurred: (toIsoDate(activity.occurredOn) as string) <= today,
+  }));
+
+  const signalRows = lead.signals.map((signal) => ({
+    id: signal.id,
+    kind: signal.kind,
+    state: signal.state,
+    claim: signal.claim,
+    sourceUrl: signal.sourceUrl,
+    sourceTitle: signal.sourceTitle,
+    disqualifies: signal.disqualifies,
+    // Name over email, like every other row on this page. Null is "nobody has
+    // reviewed it", which the row renders as nothing rather than as "unknown".
+    reviewedByName:
+      signal.reviewedByUser?.name ?? signal.reviewedByUser?.email ?? null,
   }));
 
   return (
@@ -139,10 +171,18 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
         />
       </section>
 
-      <section>
+      {/* ABOVE the deal and its history on purpose: this is what somebody
+          reads BEFORE deciding to act, and the band's reason is the sentence
+          they open the call with. Opportunities and Activity are what happened
+          next. */}
+      <SalesLeadSignals leadId={lead.id} signals={signalRows} />
+
+      <section className="mt-10">
         <h2 className="mb-3 text-lg font-semibold text-ink">Opportunities</h2>
         {lead.opportunities.length === 0 ? (
-          <p className="mb-4 text-sm text-ink-body">No opportunities logged with {lead.companyName} yet.</p>
+          <p className="mb-4 text-sm text-ink-body">
+            No opportunities logged with {lead.companyName} yet.
+          </p>
         ) : (
           <ul className="mb-4 divide-y divide-line-row border-y border-line-row">
             {lead.opportunities.map((opportunity) => (
@@ -174,15 +214,16 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
       <section className="mt-10">
         <h2 className="mb-1 text-lg font-semibold text-ink">Activity</h2>
         <p className="mb-3 text-sm text-ink-body">
-          Every call, email, demo and meeting on record. The follow-up on the most recent entry is
-          what {lead.companyName} owes — an older entry&apos;s follow-up was superseded when the
-          next activity was logged.
+          Every call, email, demo and meeting on record. The follow-up on the
+          most recent entry is what {lead.companyName} owes — an older
+          entry&apos;s follow-up was superseded when the next activity was
+          logged.
         </p>
         {activityRows.length === 0 ? (
           <p className="mb-4 text-sm text-ink-body">
-            Nothing logged with {lead.companyName} yet. Until something is, this lead reads &ldquo;No
-            contact logged&rdquo; on the list — which means nobody wrote it down, not that nobody
-            called.
+            Nothing logged with {lead.companyName} yet. Until something is, this
+            lead reads &ldquo;No contact logged&rdquo; on the list — which means
+            nobody wrote it down, not that nobody called.
           </p>
         ) : (
           <ul className="mb-4 divide-y divide-line-row border-y border-line-row">
@@ -196,7 +237,10 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
             ))}
           </ul>
         )}
-        <SalesActivityForm leadId={lead.id} opportunityOptions={opportunityOptions} />
+        <SalesActivityForm
+          leadId={lead.id}
+          opportunityOptions={opportunityOptions}
+        />
       </section>
     </div>
   );

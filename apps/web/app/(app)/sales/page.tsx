@@ -18,7 +18,11 @@ import {
   trackedOpenCount,
   type PipelineOpportunity,
 } from "@/lib/sales-pipeline";
-import { daysInCurrentStage, type RecordedStageChange } from "@/lib/sales-stage-history";
+import {
+  daysInCurrentStage,
+  type RecordedStageChange,
+} from "@/lib/sales-stage-history";
+import { qualify } from "@/lib/sales-qualification";
 
 /**
  * Prova's own sales pipeline -- for selling Prova itself, not a tenant's
@@ -35,7 +39,9 @@ export default async function SalesPage() {
   if (!company.isProvaOperator) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-16">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Not part of your access</h1>
+        <h1 className="mb-2 text-xl font-semibold text-ink">
+          Not part of your access
+        </h1>
         <p className="text-sm text-ink-body">Nothing here for this account.</p>
       </div>
     );
@@ -46,8 +52,8 @@ export default async function SalesPage() {
       <div className="mx-auto max-w-2xl px-6 py-16">
         <h1 className="mb-2 text-xl font-semibold text-ink">Owner only</h1>
         <p className="text-sm text-ink-body">
-          The sales CRM is restricted to the account owner, same as Team management and billing
-          settings.
+          The sales CRM is restricted to the account owner, same as Team
+          management and billing settings.
         </p>
       </div>
     );
@@ -58,8 +64,23 @@ export default async function SalesPage() {
     orderBy: { createdAt: "desc" },
     include: {
       _count: { select: { opportunities: true } },
+      /* Four fields, not three. `claim` is here because on a STRONG lead the
+         band's reason IS the claim — "framing the Mission Valley job under
+         Swinerton" is exactly what you want to read in a list of who to ring.
+         Selecting only kind/state/disqualifies to save bytes rendered that
+         reason as an EMPTY LINE, which is worse than the bytes. `sourceUrl`
+         stays out: the list links to the lead, not to the page. */
+      signals: {
+        select: { kind: true, state: true, disqualifies: true, claim: true },
+      },
       activities: {
-        select: { id: true, type: true, occurredOn: true, followUpOn: true, createdAt: true },
+        select: {
+          id: true,
+          type: true,
+          occurredOn: true,
+          followUpOn: true,
+          createdAt: true,
+        },
       },
       opportunities: {
         select: {
@@ -68,7 +89,14 @@ export default async function SalesPage() {
           estimatedMrr: true,
           expectedCloseDate: true,
           stageChanges: {
-            select: { id: true, fromStage: true, toStage: true, effectiveOn: true, note: true, recordedAt: true },
+            select: {
+              id: true,
+              fromStage: true,
+              toStage: true,
+              effectiveOn: true,
+              note: true,
+              recordedAt: true,
+            },
           },
         },
       },
@@ -95,14 +123,16 @@ export default async function SalesPage() {
   // than a second copy of the rule living here.
   const pipelineOpportunities: PipelineOpportunity[] = leads.flatMap((lead) =>
     lead.opportunities.map((opportunity) => {
-      const changes: RecordedStageChange[] = opportunity.stageChanges.map((change) => ({
-        id: change.id,
-        fromStage: change.fromStage,
-        toStage: change.toStage,
-        effectiveOn: toIsoDate(change.effectiveOn) as string,
-        note: change.note,
-        recordedAt: change.recordedAt.toISOString(),
-      }));
+      const changes: RecordedStageChange[] = opportunity.stageChanges.map(
+        (change) => ({
+          id: change.id,
+          fromStage: change.fromStage,
+          toStage: change.toStage,
+          effectiveOn: toIsoDate(change.effectiveOn) as string,
+          note: change.note,
+          recordedAt: change.recordedAt.toISOString(),
+        }),
+      );
 
       return {
         id: opportunity.id,
@@ -112,7 +142,10 @@ export default async function SalesPage() {
         // Decimal | null -> number | null. Never ?? 0: an unpriced deal is
         // not a deal worth nothing, and every total downstream depends on
         // the difference.
-        estimatedMrr: opportunity.estimatedMrr === null ? null : Number(opportunity.estimatedMrr),
+        estimatedMrr:
+          opportunity.estimatedMrr === null
+            ? null
+            : Number(opportunity.estimatedMrr),
         expectedCloseDate: toIsoDate(opportunity.expectedCloseDate),
         daysInStage: daysInCurrentStage(changes, today),
       };
@@ -129,15 +162,18 @@ export default async function SalesPage() {
   const queue = followUpQueue(activitySources, today);
   const overdueCount = countOverdue(queue);
   const summaries = new Map(
-    activitySources.map((source) => [source.leadId, summarizeLeadActivity(source, today)]),
+    activitySources.map((source) => [
+      source.leadId,
+      summarizeLeadActivity(source, today),
+    ]),
   );
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <h1 className="mb-1 text-lg font-semibold text-ink">Sales CRM</h1>
       <p className="mb-6 text-sm text-ink-body">
-        Prospective C Stream customers and the deals in progress with them -- internal, not visible
-        to any tenant.
+        Prospective C Stream customers and the deals in progress with them --
+        internal, not visible to any tenant.
       </p>
 
       <SalesPipelineBand
@@ -149,17 +185,27 @@ export default async function SalesPage() {
       {queue.length > 0 && (
         <section className="mb-6 rounded-lg border border-line-card bg-surface p-4">
           <h2 className="mb-1 text-sm font-semibold text-ink">
-            {queue.length} {queue.length === 1 ? "lead owes" : "leads owe"} a follow-up
-            {overdueCount > 0 && <span className="text-red-400"> — {overdueCount} overdue</span>}
+            {queue.length} {queue.length === 1 ? "lead owes" : "leads owe"} a
+            follow-up
+            {overdueCount > 0 && (
+              <span className="text-red-400"> — {overdueCount} overdue</span>
+            )}
           </h2>
           <p className="mb-3 text-xs text-ink-muted">
-            Read from each lead&apos;s most recent activity. Logging the next one with the follow-up
-            date left blank is what takes a lead off this list.
+            Read from each lead&apos;s most recent activity. Logging the next
+            one with the follow-up date left blank is what takes a lead off this
+            list.
           </p>
           <ul className="divide-y divide-line-row">
             {queue.map((row) => (
-              <li key={row.leadId} className="flex items-center justify-between gap-3 py-2">
-                <Link href={`/sales/${row.leadId}`} className="text-sm text-ink-label hover:underline">
+              <li
+                key={row.leadId}
+                className="flex items-center justify-between gap-3 py-2"
+              >
+                <Link
+                  href={`/sales/${row.leadId}`}
+                  className="text-sm text-ink-label hover:underline"
+                >
                   {row.companyName}
                 </Link>
                 <span
@@ -198,10 +244,23 @@ export default async function SalesPage() {
                 phone: lead.phone,
                 source: lead.source,
                 opportunityCount: lead._count.opportunities,
+                ...(() => {
+                  /* Derived per lead at read time, never stored — a stored
+                     band would disagree with its own signals the moment one
+                     was dismissed. */
+                  const q = qualify(lead.signals);
+                  return {
+                    band: q.band,
+                    bandReason: q.reason,
+                    awaitingReview: q.awaitingReview,
+                  };
+                })(),
                 lastContactOn: summaries.get(lead.id)?.lastContactOn ?? null,
-                daysSinceContact: summaries.get(lead.id)?.daysSinceContact ?? null,
+                daysSinceContact:
+                  summaries.get(lead.id)?.daysSinceContact ?? null,
                 followUpOn: summaries.get(lead.id)?.followUpOn ?? null,
-                followUpStanding: summaries.get(lead.id)?.followUpStanding ?? null,
+                followUpStanding:
+                  summaries.get(lead.id)?.followUpStanding ?? null,
               }}
             />
           ))}
