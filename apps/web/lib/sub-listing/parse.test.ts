@@ -622,3 +622,165 @@ describe("each signal that rescues a row from being called furniture", () => {
     expect(parsed.rows[0].city).toBe("Fontana, CA");
   });
 });
+
+/**
+ * THE GUARD THAT WAS WRITTEN AS A SPECIAL CASE FOR THE FIELD THAT BIT US.
+ *
+ * `readHeader` refused to pick a prime when a document named several, with a
+ * long comment saying why guessing was unacceptable — and kept
+ * `if (!header[key]) header[key] = value` for the other three fields, directly
+ * underneath it. These cases are the general rule.
+ */
+describe("a header field the document gives twice is refused, not guessed", () => {
+  const twoProjects = [
+    "Project: Lincoln Elementary Modernization",
+    "Agency: Fontana Unified School District",
+    "Prime: Swinerton Builders",
+    "Acme Drywall, Inc.\tFontana, CA\tLic. 884201\tMetal stud framing and drywall",
+    "Project: Jefferson Middle School Gymnasium",
+    "Baker Plastering Co.\tRialto, CA\tLic. 775500\tLath and plaster",
+  ].join("\n");
+
+  it("names neither project rather than attributing both subs to the first", () => {
+    const parsed = parseSubListing(twoProjects);
+    expect(parsed.header.project).toBeNull();
+    expect(parsed.problems.join(" ")).toContain("Lincoln Elementary Modernization");
+    expect(parsed.problems.join(" ")).toContain("Jefferson Middle School Gymnasium");
+    // Both subs are still read. Refusing a header field must not lose a row.
+    expect(parsed.rows).toHaveLength(2);
+  });
+
+  it("keeps the fields that did NOT conflict", () => {
+    const parsed = parseSubListing(twoProjects);
+    expect(parsed.header.agency).toBe("Fontana Unified School District");
+    expect(parsed.header.prime).toBe("Swinerton Builders");
+  });
+
+  it("says what the refusal costs, so the reviewer is not left guessing why", () => {
+    const parsed = parseSubListing(twoProjects);
+    expect(parsed.problems.join(" ")).toContain("No claim will name a project");
+  });
+
+  it("does not call a REPEATED identical value a conflict", () => {
+    // A listing reprinting its own header on page two is the common case, and
+    // treating that as two projects would refuse a field for no reason.
+    const parsed = parseSubListing(
+      [
+        "Project: Lincoln Elementary Modernization",
+        "Acme Drywall, Inc.\tFontana, CA\tLic. 884201\tDrywall",
+        "Page 2 of 2",
+        "Project: Lincoln Elementary Modernization",
+        "Baker Plastering Co.\tRialto, CA\tLic. 775500\tPlaster",
+      ].join("\n"),
+    );
+    expect(parsed.header.project).toBe("Lincoln Elementary Modernization");
+    expect(parsed.problems).toEqual([]);
+  });
+
+  it("guards the agency and the bid date too, not only the project", () => {
+    const agencies = parseSubListing(
+      ["Agency: Fontana USD", "Agency: Rialto USD", "Acme Drywall, Inc.\tFontana, CA\tDrywall"].join(
+        "\n",
+      ),
+    );
+    expect(agencies.header.agency).toBeNull();
+    expect(agencies.problems.join(" ")).toContain("awarding agencies");
+
+    const dates = parseSubListing(
+      ["Bid date: 2026-03-04", "Bid date: 2026-05-19", "Acme Drywall, Inc.\tFontana, CA\tDrywall"].join(
+        "\n",
+      ),
+    );
+    expect(dates.header.bidDate).toBeNull();
+    expect(dates.problems.join(" ")).toContain("bid dates");
+  });
+
+  it("a conflict keeps `agreed` false, so the screen cannot print a clean verdict", () => {
+    expect(parseSubListing(twoProjects).reconciliation.agreed).toBe(false);
+  });
+});
+
+/**
+ * A FIGURE IN A COLUMN IS A VALUE; A FIGURE IN A SENTENCE IS NOT.
+ *
+ * `amount` and `percentOfBid` were read off the whole row, so the first `$` or
+ * `%` anywhere won. The two defects that produced, and the third nobody spotted
+ * — that the same two tests were deleting the portion of work in the same
+ * breath.
+ */
+describe("money and percentages are read from columns, never from prose", () => {
+  const row = (fields: string[]) => parseSubListing(fields.join("\t")).rows[0];
+
+  it("does not read a unit price as the subcontract amount", () => {
+    // "$1.85/SF … $450,000": the unit price is printed FIRST, and the first
+    // version claimed the subcontract was "listed at $1.85" — wrong by five
+    // orders of magnitude, on the one number these buyers care about.
+    const parsed = row(["Acme Drywall, Inc.", "Fontana, CA", "Drywall at $1.85/SF", "$450,000"]);
+    expect(parsed.amount).toBe(450_000);
+  });
+
+  it("refuses an amount when the row has two dollar columns, and says so", () => {
+    const parsed = row(["Acme Drywall, Inc.", "Fontana, CA", "Drywall", "$450,000", "$12,000"]);
+    expect(parsed.amount).toBeNull();
+    expect(parsed.concerns.join(" ")).toContain("nothing says which is the subcontract amount");
+  });
+
+  it("reports a dollar figure it declined to read rather than dropping it", () => {
+    const parsed = row(["Acme Drywall, Inc.", "Fontana, CA", "Drywall at $1.85/SF"]);
+    expect(parsed.amount).toBeNull();
+    expect(parsed.concerns.join(" ")).toContain("$1.85");
+    expect(parsed.concerns.join(" ")).toContain("not the subcontract amount");
+  });
+
+  it("does not turn a product specification into a share of the bid", () => {
+    const parsed = row([
+      "Acme Drywall, Inc.",
+      "Fontana, CA",
+      "Drywall, 95% recycled gypsum board",
+    ]);
+    expect(parsed.percentOfBid).toBeNull();
+  });
+
+  it("KEEPS the portion of work that mentions a figure — the half nobody caught", () => {
+    // The scope slot excluded any field matching MONEY or PERCENT, so the
+    // recycled-gypsum scope above was discarded as well as misread. One string,
+    // two false outputs: an invented bid percentage and a deleted scope.
+    const spec = row(["Acme Drywall, Inc.", "Fontana, CA", "Drywall, 95% recycled gypsum board"]);
+    expect(spec.portionOfWork).toBe("Drywall, 95% recycled gypsum board");
+
+    const priced = row(["Acme Drywall, Inc.", "Fontana, CA", "Drywall at $1.85/SF"]);
+    expect(priced.portionOfWork).toBe("Drywall at $1.85/SF");
+  });
+
+  it("still reads a real percentage column, label and all", () => {
+    expect(row(["Acme Drywall, Inc.", "Fontana, CA", "Drywall", "15%"]).percentOfBid).toBe(15);
+    expect(
+      row(["Acme Drywall, Inc.", "Fontana, CA", "Drywall", "15% of bid"]).percentOfBid,
+    ).toBe(15);
+  });
+
+  it("still keeps the amount column out of the portion-of-work slot", () => {
+    // The reason the strict tests were there in the first place. Loosening them
+    // must not let "$450,000" become the sentence we quote down a telephone.
+    const parsed = row(["Acme Drywall, Inc.", "Fontana, CA", "$450,000", "Metal stud framing"]);
+    expect(parsed.portionOfWork).toBe("Metal stud framing");
+    expect(parsed.amount).toBe(450_000);
+  });
+});
+
+describe("an amount is not rounded away from what the document printed", () => {
+  const amountOf = (field: string) =>
+    parseSubListing(["Acme Drywall, Inc.", "Fontana, CA", "Drywall", field].join("\t")).rows[0]
+      ?.amount;
+
+  it("keeps the cents", () => {
+    // `Math.round(value * multiplier)` made this $450,001.00, while signals.ts
+    // promises in its own header that nothing is rounded.
+    expect(amountOf("$450,000.75")).toBe(450_000.75);
+  });
+
+  it("still expands an abbreviation exactly", () => {
+    expect(amountOf("$1.2M")).toBe(1_200_000);
+    expect(amountOf("$450K")).toBe(450_000);
+  });
+});

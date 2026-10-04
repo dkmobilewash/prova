@@ -325,10 +325,82 @@ function splitFields(line: string): string[] {
     .filter((field) => field.length > 0);
 }
 
-/** Money tokens removed, so a dollar figure cannot be read as a licence.
- *  `$1200000` is seven digits, and it won the licence slot. */
+/**
+ * Money tokens removed, so a dollar figure cannot be read as a licence
+ * (`$1200000` is seven digits, and it won the licence slot).
+ *
+ * **DERIVED FROM `MONEY` RATHER THAN RETYPED, because the hand-written copy had
+ * already drifted and it took `moneyOnly` to notice.** The copy's suffix
+ * alternation read `k|m|mm|million` with no trailing `\b`, and a regex
+ * alternation is leftmost-first rather than longest-match — so on "$1.2 million"
+ * it matched the `m`, stopped, and left the string "illion" behind. `MONEY`
+ * escapes that only because it ends in `\b`, which forces the engine to
+ * backtrack and take the whole word.
+ *
+ * For the two years' worth of work this file does that was harmless: a leftover
+ * "illion" is not a licence number. The moment `moneyOnly` asked "is anything
+ * left after the money is removed", the drift became an amount silently
+ * refused — `$1.2 million` read as no amount at all, which the existing suite
+ * caught because it had a case for exactly that spelling.
+ *
+ * Two expressions that must agree about the same thing are one expression. This
+ * is the same rule CLAUDE.md states for a derived check asserting its own size:
+ * the failure mode of a copy is not that it is wrong on the day it is written.
+ */
+const MONEY_TOKEN = new RegExp(MONEY.source, "gi");
+
 function withoutMoney(text: string): string {
-  return text.replace(/\$\s?\d[\d,]*(?:\.\d+)?\s*(?:k|m|mm|million|thousand)?/gi, " ");
+  return text.replace(MONEY_TOKEN, " ");
+}
+
+/**
+ * IS THIS FIELD THE AMOUNT COLUMN, OR MERELY A FIELD WITH A DOLLAR SIGN IN IT?
+ *
+ * `amount` and `percentOfBid` used to be read off the whole row — the first
+ * `$` anywhere and the first `%` anywhere. Two separate false claims came out
+ * of that, and both are the exact failure `signals.ts` is built to prevent,
+ * since money is "the one specificity that disqualifies":
+ *
+ *   - a row carrying a unit price and a total — "$1.85/SF … $450,000" — claimed
+ *     the SUBCONTRACT was "listed at $1.85", because the unit price is printed
+ *     first. Not a rounding error; a number wrong by five orders of magnitude,
+ *     read down a telephone to the man who submitted it;
+ *   - a portion of work reading "Drywall, 95% recycled gypsum" claimed the sub
+ *     was "listed at 95% of the bid" — a fact about a product specification
+ *     rendered as a fact about money.
+ *
+ * **And the same two tests were deleting the scope in the same breath**, which
+ * is the half neither review caught. `readRow` picked the portion of work with
+ * `!MONEY.test(field) && !PERCENT.test(field)`, so the field holding that
+ * recycled-gypsum scope was disqualified from the scope slot too: one stray
+ * percentage both invented a bid percentage and discarded the sentence this
+ * whole feature exists to quote. One string, two false outputs, no warning.
+ *
+ * So the test is no longer "does this field CONTAIN money" but "is this field
+ * ESSENTIALLY money" — strip the figure and see whether anything is left. That
+ * is what separates an amount column from a sentence with a price in it, and it
+ * is the same shape as `CITY_WITH_STATE` being strict about its two trailing
+ * capitals: a column holds a value, prose holds a value and some words.
+ *
+ * Deliberately strict, and it will refuse real amounts — "$450,000.00 (15%)" is
+ * read as neither. Missing an amount costs a clause in one sentence; inventing
+ * one costs the prospect. The file's standing instruction applies: paste a real
+ * listing, read what it says it could not read, and widen from that evidence.
+ */
+function moneyOnly(field: string): boolean {
+  if (!MONEY.test(field)) return false;
+  return withoutMoney(field).replace(/[\s.,]/g, "") === "";
+}
+
+/** The same question for a percentage, allowing the label a form prints. */
+function percentOnly(field: string): boolean {
+  if (!PERCENT.test(field)) return false;
+  return (
+    field
+      .replace(/\b\d{1,3}(?:\.\d+)?\s?%/, " ")
+      .replace(/\bof\s*(?:the\s*)?(?:total\s*)?(?:base\s*)?bid\b/i, " ")
+      .replace(/[\s.,:]/g, "") === ""
+  );
 }
 
 function parseAmount(raw: string): number | null {
@@ -346,7 +418,15 @@ function parseAmount(raw: string): number | null {
       : suffix === "m" || suffix === "mm" || suffix === "million"
         ? 1_000_000
         : 1;
-  return Math.round(value * multiplier);
+  // Rounded to the CENT, not to the dollar. `Math.round(value * multiplier)`
+  // was the first version, and `signals.ts` says in its own header that
+  // "nothing is inferred, nothing is rounded" — so "$450,000.75" reaching a
+  // claim as "$450,001.00" was the code contradicting the documentation on the
+  // one field where the number is the point. The rounding cannot simply go:
+  // `1.2 * 1_000_000` is not guaranteed exact in binary floating point, which
+  // is what the round was there for. Cents keep that protection and change no
+  // figure a document actually printed.
+  return Math.round(value * multiplier * 100) / 100;
 }
 
 function parsePercent(raw: string): number | null {
@@ -409,7 +489,39 @@ function isHeaderLine(line: string): boolean {
 }
 
 /**
- * Read the header, and REFUSE to pick a prime when the document names several.
+ * What a CONFLICT in each header field costs, which is why every field is
+ * guarded and not just the prime.
+ *
+ * A total `Record`, so a fifth header field cannot be added without saying here
+ * what two of it would mean — the same device `signals.ts` uses for its kinds,
+ * and for the same reason: an omission looks exactly like a decision.
+ */
+const HEADER_CONFLICT: Record<
+  keyof SubListingParse["header"],
+  { plural: string; consequence: string }
+> = {
+  project: {
+    plural: "projects",
+    consequence:
+      "No claim will name a project. Naming the wrong one is a sentence about a job this subcontractor never bid, which is the failure this reader is most careful about.",
+  },
+  agency: {
+    plural: "awarding agencies",
+    consequence: "No claim will name an agency.",
+  },
+  prime: {
+    plural: "prime contractors",
+    consequence:
+      "No claim will name a prime. Nothing in a flat paste says which subcontractor sits under which.",
+  },
+  bidDate: {
+    plural: "bid dates",
+    consequence: "No claim will state a bid date.",
+  },
+};
+
+/**
+ * Read the header, and REFUSE to pick a value when the document names several.
  *
  * `header.prime` used to take the first `Prime:` line in the whole paste. An
  * agency posting every bid for one project in one PDF is the normal case, and
@@ -422,35 +534,64 @@ function isHeaderLine(line: string): boolean {
  * It cannot be resolved per row: nothing in a flat paste says which prime a
  * given row sits under. So a multi-prime document loses its prime entirely and
  * gains a problem, which stops `signals.ts` naming one at all.
+ *
+ * ── AND THE FIX WAS APPLIED TO ONE FIELD OUT OF FOUR ──────────────────────
+ *
+ * That paragraph was written, tested and shipped while `project`, `agency` and
+ * `bidDate` kept the exact code it describes as the bug: `if (!header[key])
+ * header[key] = value`, first one silently wins. A review found it; it is the
+ * same defect, in the same function, three more times, under a comment
+ * explaining why it was unacceptable.
+ *
+ * The cost is not smaller for being on a different field. `projectPhrase` feeds
+ * both the PROJECT and the GC_RELATIONSHIP claim, so a packet covering two
+ * schools tells every subcontractor on the second one that they were named on a
+ * bid for the first — a specific, checkable, false sentence about the reader's
+ * own work, which is the one thing the GTM study calls disqualifying.
+ *
+ * So the rule is general now and the prime is not a special case: collect every
+ * DISTINCT value a field is given, use it when there is exactly one, and when
+ * there is more than one null the field and say so. A field repeated with the
+ * same value is not a conflict — one listing commonly reprints its own header on
+ * page two.
+ *
+ * The lesson is the shape rather than the fields: a guard written as a
+ * special case for the instance that bit you is a guard that does not cover the
+ * next one. `HEADER_CONFLICT` makes the general version the only version.
  */
 function readHeader(lines: string[]): { header: SubListingParse["header"]; problems: string[] } {
-  const header: SubListingParse["header"] = {
-    project: null,
-    agency: null,
-    prime: null,
-    bidDate: null,
-  };
-  const primes: string[] = [];
-  const problems: string[] = [];
+  const keys = Object.keys(HEADER_CONFLICT) as (keyof SubListingParse["header"])[];
+  const seen = new Map<keyof SubListingParse["header"], string[]>(keys.map((key) => [key, []]));
 
   for (const line of lines) {
     for (const { key, pattern } of HEADER_PATTERNS) {
       const found = line.match(pattern);
       if (!found) continue;
       const value = found[1].trim();
-      if (key === "prime") {
-        if (!primes.includes(value)) primes.push(value);
-        continue;
-      }
-      if (!header[key]) header[key] = value;
+      if (!value) continue;
+      const values = seen.get(key);
+      if (values && !values.includes(value)) values.push(value);
     }
   }
 
-  if (primes.length === 1) header.prime = primes[0];
-  else if (primes.length > 1) {
-    problems.push(
-      `this document names ${primes.length} prime contractors (${primes.join("; ")}), and nothing in a flat paste says which subcontractor sits under which. No claim will name a prime. Paste one bidder's listing at a time.`,
-    );
+  const header: SubListingParse["header"] = {
+    project: null,
+    agency: null,
+    prime: null,
+    bidDate: null,
+  };
+  const problems: string[] = [];
+
+  for (const key of keys) {
+    const values = seen.get(key) ?? [];
+    if (values.length === 1) {
+      header[key] = values[0];
+    } else if (values.length > 1) {
+      const { plural, consequence } = HEADER_CONFLICT[key];
+      problems.push(
+        `this document names ${values.length} ${plural} (${values.join("; ")}), and nothing in a flat paste says which subcontractor belongs to which. ${consequence} Paste one bidder's listing at a time.`,
+      );
+    }
   }
 
   return { header, problems };
@@ -602,8 +743,12 @@ function readRow(text: string, line: number, fields: string[]): ListedSub | Unre
     rest.find(
       (field) =>
         /[A-Za-z]{4}/.test(field) &&
-        !MONEY.test(field) &&
-        !PERCENT.test(field) &&
+        // `moneyOnly`/`percentOnly`, not `MONEY`/`PERCENT`: the strict versions
+        // kept the amount column out of the scope slot, which is what they were
+        // for, and ALSO threw away any portion of work that happened to mention
+        // a figure. See the note on those two functions.
+        !moneyOnly(field) &&
+        !percentOnly(field) &&
         field !== city &&
         field !== licenceRaw &&
         field !== registration &&
@@ -614,8 +759,45 @@ function readRow(text: string, line: number, fields: string[]): ListedSub | Unre
         !/^(?:lic|license|licence|dir|reg)\b/i.test(field),
     ) ?? null;
 
+  /**
+   * The amount and the bid percentage, read from COLUMNS rather than from
+   * anywhere on the row — see `moneyOnly`. Two figures and this refuses to pick
+   * one, which is the rule the header already follows for a multi-prime packet:
+   * when a document says two things, a parser that chooses is a parser that
+   * invents.
+   *
+   * The refusal is a CONCERN, never silence. A dollar figure on the page that
+   * does not reach a claim is exactly the "lost quietly" shape this file is
+   * built against — the reviewer has the document open and can settle in a
+   * second what no amount of parsing will.
+   */
+  const amounts = [...new Set(rest.filter(moneyOnly).map(parseAmount))].filter(
+    (value): value is number => value !== null,
+  );
+  const percents = [...new Set(rest.filter(percentOnly).map(parsePercent))].filter(
+    (value): value is number => value !== null,
+  );
+  const amount = amounts.length === 1 ? amounts[0] : null;
+  const percentOfBid = percents.length === 1 ? percents[0] : null;
+
   const match = tradeMatchFor(scope);
   const concerns: string[] = [];
+
+  if (amounts.length > 1) {
+    concerns.push(
+      `this row carries ${amounts.length} separate dollar columns (${rest.filter(moneyOnly).join("; ")}) and nothing says which is the subcontract amount — no amount will be claimed`,
+    );
+  } else if (amounts.length === 0 && MONEY.test(joined)) {
+    const token = joined.match(MONEY)?.[0]?.trim();
+    concerns.push(
+      `this row mentions ${token ?? "a dollar figure"} inside a wider field rather than in a column of its own — read as a unit price or prose, not the subcontract amount, so no amount will be claimed`,
+    );
+  }
+  if (percents.length > 1) {
+    concerns.push(
+      `this row carries ${percents.length} separate percentage columns and nothing says which is the share of the bid — no percentage will be claimed`,
+    );
+  }
 
   if (scope && DANGLING.test(scope)) {
     concerns.push(
@@ -666,8 +848,8 @@ function readRow(text: string, line: number, fields: string[]): ListedSub | Unre
     licence,
     registration,
     city,
-    amount: parseAmount(joined),
-    percentOfBid: parsePercent(joined),
+    amount,
+    percentOfBid,
     concerns,
   };
 }
