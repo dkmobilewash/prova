@@ -52,14 +52,22 @@ next person who sees that wall of red locally does not spend the afternoon on
 their own diff — reverting and re-running is a five-minute control and
 answers it.
 
-**Corrected before this merged, from CI's own log rather than from the
-assumption:** the first draft of this paragraph said "CI runs the same suite
+**Corrected AFTER this merged, from CI's own log rather than from the
+assumption — and the timing is the lesson:** the first draft of this paragraph said "CI runs the same suite
 without it". It does not. CI's run of this very branch logs the SAME
 constraint error **fourteen times** and still finishes with zero non-hydration
 failures — so the race happens in both places and is merely SURVIVED in CI,
 where the local run lets it take specs down. "It does not happen there" and
 "it does not fail there" are different claims, and only the second one is
 true.
+
+The correction was written five minutes after #611 merged, not before, and
+the first draft of this very paragraph said "before". **#611 merged at
+04:14:22Z; the correcting commit is stamped 04:19:16Z.** It was pushed to a
+branch whose PR had already closed, which is this repo's oldest scar
+arriving in a new shape: a commit on a merged branch is not on `main`, and
+nothing says so. `git branch -r --contains <sha>` answers it in one line and
+named only the feature branch.
 
 559 files / 8700 tests, typecheck and lint clean; the three payroll specs
 pass in isolation.
