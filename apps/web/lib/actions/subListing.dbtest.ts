@@ -28,6 +28,12 @@ import { qualify } from "@/lib/sales-qualification";
  *     §4104 listing names a sub once per PORTION OF WORK, so a sub doing framing
  *     and plaster appears twice on one page, and `leadCandidatesFor` only ever
  *     sees leads that existed BEFORE the import;
+ *   - and the other direction, which cost more: two DIFFERENT companies on one
+ *     listing stay two leads. The dedupe ran on a normalised name, which strips
+ *     entity suffixes, so an Inc. and an LLC trading under one name collapsed
+ *     into one lead holding both companies' claims — the second describe block
+ *     at the bottom of this file is one case per rung of the rule that replaced
+ *     it;
  *   - a selection the server's own parse does not contain is refused whole,
  *     not reconciled.
  *
@@ -279,5 +285,173 @@ describe("importing a pasted subcontractor listing", () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.rowsSkipped).toBeGreaterThan(0);
     expect(await prisma.salesLead.count({ where: { companyId: context.company.id } })).toBe(before);
+  });
+});
+
+/**
+ * WHICH TWO ROWS ARE ONE COMPANY, EXECUTED RATHER THAN ARGUED.
+ *
+ * The dedupe above ran on `normaliseCompanyName` alone, which strips entity
+ * suffixes — so "Valley Interiors, Inc." and "Valley Interiors, LLC" both
+ * reduced to "valley interiors" and became ONE `SalesLead` carrying both
+ * companies' claims. An Inc. and an LLC trading under one name are two legal
+ * companies, and the only thing the screen said about it was that `leadsCreated`
+ * read one lower than the number of rows that were ticked.
+ *
+ * Each case below is one rung of the rule in `alreadyImported`, and each uses
+ * its OWN listing so the count it asserts is the count that listing produced
+ * rather than a running total. Lines are derived from the parse, never counted
+ * by hand.
+ */
+function importListing(lines: string[], sourceUrl: string) {
+  const listingText = lines.join("\n");
+  const parsed = parseSubListing(listingText);
+  // A fixture whose rows the parser does not read would make every assertion
+  // below pass on nothing, which is the shape this whole file exists to refuse.
+  expect(parsed.rows.length, "the fixture parsed to no rows").toBeGreaterThan(1);
+  expect(parsed.unread, "the fixture has lines the parser could not read").toHaveLength(0);
+  return importSubListing(
+    form({
+      listingText,
+      sourceUrl,
+      primeOutcome: "UNKNOWN",
+      lines: parsed.rows.map((row) => row.line).join(","),
+    }),
+  );
+}
+
+/** The leads this listing's companies produced, with their signals. */
+async function leadsNamed(prefix: string) {
+  return prisma.salesLead.findMany({
+    where: { companyId: context.company.id, companyName: { startsWith: prefix } },
+    include: { signals: true },
+    orderBy: { companyName: "asc" },
+  });
+}
+
+describe("two rows are one company only when the document says so twice over", () => {
+  it("keeps an Inc. and an LLC with one trading name as two leads", async () => {
+    const result = await importListing(
+      [
+        "Project: Hemet High School Modernization",
+        "Agency: Hemet Unified School District",
+        "Prime Contractor: Bernards Bros Inc",
+        "",
+        "Valley Interiors, Inc.\tRialto, CA\tC-9 884300\t1000012399\tMetal stud framing and drywall",
+        "Valley Interiors, LLC\tRialto, CA\tC-9 990011\t1000012400\tLath and cement plaster",
+      ],
+      "https://example.test/hemet/award-packet.pdf",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.leadsCreated).toBe(2);
+
+    const leads = await leadsNamed("Valley Interiors");
+    expect(leads.map((lead) => lead.companyName)).toEqual([
+      "Valley Interiors, Inc.",
+      "Valley Interiors, LLC",
+    ]);
+    // And each company's claims are on its own lead, not pooled on one of them.
+    for (const lead of leads) expect(lead.signals.length).toBeGreaterThan(0);
+  });
+
+  it("treats the same spelling twice as one listing entry, with no licence to corroborate it", async () => {
+    const result = await importListing(
+      [
+        "Project: Perris Middle School Reroof",
+        "Agency: Perris Union High School District",
+        "Prime Contractor: Tilden-Coil Constructors",
+        "",
+        // The §4104 case: one company, once per portion of work. No licence
+        // column at all, so an identical spelling is the only evidence there is.
+        "Baker Drywall Co\tOntario, CA\tMetal stud framing and drywall",
+        "Baker Drywall Co\tOntario, CA\tLath and cement plaster",
+        // And the company the old normaliser could not tell from it.
+        "Baker Drywall Corp\tOntario, CA\tAcoustical ceilings",
+      ],
+      "https://example.test/perris/award-packet.pdf",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.leadsCreated).toBe(2);
+
+    const leads = await leadsNamed("Baker Drywall");
+    expect(leads.map((lead) => lead.companyName)).toEqual([
+      "Baker Drywall Co",
+      "Baker Drywall Corp",
+    ]);
+    const twoScopes = leads[0];
+    const lines = new Set(
+      twoScopes.signals.map((signal) => /line (\d+)/.exec(signal.claim)?.[1]).filter(Boolean),
+    );
+    expect(lines.size, "both of this company's rows must be on the one lead").toBe(2);
+  });
+
+  it("reads one licence number printed under two classifications as one contractor", async () => {
+    const result = await importListing(
+      [
+        "Project: Yucaipa High School Gymnasium",
+        "Agency: Yucaipa-Calimesa Joint Unified School District",
+        "Prime Contractor: Swinerton Builders",
+        "",
+        // A contractor holds ONE licence number under several classifications,
+        // so these two strings differ and the number does not.
+        "Northstate Drywall\tOntario, CA\tC-9 775500\tMetal stud framing and drywall",
+        "Northstate Drywall, Inc.\tOntario, CA\tC-35 775500\tLath and cement plaster",
+      ],
+      "https://example.test/yucaipa/award-packet.pdf",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.leadsCreated).toBe(1);
+
+    const leads = await leadsNamed("Northstate");
+    expect(leads).toHaveLength(1);
+    const lines = new Set(
+      leads[0].signals.map((signal) => /line (\d+)/.exec(signal.claim)?.[1]).filter(Boolean),
+    );
+    expect(lines.size).toBe(2);
+  });
+
+  it("will not merge rows the document gives different licence numbers, identical spelling and all", async () => {
+    const result = await importListing(
+      [
+        "Project: Banning Elementary Addition",
+        "Agency: Banning Unified School District",
+        "Prime Contractor: Erickson-Hall Construction",
+        "",
+        // The one case where a contradiction outranks an identical spelling: the
+        // document has already said these are two registrants.
+        "Acme Lath Systems\tFontana, CA\tC-9 884201\tMetal stud framing and drywall",
+        "Acme Lath Systems\tRialto, CA\tC-9 990099\tLath and cement plaster",
+      ],
+      "https://example.test/banning/award-packet.pdf",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.leadsCreated).toBe(2);
+    expect(await leadsNamed("Acme Lath")).toHaveLength(2);
+  });
+
+  it("still lands everything these imports wrote PROPOSED, with no reviewer", async () => {
+    // The promise above is about WHICH lead a row joins. It must not have bought
+    // that by writing anything the band can read.
+    const signals = await prisma.salesLeadSignal.findMany({
+      where: {
+        companyId: context.company.id,
+        sourceUrl: { in: [
+          "https://example.test/hemet/award-packet.pdf",
+          "https://example.test/perris/award-packet.pdf",
+          "https://example.test/yucaipa/award-packet.pdf",
+          "https://example.test/banning/award-packet.pdf",
+        ] },
+      },
+    });
+    expect(signals.length).toBeGreaterThan(0);
+    for (const signal of signals) {
+      expect(signal.state, signal.claim).toBe("PROPOSED");
+      expect(signal.reviewedAt, signal.claim).toBeNull();
+      expect(signal.reviewedByUserId, signal.claim).toBeNull();
+    }
   });
 });

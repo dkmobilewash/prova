@@ -835,6 +835,116 @@ export type SubListingImportSummary = {
  *  nobody has reviewed, and the review is the point. */
 const MAX_LISTING_ROWS = 60;
 
+/**
+ * WHAT THIS DOCUMENT HAS SAID ABOUT ONE ROW, FOR DECIDING WHETHER THE NEXT ROW
+ * IS THE SAME COMPANY.
+ *
+ * Only the two rungs below are ever enough. `normaliseCompanyName` alone is NOT,
+ * and that was the defect: it strips entity suffixes, so
+ *
+ *     "Valley Interiors, Inc."  ->  "valley interiors"
+ *     "Valley Interiors, LLC"   ->  "valley interiors"
+ *     "Baker Drywall Co"        ->  "baker drywall"
+ *     "Baker Drywall Corp"      ->  "baker drywall"
+ *
+ * and two genuinely different legal companies collapsed into one `SalesLead`
+ * with both sets of claims on it. An Inc. and an LLC trading under one name are
+ * different companies, and this trade is full of them. The only thing the user
+ * saw was `leadsCreated` reading one lower than the number of rows they ticked.
+ *
+ * `leadMatch.ts` refuses to do this against a PRE-EXISTING lead and says why in
+ * its own header — *"An automatic merge on a name is the same class of error as
+ * the one the whole feature is built to avoid"* — so the in-import path doing it
+ * silently was this file taking the opposite decision on the same evidence. The
+ * rule below is the same rule as `leadMatch.ts`'s, one notch further: merge only
+ * on evidence of SAMENESS printed in the document, and never over evidence of
+ * difference.
+ */
+type ImportedCompany = {
+  leadId: string;
+  /** The name exactly as printed — case and runs of whitespace aside, which are
+   *  typing rather than identity. */
+  spelling: string;
+  /** The name with punctuation and entity suffixes gone. Never enough on its
+   *  own; only ever read together with an identifier. */
+  normalised: string;
+  /**
+   * The licence's DIGITS. A contractor holds ONE licence number under several
+   * classifications, so "C-9 884201" on the framing row and "C-35 884201" on the
+   * plaster row are the same contractor and differ as strings. The class prefix
+   * is not identity; the number is.
+   */
+  licence: string | null;
+  /** A public-works registration number as printed. */
+  registration: string | null;
+};
+
+function identify(row: {
+  name: string;
+  licence: string | null;
+  registration: string | null;
+}): Omit<ImportedCompany, "leadId"> {
+  const digits = row.licence?.match(/(\d{6,8})\s*$/);
+  return {
+    spelling: row.name.toLowerCase().replace(/\s+/g, " ").trim(),
+    normalised: normaliseCompanyName(row.name),
+    licence: digits ? digits[1] : null,
+    registration: row.registration,
+  };
+}
+
+/**
+ * Has this row already been imported, in this same pass?
+ *
+ * Two rungs, and a CONTRADICTION beats both of them:
+ *
+ *  1. The document spells the name identically on both rows. A §4104 listing
+ *     names a subcontractor once per PORTION OF WORK, so a sub doing framing and
+ *     plaster appears twice on one page — one table entry, written out twice by
+ *     one clerk. That is the case the dedupe was written for, and it is a far
+ *     stronger piece of evidence than two names typed by two people in two
+ *     places, which is the situation `leadMatch.ts` refuses to act on.
+ *  2. The names agree once entity suffixes go AND the document prints the SAME
+ *     licence or registration number on both. `leadMatch.ts` names the reason
+ *     this is allowed to decide: "a contractor licence is the one identifier in
+ *     this trade that is unique, printed on the document, and typed by neither
+ *     party". That is what lets "Valley Interior Systems" and "Valley Interior
+ *     Systems, Inc." be one lead while "Valley Interiors, Inc." and "Valley
+ *     Interiors, LLC" are two.
+ *
+ * And the contradiction, which runs the other way and is checked first: if both
+ * rows print an identifier OF THE SAME KIND and the two differ, they are not the
+ * same company whatever the names look like. There is nothing left for an
+ * identical spelling to add — the document has already said these are two
+ * registrants.
+ *
+ * Nothing here merges a row into a lead that existed BEFORE this import. That
+ * stays a human choice on the review screen, unchanged.
+ *
+ * A linear scan: `MAX_LISTING_ROWS` is 60, and a map keyed on one of two
+ * possible keys would have to be read twice and written twice anyway.
+ */
+function alreadyImported(
+  row: Omit<ImportedCompany, "leadId">,
+  imported: readonly ImportedCompany[],
+): string | null {
+  const contradicts = (a: string | null, b: string | null) => a !== null && b !== null && a !== b;
+
+  for (const seen of imported) {
+    if (contradicts(row.licence, seen.licence)) continue;
+    if (contradicts(row.registration, seen.registration)) continue;
+
+    if (row.spelling && row.spelling === seen.spelling) return seen.leadId;
+
+    const identified =
+      (row.licence !== null && row.licence === seen.licence) ||
+      (row.registration !== null && row.registration === seen.registration);
+    if (identified && row.normalised && row.normalised === seen.normalised) return seen.leadId;
+  }
+
+  return null;
+}
+
 export async function importSubListing(
   formData: FormData,
 ): Promise<ActionResultWith<SubListingImportSummary>> {
@@ -891,7 +1001,8 @@ export async function importSubListing(
       let rowsSkipped = 0;
 
       /**
-       * Leads created inside THIS import, by normalised name.
+       * Leads created inside THIS import, with what the document printed about
+       * each — see `alreadyImported` above for the rule and why it is that rule.
        *
        * `leadCandidatesFor` only ever sees the leads that existed before the
        * import, so it cannot match a row against one created two rows ago. A
@@ -901,8 +1012,13 @@ export async function importSubListing(
        * transaction, which is the exact thing `leadMatch.ts` says the whole
        * matching exercise is for. Both were then undeletable, because a lead
        * with signals on it cannot be removed.
+       *
+       * It was keyed on `normaliseCompanyName(row.name)` alone, which fixed that
+       * at the price of a worse failure in the other direction: an Inc. and an
+       * LLC with one trading name normalise to the same string and became one
+       * lead carrying both companies' claims.
        */
-      const createdHere = new Map<string, string>();
+      const importedHere: ImportedCompany[] = [];
 
       for (const row of chosen) {
         const proposals = signalsForSub(row, parsed.header, primeOutcome);
@@ -928,8 +1044,8 @@ export async function importSubListing(
           leadId = existing.id;
           leadsAttached += 1;
         } else {
-          const key = normaliseCompanyName(row.name);
-          const already = key ? createdHere.get(key) : undefined;
+          const identity = identify(row);
+          const already = alreadyImported(identity, importedHere);
           if (already) {
             leadId = already;
           } else {
@@ -942,7 +1058,7 @@ export async function importSubListing(
             });
             leadId = created.id;
             leadsCreated += 1;
-            if (key) createdHere.set(key, created.id);
+            importedHere.push({ ...identity, leadId: created.id });
           }
         }
 
