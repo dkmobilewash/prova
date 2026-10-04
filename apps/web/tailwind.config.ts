@@ -27,6 +27,25 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        // The display face, wired from `next/font` in app/layout.tsx — which
+        // is where the measurements and the reason for a condensed face are
+        // written down. `headline`, not `display`, because `font-display` as
+        // a class name reads like the CSS descriptor of the same name and
+        // this is a family, not a loading strategy.
+        //
+        // The fallback list is the stack this whole app rendered in before
+        // there was a face at all, so a failed font file is the status quo
+        // rather than Times New Roman. `var(--font-headline)` resolves to
+        // next/font's own size-adjusted fallback first and the real file
+        // once it lands.
+        headline: [
+          "var(--font-headline)",
+          "ui-sans-serif",
+          "system-ui",
+          "sans-serif",
+        ],
+      },
       colors: {
         // DARK — the palette from the approved dark mockups (2026-09-11,
         // the "MainVision / Money Rail" set). Values are exact from the
