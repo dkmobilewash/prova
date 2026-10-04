@@ -15,6 +15,11 @@ import {
   type RecapRates,
 } from "@/lib/bid-recap";
 import { asCostCategory, COST_CATEGORY_VALUES } from "@/lib/cost-category";
+import { laborCostApplyDecision } from "@/lib/estimating/labor-cost-apply";
+import { laborRateDateFor } from "@/lib/estimate-labor-cost";
+import { fringeScheduleInput } from "@/lib/labor-cost";
+import { employerBurdenPercentOn } from "@/lib/employer-burden";
+import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import { NOT_ESTIMATE_STAGE } from "@/lib/estimating/draft-lines";
 import {
   actionFail,
@@ -230,6 +235,108 @@ export async function setLineBudgetedCost(jobId: string, lineItemId: string, cos
     revalidateJob(jobId);
     return actionOk;
   });
+}
+
+/**
+ * Writes ONE labor line's budgeted cost from the hours already on it.
+ *
+ * THE DEFECT, from the 2026-10-04 workflow audit: a line carrying 80 hours of
+ * Local 300 journeyman, coded LABOR, with no `budgetedUnitCost` contributes $0
+ * to the bid while the estimate screen prints "≈ $5,600 labor" beside it. Both
+ * figures were right and the screen was a lie by omission. The hint now says
+ * "not in the bid" when it isn't; this is the way out of that state, the way
+ * `setLineBudgetedCost` above is the way out of an uncosted line on the recap.
+ *
+ * STILL ONE NUMBER AT A TIME. `setLineBudgetedCost`'s doc comment refuses a
+ * "copy prices into costs" button and is right to; this is not that. The figure
+ * does not come from the sale price — it comes from the craft's own fringe rate
+ * schedule, the hours on the line and the company's employer burden rate, which
+ * are facts rather than a 0% margin nobody typed. And it happens on a press:
+ * `applyBidRecap` below is the standing precedent for a derived figure a person
+ * accepts deliberately, "a decision with a date on it, not a side effect".
+ *
+ * NOTHING ABOUT THE NUMBER COMES FROM THE REQUEST — #105 finding 3, and the
+ * rule `priceCatalogEntryFromQuotes` states as "there is nowhere here for a
+ * number the browser sent to come in". The request names a line; the server
+ * re-reads the hours, the schedules, the burden and the date, and
+ * `laborCostApplyDecision` rules on all of it. The estimate screen calls that
+ * same function to render the button, so the two cannot disagree.
+ *
+ * `currentEstimatedUnitCost` is deliberately NOT touched, for the reason
+ * `setLineBudgetedCost` gives: it is the PM's live forecast and this is a screen
+ * about the bid.
+ */
+export type LaborCostApplied = { unitCost: number; hours: number };
+
+export async function setLineLaborCostFromHours(
+  jobId: string,
+  lineItemId: string,
+): Promise<ActionResultWith<LaborCostApplied>> {
+  const context = await requireCompanyContext();
+  // Literals rather than `actionFail`, which returns the non-generic
+  // `ActionResult` — `applyBidRecap` below does the same for the same reason.
+  if (!can(context, "VIEW_JOB_COSTS")) return { ok: false, error: JOB_COSTS_ONLY };
+  const companyId = context.company.id;
+  const gate = await estimateJob(jobId, companyId);
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  // A raw try/catch rather than `runAction`, which is not generic and only
+  // returns a bare `ActionResult` — the same shape `applyBidRecap` below uses
+  // for the same reason: this one has a value to hand back.
+  try {
+    const line = await prisma.jobLineItem.findFirst({
+      where: { id: lineItemId, jobId, isDeleted: false },
+      select: {
+        quantity: true,
+        laborHours: true,
+        productionRate: true,
+        budgetedUnitCost: true,
+        costCategory: true,
+        craftClassificationId: true,
+        job: { select: { startDate: true } },
+      },
+    });
+    if (!line) throw new InputError("That line is no longer on the estimate.");
+
+    const [craft, burdenRates] = await Promise.all([
+      line.craftClassificationId
+        ? prisma.craftClassification.findFirst({
+            where: { id: line.craftClassificationId, companyId },
+            select: { fringeRateSchedules: true },
+          })
+        : Promise.resolve(null),
+      loadEmployerBurdenRates(companyId),
+    ]);
+
+    // The same date the screen prices at — the job's start, not today — so the
+    // button cannot write a figure the hint beside it never showed.
+    const asOf = laborRateDateFor(line.job, new Date());
+    const decision = laborCostApplyDecision(
+      {
+        quantity: Number(line.quantity),
+        laborHours: line.laborHours != null ? Number(line.laborHours) : null,
+        productionRate: line.productionRate != null ? Number(line.productionRate) : null,
+        budgetedUnitCost: line.budgetedUnitCost != null ? Number(line.budgetedUnitCost) : null,
+        costCategory: line.costCategory,
+      },
+      (craft?.fringeRateSchedules ?? []).map(fringeScheduleInput),
+      asOf,
+      employerBurdenPercentOn(burdenRates, asOf),
+    );
+    if (!decision.ok) throw new InputError(decision.error);
+
+    const updated = await prisma.jobLineItem.updateMany({
+      where: { id: lineItemId, jobId, isDeleted: false },
+      data: { budgetedUnitCost: decision.unitCost.toFixed(2) },
+    });
+    if (updated.count === 0) throw new InputError("That line is no longer on the estimate.");
+
+    revalidateJob(jobId);
+    return { ok: true, value: { unitCost: decision.unitCost, hours: decision.hours } };
+  } catch (err) {
+    if (err instanceof InputError) return { ok: false, error: err.message };
+    throw err;
+  }
 }
 
 /* ------------------------------------------------------------- the spread */

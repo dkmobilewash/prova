@@ -91,7 +91,7 @@ export function LaborHoursField({ crafts }: { crafts: CraftOption[] }) {
       {hint && (
         <p
           className="self-end pb-2 text-xs text-ink-body"
-          title="Burdened labor: base wage plus fringes, at straight time. An estimate only — it is never written into the line's budgeted cost."
+          title="Labor at base wage plus fringes, at straight time. An estimate — it is written into the line's budgeted cost only when you press Use this."
         >
           {hint}
         </p>
