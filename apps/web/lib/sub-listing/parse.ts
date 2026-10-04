@@ -155,7 +155,7 @@ const TRADE_KEYWORDS: Record<TradeScopeValue, readonly string[]> = {
 };
 
 /**
- * Which trade wins when two of ours match equally well.
+ * Which trade wins when two of ours match equally well. Lowest rank wins.
  *
  * "Drywall and ceilings" is how a drywall sub's scope is most often written, and
  * `drywall` and `ceiling` are both seven characters. The first version returned
@@ -168,14 +168,65 @@ const TRADE_KEYWORDS: Record<TradeScopeValue, readonly string[]> = {
  * ties resolve in this order and the row carries a concern naming the other
  * match. Metal framing and drywall leads because it is the core trade and the
  * one a combined scope is usually sold as.
+ *
+ * ── A RECORD, NOT AN ARRAY, AND THE REASON IS THE FAILURE DIRECTION ────────
+ *
+ * This was `readonly TradeScopeValue[]` and the tie-break was
+ * `TRADE_PRIORITY.indexOf(a) - TRADE_PRIORITY.indexOf(b)`. It happened to hold
+ * all five trades and nothing enforced that. **`Array.prototype.indexOf`
+ * returns -1 for a value it does not hold**, and -1 is lower than every real
+ * index — so a sixth trade added to `lib/trade-scopes.ts` and forgotten here
+ * would not throw, would not fail a test, and would silently sort FIRST, ahead
+ * of this company's own primary trade. Measured on the live function, with one
+ * entry commented out of the array: "Drywall and ceilings" flipped from
+ * `METAL_FRAMING_DRYWALL` to `ACOUSTICAL_CEILINGS`, with 258 tests green. A
+ * wrong winner is both a wrong import default (`shouldInclude` ticks a row when
+ * `tradeScope !== null`) and a wrong sentence, since the TRADE claim quotes the
+ * scope name down a telephone.
+ *
+ * A total `Record` cannot omit a key, so the omission is now a COMPILE error —
+ * the earliest moment available, and the same device `TRADE_KEYWORDS` and
+ * `HEADER_CONFLICT` above and `CLAIM_FOR` in `signals.ts` already use. Keys are
+ * identifiers, so this is still an ORDERING of the imported list rather than a
+ * seventh copy of it (issue #608).
+ *
+ * The rank numbers are deliberately explicit rather than derived from key order:
+ * `Object.keys` order is a property of how the object was written, which makes
+ * an accidental reordering invisible, whereas a number is read and reviewed.
+ * `tradePriority.test.ts` asserts they are a permutation of 0…n-1 — a Record
+ * cannot omit a key but it CAN give two trades the same rank, which would
+ * reintroduce exactly the arbitrary tie this table exists to settle.
  */
-const TRADE_PRIORITY: readonly TradeScopeValue[] = [
-  "METAL_FRAMING_DRYWALL",
-  "ACOUSTICAL_CEILINGS",
-  "LATH_PLASTER",
-  "EIFS",
-  "FIREPROOFING",
-];
+const TRADE_PRIORITY: Record<TradeScopeValue, number> = {
+  METAL_FRAMING_DRYWALL: 0,
+  ACOUSTICAL_CEILINGS: 1,
+  LATH_PLASTER: 2,
+  EIFS: 3,
+  FIREPROOFING: 4,
+};
+
+/**
+ * Exported for `tradePriority.test.ts`, which is the only reader.
+ *
+ * The test has to see both the MEMBERSHIP and the RANKS: the type makes an
+ * omission impossible, and nothing but a test can say that the order is the one
+ * documented above, or that no two trades share a rank.
+ */
+export const TRADE_PRIORITY_RANKS: Readonly<Record<TradeScopeValue, number>> = TRADE_PRIORITY;
+
+/**
+ * The rank of a trade, and an unknown value sorts LAST rather than first.
+ *
+ * Unreachable by the types — every caller passes a `TradeScopeValue` and the
+ * Record is total over them — so this is the belt to that braces. It exists
+ * because the failure it replaces was silent and pointed the WRONG WAY: -1 put
+ * an unranked trade ahead of metal framing and drywall. If a value ever reaches
+ * here off a type boundary (a database row, a JSON paste), losing a tie is a
+ * defensible answer and winning one is not.
+ */
+function priorityOf(scope: TradeScopeValue): number {
+  return TRADE_PRIORITY[scope] ?? Number.MAX_SAFE_INTEGER;
+}
 
 /** One subcontractor as the document lists them. */
 export type ListedSub = {
@@ -465,7 +516,7 @@ export function tradeMatchFor(portionOfWork: string | null): {
   if (best.size === 0) return { scope: null, alsoMatched: [] };
 
   const ranked = [...best.entries()].sort((a, b) =>
-    b[1] === a[1] ? TRADE_PRIORITY.indexOf(a[0]) - TRADE_PRIORITY.indexOf(b[0]) : b[1] - a[1],
+    b[1] === a[1] ? priorityOf(a[0]) - priorityOf(b[0]) : b[1] - a[1],
   );
   return { scope: ranked[0][0], alsoMatched: ranked.slice(1).map(([scope]) => scope) };
 }
