@@ -111,11 +111,12 @@ export const WH347_BLOCKING_FIELD_REASON: Record<Wh347BlockingField, string> = {
     "Every WH-347 carries a sequential payroll number for the project. Issue this week's with the button above the form.",
   projectLocation:
     "The header wants the project's location. Record the job's site address on the job page.",
-  contractNumber: "The header wants the project or contract number. A job does not record one.",
+  contractNumber:
+    "The header wants the project or contract number the awarding body assigned. Record it with the job's other public-works facts on the Compliance tab, then reprint.",
   hoursOutsideWeek:
     "Hours were logged on dates outside this week's seven columns, so the grid cannot show them. A filing that leaves them out understates the week — fix the entries' dates, then reprint.",
   statementOfCompliance:
-    "Page 2 is signed under penalty of perjury and names how fringes were paid. It is not built yet.",
+    "Page 2, the Statement of Compliance, needs the person who will sign it, their title, and whether fringe benefits are paid to approved plans or in cash. Fill it in below, then reprint — it prints with the form.",
 };
 
 /** A period, already formatted for print ("Aug 24" — see
@@ -286,15 +287,45 @@ export interface Wh347CompanyInput {
 
 export interface Wh347JobInput {
   name: string;
-  /** Neither is on the Job model yet; both are accepted so the caller
-   * that gains them does not change this module's shape. */
+  /** THE JOB'S LOCATION, and this comment used to say the column did not
+   * exist. It read "Neither is on the Job model yet; both are accepted so
+   * the caller that gains them does not change this module's shape" — true
+   * when written, and false from the moment `Job.siteAddress` and
+   * `Job.projectLocation` landed. Nothing broke. The page simply went on
+   * passing neither, so this field stayed null, stayed in `blocking`, and
+   * the message beside it went on telling people to record a site address
+   * that this module could not see. A sentence saying the app does not hold
+   * something is exactly as perishable as one saying it does, and it is the
+   * direction that stops anybody checking.
+   *
+   * The caller resolves it through `lib/job-form-location.ts`, shared with
+   * the DAS 140 and DAS 142 forms so two government documents for one job
+   * cannot name different places. */
   location?: string | null;
+  /** STILL genuinely absent: no column for a contract or project number
+   * exists anywhere in `packages/db/prisma/schema`, which is why
+   * `WH347_BLOCKING_REASON.contractNumber` says a job does not record one
+   * rather than telling somebody where to type it. Verified, not inherited —
+   * the sentence above is what happens when this kind of claim is not. */
   contractNumber?: string | null;
 }
 
 export interface Wh347BuildInput {
   company: Wh347CompanyInput;
   job: Wh347JobInput;
+  /** Whether page 2's facts are recorded — `buildWh347Statement(...).complete`.
+   *
+   * OPTIONAL AND DEFAULTING TO FALSE ON PURPOSE. Every caller that does not
+   * know about page 2 keeps the old behaviour, which is to report the
+   * statement as blocking. The alternative — defaulting to true — would make a
+   * caller that forgot to pass it silently report a federal form as ready to
+   * file. When the two possible defaults are "says not ready when it is" and
+   * "says ready when it is not", only one of them is survivable.
+   *
+   * A BOOLEAN rather than the statement itself, so this module keeps deciding
+   * nothing about page 2: lib/wh347-statement.ts owns that question and this
+   * one only reports the answer. */
+  statementComplete?: boolean;
   weekStart: Date;
   entries: Wh347TimeEntryInput[];
   fringeSchedulesByCraft: Map<string, FringeRateScheduleInput[]>;
@@ -564,9 +595,20 @@ export function buildWh347(input: Wh347BuildInput): Wh347Form {
   if (!header.projectLocation) blocking.add("projectLocation");
   if (!header.contractNumber) blocking.add("contractNumber");
   if (hoursOutsideWeek > 0) blocking.add("hoursOutsideWeek");
-  // Page 2 does not exist yet, so no week can be filed regardless of the
-  // grid. Stated here rather than left for the reader to notice.
-  blocking.add("statementOfCompliance");
+  // PAGE 2 EXISTS NOW, so this stops being unconditional — and that makes
+  // `fileable` able to be true for the first time since this module was
+  // written. It was `blocking.add(...)` with no condition, which was honest
+  // while the Statement of Compliance was unbuilt and is a lie the moment it
+  // is built.
+  //
+  // What is being asked here is NOT "is page 2 signed" — this app holds no
+  // evidence anybody signed anything, deliberately (see
+  // lib/wh347-statement.ts). It is "are the facts page 2 needs recorded":
+  // who signs, as what, and the section 4 fringe election. The caller answers
+  // it with `buildWh347Statement(...).complete`, which is the one place that
+  // decides it, so page 1's banner and page 2's own blocking list cannot
+  // disagree about whether the statement is ready.
+  if (!input.statementComplete) blocking.add("statementOfCompliance");
   for (const w of workers) for (const b of w.blocking) blocking.add(b);
 
   const ORDER: Wh347BlockingField[] = [

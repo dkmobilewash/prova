@@ -1,13 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ContractSummary } from "@/components/ContractSummary";
-import { prisma } from "@prova/db";
 import { money } from "@/lib/money";
 import { invoiceBalanceLabel, balanceToneClass } from "@/lib/invoice-balance-label";
 import { PortalJobPhotos } from "@/components/PortalJobPhotos";
 import { countJobMedia, loadSharedJobMediaForClient } from "@/lib/job-media-query";
 import { viewerTimeZone } from "@/lib/viewerToday";
-import { isPortalAccessRevoked, CLIENT_VISIBLE_CHANGE_ORDER_STATUS } from "@/lib/access-tokens";
+import { loadPortalContact, loadPortalJob } from "@/lib/portal-query";
 
 /** The photo cap, matching `/photos`. A GC scrolling a job's history wants
  * the same generous page the sub gets, and this section is at the bottom of
@@ -21,63 +20,27 @@ export default async function PortalJobPage({
 }) {
   const { token, jobId } = await params;
 
-  const contact = await prisma.contact.findUnique({ where: { portalToken: token } });
-  // Issue #106 finding 2: a revoked link, and a contact the sub has set
-  // INACTIVE (a PM who left, a relationship that's over), read exactly
-  // like a token that never existed — 404, not a different error shape.
-  // Distinguishing "revoked" from "never was" would tell whoever is
-  // holding a dead link that it once worked, which the portal's existing
-  // "wrong jobId 404s" convention already treats as worth avoiding.
-  if (!contact || isPortalAccessRevoked(contact)) {
+  // Both reads, and every clause in them, live in lib/portal-query.ts —
+  // see that module for what a GC may see and why. Null means the same
+  // three things here as on the index (no token, revoked, inactive) and is
+  // deliberately one answer, so a dead link learns nothing about itself.
+  const contact = await loadPortalContact(token);
+  if (!contact) {
     notFound();
   }
 
-  const job = await prisma.job.findUnique({
-    where: { id: jobId },
-    include: {
-      company: true,
-      contact: true,
-      lineItems: {
-        where: { isDeleted: false },
-        orderBy: { createdAt: "asc" },
-        include: { originChangeOrder: true },
-      },
-      // Issue #106 finding 1: APPROVED only. Every other read site treats
-      // a change order as live scope only once the GC has agreed to it
-      // (see ChangeOrderStatus's own comment in jobs.prisma) — DRAFT is
-      // the sub's own unsent internal note, SUBMITTED is a pending ask,
-      // REJECTED and VOID are things that didn't happen. None of that is
-      // the sub's to show a GC, and VOID/REJECTED numbers would also
-      // expose gaps in the sequence with no context for why.
-      changeOrders: {
-        where: { status: CLIENT_VISIBLE_CHANGE_ORDER_STATUS },
-        orderBy: { number: "asc" },
-        include: { edits: true },
-      },
-      // `revokedAt: null` and the `expiresAt` clause: don't hand the GC a
-      // "Review and sign" link to a request that will 404 the moment they
-      // click it — see issue #106 finding 2.
-      signatureRequests: {
-        where: { status: "PENDING", revokedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
-        orderBy: { createdAt: "desc" },
-        take: 1,
-      },
-      invoices: {
-        orderBy: { number: "asc" },
-        include: { payments: { orderBy: { receivedAt: "desc" } } },
-      },
-    },
-  });
-
-  if (!job || job.contactId !== contact.id) {
+  // `contactId` is part of the WHERE rather than a check after the fetch,
+  // so a job that is not this contact's never leaves the database.
+  const job = await loadPortalJob(contact.id, jobId);
+  if (!job) {
     notFound();
   }
 
   /* THE PHOTO READ SITS BELOW THAT GUARD ON PURPOSE, not beside it in a
-     `Promise.all` with the job lookup. `job.contactId !== contact.id` is
-     the whole of the portal's authorisation — there is no session here, the
-     token IS the credential — and the id it validates is the same `job.id`
-     the query below filters on. Hoisting these two reads to run
+     `Promise.all` with the job lookup. `loadPortalJob`'s `contactId` clause
+     is the whole of the portal's authorisation — there is no session here,
+     the token IS the credential — and the id it validates is the same
+     `job.id` the query below filters on. Hoisting these two reads to run
      concurrently would mean the photos of a job this contact does not own
      were fetched before anything established that they own it, which is the
      shape of bug that becomes a leak the first time somebody moves a

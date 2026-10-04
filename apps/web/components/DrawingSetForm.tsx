@@ -6,6 +6,7 @@ import { createDrawingSet } from "@/lib/actions";
 import { type JobOption } from "@/components/RfiFields";
 import { DrawingSetFields } from "@/components/DrawingSetFields";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 
 export function DrawingSetForm({ jobs, defaultJobId }: { jobs: JobOption[]; defaultJobId?: string }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -77,7 +78,14 @@ export function DrawingSetForm({ jobs, defaultJobId }: { jobs: JobOption[]; defa
           disabled={isPending}
           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Save set"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save set"
+          )}
         </button>
         <button
           type="button"

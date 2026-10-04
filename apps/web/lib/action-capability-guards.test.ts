@@ -1524,6 +1524,12 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // — two modules because they sit behind two different doors.
   procore: () => import("./actions/procore"),
   procoreFeed: () => import("./actions/procoreFeed"),
+  projectLookup: () => import("./actions/projectLookup"),
+  // Finding public projects out to bid, reachable from /pipeline alone, which
+  // withholds on MANAGE_ESTIMATING. The capability is the DOOR's, copied from
+  // the neighbour it sits beside rather than chosen from the feature's name —
+  // the lesson the plan-ingest entry below paid for.
+  leadSearch: () => import("./actions/leadSearch"),
   // ACC (Autodesk Construction Cloud): same two-door shape as Procore's —
   // the Integrations card's four (MANAGE_COMPLIANCE, then owner) and the
   // feed refresh on /rfis and /submittals (MANAGE_JOBS).
@@ -1613,6 +1619,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // spreadsheet importers beside the register import on /settings/import.
   // See lib/actions/payrollRegister.ts's own doc comment for why.
   payrollRegister: () => import("./actions/payrollRegister"),
+  // WH-347 page 2, the Statement of Compliance. Same MANAGE_COMPLIANCE gate
+  // as the payroll number beside it and for the same reason: it is submitted
+  // from a page that already demands the capability, so an ungated action
+  // here would be a door around that page's own wall.
+  wh347Statement: () => import("./actions/wh347Statement"),
   // Phase codes — the company's own cost-coding vocabulary. All three
   // writes are reachable only from /settings, which demands
   // MANAGE_COMPLIANCE, so the walk puts all three in MUST_ASSERT and every
@@ -1684,6 +1695,26 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // turning AI off stops work for every member of the company, and turning it
   // back on is a decision about where their documents may go.
   aiSettings: () => import("./actions/aiSettings"),
+  // The plan-ingestion runner, reachable from /jobs/[id]/takeoff alone, which is
+  // hard-gated on VIEW_JOB_COSTS. All four actions assert that — the first
+  // version asserted MANAGE_ESTIMATING, which sounds right for a plan set and is
+  // not the capability that door takes; this suite named all four and the page,
+  // which is how it was caught rather than shipped.
+  planIngest: () => import("./actions/planIngest"),
+  // Accepting and rejecting what a title-block reading proposed. Reachable from
+  // /jobs/[id]/takeoff, the same door as the plan-ingest actions above, so it takes
+  // the same capability — `VIEW_JOB_COSTS`, which is what that page is hard-gated
+  // on and not the `MANAGE_ESTIMATING` a plan set sounds like it should need.
+  planSheets: () => import("./actions/planSheets"),
+  // Reading a sub's quote, reachable from /bids alone, which withholds on
+  // MANAGE_ESTIMATING. `readBidQuoteDocument` asserts the same — and unlike the
+  // plan-ingest entry above, this one was right first time, because the
+  // capability was copied from the neighbour it sits beside (`saveBidQuote`)
+  // rather than chosen from the feature's name. Worth the two lines: "what does
+  // this door take" beats "what does this feature sound like", twice over now.
+  quoteRead: () => import("./actions/quoteRead"),
+  addendumRead: () => import("./actions/addendumRead"),
+  specRead: () => import("./actions/specRead"),
   // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it
   // is reachable from /settings/assistant alone, which demands
   // MANAGE_COMPLIANCE. The card actions (confirm, cancel, settle, load)

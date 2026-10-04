@@ -560,13 +560,18 @@ function countRealInputs(source: string): number {
  * dropped from the set is a field that can never be missing from it.
  */
 const INPUT_EXCEPTIONS: Record<string, { reason: string }> = {
-  // The four inputs this file cannot name — free text, every one, checked
+  // The THREE inputs this file cannot name — free text, every one, checked
   // by reading them rather than by skipping anything it could not parse.
   // They are LISTED rather than excluded from the walk, because a field
   // dropped from the set can never be missing from it.
-  "apps/web/components/AskPanel.tsx (unnamed)": {
-    reason: "the Ask question box — free text, and the file input beside it",
-  },
+  //
+  // It was four. `AskPanel.tsx (unnamed)` covered the Ask question box and
+  // the file input beside it; the question box is a TEXTAREA now — a
+  // single-line input scrolled the start of a long question out of sight —
+  // and the file input is `type="file"`, which this census does not flag. So
+  // nothing in that file matches any more, and the census refused to let the
+  // dead entry sit here. That refusal is the point: an exception list nobody
+  // prunes becomes permanent.
   "apps/web/components/SearchLauncher.tsx (unnamed)": {
     reason: "the global search box — free text. Another branch's file this session.",
   },
@@ -587,6 +592,15 @@ const INPUT_EXCEPTIONS: Record<string, { reason: string }> = {
     reason:
       "The same, for the page box's width in PDF points, which pdf.js reports and nobody types. " +
       "It is used only to NAME the paper scale back to the estimator; no quantity depends on it.",
+  },
+  "apps/web/components/PlanSheetReview.tsx (unnamed)": {
+    reason:
+      "TWO BOXES, BOTH FREE TEXT, and one of them is the reason this entry needs a sentence rather " +
+      "than a shrug. A sheet number is 'A-101', 'S2.1', 'M-201' — letters, a separator and digits — " +
+      "so a numeric keypad would be the WRONG keyboard, not a missing one, and `inputMode=\"decimal\"` " +
+      "on it would hide the letters a person has to type. The other is what the sheet is ('FIRST FLOOR " +
+      "PLAN'). Neither is a figure and no quantity depends on either: they are what an estimator calls " +
+      "the sheet, which is the same thing `TakeoffPlanPage.label` holds and types by hand.",
   },
   "apps/web/components/TimeEntryFields.tsx hours": {
     reason:

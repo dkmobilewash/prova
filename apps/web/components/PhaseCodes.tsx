@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { createPhaseCode, setPhaseCodeActive, updatePhaseCode } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * The company's own cost-coding vocabulary, managed on /settings.
@@ -155,7 +156,14 @@ function PhaseCodeRow({ phaseCode, canManage }: { phaseCode: PhaseCodeData; canM
               disabled={isPending}
               className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
-              {isPending ? "Saving…" : "Save"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save"
+              )}
             </button>
             <button
               type="button"
@@ -247,7 +255,14 @@ function PhaseCodeRow({ phaseCode, canManage }: { phaseCode: PhaseCodeData; canM
             title="Offer this code on new work again"
             className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
           >
-            {isPending ? "Working…" : "Bring back"}
+            {isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Working…
+              </span>
+            ) : (
+              "Bring back"
+            )}
           </button>
         ))}
     </li>

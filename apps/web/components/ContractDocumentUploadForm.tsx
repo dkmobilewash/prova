@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { uploadContractDocument } from "@/lib/actions";
 import { singleFileFrom, uploadDocumentFile } from "@/lib/document-upload-client";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * The GC's own agreement, and every later amendment, attached to the job.
@@ -104,7 +105,14 @@ export function ContractDocumentUploadForm({
           disabled={isPending}
           className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isPending ? "Uploading…" : "Upload"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Uploading…
+            </span>
+          ) : (
+            "Upload"
+          )}
         </button>
       </div>
 

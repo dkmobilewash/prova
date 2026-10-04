@@ -13,6 +13,10 @@ export type RevisionData = {
   returnedOn: string | null;
   outcome: string | null;
   responseNotes: string | null;
+  /// Where the stamped submittal lives. A LINK, not a copy — see the column's
+  /// own comment in operations.prisma. Null is the ordinary case.
+  responseUrl: string | null;
+  responseFileName: string | null;
 };
 
 export type SubmittalState =

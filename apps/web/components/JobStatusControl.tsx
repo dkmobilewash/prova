@@ -10,6 +10,7 @@ import {
   JOB_STATUS_LABELS,
   type JobStatusValue,
 } from "@/lib/job-status-transitions";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * Where the job is, and the moves available from here.
@@ -62,7 +63,14 @@ export function JobStatusControl({
             }}
             className="rounded-md border border-line-card px-3 py-1.5 text-sm font-medium text-ink-label hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isPending ? "Saving…" : JOB_STATUS_ACTION_LABELS[next]}
+            {isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Saving…
+              </span>
+            ) : (
+              JOB_STATUS_ACTION_LABELS[next]
+            )}
           </button>
         ))}
       </div>

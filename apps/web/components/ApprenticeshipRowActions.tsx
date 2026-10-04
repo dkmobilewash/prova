@@ -8,6 +8,7 @@ import {
   updateApprenticeshipEnrollment,
 } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 
 const field =
   "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -164,7 +165,14 @@ export function ApprenticeshipRowActions({
             disabled={isPending}
             className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
           >
-            {isPending ? "Saving…" : "Save enrolment"}
+            {isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Saving…
+              </span>
+            ) : (
+              "Save enrolment"
+            )}
           </button>
           <button
             type="button"
@@ -241,7 +249,14 @@ export function ApprenticeshipRowActions({
             disabled={isPending}
             className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
           >
-            {isPending ? "Saving…" : "Record period"}
+            {isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Saving…
+              </span>
+            ) : (
+              "Record period"
+            )}
           </button>
           <button
             type="button"

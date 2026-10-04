@@ -179,6 +179,10 @@ export default function RootLayout() {
             {/* The title is never shown — the tabs draw their own headers. */}
             <Stack.Screen name="(tabs)" options={{ headerShown: false, title: "Home" }} />
             <Stack.Screen name="sign-in" options={{ title: "Sign in" }} />
+            {/* The way home is NOT here and must not come back here. Three
+                header-based attempts rendered nothing on a phone — inside the
+                screen (#548, #553) and as a layout options function (#554).
+                It lives in the screen BODY now; see components/wayHome.tsx. */}
             <Stack.Screen name="job/[jobId]" options={{ title: t("nav.job") }} />
             <Stack.Screen name="reports/[jobId]" options={{ title: t("nav.reports") }} />
             <Stack.Screen name="photos/[jobId]" options={{ title: t("nav.photos") }} />
@@ -189,8 +193,6 @@ export default function RootLayout() {
             <Stack.Screen name="ticket/[jobId]" options={{ title: t("nav.ticket") }} />
             <Stack.Screen name="drawings/[jobId]" options={{ title: t("nav.drawings") }} />
             <Stack.Screen name="schedule/[jobId]" options={{ title: t("nav.schedule") }} />
-            <Stack.Screen name="outbox" options={{ title: t("nav.outbox") }} />
-            <Stack.Screen name="alerts" options={{ title: t("nav.alerts") }} />
             {/* No header and no swipe-back: the way out of a handover is
                 handing the phone back, not an iOS gesture. */}
             <Stack.Screen name="handover" options={{ headerShown: false, gestureEnabled: false }} />

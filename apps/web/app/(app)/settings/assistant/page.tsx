@@ -4,6 +4,8 @@ import { NoAccess } from "@/components/NoAccess";
 import { anthropicIsConfigured, ASK_DEFAULT_MODEL } from "@prova/integrations";
 import { auditSummary, listAskProposals, OUTCOME_LABEL, type AuditOutcome } from "@/lib/ask/audit";
 import { ASK_LIMITS, MIGRATE_COMMAND, usageSummary } from "@/lib/ask/usage";
+import { loadCostReport } from "@/lib/ask/cost-query";
+import { CostPanel, thirtyDaysAgo } from "@/components/AiCostPanel";
 import { allowanceSummary } from "@/lib/ask/allowance";
 import { AssistantConnectionCheck } from "@/components/AssistantConnectionCheck";
 import { AiSettingsForm } from "@/components/AiSettingsForm";
@@ -64,9 +66,10 @@ export default async function AssistantAuditPage() {
   }
 
   const now = new Date();
-  const [rows, usage, allowance, aiSettings] = await Promise.all([
+  const [rows, usage, cost, allowance, aiSettings] = await Promise.all([
     listAskProposals(company.id, now),
     usageSummary(company.id, now),
+    loadCostReport(company.id, thirtyDaysAgo(now)),
     allowanceSummary(company.id, now),
     aiSettingsFor(company.id),
   ]);
@@ -163,6 +166,39 @@ export default async function AssistantAuditPage() {
                 Contact C Stream if you need more before {allowance.resetsOn}.
               </p>
             )}
+            {/* THE OTHER TWO UNITS, and they were metered and never shown until
+                2026-09-30. `planSheetSpend.ts` and `addendumSpend.ts` each tell a
+                person on screen that "the account owner can see the month on
+                Settings → Assistant" — and this page carried questions and
+                document pages only, so for plan sheets (#551) and addendum pages
+                both sentences were false. A browser click-through found it by
+                looking for a figure it had been told would be here.
+
+                A SEPARATE LINE rather than folded into the sentence above,
+                because these are separate ceilings: running out of plan sheets
+                does not stop the Ask box, and running out of questions does not
+                stop a plan set being read. One sentence would imply one pot. */}
+            <p className="mb-3 text-sm text-ink-body" data-ask="allowance-units">
+              Separately, and on their own ceilings:{" "}
+              <span className="text-ink-label">
+                {allowance.planSheetsLeft} of {allowance.planSheetCeiling} plan sheets
+              </span>{" "}
+              and{" "}
+              <span className="text-ink-label">
+                {allowance.addendumPagesLeft} of {allowance.addendumPageCeiling} addendum pages
+              </span>{", "}
+              and{" "}
+              <span className="text-ink-label">
+                {allowance.specPagesLeft} of {allowance.specPageCeiling} spec pages
+              </span>{" "}
+              left. Used so far: {allowance.planSheetsUsed}{" "}
+              {allowance.planSheetsUsed === 1 ? "sheet" : "sheets"}, {allowance.addendumPagesUsed}{" "}
+              {allowance.addendumPagesUsed === 1 ? "addendum page" : "addendum pages"} and{" "}
+              {allowance.specPagesUsed} {allowance.specPagesUsed === 1 ? "spec page" : "spec pages"}.
+              These do not come out of the questions or document pages above, and they do not come out
+              of each other — so reading a drawing set, a GC&apos;s addendum or a spec section cannot
+              spend the allowance the same job&apos;s paperwork needs.
+            </p>
             <p className="mb-3 text-sm text-ink-body">
               A question costs one question. A file costs its real page count on top — a PDF is counted
               page by page, a photo is one page, and a PDF whose page count can&apos;t be read is charged
@@ -175,6 +211,24 @@ export default async function AssistantAuditPage() {
                 for something that then failed to answer. It is counted rather than quietly given back, because
                 an allowance that hands itself back whenever a call fails is not a cap — contact C Stream and
                 a person will credit it.
+              </p>
+            )}
+            {/* The same disclosure for the other two units. Both ledgers MARK a
+                failure rather than releasing it, and both tell the person so at
+                the time — "the account owner can see them on Settings →
+                Assistant". This is where that has to be true. */}
+            {(allowance.failedPlanSheets > 0 ||
+              allowance.failedAddendumPages > 0 ||
+              allowance.failedSpecPages > 0) && (
+              <p className="mb-3 text-sm text-ink-body" data-ask="allowance-failed-units">
+                {allowance.failedPlanSheets}{" "}
+                {allowance.failedPlanSheets === 1 ? "plan sheet" : "plan sheets"},{" "}
+                {allowance.failedAddendumPages}{" "}
+                {allowance.failedAddendumPages === 1 ? "addendum page" : "addendum pages"} and{" "}
+                {allowance.failedSpecPages}{" "}
+                {allowance.failedSpecPages === 1 ? "spec page" : "spec pages"} were claimed for
+                a read that then failed. Counted rather than given back, for the same reason — contact
+                C Stream and a person will credit it.
               </p>
             )}
           </>
@@ -287,6 +341,13 @@ export default async function AssistantAuditPage() {
           </ul>
         )}
       </section>
+
+      {/* STEP 2 OF THE AI PLAN. The section above says how many tokens; this
+          one says what they cost, and what one unit of work costs — which is
+          the figure `docs/ai/DECISIONS.md` says is needed to answer whether
+          1,500 plan sheets and 600 addendum pages a month are sustainable.
+          Both were written down as "a figure, not a measurement". */}
+      <CostPanel report={cost} />
 
       <StatusLine report={assistantStatus({ proposed: summary.proposed, done: summary.done, notDone: summary.notDone })} />
 

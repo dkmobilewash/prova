@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type LeadSearch } from "@prova/integrations";
+import { LEAD_PROMPT_VERSION, type LeadSearch } from "@prova/integrations";
 import { HAIKU_4_5, modelFor } from "@prova/integrations/src/models";
 import { boundLeadFinder } from "./leadFinder";
 
@@ -47,7 +47,13 @@ describe("boundLeadFinder", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const d = deps({ ok: true, leads: [], searches: 3, usage });
     const result = await boundLeadFinder(actor, d)(input);
-    expect(result).toEqual({ ok: true, leads: [] });
+    // `searches` is CARRIED OUT, not just recorded in the ledger, so a caller
+    // can show what the pass cost. It is the billed unit: web search is charged
+    // per search on top of tokens. The /pipeline control shipped without
+    // showing it while the project look-up showed it, and a browser tester
+    // caught that before any test here could — this is the assertion that keeps
+    // it reaching a caller at all.
+    expect(result).toEqual({ ok: true, leads: [], searches: 3 });
     expect(d.recordAskUsage).toHaveBeenCalledTimes(1);
     expect(d.recordAskUsage).toHaveBeenCalledWith({
       companyId: "co-1",
@@ -56,6 +62,13 @@ describe("boundLeadFinder", () => {
       usage,
       outcome: "answered",
       feature: "lead-search",
+      // The prompt's version, so a later claim that a prompt change improved
+      // lead quality can be attributed to one side of it. Both callers — the
+      // Ask command and the /pipeline control — come through this one
+      // recording site, which is why the version cannot be on one path and
+      // missing from the other. `promptVersionCensus` fails the build if it
+      // is dropped; this pins it to the exact value rather than its presence.
+      promptVersion: LEAD_PROMPT_VERSION,
     });
     for (const call of d.recordAskUsage.mock.calls) expect(call[0].feature).not.toBe("ask");
     expect(d.recordAskUsage.mock.calls[0][0].usage.webSearches).toBe(3);
@@ -142,7 +155,7 @@ describe("boundLeadFinder", () => {
       vi.spyOn(console, "log").mockImplementation(() => {});
       aiSettingsRow = { aiEnabled: true, disabledFeatures: ["COMPLIANCE_EXTRACT"], planSheetsPerMonth: 1500, modelOverride: null };
       const d = deps({ ok: true, leads: [], searches: 1, usage });
-      expect(await boundLeadFinder(actor, d)(input)).toEqual({ ok: true, leads: [] });
+      expect(await boundLeadFinder(actor, d)(input)).toEqual({ ok: true, leads: [], searches: 1 });
       expect(d.findLeads).toHaveBeenCalledTimes(1);
     });
 

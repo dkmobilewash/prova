@@ -15,6 +15,8 @@ function revision(overrides: Partial<RevisionData> & { revisionNumber: number; s
     returnedOn: null,
     outcome: null,
     responseNotes: null,
+    responseUrl: null,
+    responseFileName: null,
     ...overrides,
   };
 }

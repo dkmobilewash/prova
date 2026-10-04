@@ -94,6 +94,8 @@ const REVISIONS: readonly RevisionData[] = [
     returnedOn: "2026-08-14",
     outcome: "REVISE_AND_RESUBMIT",
     responseNotes: null,
+    responseUrl: null,
+    responseFileName: null,
   },
   {
     revisionNumber: 2,
@@ -102,6 +104,8 @@ const REVISIONS: readonly RevisionData[] = [
     returnedOn: "2026-08-28",
     outcome: "APPROVED_AS_NOTED",
     responseNotes: null,
+    responseUrl: null,
+    responseFileName: null,
   },
 ];
 

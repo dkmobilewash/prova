@@ -356,7 +356,7 @@ function throwingParsers(): string[] {
 const THROWERS = throwingParsers();
 
 describe("the shared parsers that raise InputError", () => {
-  it("are all seven, derived through the callback rather than typed", () => {
+  it("are all eight, derived through the callback rather than typed", () => {
     // The roll-call IS the size assertion (scar 1): a derivation that
     // matched nothing gives [] and fails here, instead of making every rule
     // below vacuously true over an empty set.
@@ -375,6 +375,13 @@ describe("the shared parsers that raise InputError", () => {
       "nullablePercentFromForm",
       "numberFromForm",
       "optionalEnumFromForm",
+      // Added with the one shared link validator. It is the THROWING half of
+      // a deliberate pair — `optionalLinkFromForm` returns a result for the
+      // actions that are not inside `runAction`, and this one throws for the
+      // ones that are, exactly as `ownerRefusal`/`assertOwner` split. This
+      // line going red is that pair being registered, which is what the
+      // comment above asks for.
+      "optionalLinkOrThrow",
       "optionalNumberFromForm",
     ]);
   });

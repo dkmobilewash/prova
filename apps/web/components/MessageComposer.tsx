@@ -5,6 +5,7 @@ import { sendOutboundEmail, settleAskDraft } from "@/lib/actions";
 import { inputClass, labelClass, type JobOption } from "@/components/RfiFields";
 import type { MessageDraft } from "@/lib/ask/drafts";
 import { jobPickerLabel } from "@/components/jobLabels";
+import { Spinner } from "@/components/Spinner";
 
 /** The entry point this feature shipped without.
  *
@@ -161,7 +162,14 @@ export function MessageComposer({
           disabled={isPending}
           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? "Sending…" : "Send"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Sending…
+            </span>
+          ) : (
+            "Send"
+          )}
         </button>
         <button
           type="button"

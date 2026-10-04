@@ -170,6 +170,39 @@ function routeShapeOf(value: string): string {
     .split(/[?#]/)[0];
 }
 
+/**
+ * A route with its parameter NAMES erased — `[anything]` becomes `[id]`.
+ *
+ * `routeShapeOf` turns every `${…}` in an href into `[id]`, which is right
+ * for what an href is (a value, with no parameter name in it) and wrong for
+ * comparing against a page path, where the folder is named whatever the page
+ * called it. One dynamic segment happened to work because `/jobs/[id]` is
+ * named `id`; a SECOND one never did. `/jobs/${n.jobId}/das-140/${n.id}`
+ * shapes to `/jobs/[id]/das-140/[id]` and the page on disk is
+ * `/jobs/[id]/das-140/[noticeId]`, so the two could not match however
+ * correct the href was.
+ *
+ * So the census had been unable to resolve any nested dynamic route, and
+ * reported the first one that appeared as a page that does not exist. It
+ * does exist. Normalising BOTH sides keeps everything this file is for —
+ * segment count, order and literal segments are all still compared, and
+ * those are the things an href can actually get wrong. Only the name, which
+ * it cannot, stops mattering. Two pages differing solely by parameter name
+ * at the same position are a thing Next.js itself refuses, so this cannot
+ * collapse two real routes into one.
+ */
+const anyParam = (route: string) => route.replace(/\[[^\]]+\]/g, "[id]");
+// `pages` is a Map of route -> file, so it is `pages.keys()` and not the Map
+// that gets normalised. Built lazily inside a getter rather than at module
+// scope: a throw during module evaluation is a COLLECTION error, which
+// vitest reports as "no tests" — a file that runs nothing looks nothing like
+// a file that fails, and this census exists to stop exactly that.
+let shapes: Set<string> | null = null;
+function pageShapes(): Set<string> {
+  if (shapes === null) shapes = new Set([...pages.keys()].map(anyParam));
+  return shapes;
+}
+
 describe("the census sees what it reasons about", () => {
   const files = scannedFiles();
   const found = hrefsIn(files);
@@ -236,7 +269,7 @@ describe("every href Ask can emit is a page that exists", () => {
     const literals = found.filter((href) => href.value.startsWith('"'));
     expect(literals.length, "no literal hrefs parsed").toBeGreaterThan(80);
     const broken = literals
-      .filter((href) => !pages.has(routeShapeOf(href.value)))
+      .filter((href) => !pageShapes().has(anyParam(routeShapeOf(href.value))))
       .map((href) => `${href.file}: ${href.value}`);
     expect(broken, `Ask cites a page with no page.tsx behind it: ${broken.join("; ")}`).toEqual([]);
   });
@@ -245,7 +278,7 @@ describe("every href Ask can emit is a page that exists", () => {
     const templates = found.filter((href) => href.value.startsWith("`"));
     expect(templates.length, "no template hrefs parsed").toBeGreaterThan(20);
     const broken = templates
-      .filter((href) => !pages.has(routeShapeOf(href.value)))
+      .filter((href) => !pageShapes().has(anyParam(routeShapeOf(href.value))))
       .map((href) => `${href.file}: ${href.value}`);
     expect(broken, `Ask builds an href for a route with no page: ${broken.join("; ")}`).toEqual([]);
   });

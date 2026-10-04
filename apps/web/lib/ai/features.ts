@@ -30,6 +30,8 @@ export type AiSettings = {
   aiEnabled: boolean;
   disabledFeatures: AiFeature[];
   planSheetsPerMonth: number;
+  addendumPagesPerMonth: number;
+  specPagesPerMonth: number;
   modelOverride: string | null;
 };
 
@@ -49,6 +51,12 @@ export const AI_SETTINGS_DEFAULTS: AiSettings = {
   aiEnabled: true,
   disabledFeatures: [],
   planSheetsPerMonth: 1500,
+  addendumPagesPerMonth: 600,
+  // 1,800 is Diego's figure, and it was 600 for about an hour until the page
+  // estimate behind it turned out to be wrong — a spec section is thirty-odd
+  // pages, not ten, so 600 was three bids a month rather than fifteen.
+  // `ask-allowance.prisma` carries the arithmetic.
+  specPagesPerMonth: 1800,
   modelOverride: null,
 };
 
@@ -73,8 +81,50 @@ export const AI_FEATURE_LABEL: Record<AiFeatureKey, string> = {
   DRAFT_ESTIMATE_LINES: "Drafting estimate lines",
   BID_RESEARCH: "Bid research",
   LEAD_SEARCH: "Lead search",
+  QUOTE_EXTRACT: "Reading a sub's quote",
   PLAN_INGESTION: "Reading plan sets",
+  ADDENDUM_READ: "Reading addenda",
+  SPEC_READ: "Reading spec sections",
 };
+
+/**
+ * The on-screen name for a feature as the USAGE LEDGER spells it.
+ *
+ * ── THIS EXISTS BECAUSE THE TWO HALVES OF THE APP SPELL A FEATURE
+ *    DIFFERENTLY, AND A LOOKUP THAT NEVER MATCHED SHIPPED ──
+ *
+ * `AiFeatureKey` is SCREAMING_SNAKE (`PLAN_INGESTION`) because it is a
+ * TypeScript union and a settings column. `AskUsage.feature` is kebab
+ * (`plan-ingestion`) because it is a ledger string — see `AskUsageFeature` in
+ * `lib/ask/usage.ts`. Both spellings are deliberate and neither is changing.
+ *
+ * The cost panel shipped on 2026-10-02 reading `AI_FEATURE_LABEL[row.feature]`
+ * with the ledger's spelling, which is `undefined` for EVERY feature, and fell
+ * through to a `?? feature` fallback — so every row on a money screen rendered
+ * its raw database key. Found by clicking it, not by any test. Two things of
+ * mine hid it, and both looked like care at the time:
+ *
+ *   - an `as keyof typeof` cast, which silenced the one type error that would
+ *     have caught it at compile time;
+ *   - the fallback itself, written so an unnamed feature would not be DROPPED,
+ *     which turned a total failure into something that reads as a rare edge
+ *     case.
+ *
+ * So the mapping is DERIVED rather than written out a second time — a hand-kept
+ * second list is the defect #526 collapsed (a completeness guard cannot see a
+ * consumer that stopped reading the canonical list). The transform is
+ * mechanical, and `askFeatureLabelCensus.test.ts` asserts every member of
+ * `AskUsageFeature` resolves to a real label, so the fallback can never again
+ * be the normal path.
+ */
+export function askFeatureLabel(ledgerFeature: string): string {
+  const key = ledgerFeature.toUpperCase().replace(/-/g, "_") as AiFeatureKey;
+  // The fallback is kept, and is now genuinely for the unknown case only: a
+  // tenth caller that writes a ledger row before anybody names it appears under
+  // its own key rather than vanishing from a bill. The census is what makes
+  // that a rare case rather than every case.
+  return AI_FEATURE_LABEL[key] ?? ledgerFeature;
+}
 
 /**
  * What each feature actually DOES, in one line, for the settings screen.
@@ -97,8 +147,14 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
   BID_RESEARCH:
     "Looking up a new project on the web to pre-fill a bid card. The project name and location leave for the search.",
   LEAD_SEARCH: "Searching the web for projects out to bid in your trades and area.",
+  QUOTE_EXTRACT:
+    "Reading a quote a sub or supplier sent you, and filling in the amount, date and exclusions for you to check. Nothing is saved until you press save, and with this off you can still type a quote in by hand.",
   PLAN_INGESTION:
-    "Reading an uploaded plan set: splitting it into sheets, classifying them and indexing the title blocks. Not built yet — the switch is here first so it is not retrofitted later.",
+    "Reading an uploaded plan set: per sheet, whether it has selectable text and what its title block says, proposed as a sheet index you confirm or correct. With this off, sheets are still labelled by typing them in.",
+  ADDENDUM_READ:
+    "Reading an addendum a GC issued on a bid, and listing what it says it changed for you to check against the document. It never decides whether something affects work you have already priced — that stays your tick on the addendum — and with this off you can still log addenda by hand.",
+  SPEC_READ:
+    "Reading a spec section from the bid documents and listing what in it costs money — finish levels, rated assemblies, mock-ups, testing, named products — for you to check against your number. It never says whether your bid already carries a cost, because it has not seen your estimate. With this off you read the section yourself, as you do today.",
 };
 
 /**

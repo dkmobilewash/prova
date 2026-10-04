@@ -13,6 +13,7 @@ import {
   isUniqueConstraintError,
   runAction,
   type ActionResult,
+  optionalLinkOrThrow,
 } from "./shared";
 
 /** Every entry point to a closeout package is a page guarded by
@@ -72,20 +73,6 @@ function requiredDate(formData: FormData, key: string, label: string): Date {
 /** Links rather than uploads, same reason as drawing sets: a Server Action
  * body caps around 1MB. Only http(s) — this string goes into an `href`, so
  * a `javascript:` URL would be an injection vector. */
-function optionalLink(formData: FormData, key: string): string | null {
-  const raw = text(formData, key);
-  if (!raw) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    throw new InputError("The link needs to be a full URL, starting with https://");
-  }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new InputError("The link needs to start with https://");
-  }
-  return parsed.toString();
-}
 
 function isoDay(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -191,7 +178,7 @@ export async function updateCloseoutItem(itemId: string, formData: FormData): Pr
           // Entered, not stamped — backfilling a job that closed out in
           // March must not date every item today.
           completedOn: optionalDate(formData, "completedOn"),
-          documentUrl: optionalLink(formData, "documentUrl"),
+          documentUrl: optionalLinkOrThrow(formData, "documentUrl"),
           documentName: text(formData, "documentName") || null,
         },
       });

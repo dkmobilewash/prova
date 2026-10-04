@@ -6,6 +6,7 @@ import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import type { ActionResult } from "@/lib/actions/shared";
 import { inputClass, labelClass } from "@/components/RfiFields";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 import {
   CERTIFICATION_KINDS,
   CERTIFICATION_LABELS,
@@ -147,7 +148,14 @@ export function CertificationRequirements({
               disabled={isPending}
               className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
-              {isPending ? "Saving…" : "Require it"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Require it"
+              )}
             </button>
             <button
               type="button"

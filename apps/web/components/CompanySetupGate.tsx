@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveBusinessScope, skipBusinessScopeQuestions } from "@/lib/actions";
 import { BusinessScopeFields } from "@/components/BusinessScopeFields";
+import { Spinner } from "@/components/Spinner";
 import { UNANSWERED_SCOPE } from "@/lib/businessScope";
 
 /**
@@ -137,7 +138,14 @@ export function CompanySetupGate() {
               disabled={isPending}
               className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
-              {isPending ? "Saving…" : "Save"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save"
+              )}
             </button>
           </div>
         </form>

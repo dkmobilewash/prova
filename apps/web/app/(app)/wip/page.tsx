@@ -1,4 +1,5 @@
 import { requireCapability } from "@/lib/authz";
+import { PageAlerts } from "@/components/PageAlerts";
 import { EmptyState } from "@/components/EmptyState";
 import { NoAccess } from "@/components/NoAccess";
 import { loadWipSchedule } from "@/lib/wip-schedule-query";
@@ -61,6 +62,16 @@ export default async function WipSchedulePage() {
           As of {today}.
         </p>
       </header>
+
+      {/* A job forecast over its contract value is a fact about THIS table,
+          and until now it reached only /alerts — a list somebody has to
+          decide to go and read. Same `loadAlerts` call as that list, so the
+          two cannot disagree; renders nothing when there is nothing. */}
+      <PageAlerts
+        companyId={context.company.id}
+        user={{ id: context.id, role: context.role, jobFunction: context.jobFunction }}
+        kinds={["WIP_VARIANCE"]}
+      />
 
       {jobCount === 0 ? (
         <EmptyState

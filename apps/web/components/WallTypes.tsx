@@ -12,6 +12,7 @@ import {
   updateWallTypeComponent,
 } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 import { WALL_BASIS_LABELS, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
 
 /**
@@ -167,7 +168,14 @@ export function WallTypeCard({
         <form onSubmit={save.onSubmit} className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
           <WallTypeFields type={type} />
           <button type="submit" disabled={save.isPending} className={small}>
-            {save.isPending ? "Saving…" : "Save"}
+            {save.isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Saving…
+              </span>
+            ) : (
+              "Save"
+            )}
           </button>
           <ErrorLine error={save.error} />
         </form>
@@ -322,7 +330,14 @@ function WallComponentRow({
       <form onSubmit={save.onSubmit} className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
         <ComponentFields component={component} catalog={catalog} crafts={crafts} />
         <button type="submit" disabled={save.isPending} className={small}>
-          {save.isPending ? "Saving…" : "Save"}
+          {save.isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save"
+          )}
         </button>
         <ErrorLine error={save.error} />
       </form>

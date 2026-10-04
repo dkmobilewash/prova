@@ -152,6 +152,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/jobs/job-summary.ts": "The always-visible summary header's retainage-held figure — the same calculateRetainageSummary call, over a leaner per-job query shared by every tab.",
   "lib/lien-waiver-query.ts":
     "Retainage held is a CANDIDATE EXCEPTION on a lien waiver — the money a waiver gives up if it is not written into the exceptions. Reads the same calculateRetainageSummary().balance rather than recomputing from retainagePercent, for the reason this file exists.",
+  "lib/portal-query.ts":
+    "The GC portal's two loaders. Carries the per-invoice snapshot into invoiceBalanceLabel, which is what makes the balance the GC reads and the balance the billing tab reads the same sentence — it does no arithmetic of its own. Named here because the column moved OUT of the portal page and into this module when the portal's `where` clauses were consolidated somewhere a dbtest can reach them; the page still names it too, handing this value straight through.",
   "lib/pay-application-query.ts":
     "Assembles one pay application. PR #156 moved this out of the page so the G702 arithmetic could be tested without a database; the page now renders what this returns.",
   "lib/pay-application-query.test.ts": "Pins that assembly, including the removed-line close-out.",

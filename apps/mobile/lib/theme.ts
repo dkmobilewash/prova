@@ -1,12 +1,22 @@
 // The field app's design tokens.
 //
-// TWO palettes now, and the dark one is still the web's: source of truth
-// for `dark` is apps/web/tailwind.config.ts, the approved "MainVision /
-// Money Rail" set, copied exactly with matching token names.
+// THE PROSE AUTHORITY FOR EVERYTHING HERE IS /DESIGN.md. This file is
+// the executable copy; where the two disagree, this file is what renders
+// and DESIGN.md is the bug. Read it before changing a value.
 //
-// The LIGHT palette is the mobile app's own set, derived from Apple's HIG
-// system colours (systemGroupedBackground, label/secondaryLabel,
-// systemFill rows) so the phone reads as a native iOS app in light mode.
+// THREE palettes over one vocabulary: light, dark, outdoor.
+//
+// `dark` is still the web's: source of truth is
+// apps/web/tailwind.config.ts, the approved "MainVision / Money Rail"
+// set, copied exactly with matching token names.
+//
+// `light` is the FieldLink monochrome reference — white surfaces,
+// #111111 type, yellow actions — extracted 2026-10-02 from
+// cstream-mobile-design-ui. It used to be an Apple-HIG-derived set with a
+// darker canvas; that is gone deliberately, not lost. The reference
+// separates a card from the page with a 1px hairline instead of a canvas
+// step, which is why `light` is now `flat` (see `cardSurface`).
+//
 // It is NOT copied from the web — the web is dark-only, and there is no
 // light web theme to copy. Do not "fix" the asymmetry by making the two
 // sides match; they are different products on different surfaces.
@@ -19,9 +29,12 @@
 // for. If the field complains about glare, dark is one Settings toggle
 // away — that was the point of keeping the vocabulary identical.
 //
-// What did NOT change, because none of it was about colour: body text
-// stays 17px, nothing below 13, every tappable target stays at least 44pt.
-// Those are the parts of the field design that earn their keep in gloves.
+// What the reference did NOT get to change, because none of it was about
+// colour: body text stays 17px, nothing below 13, and every tappable
+// target stays at least 48pt. The reference runs 9-13px type on 40pt
+// targets; those are the parts of the field design that earn their keep
+// in gloves, so its hierarchy was adopted and its sizes were not
+// (DESIGN.md deviations 3 and 4).
 //
 // Rules that survive every palette:
 //  - `brand` (#facc15) is a FILL and always carries the dark `brandInk`
@@ -34,19 +47,29 @@
 
 export const palettes = {
   light: {
+    /** FLAT. White cards on a white page, told apart by a 1px `lineCard`
+     * hairline — the reference design's central move (DESIGN.md, "Depth").
+     * This replaced a darker canvas with elevated cards: with no canvas
+     * step there is nothing for a shadow to fall on, so the border does
+     * all the separating and a shadow on top would only read as a box
+     * someone drew a shadow under. */
+    depth: "flat" as const,
     colors: {
-      canvas: "#f2f2f7", // page background — HIG systemGroupedBackground
-      surface: "#ffffff", // grouped-list surface
-      rail: "#f9f9f9", // chrome: headers and the tab bar, lifted off the canvas
-      railHover: "#e9e9ec", // pressed-row fill (HIG cell highlight)
+      canvas: "#ffffff", // the page — the same white as `surface` on purpose
+      surface: "#ffffff", // cards, grouped rows
+      rail: "#ffffff", // header and tab bar, separated by a 1px top border
+      railHover: "#f1f1f1", // pressed row — the reference's search-field ground
 
-      lineCard: "#e2e2e7", // 1px soft grey outlines — never white, never black
-      lineRow: "#ececef", // row dividers inside groups
+      lineCard: "#e5e5e5", // the hairline that does ALL the separating here
+      lineRow: "#e5e5e5", // row dividers — drawn as 1px gaps over this ground
 
-      ink: "#1c1c1e", // primary text
-      inkLabel: "#3c3c43", // labels, section headers
-      inkBody: "#48484a", // secondary text
-      inkMuted: "#6f6f6f", // placeholders/disabled — optional text only
+      ink: "#111111", // primary text — 18.88:1
+      inkLabel: "#4d4d4d", // labels, section headers — 8.45:1
+      inkBody: "#6b6b6b", // secondary text — 5.33:1
+      // Optional text only: placeholders, disabled controls. 4.74:1.
+      // SUBSTITUTED: the reference's #858585 is 3.69:1 and fails the 4.5:1
+      // floor — at 9px, in the tab bar. See DESIGN.md deviation 1.
+      inkMuted: "#737373",
 
       brand: "#facc15", // yellow fill (buttons, chips) — never as text on it
       brandInk: "#171717", // dark label on a brand fill
@@ -76,12 +99,16 @@ export const palettes = {
       tagSlate: "#e4e4e7",
       tagSlateInk: "#3f3f46",
 
-      /** Soft brand chip: light gold ground, dark amber ink. */
-      tagBrandSoft: "#fef9c3",
+      /** Soft brand chip: light gold ground, dark amber ink. The
+       * reference's yellow tint, used for every soft yellow ground. */
+      tagBrandSoft: "#fff6c9",
       tagBrandSoftInk: "#854d0e",
     },
   },
   dark: {
+    /** Lifted too — the shadow is near-invisible on a #0f0f0f canvas, and
+     * the surface step does the work there, but the vocabulary stays one. */
+    depth: "lifted" as const,
     colors: {
       canvas: "#0f0f0f", // page background
       surface: "#1a1a1a", // card background
@@ -147,6 +174,12 @@ export const palettes = {
    * full chroma is the one thing sunlight does not wash out.
    */
   outdoor: {
+    /** FLAT, and this is the reason the flag exists. A soft shadow is the
+     * first thing direct sunlight destroys; in glare a card is told apart
+     * by its BORDER, which is why lineCard here is #6b6b6b rather than a
+     * hairline. Elevating this palette would be decoration nobody outdoors
+     * can see, bought with the one cue they can. */
+    depth: "flat" as const,
     colors: {
       canvas: "#ffffff",
       surface: "#ffffff",
@@ -202,7 +235,10 @@ export type ColorKey = keyof (typeof palettes)["light"]["colors"];
  * strings. The hex LITERALS are widened on purpose — light and dark hold
  * different values over one vocabulary, and a type that pins the light
  * values would reject the dark palette outright. */
-export type Palette = { colors: Record<ColorKey, string> };
+/** `depth` is part of the vocabulary, not a colour: it says whether a
+ * card on this palette is told apart by a shadow or by a border. See
+ * `cardSurface`. */
+export type Palette = { depth: "lifted" | "flat"; colors: Record<ColorKey, string> };
 
 /** Big, heavy type. Body defaults to 17; nothing below 13, and 13 is only
  * for secondary metadata. Labels run semibold (600) — the gloved thumb is
@@ -215,8 +251,13 @@ export const typography = {
     lg: 20,
     xl: 24,
     xxl: 32,
-    /** The large title — screens' top block on headerless tabs. */
-    xl2: 34,
+    /** The large title — screens' top block on headerless tabs.
+     *
+     * 28, not iOS's 34. At 34 the greeting and the job name took the most
+     * valuable band on the screen to say the least operational thing on it,
+     * and every reference layout this was reviewed against runs its screen
+     * title nearer 28 and spends the difference on content. */
+    xl2: 28,
   },
   weight: {
     regular: "400" as const,
@@ -275,9 +316,9 @@ export const space = {
 
 /** Corner radii, by the shape they belong to rather than a number. */
 export const radius = {
-  field: 10,
-  card: 12,
-  sheet: 20,
+  field: 11,
+  card: 15,
+  sheet: 24,
   pill: 999,
   checkbox: 8,
   /** Small media corners — the photo preview, the signature paper. */
@@ -286,11 +327,22 @@ export const radius = {
   dayCell: 19,
 } as const;
 
-/** Elevation is used exactly once in this app — under the floating
- * capture button, where a 56pt circle over scrolling content is the one
- * surface that earns a shadow. Everything else stays flat: borders and
- * surface tones do the lifting, per the brief ("the interface should
- * feel almost flat until depth is needed"). */
+/**
+ * ELEVATION USED TO BE USED EXACTLY ONCE — under the floating capture
+ * button — and everything else was a 1px border. That was a deliberate
+ * choice and it is being revised deliberately, so the old reasoning is
+ * kept rather than deleted: "borders and surface tones do the lifting…
+ * the interface should feel almost flat until depth is needed."
+ *
+ * What changed is evidence. Against the field apps this was reviewed
+ * against, an outlined card reads as a BOX and an elevated one reads as a
+ * CARD sitting on the page — and with canvas and surface only ~4% apart
+ * the outline was doing all the separating on its own. Depth is needed.
+ *
+ * `card` is deliberately much softer than `floating`: a list of them has
+ * to look like a page of paper, not a stack of buttons. Opacity 0.06
+ * against 0.18, a tighter radius and a 1pt offset.
+ */
 export const shadow = {
   floating: {
     shadowColor: "#000000",
@@ -299,7 +351,42 @@ export const shadow = {
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
   },
+  card: {
+    shadowColor: "#000000",
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
 } as const;
+
+/**
+ * THE CARD TREATMENT FOR A PALETTE, in one place so nine screens cannot
+ * each decide and so `outdoor` cannot be forgotten by whoever adds the
+ * tenth.
+ *
+ * Lifted palettes get a soft shadow and NO border — an outline plus a
+ * shadow reads as a box someone drew a shadow under, which is the look
+ * this replaced. Flat palettes get the border and no shadow, because a
+ * shadow in direct sun is a cue that is not there.
+ *
+ * Returns a plain object: this module stays importable from plain node
+ * (the lib suite runs there), so nothing here may touch react-native.
+ */
+export function cardSurface(p: Palette) {
+  return p.depth === "lifted"
+    ? {
+        backgroundColor: p.colors.surface,
+        borderRadius: radius.card,
+        ...shadow.card,
+      }
+    : {
+        backgroundColor: p.colors.surface,
+        borderRadius: radius.card,
+        borderWidth: 1,
+        borderColor: p.colors.lineCard,
+      };
+}
 
 /**
  * Minimum touch target in points.

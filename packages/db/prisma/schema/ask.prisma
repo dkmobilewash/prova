@@ -146,6 +146,28 @@ model AskUsage {
   outputTokens     Int
   cacheReadTokens  Int
   cacheWriteTokens Int
+
+  /// Server-side web searches these passes ran, read off
+  /// `usage.server_tool_use.web_search_requests`.
+  ///
+  /// ITS OWN COLUMN BECAUSE IT IS ITS OWN CHARGE. Web search bills PER SEARCH
+  /// on top of tokens, so a row's cost cannot be computed from the four token
+  /// counts alone — and `lead-search` and `bid-research` are the two features
+  /// that use it, which are exactly the two whose cost nobody could work out.
+  ///
+  /// IT WAS COUNTED AND THEN THROWN AWAY. `AskUsageTotals.webSearches` has
+  /// existed since lead search shipped, with a comment saying "each one bills
+  /// on top of tokens, which is why it is counted apart from them" — and
+  /// `recordAskUsage` never put it in the insert. Every searched pass since has
+  /// a row that understates what it cost, by an amount nothing can recover:
+  /// the API told us once and we did not write it down.
+  ///
+  /// Defaults to 0 so existing rows are additive rather than null. That is a
+  /// LIE ABOUT HISTORY and a deliberate one — a null would have to be rendered
+  /// as "unknown" on every row ever written, when only the two web-search
+  /// features could have had any. `lib/ask/cost.ts` records which rows predate
+  /// this column so a historical figure can say it is a floor.
+  webSearches      Int     @default(0)
   /// "answered", "proposal" (a card was shown), "clarify" (chips were
   /// shown), or "error:<reason>" with the loop's own reason.
   outcome          String

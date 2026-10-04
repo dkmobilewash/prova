@@ -3,6 +3,8 @@
 import type { ComponentProps } from "react";
 import { useFormStatus } from "react-dom";
 
+import { Spinner } from "@/components/Spinner";
+
 /**
  * A submit button that disables itself while its form is in flight.
  *
@@ -25,7 +27,16 @@ import { useFormStatus } from "react-dom";
  * Outside a form it simply reports not-pending, so this stays safe to use
  * anywhere.
  */
-export function SubmitButton({ children, disabled, ...props }: ComponentProps<"button">) {
+export function SubmitButton({
+  children,
+  disabled,
+  /* Opt out of the in-flight spinner. Destructured rather than spread so it
+     never reaches the DOM as an attribute. Exactly one caller sets it —
+     `RowActions`'s armed confirm button, for the measured reason given there.
+     `lib/spinnerCensus.test.ts` pins that count at exactly one. */
+  spinner = true,
+  ...props
+}: ComponentProps<"button"> & { spinner?: boolean }) {
   const { pending } = useFormStatus();
 
   return (
@@ -37,7 +48,20 @@ export function SubmitButton({ children, disabled, ...props }: ComponentProps<"b
       // this reads as unavailable rather than merely inert.
       className={`${props.className ?? ""} disabled:cursor-not-allowed disabled:opacity-60`.trim()}
     >
-      {children}
+      {/* The spinner rides on `pending`, the same flag that disables the
+          button — so it cannot disagree with whether the form is in flight.
+          Rendered BEFORE `children` and only while pending, so a button that
+          is not submitting keeps the exact DOM it always had. The label is
+          left alone: the word is the accessible name, the spinner is
+          `aria-hidden`, and `aria-busy` above already says busy. */}
+      {pending && spinner ? (
+        <span className="inline-flex items-center gap-1.5">
+          <Spinner />
+          {children}
+        </span>
+      ) : (
+        children
+      )}
     </button>
   );
 }

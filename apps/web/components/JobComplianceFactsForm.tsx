@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { updateJobComplianceFacts } from "@/lib/actions";
 import { PUBLIC_WORKS_OPTIONS } from "@/lib/determination-facts";
 import { formatCalendarDay } from "@/lib/render-date";
+import { Spinner } from "@/components/Spinner";
 
 export type JobComplianceFacts = {
   siteCounty: string | null;
@@ -12,6 +13,7 @@ export type JobComplianceFacts = {
   /** YYYY-MM-DD or null. */
   bidAdvertisedOn: string | null;
   awardingBody: string | null;
+  contractNumber: string | null;
 };
 
 const field =
@@ -44,7 +46,11 @@ export function JobComplianceFactsForm({ jobId, facts }: { jobId: string; facts:
   const [pending, startTransition] = useTransition();
 
   const nothingEntered =
-    !facts.siteCounty && facts.publicWorks === null && !facts.bidAdvertisedOn && !facts.awardingBody;
+    !facts.siteCounty &&
+    facts.publicWorks === null &&
+    !facts.bidAdvertisedOn &&
+    !facts.awardingBody &&
+    !facts.contractNumber;
 
   if (!open) {
     return (
@@ -61,7 +67,8 @@ export function JobComplianceFactsForm({ jobId, facts }: { jobId: string; facts:
             <span className="text-ink">
               {facts.bidAdvertisedOn ? formatCalendarDay(facts.bidAdvertisedOn) : "—"}
             </span>{" "}
-            · Awarding body: <span className="text-ink">{facts.awardingBody ?? "—"}</span>
+            · Awarding body: <span className="text-ink">{facts.awardingBody ?? "—"}</span> ·
+            Contract no.: <span className="text-ink">{facts.contractNumber ?? "—"}</span>
           </span>
         )}
         <button type="button" onClick={() => setOpen(true)} className="text-xs text-link hover:underline">
@@ -113,6 +120,15 @@ export function JobComplianceFactsForm({ jobId, facts }: { jobId: string; facts:
           Awarding body
           <input name="awardingBody" defaultValue={facts.awardingBody ?? ""} placeholder="As written on the call for bids" className={`w-56 ${field}`} />
         </label>
+        <label className={label}>
+          Contract or project number
+          <input
+            name="contractNumber"
+            defaultValue={facts.contractNumber ?? ""}
+            placeholder="As written on the contract"
+            className={`w-56 ${field}`}
+          />
+        </label>
       </div>
       <p className="text-xs text-ink-muted">
         The advertisement date comes from the awarding body&rsquo;s call for bids, not from when you
@@ -124,7 +140,14 @@ export function JobComplianceFactsForm({ jobId, facts }: { jobId: string; facts:
           disabled={pending}
           className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {pending ? "Saving…" : "Save facts"}
+          {pending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save facts"
+          )}
         </button>
         <button
           type="button"

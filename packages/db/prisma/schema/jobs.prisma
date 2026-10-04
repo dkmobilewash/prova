@@ -103,7 +103,7 @@ model Job {
   /// the note that it came from the web.
   bidResearch Json?
 
-  /// Four ENTERED public-works facts, recorded on the job's Compliance tab.
+  /// FIVE ENTERED public-works facts, recorded on the job's Compliance tab.
   /// Nothing derives them: the geocoder guesses a county and a prevailing-
   /// wage determination area is not a guess; whether a job is public works
   /// is what the awarding body said, not what the GC's name suggests.
@@ -121,6 +121,22 @@ model Job {
   bidAdvertisedOn DateTime?
   /// The awarding body, as written on the call for bids. Free text.
   awardingBody    String?
+  /// The contract or project number the awarding body assigned, as written
+  /// on the contract. Free text, because it is a string somebody else chose
+  /// and every agency formats it differently.
+  ///
+  /// THIS COLUMN EXISTS BECAUSE THE WH-347 HEADER ASKS FOR IT AND NOTHING
+  /// HELD IT. `lib/wh347.ts` reported `contractNumber` as BLOCKING with the
+  /// sentence "A job does not record one" — which was true, and meant the
+  /// federal form could never be filed by anybody, for any week, however
+  /// complete the rest of it was. Page 2 landing without this column would
+  /// have left the form one unfixable field short of fileable, which is
+  /// worse than being obviously unbuilt.
+  ///
+  /// Entered here rather than on the WH-347 page: it is a fact about the
+  /// job, not about a payroll week, and the other four public-works facts
+  /// are already entered where they are read.
+  contractNumber  String?
 
   /// The Jobber job or quote this was imported from (Jobber ids are global
   /// and name their type, so one column holds both). Null for everything
@@ -174,6 +190,7 @@ model Job {
   contractDocumentVersionCounter ContractDocumentVersionCounter?
   wh347PayrollNumbers            Wh347PayrollNumber[]
   wh347PayrollCounter            Wh347PayrollCounter?
+  wh347Statements                Wh347Statement[]
   das140Notices                  Das140Notice[]
   das142Requests                 Das142Request[]
   rfiCounter                     RfiCounter?
@@ -234,9 +251,19 @@ model JobLineItem {
   /// labor (see bid-recap.prisma). An uncategorised line is REPORTED by the
   /// recap and marked up at nothing — never at some default.
   ///
-  /// Equipment has no member of CostCategory today and sits under OTHER; the
+  /// CORRECTED 2026-10-02, and it had been false since 2026-09-26. This read:
+  /// "Equipment has no member of CostCategory today and sits under OTHER; the
   /// enum is keyed on by the QuickBooks account mapping (billing.prisma), so
-  /// adding one is a change in another lane.
+  /// adding one is a change in another lane." EQUIPMENT is a member of the enum
+  /// FOUR HUNDRED LINES BELOW THIS COMMENT, in this same file, and
+  /// `equipmentMarkupPercent` has its own rate on JobBidRecap and
+  /// CompanyBidDefaults.
+  ///
+  /// FEATURE-AUDIT.md recorded striking the equivalent prose when the member
+  /// landed; this comment was missed, which is the ordinary way a correction
+  /// goes half-done — the sheet that gets audited is updated and the comment
+  /// nobody is reading is not. Found by auditing the estimating workflow rather
+  /// than by anything failing, because nothing can fail on a stale comment.
   costCategory CostCategory?
 
   /// Units per hour — the estimator's productivity assumption ("this crew

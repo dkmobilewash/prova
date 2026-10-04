@@ -13,6 +13,7 @@ import { inputClass, labelClass } from "@/components/RfiFields";
 import { localToday } from "@/components/localToday";
 import { money } from "@/lib/money";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 
 const btn =
   "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
@@ -219,7 +220,14 @@ export function FringeScheduleList({
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={btn}>
-              {isPending ? "Saving…" : "Save rate"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save rate"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setIsAdding(false)} className={btn}>
               Cancel

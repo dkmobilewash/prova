@@ -98,7 +98,7 @@ async function readRenewalSources(companyId: string): Promise<RenewalSource[]> {
       detail: license.jurisdictionName,
       date: toIsoDate(license.expirationDate),
       expectsDate: true,
-      href: "/settings",
+      href: "/settings#licences",
       // The only one of the four that stores a status about itself, and so
       // the only one that can contradict its own date.
       storedStatus: license.status,
@@ -110,7 +110,7 @@ async function readRenewalSources(companyId: string): Promise<RenewalSource[]> {
       detail: policy.carrier,
       date: toIsoDate(policy.expirationDate),
       expectsDate: true,
-      href: "/settings",
+      href: "/settings#insurance",
     })),
     ...bonds.map((bond): RenewalSource => ({
       id: bond.id,
@@ -122,7 +122,7 @@ async function readRenewalSources(companyId: string): Promise<RenewalSource[]> {
       // legitimately hold one with no scheduled renewal, so a missing date
       // here is not automatically a gap to chase.
       expectsDate: false,
-      href: "/settings",
+      href: "/settings#bonding",
     })),
     // A contact can carry both an MSA and a prequalification date, so each
     // gets its own id off the same row rather than one entry trying to

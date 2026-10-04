@@ -537,6 +537,15 @@ model Rfi {
   answeredOn DateTime?
   answer     String?
 
+  /// WHERE THE GC'S WRITTEN ANSWER LIVES. `answer` is what somebody typed
+  /// in; this is the document it was typed from. When an RFI answer changes
+  /// scope, the sentence in this app is the summary and the GC's own letter
+  /// is the evidence — a link so the two never disagree about which is which.
+  /// Same reasoning as `SubmittalRevision.responseUrl` above.
+  answerUrl      String?
+  /// What to call the link on screen. Null renders the answer alone.
+  answerFileName String?
+
   /// Flagged by whoever reads the answer. These do not create a change
   /// order or move a schedule — they mark the RFIs worth revisiting when
   /// someone builds the claim.
@@ -652,6 +661,22 @@ model SubmittalRevision {
 
   /// What "approved as noted" actually noted, or why it bounced.
   responseNotes String?
+
+  /// WHERE THE STAMPED SUBMITTAL LIVES, as a link rather than a copy.
+  ///
+  /// A submittal revision is correspondence: never deleted, never
+  /// renumbered. It recorded the outcome and the reviewer's notes and had
+  /// nowhere to point at the stamp those came off, which is the one document
+  /// somebody argues from when a crew is told it built the wrong thing.
+  ///
+  /// A LINK, not an upload, and that is the same call `DrawingRevision`
+  /// already made: the reviewed shop drawing lives in the GC's system, and
+  /// duplicating it here would buy a second source of truth for a document
+  /// we do not own. Null is the ordinary case — recording the outcome
+  /// without the paper works exactly as it did.
+  responseUrl      String?
+  /// What to call the link on screen. Null renders the outcome alone.
+  responseFileName String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

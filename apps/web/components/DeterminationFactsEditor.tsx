@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { updateDeterminationFacts } from "@/lib/actions";
 import { formatCalendarDay } from "@/lib/render-date";
 import { DeterminationFactsFields, type DeterminationFactsDefaults } from "@/components/DeterminationFactsFields";
+import { Spinner } from "@/components/Spinner";
 
 const field =
   "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -101,7 +102,14 @@ export function DeterminationFactsEditor({
           disabled={pending}
           className="rounded-md bg-brand px-3 py-1 text-xs font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {pending ? "Saving…" : "Save dates"}
+          {pending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save dates"
+          )}
         </button>
         <button
           type="button"

@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { refreshDocuSignEnvelope, sendWithDocuSign, voidSentEnvelope } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 import type { DocuSignCardState } from "@/lib/docusign/setup";
 
 /**
@@ -145,7 +146,14 @@ function EnvelopeRow({ envelope, canVoid }: { envelope: DocuSignEnvelopeView; ca
               });
             }}
           >
-            {isPending ? "Checking…" : "Refresh"}
+            {isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Checking…
+              </span>
+            ) : (
+              "Refresh"
+            )}
           </button>
         )}
       </RowActions>
@@ -205,7 +213,14 @@ function SendForm({
       ))}
       <div className="flex flex-wrap items-center gap-3">
         <button type="submit" className={primaryClass} disabled={isPending}>
-          {isPending ? "Sending…" : "Send for signature"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Sending…
+            </span>
+          ) : (
+            "Send for signature"
+          )}
         </button>
         {signers < 5 && (
           <button type="button" className="text-xs text-link hover:underline" onClick={() => setSigners((n) => n + 1)}>

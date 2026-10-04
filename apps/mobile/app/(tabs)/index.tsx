@@ -1,23 +1,24 @@
-import { useAuth, useUser } from "@clerk/expo";
+import { useAuth } from "@clerk/expo";
 import { Redirect, router, useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Card } from "@/components/Card";
+import { AppHeader } from "@/components/AppHeader";
+import { JobCard } from "@/components/JobCard";
 import { GroupedList } from "@/components/GroupedList";
 import { GroupedRow } from "@/components/GroupedRow";
 import { Icon } from "@/components/Icon";
 import { JobContextChip } from "@/components/JobContextChip";
+import { QuickActions } from "@/components/QuickActions";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Skeleton } from "@/components/Skeleton";
-import { StatusBadge } from "@/components/StatusBadge";
 import { SyncStatus } from "@/components/SyncStatus";
 import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, oldestNote, withToken, type CachedRead } from "@/lib/cached-read";
 import { holds } from "@/lib/capabilities";
 import { tokenOrNull } from "@/lib/clerk-token";
-import { useT, type Language, type StringKey } from "@/lib/i18n";
+import { useT, type Language } from "@/lib/i18n";
 import { localToday, shortDay } from "@/lib/local-today";
 import { prefetchJob } from "@/lib/prefetch";
 import { pendingCount } from "@/lib/sync-queue";
@@ -35,13 +36,6 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-function greetingKey(now: Date): StringKey {
-  const hour = now.getHours();
-  if (hour < 12) return "home.greeting.morning";
-  if (hour < 18) return "home.greeting.afternoon";
-  return "home.greeting.evening";
-}
 
 /**
  * "Saturday, September 21" — the phone's calendar day, not UTC's — and
@@ -76,8 +70,9 @@ function longDate(iso: string, language: Language): string {
 
 /**
  * Home: what today looks like on the job this phone is on — now a daily
- * command centre rather than a menu wearing a heading. The greeting says
- * when we are; the Today group says what is true and what needs doing,
+ * command centre rather than a menu wearing a heading. The brand lockup
+ * and the date say where and when we are; the Today group says what is
+ * true and what needs doing,
  * each line a claim derived from real rows in lib/today.ts (which is pure
  * and tested, and hands this screen a translation key plus its numbers
  * rather than a finished sentence); one quiet card carries the job itself.
@@ -88,7 +83,6 @@ function longDate(iso: string, language: Language): string {
  */
 export default function HomeScreen() {
   const { isLoaded, isSignedIn } = useAuth();
-  const { user } = useUser();
   const getToken = useStableGetToken();
   const { job, loading } = useCurrentJob();
   // Home is four FIELD lists. Somebody who cannot read them must not be
@@ -192,17 +186,36 @@ export default function HomeScreen() {
           />
         }
       >
-        <Text style={styles.greeting}>
-          {t(greetingKey(new Date()))}
-          {/* A person's name is never translated, and the comma before it
-              is punctuation both languages already agree on. */}
-          {user?.firstName ? `, ${user.firstName}` : ""}
-        </Text>
+        {/* THE REFERENCE DESIGN'S BRAND LOCKUP, and it costs the greeting.
+            "Good afternoon, Diego" is warmer than "Home", but the lockup —
+            mark, tracked C STREAM overline, screen name at 32pt — is the
+            single most recognisable thing in the reference, and two stacked
+            headings is one too many. The name did not vanish: it is the
+            avatar, which is also the way into Settings. The date stays,
+            because on a field app the day is a fact people check. */}
+        <AppHeader title={t("nav.home")} />
         <Text style={styles.date}>{longDate(localToday(), language)}</Text>
 
         <View style={styles.chipRow}>
           <JobContextChip />
         </View>
+
+        {/* The four things that happen on a site TODAY, each going straight
+            to the screen that records it — the same set the job hub groups
+            as `day` and the capture sheet lists first. Only with a job:
+            every one of them needs somewhere to put what it captures. */}
+        {job ? (
+          <View style={styles.quickRow}>
+            <QuickActions
+              items={[
+                { icon: "photos", label: t("capture.photo"), onPress: () => router.push(`/photos/${job.id}?open=camera`) },
+                { icon: "report", label: t("capture.report"), onPress: () => router.push(`/reports/${job.id}`) },
+                { icon: "time", label: t("capture.time"), onPress: () => router.push(`/time/${job.id}`) },
+                { icon: "punch", label: t("capture.punch"), onPress: () => router.push(`/punch-list/${job.id}`) },
+              ]}
+            />
+          </View>
+        ) : null}
 
         {loading && field ? (
           <View style={styles.skeletonGroup}>
@@ -245,16 +258,27 @@ export default function HomeScreen() {
               ))}
             </GroupedList>
 
+            {/* The same card the Jobs tab draws, and now PRESSABLE — this
+                was a plain <Card>, so the one job on Home was a picture of
+                a job you could not open. Found by tapping it on a device
+                and watching nothing happen. */}
             {jobSummary ? (
-              <Card style={styles.jobCard}>
-                <View style={styles.jobCardHead}>
-                  <Text style={styles.jobCardName} numberOfLines={1}>
-                    {jobSummary.name}
-                  </Text>
-                  <StatusBadge status={jobSummary.status} />
-                </View>
-                {dateRange ? <Text style={styles.jobCardMeta}>{dateRange}</Text> : null}
-              </Card>
+              <JobCard
+                name={jobSummary.name}
+                status={jobSummary.status}
+                meta={dateRange ?? undefined}
+                current
+                onPress={() =>
+                  router.push({
+                    pathname: "/job/[jobId]",
+                    params: {
+                      jobId: jobSummary.id,
+                      name: jobSummary.name,
+                      status: jobSummary.status,
+                    },
+                  })
+                }
+              />
             ) : null}
 
             {todayPhotos.length > 0 ? (
@@ -340,17 +364,12 @@ function makeStyles(p: Palette) {
     screen: { flex: 1, backgroundColor: p.colors.canvas },
     loading: { color: p.colors.ink, fontSize: typography.size.md, padding: space.md },
     content: { paddingHorizontal: space.md, paddingBottom: space.scrollBottom, gap: space.sm },
-    greeting: {
-      color: p.colors.ink,
-      fontSize: typography.size.xl2,
-      fontWeight: typography.weight.bold,
-      marginTop: space.xs,
-    },
     date: {
       color: p.colors.inkBody,
       fontSize: typography.size.sm,
     },
     chipRow: { marginTop: space.sm, marginBottom: space.xxs },
+    quickRow: { marginTop: space.sm, marginBottom: space.xs },
     skeletonGroup: { gap: space.sm, marginTop: space.md },
     empty: { gap: space.xs, paddingTop: space.xl },
     emptyTitle: {
@@ -359,15 +378,6 @@ function makeStyles(p: Palette) {
       fontWeight: typography.weight.semibold,
     },
     emptyBody: { color: p.colors.inkBody, fontSize: typography.size.sm, lineHeight: 22 },
-    jobCard: { marginTop: space.sm, gap: space.xs },
-    jobCardHead: { flexDirection: "row", alignItems: "center", gap: space.sm },
-    jobCardName: {
-      color: p.colors.ink,
-      fontSize: typography.size.md,
-      fontWeight: typography.weight.semibold,
-      flex: 1,
-    },
-    jobCardMeta: { color: p.colors.inkMuted, fontSize: typography.size.sm },
     stripRow: { flexDirection: "row", gap: space.xs, marginTop: space.sm },
     moreTile: {
       width: 72,

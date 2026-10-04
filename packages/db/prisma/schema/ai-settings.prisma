@@ -40,10 +40,69 @@ enum AiFeature {
   BID_RESEARCH
   /// `findLeads` — web search for pursuits.
   LEAD_SEARCH
-  /// Plan-set ingestion: split, classify, title blocks, sheet index. Not
-  /// built yet; the member exists so the switch is ready before the feature
-  /// is, rather than being retrofitted onto six call sites afterwards.
+  /// `extractBidQuote` — reading a sub's quote document into the fields a
+  /// `BidQuote` already holds, for the estimator to correct before saving.
+  ///
+  /// ITS OWN MEMBER RATHER THAN REUSING `COMPLIANCE_EXTRACT`, which is the
+  /// obvious saving and the wrong one. A contractor perfectly happy for us to
+  /// read their own lien waivers may not be happy for us to read a
+  /// competitor's pricing — that is a different question about a different
+  /// kind of document, and the whole reason this switch is per feature rather
+  /// than one flag is so the two can be answered differently.
+  QUOTE_EXTRACT
+  /// Plan-set ingestion: per page, whether it carries selectable text and what
+  /// its title block says, proposed as a sheet index an estimator confirms.
+  ///
+  /// THIS SAID "Not built yet" UNTIL 2026-09-29 and it shipped in #551. The
+  /// member did exist before the feature, deliberately and for the reason the
+  /// old comment gave — but a sentence describing a capability as ABSENT is the
+  /// direction that stops the next person looking, and it outlived the build by
+  /// three weeks. `titleBlock.ts:174` holds the real `aiGate(…, "PLAN_INGESTION")`.
+  /// It also listed "split, classify", neither of which exists: classify was
+  /// folded into the title-block read so one page is one paid call.
+  ///
+  /// `aiFeatureGateCensus`'s `notBuilt` list is `[]` now, so a member added ahead
+  /// of its feature fails the build rather than waiting for somebody to notice.
   PLAN_INGESTION
+
+  /// `extractAddendum` — reading a bid addendum the GC issued, and listing what
+  /// it changed for the estimator to judge.
+  ///
+  /// ITS OWN MEMBER, for `QUOTE_EXTRACT`'s reason one line up and a third turn of
+  /// it: a contractor happy for us to read their own paperwork may not be happy
+  /// for us to read a competitor's pricing, and an addendum is neither — it is
+  /// the GC's own document, arriving on a bid that has not been won. Three kinds
+  /// of document, three questions somebody may answer differently, which is the
+  /// whole point of a switch that is per feature rather than one flag.
+  ///
+  /// WHAT IT MAY NOT DO, recorded here because the switch is where somebody looks
+  /// to find out what this feature touches: it writes nothing that
+  /// `takeoff-currency.ts` or `bid-responsiveness.ts` read. Not
+  /// `affectsPricedScope`, not `acknowledgedOn`, not `issuedOn`. It lists what a
+  /// document says; the assertions on the bid stay the estimator's.
+  ADDENDUM_READ
+
+  /// `extractSpecSection` — reading a CSI spec section from the bid documents
+  /// and listing what in it COSTS MONEY, for the estimator to check against
+  /// their number.
+  ///
+  /// ITS OWN MEMBER, and this is the fourth turn of the argument above rather
+  /// than a new one. A spec section is the architect's document, not the GC's
+  /// and not a competitor's, and it is the one of the four a contractor is most
+  /// likely to be relaxed about — there is nothing commercially sensitive in a
+  /// published gypsum-board spec. Which is exactly why it gets its own switch:
+  /// somebody who turned the quote reader off because it reads competitors'
+  /// pricing has said nothing about this, and folding the two together would
+  /// make their answer mean something they did not say.
+  ///
+  /// WHAT IT MAY NOT DO, recorded here for the same reason as the entry above:
+  /// it writes nothing another module reads. Not a `BidRequirement` row — which
+  /// `bid-responsiveness.ts` reads to decide a bid is non-responsive, and whose
+  /// `required` column defaults to true, so an invented one would default to
+  /// condemning the bid. Not `affectsPricedScope`. It lists what a section
+  /// demands and whether that costs money; whether the bid CARRIES the cost is a
+  /// judgement about an estimate the model has never seen.
+  SPEC_READ
 }
 
 /// One row per company. Absent means every default below.
@@ -83,7 +142,15 @@ model CompanyAiSettings {
   disabledFeatures AiFeature[]
 
   /// Plan sheets included per calendar month, metered by
-  /// `AskAllowancePeriod.planSheetsUsed`.
+  /// `AskAllowancePeriod.planSheetsUsed` — which `claimPlanSheet` in
+  /// `lib/ask/planSheetSpend.ts` increments, one sheet at a time, before each
+  /// title-block read.
+  ///
+  /// THAT SENTENCE WAS ASPIRATIONAL UNTIL 2026-09-28 and read as settled fact.
+  /// The columns existed from step 0 and nothing incremented them; a reader
+  /// checking whether plan-set reading was metered would have concluded yes. The
+  /// claimer names itself here now so the next such claim can be followed to a
+  /// function rather than taken on trust.
   ///
   /// Per company rather than a constant so a plan can move it without a
   /// migration — `ASK_MONTHLY_ALLOWANCE` is a constant today and
@@ -94,6 +161,27 @@ model CompanyAiSettings {
   /// Whether it is sustainable is a question about measured cost, and step 2
   /// answers it with real numbers rather than my estimate.
   planSheetsPerMonth Int @default(1500)
+
+  /// Pages of bid addenda included a month. `ask-allowance.prisma` carries the
+  /// argument for why this is not the document-page allowance; the short of it
+  /// is that a heavy bidding month is ~480 pages against a 300-page month, so
+  /// sharing would spend a job's compliance allowance on its bid.
+  ///
+  /// 600 is a figure, not a measurement, exactly as 1,500 is above it. It is not
+  /// editable by the company — absent from the settings form and from the upsert
+  /// — because it is what the plan includes rather than a preference, the same
+  /// call `planSheetsPerMonth` records.
+  addendumPagesPerMonth Int @default(600)
+
+  /// Spec-section pages a month. `ask-allowance.prisma` carries the whole
+  /// argument for why this is a fifth unit rather than more addendum pages, and
+  /// for how 1,800 was arrived at after 600 turned out to be based on a wrong
+  /// page estimate.
+  ///
+  /// Not editable by the company, for the same reason as the two above: it is
+  /// what the plan includes rather than a preference, and a form that posted it
+  /// would let an owner raise their own paid allowance by editing one input.
+  specPagesPerMonth Int @default(1800)
 
   /// Override the model for every feature on this company, e.g. a customer who
   /// wants the cheapest option on everything.

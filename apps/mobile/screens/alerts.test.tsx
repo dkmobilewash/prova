@@ -19,7 +19,7 @@ beforeEach(async () => {
 });
 
 async function open() {
-  const { default: Alerts } = await import("@/app/alerts");
+  const { default: Alerts } = await import("@/app/(tabs)/alerts");
   return mount(<Alerts />);
 }
 
@@ -86,3 +86,4 @@ describe("the alerts screen", () => {
     screen.unmount();
   });
 });
+

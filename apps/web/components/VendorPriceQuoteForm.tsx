@@ -5,6 +5,7 @@ import { createVendorPriceQuote } from "@/lib/actions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { localToday } from "@/components/localToday";
 import type { VendorOption } from "@/components/MaterialOrderFields";
+import { Spinner } from "@/components/Spinner";
 import {
   VendorPriceQuoteFields,
   type CatalogOption,
@@ -101,7 +102,14 @@ export function VendorPriceQuoteForm({
           disabled={isPending}
           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Save price"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save price"
+          )}
         </button>
         <button
           type="button"

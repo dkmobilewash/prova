@@ -42,6 +42,7 @@ import {
 } from "@/lib/spreadsheet-import";
 import { applyColumnMapping, headerOf, type ColumnMapping } from "@/lib/import-mapping";
 import { matchPreset, presetMapping } from "@/lib/import-presets";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * Paste or upload a spreadsheet, see exactly what will happen, then confirm.
@@ -773,11 +774,16 @@ export function SpreadsheetImport(props: Props) {
               aria-busy={pending || undefined}
               className="min-h-11 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {pending
-                ? "Saving…"
-                : createCount === 0
-                  ? "Nothing new to add"
-                  : `Confirm — add ${createCount} ${createCount === 1 ? noun[0] : noun[1]}`}
+              {pending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : createCount === 0 ? (
+                "Nothing new to add"
+              ) : (
+                `Confirm — add ${createCount} ${createCount === 1 ? noun[0] : noun[1]}`
+              )}
             </button>
             {tooLarge && <span className="text-xs text-tag-rose-ink">{TOO_LARGE_MESSAGE}</span>}
             <span className="text-xs text-ink-muted">

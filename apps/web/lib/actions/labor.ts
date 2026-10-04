@@ -5,6 +5,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
 import { determinationFactsFromForm } from "@/lib/determination-facts";
+import { readWageRateForm } from "@/lib/determination-wage-rate";
 import { prisma } from "@prova/db";
 import {
   actionFail,
@@ -13,7 +14,9 @@ import {
   assertLineItemOnJob,
   craftClassificationIdFromForm,
   joinWithConjunction,
+  ownerRefusal,
   type ActionResult,
+  optionalLinkFromForm,
 } from "./shared";
 import {
   parseTimeEntryFigures,
@@ -531,7 +534,16 @@ export async function uploadPrevailingWageDetermination(
     return actionFail("Name the jurisdiction this determination came from.");
   }
 
-  const sourceUrl = String(formData.get("sourceUrl") ?? "").trim();
+  // CHECKED, because this value is rendered as `href={determination.sourceUrl}`
+  // on the job compliance tab. The form's `type="url"` is a browser hint and
+  // this action takes whatever the POST body holds, so an unchecked value
+  // here was a `javascript:` link waiting to run in a colleague's session.
+  // Returned rather than thrown, like every other refusal in this function —
+  // it is not wrapped in `runAction`, so a throw would reach a real user as
+  // the digest production redacts a thrown Server Action message into.
+  const source = optionalLinkFromForm(formData, "sourceUrl", "The source link");
+  if (!source.ok) return actionFail(source.error);
+  const sourceUrl = source.value ?? "";
   const note = String(formData.get("note") ?? "").trim();
 
   // Already uploaded by the browser; the URL is re-checked here against
@@ -597,6 +609,98 @@ export async function deletePrevailingWageDetermination(jobId: string, determina
   await prisma.prevailingWageDetermination.delete({ where: { id: determinationId } });
 
   revalidatePath(`/jobs/${jobId}`);
+}
+
+/** Same shape as the integration files' own refusal: a sentence naming the
+ * reason and who to ask, because this is returned and rendered. */
+const WAGE_RATES_NOT_YOURS =
+  "Prevailing wage records aren't part of your job function. Ask the account owner.";
+
+/**
+ * A RATE THE DETERMINATION PUBLISHES, entered off the document.
+ *
+ * `ActionResult` rather than a throw, unlike the two determination actions
+ * above it: production redacts a thrown Server Action message to a digest,
+ * and every refusal here is something a person needs to read — "a base
+ * wage of 0 is not a rate" is useless as a digest. The older throw-style
+ * actions beside this one are left alone; they are not being changed, and
+ * mixing the two in one function is how `assertOwner` got into a file that
+ * promises an ActionResult.
+ *
+ * Everything that can be wrong is decided in `lib/determination-wage-rate.ts`,
+ * which is pure and tested. This half does the scoping and the write.
+ */
+export async function addDeterminationWageRate(
+  jobId: string,
+  determinationId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_COMPLIANCE")) return actionFail(WAGE_RATES_NOT_YOURS);
+  await assertJobInCompany(jobId, context.company.id);
+
+  // Scoped in the WHERE, not checked after: a determination id in a form
+  // body is not evidence it belongs to this company's job.
+  const determination = await prisma.prevailingWageDetermination.findFirst({
+    where: { id: determinationId, jobId },
+    select: { id: true },
+  });
+  if (!determination) return actionFail("That determination is not on this job.");
+
+  const read = readWageRateForm((key) => {
+    const raw = formData.get(key);
+    return typeof raw === "string" ? raw : null;
+  });
+  if (!read.ok) return actionFail(read.error);
+
+  // A craft from the form must be this company's, or the mapping is a way
+  // to point a rate at somebody else's classification.
+  if (read.value.craftClassificationId) {
+    const craft = await prisma.craftClassification.findFirst({
+      where: { id: read.value.craftClassificationId, companyId: context.company.id },
+      select: { id: true },
+    });
+    if (!craft) return actionFail("That classification is not one of yours.");
+  }
+
+  await prisma.determinationWageRate.create({
+    data: {
+      companyId: context.company.id,
+      determinationId: determination.id,
+      classification: read.value.classification,
+      craftClassificationId: read.value.craftClassificationId,
+      baseWage: read.value.baseWage,
+      pensionRate: read.value.pensionRate,
+      vacationRate: read.value.vacationRate,
+      healthWelfareRate: read.value.healthWelfareRate,
+      trainingRate: read.value.trainingRate,
+    },
+  });
+
+  revalidatePath(`/jobs/${jobId}/compliance`);
+  return actionOk;
+}
+
+/** Owner-only, and refused in a sentence rather than thrown: a wage rate is
+ * what somebody read off a government document, and removing one is the
+ * kind of thing that should name who may do it. */
+export async function deleteDeterminationWageRate(
+  jobId: string,
+  rateId: string,
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_COMPLIANCE")) return actionFail(WAGE_RATES_NOT_YOURS);
+  const refusal = ownerRefusal(context, "Only the account owner can remove a published wage rate.");
+  if (refusal) return refusal;
+  await assertJobInCompany(jobId, context.company.id);
+
+  const { count } = await prisma.determinationWageRate.deleteMany({
+    where: { id: rateId, companyId: context.company.id, determination: { jobId } },
+  });
+  if (count === 0) return actionFail("That rate is not on this job.");
+
+  revalidatePath(`/jobs/${jobId}/compliance`);
+  return actionOk;
 }
 
 // ---------------------------------------------------------------------------

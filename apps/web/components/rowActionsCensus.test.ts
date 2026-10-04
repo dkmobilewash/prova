@@ -82,7 +82,26 @@ function tsxFiles(dir: string, out: string[] = []) {
     if (name === "node_modules" || name === ".next" || name.startsWith(".")) continue;
     const full = join(dir, name);
     if (statSync(full).isDirectory()) tsxFiles(full, out);
-    else if (name.endsWith(".tsx")) out.push(full);
+    // A `.test.tsx` FILE IS NOT A COMPONENT, and this exclusion was missing
+    // rather than decided against: the action-module walk below has always
+    // carried the same one (`!/\.(test|dbtest)\.ts$/`), and this side simply
+    // never needed it — until 2026-09-27 there was exactly one `.tsx` test in
+    // the repo and it mentions no removal action.
+    //
+    // `quoteReaderNote.test.tsx` was the second, and the first to `vi.mock` the
+    // actions barrel, which put the name `deleteBidQuote` in a file that renders
+    // no row and can delete nothing. The census reported it as a component
+    // deleting without a confirm step. Excluding tests is the fix rather than a
+    // `CALLBACK_EXCEPTIONS` entry, which would have recorded a test file as a
+    // component that legitimately does not confirm — a false statement parked
+    // where the next reader would trust it.
+    //
+    // This NARROWS a census's scope, which this repo is rightly suspicious of
+    // (see the `theme-contrast` entry in CLAUDE.md). It is safe here for a
+    // specific reason: a test file is never mounted by the app, so it is not a
+    // member of the set any rule in this file reasons about. The non-empty
+    // assertions below still hold, and were re-run to confirm it.
+    else if (name.endsWith(".tsx") && !/\.(test|dbtest)\.tsx$/.test(name)) out.push(full);
   }
   return out;
 }
