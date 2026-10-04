@@ -199,3 +199,81 @@ dbtest was impossible was wrong:
 The limit is worth stating as plainly as the recipe: this reaches the db suite,
 not the signed-in e2e suite, which still needs a browser the egress proxy will
 not let near Clerk's FAPI host.
+
+### A second review, and the three findings that were one mistake
+
+The header refused to guess a prime when a document named several — with a
+long comment about why guessing was unacceptable — and kept
+`if (!header[key]) header[key] = value` for `project`, `agency` and `bidDate`
+three lines below it. The cost is not smaller for being a different field:
+`projectPhrase` feeds both the PROJECT and the GC_RELATIONSHIP claim, so a
+packet covering two schools tells every subcontractor on the second one that
+they were named on a bid for the first. The rule is general now, and
+`HEADER_CONFLICT` is a total `Record`, so a fifth header field cannot be added
+without saying what two of it would mean.
+
+The same shape in the money fields. `amount` took the first `$` on the row and
+`percentOfBid` the first `%`, so a row printing a unit price before a total —
+"$1.85/SF … $450,000" — claimed the subcontract was **listed at $1.85**, and a
+scope reading "Drywall, 95% recycled gypsum" claimed the sub was listed at 95%
+of the bid. Both now read only from a field that is *essentially* a figure, and
+a row with two such columns gets no amount and a concern saying why.
+
+**And the same two tests were deleting the scope in the same breath**, which
+neither review caught: the portion-of-work slot excluded any field matching
+MONEY or PERCENT, so that recycled-gypsum scope was discarded as well as
+misread. One string, two false outputs, nothing on screen either way.
+
+So the lesson is the shape rather than the fields: **a guard written as a
+special case for the instance that bit you does not cover the next one.**
+
+### Two things the existing suite caught that no review did
+
+`withoutMoney` was a hand-written copy of `MONEY` whose suffix alternation read
+`k|m|mm|million` with no trailing `\b`. Alternation is leftmost-first, not
+longest-match, so "$1.2 million" matched the `m` and left "illion" behind;
+`MONEY` escapes it only by ending in `\b`, which forces a backtrack. Harmless
+while the leftover was only compared against licence patterns — and the moment
+`moneyOnly` asked whether anything remained after removing the money, it
+silently refused a real amount. Derived from `MONEY` now. The failure mode of a
+copy is not that it is wrong on the day it is written.
+
+And `signals.ts` promises in its own header that nothing is rounded, while
+`parseAmount` rounded to whole dollars: `$450,000.75` reached a claim as
+`$450,001.00`. Rounded to the cent, which keeps the protection the round was
+actually for (`1.2 * 1_000_000` is not guaranteed exact in binary floating
+point) and changes no figure a document printed.
+
+### The typecheck in this container was answering about nothing
+
+Worth more than any of the above, and now in CLAUDE.md. `tsc --noEmit` run
+from the repo root exits on TS5081 — there is no `tsconfig.json` there, only
+`tsconfig.base.json` — so it compiles **nothing**, and an agent that filters
+the output for its own files sees an empty result and reads it as clean.
+
+Settled the only way it can be: inject a deliberate `const x: number = "s"`
+and require the checker to report it. From the root, 0 lines. From `apps/web`
+with `-p tsconfig.json`, `parse.ts(391,9): error TS2322`. Several "typecheck
+clean" statements made earlier in this work were that empty question; the one
+in the component commit survives only because it rested on an independently
+measured 142-line count, which a non-compile cannot produce.
+
+The rule that falls out: an empty filter plus a count of ZERO lines naming
+your file is the vacuous case, and an empty filter plus a non-zero count is a
+real pass. On this branch it is 18 lines, all TS2307/TS7006/TS7031 from the
+unlinked `react`/`next`/`@prova/db` types.
+
+### Checked by breaking it, again
+
+Eight more mutations, each red on its own assertion, every run reporting the
+test total before its colour: first-one-wins restored (10 red, two of them
+pre-existing cases, so the general rule agrees with what was already expected
+of it) · a repeated identical header value counted as a conflict · `moneyOnly`
+and `percentOnly` loosened back to "contains a figure" · the strict scope
+exclusion restored · the first dollar column taken instead of refusing
+ambiguity · rounding to whole dollars · the drifted `withoutMoney` copy,
+caught by the pre-existing "$1.2 million" case.
+
+The ninth run is the harness control and the reason the total is read first:
+deleting the three new describe blocks reports **green on 215 instead of
+230**.

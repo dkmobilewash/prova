@@ -1562,6 +1562,38 @@ anything about SIZE.
   egress proxy will not let near Clerk's FAPI host — the paragraph near the
   top of this file about `pnpm test:e2e` stands unchanged.
 
+- **`tsc --noEmit` FROM THE REPO ROOT COMPILES NOTHING AND LOOKS LIKE A
+  PASS.** 2026-10-04, and it is the `gh pr checks` scar wearing the
+  toolchain's clothes: not a wrong answer, an answer about nothing.
+
+  There is no `tsconfig.json` at the repo root — only `tsconfig.base.json`.
+  So a bare `tsc --noEmit` there exits on **TS5081, "Cannot find a
+  tsconfig.json file at the current directory"**, and an agent that pipes
+  the output through `grep <my file>` sees an empty result and reads it as
+  clean. It is clean the way an unopened book has no typos.
+
+  Proved by the only method that settles it, which is the transferable part:
+  **inject a deliberate type error and require the checker to report it.**
+
+  | invocation | injected `const x: number = "s"` in `parse.ts` |
+  | --- | --- |
+  | `tsc --noEmit` from `/home/user/prova` | **0 lines. Silent.** |
+  | `tsc -p tsconfig.json --noEmit` from `apps/web` | `parse.ts(391,9): error TS2322` |
+
+  The right invocation is the project one, and in a container without
+  `node_modules` it emits ~22,500 lines of missing-module cascade — so the
+  filter stays necessary, and the count of lines naming your file is what
+  tells you the file was compiled at all. Empty filter plus a count of
+  ZERO is the vacuous case; empty filter plus a non-zero count is a real
+  pass. On this branch that was 18 lines, every one TS2307/TS7006/TS7031
+  from the unlinked `react`/`next`/`@prova/db` types.
+
+  Same family as the entries below and above it — the census with the
+  wrong scope, the watcher whose needle was already on the page, the
+  review that counted a dead agent as a refutation. **Ask what set the
+  check can SEE before reading what it found**, and for a checker that
+  means proving it can still fail.
+
 - **"Written, documented, and never called" is a recurring shape here,
   not a one-off.** Three live instances found in a single day: 161
   `.dbtest.ts` tests no runner referenced; an `acknowledgedSeverity`
