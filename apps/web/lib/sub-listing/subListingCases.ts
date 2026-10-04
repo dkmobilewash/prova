@@ -493,7 +493,7 @@ export const SUB_LISTING_CASES: SubListingCase[] = [
   },
   {
     id: "bare-number-as-licence",
-    why: "TODAY a bare square-foot quantity becomes the licence AND is excluded from the scope slot, so the row carries an invented licence with no portion of work and no trade — a real defect",
+    why: "a bare square-foot quantity is no longer read as the licence — it is not a licence COLUMN, and the row says so in a concern. Until 2026-10-04 it became an invented licence number belonging to nobody. The field is STILL excluded from the scope slot by the address-line test, so the row has no portion of work and no trade and arrives default-unticked: an open defect, now flagged rather than silent",
     text: BARE_NUMBER_AS_LICENCE,
     expectRows: 1,
     expectUnread: 0,

@@ -462,6 +462,58 @@ function percentOnly(field: string): boolean {
   );
 }
 
+/**
+ * IS THIS FIELD A LICENCE COLUMN, OR MERELY A FIELD WITH SIX DIGITS IN IT?
+ *
+ * The same question `moneyOnly` asks, applied to the identifier it should have
+ * been applied to at the same time. **It was not, and the asymmetry is the
+ * defect**: `amount` was moved to column discipline after taking the first `$`
+ * on the row produced a claim wrong by five orders of magnitude, with a long
+ * comment reasoning from "does this field CONTAIN money" to "is this field
+ * ESSENTIALLY money" — and the licence was left matching the leftmost 6-to-8
+ * digit run anywhere on the row.
+ *
+ * What that costs, measured on a real listing shape rather than argued:
+ *
+ *   "Acme Interiors, Inc. | Fontana, CA | 092900 Gypsum Board | 684213 | Drywall"
+ *                                         ↑ won the licence slot
+ *
+ * `09 29 00` and `09 24 00` are the CSI section numbers for Gypsum Board and
+ * Portland Cement Plastering — the two numbers most likely to be printed on OUR
+ * OWN trades' rows, in a Spec Section column. The claim went out reading
+ * "Listed with licence 092900" to a man whose licence is 684213 and is sitting
+ * in the next column. **A CSLB number is the single most checkable fact about a
+ * contractor in this state**, so that is not a wrong detail, it is the sentence
+ * that tells him we do not know who he is. `concerns: 0`, `agreed: true`.
+ *
+ * `parse.ts` already carried the scar in a comment two lines above the bug —
+ * *"`$1200000` is seven digits and it won the licence slot"* — and the fix for
+ * that was `withoutMoney`, which only works while the figure carries a `$`. The
+ * moment a column prints a bare number the documented scar reopens. CLAUDE.md's
+ * "a guard written as a special case for the instance that bit you does not
+ * cover the next one", inside the function whose comment says so.
+ *
+ * So: strip an optional label and an optional class prefix, and what is left
+ * must be the number and NOTHING else. A spec section with a title after it, a
+ * quantity with a unit after it, and a dollar figure all fail that.
+ */
+const LICENCE_LABEL = /^(?:cslb\s*)?(?:lic(?:ense|ence)?\.?)?\s*(?:no\.?|number|#)?\s*:?\s*/i;
+
+function licenceOnly(field: string): string | null {
+  const bare = field.replace(LICENCE_LABEL, "").trim();
+  const found = bare.match(/^((?:[A-C]-?\d{1,2}\s+)?\d{6,8})$/);
+  return found ? found[1].replace(/\s+/g, " ") : null;
+}
+
+/** The same discipline for a public-works registration: ten digits, alone. */
+const REGISTRATION_LABEL = /^(?:dir\s*)?(?:reg(?:istration)?\.?)?\s*(?:no\.?|number|#)?\s*:?\s*/i;
+
+function registrationOnly(field: string): string | null {
+  const bare = field.replace(REGISTRATION_LABEL, "").trim();
+  const found = bare.match(/^(1\d{9})$/);
+  return found ? found[1] : null;
+}
+
 function parseAmount(raw: string): number | null {
   const found = raw.match(MONEY);
   if (!found) return null;
@@ -782,14 +834,18 @@ function readRow(text: string, line: number, fields: string[]): ListedSub | Unre
   const rest = fields.filter((_, index) => index !== nameIndex);
   const joined = rest.join("  ");
 
-  // Money out before looking for a licence: `$1200000` is seven digits and it
-  // won the licence slot, so a claim read "Listed with licence 1200000".
-  const forIds = withoutMoney(text);
-  const licenceFound = forIds.match(LICENCE);
-  const registrationFound = forIds.match(REGISTRATION);
-  const registration = registrationFound ? registrationFound[1] : null;
-  const licenceRaw = licenceFound ? licenceFound[1].replace(/\s+/g, " ").trim() : null;
-  const licence = licenceRaw && licenceRaw !== registration ? licenceRaw : null;
+  /**
+   * The licence and the registration, read from COLUMNS — see `licenceOnly`.
+   * Two candidates and this refuses to pick one, which is the doctrine the
+   * amount already follows and the header already follows for a second `Prime:`.
+   * The refusal is a concern, never silence.
+   */
+  const licenceFields = [...new Set(fields.map(licenceOnly).filter((v): v is string => v !== null))];
+  const registrationFields = [
+    ...new Set(fields.map(registrationOnly).filter((v): v is string => v !== null)),
+  ];
+  const registration = registrationFields.length === 1 ? registrationFields[0] : null;
+  const licence = licenceFields.length === 1 ? licenceFields[0] : null;
 
   // City first, then the scope from what is left. The other order was the first
   // draft and it was wrong on every well-formed row: "Fontana, CA" satisfies
@@ -809,8 +865,13 @@ function readRow(text: string, line: number, fields: string[]): ListedSub | Unre
         !moneyOnly(field) &&
         !percentOnly(field) &&
         field !== city &&
-        field !== licenceRaw &&
-        field !== registration &&
+        // An identifier column is never the scope. Tested by SHAPE rather than
+        // by inequality against the chosen value, which is what this read before
+        // — so when two licence-shaped fields made the parser refuse to choose,
+        // `licence` was null and BOTH of them became eligible to be quoted as
+        // the portion of work. A refusal must not widen what else can go wrong.
+        licenceOnly(field) === null &&
+        registrationOnly(field) === null &&
         // An address line: a street number and a state code, which is the
         // place-of-business column and not a scope of work.
         !/^\d+\s+\S/.test(field) &&
@@ -850,6 +911,20 @@ function readRow(text: string, line: number, fields: string[]): ListedSub | Unre
     const token = joined.match(MONEY)?.[0]?.trim();
     concerns.push(
       `this row mentions ${token ?? "a dollar figure"} inside a wider field rather than in a column of its own — read as a unit price or prose, not the subcontract amount, so no amount will be claimed`,
+    );
+  }
+  if (licenceFields.length > 1) {
+    concerns.push(
+      `this row carries ${licenceFields.length} licence-shaped numbers (${licenceFields.join("; ")}) and nothing says which is the contractor's licence — none will be claimed. A spec-section number printed in its own column looks exactly like a licence`,
+    );
+  } else if (licenceFields.length === 0 && LICENCE.test(withoutMoney(text))) {
+    concerns.push(
+      `this row has a licence-shaped number inside a wider field rather than in a column of its own — read as a spec section, a quantity or prose, so no licence will be claimed`,
+    );
+  }
+  if (registrationFields.length > 1) {
+    concerns.push(
+      `this row carries ${registrationFields.length} registration-shaped numbers and nothing says which is the public-works registration — none will be claimed`,
     );
   }
   if (percents.length > 1) {

@@ -234,26 +234,36 @@ describe("a bare undelimited number winning the licence slot", () => {
   const parsed = parseSubListing(caseNamed("bare-number-as-licence"));
   const row = parsed.rows[0];
 
-  it("TODAY reads a square-foot quantity as the contractor's licence — a real defect", () => {
+  it("no longer reads a square-foot quantity as the contractor's licence", () => {
     expect(parsed.rows).toHaveLength(1);
     expect(row.name).toBe("Acme Drywall, Inc.");
-    expect(row.licence).toBe("148000");
+    // "148000 SF of gypsum board" is not a licence COLUMN — strip an optional
+    // label and a class prefix and words remain. No licence is better than a
+    // number belonging to nobody.
+    expect(row.licence).toBeNull();
   });
 
-  it("TODAY also loses the portion of work and the trade to the same field — the half nobody predicted", () => {
+  it("STILL loses the portion of work and the trade to the same field — an open defect, now flagged", () => {
     // The field holding the quantity is ALSO disqualified from the scope slot, by
     // the address-line test `^\d+\s+\S`. So one field produces two wrong outputs:
     // an invented licence, and no portion of work at all — which costs the trade,
     // and the trade is what sorts a lead into our pipeline. "gypsum board" is
     // right there in the text.
+    //
+    // UNFIXED on purpose, and recorded rather than quietly carried: moving the
+    // licence to column discipline stopped the invented number but not this. The
+    // row now arrives with a concern and no trade, so it is default-UNTICKED and
+    // a person has to look at it — which is the right failure, not a fixed one.
     expect(row.portionOfWork).toBeNull();
     expect(row.tradeScope).toBeNull();
     expect(row.sourceText).toContain("gypsum board");
   });
 
-  it("TODAY raises no concern about either, so nothing on screen marks the row as doubtful", () => {
-    expect(row.concerns).toEqual([]);
-    expect(parsed.reconciliation.agreed).toBe(true);
+  it("says on screen that it saw a licence-shaped number and declined to read it", () => {
+    // The refusal is never silence. The reviewer has the document open and can
+    // settle in one glance what no amount of parsing will.
+    expect(row.concerns).toHaveLength(1);
+    expect(row.concerns[0]).toContain("inside a wider field rather than in a column of its own");
   });
 });
 
@@ -364,5 +374,97 @@ describe("a footer line carrying a phone number and a place is still not a subco
     // nothing. A guard that cries wolf is read as noise by the second week.
     expect(parsed.problems).toEqual([]);
     expect(parsed.reconciliation.agreed).toBe(true);
+  });
+});
+
+/**
+ * THE SPEC-SECTION COLLISION, WHICH IS WHY THE LICENCE MOVED TO COLUMN DISCIPLINE.
+ *
+ * `09 29 00` and `09 24 00` are the CSI section numbers for Gypsum Board and
+ * Portland Cement Plastering — the two most likely to be printed on OUR OWN
+ * trades' rows of a listing, in a Spec Section column. Stripped of spaces they
+ * are six-digit runs, and the licence used to be the leftmost 6-to-8 digit run
+ * anywhere on the row, so a spec section beat the contractor's real licence
+ * sitting in the next column.
+ */
+describe("a spec-section number does not beat the contractor's real licence", () => {
+  it("takes the licence from the column that holds only a licence", () => {
+    const row = parseSubListing(
+      "Acme Interiors, Inc.\tFontana, CA\t092900 Gypsum Board\t684213\tDrywall",
+    ).rows[0];
+    // The claim used to read "Listed with licence 092900" to a man whose licence
+    // is 684213 and is on the same row. A CSLB number is the most checkable fact
+    // about a contractor in this state, so that sentence does not read as a wrong
+    // detail — it reads as not knowing who he is.
+    expect(row.licence).toBe("684213");
+    expect(row.portionOfWork).toBe("Drywall");
+    expect(row.tradeScope).toBe("METAL_FRAMING_DRYWALL");
+    expect(row.concerns).toEqual([]);
+  });
+
+  it("refuses when a spec section sits ALONE in its own column, and names both", () => {
+    // Then the two are genuinely indistinguishable by shape, and the doctrine the
+    // amount already follows applies: when a document says two things, a parser
+    // that chooses is a parser that invents.
+    const row = parseSubListing(
+      "Acme Interiors, Inc.\tFontana, CA\t092900\t684213\tDrywall",
+    ).rows[0];
+    expect(row.licence).toBeNull();
+    expect(row.concerns.join(" ")).toContain("092900");
+    expect(row.concerns.join(" ")).toContain("684213");
+    expect(row.concerns.join(" ")).toContain("spec-section number printed in its own column");
+  });
+
+  it("still reads a labelled, a bare and a class-prefixed licence", () => {
+    const labelled = parseSubListing("Acme Drywall, Inc.\tFontana, CA\tLic. 884201\tDrywall").rows[0];
+    expect(labelled.licence).toBe("884201");
+    const bare = parseSubListing("Acme Drywall, Inc.\tFontana, CA\t884201\tDrywall").rows[0];
+    expect(bare.licence).toBe("884201");
+    const classed = parseSubListing("Baker Plastering Co.\tRialto, CA\tC-35 775500\tPlaster").rows[0];
+    expect(classed.licence).toBe("C-35 775500");
+  });
+
+  it("keeps a licence and a DIR registration apart when both are present", () => {
+    const row = parseSubListing(
+      "Acme Drywall, Inc.\tFontana, CA\t884201\t1000012345\tDrywall",
+    ).rows[0];
+    expect(row.licence).toBe("884201");
+    expect(row.registration).toBe("1000012345");
+  });
+
+  it("does not let a LABELLED identifier column become the portion of work when it refuses", () => {
+    // The scope slot used to exclude the licence by inequality against the CHOSEN
+    // value. So when two licence-shaped fields made this refuse, `licence` was
+    // null, `field !== licence` was true of everything, and both became eligible
+    // to be quoted as the portion of work. A refusal must not widen what else can
+    // go wrong, so the exclusion tests SHAPE now.
+    //
+    // Finding a case that can tell the two arms apart took three attempts, and
+    // the failures are the useful part. A BARE "1065432" is excluded from the
+    // scope slot anyway by the slot's own `[A-Za-z]{4}` test. "License No. 884201"
+    // is excluded by its `^(?:lic|license|licence|dir|reg)\b` prefix test. Both
+    // mutations survived, because in both cases something ELSE was doing the work.
+    //
+    // "CSLB" is the label that distinguishes them — it is four letters, it is how
+    // a California form actually writes it, and it is not in that prefix list. So
+    // this is the one case where the shape exclusion is load-bearing, and without
+    // it the row's portion of work reads "CSLB 884201".
+    const row = parseSubListing(
+      "Acme Drywall, Inc.\tFontana, CA\tCSLB 884201\tCSLB 992211\tDrywall",
+    ).rows[0];
+    expect(row.licence).toBeNull();
+    expect(row.portionOfWork).toBe("Drywall");
+    expect(row.portionOfWork).not.toContain("CSLB");
+  });
+
+  it("does not read a registration out of the middle of a wider field", () => {
+    // The same column discipline, and the same kind of case needed to prove it:
+    // a registration already alone in its column cannot distinguish an anchored
+    // pattern from an unanchored one.
+    const row = parseSubListing(
+      "Acme Drywall, Inc.\tFontana, CA\t884201\tRegistration 1000012345 verified 2026-03-04\tDrywall",
+    ).rows[0];
+    expect(row.licence).toBe("884201");
+    expect(row.registration).toBeNull();
   });
 });
