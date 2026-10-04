@@ -703,3 +703,100 @@ describe("a percentage is claimed with its ambiguity attached, not silently", ()
     expect(row.concerns.join(" ")).not.toContain("does not say what it is a percentage OF");
   });
 });
+
+/**
+ * A CITY PRINTED WITHOUT ITS STATE CODE, WHICH COST THE SCOPE, THE TRADE, THE
+ * GEOGRAPHY CLAIM AND SOMETIMES THE WHOLE ROW.
+ *
+ * `CITY_WITH_STATE` wants two trailing capitals, deliberately, so that "Culver
+ * City, CA" is a city and the heading "City, State" is not. A form printing the
+ * place of business without the state therefore had no city at all — and a city
+ * is an eligible scope, so it won the portion-of-work slot from `rest.find(...)`,
+ * which takes the first match.
+ */
+describe("a city without a state code is a city, not a portion of work", () => {
+  it("reads the city, the real scope and the trade", () => {
+    const row = parseSubListing(
+      "Bianchi Plastering, Inc.\tUnion City\tInterior plaster work",
+    ).rows[0];
+    expect(row.city).toBe("Union City");
+    expect(row.portionOfWork).toBe("Interior plaster work");
+    expect(row.tradeScope).toBe("LATH_PLASTER");
+  });
+
+  it("matters because the trade decides whether the row is ticked at all", () => {
+    // `shouldInclude` defaults a row to ticked only when `tradeScope` is set. With
+    // the city in the scope slot the trade was null, so the prospect arrived
+    // unticked and was silently left out of the import — a lost lead that looked
+    // like a deliberate exclusion.
+    const row = parseSubListing("Okonkwo Drywall, Inc.\tDaly City\tDrywall and taping").rows[0];
+    expect(row.tradeScope).toBe("METAL_FRAMING_DRYWALL");
+  });
+
+  it("rescues the whole row when nothing else on it is recognisable", () => {
+    // These three are the review's own examples, and each has no entity suffix, no
+    // licence and no state code — so `hasDataEvidence` had nothing to rescue them
+    // with and the heading-majority rule ate them, `agreed: true`. A name ending
+    // in the word "City" is now evidence of data, which covers the set that bites:
+    // Daly, Union, National, Culver, Redwood, Foster, Cathedral.
+    for (const [text, trade] of [
+      ["Bianchi Plastering\tUnion City\tInterior plaster work", "LATH_PLASTER"],
+      ["Okonkwo Drywall\tDaly City\tDrywall and taping work", "METAL_FRAMING_DRYWALL"],
+      ["Vang Acoustical\tNational City\tAcoustical ceiling work", "ACOUSTICAL_CEILINGS"],
+    ] as const) {
+      const parsed = parseSubListing(text);
+      expect(parsed.reconciliation.rowsParsed).toBe(1);
+      expect(parsed.rows[0].tradeScope).toBe(trade);
+    }
+  });
+
+  it("prefers a trade-naming field for the scope even when no city is recognised", () => {
+    // The narrower residual: a city that does NOT end in "City". The city is still
+    // missed, but preferring a field that names one of our trades keeps it out of
+    // the scope slot, so the row is still a usable prospect.
+    const row = parseSubListing("Bianchi Plastering\tFontana\tInterior plaster work").rows[0];
+    expect(row.portionOfWork).toBe("Interior plaster work");
+    expect(row.tradeScope).toBe("LATH_PLASTER");
+    expect(row.city).toBeNull();
+  });
+
+  it("a line that names one of our trades is never 'the table's column headings'", () => {
+    // "Scope: drywall work" is three heading words by the pattern's reckoning —
+    // `scope`, `work`, and `description` is not even needed — so a drywall sub in
+    // a city with neither a state code nor the word "City" was filed as furniture.
+    const parsed = parseSubListing("Northstate Drywall\tChico\tScope: drywall work");
+    expect(parsed.reconciliation.rowsParsed).toBe(1);
+    expect(parsed.rows[0].tradeScope).toBe("METAL_FRAMING_DRYWALL");
+  });
+
+  it("rescues a row in a trade that is NOT one of ours, which only the city can do", () => {
+    // Added because a mutation survived: removing the city from `hasDataEvidence`
+    // broke nothing, since the trade-naming bail and the entity-marker rescue
+    // already covered every case I first tried — "Acme Builders" is rescued by
+    // `builders` being an entity marker, and anything naming drywall or plaster is
+    // rescued by the bail.
+    //
+    // The case only the city can reach needs all four: no entity suffix, no trade
+    // word, a labelled scope cell supplying two heading words, and a city with no
+    // state code. It is not a prospect, and it is still a loss — the reader
+    // promises not to lose anything, not merely not to lose prospects.
+    const parsed = parseSubListing("Vang Carpentry\tUnion City\tScope of work: trim");
+    expect(parsed.reconciliation.rowsParsed).toBe(1);
+    expect(parsed.rows[0].city).toBe("Union City");
+    expect(parsed.ignored).toEqual([]);
+  });
+
+  it("still sets a REAL heading row aside, which is the control that keeps this honest", () => {
+    // A heading says what the column IS; a cell says what the work is. None of
+    // these names a trade, which is exactly why the discriminator works.
+    for (const heading of [
+      "Subcontractor\tCity\tLicense\tPortion of Work",
+      "Subcontractor Name\tCity, State\tLicense No.\tDescription of Work",
+      "Firm\tLocation\tScope",
+    ]) {
+      const parsed = parseSubListing(heading);
+      expect(parsed.reconciliation.rowsParsed).toBe(0);
+      expect(parsed.ignored[0].why).toBe("the table's column headings");
+    }
+  });
+});

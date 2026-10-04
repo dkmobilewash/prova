@@ -366,6 +366,31 @@ export function looksCutOff(field: string | null): boolean {
  */
 const CITY_WITH_STATE = /^[A-Z][A-Za-z.\- ]+,\s*[A-Z]{2}$/;
 
+/**
+ * A CALIFORNIAN CITY THAT NAMES ITSELF WITHOUT A STATE CODE.
+ *
+ * `CITY_WITH_STATE` is strict about its two trailing capitals on purpose — that
+ * is what separates "Culver City, CA" from the column heading "City, State". A
+ * form that prints the place of business WITHOUT the state then had no city at
+ * all, and three things followed, all measured:
+ *
+ *   - the city won the portion-of-work slot, because `rest.find(...)` takes the
+ *     first eligible field and a city is eligible. "Bianchi Plastering, Inc. |
+ *     Union City | Interior plaster work" produced `portionOfWork: "Union City"`,
+ *     and the real scope was discarded;
+ *   - so `tradeScope` was null, and `shouldInclude` defaults a row to ticked only
+ *     when the trade matched — the prospect arrived unticked and was silently
+ *     left out of the import;
+ *   - and no GEOGRAPHY claim was produced from a city plainly on the page.
+ *
+ * This is deliberately narrow: a name ending in the word "City". That covers the
+ * set that actually bites — Daly, Union, National, Culver, Redwood, Foster,
+ * Cathedral — and a portion of work never ends in "City", so it cannot steal the
+ * scope slot in return. A bare "Fontana" is still not recognised, and that
+ * residual is handled by preferring a trade-matching scope instead.
+ */
+const CITY_SUFFIXED = /^[A-Z][A-Za-z.\-]+(?: [A-Z][a-z]+)* City$/;
+
 const ENTITY_MARKER =
   /\b(?:inc|llc|corp|corporation|co|company|ltd|llp|lp|systems|builders|construction|contractors|interiors|enterprises|group|industries)\b\.?/i;
 
@@ -835,7 +860,7 @@ function hasDataEvidence(trimmed: string, fields: string[]): boolean {
   // file recognises, so a separate LICENCE test here was redundant — a mutation
   // removing it changed no outcome, which is the definition of dead logic.
   if (/\d{4,}/.test(trimmed)) return true;
-  if (fields.some((field) => CITY_WITH_STATE.test(field))) return true;
+  if (fields.some((field) => CITY_WITH_STATE.test(field) || CITY_SUFFIXED.test(field))) return true;
   if (fields.some((field) => ENTITY_MARKER.test(field))) return true;
   return false;
 }
@@ -894,7 +919,27 @@ function furnitureReason(line: string, fields: string[]): string | null {
    */
   if (!MONEY.test(trimmed) && !PERCENT.test(trimmed) && !REGISTRATION.test(trimmed)) {
     const words = trimmed.match(HEADING_WORDS) ?? [];
-    if (fields.length >= 2 && words.length >= Math.ceil(fields.length / 2)) {
+    /**
+     * A COLUMN HEADING NEVER NAMES ONE OF OUR FIVE TRADES.
+     *
+     * The heading-majority rule needs two heading words out of three or four
+     * fields, and two is cheap: `work` is what a "Portion of Work" column echoes
+     * into its own cells, and `scope` is what a form that LABELS its cells
+     * prints. So "Northstate Drywall | Chico | Scope: drywall work" was filed as
+     * "the table's column headings" — three heading words by the pattern's
+     * reckoning, no licence, no entity suffix, and a city with neither a state
+     * code nor the word "City" to rescue it. A drywall subcontractor, lost, with
+     * `agreed: true` over the loss.
+     *
+     * A real heading row reads "Subcontractor | City | License | Portion of
+     * Work", and not one of those fields names a trade: the heading says what the
+     * column IS, the cell says what the work is. So a field that matches one of
+     * our five is positive evidence of a DATA row, exactly as a licence number
+     * is, and it belongs in the same place — ahead of the furniture tests rather
+     * than inside them.
+     */
+    const namesOneOfOurTrades = fields.some((field) => tradeMatchFor(field).scope !== null);
+    if (!namesOneOfOurTrades && fields.length >= 2 && words.length >= Math.ceil(fields.length / 2)) {
       return "the table's column headings";
     }
   }
@@ -954,12 +999,26 @@ function readRow(text: string, line: number, fields: string[]): ListedSub | Unre
   // "has four letters and is not a number", so the city column won the
   // portion-of-work slot and the real scope — the one the whole feature quotes
   // — was discarded.
-  const city = rest.find((field) => CITY_WITH_STATE.test(field)) ?? null;
+  const city =
+    rest.find((field) => CITY_WITH_STATE.test(field)) ??
+    rest.find((field) => CITY_SUFFIXED.test(field)) ??
+    null;
 
-  const scope =
-    rest.find(
-      (field) =>
-        /[A-Za-z]{4}/.test(field) &&
+  /**
+   * PREFER A FIELD THAT NAMES ONE OF OUR TRADES over the first merely-eligible
+   * one. `rest.find(...)` took the first, so any column printed before the
+   * portion of work and not otherwise excluded won the slot — which is how a city
+   * came to be quoted as a scope of work. The portion of work is, by definition,
+   * the field most likely to name a trade, and that is a far better
+   * discriminator than position on a form whose column order this parser has
+   * never seen.
+   *
+   * The fallback is unchanged, so a row whose scope is NOT one of our five still
+   * behaves exactly as before. That row is not a prospect, which is why this is
+   * the right place to stop rather than guess further.
+   */
+  const eligible = (field: string) =>
+    /[A-Za-z]{4}/.test(field) &&
         // `moneyOnly`/`percentOnly`, not `MONEY`/`PERCENT`: the strict versions
         // kept the amount column out of the scope slot, which is what they were
         // for, and ALSO threw away any portion of work that happened to mention
@@ -978,8 +1037,12 @@ function readRow(text: string, line: number, fields: string[]): ListedSub | Unre
         // place-of-business column and not a scope of work.
         !/^\d+\s+\S/.test(field) &&
         !/\b[A-Z]{2}\s+\d{5}(-\d{4})?\b/.test(field) &&
-        !/^(?:lic|license|licence|dir|reg)\b/i.test(field),
-    ) ?? null;
+        !/^(?:lic|license|licence|dir|reg)\b/i.test(field);
+
+  const scope =
+    rest.find((field) => eligible(field) && tradeMatchFor(field).scope !== null) ??
+    rest.find(eligible) ??
+    null;
 
   /**
    * The amount and the bid percentage, read from COLUMNS rather than from
