@@ -330,8 +330,23 @@ const PERCENT = /\b(\d{1,3}(?:\.\d+)?)\s?%/;
  * nothing real.
  */
 const LICENCE = /\b(?:lic(?:ense|ence)?\.?\s*(?:no\.?|#)?\s*)?((?:[A-C]-?\d{1,2}\s+)?\d{6,8})\b/i;
-/** A public-works registration number as printed: 10 digits starting with 1. */
-const REGISTRATION = /\b(1\d{9})\b/;
+/**
+ * A public-works registration number as printed: 10 digits starting 1 OR 2.
+ *
+ * **It was `1\d{9}` until a real document disagreed.** UCLA's posted bid summary
+ * carries `2000015618` in the DIR column, and the Caltrans corpus (26 documents,
+ * 12 contracts) shows registrations starting `10` and `20` alike. Under the old
+ * pattern that row silently lost its registration while every other field read
+ * correctly and `agreed` stayed true — the quiet half-row this file keeps finding.
+ *
+ * The bound, stated rather than pretended away: a bare 10-digit PHONE column
+ * would now match, and `2135551234` would be read as a registration. That
+ * exposure is not new — `1\d{9}` already matched a leading-1 number — it is
+ * doubled. No document seen so far has a phone column at all: §4104 does not ask
+ * for one, and neither UCLA's table nor Caltrans' form prints one. If a listing
+ * ever does, this is the first thing to suspect.
+ */
+const REGISTRATION = /\b([12]\d{9})\b/;
 
 /** A field that visibly does not finish — the printed evidence of a wrap. */
 const DANGLING = /(?:[,&/+]|\b(?:and|or|with|plus|including|incl\.?|as)\s*)$/i;
@@ -580,7 +595,7 @@ const REGISTRATION_LABEL = /^(?:dir\s*)?(?:reg(?:istration)?\.?)?\s*(?:no\.?|num
 
 function registrationOnly(field: string): string | null {
   const bare = field.replace(REGISTRATION_LABEL, "").trim();
-  const found = bare.match(/^(1\d{9})$/);
+  const found = bare.match(/^([12]\d{9})$/);
   return found ? found[1] : null;
 }
 

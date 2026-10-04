@@ -907,3 +907,104 @@ Crestline Plastering       Fort Hollow        CA      448120`;
     expect(parsed.reconciliation.rowsParsed).toBeGreaterThan(0);
   });
 });
+
+/**
+ * THE SHAPE A CALIFORNIA BUILDING OWNER ACTUALLY POSTS — AND IT IS A TABLE.
+ *
+ * UCLA Capital Programs publishes "BID SUMMARY SHEET WITH SUBCONTRACTORS" PDFs
+ * (`contract.capnet.ucla.edu`) carrying every bidder's filled §4104 list as a
+ * COLUMN TABLE with a text layer, columns separated by runs of three or more
+ * spaces. Five such PDFs were read: 20 bidder lists, about 149 subcontractor
+ * rows. **These five trades are in them** — the cells read "Drywall", "ACT",
+ * "Acoustical Ceilings", "Framing Drywall", "Firestopping", "Suspension Ceiling".
+ *
+ * That matters because Caltrans, whose form `parse.ts` now refuses, builds ROADS:
+ * across 14 of its listings these trades appeared in exactly one. Building owners
+ * — universities, school districts, cities — are where this product's prospects
+ * are, and UCLA posts the shape this parser was written for. Run against the real
+ * document, it read all 14 rows of one bidder's list and got 12 of the 14 names
+ * right, including the drywall sub with its licence, registration and trade.
+ *
+ * **But the real column ORDER is not the one every other fixture here assumes.**
+ * UCLA prints `Portion of Work: | Name of Business: | Location: | License #: |
+ * DIR #:` — the scope FIRST and the company SECOND. Every other case in
+ * `subListingCases.ts` puts the name first. The column-order assumption that
+ * file's header flags as a guess was simply wrong, and this is the evidence.
+ *
+ * Invented names throughout, per the rule; the shape, spacing and column order
+ * are copied exactly. A real UCLA sheet names real subcontractors.
+ */
+describe("the UCLA shape: scope in column one, company in column two", () => {
+  // Three rows chosen to reproduce exactly what the real document exposed:
+  // one ordinary company, one whose DIR registration starts with 2, and one
+  // with NO entity suffix — which is the row that goes wrong.
+  const UCLA = `                    Portion of Work:       Name of Business:                        Location:          License #:    DIR #:
+                    Framing Drywall        Halloran Interior Systems, Inc.          Valencia           438612        1000013433
+                    Doors/HW               Rosegate Builders, Inc.                  Los Angeles        1130181       2000015618
+                    Millwork               Marbury West                             Temple City        1046943       1000062389`;
+
+  it("reads every row and the headings, and claims nothing it did not read", () => {
+    const parsed = parseSubListing(UCLA);
+    expect(parsed.reconciliation.rowsParsed).toBe(3);
+    expect(parsed.reconciliation.accountedFor).toBe(parsed.reconciliation.nonBlankLines);
+    expect(parsed.ignored.map((line) => line.why)).toContain("the table's column headings");
+  });
+
+  it("reads the drywall sub correctly — name, licence, registration and trade", () => {
+    const parsed = parseSubListing(UCLA);
+    const drywall = parsed.rows.find((row) => row.licence === "438612");
+    expect(drywall?.name).toBe("Halloran Interior Systems, Inc.");
+    expect(drywall?.registration).toBe("1000013433");
+    expect(drywall?.tradeScope).toBe("METAL_FRAMING_DRYWALL");
+    expect(drywall?.portionOfWork).toBe("Framing Drywall");
+  });
+
+  /**
+   * A REGRESSION, NOT A REPRODUCTION. `REGISTRATION` was `1\d{9}` and silently
+   * dropped this value while every other field on the row read correctly and
+   * `agreed` stayed true. Two independent real corpora show `20…`.
+   */
+  it("reads a DIR registration that starts with 2", () => {
+    const parsed = parseSubListing(UCLA);
+    const row = parsed.rows.find((candidate) => candidate.licence === "1130181");
+    expect(row?.registration).toBe("2000015618");
+  });
+
+  /**
+   * TODAY: A COMPANY WITH NO ENTITY SUFFIX LOSES ITS NAME TO ITS OWN SCOPE.
+   *
+   * "Marbury West" carries no `Inc`/`LLC`/`Corp`, so the name predicate prefers
+   * the scope cell and the row comes out named "Millwork" with the real company
+   * demoted into `portionOfWork`. On the real document this happened to 2 of 14
+   * rows — about 14% — and `agreed` read TRUE throughout, so the importer would
+   * create leads called "Concrete" and "Millwork".
+   *
+   * Same root cause as the Caltrans form's lost company: no entity marker, so
+   * `hasDataEvidence` and the name predicate cannot see it. The fix is for
+   * `splitFields` to learn column POSITIONS from the heading row — which UCLA
+   * prints, and which the comment above `accountedFor` names as the actual fix.
+   * When that lands this test goes red; change the assertion and delete the TODAY.
+   */
+  it("TODAY swaps name and scope when the company has no entity suffix", () => {
+    const parsed = parseSubListing(UCLA);
+    const row = parsed.rows.find((candidate) => candidate.licence === "1046943");
+    expect(row?.name).toBe("Millwork");
+    expect(row?.portionOfWork).toBe("Marbury West");
+  });
+
+  /**
+   * TODAY: A BARE CITY WITH NO STATE CODE YIELDS NO GEOGRAPHY.
+   *
+   * UCLA prints "Valencia", not "Valencia, CA" — `CITY_WITH_STATE` wants two
+   * trailing capitals and `CITY_SUFFIXED` wants the word "City", so 13 of 14 real
+   * rows read `city: null`. The one that worked was "Temple City", and only
+   * because of its name. This is the residual already recorded in
+   * `subListingCases.ts`, now measured on a real document instead of predicted.
+   */
+  it("TODAY reads no city from a bare city, but still gets the trade", () => {
+    const parsed = parseSubListing(UCLA);
+    const drywall = parsed.rows.find((row) => row.licence === "438612");
+    expect(drywall?.city).toBeNull();
+    expect(drywall?.tradeScope).toBe("METAL_FRAMING_DRYWALL");
+  });
+});

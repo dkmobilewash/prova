@@ -475,6 +475,58 @@ pushed; they are a city and a licence number from a document the state publishes
 for anyone to read, so this is fixture hygiene rather than a disclosure, and it is
 fixed forward rather than by rewriting pushed history.
 
+### The shape a building owner actually posts IS a table, and the parser mostly reads it
+
+Caltrans builds roads — across 14 of its listings these five trades appeared in
+exactly one. So the question that decides whether this feature is worth anything
+was never Caltrans: it is what a BUILDING owner posts. About 15 agencies were
+checked. **UCLA Capital Programs publishes every bidder's filled §4104 list as a
+COLUMN TABLE with a text layer** (`contract.capnet.ucla.edu`, the
+"BID SUMMARY SHEET WITH SUBCONTRACTORS" PDFs): 5 PDFs, 20 bidder lists, ~149 rows,
+columns separated by runs of three or more spaces. **These trades are in them** —
+"Drywall", "ACT", "Acoustical Ceilings", "Framing Drywall", "Firestopping",
+"Suspension Ceiling".
+
+Run against one real bidder's list, the parser read **all 14 rows, 12 of 14 names
+correct**, and got the drywall sub exactly right — name, city aside, licence
+`438612`, registration, and `tradeScope: METAL_FRAMING_DRYWALL`. That is the
+feature working on a real document for the first time.
+
+Both shapes exist in the wild: UC Davis Health posts a FORM instead (a
+BuildingConnected export, different again from Caltrans'), and UCSB posts sub
+names in free text with no licence. Four agencies posted a prime-only bid
+tabulation, four hosts are 403 from here, and no school district or community
+college produced a filled list — several sit behind PlanetBids portals nobody has
+driven. Which shape is more common is NOT established; n=2 agencies with lists.
+
+**One real fix, with two independent corpora behind it.** `REGISTRATION` was
+`1\d{9}` and silently dropped `2000015618` from a UCLA row while every other
+field on it read correctly and `agreed` stayed true. Both the UCLA document and
+the 26-document Caltrans corpus show registrations starting `10` AND `20`. Now
+`[12]\d{9}`, mutation-tested: reverting reds exactly the one new assertion. The
+bound is stated in the code rather than pretended away — a bare 10-digit PHONE
+column would now match, an exposure doubled rather than created, and no document
+seen has a phone column because §4104 does not ask for one.
+
+**Two defects measured and PINNED rather than fixed**, with the file's existing
+TODAY convention so they go red when someone fixes them:
+
+- **The real column ORDER is not the one any fixture assumes.** UCLA prints the
+  scope FIRST and the company SECOND. Where a company carries no `Inc`/`LLC`, the
+  name predicate prefers the scope cell: 2 of 14 real rows came out named
+  **"Concrete"** and **"Millwork"** with the real companies demoted into
+  `portionOfWork`. `agreed` read true throughout, so the importer would create
+  two leads named after trades. Same root cause as the Caltrans form's lost
+  company — no entity marker — and the fix is the one the comment above
+  `accountedFor` already names: `splitFields` learning column positions from the
+  heading row, which UCLA prints.
+- **A bare city yields no geography.** UCLA writes "Valencia", not "Valencia, CA",
+  so 13 of 14 rows read `city: null`. The one that worked was "Temple City", and
+  only because of its name. This was already recorded as a residual; it is now
+  measured on a real document rather than predicted.
+
+335 tests across 16 files.
+
 **Still unverified, and unchanged as the honest headline: no real bid or award
 document has been read.** Every fixture is a guess about a form nobody here has
 opened, the suite is deliberately green over the remaining documented
