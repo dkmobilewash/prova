@@ -494,6 +494,23 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
         </section>
       )}
 
+      {/* MANAGE_BILLING, and the hiding is half of the fix rather than
+          cosmetics. Every control in this section posts to
+          `enablePortalAccess` or `revokeClientPortalAccess`, which now
+          refuse anyone without that capability — but they refuse by
+          THROWING, and production redacts a thrown Server Action message
+          to a digest. A visible button whose refusal cannot be read is a
+          dead button, so the section is not rendered for the people the
+          action turns away. The action is the boundary (a Server Action is
+          an endpoint with a stable id and answers whoever posts to it);
+          this is what stops a real person meeting it.
+
+          The whole section goes, not just the buttons: the revoked and
+          active branches print the token itself, and that string IS the
+          credential — #527 keeps it out of the contact CSV for exactly
+          that reason. Showing the link to somebody who may not issue one
+          would leave the credential readable and only the button gone. */}
+      {showsBilling && (
       <section className="mb-10 rounded-lg border border-line-card bg-surface p-6">
         <h2 className="mb-3 text-lg font-semibold text-ink">Client portal</h2>
         {contact.portalToken && contact.portalRevokedAt ? (
@@ -550,6 +567,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           </div>
         )}
       </section>
+      )}
 
       <section>
         <h2 className="mb-3 text-lg font-semibold text-ink">Jobs</h2>
