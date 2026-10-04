@@ -623,6 +623,59 @@ Mutation-tested two ways. Removing the acronym loop reds 2 tests. **"Tidying" `A
 into `TRADE_KEYWORDS` as a lowercase word reds 21** — which is the point of the
 trap tests, since that refactor is the tempting one.
 
+### `agreed` was lying on every damaged page, and now it says so
+
+A diagnosis across the 20 real bidder lists carrying 154 known rows found
+`reconciliation.agreed` reading **TRUE on all 20 — including the eight that lost or
+mangled a row.** 125 of 154 rows were perfect, 29 were not, and nothing said which.
+
+It is structural rather than an oversight: a wrapped cell lands in `ignored` as
+"one column only" and a two-field fragment becomes a row, so the partition always
+sums and `accountedFor === nonBlankLines` can never notice. `unread` was empty on
+all 20.
+
+**Three signals close it, and the measured result is 6 of 8 damaged blocks flagged
+with 0 of 12 clean blocks wrongly flagged:**
+
+- **A one-column line stranded BETWEEN two rows** is a wrapped cell, so the row
+  above or below is incomplete. There is a control test asserting the same fragment
+  ABOVE the rows stays quiet, which keeps this positional rather than a blanket
+  complaint about one-column lines.
+- **The document names a licence or DIR column and the cell does not read.** `394`,
+  `88` and `PW-LR-1001079292` are all real printed values that parse as nothing;
+  three of 154 rows lose an identifier that quietly with every other field fine.
+  The plan is what makes it sayable — the heading named the column, so the
+  disagreement is between the document and this reader.
+- **A recognised heading whose columns cannot be matched to the rows** means the
+  rows were read by guessing.
+
+**NONE OF THIS IS THE GUARD THE FILE SAYS WAS DEAD**, and the distinction is the
+reason it works. That guard asked whether a set-aside line LOOKED like a row — a
+content predicate, and useless here, because a wrap fragment is `Services` or
+`INC.` or `PW-LR-`; no predicate over its text can see it. These ask about POSITION
+and about what the document's own heading promised. Neither question was available
+before the column plan existed.
+
+### Reading the heading as text, not as whitespace
+
+Four of 20 real lists print their labels in ways that break a 2+-space split while
+their rows are ordinary five-column rows: one puts the last three labels in one
+field, three wrap `License` onto the line above its `#:`. The labels are now also
+scanned as TEXT in order of appearance, and `readRow` takes whichever derivation
+matches the row it is looking at — preferring the field-based one, which keeps a
+slot for a column this parser does not recognise.
+
+**Worth 3 cities on the real corpus: 128 to 131 of 154.** That is the honest figure
+and far smaller than the 25 it looked like it would be, because the four problem
+lists' heading lines are not recognised as headings in the first place — so neither
+the plan nor the new warning reaches them, and 23 rows still read `city: null`
+without a word said. Fixing `furnitureReason`'s heading detection for those shapes
+is named as the next gap rather than claimed as done.
+
+Five mutations, each landing and each reding its own assertions: the stranded-line
+problem removed, its BETWEEN-rows bound removed, the planned-column concern removed
+(2 red), the heading-unusable problem removed, the label scan disabled. 351 tests.
+
 **Still unverified, and unchanged as the honest headline: no real bid or award
 document has been read.** Every fixture is a guess about a form nobody here has
 opened, the suite is deliberately green over the remaining documented

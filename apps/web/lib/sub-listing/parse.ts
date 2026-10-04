@@ -1090,6 +1090,55 @@ function columnKindOf(heading: string): ColumnKind | null {
 }
 
 /**
+ * THE SAME HEADING, READ AS TEXT RATHER THAN AS FIELDS — BECAUSE WHITESPACE LIES.
+ *
+ * Splitting the heading on runs of two spaces is right when the document spaces
+ * its labels out, and across 20 real bidder lists it is right 16 times. The other
+ * four print the labels in ways that break the field count while the ROWS beneath
+ * them are perfectly ordinary five-column rows:
+ *
+ *   compact   `Portion of Work:  Name of Business:  Location: License #: DIR #:`
+ *             — the last three share one field, so the heading yields 3
+ *   wrapped   `License` ends the line above and `#:` opens the line below, so the
+ *             heading line yields 4
+ *
+ * Measured cost of refusing those: four lists, **25 rows that read `city: null`
+ * on every row**, and the original name/scope swap reproducing on rows that are
+ * otherwise clean. That is the largest single bucket of damage in the corpus, and
+ * none of it is the rows' fault.
+ *
+ * So the labels are also looked for as TEXT, in order of appearance. The compact
+ * heading then yields all five in the right order. The wrapped one still yields
+ * four, because the fifth label genuinely is not on that line — that case is
+ * recorded as unfixed rather than guessed at, since inserting a column where a
+ * label is missing is inventing the order rather than reading it.
+ *
+ * Both derivations are kept and `readRow` takes whichever matches the row it is
+ * looking at, preferring the field-based one: that plan keeps a position for a
+ * column this parser does NOT recognise, which a label scan necessarily drops, and
+ * a real unrecognised column still has a cell in every row.
+ */
+function planByLabels(heading: string): (ColumnKind | null)[] | null {
+  const seen: { at: number; kind: ColumnKind }[] = [];
+  for (const [kind, pattern] of COLUMN_KINDS) {
+    const scan = new RegExp(pattern.source, "gi");
+    let found: RegExpExecArray | null;
+    // The FIRST occurrence of each kind only: "Name of Business" contains the
+    // word "Business" and a looser later alternative could match it twice.
+    while ((found = scan.exec(heading)) !== null) {
+      if (!seen.some((entry) => entry.kind === kind)) seen.push({ at: found.index, kind });
+      break;
+    }
+  }
+  if (seen.length < 2) return null;
+  seen.sort((a, b) => a.at - b.at);
+  // Two labels resolving to the same position means the patterns overlapped on
+  // one word, which is not an order this can be trusted to have read.
+  if (new Set(seen.map((entry) => entry.at)).size !== seen.length) return null;
+  return seen.map((entry) => entry.kind);
+}
+
+/**
  * A plan, or null when the heading does not describe enough to be worth trusting.
  *
  * TWO recognised columns is the floor, and a kind appearing TWICE voids the plan
@@ -1364,6 +1413,36 @@ function readRow(
       `this row has a licence-shaped number inside a wider field rather than in a column of its own — read as a spec section, a quantity or prose, so no licence will be claimed`,
     );
   }
+  /**
+   * THE DOCUMENT NAMED THE COLUMN AND THE CELL DID NOT READ — SAY SO.
+   *
+   * The licence and registration patterns are deliberately narrow: 6-to-8 digits
+   * for a licence, ten starting 1 or 2 for a registration. Real documents print
+   * `394`, `88` and `PW-LR-1001079292`, and each of those reads as NOTHING. Every
+   * other field on the row is fine, nothing warns, and `agreed` stays true — three
+   * of 154 real rows lose an identifier exactly this quietly.
+   *
+   * A predicate could never flag it, because a cell that fails the pattern is
+   * indistinguishable from a cell that is not a licence. What makes this sayable
+   * is the PLAN: when the heading itself says which column is the licence and the
+   * cell under it does not parse, the disagreement is between the document and
+   * this parser, and that is worth a sentence rather than a silent null.
+   */
+  if (usablePlan) {
+    for (const [kind, label, got] of [
+      ["licence", "contractor's licence", licence],
+      ["registration", "public-works registration", registration],
+    ] as const) {
+      const at = usablePlan.indexOf(kind);
+      if (at === -1 || got !== null) continue;
+      const cell = fields[at]?.trim();
+      if (!cell || cell === name) continue;
+      concerns.push(
+        `the document heads column ${at + 1} as the ${label} and this row prints "${cell}" there, which this reader does not recognise as one — so none will be claimed. Short, lettered and prefixed numbers are all printed in real listings`,
+      );
+    }
+  }
+
   if (registrationFields.length > 1) {
     concerns.push(
       `this row carries ${registrationFields.length} registration-shaped numbers and nothing says which is the public-works registration — none will be claimed`,
@@ -1526,6 +1605,11 @@ export function parseSubListing(text: string): SubListingParse {
    * match the row's shape.
    */
   let columnPlan: (ColumnKind | null)[] | null = null;
+  /** The same heading read as text; see `planByLabels`. */
+  let labelPlan: (ColumnKind | null)[] | null = null;
+  /** Whether the document printed a heading at all, and whether one ever fitted. */
+  let headingSeen = false;
+  let planEverApplied = false;
 
   /**
    * THE FORM SHAPE IS RECOGNISED AND REFUSED, WITH EVERY LINE STILL ACCOUNTED FOR.
@@ -1582,8 +1666,11 @@ export function parseSubListing(text: string): SubListingParse {
       if (furniture === "the table's column headings") {
         // Only replace a plan with a better-understood one; a heading that
         // yields nothing usable must not erase what an earlier one taught us.
+        headingSeen = true;
         const learned = columnPlanFrom(fields);
         if (learned) columnPlan = learned;
+        const byLabel = planByLabels(raw);
+        if (byLabel) labelPlan = byLabel;
       }
       ignored.push({ line, text: raw, why: furniture });
       return;
@@ -1647,7 +1734,16 @@ export function parseSubListing(text: string): SubListingParse {
       return;
     }
 
-    const result = readRow(raw, line, fields, columnPlan);
+    // Whichever plan describes THIS row's shape; the field-based one wins a tie
+    // because it keeps a slot for a column this parser does not recognise.
+    const planForRow =
+      columnPlan !== null && columnPlan.length === fields.length
+        ? columnPlan
+        : labelPlan !== null && labelPlan.length === fields.length
+          ? labelPlan
+          : columnPlan;
+    if (planForRow !== null && planForRow.length === fields.length) planEverApplied = true;
+    const result = readRow(raw, line, fields, planForRow);
     if (isUnread(result)) unread.push(result);
     else rows.push(result);
   });
@@ -1784,6 +1880,74 @@ export function parseSubListing(text: string): SubListingParse {
    * "Systems" and "Inc.", because a space inside "Valley Interior Systems" is
    * indistinguishable from the gap before the city column.
    */
+  /**
+   * A ONE-COLUMN LINE *INSIDE* THE TABLE IS A WRAPPED CELL, AND IT MEANS A ROW
+   * NEARBY IS INCOMPLETE.
+   *
+   * ── THIS IS NOT THE DEAD GUARD, AND THE DIFFERENCE IS THE WHOLE POINT ──
+   *
+   * The comment above `accountedFor` records a conjunct that asked whether
+   * anything in the set-aside pile LOOKED LIKE A ROW, and records that it was
+   * measured dead across 308 tests and deleted, with a note not to rebuild it.
+   * That note is right and this is a different question. That guard was a CONTENT
+   * predicate — "is this fragment row-shaped?" — and a wrap fragment is by
+   * definition not row-shaped: it is `Services`, or `INC.`, or `PW-LR-`. No
+   * predicate over its text can see it.
+   *
+   * This asks about POSITION instead, which the old guard never did: a line with
+   * one column sitting BETWEEN two parsed table rows is inside the table, and the
+   * only thing inside a table is table data. A heading sits above the rows and
+   * prose sits below them; a cell that wrapped onto its own line sits between.
+   *
+   * ── MEASURED, BECAUSE THE CLAIM "`agreed` LIES" NEEDED EVIDENCE ──
+   *
+   * Across 20 real bidder lists carrying 154 known rows, `agreed` read TRUE on
+   * all 20 — including the eight that lost or mangled a row. 58 lines were set
+   * aside as one-column and roughly 35 of them were real data fragments. The
+   * partition always sums, so `accountedFor === nonBlankLines` can never notice,
+   * and `unread` was empty everywhere. This is the signal that was missing.
+   *
+   * It does not repair the row. It says the page was not fully read, which is the
+   * promise this file is built on: a quiet loss is worse than a stated one.
+   */
+  /**
+   * A HEADING THIS READER COULD NOT TURN INTO A PLAN IS A PAGE READ BY GUESSWORK.
+   *
+   * Three of 20 real bidder lists wrap `License` onto the line above its `#:`, so
+   * the heading line carries four labels against five-column rows and neither
+   * derivation in `columnPlanFrom`/`planByLabels` can honestly produce an order.
+   * The rows are then read by the predicate — first plausible field as the name —
+   * and the measured cost is every city on the list plus the occasional name/scope
+   * swap: 25 of 154 rows read `city: null` for this reason alone.
+   *
+   * Refusing the plan there is right; staying silent about it is not. The document
+   * printed a heading, this reader saw it, and could not use it.
+   */
+  if (headingSeen && !planEverApplied && rows.length > 0) {
+    problems.push(
+      "this page prints a column heading, but its columns could not be matched to the rows beneath it — usually because a label is split across two lines. The rows were read by guessing which field is which, so the company name, the city and the portion of work may be wrong on any of them. Check them against the document before importing.",
+    );
+  }
+
+  const rowLines = rows.map((row) => row.line);
+  if (rowLines.length >= 2) {
+    const firstRow = Math.min(...rowLines);
+    const lastRow = Math.max(...rowLines);
+    const strandedInside = ignored.filter(
+      (line) =>
+        line.why.startsWith("one column only") && line.line > firstRow && line.line < lastRow,
+    );
+    if (strandedInside.length > 0) {
+      problems.push(
+        `${strandedInside.length} line${strandedInside.length === 1 ? "" : "s"} inside the table ${
+          strandedInside.length === 1 ? "was" : "were"
+        } set aside as having only one column — ${strandedInside
+          .map((line) => `line ${line.line}`)
+          .join(", ")}. A line between two rows is usually a cell that wrapped, which means a row above or below it is missing part of its data. Check those rows against the document before importing, and do not read the counts below as a complete reading of this page.`,
+      );
+    }
+  }
+
   const unsplitLooking = ignored.filter((line) => line.why.startsWith("one column only")).length;
   if (rows.length === 0 && unsplitLooking > 0 && headerLines > 0) {
     problems.push(

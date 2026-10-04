@@ -1113,3 +1113,105 @@ ${ROWS}`;
     expect(parsed.rows[0]?.city).toBe("Valencia");
   });
 });
+
+/**
+ * SAYING SO WHEN THE PAGE WAS NOT FULLY READ — THREE SIGNALS, MEASURED.
+ *
+ * A diagnosis across 20 real bidder lists carrying 154 known rows found
+ * `reconciliation.agreed` reading **TRUE on all 20**, including the eight that lost
+ * or mangled a row. The partition always sums, because a wrapped cell lands in
+ * `ignored` as "one column only" and a two-field fragment becomes a row — so
+ * `accountedFor === nonBlankLines` can never notice, and `unread` was empty
+ * everywhere. 125 of 154 rows were perfect, 29 were not, and nothing said which.
+ *
+ * These three signals are what close that, and the measured result on the real
+ * corpus is **6 of 8 damaged blocks flagged, 0 of 12 clean blocks wrongly
+ * flagged.** Two damaged blocks stay silent; see the note at the end.
+ *
+ * **None of this is the guard the file says was dead.** That one asked whether a
+ * set-aside line LOOKED like a row — a content predicate, and useless here, because
+ * a wrap fragment is `Services` or `INC.` or `PW-LR-`. These ask about POSITION and
+ * about what the document's own heading promised, neither of which that guard had.
+ */
+describe("the parser says so when it did not fully read the page", () => {
+  it("flags a one-column line stranded BETWEEN two rows as a wrapped cell", () => {
+    const wrapped = `                    Portion of Work:       Name of Business:                        Location:          License #:    DIR #:
+                    Framing Drywall        Halloran Interior Systems, Inc.          Valencia           438612        1000013433
+                    Acoustical
+                    Millwork               Marbury West                             Temple City        1046943       1000062389`;
+    const parsed = parseSubListing(wrapped);
+    expect(parsed.problems.join(" ")).toMatch(/inside the table/);
+    expect(parsed.reconciliation.agreed).toBe(false);
+  });
+
+  /**
+   * The same fragment ABOVE the rows is a heading or prose and must stay quiet —
+   * this is the control that keeps the signal positional rather than a blanket
+   * complaint about one-column lines, of which a normal document has several.
+   */
+  it("stays quiet about a one-column line that is NOT between two rows", () => {
+    const titled = `   Sub Contractor Listing
+                    Portion of Work:       Name of Business:                        Location:          License #:    DIR #:
+                    Framing Drywall        Halloran Interior Systems, Inc.          Valencia           438612        1000013433
+                    Millwork               Marbury West                             Temple City        1046943       1000062389`;
+    const parsed = parseSubListing(titled);
+    expect(parsed.problems.join(" ")).not.toMatch(/inside the table/);
+    expect(parsed.reconciliation.agreed).toBe(true);
+  });
+
+  /**
+   * `394`, `88` and `PW-LR-1001079292` are all real printed values that read as
+   * NOTHING — the licence pattern wants 6-to-8 digits and the registration wants
+   * ten bare ones. Three of 154 real rows lose an identifier this quietly, with
+   * every other field fine. The plan is what makes it sayable: the heading named
+   * the column, so the disagreement is between the document and this reader.
+   */
+  it("says when the document names a licence column and the cell does not read", () => {
+    const shortLicence = `                    Portion of Work:       Name of Business:                        Location:          License #:    DIR #:
+                    Framing Drywall        Halloran Interior Systems, Inc.          Valencia           394           1000013433`;
+    const parsed = parseSubListing(shortLicence);
+    expect(parsed.rows[0]?.licence).toBeNull();
+    expect(parsed.rows[0]?.concerns.join(" ")).toMatch(/heads column \d+ as the contractor's licence/);
+    expect(parsed.rows[0]?.concerns.join(" ")).toContain('"394"');
+  });
+
+  it("says the same when the registration column carries a prefixed value", () => {
+    const prefixed = `                    Portion of Work:       Name of Business:                        Location:          License #:    DIR #:
+                    Framing Drywall        Halloran Interior Systems, Inc.          Valencia           438612        PW-LR-1001079292`;
+    const parsed = parseSubListing(prefixed);
+    expect(parsed.rows[0]?.registration).toBeNull();
+    expect(parsed.rows[0]?.concerns.join(" ")).toMatch(/public-works registration/);
+  });
+
+  /**
+   * A heading whose columns cannot be matched to the rows means the rows were read
+   * by guessing. Three real lists wrap `License` onto the line above its `#:`.
+   *
+   * **MEASURED LIMIT, recorded so nobody reads more into this than it does.** This
+   * fires on the shape above but on NONE of the four real wrapped or compact lists,
+   * because their heading lines are not recognised as headings in the first place —
+   * so neither the plan nor this warning reaches them, and 23 of 154 rows still
+   * read `city: null` without a word said. Fixing `furnitureReason`'s heading
+   * detection for those shapes is the next gap, not this one.
+   */
+  it("flags a recognised heading whose columns do not fit the rows", () => {
+    const unusable = `                    Portion of Work:       Name of Business:                        Location:          DIR #:
+                    Framing Drywall        Halloran Interior Systems, Inc.          Valencia           438612        1000013433`;
+    const parsed = parseSubListing(unusable);
+    expect(parsed.problems.join(" ")).toMatch(/could not be matched to the rows/);
+  });
+
+  /**
+   * The compact heading, where the last three labels share one field. Reading the
+   * heading as TEXT rather than as whitespace-separated fields is what recovers it.
+   * Worth 3 cities on the real corpus — 128 to 131 of 154 — which is the honest
+   * figure and smaller than it looks, for the reason in the test above.
+   */
+  it("takes the plan from a COMPACT heading whose labels share a field", () => {
+    const compact = `                    Portion of Work:       Name of Business:                        Location: License #: DIR #:
+                    Millwork               Marbury West                             Temple City        1046943       1000062389`;
+    const parsed = parseSubListing(compact);
+    expect(parsed.rows[0]?.name).toBe("Marbury West");
+    expect(parsed.rows[0]?.city).toBe("Temple City");
+  });
+});
