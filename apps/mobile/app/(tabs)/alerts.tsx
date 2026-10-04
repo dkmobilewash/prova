@@ -1,6 +1,6 @@
 import { useAuth } from "@clerk/expo";
-import { Redirect } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Redirect, useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GroupedList } from "@/components/GroupedList";
@@ -73,14 +73,26 @@ export default function AlertsScreen() {
     setLoaded(true);
   }, [getToken]);
 
-  useEffect(() => {
-    if (!isSignedIn) return;
-    // Awaited inside its own async closure, as the other list screens do:
-    // a bare load() reads as a synchronous setState to the hooks lint.
-    (async () => {
-      await load();
-    })();
-  }, [isSignedIn, load]);
+  // ON FOCUS, not once on mount — and this screen is the one that most
+  // needed it. A tab stays MOUNTED when you switch away from it, so an
+  // effect keyed on mount runs exactly once per app launch: the list you
+  // saw at breakfast is the list you see at four, with no stale note,
+  // because `cachedRead` reached the server that one time and was right.
+  //
+  // Measured on a real iPhone 2026-10-03: a contact and its dates were
+  // deleted on the web, `/alerts` there went to "Nothing needs attention",
+  // and this screen still showed all three — through tab switches and an
+  // app resume. Pull-to-refresh fixed it, which is exactly the problem:
+  // the one list whose whole job is to be current only updated if you
+  // happened to distrust it.
+  //
+  // Home and Outbox already did this; Jobs and Alerts did not.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isSignedIn) return;
+      void load();
+    }, [isSignedIn, load]),
+  );
 
   if (!isLoaded) return <Text style={styles.loading}>{t("common.loading")}</Text>;
   if (!isSignedIn) return <Redirect href="/sign-in" />;

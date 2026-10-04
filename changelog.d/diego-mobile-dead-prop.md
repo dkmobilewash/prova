@@ -32,4 +32,36 @@ file: the instrument disagreed with the conclusion, and the instrument was
 right. A test that fails when the fix is in is not a broken test; it is the
 fix being wrong.
 
-53 files / 399 tests across both mobile suites, typecheck clean.
+**AND THE ONE THE PHONE ACTUALLY CAUGHT: a tab that fetches on mount and
+never again.** A contact and its dates were deleted on the web, `/alerts`
+there went to "Nothing needs attention" — and the phone's Alerts tab still
+showed all three, through tab switches and an app resume. A tab screen stays
+MOUNTED when you switch away, so an effect keyed on mount runs once per app
+launch. Pull-to-refresh cleared it, which is the problem rather than the
+answer: the one list whose entire job is to be current only updated if you
+already distrusted it. Home and Outbox refreshed on focus; Alerts and Jobs
+did not. They do now.
+
+`lib/tab-refresh-census.test.ts` guards it, **and it is a SOURCE census that
+says so in its own header.** No test here can tell `useFocusEffect` from
+`useEffect`, because `screens/setup.tsx` mocks the first as the second — the
+right mock, and it blinds every behavioural test to this exact defect. Same
+shape as the expo-router header entry in CLAUDE.md: a check can prove code is
+present, never that a framework honours it.
+
+| mutation | result |
+| --- | --- |
+| alerts back to a mount-only effect | **RED** |
+| census scope points at a directory that does not exist | **RED** |
+| the "which tabs fetch" pattern matches nothing | **RED** |
+
+The first version of that census went **GREEN** against the real bug: it
+matched the bare string `useFocusEffect`, and reverting the fix left the name
+sitting in the import line. It matches the CALL now. A census that counts an
+import as a usage is measuring nothing — and it took a mutation to find that
+out, not a reading.
+
+**Not verified on the device.** The fix needs a new build in TestFlight; this
+session could only prove the defect on the phone, not the cure.
+
+54 files / 402 tests across both mobile suites, typecheck and lint clean.
