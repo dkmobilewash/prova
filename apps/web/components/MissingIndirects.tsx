@@ -6,7 +6,15 @@ import { money } from "@/lib/money";
 import type { MissingIndirect } from "@/lib/estimating/indirect-costs";
 
 /**
- * "This estimate carries nothing for Cleanup and Dumpsters."
+ * "This estimate carries nothing for these."
+ *
+ * THE SENTENCE DOES NOT NAME THE KINDS, on purpose: the buttons below it name
+ * every one of them, so a sentence listing them again would be the same list
+ * twice. This docstring used to quote a NAMED version — "…for Cleanup and
+ * Dumpsters." — which this component has never rendered, and a dead
+ * `missingIndirectsSentence` in `indirect-costs.ts` built exactly that string
+ * for nobody. Both are gone; `missingIndirects.test.tsx` now pins that the
+ * wording lives in one place and that this is the place.
  *
  * ── WHY A LIST OF BUTTONS AND NOT A WARNING BOX ──
  *

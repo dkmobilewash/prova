@@ -106,6 +106,14 @@ export default async function BidsPage({
     orderBy: { createdAt: "desc" },
     include: {
       contact: true,
+      // THE LINKED JOB, READ HERE RATHER THAN INFERRED FROM THE OUTCOME.
+      // `loadBidOutcomes` only returns WON bids — deliberately, so a lost or
+      // in-progress bid never enters the bid-versus-actual comparison — so a
+      // bid linked before it is won appears in no outcome map. Deriving the
+      // link from that map made an already-linked bid render the "link" button
+      // again, which is how the control came to be gated on WON in the first
+      // place. The link is its own fact and is read as one.
+      wonJob: { select: { id: true, name: true } },
       quotes: { orderBy: [{ packageLabel: "asc" }, { amount: "asc" }] },
       lines: { orderBy: { sortOrder: "asc" } },
       // Addenda oldest first: they are read as a sequence, and the one you
@@ -462,26 +470,35 @@ export default async function BidsPage({
                   }),
                 )}
               />
-              {bid.status === "WON" && (
-                <BidJobLink
-                  bidInvitationId={bid.id}
-                  jobs={linkableJobs}
-                  linked={
-                    outcomesByBid.has(bid.id)
-                      ? {
-                          jobId: outcomesByBid.get(bid.id)!.jobId,
-                          jobName: outcomesByBid.get(bid.id)!.jobName,
-                          outcome: outcomesByBid.get(bid.id)!.outcome,
-                        }
-                      : null
-                  }
-                  sentence={
-                    outcomesByBid.has(bid.id)
-                      ? settledSentence(outcomesByBid.get(bid.id)!.outcome, money)
-                      : null
-                  }
-                />
-              )}
+              {/* NOT GATED ON WON, and that is the whole point of the control.
+                  A quote is carried, and a job's estimate is built, BEFORE
+                  anybody knows whether the bid was won — so a link only
+                  offered on a won bid is offered after every decision it
+                  exists to serve. `linkBidToJob` dropped its own WON check
+                  with #619; this gate stayed and made that unreachable, which
+                  no census could see: the action HAS a caller, and
+                  reachability of the caller is a different question.
+
+                  The comparison inside stays won-only regardless, because
+                  `outcome` is null until there is one. */}
+              <BidJobLink
+                bidInvitationId={bid.id}
+                jobs={linkableJobs}
+                linked={
+                  bid.wonJob
+                    ? {
+                        jobId: bid.wonJob.id,
+                        jobName: bid.wonJob.name,
+                        outcome: outcomesByBid.get(bid.id)?.outcome ?? null,
+                      }
+                    : null
+                }
+                sentence={
+                  outcomesByBid.has(bid.id)
+                    ? settledSentence(outcomesByBid.get(bid.id)!.outcome, money)
+                    : null
+                }
+              />
             </li>
           ))}
         </ul>
