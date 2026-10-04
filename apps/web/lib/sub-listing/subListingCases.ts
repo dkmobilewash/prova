@@ -3,20 +3,96 @@
  *
  * ── THESE ARE INVENTED, AND THAT IS THE MOST IMPORTANT THING ON THIS PAGE ──
  *
- * No real bid tab or award packet was read while writing them. The egress proxy
- * in the container this was built in answers 403 on CONNECT for every general
- * web host, so the agencies' own forms could not be opened. Every column order,
- * every field name and every wrapping behaviour below is a GUESS at what such a
- * document looks like.
+ * Every column order, every field name and every wrapping behaviour below was a
+ * GUESS at what such a document looks like, written when no real one could be
+ * opened. They prove the parser is SELF-CONSISTENT — every non-blank line lands
+ * in exactly one of the four buckets — and nothing more.
  *
- * So these cases prove the parser is SELF-CONSISTENT — every non-blank line
- * lands in exactly one of the four buckets. They do NOT prove it reads a real
- * document, and no number of them ever will. The next person to touch this
- * should paste one real listing in, read what `unread` AND `ignored` say, and
- * widen from that evidence — which is also why nothing here is written as an
- * exhaustive format specification: a fixture that claimed to be authoritative
- * would be the stale-documentation failure this repo keeps paying for, with a
- * test suite agreeing with it.
+ * **THE PARAGRAPH THAT USED TO BE HERE SAID NO REAL DOCUMENT HAD EVER BEEN READ.
+ * THAT STOPPED BEING TRUE ON 2026-10-04, AND THE SENTENCE AFTER IT WAS RIGHT.**
+ * It said these cases "do NOT prove it reads a real document, and no number of
+ * them ever will", and told the next person to paste one real listing in and
+ * widen from that evidence. A real listing was pasted in. It read ZERO of three
+ * subcontractors, returned 228 rows, and on a clean paste of only the filled
+ * blocks reported `agreed: true`. The warning was not rhetorical.
+ *
+ * It also said the proxy answers 403 for every general web host, which is why
+ * nothing could be opened. **That is stale too**: `cslb.ca.gov`,
+ * `ppmoe.dot.ca.gov` and `data.oregon.gov` all answer 200 from an agent
+ * container now, and a real Chromium drives them. Some hosts are still denied
+ * (`ppmoe2.dot.ca.gov`, `awci.org`); the blanket claim is what expired. A
+ * measurement honest on the day, cited later as a property of the world — this
+ * repo's most expensive recurring shape, and it was in the file warning about it.
+ *
+ * ── WHAT A REAL ONE ACTUALLY LOOKS LIKE, FROM 26 DOCUMENTS ──
+ *
+ * Harvested from Caltrans' PUBLIC Post-Bid Files portal (no login,
+ * `ppmoe.dot.ca.gov/cc?id=cc_post_bids`), which publishes per bid-opening date,
+ * per contract, per BIDDER rather than only the winner: 12 contracts, 7 opening
+ * dates, two form revisions — `DES-OE-0102.2C(REV 04/2025)` and `(REV. 3/2015)`,
+ * whose field labels are IDENTICAL eleven years apart.
+ *
+ * **It is not a table.** It is a form of exactly 60 numbered blocks, filled ones
+ * first and the rest blank templates, each opening `N) List this subcontractor?
+ * YES NO` with the labels printed beside the values rather than above them. Every
+ * document carries all 60. `parse.ts` recognises this shape and refuses it; see
+ * `formShapedListing` there and the form case in `parseShapes.test.ts`.
+ *
+ * Field reality, which is wider than anything guessed below and is what a future
+ * form reader must handle — none of these fixtures exercises any of it:
+ *
+ *   - the licence is BARE DIGITS, 5 to 7 of them, leading zeros significant
+ *     (`061234`), and never carries a `C-9`/`C-35` class prefix. It can also be
+ *     the literal `na`, or blank. These fixtures all write `C-9 884201`, and the
+ *     parser's own pattern wants 6 to 8 digits — so a five-digit licence is
+ *     missed and `na` is not contemplated at all;
+ *   - the DIR registration starts `10` OR `20`, appears as 10 or 11 digits, and
+ *     is sometimes truncated (`10000`) or blank. The parser's pattern is
+ *     `^1\d{9}$`, which admits one of those four;
+ *   - the registration LABEL WRAPS, `Registration` ending one line and
+ *     `Number  1000447788` opening the next. When the licence is blank the
+ *     registration lands on the licence label's own line instead;
+ *   - percentages are PER BID ITEM, several per subcontractor, never above 100.
+ *     The 2025 revision writes `50.00%`; the 2015 revision writes a bare `100`;
+ *   - there is NO dollar column anywhere in the form, which is §4104 working as
+ *     documented. The DBE/SBE/DVBE submittals filed alongside DO carry dollar
+ *     amounts and percentages of the whole bid, for the certified subset only;
+ *   - descriptions are often EMPTY, and sometimes name ranges (`Items 74, 84-87`);
+ *   - the same business occupies SEVERAL blocks, one business's rows can continue
+ *     across a page break, spellings differ between bidders, and one licence
+ *     appeared under two different business names. **De-duplicate on licence,
+ *     never on name.**
+ *
+ * Furniture a column reader turns into subcontractors, all confirmed present in
+ * every one of the 14 listings opened: the form prints its own `Sample Data
+ * Entry:` block (`6  75  striping`, `42  15  reinforcement`, `54  100`), which
+ * became phantom subs called "striping" and "reinforcement"; page headers and
+ * footers (`Check:`, `Contract ID`, `Bidder:`) cut into the middle of blocks; and
+ * `Bidder:` names the PRIME, not a subcontractor.
+ *
+ * The YES/NO state is a radio GRAPHIC — both words appear in the text either way,
+ * so a text reader cannot see which is selected. The usable rule is that a block
+ * counts when its `Business Name` is non-empty.
+ *
+ * **AND THE CONSTRAINT THAT NO PARSER CAN FIX: 10 of 15 current Bid Books have no
+ * text layer at all.** They are image-only scans returning about one byte per
+ * page. A person cannot copy text out of them either, so paste-based import
+ * cannot reach them whatever is built. That needs OCR, which is a different
+ * project — and it means the form reader's reachable corpus is smaller than the
+ * portal's document count suggests.
+ *
+ * **Nothing from those documents is reproduced here.** They name real
+ * subcontractors who did not agree to be test data; the project rule is that a
+ * real name never enters a committed fixture. Shapes are copied, names invented.
+ * The harvest report lives outside the repo on purpose.
+ *
+ * Still true, and the reason this header is not now an authoritative spec: these
+ * are 26 documents from ONE agency, and Caltrans builds roads — across 14
+ * listings read, these five trades appeared in exactly one, a building contract.
+ * School, college and city BUILDING work is where this product's trades live, and
+ * not one of those documents has been opened yet. A fixture file claiming to be
+ * exhaustive would be the stale-documentation failure this repo keeps paying for,
+ * with a test suite agreeing with it.
  *
  * ── THREE CORRECTIONS TO THIS FILE, 2026-10-04 ──
  *

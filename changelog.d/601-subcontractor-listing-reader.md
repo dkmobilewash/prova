@@ -425,6 +425,56 @@ One harness failure on the way, caught by its own landing check: a `sed` mutatio
 whose pattern contained `|` never applied, and that arm reported a clean 330. A
 mutation run that does not assert the mutation LANDED is a vacuous green.
 
+### The refusal, now validated against 26 documents instead of one
+
+The form detector was built against a single Bid Book, which is how the fixtures
+it replaces came to be wrong. It has since been checked against **12 contracts
+across 7 bid-opening dates and two form revisions** — `DES-OE-0102.2C(REV
+04/2025)` and `(REV. 3/2015)`, whose field labels are identical eleven years
+apart. Every document opens its blocks with `N) List this subcontractor?`, and
+every one prints exactly 60 blocks with the filled ones first.
+
+Keying on `DES-OE-0102` rather than a generic `REV` marker turned out to matter
+for a reason not anticipated: Bid Books contain other forms carrying their own
+revision markers (01/2017, 12/2024, 01/2025, 01/2024), so a loose pattern would
+have matched them.
+
+`subListingCases.ts`'s header is corrected rather than extended, because two of
+its claims had expired. It said no real document had ever been read — false since
+2026-10-04 — and that the proxy answers 403 for every general web host, which is
+why none could be opened. Also false now: `cslb.ca.gov`, `ppmoe.dot.ca.gov` and
+`data.oregon.gov` all answer 200 from an agent container. Some hosts are still
+denied; the blanket claim is what expired. A measurement honest on the day, cited
+later as a property of the world — inside the file warning about that shape.
+
+The header now records what the corpus says the field reality is, none of which
+the fixtures exercise and all of which a form reader must handle: licences are
+bare 5-to-7 digits with significant leading zeros, or `na`, or blank, and never
+carry a class prefix (the parser wants 6-to-8 digits); DIR registrations start
+`10` **or** `20`, run 10 or 11 digits, and are sometimes truncated or blank (the
+parser's pattern admits one of those four); percentages are per bid item and the
+2015 revision writes a bare `100` where 2025 writes `50.00%`; there is no dollar
+column at all, which is §4104 working as documented; and the same business
+occupies several blocks while one licence appeared under two business names, so
+de-duplication keys on licence, never on name.
+
+**Two constraints that bound the feature regardless of parser quality.** Ten of
+fifteen current Bid Books have **no text layer** — image-only scans returning
+about one byte per page, which a person cannot copy out of either, so paste-based
+import cannot reach them whatever is built. And the YES/NO state is a radio
+graphic: both words appear in the text either way, so the usable rule is that a
+block counts when its `Business Name` is non-empty.
+
+**A fixture-hygiene error of mine, disclosed rather than quietly fixed.** The
+previous commit's docstring invented the company name but kept the real city and
+real licence number from the document, and this header first did the same with a
+real licence and DIR registration. A licence number identifies that firm as
+surely as its name does, so it falls under the same rule. All four are replaced
+with invented values preserving the property each illustrated. Two were already
+pushed; they are a city and a licence number from a document the state publishes
+for anyone to read, so this is fixture hygiene rather than a disclosure, and it is
+fixed forward rather than by rewriting pushed history.
+
 **Still unverified, and unchanged as the honest headline: no real bid or award
 document has been read.** Every fixture is a guess about a form nobody here has
 opened, the suite is deliberately green over the remaining documented
