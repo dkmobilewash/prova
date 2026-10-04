@@ -4,6 +4,18 @@ import { revalidatePath } from "next/cache";
 import { numericReaders } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
 import { viewerToday } from "@/lib/viewerToday";
+// The signal kinds and review decisions are imported from the module that
+// OWNS them rather than redeclared beside the other sales enums in
+// ./shared. A second copy of a canonical list is the #526 defect, and a
+// completeness test on the first copy cannot see the second.
+import {
+  REVIEW_DECISIONS,
+  SALES_SIGNAL_KINDS,
+  type ReviewDecision,
+} from "@/lib/sales-qualification";
+import { parseSubListing } from "@/lib/sub-listing/parse";
+import { PRIME_OUTCOMES, signalsForSub } from "@/lib/sub-listing/signals";
+import { normaliseCompanyName } from "@/lib/sub-listing/leadMatch";
 import { prisma } from "@prova/db";
 import {
   InputError,
@@ -11,10 +23,12 @@ import {
   SALES_ACTIVITY_TYPES,
   SALES_LEAD_SOURCES,
   actionFail as fail,
+  optionalLinkFromForm,
   actionOk as ok,
   joinWithConjunction,
   runAction,
   type ActionResult,
+  type ActionResultWith,
 } from "./shared";
 
 // `InputError` and `runAction` are imported from ./shared rather than
@@ -34,16 +48,27 @@ function required(formData: FormData, key: string, label: string) {
   return value;
 }
 
-function optionalEnum<T extends readonly string[]>(formData: FormData, key: string, allowed: T): T[number] | null {
+function optionalEnum<T extends readonly string[]>(
+  formData: FormData,
+  key: string,
+  allowed: T,
+): T[number] | null {
   const raw = text(formData, key);
   if (!raw) return null;
-  if (!allowed.includes(raw as T[number])) throw new InputError(`"${key}" must be one of: ${allowed.join(", ")}`);
+  if (!allowed.includes(raw as T[number]))
+    throw new InputError(`"${key}" must be one of: ${allowed.join(", ")}`);
   return raw as T[number];
 }
 
-function requiredEnum<T extends readonly string[]>(formData: FormData, key: string, allowed: T, label: string): T[number] {
+function requiredEnum<T extends readonly string[]>(
+  formData: FormData,
+  key: string,
+  allowed: T,
+  label: string,
+): T[number] {
   const raw = text(formData, key);
-  if (!allowed.includes(raw as T[number])) throw new InputError(`Pick ${label}`);
+  if (!allowed.includes(raw as T[number]))
+    throw new InputError(`Pick ${label}`);
   return raw as T[number];
 }
 
@@ -70,7 +95,6 @@ function optionalDecimal(formData: FormData, key: string): string | null {
   return optionalNumber(formData, key, { maxDecimals: 2 })?.value ?? null;
 }
 
-
 /**
  * The only gate this whole file uses. Two independent checks, deliberately
  * NOT expressed as a lib/permissions.ts Capability: that map is about what
@@ -86,7 +110,10 @@ function optionalDecimal(formData: FormData, key: string): string | null {
  * kind of lie than just not showing it. A member at the operator company
  * gets the real reason, matching assertOwner's own convention.
  */
-function assertSalesAccess(context: { company: { isProvaOperator: boolean }; role: string }) {
+function assertSalesAccess(context: {
+  company: { isProvaOperator: boolean };
+  role: string;
+}) {
   if (!context.company.isProvaOperator) {
     throw new InputError("Not found");
   }
@@ -102,7 +129,9 @@ async function findLead(leadId: string, companyId: string) {
 }
 
 async function findOpportunity(opportunityId: string, companyId: string) {
-  const opportunity = await prisma.salesOpportunity.findUnique({ where: { id: opportunityId } });
+  const opportunity = await prisma.salesOpportunity.findUnique({
+    where: { id: opportunityId },
+  });
   if (!opportunity || opportunity.companyId !== companyId) return null;
   return opportunity;
 }
@@ -129,7 +158,9 @@ async function assertMoveNotBackwards(
   }
 }
 
-export async function createSalesLead(formData: FormData): Promise<ActionResult> {
+export async function createSalesLead(
+  formData: FormData,
+): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
     assertSalesAccess(context);
@@ -157,7 +188,10 @@ export async function createSalesLead(formData: FormData): Promise<ActionResult>
   });
 }
 
-export async function updateSalesLead(leadId: string, formData: FormData): Promise<ActionResult> {
+export async function updateSalesLead(
+  leadId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
     assertSalesAccess(context);
@@ -202,9 +236,14 @@ export async function deleteSalesLead(leadId: string): Promise<ActionResult> {
 
     const lead = await prisma.salesLead.findUnique({
       where: { id: leadId },
-      include: { _count: { select: { opportunities: true, activities: true } } },
+      include: {
+        _count: {
+          select: { opportunities: true, activities: true, signals: true },
+        },
+      },
     });
-    if (!lead || lead.companyId !== context.company.id) return fail("Lead not found");
+    if (!lead || lead.companyId !== context.company.id)
+      return fail("Lead not found");
 
     // Only the non-zero parts are named. "Acme has 0 opportunities and 3
     // logged activities on file" is the shape of refusal message this repo
@@ -220,10 +259,25 @@ export async function deleteSalesLead(leadId: string): Promise<ActionResult> {
         `${lead._count.activities} logged activit${lead._count.activities === 1 ? "y" : "ies"}`,
       );
     }
+    // Signals are RESTRICT children too, and counting them here is NOT
+    // optional: WORK-SPLIT records this exact guard shipping without the
+    // activities count while `SalesActivity.leadId` was already RESTRICT, so
+    // the delete failed at the database with a message production redacts.
+    // A researched lead now refuses deletion and says how much evidence it is
+    // holding — which is also the right answer on the merits, since the
+    // research is the expensive part of the record.
+    if (lead._count.signals > 0) {
+      held.push(
+        `${lead._count.signals} researched signal${lead._count.signals === 1 ? "" : "s"}`,
+      );
+    }
     if (held.length > 0) {
-      // #218: `held.join(" and ")` only ever saw two possible entries here
-      // (opportunities, activities), so it never had to be "a, b, and c" —
-      // joinWithConjunction is the shared style, same as deleteContact.
+      // #218: `held.join(" and ")` was written when this only ever saw two
+      // possible entries (opportunities, activities), so it never had to be
+      // "a, b, and c" — which it now does, with signals. joinWithConjunction
+      // is the shared style, same as deleteContact, and it already handled
+      // three; the comment is updated because the two-entry reasoning it gave
+      // has stopped being true.
       return fail(
         `${lead.companyName} has ${joinWithConjunction(held)} on file, so its record stays. Only a lead with no history can be deleted.`,
       );
@@ -235,7 +289,10 @@ export async function deleteSalesLead(leadId: string): Promise<ActionResult> {
   });
 }
 
-export async function createSalesOpportunity(leadId: string, formData: FormData): Promise<ActionResult> {
+export async function createSalesOpportunity(
+  leadId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const context = await requireCompanyContext();
   const userId = context.id;
   return runAction(async () => {
@@ -243,11 +300,20 @@ export async function createSalesOpportunity(leadId: string, formData: FormData)
     const lead = await findLead(leadId, context.company.id);
     if (!lead) return fail("Lead not found");
 
-    const stage = requiredEnum(formData, "stage", OPPORTUNITY_STAGES, "a stage");
+    const stage = requiredEnum(
+      formData,
+      "stage",
+      OPPORTUNITY_STAGES,
+      "a stage",
+    );
     const estimatedMrr = optionalDecimal(formData, "estimatedMrr");
     const expectedCloseDate = optionalDate(formData, "expectedCloseDate");
     const notes = text(formData, "notes");
-    const stageEffectiveOn = requiredDate(formData, "stageEffectiveOn", "The date it reached this stage");
+    const stageEffectiveOn = requiredDate(
+      formData,
+      "stageEffectiveOn",
+      "The date it reached this stage",
+    );
     const stageNote = text(formData, "stageNote");
 
     // One transaction, so a stage and its history cannot come apart. The
@@ -287,15 +353,26 @@ export async function createSalesOpportunity(leadId: string, formData: FormData)
   });
 }
 
-export async function updateSalesOpportunity(opportunityId: string, formData: FormData): Promise<ActionResult> {
+export async function updateSalesOpportunity(
+  opportunityId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const context = await requireCompanyContext();
   const userId = context.id;
   return runAction(async () => {
     assertSalesAccess(context);
-    const opportunity = await findOpportunity(opportunityId, context.company.id);
+    const opportunity = await findOpportunity(
+      opportunityId,
+      context.company.id,
+    );
     if (!opportunity) return fail("Opportunity not found");
 
-    const stage = requiredEnum(formData, "stage", OPPORTUNITY_STAGES, "a stage");
+    const stage = requiredEnum(
+      formData,
+      "stage",
+      OPPORTUNITY_STAGES,
+      "a stage",
+    );
     const estimatedMrr = optionalDecimal(formData, "estimatedMrr");
     const expectedCloseDate = optionalDate(formData, "expectedCloseDate");
     const notes = text(formData, "notes");
@@ -346,11 +423,16 @@ export async function updateSalesOpportunity(opportunityId: string, formData: Fo
   });
 }
 
-export async function deleteSalesOpportunity(opportunityId: string): Promise<ActionResult> {
+export async function deleteSalesOpportunity(
+  opportunityId: string,
+): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
     assertSalesAccess(context);
-    const opportunity = await findOpportunity(opportunityId, context.company.id);
+    const opportunity = await findOpportunity(
+      opportunityId,
+      context.company.id,
+    );
     if (!opportunity) return fail("Opportunity not found");
 
     await prisma.salesOpportunity.delete({ where: { id: opportunityId } });
@@ -361,7 +443,9 @@ export async function deleteSalesOpportunity(opportunityId: string): Promise<Act
 }
 
 async function findActivity(activityId: string, companyId: string) {
-  const activity = await prisma.salesActivity.findUnique({ where: { id: activityId } });
+  const activity = await prisma.salesActivity.findUnique({
+    where: { id: activityId },
+  });
   if (!activity || activity.companyId !== companyId) return null;
   return activity;
 }
@@ -381,8 +465,14 @@ async function readOpportunityField(
   const opportunityId = text(formData, "opportunityId");
   if (!opportunityId) return null;
 
-  const opportunity = await prisma.salesOpportunity.findUnique({ where: { id: opportunityId } });
-  if (!opportunity || opportunity.companyId !== companyId || opportunity.leadId !== leadId) {
+  const opportunity = await prisma.salesOpportunity.findUnique({
+    where: { id: opportunityId },
+  });
+  if (
+    !opportunity ||
+    opportunity.companyId !== companyId ||
+    opportunity.leadId !== leadId
+  ) {
     throw new InputError("That opportunity is not one of this lead's");
   }
   return opportunityId;
@@ -416,24 +506,42 @@ function assertNotInTheFuture(occurredOn: Date, todayIso: string) {
  */
 function assertFollowUpNotBackwards(occurredOn: Date, followUpOn: Date | null) {
   if (followUpOn !== null && followUpOn < occurredOn) {
-    throw new InputError("The follow-up date is before the activity it follows up on");
+    throw new InputError(
+      "The follow-up date is before the activity it follows up on",
+    );
   }
 }
 
-export async function createSalesActivity(leadId: string, formData: FormData): Promise<ActionResult> {
+export async function createSalesActivity(
+  leadId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
   return runAction(async () => {
     assertSalesAccess({ company, role: user.role });
     const lead = await findLead(leadId, company.id);
     if (!lead) return fail("Lead not found");
 
-    const type = requiredEnum(formData, "type", SALES_ACTIVITY_TYPES, "what kind of activity this was");
-    const occurredOn = requiredDate(formData, "occurredOn", "The date it happened");
+    const type = requiredEnum(
+      formData,
+      "type",
+      SALES_ACTIVITY_TYPES,
+      "what kind of activity this was",
+    );
+    const occurredOn = requiredDate(
+      formData,
+      "occurredOn",
+      "The date it happened",
+    );
     const summary = required(formData, "summary", "A summary");
     const followUpOn = optionalDate(formData, "followUpOn");
     assertNotInTheFuture(occurredOn, await viewerToday());
     assertFollowUpNotBackwards(occurredOn, followUpOn);
-    const opportunityId = await readOpportunityField(formData, leadId, company.id);
+    const opportunityId = await readOpportunityField(
+      formData,
+      leadId,
+      company.id,
+    );
 
     await prisma.salesActivity.create({
       data: {
@@ -468,13 +576,26 @@ export async function updateSalesActivity(
     const activity = await findActivity(activityId, context.company.id);
     if (!activity) return fail("Activity not found");
 
-    const type = requiredEnum(formData, "type", SALES_ACTIVITY_TYPES, "what kind of activity this was");
-    const occurredOn = requiredDate(formData, "occurredOn", "The date it happened");
+    const type = requiredEnum(
+      formData,
+      "type",
+      SALES_ACTIVITY_TYPES,
+      "what kind of activity this was",
+    );
+    const occurredOn = requiredDate(
+      formData,
+      "occurredOn",
+      "The date it happened",
+    );
     const summary = required(formData, "summary", "A summary");
     const followUpOn = optionalDate(formData, "followUpOn");
     assertNotInTheFuture(occurredOn, await viewerToday());
     assertFollowUpNotBackwards(occurredOn, followUpOn);
-    const opportunityId = await readOpportunityField(formData, activity.leadId, context.company.id);
+    const opportunityId = await readOpportunityField(
+      formData,
+      activity.leadId,
+      context.company.id,
+    );
 
     await prisma.salesActivity.update({
       where: { id: activityId },
@@ -492,7 +613,9 @@ export async function updateSalesActivity(
  * own conversations, not evidence sent to anyone — a call logged against
  * the wrong lead should be removable rather than corrected into a lie.
  */
-export async function deleteSalesActivity(activityId: string): Promise<ActionResult> {
+export async function deleteSalesActivity(
+  activityId: string,
+): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
     assertSalesAccess(context);
@@ -505,4 +628,352 @@ export async function deleteSalesActivity(activityId: string): Promise<ActionRes
     revalidatePath("/sales");
     return ok;
   });
+}
+
+/* ------------------------------------------------------------------------- *
+ * Signals: what we know about a prospect, each with the page it came from.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * `sourceUrl` is required, so this composes the shared optional reader rather
+ * than adding a fourth copy of URL validation — `shared.ts` documents at
+ * length how three copies of that check drifted and two fields had none at
+ * all. The required-ness is the only thing added here.
+ */
+function requiredSourceUrl(formData: FormData): string {
+  const link = optionalLinkFromForm(formData, "sourceUrl", "The source link");
+  if (!link.ok) throw new InputError(link.error);
+  if (!link.value) {
+    throw new InputError(
+      "A signal needs the page you read it on. Without a source it is a rumour, and it will be read as a fact on a call.",
+    );
+  }
+  return link.value;
+}
+
+export async function createSalesLeadSignal(
+  leadId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { company, ...user } = await requireCompanyContext();
+  return runAction(async () => {
+    assertSalesAccess({ company, role: user.role });
+    const lead = await findLead(leadId, company.id);
+    if (!lead) return fail("Lead not found");
+
+    const kind = requiredEnum(
+      formData,
+      "kind",
+      SALES_SIGNAL_KINDS,
+      "what this tells you",
+    );
+    const claim = required(formData, "claim", "What you found");
+    const sourceUrl = requiredSourceUrl(formData);
+    const sourceTitle = text(formData, "sourceTitle") || null;
+    const disqualifies = formData.get("disqualifies") === "on";
+
+    /* Typed in BY A PERSON, so it lands CONFIRMED and reviewed by them — they
+       are the review. Only the research seam creates PROPOSED rows, and the
+       band counts CONFIRMED only, so defaulting this to PROPOSED would hide a
+       hand-entered fact from the band that exists to use it. */
+    await prisma.salesLeadSignal.create({
+      data: {
+        companyId: company.id,
+        leadId,
+        kind,
+        claim,
+        sourceUrl,
+        sourceTitle,
+        disqualifies,
+        state: "CONFIRMED",
+        reviewedAt: new Date(),
+        reviewedByUserId: user.id,
+      },
+    });
+
+    revalidatePath(`/sales/${leadId}`);
+    // The band is derived from these rows and shows on BOTH pages. Revalidating
+    // only the detail page is the bug WORK-SPLIT records for activities, where
+    // /sales went stale for the same reason.
+    revalidatePath("/sales");
+    return ok;
+  });
+}
+
+/**
+ * Move a signal off PROPOSED. There is no path back to it: PROPOSED means
+ * nobody has looked, and a reviewed signal has been looked at whichever way it
+ * went.
+ */
+export async function reviewSalesLeadSignal(
+  signalId: string,
+  decision: ReviewDecision,
+): Promise<ActionResult> {
+  const { company, ...user } = await requireCompanyContext();
+  return runAction(async () => {
+    assertSalesAccess({ company, role: user.role });
+
+    if (!REVIEW_DECISIONS.includes(decision)) {
+      return fail("That is not a review decision");
+    }
+
+    const signal = await prisma.salesLeadSignal.findUnique({
+      where: { id: signalId },
+    });
+    if (!signal || signal.companyId !== company.id)
+      return fail("Signal not found");
+
+    await prisma.salesLeadSignal.update({
+      where: { id: signalId },
+      data: {
+        state: decision,
+        reviewedAt: new Date(),
+        reviewedByUserId: user.id,
+      },
+    });
+
+    revalidatePath(`/sales/${signal.leadId}`);
+    revalidatePath("/sales");
+    return ok;
+  });
+}
+
+/**
+ * Correct a signal's claim or its source. DELIBERATELY NOT A DELETE, and not
+ * an edit of `kind` either.
+ *
+ * Evidence records in this app lock their identity fields after creation and
+ * close rather than delete — a dismissed signal is the memory that we already
+ * looked at this and it was wrong, which is what stops the next search
+ * re-proposing it. So a wrong signal is DISMISSED through the action above.
+ * What this allows is fixing a typo in the sentence or a truncated URL, which
+ * is a correction to the record rather than a change to what it says.
+ */
+export async function updateSalesLeadSignal(
+  signalId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { company, ...user } = await requireCompanyContext();
+  return runAction(async () => {
+    assertSalesAccess({ company, role: user.role });
+
+    const signal = await prisma.salesLeadSignal.findUnique({
+      where: { id: signalId },
+    });
+    if (!signal || signal.companyId !== company.id)
+      return fail("Signal not found");
+
+    const claim = required(formData, "claim", "What you found");
+    const sourceUrl = requiredSourceUrl(formData);
+    const sourceTitle = text(formData, "sourceTitle") || null;
+
+    await prisma.salesLeadSignal.update({
+      where: { id: signalId },
+      data: { claim, sourceUrl, sourceTitle },
+    });
+
+    revalidatePath(`/sales/${signal.leadId}`);
+    revalidatePath("/sales");
+    return ok;
+  });
+}
+
+/* --------------------------------------------------------------------- */
+/* Reading a public subcontractor listing                                 */
+/* --------------------------------------------------------------------- */
+
+/**
+ * IMPORTING SUBCONTRACTORS OFF A PUBLIC BID OR AWARD DOCUMENT.
+ *
+ * The acquisition motion: find a project out to bid or recently awarded, find
+ * the subs named on it, and reach each one about their own job. `lib/sub-listing/`
+ * does the reading; this does the writing, and the two halves are deliberately
+ * separate because one is pure and testable and the other is not.
+ *
+ * ── THE CLIENT CANNOT INVENT A SUBCONTRACTOR ──
+ *
+ * The browser parses the pasted text to show a review table, and then the
+ * confirm sends **the raw text again** and this function parses it a second
+ * time with the same parser. Nothing the screen displays is trusted: a row that
+ * is not in the server's own reading of the document cannot be imported,
+ * because the server never sees the client's rows at all. That is
+ * `SpreadsheetImport`'s rule — *"what lands can never be something this
+ * component invented"* — and it matters more here, because what lands is a
+ * sourced claim somebody will read down a telephone.
+ *
+ * The selection arrives as LINE NUMBERS, which is the only thing the two
+ * parses are guaranteed to agree on. If the counts do not match, the import is
+ * refused rather than reconciled — a listing that reads differently on the
+ * server than it did in the browser is not something to guess about.
+ *
+ * ── EVERYTHING LANDS PROPOSED ──
+ *
+ * `createSalesLeadSignal` forces `CONFIRMED` and stamps the reviewer, on the
+ * theory that a person typing a signal in IS the review. Nothing here is typed
+ * by a person, so nothing here may claim to have been reviewed: every row lands
+ * `PROPOSED` with no reviewer, and the band cannot move until somebody presses
+ * Confirm on the lead. A machine-proposed signal that counted toward a band
+ * would make the band measure how much reading happened rather than what is
+ * known.
+ *
+ * ── NO MODEL, AND THAT IS A LANE DECISION AS WELL AS A DESIGN ONE ──
+ *
+ * This reads a table with a parser, not a document with a model. AI extraction
+ * is Diego's lane (CLAUDE.md, from 2026-09-26), so a model-based reader here
+ * would be in the wrong lane AND would carry the invention failure
+ * `lib/research/bidResearch.eval.ts` exists to measure. A subcontractor listing
+ * is a table; a parser is the right instrument and the cheaper one.
+ */
+export type SubListingImportSummary = {
+  leadsCreated: number;
+  leadsAttached: number;
+  signalsProposed: number;
+  rowsSkipped: number;
+};
+
+/** One pasted page's worth. A listing with more rows than this is a document
+ *  nobody has reviewed, and the review is the point. */
+const MAX_LISTING_ROWS = 60;
+
+export async function importSubListing(
+  formData: FormData,
+): Promise<ActionResultWith<SubListingImportSummary>> {
+  const { company, ...user } = await requireCompanyContext();
+  try {
+    assertSalesAccess({ company, role: user.role });
+
+    const listingText = required(formData, "listingText", "The listing you pasted");
+
+    // `requiredSourceUrl` rather than a second copy of it: it is 200 lines above
+    // in this same file, it is what the hand-typed path uses, and the two had
+    // already drifted to different wordings for the same refusal — #526 in
+    // miniature. It throws `InputError`, which the catch below converts.
+    const sourceUrl = requiredSourceUrl(formData);
+    const sourceTitle = text(formData, "sourceTitle") || null;
+    const primeOutcome = requiredEnum(
+      formData,
+      "primeOutcome",
+      PRIME_OUTCOMES,
+      "whether the prime's bid won",
+    );
+
+    const parsed = parseSubListing(listingText);
+
+    const wanted = text(formData, "lines")
+      .split(",")
+      .map((entry) => Number.parseInt(entry.trim(), 10))
+      .filter((line) => Number.isInteger(line));
+    const unique = [...new Set(wanted)];
+
+    if (unique.length === 0) return { ok: false, error: "Pick at least one subcontractor to add." };
+    if (unique.length > MAX_LISTING_ROWS) {
+      return {
+        ok: false,
+        error: `That is ${unique.length} subcontractors at once. Import up to ${MAX_LISTING_ROWS} so the reading stays something a person has actually looked at.`,
+      };
+    }
+
+    const chosen = parsed.rows.filter((row) => unique.includes(row.line));
+    if (chosen.length !== unique.length) {
+      return {
+        ok: false,
+        error:
+          "The listing does not read the same way now as it did on screen, so nothing was added. Paste it again and pick from the fresh reading.",
+      };
+    }
+
+    const touched = new Set<string>();
+
+    const summary = await prisma.$transaction(async (tx) => {
+      let leadsCreated = 0;
+      let leadsAttached = 0;
+      let signalsProposed = 0;
+      let rowsSkipped = 0;
+
+      /**
+       * Leads created inside THIS import, by normalised name.
+       *
+       * `leadCandidatesFor` only ever sees the leads that existed before the
+       * import, so it cannot match a row against one created two rows ago. A
+       * §4104 listing names a subcontractor once per PORTION OF WORK, so a sub
+       * doing both framing and plaster appears twice on one page — and that
+       * produced two `SalesLead` rows with the same name in a single
+       * transaction, which is the exact thing `leadMatch.ts` says the whole
+       * matching exercise is for. Both were then undeletable, because a lead
+       * with signals on it cannot be removed.
+       */
+      const createdHere = new Map<string, string>();
+
+      for (const row of chosen) {
+        const proposals = signalsForSub(row, parsed.header, primeOutcome);
+        if (proposals.length === 0) {
+          // A row with no checkable fact would produce a lead with nothing on
+          // it, which is worse than no lead: it reads as researched.
+          rowsSkipped += 1;
+          continue;
+        }
+
+        const attachTo = text(formData, `attach:${row.line}`);
+        let leadId: string;
+
+        if (attachTo) {
+          // Re-read and re-scope INSIDE the transaction. The candidate list the
+          // reviewer chose from was rendered from an earlier read.
+          const existing = await tx.salesLead.findUnique({ where: { id: attachTo } });
+          if (!existing || existing.companyId !== company.id) {
+            throw new InputError(
+              "One of the leads you chose to add to is no longer there, so nothing was added. Paste the listing again.",
+            );
+          }
+          leadId = existing.id;
+          leadsAttached += 1;
+        } else {
+          const key = normaliseCompanyName(row.name);
+          const already = key ? createdHere.get(key) : undefined;
+          if (already) {
+            leadId = already;
+          } else {
+            const created = await tx.salesLead.create({
+              data: {
+                companyId: company.id,
+                companyName: row.name,
+                source: "OUTBOUND",
+              },
+            });
+            leadId = created.id;
+            leadsCreated += 1;
+            if (key) createdHere.set(key, created.id);
+          }
+        }
+
+        await tx.salesLeadSignal.createMany({
+          data: proposals.map((proposal) => ({
+            companyId: company.id,
+            leadId,
+            kind: proposal.kind,
+            claim: proposal.claim,
+            sourceUrl,
+            sourceTitle,
+            // PROPOSED, with no reviewer. Nothing here was reviewed by anybody.
+            state: "PROPOSED" as const,
+          })),
+        });
+        signalsProposed += proposals.length;
+        touched.add(leadId);
+      }
+
+      return { leadsCreated, leadsAttached, signalsProposed, rowsSkipped };
+    });
+
+    // BOTH pages, because the band is derived from these rows and renders on
+    // each. `createSalesLeadSignal` revalidates both and says why; this had the
+    // mirror-image omission, so a lead already open in another tab would have
+    // shown its old band.
+    for (const leadId of touched) revalidatePath(`/sales/${leadId}`);
+    revalidatePath("/sales");
+    return { ok: true, value: summary };
+  } catch (err) {
+    if (err instanceof InputError) return { ok: false, error: err.message };
+    throw err;
+  }
 }

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { deleteSalesLead } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { SALES_LEAD_SOURCE_OPTIONS } from "@/components/SalesLeadFields";
+import { BAND_LABELS, type FitBand } from "@/lib/sales-qualification";
 
 const btn =
   "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
@@ -27,8 +28,19 @@ const FOLLOW_UP_LABEL = {
  * as a statement about the log rather than about the relationship — nobody
  * has written anything down, which is all this page can honestly claim.
  */
-function lastContactLabel(lead: { lastContactOn: string | null; daysSinceContact: number | null }) {
-  if (lead.lastContactOn === null || lead.daysSinceContact === null) return "No contact logged";
+const BAND_STYLE: Record<FitBand, string> = {
+  STRONG: "bg-tag-green text-tag-green-ink",
+  WORTH_A_CALL: "bg-tag-blue text-tag-blue-ink",
+  THIN: "bg-tag-slate text-tag-slate-ink",
+  NOT_A_FIT: "bg-tag-rose text-tag-rose-ink",
+};
+
+function lastContactLabel(lead: {
+  lastContactOn: string | null;
+  daysSinceContact: number | null;
+}) {
+  if (lead.lastContactOn === null || lead.daysSinceContact === null)
+    return "No contact logged";
   if (lead.daysSinceContact === 0) return "Last contact today";
   if (lead.daysSinceContact === 1) return "Last contact yesterday";
   return `Last contact ${lead.daysSinceContact} days ago`;
@@ -52,6 +64,16 @@ export function SalesLeadRow({
     daysSinceContact: number | null;
     followUpOn: string | null;
     followUpStanding: "OVERDUE" | "DUE_TODAY" | "UPCOMING" | null;
+    /** Derived from the lead's signals on every read — see
+     *  lib/sales-qualification.ts. The band alone is not enough to act on, so
+     *  the reason travels with it; the list shows the reason, because a pill
+     *  saying "too thin" tells nobody what to go and find out. */
+    band: FitBand;
+    bandReason: string;
+    /** Signals nobody has reviewed. Shown because reviewing them is the only
+     *  thing on this page that is somebody's job, and because they count for
+     *  nothing until somebody does. */
+    awaitingReview: number;
   };
 }) {
   const [isPending, startTransition] = useTransition();
@@ -61,24 +83,47 @@ export function SalesLeadRow({
   return (
     <li className="flex flex-col gap-2 p-4">
       <div className="flex items-center justify-between gap-3">
-        <Link href={`/sales/${lead.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+        <Link
+          href={`/sales/${lead.id}`}
+          className="flex min-w-0 flex-1 items-center gap-3"
+        >
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-medium text-ink">{lead.companyName}</p>
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs ${BAND_STYLE[lead.band]}`}
+              >
+                {BAND_LABELS[lead.band]}
+              </span>
+              {lead.awaitingReview > 0 && (
+                <span className="rounded-full bg-tag-amber px-2 py-0.5 text-xs text-tag-amber-ink">
+                  {lead.awaitingReview} to check
+                </span>
+              )}
               {lead.source && (
                 <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-ink-body">
-                  {SALES_LEAD_SOURCE_OPTIONS.find((o) => o.value === lead.source)?.label ?? lead.source}
+                  {SALES_LEAD_SOURCE_OPTIONS.find(
+                    (o) => o.value === lead.source,
+                  )?.label ?? lead.source}
                 </span>
               )}
             </div>
             <p className="text-sm text-ink-body">
-              {[lead.contactName, lead.email, lead.phone].filter(Boolean).join(" · ") || "No contact info"}
+              {[lead.contactName, lead.email, lead.phone]
+                .filter(Boolean)
+                .join(" · ") || "No contact info"}
+            </p>
+            {/* The reason, not the band. On a STRONG lead this IS the opening
+                line; on a thin one it names the half that is missing. */}
+            <p className="mt-0.5 truncate text-xs text-ink-muted">
+              {lead.bandReason}
             </p>
           </div>
         </Link>
         <div className="shrink-0 text-right text-sm text-ink-body">
           <p>
-            {lead.opportunityCount} {lead.opportunityCount === 1 ? "opportunity" : "opportunities"}
+            {lead.opportunityCount}{" "}
+            {lead.opportunityCount === 1 ? "opportunity" : "opportunities"}
           </p>
           <p className="text-xs text-ink-muted">{lastContactLabel(lead)}</p>
           {lead.followUpStanding && (

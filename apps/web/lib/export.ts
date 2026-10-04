@@ -823,15 +823,23 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     title: "The sales pipeline and bidding",
     detail:
       "Leads, opportunities, bid invitations, the pre-bid chase list on the bid pipeline " +
-      "page (projects being pursued before any GC invited you), vendor price quotes, and " +
-      "the named people and call history behind a contact. The contact record itself is " +
-      "exported; the work of winning it is not.",
+      "page (projects being pursued before any GC invited you), vendor price quotes, the " +
+      "researched signals behind a prospect and their sources, and the named people and " +
+      "call history behind a contact. The contact record itself is exported; the work of " +
+      "winning it is not.",
     models: [
       "BidPursuit",
       "SalesLead",
       "SalesOpportunity",
       "SalesActivity",
       "SalesStageChange",
+      // Researched facts about a prospect, each with the page it came from.
+      // An omission rather than a dataset, for the same reason as the rest of
+      // this line: it is the work of winning the deal, not a record of the
+      // customer's own business. It is also operator-only data -- these
+      // models are populated only on the Company with isProvaOperator -- so a
+      // tenant's export would carry nothing from it even as a dataset.
+      "SalesLeadSignal",
       "BidInvitation",
       "VendorPriceQuote",
       "ContactPerson",

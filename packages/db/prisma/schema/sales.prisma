@@ -42,6 +42,7 @@ model SalesLead {
 
   opportunities SalesOpportunity[]
   activities    SalesActivity[]
+  signals       SalesLeadSignal[]
 
   @@index([companyId])
 }
@@ -200,4 +201,101 @@ model SalesStageChange {
 
   @@index([opportunityId])
   @@index([companyId])
+}
+
+/// What a signal is ABOUT. Ordered loosely by how much it changes a call --
+/// the last two are the ones that give you an opening sentence, which is why
+/// lib/sales-qualification.ts treats them differently from the rest.
+enum SalesSignalKind {
+  TRADE
+  SIZE
+  GEOGRAPHY
+  LICENCE
+  UNION
+  TECH
+  GC_RELATIONSHIP
+  PROJECT
+}
+
+/// PROPOSED is research; CONFIRMED is knowledge; DISMISSED is the memory that
+/// we already looked at this and it was wrong.
+///
+/// The distinction is load-bearing rather than tidy. Only CONFIRMED signals
+/// count toward a lead's fit band, so research nobody has read can never make
+/// a prospect look better than a prospect nobody researched -- otherwise the
+/// band measures how much searching happened rather than what is known.
+enum SalesSignalState {
+  PROPOSED
+  CONFIRMED
+  DISMISSED
+}
+
+/// One thing we know, or think we know, about a prospective Prova customer --
+/// each carrying the page it came from.
+///
+/// WHY THIS IS NOT SalesOpportunity.notes OR SalesActivity. `notes` is one
+/// mutable free-text field the next edit overwrites, which is the defect
+/// SalesActivity was added to fix. An ACTIVITY is a touchpoint: something we
+/// DID, on a date. A SIGNAL is a FACT ABOUT THEM, with a source, which nobody
+/// did anything to acquire except look. Logging "read their website" as a call
+/// would corrupt the last-contact line that /sales derives from activities.
+///
+/// `sourceUrl` IS REQUIRED, AND THAT IS THE WHOLE DESIGN. A claim with no
+/// source is not a signal; it is a rumour that will be read as a fact on a
+/// call. The column is NOT NULL so no code path can invent one, which is
+/// stronger than any check in the app -- and it means the qualification band
+/// never has to ask whether a signal is sourced.
+///
+/// IDENTITY FIELDS LOCK AFTER CREATION and a wrong signal is DISMISSED rather
+/// than deleted, like every other evidence record here. A dismissed signal is
+/// worth keeping: it stops the next search re-proposing the same wrong thing.
+model SalesLeadSignal {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// RESTRICT, like SalesActivity: deleting a lead we have researched should
+  /// refuse and say so, not silently discard the evidence. deleteSalesLead
+  /// counts these -- see its guard, and the note in WORK-SPLIT about the same
+  /// bug shipping once already for activities.
+  leadId String
+  lead   SalesLead @relation(fields: [leadId], references: [id], onDelete: Restrict)
+
+  kind  SalesSignalKind
+  state SalesSignalState @default(PROPOSED)
+
+  /// One sentence, as somebody would say it out loud. Used verbatim in the
+  /// band's reason and never parsed -- a band that depended on the wording of
+  /// a claim would be a parser pretending to be a rule.
+  claim String
+
+  /// The page this came from. Never derived, never defaulted.
+  sourceUrl   String
+  sourceTitle String?
+
+  /// Confirmed, this ends the chase whatever else is known: they are the GC,
+  /// they have shut down, they already pay us, they are locked into a
+  /// competitor. ONE FLAG RATHER THAN A SECOND TAXONOMY -- deriving "not a
+  /// fit" from a trade outside our five would need a second copy of the trade
+  /// list, and a duplicated canonical list is a defect this repo has paid for.
+  disqualifies Boolean @default(false)
+
+  /// When WE looked. Stamped, and that is correct here: unlike the dates on
+  /// an evidence record, this describes our own act of looking rather than
+  /// something that happened in the world, and the machine genuinely knows
+  /// it. A date about the PROSPECT belongs in `claim`, with its source.
+  foundAt DateTime @default(now())
+
+  /// Who moved it off PROPOSED, and when they did. Null while it is still
+  /// research nobody has read.
+  reviewedAt       DateTime?
+  reviewedByUserId String?
+  reviewedByUser   User?     @relation("SalesLeadSignalReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([leadId])
+  @@index([leadId, state])
 }
