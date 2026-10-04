@@ -2240,6 +2240,73 @@ anything about SIZE.
   new Clerk widget added, a `content` glob pointed at a directory that does
   not exist, and `<UserButton>` reached through a namespace import.
 
+- **A MUTATION THAT SURVIVES IS NOT A WEAK GUARD — IT IS A CASE THAT PROVES
+  NOTHING, AND THE CAUSE IS ALWAYS THAT SOMETHING ELSE WAS DOING THE WORK.**
+  2026-10-04, on the subcontractor-listing parser. Five separate times in one
+  session, several of them surviving twice before the right case was found.
+  Written down because the reflex on a surviving mutation is to go and
+  strengthen the CODE, and every single time the code was fine and the TEST was
+  about nothing.
+
+  | the condition under test | why the first case proved nothing |
+  | --- | --- |
+  | the licence digit width (6-10, not any 4+ run) | the furniture lines score one signal either way, so the width never decided anything |
+  | a licence column excluded from the scope slot | a BARE `1065432` is excluded anyway by the slot's own `[A-Za-z]{4}` test |
+  | the same, second attempt | `License No. 884201` is excluded by its `^(?:lic\|license\|dir\|reg)\b` prefix test |
+  | a registration read only from its own column | a registration already alone in its column cannot tell an anchored pattern from an unanchored one |
+  | the two wrap conditions (row-shape, fewer-columns) | the fixture rows were excluded by the OTHER two conditions, so dropping either changed nothing |
+  | a bare city as data evidence | "Acme Builders" is rescued by `builders` being an entity marker, and anything naming drywall by a separate trade test |
+
+  The case that finally distinguished each one was narrower and odder than the
+  obvious one, and in every instance it took three tries: `CSLB 884201` (four
+  letters, not in that prefix list, and exactly how a California form writes
+  it); a registration buried in "Registration 1000012345 verified 2026-03-04";
+  a COMPLETE row whose scope is printed lower case AND which is narrower than
+  the row above; "Vang Carpentry | Union City | Scope of work: trim", which
+  needs all four of no entity suffix, no trade word, a labelled scope cell and
+  a city with no state code.
+
+  **So the question to ask of a surviving mutation is not "is my guard too
+  weak" but "what else in this function already handles the input I chose".**
+  Answer that and the distinguishing case writes itself. The reflex of
+  strengthening the code instead would, in two of the six rows above, have
+  removed a working capability — see the entry below on the percentage refusal
+  that nearly shipped.
+
+  And the companion, which cost nothing and caught the worst of them: **read
+  the TOTAL before the colour on every mutation run.** One run in this session
+  reported `122 passed` where the baseline was 286, because a mutation left a
+  dangling reference and three files failed to LOAD. Vitest called it green.
+  That is the "68 passed" scar from the `InvoiceCounter` work arriving again as
+  a 164-test drop, and the only reason it was not read as a pass is that the
+  total is read first.
+
+- **A REFUSAL CAN BE THE MORE DESTRUCTIVE OPTION, AND IT WILL FEEL LIKE THE
+  CAUTIOUS ONE.** Same session. A review found that any lone percentage on a
+  listing row became "listed at N% of the bid" — including `110%` and `999%`,
+  and worse, the plausible ones: a bond column prints **100%** and a retention
+  column prints **5%**.
+
+  The first fix refused every unlabelled percentage. Two existing tests failed
+  it and they were right: a fixture exists precisely because a form may carry a
+  percentage column INSTEAD of a dollar column, so refusing deletes that
+  capability outright — on the strength of a guess about bond columns, to guard
+  against another guess, in a file where every fixture is synthetic and nobody
+  has read a real form.
+
+  **The architecture already had the answer and the refusal talked over it.**
+  Every signal this feature writes lands PROPOSED and a person confirms it. So
+  the useful move is not to withhold the figure but to tell that person what
+  else the column could be: the value is claimed AND carries a concern naming
+  the alternatives. Only `> 100` is refused, because no confirmation by anybody
+  makes "999% of the bid" true — there is nothing left for a reviewer to decide.
+
+  The general form, and it applies well beyond this parser: before removing a
+  capability to avoid being wrong, ask what the system does with an uncertain
+  value ANYWAY. Where a human already gates it, "claim it and say what is
+  doubtful" beats "refuse it", and the refusal is the option that looks
+  responsible while quietly costing the most.
+
 - **A HEADER OPTION IN expo-router CAN BE DISCARDED IN SILENCE, AND THREE
   FIXES SHIPPED GREEN BECAUSE OF IT.** 2026-09-28/29, on the phone. The
   fourth member of the family directly above, and the one that finally says

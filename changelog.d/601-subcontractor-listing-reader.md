@@ -277,3 +277,69 @@ caught by the pre-existing "$1.2 million" case.
 The ninth run is the harness control and the reason the total is read first:
 deleting the three new describe blocks reports **green on 215 instead of
 230**.
+
+### A fourth review, seven findings, and two of them closed by deleting things
+
+The fourth adversarial review named the common cause better than any of the
+individual findings: `readRow` picked every field by predicate over the WHOLE
+ROW — leftmost match wins — rather than by column. `amount` had been moved to
+column discipline after taking the first `$` on a row produced a claim wrong by
+five orders of magnitude, and that reasoning was never carried across. Four of
+its five serious findings were that one decision.
+
+What the asymmetry cost, and it is the worst thing found in this feature: on a
+listing with a Spec Section column, `09 29 00` — the CSI number for Gypsum
+Board — beat the contractor's real CSLB licence sitting in the next column, so
+the claim read **"Listed with licence 092900"** to a man whose licence is
+684213. A CSLB number is the single most checkable fact about a contractor in
+this state. That sentence does not read as a wrong detail; it reads as not
+knowing who he is.
+
+Fixed, with the same treatment applied to the registration, the city and the
+scope. Also fixed: a wrap spanning two columns, which **invented a company**
+carrying a sourced claim that a named GC had listed it on a named project —
+ticked by default and undeletable; a wrapped project name reaching the two
+claims that name the man's job, where `looksCutOff` was exported for exactly
+that purpose and applied only to the portion of work; a lone `110%` becoming a
+share of the bid; and a city printed without its state code, which won the
+portion-of-work slot, left `tradeScope` null, and therefore arrived
+default-UNTICKED — a lost prospect wearing the appearance of a deliberate
+exclusion.
+
+That last fix closed the heading-majority defect as a side effect, via a
+discriminator worth remembering: **a column heading never names one of our five
+trades.** A heading says what the column IS; a cell says what the work is.
+
+### The two negative results, which are the part worth reading
+
+**A conjunct for `agreed` was built, measured, and deleted.** The review was
+right that `accountedFor === nonBlankLines` is a tautology, and its suggested
+remedy — check whether any set-aside line looks like a row — turned out to be
+unreachable: six constructed attempts could not land a row-shaped line in
+`ignored` at all, and deleting the branch changed no outcome across 308 tests.
+So the hole is real and is NOT where the review placed it; what is still lost is
+the row carrying no identifiers, which no predicate over that pile can see
+because by construction there is nothing in it to look at. `parse.ts` records
+this where the dead guard was, so nobody rebuilds it.
+
+**A refusal nearly shipped that would have deleted a working capability.** The
+first percentage fix refused every unlabelled percentage; two existing tests
+failed it and were right to. The architecture already had the answer — every
+signal lands PROPOSED and a person confirms it — so the value is claimed WITH a
+concern naming what else the column could be, and only `> 100` is refused.
+Both lessons are now in CLAUDE.md.
+
+### Checked by breaking it, and the harness failed more often than the code
+
+325 tests. Every fix mutation-tested with the test TOTAL read before the colour
+— one run reported **122 passed** against a baseline of 286, because a mutation
+left a dangling reference and three files failed to LOAD while vitest called it
+green. And five separate mutations SURVIVED before an honest case existed for
+them; in every instance the cause was the same, that something else in the
+function already handled the input chosen. The distinguishing cases are listed
+in CLAUDE.md.
+
+**Still unverified, and unchanged as the honest headline: no real bid or award
+document has been read.** Every fixture is a guess about a form nobody here has
+opened, the suite is deliberately green over the remaining documented
+limitations, and this must not merge on the strength of a green check.
