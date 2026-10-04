@@ -1273,12 +1273,21 @@ anything about SIZE.
       it said a preview URL, being a different host from `app.cstream.ai`,
       "would pass the egress proxies that 403 both agents' containers".
       Measured 2026-09-09 from an agent container, twice: the preview host
-      is denied exactly like production — `curl` fails at CONNECT and the
-      proxy's own status endpoint names it, `connect_rejected`, "gateway
-      answered 403 to CONNECT (policy denial)". So an agent container
-      cannot reach a preview either, and the hypothesis was dead on a
-      second ground nobody had checked. The conclusion is unchanged and
-      still rests on the build logs above;
+      was denied exactly like production — `curl` failed at CONNECT and the
+      proxy's own status endpoint named it, `connect_rejected`, "gateway
+      answered 403 to CONNECT (policy denial)".
+      **THAT SECOND GROUND IS NO LONGER TRUE, as of 2026-10-04: the preview
+      host answers 200 from an agent container, and a real Chromium drives
+      it.** Sixteen public page loads at 375 and 1280, every one hydrated
+      and clean. So "an agent container cannot reach a preview" has expired,
+      and anyone reading this list to decide where to look next must treat
+      the browser route as OPEN again.
+      The conclusion of this bullet is unchanged and never depended on it —
+      it rests on the build logs above, which say previews resolve
+      `ep-patient-lake`. A preview an agent CAN now reach still cannot write
+      to `ep-little-sea`. But the elimination has lost one of its two legs,
+      which is exactly the shape this file keeps recording: a measurement
+      that was honest on the day, cited later as a property of the world;
     - **Scheduled Routines are not it.** One exists on Diego's account, the
       hourly status desk. Disabled, and its prompt is STATUS ONLY — no
       code, no pushes, and no path to the app;
@@ -2239,6 +2248,68 @@ anything about SIZE.
   on the COUNT: "the sources contain 4 files and this census parsed 0"), a
   new Clerk widget added, a `content` glob pointed at a directory that does
   not exist, and `<UserButton>` reached through a namespace import.
+
+- **A REAL BROWSER CAN DRIVE THE PREVIEW FROM AN AGENT CONTAINER. THE ONE
+  THING STOPPING IT WAS A CA, AND THE PROXY'S OWN README SAYS THAT IS ALREADY
+  HANDLED.** 2026-10-04. Worth as much as any bug in this file: it moves
+  "nothing here can click the app" from true to false.
+
+  Three claims checked rather than inherited, and two were stale:
+
+  | claim | measured 2026-10-04 |
+  | --- | --- |
+  | the preview host is denied like production | **200.** Reachable |
+  | Clerk's FAPI host is denied | **400** — a real Clerk response, not a denial |
+  | `cdn.playwright.dev` is needed | not needed; Chromium is pre-installed at `/opt/pw-browsers` and Playwright 1.63.0 is in the root store |
+
+  **What actually blocked it was TLS trust, and the symptom names nothing
+  useful.** Every navigation failed `ERR_CERT_AUTHORITY_INVALID`, because the
+  agent proxy re-terminates TLS and Chromium on Linux reads the NSS store
+  rather than the system one. `/root/.ccr/README.md` lists "the browser NSS
+  store" among the trust accommodations "already set up". It is not: the db at
+  `~/.pki/nssdb` was created EMPTY by my own first Chromium launch, timestamped
+  to the minute. The proxy CA sits in `/usr/local/share/ca-certificates/`, where
+  Chromium never looks.
+
+  The fix, and it needs no privilege beyond apt:
+
+      apt-get install -y libnss3-tools          # certutil is not in the image
+      # split each /usr/local/share/ca-certificates/ccr-agent-proxy*.crt into
+      # single certs, then for each one:
+      certutil -d "sql:$HOME/.pki/nssdb" -A -t "C,," -n <name> -i <cert.pem>
+
+  Then launch `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` through
+  playwright-core with `--no-sandbox`. **Do NOT reach for
+  `ignoreHTTPSErrors` or `--ignore-certificate-errors`** — that is disabling
+  verification, which the proxy README forbids in as many words, and the
+  supported fix is four lines.
+
+  **What is STILL blocked, and the reason is newly specific.** The signed-in
+  walk, because the Clerk sign-up form carries **Cloudflare Turnstile**
+  (`cf-turnstile-response` appears in the DOM after submit) and marks
+  `username` and `phoneNumber` required. Clerk's own answer to bot protection
+  in tests is a Testing Token, which is minted with the SECRET key — and
+  `sk_test_` is a credential that does not travel through an agent channel.
+  So the gate is not the network and never was: it is that CI's `e2e` job holds
+  `E2E_CLERK_SECRET_KEY` and this container does not. Defeating the bot check
+  is not an option; the routes are either walked by CI, by a laptop, or by this
+  container once that secret is set as an environment variable.
+
+  What this DOES buy, and it is the first of its kind here: every public route
+  verified in a real browser at 375 and 1280 — hydrated, no `pageerror`, no
+  console error, no horizontal scroll — and `/sales` confirmed to redirect to
+  `/sign-in?redirect_url=…` rather than 404, which a `curl` without redirects
+  had made look like a missing route.
+
+  **And the instrument lied first, which is the lesson inside the lesson.** The
+  walk's boundary detector matched `/went wrong/` over body text, and flagged
+  the landing page at both widths — because its marketing copy reads "Most subs
+  find out a job **went wrong** when it is finished." A detector whose needle is
+  already on the page, written on the same day as the entry below about exactly
+  that, by the same author. Anchor it on the app's OWN strings: `Digest:\s*\d`
+  from `app/error.tsx`, the "Migrate demo database" link from the preview arm,
+  `nextjs-portal` for the dev overlay. 16 of 16 clean once it was asking the
+  right question.
 
 - **A MUTATION THAT SURVIVES IS NOT A WEAK GUARD — IT IS A CASE THAT PROVES
   NOTHING, AND THE CAUSE IS ALWAYS THAT SOMETHING ELSE WAS DOING THE WORK.**
