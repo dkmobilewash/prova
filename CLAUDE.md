@@ -2349,6 +2349,87 @@ anything about SIZE.
   `nextjs-portal` for the dev overlay. 16 of 16 clean once it was asking the
   right question.
 
+- **AND THE SIGNED-IN WALL IS NOT THE LIMIT IT LOOKS LIKE: A CLIENT COMPONENT
+  FROM BEHIND SIGN-IN CAN BE CLICKED IN A REAL BROWSER WITH NO CLERK, NO
+  SERVER AND NO SOCKETS.** 2026-10-04, the sequel to the entry above and worth
+  more than it, because the entry above ends at "the signed-in routes need CI or
+  a laptop" and that is only true of ROUTES.
+
+  The thing being verified is usually a `"use client"` component. It does not
+  need Next, a database or a session — it needs React, its own imports, and the
+  app's real CSS. So: bundle it, alias the two or three server-side imports to
+  stubs, compile the REAL Tailwind from `apps/web/tailwind.config.ts` and
+  `app/globals.css`, write an HTML file whose `<body>` carries the root layout's
+  own classes, and open it over **`file://`**. No loopback, so none of the
+  proxy-bypass misery in the entries above applies at all.
+
+      esbuild entry.tsx --bundle --format=iife          # IIFE, so file:// needs no CORS
+        # alias: next/navigation -> stub, @/lib/actions -> stub
+        # a @/ onResolve plugin for the rest; nodePaths at the pnpm store
+        # (the store, because apps/web/node_modules is EMPTY here — xlsx 403)
+      tailwindcss -c <config compiled to .cjs> -i app/globals.css -o app.css
+      chromium /opt/pw-browsers/chromium-1194/chrome-linux/chrome --no-sandbox
+
+  **It found a real defect on its first run, and the defect was invisible to
+  every other instrument in this repo.** `SubListingImport`'s row checkbox
+  carried `className="mt-0.5"` and nothing else, so it rendered at the browser
+  default **13×13** at both 1280 and 375 — the primary selection control on the
+  screen. Eight other components in `components/` size theirs `h-4 w-4` or
+  `h-5 w-5`. No unit test could see it: the screen suite runs in happy-dom,
+  which does no layout and returns zeros from `getBoundingClientRect`, which is
+  the same sentence as the "Cancel inherits the delete pixel" entry and the
+  1.35-point line height on five phone screens.
+
+  **THREE CONTROLS, AND NONE OF THEM IS OPTIONAL** — each answers a way the
+  whole run could be about nothing:
+
+  | control | the vacuous run it rules out |
+  | --- | --- |
+  | `getComputedStyle(body).backgroundColor === "rgb(15, 15, 15)"` | the CSS never loaded, so every layout number is from an unstyled page |
+  | a `__reactFiber$` key across many elements, not one | it never hydrated, and React was never exercised |
+  | **zero rows asserted BEFORE any text is typed** | a row already on the page would pass every count that follows |
+
+  The third is the #61 watcher lesson as a positive requirement rather than a
+  warning, and it is the one that would have been left out.
+
+  **The harness lied first, again, and the control caught it, again.** The
+  action stub returned `{ ok: true, data: … }`; the real type is
+  `ActionResultWith<T> = { ok: true; value: T } | …` (`lib/actions/shared.ts`),
+  so the component threw `Cannot destructure property 'leadsCreated' of
+  'result.value'`. That read exactly like a product defect for a minute. Fixing
+  the STUB resolved that one check and changed nothing else — 44 checks, 42
+  passing, the two reds both the real checkbox — which is what makes the
+  attribution evidence rather than a story. **A failing control is an
+  instruction to fix the harness, not a result to read**, for the fourth time
+  in this file.
+
+  **AND THE CENSUS THAT WAS GOING TO GUARD IT WAS WRONG IN THE REPO'S FAVOURITE
+  WAY.** A regex census over JSX reported **16** unsized checkboxes; the
+  TypeScript AST reported **11**, from the same 26 `<input type="checkbox">`
+  nodes. The five false positives included `SubListingImport.tsx` itself, after
+  it was fixed. The cause is one character: `onChange={(event) => …}` contains a
+  `>`, so `<input\b[^>]*?type="checkbox"[^>]*?>` ends at the ARROW and never
+  reaches `className`. That is "a guard that parses by regex is one line break
+  from seeing nothing" with the line break replaced by a fat arrow — and it
+  fails in the direction that invents work rather than hiding it, which is the
+  only reason it was caught. **Parse JSX with the AST. There is no regex that
+  does this.**
+
+  The 11 are PRE-EXISTING and span both lanes, so no census ships here: a guard
+  needing an 11-entry exemption list documents a problem instead of preventing
+  one. Filed as an issue instead, per the working agreement's rule 3.
+
+  **What is deliberately NOT committed, and the better version of it.**
+  `esbuild` is not a declared dependency of `apps/web` — it resolved out of the
+  pnpm store — and a dependency cannot be added in this container, because
+  `pnpm install` dies on the `xlsx` tarball 403. So this recipe lives here
+  rather than in `e2e/`, where it would be an instrument nobody can install.
+  The durable version needs no bundler at all and is Diego's call because it
+  adds a route: mount the component at a **dev-only public route** outside
+  `(app)`, and the existing `e2e-public` job — real Chromium, already in CI, no
+  credentials — clicks it on every PR. That is the same trick the outlined-
+  boundary investigation above used to measure the shell without signing in.
+
 - **A MUTATION THAT SURVIVES IS NOT A WEAK GUARD — IT IS A CASE THAT PROVES
   NOTHING, AND THE CAUSE IS ALWAYS THAT SOMETHING ELSE WAS DOING THE WORK.**
   2026-10-04, on the subcontractor-listing parser. Five separate times in one

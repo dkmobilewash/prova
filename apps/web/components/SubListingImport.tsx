@@ -409,7 +409,14 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
                         onChange={(event) =>
                           setChosen((current) => ({ ...current, [row.line]: event.target.checked }))
                         }
-                        className="mt-0.5"
+                        // `h-4 w-4` is the codebase's row-checkbox size (AskProposalCard,
+                        // BidCompliance, LeadSearch). Without it this box renders at the
+                        // browser default 13x13 — measured in real Chromium at 1280 AND
+                        // 375, because no test here can see it: the screen suite runs in
+                        // happy-dom, which does no layout and returns zeros from
+                        // getBoundingClientRect. `shrink-0` because the sibling is
+                        // `min-w-0 flex-1` and would otherwise squeeze it at phone width.
+                        className="mt-0.5 h-4 w-4 shrink-0"
                         aria-label={`Add ${row.name}`}
                       />
                       <div className="min-w-0 flex-1">

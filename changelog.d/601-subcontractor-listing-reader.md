@@ -339,6 +339,39 @@ them; in every instance the cause was the same, that something else in the
 function already handled the input chosen. The distinguishing cases are listed
 in CLAUDE.md.
 
+### Clicked in a real browser, which is where the last defect was
+
+The review screen was driven in real Chromium at 1280 and 375 — the real
+component, the real parser, the real Tailwind built from this app's own config —
+by bundling it and opening it over `file://`, so no Clerk, no server and no
+sockets are involved. It needs neither the preview nor CI, and the recipe is in
+CLAUDE.md.
+
+It found one defect on its first run, and nothing else in this repo could have:
+the row checkbox carried `className="mt-0.5"` and no size, so it rendered at the
+browser default **13x13** while eight comparable components use `h-4 w-4`. The
+screen suite runs in happy-dom, which does no layout and returns zeros from
+`getBoundingClientRect` — so a unit test cannot see a 13-pixel control, and the
+fix is `h-4 w-4 shrink-0`, verified red before and green after.
+
+44 checks pass, including three controls that each rule out a way the run could
+be about nothing: the CSS is actually applied, the page actually hydrated, and
+**zero rows are asserted before any text is typed** so a pre-existing row cannot
+pass every count that follows. The run also confirms from the browser what the
+component's own docstring claims and nothing checked end to end: the confirm
+sends the RAW pasted text plus LINE NUMBERS, and no parsed company object.
+
+The harness was wrong before the code was — an action stub returning `data`
+where the real type returns `value` threw in a way that read exactly like a
+product defect. Fixing the stub resolved that check and no other, which is what
+makes the attribution evidence rather than a story.
+
+**A census was written for this and then withdrawn.** A regex over JSX reported
+16 unsized checkboxes; the TypeScript AST reported 11 of the same 26 nodes,
+because `onChange={(event) => …}` contains a `>` that ends `[^>]*?` before
+`className`. The 11 are pre-existing and span both lanes, so they are an issue
+rather than a guard needing an 11-entry exemption list.
+
 **Still unverified, and unchanged as the honest headline: no real bid or award
 document has been read.** Every fixture is a guess about a form nobody here has
 opened, the suite is deliberately green over the remaining documented
