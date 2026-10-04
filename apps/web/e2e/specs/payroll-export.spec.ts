@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
-import { E2E_TAG } from "../lib/seedDatabase";
+import { E2E_TAG, PAYROLL_WEEK_START } from "../lib/seedDatabase";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { PAYROLL_EXPORT_COLUMNS } from "@/lib/payroll-export";
 
@@ -117,4 +117,101 @@ test("a field user gets a plain-text refusal, not a sign-in page saved as .csv",
   // The 403 above rules it out; this names it so a refactor cannot quietly
   // reintroduce it.
   expect(res.url(), "the refusal redirected instead of refusing").toContain("/api/payroll-export");
+});
+
+/** Minimal RFC-4180 reader — enough for one row, and quote-aware rather
+ * than a `split(",")`, because a craft label or an employee name is exactly
+ * the sort of field that grows a comma later. */
+function csvRow(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') quoted = false;
+      else cur += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+/**
+ * THE NUMBERS, not just the shape.
+ *
+ * The three tests above prove the route answers correctly — status, type,
+ * filename, header order, the refusal. None of them could look at a figure,
+ * because until the seed grew a week of hours there were none to look at.
+ * Verifying these on 2026-10-03 took a real production job and a human
+ * downloading a CSV. It takes this file now.
+ *
+ * The seeded week is ONE employee in TWO classifications, which is the
+ * smallest shape that can catch both of the mistakes #596 exists to prevent.
+ */
+test("the exported figures match the week that was logged", async ({ page }) => {
+  await signInAs(page, PERSONAS.main.email);
+  await page.goto("/schedule");
+  await page.getByRole("link", { name: new RegExp(`${E2E_TAG} Seeded Job`) }).first().click();
+  await page.waitForURL(/\/jobs\/[^/]+$/);
+  const jobId = new URL(page.url()).pathname.split("/")[2];
+
+  const res = await page.request.get(
+    `/api/payroll-export?jobId=${jobId}&weekStart=${PAYROLL_WEEK_START}`,
+  );
+  expect(res.status()).toBe(200);
+
+  const lines = (await res.text()).trim().split(/\r?\n/);
+  const header = csvRow(lines[0]);
+  const rows = lines.slice(1).map(csvRow);
+  const col = (r: string[], label: string) => r[header.indexOf(label)];
+
+  // SIZE, before anything is read off it: a file that came back with no data
+  // rows would make every assertion below vacuously true.
+  expect(rows.length, "the export returned no data rows — the seed did not land").toBe(2);
+
+  // "No craft tag" is the LABEL an untagged row carries, not a blank —
+  // `certified-payroll.ts` fills it in so the column never reads as a
+  // missing value. Asserted here rather than assumed: the first version of
+  // this test looked for an empty Classification and found no such row.
+  const UNTAGGED = "No craft tag";
+  const priced = rows.find((r) => col(r, "Classification") !== UNTAGGED);
+  const unpriced = rows.find((r) => col(r, "Classification") === UNTAGGED);
+  expect(priced, "no classified row in the export").toBeTruthy();
+  expect(unpriced, "no unclassified row in the export").toBeTruthy();
+  if (!priced || !unpriced) return;
+
+  // Both rows are the same person and the same week.
+  expect(col(priced, "Employee")).toBe(col(unpriced, "Employee"));
+  expect(col(priced, "Classification"), "the priced row lost its craft label").toContain(
+    "Drywall Finisher",
+  );
+  expect(col(priced, "Period start")).toBe(PAYROLL_WEEK_START);
+  expect(col(priced, "Period end")).toBe("2026-08-29");
+
+  // The hours as logged: 8 under the craft, 6 without one.
+  expect(col(priced, "Straight hours")).toBe("8");
+  expect(col(priced, "Total hours")).toBe("8");
+  expect(col(unpriced, "Straight hours")).toBe("6");
+  expect(col(unpriced, "Total hours")).toBe("6");
+
+  // THE FIRST REFUSAL. A rate IS in force for the craft row, so it prices.
+  expect(col(priced, "Rate known")).toBe("yes");
+  expect(Number(col(priced, "Wage cost")), "a priced row came out with no wage").toBeGreaterThan(0);
+
+  // THE SECOND. No craft means no schedule in force, and an unknown wage is
+  // NOT zero — a 0 here reads as free labour in a pay run.
+  expect(col(unpriced, "Rate known")).toBe("no");
+  expect(col(unpriced, "Wage cost"), "an unknown wage was written as a number").toBe("");
+
+  // AND THE THIRD, which only a multi-row employee can show: per diem and
+  // travel are EMPLOYEE totals, so they sit on the first row and nowhere
+  // else. Repeated, they are paid twice.
+  expect(col(priced, "Per diem (employee total)")).toBe("75");
+  expect(col(priced, "Travel pay (employee total)")).toBe("50");
+  expect(col(unpriced, "Per diem (employee total)"), "per diem was repeated on a second row").toBe("");
+  expect(col(unpriced, "Travel pay (employee total)"), "travel pay was repeated on a second row").toBe("");
 });
