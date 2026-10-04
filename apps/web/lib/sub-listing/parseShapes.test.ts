@@ -540,3 +540,118 @@ describe("across every fixture, nothing set aside looks like a subcontractor", (
     expect(parsed.reconciliation.agreed).toBe(false);
   });
 });
+
+/**
+ * A WRAP THAT SPANS TWO COLUMNS, WHICH INVENTED A SUBCONTRACTOR.
+ *
+ * The continuation branch only ever considered lines with fewer than two fields —
+ * a wrap of ONE cell. A real PDF row wraps in several cells at once, so its second
+ * physical line has two or more fields and became its own row. Run through the
+ * real importer this wrote a lead for a company that does not exist, carrying a
+ * sourced claim that a named GC listed it on a named project, ticked by default
+ * because its trade matched, and undeletable.
+ */
+describe("a row that wraps across two columns does not become a second subcontractor", () => {
+  const wrapped = [
+    "Project: Lincoln Elementary Modernization",
+    "Prime Contractor: Swinerton Builders",
+    "Southern California\tFontana, CA\t1065432\tMetal stud framing",
+    "Drywall & Interiors, Inc.\tand drywall",
+    "Baker Plastering, LLC\tRialto, CA\t998877\tExterior plaster",
+  ].join("\n");
+  const parsed = parseSubListing(wrapped);
+
+  it("reads two subcontractors, not three", () => {
+    expect(parsed.reconciliation.rowsParsed).toBe(2);
+    expect(parsed.rows.map((row) => row.name)).toEqual([
+      "Southern California",
+      "Baker Plastering, LLC",
+    ]);
+    // The phantom is the one that mattered: it would have carried a claim that
+    // Swinerton listed it on Lincoln Elementary, about a company nobody has
+    // heard of, and a lead with signals cannot be deleted.
+    expect(parsed.rows.map((row) => row.name)).not.toContain("Drywall & Interiors, Inc.");
+  });
+
+  it("attributes the overflow to the row above and says the row is cut short", () => {
+    expect(parsed.ignored).toHaveLength(1);
+    expect(parsed.ignored[0].why).toBe("read as the continuation of line 3");
+    const concerns = parsed.rows[0].concerns;
+    expect(concerns.some((concern) => concern.includes("reads as its continuation"))).toBe(true);
+    // The hedge `looksCutOff` provides cannot fire here — "Metal stud framing"
+    // ends on a word boundary with no dangling token — so this concern is the only
+    // thing that tells the reviewer the name and the scope are both truncated.
+    expect(concerns.some((concern) => concern.includes("cut short"))).toBe(true);
+  });
+
+  it("does NOT swallow a real row that merely has fewer columns", () => {
+    // The case the heading-majority defect loses: a sole proprietor with no
+    // licence, no entity suffix and a city with no state code. It passes the first
+    // two tests of the wrap rule and must fail the third, or this fix would eat
+    // the very rows the parser is already worst at.
+    const sparse = parseSubListing(
+      [
+        "Mesa Drywall, Inc.\tNational City, CA\t987654\tDrywall work",
+        "Bianchi\tDaly City\tLath and plaster",
+      ].join("\n"),
+    );
+    expect(sparse.rows.map((row) => row.name)).toContain("Bianchi");
+    expect(sparse.ignored).toEqual([]);
+  });
+
+  it("does NOT swallow a complete row that follows a wider one", () => {
+    const complete = parseSubListing(
+      [
+        "Mesa Drywall, Inc.\tNational City, CA\t987654\t$450,000\tDrywall",
+        "Coastal Plastering, Inc.\tChula Vista, CA\t876543\tPlaster",
+      ].join("\n"),
+    );
+    expect(complete.reconciliation.rowsParsed).toBe(2);
+    expect(complete.ignored).toEqual([]);
+  });
+
+  it("protects a COMPLETE row whose scope is printed lower case — the row-shape test", () => {
+    // Added because a mutation survived. Dropping `!looksLikeARow(raw)` broke
+    // nothing, so the condition was load-bearing with nothing asserting it. The
+    // case that separates the arms needs all of: a genuine row (licence, place and
+    // company), FEWER fields than the row above, and a field opening lower case —
+    // which a form printing its portion of work in lower case supplies for free.
+    const parsed = parseSubListing(
+      [
+        "Mesa Drywall, Inc.\tNational City, CA\t987654\t$450,000\tDrywall work",
+        "Summit Acoustics LLC\tRiverside, CA\t650118\tacoustical ceilings",
+      ].join("\n"),
+    );
+    expect(parsed.reconciliation.rowsParsed).toBe(2);
+    expect(parsed.rows[1].name).toBe("Summit Acoustics LLC");
+    expect(parsed.rows[1].licence).toBe("650118");
+    expect(parsed.ignored).toEqual([]);
+  });
+
+  it("protects a row that is WIDER than the one above it — the fewer-columns test", () => {
+    // The other surviving mutation. An overflow line can only ever have fewer
+    // cells than the row it overflows from, so a line with MORE is a row whatever
+    // else it looks like. Rows legitimately vary in width when cells are empty.
+    const parsed = parseSubListing(
+      [
+        "Mesa Drywall, Inc.\tDrywall",
+        "Okonkwo Drywall\tFontana\tdrywall and taping",
+      ].join("\n"),
+    );
+    expect(parsed.reconciliation.rowsParsed).toBe(2);
+    expect(parsed.rows.map((row) => row.name)).toContain("Okonkwo Drywall");
+    expect(parsed.ignored).toEqual([]);
+  });
+
+  it("needs all three signals, so a lowercase scope alone is not a wrap", () => {
+    // A form that prints its portion of work in lower case is not a wrapped row.
+    const lower = parseSubListing(
+      [
+        "Mesa Drywall, Inc.\tNational City, CA\t987654\tDrywall work",
+        "Coastal Plastering, Inc.\tChula Vista, CA\t876543\texterior plaster",
+      ].join("\n"),
+    );
+    expect(lower.reconciliation.rowsParsed).toBe(2);
+    expect(lower.rows[1].portionOfWork).toBe("exterior plaster");
+  });
+});

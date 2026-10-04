@@ -806,6 +806,19 @@ function hasDataEvidence(trimmed: string, fields: string[]): boolean {
  * second list" defect CLAUDE.md records, in a file that already has three
  * entries about it.
  */
+/**
+ * A FIELD THAT OPENS THE WAY THE REST OF A SENTENCE OPENS.
+ *
+ * "and drywall" is not a portion of work; it is the tail of one. A cell never
+ * begins with a conjunction and a company name never begins lowercase, so either
+ * is strong evidence that this line is the overflow of the line above it.
+ */
+const CONTINUES = /^(?:and|or|with|plus|including|incl\.?|&)\b/i;
+
+function opensAsContinuation(field: string): boolean {
+  return CONTINUES.test(field) || /^[a-z]/.test(field);
+}
+
 function looksLikeARow(text: string): boolean {
   return (
     [
@@ -1075,6 +1088,59 @@ export function parseSubListing(text: string): SubListingParse {
 
     if (fields.length < 2) {
       singles.push({ line, text: raw });
+      return;
+    }
+
+    /**
+     * A WRAP THAT SPANS TWO COLUMNS INVENTED A SUBCONTRACTOR, AND THE EXISTING
+     * CONTINUATION BRANCH COULD NOT SEE IT.
+     *
+     * That branch only considers lines with fewer than two fields, which is a
+     * wrap of ONE cell. A real PDF row wraps in several cells at once:
+     *
+     *     Southern California      Fontana, CA  1065432  Metal stud framing
+     *     Drywall & Interiors, Inc.                      and drywall
+     *
+     * The second line has two fields, so it never reached the branch and became
+     * its own row. Reproduced: THREE rows for two subcontractors, zero concerns,
+     * `agreed: true`, and run through the real importer it wrote a lead named
+     * "Drywall & Interiors, Inc." carrying a sourced claim that Swinerton
+     * Builders listed it as their subcontractor on a named project — a company
+     * that does not exist, ticked by default because its trade matched, and
+     * UNDELETABLE, since a lead with signals cannot be removed.
+     *
+     * Meanwhile the real company's lead is named "Southern California" and its
+     * trade claim quotes "Metal stud framing" as the whole portion of work. The
+     * hedge cannot fire: the truncation lands on a word boundary, so there is no
+     * dangling token for `looksCutOff` to catch. The claim-hedging mechanism
+     * bypassed rather than absent, which is worse.
+     *
+     * Three things together, because any one alone would swallow a real row:
+     * the line does not look like a row in its own right; it has FEWER fields
+     * than the row above, as an overflow must; and one of its fields opens as a
+     * continuation. A sole proprietor's row with no identifiers — the case the
+     * heading-majority defect loses — passes the first two and fails the third,
+     * which is what keeps this from eating it.
+     *
+     * Attributed, never appended. Joining the halves would put text this parser
+     * guessed at into a claim, and a claim is the document's words about a row,
+     * not this function's opinion about which row they belong to.
+     */
+    const previous = rows[rows.length - 1];
+    if (
+      previous &&
+      !looksLikeARow(raw) &&
+      fields.length < splitFields(previous.sourceText).length &&
+      fields.some(opensAsContinuation)
+    ) {
+      previous.concerns.push(
+        `line ${line} ("${raw.trim()}") has fewer columns than this row and reads as its continuation — this row's name and portion of work are probably both cut short`,
+      );
+      ignored.push({
+        line,
+        text: raw,
+        why: `read as the continuation of line ${previous.line}`,
+      });
       return;
     }
 
