@@ -53,11 +53,31 @@ import { TRADE_SCOPE_OPTIONS } from "@/lib/trade-scopes";
  * into exactly one bucket: a `row`, a header line, an `ignored` line whose
  * reason is NAMED, or `unread`. `reconciliation.accountedFor` is their sum and
  * must equal `nonBlankLines` — a partition, asserted in the tests rather than
- * assumed. There is no predicate left that can decline to admit a line, because
- * there is no predicate: `readRow` is tried on everything that is not furniture,
- * and whatever it cannot read is reported.
+ * assumed.
  *
- * `looksLikeData` is gone. Nothing replaced it, which is the point.
+ * ── AND READ THE NEXT PARAGRAPH, BECAUSE THIS ONE USED TO OVERCLAIM AND THE
+ *    OVERCLAIM IS WHAT LET THE DEFECT BACK IN ──
+ *
+ * It said: *"There is no predicate left that can decline to admit a line,
+ * because there is no predicate."* That was false when written.
+ * `furnitureReason` is a predicate, it declines lines, and a second review
+ * proved it declined the majority of rows on the document type this feature
+ * exists for — see its own header for the reproduction.
+ *
+ * **What the partition actually guarantees is narrower than it reads.**
+ * `accountedFor === nonBlankLines` proves no line fell off the page. It proves
+ * NOTHING about whether a line is in the bucket it belongs in, and a bucket
+ * with a confident wrong reason loses a subcontractor exactly as thoroughly as
+ * no bucket at all. The two guarantees are:
+ *
+ *   - nothing VANISHES — the partition, asserted;
+ *   - nothing is MISFILED — `hasDataEvidence` plus the converse tests in
+ *     `parse.test.ts` ("furniture is only furniture"), which is the half that
+ *     was missing and the half no arithmetic can supply.
+ *
+ * `looksLikeData` is gone and `furnitureReason` is narrower, but the lesson is
+ * not about either function: **a guard and its converse are two tests, and
+ * writing one of them reads exactly like finishing.**
  *
  * ── RECOGNISE, NEVER REJECT ──
  *
@@ -278,6 +298,15 @@ export function looksCutOff(field: string | null): boolean {
  * real companies carry none of these ("Northstate Drywall", "Kings Acoustical"),
  * and the absence of a marker is never on its own evidence of anything.
  */
+/**
+ * A place with a two-letter state code: "Fontana, CA".
+ *
+ * Named rather than inline because `hasDataEvidence` and `readRow` must agree
+ * about it. Deliberately strict about the TWO trailing capitals: that is what
+ * separates "Culver City, CA" from the column heading "City, State".
+ */
+const CITY_WITH_STATE = /^[A-Z][A-Za-z.\- ]+,\s*[A-Z]{2}$/;
+
 const ENTITY_MARKER =
   /\b(?:inc|llc|corp|corporation|co|company|ltd|llp|lp|systems|builders|construction|contractors|interiors|enterprises|group|industries)\b\.?/i;
 
@@ -437,34 +466,116 @@ function readHeader(lines: string[]): { header: SubListingParse["header"]; probl
  * Total Western. A totals line is short — a label and a figure — so the field
  * count does the work the keyword cannot.
  */
+/**
+ * Positive evidence that a line is DATA rather than furniture.
+ *
+ * ── THIS FUNCTION EXISTS BECAUSE THE REWRITE MOVED THE DEFECT IT CLOSED ──
+ *
+ * The first version of this file gated rows behind `looksLikeData`, which
+ * admitted a line only if it carried money, a percentage, a licence or a
+ * registration number. A review proved that lost subcontractors silently. The
+ * rewrite deleted that gate, partitioned every non-blank line into four buckets,
+ * asserted the partition, and claimed in its header that "there is no predicate
+ * left that can decline to admit a line, because there is no predicate".
+ *
+ * **`furnitureReason` is a predicate, and a second review proved it declines
+ * real rows — the majority of them on the document type this feature exists
+ * for.** Its column-heading branch required the line to carry NO money,
+ * percent or registration; California's §4104 listing has no dollar column at
+ * all, so that escape hatch is absent on every row. Reproduced: an ordinary
+ * five-sub San Diego listing read THREE, with a plaster sub and a drywall sub
+ * filed as "the table's column headings", `agreed: true`, and the screen
+ * printing "All 10 lines accounted for" over the loss. A row-by-row sweep ate
+ * six of seven. Any Californian city containing the word "City" — Daly, Culver,
+ * National, Redwood, Foster, Union, Cathedral — plus any licence label was
+ * enough, and so was any scope containing the word "work", which is what a
+ * "Portion of Work" column tends to echo.
+ *
+ * So the partition was honest about where a line went and wrong about what it
+ * was, and `agreed` read true either way. **A bucket with a confident wrong
+ * reason loses a subcontractor exactly as thoroughly as no bucket at all.**
+ *
+ * The fix is to stop asking only "does this look like furniture" and ask first
+ * "is there positive evidence this is data" — evidence a heading row cannot
+ * have, because a heading row names columns rather than carrying values:
+ *
+ *   - a run of four or more digits (a licence, a registration, a bid item);
+ *   - a field that is a place with a state code, which "City, State" is not
+ *     (the pattern wants two trailing capitals);
+ *   - a field carrying a company entity marker;
+ *   - a licence the pattern recognises.
+ *
+ * Any one of those and the line is never furniture. Nothing here RE-GATES the
+ * row: a line with none of this evidence still goes through `readRow` and ends
+ * up a row, unread, or furniture on the narrower tests below — the evidence only
+ * ever rescues a line from being called furniture, never the other way round.
+ */
+function hasDataEvidence(trimmed: string, fields: string[]): boolean {
+  // A run of four or more digits covers every licence and registration this
+  // file recognises, so a separate LICENCE test here was redundant — a mutation
+  // removing it changed no outcome, which is the definition of dead logic.
+  if (/\d{4,}/.test(trimmed)) return true;
+  if (fields.some((field) => CITY_WITH_STATE.test(field))) return true;
+  if (fields.some((field) => ENTITY_MARKER.test(field))) return true;
+  return false;
+}
+
 function furnitureReason(line: string, fields: string[]): string | null {
   const trimmed = line.trim();
+
+  if (/^\s*page\s+\d+(\s+of\s+\d+)?\s*$/i.test(trimmed)) return "a page number";
+
+  // Positive data evidence beats every furniture test below it.
+  if (hasDataEvidence(trimmed, fields)) return null;
 
   if (fields.length <= 2 && TOTALS_WORDS.test(trimmed) && MONEY.test(trimmed)) {
     return "a total or an alternate for the bid as a whole, not a subcontractor";
   }
 
-  // A column heading: several heading words, and no figure of its own.
+  /**
+   * A column heading: heading words are a MAJORITY of the fields, not merely
+   * two of them anywhere on the line. A real heading row is almost entirely
+   * column names; two hits was low enough that "Acme Drywall Company / Fontana,
+   * CA / Finish carpentry and drywall work" cleared it on `company` + `work`.
+   */
   if (!MONEY.test(trimmed) && !PERCENT.test(trimmed) && !REGISTRATION.test(trimmed)) {
     const words = trimmed.match(HEADING_WORDS) ?? [];
-    if (fields.length >= 2 && words.length >= 2) return "the table's column headings";
+    if (fields.length >= 2 && words.length >= Math.ceil(fields.length / 2)) {
+      return "the table's column headings";
+    }
   }
-
-  if (/^\s*page\s+\d+(\s+of\s+\d+)?\s*$/i.test(trimmed)) return "a page number";
 
   return null;
 }
 
 function readRow(text: string, line: number, fields: string[]): ListedSub | UnreadLine {
-  const nameIndex = fields.findIndex(
-    (field) =>
-      /[A-Za-z]{3}/.test(field) &&
-      !MONEY.test(field) &&
-      !PERCENT.test(field) &&
-      !REGISTRATION.test(field) &&
-      !/^\d+$/.test(field) &&
-      !/^(?:lic|license|licence|dir|reg)\b/i.test(field),
-  );
+  /**
+   * Which field is the company name.
+   *
+   * Taking the FIRST plausible field was the first two versions, and both were
+   * wrong in a way that names a lead after something that is not a company:
+   * a `Item 4` bid-item column became the name, and so did `Fontana, CA` when a
+   * form put the place of business first. Neither raised a concern, and
+   * `importSubListing` writes whatever this returns into `SalesLead.companyName`.
+   *
+   * So two changes. Fields that are self-evidently NOT a company are excluded —
+   * a bid item number, a place with a state code, a bare licence label. And a
+   * field carrying an entity marker is PREFERRED over an earlier one without
+   * it, because "Inc." is the strongest evidence of a company name there is and
+   * it survives a column order this parser has never seen.
+   */
+  const isNameCandidate = (field: string) =>
+    /[A-Za-z]{3}/.test(field) &&
+    !MONEY.test(field) &&
+    !PERCENT.test(field) &&
+    !REGISTRATION.test(field) &&
+    !/^\d+$/.test(field) &&
+    !/^(?:lic|license|licence|dir|reg)\b/i.test(field) &&
+    !/^(?:item|no|line|bid\s*item)\.?\s*\d+$/i.test(field) &&
+    !CITY_WITH_STATE.test(field);
+
+  const marked = fields.findIndex((field) => isNameCandidate(field) && ENTITY_MARKER.test(field));
+  const nameIndex = marked !== -1 ? marked : fields.findIndex(isNameCandidate);
   if (nameIndex === -1) return { line, text, why: "no field reads as a company name" };
 
   const name = fields[nameIndex];
@@ -485,7 +596,7 @@ function readRow(text: string, line: number, fields: string[]): ListedSub | Unre
   // "has four letters and is not a number", so the city column won the
   // portion-of-work slot and the real scope — the one the whole feature quotes
   // — was discarded.
-  const city = rest.find((field) => /^[A-Z][A-Za-z.\- ]+,\s*[A-Z]{2}$/.test(field)) ?? null;
+  const city = rest.find((field) => CITY_WITH_STATE.test(field)) ?? null;
 
   const scope =
     rest.find(

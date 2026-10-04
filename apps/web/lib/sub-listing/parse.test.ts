@@ -237,11 +237,59 @@ describe("the claims that used to assert what the document does not say", () => 
 
   /** A form ordered "Item of work | Subcontractor | …" produced a lead named
    *  after a scope of work, ticked by default, with no warning at all. */
-  it("flags a row whose first column reads like a scope rather than a company", () => {
+  /**
+   * A form ordered "Item of work | Subcontractor | …" used to produce a lead
+   * named after a scope of work, ticked by default, with no warning. It is now
+   * READ CORRECTLY when anything identifies the company — which is better than
+   * a warning, and is why this test changed shape rather than being deleted.
+   */
+  it("reads a reversed column order correctly when an entity marker identifies the company", () => {
     const parsed = parseSubListing(
       "Metal stud framing and drywall\tAcme Drywall, Inc.\tFontana, CA\t1045723",
     );
-    expect(parsed.rows[0].concerns.join(" ")).toMatch(/reads like a portion of work/);
+    expect(parsed.rows[0].name).toBe("Acme Drywall, Inc.");
+    expect(parsed.rows[0].portionOfWork).toBe("Metal stud framing and drywall");
+    expect(parsed.rows[0].city).toBe("Fontana, CA");
+    expect(parsed.rows[0].tradeScope).toBe("METAL_FRAMING_DRYWALL");
+  });
+
+  /**
+   * THE KNOWN LIMIT, PINNED RATHER THAN PAPERED OVER.
+   *
+   * With no entity marker anywhere on the row, the only thing separating the
+   * name column from the scope column is position — and position is exactly
+   * what is wrong on a reversed form. Both fields match a trade keyword, so
+   * the pairwise discriminator cannot fire either.
+   *
+   * A heuristic that guessed here would fire on ordinary rows too
+   * ("Northstate Drywall / Chico, CA / Drywall assemblies" has the same shape
+   * and is correct), so the parser does not guess. This test asserts the WRONG
+   * answer on purpose, so the limit is visible in the suite rather than
+   * discovered by somebody on a real document — and so that anybody who fixes
+   * it sees a red test telling them they have.
+   *
+   * It is bounded: the row is still READ, so nothing is lost, and the review
+   * screen shows the verbatim source line beside the name it chose.
+   */
+  it("cannot tell a reversed order apart when nothing identifies the company", () => {
+    const parsed = parseSubListing("Metal stud framing and drywall\tNorthstate Drywall\tFontana, CA");
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0].name).toBe("Metal stud framing and drywall");
+    expect(parsed.rows[0].portionOfWork).toBe("Northstate Drywall");
+    // Not lost, and the city is still right.
+    expect(parsed.rows[0].city).toBe("Fontana, CA");
+  });
+
+  it("never names a lead after a bid item number or a city", () => {
+    // Both WITHOUT an entity marker anywhere, because the marker preference
+    // would otherwise pick the right field on its own and the exclusions would
+    // never be exercised — which is exactly how both mutations survived.
+    const item = parseSubListing("Item 4\tNorthstate Drywall\tLic. 684213\tFontana, CA\tDrywall");
+    expect(item.rows[0].name).toBe("Northstate Drywall");
+
+    const cityFirst = parseSubListing("Fontana, CA\tNorthstate Drywall\tDrywall");
+    expect(cityFirst.rows[0].name).toBe("Northstate Drywall");
+    expect(cityFirst.rows[0].city).toBe("Fontana, CA");
   });
 });
 
@@ -440,5 +488,137 @@ describe("matching a portion of work to one of our five trades", () => {
     const parsed = parseSubListing("Acme Interiors\tFontana, CA\tDrywall and ceilings\t$900,000");
     expect(parsed.rows[0].tradeScope).toBe("METAL_FRAMING_DRYWALL");
     expect(parsed.rows[0].concerns.join(" ")).toMatch(/more than one of our trades/);
+  });
+});
+
+describe("furniture is only furniture — the converse nobody asserted", () => {
+  /**
+   * THE MISSING HALF, AND THE REASON THE REWRITE SHIPPED BROKEN.
+   *
+   * The suite asserted that a column-heading line IS ignored. It never asserted
+   * that a data row is NOT. One guard written, its converse not — and a second
+   * review proved `furnitureReason` ate six of seven ordinary rows, because its
+   * heading branch required the line to carry no money, percent or registration
+   * and a §4104 listing has no dollar column at all.
+   *
+   * Every row below is one the reviewer demonstrated being eaten. They are kept
+   * verbatim: a defect that was real and is now fixed is the only kind of case
+   * you know is worth having.
+   */
+  const SHOULD_BE_ROWS: [string, string][] = [
+    ["a licence label plus a city containing 'City'", "Acme Drywall, Inc.\tLic. 684213\tDaly City, CA\tDrywall"],
+    ["no number at all — the plain §4104 shape", "Acme Drywall, Inc.\tCulver City, CA\tInterior finish work"],
+    ["'License' spelled out, plus 'Scope:'", "Acme Drywall, Inc.\tLicense 684213\tFontana, CA\tScope: drywall"],
+    ["a numbered bid item in the first column", "Item 4\tAcme Drywall, Inc.\tLic. 684213\tFontana, CA\tDrywall"],
+    ["'Company' in the name and 'work' in the scope", "Acme Drywall Company\tFontana, CA\tFinish carpentry and drywall work"],
+    ["a company whose name contains 'City'", "National City Plastering\tLic. 684213\tSan Diego, CA\tLath and plaster"],
+    ["a non-DIR-shaped registration", "Acme Drywall, Inc.\tLic. 684213\tReg. 2000012345\tFontana, CA\tDrywall"],
+  ];
+
+  it.each(SHOULD_BE_ROWS)("reads a row, not furniture: %s", (_why, line) => {
+    const parsed = parseSubListing(line);
+    expect(parsed.ignored, `"${line}" was filed as furniture`).toEqual([]);
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0].name).not.toMatch(/^(Lic|License|Item|Reg)\b/);
+  });
+
+  it("reads all five subs off a realistic California listing with no dollar column", () => {
+    const parsed = parseSubListing(
+      [
+        "Project: Mission Bay Middle School Modernization",
+        "Agency: San Diego Unified School District",
+        "Prime Contractor: Swinerton Builders",
+        "",
+        "Name of Subcontractor            City, State          Licence        Portion of Work",
+        "Valley Interior Systems          Fontana, CA          C-9 884201     Metal stud framing & drywall",
+        "National City Plastering         San Diego, CA        Lic. 771903    Lath and cement plaster",
+        "Harbor Acoustical Company        Chula Vista, CA      C-2 650118     Acoustical ceilings",
+        "Pacific Coast Interiors          Culver City, CA      C-9 912004     Interior finish work",
+        "Summit Fireproofing, Inc.        Ontario, CA          C-2 334455     Spray-applied fireproofing",
+      ].join("\n"),
+    );
+    expect(parsed.rows.map((row) => row.name)).toEqual([
+      "Valley Interior Systems",
+      "National City Plastering",
+      "Harbor Acoustical Company",
+      "Pacific Coast Interiors",
+      "Summit Fireproofing, Inc.",
+    ]);
+    // Exactly one line set aside, and it is the heading.
+    expect(parsed.ignored).toHaveLength(1);
+    expect(parsed.ignored[0].why).toMatch(/column headings/);
+  });
+
+  it("still recognises a genuine heading row, in every delimiter", () => {
+    for (const heading of [
+      "Name of Subcontractor          City, State        Licence       Portion of Work",
+      "Subcontractor\tCity\tLicence\tWork\tAmount",
+      "Firm | Location | Lic. | Scope | Value",
+    ]) {
+      const parsed = parseSubListing(heading);
+      expect(parsed.rows, `"${heading}" should not be a row`).toEqual([]);
+      expect(parsed.ignored[0]?.why).toMatch(/column headings/);
+    }
+  });
+});
+
+describe("each signal that rescues a row from being called furniture", () => {
+  /**
+   * WRITTEN BECAUSE FOUR MUTATIONS SURVIVED.
+   *
+   * `hasDataEvidence` has several signals and the cases above happen to satisfy
+   * more than one at a time, so removing any single signal changed no outcome —
+   * a suite that cannot tell which part of a guard is doing the work. Each case
+   * here is built to leave exactly ONE signal standing.
+   */
+  it("rescues a row on the CITY alone — no digits, no entity marker", () => {
+    const line = "Acme Drywall\tCulver City, CA\tInterior finish work";
+    expect(/\d{4,}/.test(line), "this case must carry no 4-digit run").toBe(false);
+    const parsed = parseSubListing(line);
+    expect(parsed.ignored).toEqual([]);
+    expect(parsed.rows[0].name).toBe("Acme Drywall");
+    expect(parsed.rows[0].city).toBe("Culver City, CA");
+  });
+
+  it("rescues a row on the ENTITY MARKER alone — no digits, no city, heading words in the majority", () => {
+    // The first version of this case was not isolating: with only one heading
+    // word in three fields the majority rule already saved it, so removing the
+    // entity-marker signal changed nothing and the mutation survived. This one
+    // carries TWO heading words in three fields, so the majority rule would
+    // condemn it and the marker is the only thing left standing.
+    const line = "Acme Drywall, Inc.\tInterior finish work\tScope: level 5 taping";
+    expect(/\d{4,}/.test(line), "must carry no 4-digit run").toBe(false);
+    const parsed = parseSubListing(line);
+    expect(parsed.ignored, "the entity marker must rescue this row").toEqual([]);
+    expect(parsed.rows[0].name).toBe("Acme Drywall, Inc.");
+  });
+
+  it("rescues a row on DIGITS alone — no city, no entity marker, heading words in the majority", () => {
+    // Isolating for the same reason the marker case needed rewriting: two
+    // heading words in three fields, so the majority rule condemns it and the
+    // digit run is the only signal left.
+    const line = "Acme Drywall\t684213\tScope of work";
+    const parsed = parseSubListing(line);
+    expect(parsed.ignored, "the licence digits must rescue this row").toEqual([]);
+    expect(parsed.rows[0].licence).toBe("684213");
+  });
+
+  /**
+   * The majority rule, isolated. Two heading words out of five fields: enough
+   * for the old `>= 2` test to eat the row, not enough to be a majority. No
+   * other data evidence, so the majority rule is the only thing saving it.
+   */
+  it("needs heading words to be a MAJORITY, not merely two of them", () => {
+    const line = "Northstate Drywall\tChico\tInterior finish work\tTaping and texture\tScope: level 5";
+    expect(/\d{4,}/.test(line)).toBe(false);
+    const parsed = parseSubListing(line);
+    expect(parsed.ignored, "two heading words in five fields is not a heading row").toEqual([]);
+    expect(parsed.rows[0].name).toBe("Northstate Drywall");
+  });
+
+  it("does not name a lead after a city even when nothing carries an entity marker", () => {
+    const parsed = parseSubListing("Fontana, CA\tNorthstate Drywall\tDrywall");
+    expect(parsed.rows[0].name).toBe("Northstate Drywall");
+    expect(parsed.rows[0].city).toBe("Fontana, CA");
   });
 });
