@@ -623,6 +623,70 @@ Mutation-tested two ways. Removing the acronym loop reds 2 tests. **"Tidying" `A
 into `TRADE_KEYWORDS` as a lowercase word reds 21** — which is the point of the
 trap tests, since that refactor is the tempting one.
 
+### The form refusal was keyed on one publisher, and a second form was inventing leads
+
+The Caltrans refusal argues — correctly — that keying on the LABELS would refuse
+legitimate column tables, so it keys on the numbered toggle and the `DES-OE-0102`
+revision id instead. What nobody noticed is that those two markers belong to ONE
+publisher. **UC Berkeley and UC Davis Health publish the same §4104 list as a
+different form** — labels down the left, each bidder's answers in a column to the
+right — and it fell straight through into the table reader.
+
+Measured against six fixtures built from real documents:
+
+| document | rows invented | **ticked for import** |
+| --- | --- | --- |
+| Berkeley, 6 bidders | 52 | **6** |
+| Berkeley, 2 bidders | 63 | **4** |
+| Berkeley, 4 bidders | 41 | **2** |
+| Berkeley, 5 bidders | 29 | **2** |
+| UC Davis Health | 36 | 0 |
+| Berkeley, 1 bidder | 15 | 0 |
+
+**The row count is the dramatic number; the ticked count is the dangerous one**,
+because a row is only imported when its trade matched. Fourteen leads across four
+documents, wrong in two distinct ways: a real firm under the WRONG TRADE — a
+plumbing company ticked as metal framing & drywall, a casework company as lath &
+plaster, where the name is right and the trade is a lie and the trade is what
+somebody reads down a telephone — and the form's own instruction text as a
+company, `(e.g. electrical, mechanical, concrete)`, ticked three times in one
+document.
+
+`agreed` already read false on all six. That is the honesty signals above working
+and it is **not** a refusal: a person looking at 52 rows and a warning can still
+press the button.
+
+**What makes it safe to key on the labels after all is POSITION.** In a form the
+label is the first thing on its line with the values to the right; in a column
+table every label is on ONE line, so only the first of them leads. Matching the
+LEADING FIELD refuses the form without touching the tables — UCLA's heading leads
+with `Portion of Work:` and carries `Name of Business:` to its right, so it scores
+the name family zero however often the words appear.
+
+**Which threshold is actually carrying the weight, measured by keeping one clause
+and dropping the other two** — because removing any single clause reds nothing:
+every legitimate document fails at least two, so each is individually redundant
+and a one-at-a-time run proves only that. Kept alone, `lic >= 2` separates every
+document and so does `size >= 3`; **`name >= 2` alone REFUSES a table this parser
+reads**, because two primes' tables pasted together print their heading twice. The
+licence family is the discriminator, structurally: in a table `License #:` is
+never the first field on its line, and in this form it always is.
+
+Four tests, and the two that READ rather than refuse are the point: a table
+leading with the company column, and two primes' tables pasted together. Both
+would be eaten by a substring match. Also probed and clean: wrapped two-prime
+headings, in both the portion-leads and name-leads variants.
+
+**One case deliberately NOT fixed, and said rather than hidden.** A Final Bid
+Results sheet carrying no subcontractor section at all still yields 11 rows —
+`Base Bid`, `Estimated Cost`, `Unit`, `Basis of Award`. **Zero are ticked**, and
+both of the honesty signals above fire on it by name. That is a different question
+— "is this a subcontractor listing at all" rather than "is this a form" — and
+guessing at it would cost a working capability for a document that already warns
+twice and imports nothing.
+
+356 tests across 16 files.
+
 ### `agreed` was lying on every damaged page, and now it says so
 
 A diagnosis across the 20 real bidder lists carrying 154 known rows found

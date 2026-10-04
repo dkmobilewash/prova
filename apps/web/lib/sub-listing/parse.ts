@@ -1577,9 +1577,163 @@ function isUnread(value: ListedSub | UnreadLine): value is UnreadLine {
 const FORM_BLOCK_TOGGLE = /^\s*\d+\)\s*List this subcontractor\?/im;
 const FORM_REVISION_ID = /\bDES-OE-0102\b/i;
 
-function formShapedListing(text: string): boolean {
-  return FORM_BLOCK_TOGGLE.test(text) || FORM_REVISION_ID.test(text);
+/**
+ * AND A SECOND FORM SHAPE, WHICH THE TWO MARKERS ABOVE DO NOT CATCH AT ALL.
+ *
+ * The paragraph above argues for keying the refusal on the Caltrans toggle and
+ * revision id rather than on the labels, and that argument is still right. What
+ * it did not say — because only one real document had been read — is that those
+ * two markers are specific to ONE publisher. A different publisher's form
+ * carries neither, so it fell straight through into `readRow`.
+ *
+ * Measured against twelve fixtures built from real documents, before this:
+ *
+ *   | document | rows invented |
+ *   | --- | --- |
+ *   | UC Berkeley, 2 bidders | 63 |
+ *   | UC Berkeley, 6 bidders | 52 |
+ *   | UC Berkeley, 4 bidders | 41 |
+ *   | UC Davis Health, 2 bidders | 36 |
+ *   | UC Berkeley, 1 bidder | 15 |
+ *   | **a Final Bid Results sheet listing NO subcontractors at all** | **11** |
+ *
+ * That last row is the one that settles it. Eleven prospects out of a document
+ * which names none is not a degraded read, it is fabrication — and every lead
+ * this importer writes is currently undeletable, so somebody would be stuck with
+ * them. `agreed` already read false on all six, which is the honesty signals
+ * doing their job and is NOT the same as a refusal: a person looking at 63 rows
+ * and a warning can still press the button.
+ *
+ * These are BuildingConnected exports — one PDF per project, each subcontractor
+ * slot a block of five LABELLED rows, and the bidders side by side as columns so
+ * one label line carries up to six answers. UC Berkeley and UC Davis Health both
+ * publish them. They are not the Caltrans shape and will need a different
+ * reader; what this does is stop pretending.
+ *
+ * **KEYED ON THE LEADING FIELD OF A LINE, WHICH IS THE WHOLE TRICK.** The
+ * paragraph above is right that "Business Name   Location City   State" is a
+ * legitimate heading row, and a substring match on these labels would refuse the
+ * UCLA tables this parser reads correctly at 14 of 14. The difference is
+ * POSITIONAL: in a form the label is the first thing on its line and the values
+ * are to the right of it; in a column table the labels are all on ONE line, so
+ * only the first of them leads. UCLA's heading leads with `Portion of Work:` and
+ * carries `Name of Business:` to its right, so it scores the name family zero
+ * however many times the words appear.
+ *
+ * Thresholds are three distinct families, with the name and licence families
+ * twice each — a form has one of each per slot and these documents carry two to
+ * fourteen slots. Measured over 64 documents (12 fixtures, 9 Berkeley, 1 Davis
+ * Health, 9 Caltrans, 12 UCLA, 21 UC Santa Barbara prose): no document this
+ * parser reads is refused, and no form is missed.
+ *
+ * **WHICH OF THE THREE IS ACTUALLY CARRYING THE WEIGHT, measured by keeping one
+ * clause and dropping the other two rather than by removing one at a time** —
+ * which is the mutation design that answers a conjunction, since removing any
+ * single clause here reds nothing: every legitimate document in hand fails at
+ * least two of them, so each is individually redundant and the one-at-a-time run
+ * proves only that.
+ *
+ *   | kept alone | result |
+ *   | --- | --- |
+ *   | `lic >= 2` | separates every one of these documents |
+ *   | `size >= 3` | separates every one of these documents |
+ *   | **`name >= 2`** | **REFUSES A TABLE THIS PARSER READS** |
+ *   | any family at all | refuses two |
+ *
+ * So the licence family is the real discriminator, and the reason is structural
+ * rather than lucky: in a column table `License #:` is never the first field on
+ * its line — something is always to the left of it — and in this form it always
+ * is. The NAME family is the weak one, because two primes' tables pasted
+ * together print their heading twice and that is enough to reach two. It is kept
+ * because it only ever narrows, and because 64 documents is not the world; but
+ * anything added here later should be judged against the licence clause, not
+ * against the name clause it would be easy to mistake for the load-bearing one.
+ */
+type BcFamily = "portion" | "name" | "city" | "lic" | "dir";
+
+/** `Subcontractor 3 - `, and `Subcontractor 7 for Alternate - `. */
+const BC_SLOT_PREFIX = /^subcontractor \d+(?: for alternate)? - /;
+
+/**
+ * Written as whole-string patterns against a NORMALISED leading field, never as
+ * substrings. `licen[cs]e` because a form will be fed a British spelling
+ * eventually; the single-word alternatives (`business`, `location`, `no.`) are
+ * what a two- or three-line label wrap leaves on its own line.
+ */
+const BC_FAMILIES: readonly (readonly [BcFamily, RegExp])[] = [
+  ["name", /^(?:name of business|business|name of)$/],
+  [
+    "city",
+    /^(?:location of business(?: \(city\))?|\(city\)|business \(city\)|location(?: of)?)$/,
+  ],
+  ["lic", /^licen[cs]e(?: no\.?)?$/],
+  ["dir", /^(?:dir registration(?: no\.?)?|registration no\.?|no\.)$/],
+  [
+    "portion",
+    /^(?:portion of the work(?: activity)?|\(e\.g\..*|(?:work )?activity \(e\.g\..*|mechanical, concrete\)|concrete\))$/,
+  ],
+];
+
+/**
+ * The text before the first run of two or more spaces, lowercased, with runs of
+ * whitespace collapsed, a trailing colon dropped and a dash given a space on
+ * each side — which is what absorbs the real `Subcontractor 2- Location` that
+ * five of six Berkeley documents print.
+ */
+function bcLeadingField(raw: string): string {
+  const match = /^\s*(.*?)(?:\s{2,}|$)/.exec(raw);
+  return (match?.[1] ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/:$/, "")
+    .replace(/\s*-\s*/g, " - ")
+    .trim()
+    .toLowerCase();
 }
+
+function bcFamilyOf(leading: string): BcFamily | null {
+  const bare = leading.replace(BC_SLOT_PREFIX, "");
+  for (const [family, pattern] of BC_FAMILIES) {
+    if (pattern.test(bare)) return family;
+  }
+  return null;
+}
+
+function buildingConnectedListing(text: string): boolean {
+  const seen = new Map<BcFamily, number>();
+  for (const raw of text.split(/\r?\n/)) {
+    const family = bcFamilyOf(bcLeadingField(raw));
+    if (family !== null) seen.set(family, (seen.get(family) ?? 0) + 1);
+  }
+  return (
+    seen.size >= 3 && (seen.get("name") ?? 0) >= 2 && (seen.get("lic") ?? 0) >= 2
+  );
+}
+
+/** Which form shape this is, or null when it is a table this parser can read. */
+type FormShape = "numbered-blocks" | "labelled-columns";
+
+function formShapedListing(text: string): FormShape | null {
+  if (FORM_BLOCK_TOGGLE.test(text) || FORM_REVISION_ID.test(text)) {
+    return "numbered-blocks";
+  }
+  if (buildingConnectedListing(text)) return "labelled-columns";
+  return null;
+}
+
+/**
+ * Both messages say the same three things — this is a form, nothing was read,
+ * here is what to do — because that is what a person needs. They differ in what
+ * they NAME, since "one numbered block per subcontractor" would not help anyone
+ * holding a BuildingConnected export, and a reader who cannot tell which
+ * document they have cannot act on the advice.
+ */
+const FORM_REFUSAL: Record<FormShape, string> = {
+  "numbered-blocks":
+    "this looks like a filled subcontractor FORM — the kind with one numbered block per subcontractor and the labels printed beside the values — and this reader only understands a column TABLE. Nothing on this page has been read as a subcontractor, deliberately, because reading it wrongly would import leads that are not real. Paste the subcontractor table from a bid tabulation or an award packet instead, or send this document to Diego so the form reader can be built against it.",
+  "labelled-columns":
+    "this looks like a filled subcontractor FORM — the kind that prints a label on the left (“Name of Business”, “License No.”) with each bidder's answers in columns to the right of it — and this reader only understands a column TABLE, one subcontractor per line. Nothing on this page has been read as a subcontractor, deliberately: read as a table this shape produces dozens of rows that are not subcontractors at all, including on documents that list none. Paste the subcontractor table from a bid tabulation or an award packet instead, or send this document to Diego so the form reader can be built against it.",
+};
 
 export function parseSubListing(text: string): SubListingParse {
   const lines = text.split(/\r?\n/);
@@ -1619,7 +1773,8 @@ export function parseSubListing(text: string): SubListingParse {
    * equals `nonBlankLines` — and `agreed` reads false on its third conjunct
    * because a problem was raised. No row is invented and no count is implied.
    */
-  if (formShapedListing(text)) {
+  const formShape = formShapedListing(text);
+  if (formShape !== null) {
     lines.forEach((raw, index) => {
       if (!raw.trim()) return;
       nonBlankLines += 1;
@@ -1629,9 +1784,7 @@ export function parseSubListing(text: string): SubListingParse {
         why: "this is a form, not a table — see the problem above",
       });
     });
-    problems.push(
-      "this looks like a filled subcontractor FORM — the kind with one numbered block per subcontractor and the labels printed beside the values — and this reader only understands a column TABLE. Nothing on this page has been read as a subcontractor, deliberately, because reading it wrongly would import leads that are not real. Paste the subcontractor table from a bid tabulation or an award packet instead, or send this document to Diego so the form reader can be built against it.",
-    );
+    problems.push(FORM_REFUSAL[formShape]);
     return {
       header,
       rows,

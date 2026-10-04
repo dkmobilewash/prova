@@ -939,6 +939,158 @@ Crestline Plastering       Fort Hollow        CA      448120`;
  * Invented names throughout, per the rule; the shape, spacing and column order
  * are copied exactly. A real UCLA sheet names real subcontractors.
  */
+/**
+ * THE SECOND FORM SHAPE, AND THE REASON THE FIRST REFUSAL WAS NOT ENOUGH.
+ *
+ * The refusal above is keyed on two Caltrans markers — the numbered toggle and
+ * the `DES-OE-0102` revision id — and its own comment argues, correctly, that
+ * keying on the LABELS would refuse legitimate column tables. What neither it nor
+ * that comment noticed is that those markers belong to ONE publisher. UC Berkeley
+ * and UC Davis Health both publish a §4104 list as a different form: the labels
+ * down the left, each bidder's answers in a column to the right.
+ *
+ * Measured against fixtures built from those real documents, BEFORE this change:
+ *
+ *   | document | rows | **ticked for import** |
+ *   | --- | --- | --- |
+ *   | Berkeley, 6 bidders | 52 | **6** |
+ *   | Berkeley, 2 bidders | 63 | **4** |
+ *   | Berkeley, 4 bidders | 41 | **2** |
+ *   | Berkeley, 5 bidders | 29 | **2** |
+ *   | UC Davis Health | 36 | 0 |
+ *   | Berkeley, 1 bidder | 15 | 0 |
+ *
+ * **The row count is the dramatic number and the ticked count is the dangerous
+ * one**, because a row is only imported when its trade matched. Fourteen leads
+ * would have been created across four documents, and they are wrong in two
+ * distinct ways. A real firm under the WRONG TRADE — a plumbing company ticked as
+ * METAL_FRAMING_DRYWALL, a casework company as LATH_PLASTER — where the name is
+ * right, the trade is a lie, and the trade is the thing somebody reads down a
+ * telephone. And the form's OWN INSTRUCTION TEXT as a company: `(e.g. electrical,
+ * mechanical, concrete)` arrived ticked three times in one document.
+ *
+ * `agreed` already read false on every one of them, which is the honesty signals
+ * working — and is not a refusal. A person looking at 52 rows and a warning can
+ * still press the button.
+ *
+ * **WHAT MAKES IT SAFE TO KEY ON THE LABELS AFTER ALL: POSITION.** In a form the
+ * label is the first thing on its line and the values are to the right of it. In
+ * a column table every label is on ONE line, so only the first of them leads.
+ * Matching the LEADING FIELD rather than a substring is what lets this refuse a
+ * form without touching the tables — and the thresholds (three families, with the
+ * name and licence families twice each) are what makes a table with a single
+ * heading row score below it however its columns are ordered. The two tests below
+ * that read rather than refuse are the point of the whole design.
+ *
+ * Invented names throughout. The shape, the labels, the `(e.g. …)` line and the
+ * `Subcontractor 2- Location` dash variant are the real documents'.
+ */
+describe("the OTHER form: labels on the left, each bidder in a column", () => {
+  const LABELLED = `Example University — Final Bid Results
+Generated September 16, 2026                            Alpha Example Builders Inc       Bravo Example Construction
+
+LIST OF SUBCONTRACTORS:
+      Subcontractor 1 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)           Metal Stud Framing & Drywall     DRYWALL/FRAMING
+      Subcontractor 1 - Name of Business                Example Wallworks Inc            Harbor Interiors LLC
+      Subcontractor 1 - Location of Business (city)     Fairview                         FAIRVIEW
+      Subcontractor 1 - License No.                     884201                           903774
+      Subcontractor 1 - DIR Registration No.            1000447788                       2000552211
+      Subcontractor 2 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)           Lath & Plaster                   N/A
+      Subcontractor 2 - Name of Business                Crestline Lathing Co             N/A
+      Subcontractor 2- Location of Business (city)      Fort Hollow                      N/A
+      Subcontractor 2 - License No.                     448120                           N/A
+      Subcontractor 2 - DIR Registration No.            1000889922                       N/A`;
+
+  it("invents no subcontractor from it, and says which form it is", () => {
+    const parsed = parseSubListing(LABELLED);
+    expect(parsed.reconciliation.rowsParsed).toBe(0);
+    expect(parsed.rows).toEqual([]);
+    expect(parsed.reconciliation.agreed).toBe(false);
+    // The message must name THIS form rather than the numbered-block one, since a
+    // reader holding a BuildingConnected export cannot act on advice about blocks.
+    expect(parsed.problems.join(" ")).toMatch(/columns to the right of it/);
+    expect(parsed.problems.join(" ")).not.toMatch(/numbered block/);
+  });
+
+  it("accounts for every line it refused, so no count is implied", () => {
+    const parsed = parseSubListing(LABELLED);
+    const nonBlank = LABELLED.split("\n").filter((l) => l.trim()).length;
+    expect(parsed.reconciliation.nonBlankLines).toBe(nonBlank);
+    expect(parsed.reconciliation.accountedFor).toBe(nonBlank);
+    expect(parsed.unread).toEqual([]);
+  });
+
+  /**
+   * THE CONTROL THAT THE WHOLE DESIGN RESTS ON, and the one a substring match
+   * fails. This table's heading LEADS with `Name of Business:` — the name family,
+   * as the first field on its line — and it must still be read. It is, because a
+   * table prints its heading ONCE and the threshold is two.
+   */
+  it("still reads a column table that LEADS with the company column", () => {
+    const parsed = parseSubListing(
+      [
+        "Name of Business:       Location:      License #:   DIR #:        Portion of Work:",
+        "Example Wallworks Inc   Fairview       884201       1000447788    Metal Stud Framing",
+        "Crestline Lathing Co    Fort Hollow    448120       1000889922    Lath and Plaster",
+      ].join("\n"),
+    );
+    expect(parsed.reconciliation.rowsParsed).toBe(2);
+    expect(parsed.rows.map((r) => r.name)).toEqual([
+      "Example Wallworks Inc",
+      "Crestline Lathing Co",
+    ]);
+    expect(parsed.problems.join(" ")).not.toMatch(/this looks like a filled/);
+  });
+
+  /**
+   * And the prime's own licence block, which every one of these bid-results
+   * sheets carries. It uses `Name of Licensee` and `License Number`, neither of
+   * which is a family, so it scores zero — stated as a test because the obvious
+   * "widen the patterns" tidy-up would make this document refuse and take the
+   * table above with it.
+   */
+  /**
+   * THE CASE THAT MAKES THE LICENCE THRESHOLD LOAD-BEARING, and the only one
+   * found that does. Two primes' tables pasted together print the heading TWICE,
+   * so the name family leads twice and the `name >= 2` test alone would refuse a
+   * document this parser reads. What saves it is that `License #:` is never a
+   * leading field in a table — it is always to the right of something.
+   */
+  it("still reads TWO primes' tables pasted together, each leading with the company", () => {
+    const parsed = parseSubListing(
+      [
+        "Alpha Example Builders Inc — list of subcontractors",
+        "Name of Business:       Location:      License #:   DIR #:        Portion of Work:",
+        "Example Wallworks Inc   Fairview       884201       1000447788    Metal Stud Framing",
+        "",
+        "Bravo Example Construction — list of subcontractors",
+        "Name of Business:       Location:      License #:   DIR #:        Portion of Work:",
+        "Crestline Lathing Co    Fort Hollow    448120       1000889922    Lath and Plaster",
+      ].join("\n"),
+    );
+    expect(parsed.problems.join(" ")).not.toMatch(/this looks like a filled/);
+    expect(parsed.rows.map((r) => r.name)).toEqual([
+      "Example Wallworks Inc",
+      "Crestline Lathing Co",
+    ]);
+  });
+
+  it("is not triggered by the prime's own licence block", () => {
+    const parsed = parseSubListing(
+      [
+        "CALIFORNIA CONTRACTOR'S LICENSE",
+        "Name of Licensee          Alpha Example Builders Inc     Bravo Example Construction",
+        "Classification            A, B                           B",
+        "License Number            1250301                        1250308",
+        "DIR Registration Number   1900000901                     1900000912",
+      ].join("\n"),
+    );
+    expect(parsed.problems.join(" ")).not.toMatch(/this looks like a filled/);
+  });
+});
+
 describe("the UCLA shape: scope in column one, company in column two", () => {
   // Three rows chosen to reproduce exactly what the real document exposed:
   // one ordinary company, one whose DIR registration starts with 2, and one
