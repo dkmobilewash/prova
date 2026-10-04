@@ -527,6 +527,74 @@ TODAY convention so they go red when someone fixes them:
 
 335 tests across 16 files.
 
+### The column order is learned from the heading, and the real document now reads
+
+The parser took the first plausible field as the company name, which is only right
+if the name is in column one. UCLA prints the SCOPE first. On the real document
+that cost 2 of 14 names and 13 of 14 cities, with `agreed: true` over all of it.
+
+A **column plan** is now learned from the heading row the document prints and
+applied to the rows that follow. Measured on the same real bidder list:
+
+| | before | after |
+| --- | --- | --- |
+| names correct | 12 of 14 | **14 of 14** |
+| cities read | 1 of 14 | **14 of 14** |
+| the drywall sub | correct | correct |
+
+The two leads that would have been created as "Concrete" and "Millwork" are now
+the companies that are actually on the page, and the 13 bare cities read because
+a column headed `Location:` makes "Valencia" readable where no pattern can.
+
+**Character offsets were tried first and rejected on measurement**, which is worth
+recording because it is the obvious design: in the real document the heading tokens
+begin at characters 37, 60, 142, 166 and 180 while the cells beneath them begin at
+42-47, 86-105, 150-160 and 174-180. `pdftotext -layout` approximates a
+proportional font, so a cell drifts tens of characters from its own heading. The
+ORDER is what is stable, so the plan maps heading position to field index.
+
+**It validates, because an index map is one empty cell from nonsense.** The plan
+is used only when the row has exactly as many fields as the heading had columns,
+and every field it assigns must still pass the test that field already had to pass.
+Anything else falls back to the predicate path unchanged — which is why all 335
+pre-existing tests kept passing: their headings describe the order those fixtures
+already assume, so the plan agrees with the predicate and changes nothing.
+
+**Calibrated against 20 real bidder lists, not the one document.** The corpus says
+the column order never varies and no amount or percentage column exists — but the
+heading LAYOUT does vary, and only two of four variants give a usable field count:
+9 lists print the labels on their own line, 7 print them on the same line as "Sub
+Contractor Listing" (handled by trimming unrecognised columns at either end), 3
+wrap `License #:` across two lines, and 1 is compact. The last two degrade to the
+predicate, and there is a test asserting that degradation with its measured cost.
+Of 154 real rows, 12 have a field count that does not match, so they degrade too.
+
+**`ACT` is why the scope column matters.** Acoustical ceiling tile, one of the five
+trades, appears on nine of the 154 rows and the scope predicate requires four
+letters — right for guessing at an unknown column order, wrong once the document
+has named the column. Before the plan that row's scope read as its own CITY; with
+the plan it reads `ACT`.
+
+**A guard was written here, mutation-tested, found dead, and deleted rather than
+given a test.** `columnPlanFrom` required the heading to name a company column, on
+the argument that a plan which cannot find the company does not fix the defect.
+True and irrelevant: the name already falls back by itself when no column matches.
+The mutation removing the condition left all 340 tests green, and keeping it threw
+away a perfectly good `Location` column because the same heading failed to label
+its company. The test defending it was asserting something the guard did not cause,
+and now asserts the mixed truth instead.
+
+Mutations, each landing and each reding its own assertions: name column ignored
+(2), city ignored (3), scope ignored (1), title-trimming removed (1), row/heading
+length guard removed (1). 340 tests across 16 files.
+
+**One self-inflicted bug worth recording.** The `COLUMN_KINDS` patterns were first
+written through a non-raw Python string, so every `\b` became a literal backspace
+byte and all five regexes matched nothing. The symptom was silent: the plan built,
+returned all-nulls, and every test stayed green because the parser simply fell back
+to its old behaviour. What caught it was the TODAY tests NOT going red — a fix that
+changes nothing is the same shape as a fix that is not wired up.
+
 **Still unverified, and unchanged as the honest headline: no real bid or award
 document has been read.** Every fixture is a guess about a form nobody here has
 opened, the suite is deliberately green over the remaining documented

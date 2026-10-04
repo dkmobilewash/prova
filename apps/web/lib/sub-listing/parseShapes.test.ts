@@ -925,7 +925,12 @@ Crestline Plastering       Fort Hollow        CA      448120`;
  * document, it read all 14 rows of one bidder's list and got 12 of the 14 names
  * right, including the drywall sub with its licence, registration and trade.
  *
- * **But the real column ORDER is not the one every other fixture here assumes.**
+ * **FIXED IN THIS FILE'S OWN HISTORY: the two TODAY tests that used to sit here —
+ * the name/scope swap and the unread bare city — were reproductions, and the
+ * column plan turned them red exactly as the convention says it should. They now
+ * assert the right answer instead.**
+ *
+ * **The real column ORDER is not the one every other fixture here assumes.**
  * UCLA prints `Portion of Work: | Name of Business: | Location: | License #: |
  * DIR #:` — the scope FIRST and the company SECOND. Every other case in
  * `subListingCases.ts` puts the name first. The column-order assumption that
@@ -985,11 +990,11 @@ describe("the UCLA shape: scope in column one, company in column two", () => {
    * prints, and which the comment above `accountedFor` names as the actual fix.
    * When that lands this test goes red; change the assertion and delete the TODAY.
    */
-  it("TODAY swaps name and scope when the company has no entity suffix", () => {
+  it("reads the company from the NAME column even with no entity suffix", () => {
     const parsed = parseSubListing(UCLA);
     const row = parsed.rows.find((candidate) => candidate.licence === "1046943");
-    expect(row?.name).toBe("Millwork");
-    expect(row?.portionOfWork).toBe("Marbury West");
+    expect(row?.name).toBe("Marbury West");
+    expect(row?.portionOfWork).toBe("Millwork");
   });
 
   /**
@@ -1001,10 +1006,110 @@ describe("the UCLA shape: scope in column one, company in column two", () => {
    * because of its name. This is the residual already recorded in
    * `subListingCases.ts`, now measured on a real document instead of predicted.
    */
-  it("TODAY reads no city from a bare city, but still gets the trade", () => {
+  /**
+   * `ACT` is acoustical ceiling tile and it is one of this product's five trades.
+   * It appears on nine of the 154 real rows. The scope predicate requires four
+   * letters — right for guessing at an unknown column order, wrong once the
+   * document has said which column the scope is. Before the plan this row's scope
+   * read as its own CITY; a column that says "Portion of Work" ends that.
+   */
+  it("reads a three-letter scope like ACT from the scope column", () => {
+    const shortScope = `                    Portion of Work:       Name of Business:                        Location:          License #:    DIR #:
+                    ACT                    Coastline Ceilings, Inc.                 Simi Valley        585006        1000004348`;
+    const parsed = parseSubListing(shortScope);
+    expect(parsed.rows[0]?.portionOfWork).toBe("ACT");
+    expect(parsed.rows[0]?.name).toBe("Coastline Ceilings, Inc.");
+    expect(parsed.rows[0]?.city).toBe("Simi Valley");
+  });
+
+  it("reads a bare city with no state code, because the column says it is one", () => {
     const parsed = parseSubListing(UCLA);
     const drywall = parsed.rows.find((row) => row.licence === "438612");
-    expect(drywall?.city).toBeNull();
+    expect(drywall?.city).toBe("Valencia");
     expect(drywall?.tradeScope).toBe("METAL_FRAMING_DRYWALL");
+  });
+});
+
+/**
+ * THE HEADING LAYOUTS THE REAL CORPUS ACTUALLY PRINTS, AND WHAT EACH ONE COSTS.
+ *
+ * Counted across 20 real bidder lists in five UCLA PDFs. The column ORDER never
+ * varies — `Portion of Work | Name of Business | Location | License # | DIR #`,
+ * with no amount or percentage column ever present — but the LAYOUT does, and
+ * only two of the four variants give five fields on a 2+-space split:
+ *
+ *   9 lists  the five labels on their own line                      → plan works
+ *   7 lists  the same labels on the same line as "Sub Contractor     → plan works,
+ *            Listing"                                                  by trimming
+ *   3 lists  `License #:` wrapped across two lines (4 fields)       → no plan
+ *   1 list   compact, three labels sharing a field                  → no plan
+ *
+ * The last two fall back to the predicate path, which is the pre-existing
+ * behaviour and is why they are recorded here rather than fixed: a plan built
+ * from a heading this parser only half understood would assign columns by an
+ * index that is already wrong, confidently. Degrading is the correct answer.
+ */
+describe("heading layouts: the plan is taken only when the heading is understood", () => {
+  const ROWS = `                    Framing Drywall        Halloran Interior Systems, Inc.          Valencia           438612        1000013433
+                    Millwork               Marbury West                             Temple City        1046943       1000062389`;
+
+  it("takes the plan when the table's TITLE shares the heading line (7 of 20 real lists)", () => {
+    const titleOnSameLine = `   Sub Contractor Listing          Portion of Work:    Name of Business:    Location:    License #:    DIR #:
+${ROWS}`;
+    const parsed = parseSubListing(titleOnSameLine);
+    const row = parsed.rows.find((candidate) => candidate.licence === "1046943");
+    expect(row?.name).toBe("Marbury West");
+    expect(row?.city).toBe("Temple City");
+  });
+
+  /**
+   * A heading yielding four fields against five-field rows. The plan is refused
+   * and the predicate path runs, so the company without an entity suffix is
+   * mis-named exactly as it was before any of this existed. Recorded as the
+   * measured cost of degrading rather than guessing.
+   */
+  it("REFUSES a half-understood heading and degrades to the predicate path", () => {
+    const wrappedLicenceHeading = `                    Portion of Work:       Name of Business:                        Location:          DIR #:
+${ROWS}`;
+    const parsed = parseSubListing(wrappedLicenceHeading);
+    const row = parsed.rows.find((candidate) => candidate.licence === "1046943");
+    expect(row?.name).toBe("Millwork");
+  });
+
+  /**
+   * An unrecognised column in the MIDDLE is kept in place, because the rows have
+   * a cell for it and dropping it would shift every index after it. Here a real
+   * `Item` column sits between the scope and the name.
+   */
+  it("keeps an unrecognised middle column so later indices do not shift", () => {
+    const withMiddleColumn = `                    Portion of Work:    Bid Item    Name of Business:                   Location:     License #:    DIR #:
+                    Framing Drywall     14          Halloran Interior Systems, Inc.     Valencia      438612        1000013433`;
+    const parsed = parseSubListing(withMiddleColumn);
+    expect(parsed.rows[0]?.name).toBe("Halloran Interior Systems, Inc.");
+    expect(parsed.rows[0]?.city).toBe("Valencia");
+  });
+
+  /**
+   * A HEADING THAT LABELS SOME COLUMNS AND NOT OTHERS IS USED FOR THE ONES IT
+   * LABELS — which is a correction to this test's first version.
+   *
+   * It originally asserted that such a heading is refused outright, to defend a
+   * `named.includes("name")` condition in `columnPlanFrom`. The mutation deleting
+   * that condition left every test green, because `plannedIndex` is already `-1`
+   * when no column reads as the name and the name already falls back by itself.
+   * The condition was dead, and it was also harmful: it discarded a `Location`
+   * column because the same heading had failed to label its company column.
+   *
+   * So the honest assertion is the mixed one. The name falls back to the
+   * predicate and takes the first plausible field — wrong here, and unchanged
+   * from before any of this existed. The city, which the heading DOES label, is
+   * read.
+   */
+  it("uses the columns a partial heading does label, and falls back for the rest", () => {
+    const noNameColumn = `                    Portion of Work:       Location:          License #:    DIR #:
+                    Framing Drywall        Valencia           438612        1000013433`;
+    const parsed = parseSubListing(noNameColumn);
+    expect(parsed.rows[0]?.name).toBe("Framing Drywall");
+    expect(parsed.rows[0]?.city).toBe("Valencia");
   });
 });

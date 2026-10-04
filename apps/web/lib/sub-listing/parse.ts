@@ -962,7 +962,125 @@ function furnitureReason(line: string, fields: string[]): string | null {
   return null;
 }
 
-function readRow(text: string, line: number, fields: string[]): ListedSub | UnreadLine {
+/**
+ * WHICH COLUMN IS WHICH, LEARNED FROM THE HEADING ROW THE DOCUMENT PRINTS.
+ *
+ * ── WHY THIS EXISTS: THE COLUMN ORDER WAS A GUESS AND THE GUESS WAS WRONG ──
+ *
+ * Every fixture in `subListingCases.ts` puts the company name in column one. A
+ * real document says otherwise. UCLA Capital Programs publishes each bidder's
+ * filled §4104 list as a readable table headed
+ *
+ *     Portion of Work:   Name of Business:   Location:   License #:   DIR #:
+ *
+ * — the SCOPE first and the company SECOND. Run against it, `readRow` took the
+ * first plausible field as the name, so any row whose company lacked an `Inc`
+ * suffix came out named after its own trade: 2 of 14 real rows became leads
+ * called "Concrete" and "Millwork", with the real companies demoted into
+ * `portionOfWork`, and `reconciliation.agreed` read TRUE over it.
+ *
+ * The comment above `accountedFor` names this fix by name — "`splitFields`
+ * learning column positions is the actual fix" — and the document hands it to us
+ * for free, because it prints its own heading row.
+ *
+ * ── CHARACTER OFFSETS WERE MEASURED AND REJECTED ──
+ *
+ * The obvious implementation is to slice each row at the heading's own column
+ * positions. It does not work, and this is measured rather than assumed: in the
+ * real document the heading tokens begin at characters 37, 60, 142, 166 and 180
+ * while the cells beneath them begin at 42-47, 86-105, 150-160 and 174-180.
+ * `pdftotext -layout` approximates a proportional font, so a cell drifts tens of
+ * characters from its own heading. What IS stable is the ORDER, so the plan maps
+ * heading position to FIELD INDEX.
+ *
+ * ── AND IT VALIDATES, BECAUSE AN INDEX MAP IS ONE EMPTY CELL FROM NONSENSE ──
+ *
+ * `splitFields` drops empty fields, so a row with a blank licence yields one
+ * field fewer and every later column shifts by one. A plan applied blindly there
+ * would read the DIR number as a licence and the city as a scope — confidently,
+ * and with `agreed` still true. So the plan is used ONLY when the row has exactly
+ * as many fields as the heading had columns, and each field it assigns must still
+ * pass the test that field already had to pass. Anything else falls back to the
+ * predicate path below, unchanged, which is also why every pre-existing case in
+ * this file behaves exactly as it did: their headings describe the order those
+ * fixtures already assume, so the plan agrees with the predicate and changes
+ * nothing.
+ */
+type ColumnKind = "name" | "scope" | "city" | "licence" | "registration";
+
+/**
+ * Ordered most specific first: "Name of Business" must read as the name before
+ * the word "business" can mean anything else, and "Portion of Work" must read as
+ * the scope rather than matching the bare word "work" somewhere later.
+ */
+const COLUMN_KINDS: [ColumnKind, RegExp][] = [
+  ["name", /\b(?:name\s+of\s+(?:business|subcontractor|firm|contractor)|business\s+name|subcontractor(?:'s)?\s+name|firm\s+name|company\s+name|name|firm|company|business|subcontractor)\b/i],
+  ["scope", /\b(?:portion\s+of\s+(?:the\s+)?work|description\s+of\s+work|type\s+of\s+work|scope(?:\s+of\s+work)?|portion|trade|work|description)\b/i],
+  ["city", /\b(?:location|city|place\s+of\s+business|address|city,?\s*state)\b/i],
+  ["licence", /\b(?:licen[cs]e|lic\.?)\b/i],
+  ["registration", /\b(?:dir|registration|reg\.?)\b/i],
+];
+
+function columnKindOf(heading: string): ColumnKind | null {
+  for (const [kind, pattern] of COLUMN_KINDS) if (pattern.test(heading)) return kind;
+  return null;
+}
+
+/**
+ * A plan, or null when the heading does not describe enough to be worth trusting.
+ *
+ * TWO recognised columns is the floor, and a kind appearing TWICE voids the plan
+ * outright: two columns both reading as a licence means the heading was not
+ * understood, and guessing which is which is precisely the invention this file
+ * refuses elsewhere.
+ *
+ * **A THIRD CONDITION WAS WRITTEN HERE, REQUIRING A NAME COLUMN, AND IT WAS DEAD.**
+ * Its argument was that a plan unable to say where the company is cannot fix the
+ * defect this exists for. True, and irrelevant: `plannedIndex` is already `-1`
+ * when no column reads as the name, so the name already falls back to the
+ * predicate on its own. The mutation removing the condition left all 340 tests
+ * green — this file's own definition of dead logic — and keeping it had a cost,
+ * because it threw away a heading's perfectly good `Location` column on the
+ * grounds that the same heading failed to label its company column. Deleted
+ * rather than given a test to defend it.
+ */
+function columnPlanFrom(headingFields: string[]): (ColumnKind | null)[] | null {
+  const kinds = headingFields.map(columnKindOf);
+
+  /**
+   * A TABLE'S TITLE IS NOT ONE OF ITS COLUMNS, AND 35% OF REAL LISTS PRINT BOTH
+   * ON ONE LINE.
+   *
+   * Measured across 20 real bidder lists in the UCLA corpus: 9 print the five
+   * labels on their own line, but 7 print them on the SAME line as the words
+   * "Sub Contractor Listing". Those seven yield six fields where the rows have
+   * five, so a plan keyed on field count would be discarded for a third of all
+   * lists — correct, but needlessly blind.
+   *
+   * Unrecognised columns at either END are therefore trimmed, which is the only
+   * place a title or a stray marker can sit without displacing the labels between
+   * them. An unrecognised column in the MIDDLE is left exactly where it is: it is
+   * a real column this parser does not understand, the rows have a cell for it,
+   * and removing it would shift every index after it.
+   */
+  let first = 0;
+  let last = kinds.length - 1;
+  while (first <= last && kinds[first] === null) first += 1;
+  while (last >= first && kinds[last] === null) last -= 1;
+  const trimmed = kinds.slice(first, last + 1);
+
+  const named = trimmed.filter((kind): kind is ColumnKind => kind !== null);
+  if (named.length < 2) return null;
+  if (new Set(named).size !== named.length) return null;
+  return trimmed;
+}
+
+function readRow(
+  text: string,
+  line: number,
+  fields: string[],
+  plan: (ColumnKind | null)[] | null = null,
+): ListedSub | UnreadLine {
   /**
    * Which field is the company name.
    *
@@ -988,8 +1106,20 @@ function readRow(text: string, line: number, fields: string[]): ListedSub | Unre
     !/^(?:item|no|line|bid\s*item)\.?\s*\d+$/i.test(field) &&
     !CITY_WITH_STATE.test(field);
 
+  /**
+   * The plan is honoured only when the row's shape matches the heading's, and
+   * only when the field it points at still passes the test every name has had to
+   * pass. Both conditions are the guard against a shifted index; see
+   * `columnPlanFrom`. `usablePlan` gates the city below for the same reason.
+   */
+  const usablePlan = plan !== null && plan.length === fields.length ? plan : null;
+  const plannedIndex = usablePlan ? usablePlan.indexOf("name") : -1;
+  const plannedName =
+    plannedIndex !== -1 && isNameCandidate(fields[plannedIndex]) ? plannedIndex : -1;
+
   const marked = fields.findIndex((field) => isNameCandidate(field) && ENTITY_MARKER.test(field));
-  const nameIndex = marked !== -1 ? marked : fields.findIndex(isNameCandidate);
+  const nameIndex =
+    plannedName !== -1 ? plannedName : marked !== -1 ? marked : fields.findIndex(isNameCandidate);
   if (nameIndex === -1) return { line, text, why: "no field reads as a company name" };
 
   const name = fields[nameIndex];
@@ -1014,7 +1144,35 @@ function readRow(text: string, line: number, fields: string[]): ListedSub | Unre
   // "has four letters and is not a number", so the city column won the
   // portion-of-work slot and the real scope — the one the whole feature quotes
   // — was discarded.
+  /**
+   * A COLUMN HEADED "Location" MAKES A BARE CITY READABLE, WHICH NO PATTERN CAN.
+   *
+   * `CITY_WITH_STATE` wants two trailing capitals and `CITY_SUFFIXED` wants the
+   * word "City", so UCLA's "Valencia" satisfied neither and 13 of 14 real rows
+   * read `city: null` — the one that worked was "Temple City", and only because
+   * of its name. When the document itself says which column is the place, that
+   * guesswork is unnecessary: take the field.
+   *
+   * It still has to not be something else. An identifier, a figure or a street
+   * address in that column means the heading and the row disagree, and a
+   * disagreement is not a licence to invent a city.
+   */
+  const plannedCityIndex = usablePlan ? usablePlan.indexOf("city") : -1;
+  const plannedCity =
+    plannedCityIndex !== -1 && plannedCityIndex !== nameIndex
+      ? ((candidate) =>
+          /[A-Za-z]{2}/.test(candidate) &&
+          licenceOnly(candidate) === null &&
+          registrationOnly(candidate) === null &&
+          !moneyOnly(candidate) &&
+          !percentOnly(candidate) &&
+          !/^\d/.test(candidate)
+            ? candidate
+            : null)(fields[plannedCityIndex])
+      : null;
+
   const city =
+    plannedCity ??
     rest.find((field) => CITY_WITH_STATE.test(field)) ??
     rest.find((field) => CITY_SUFFIXED.test(field)) ??
     null;
@@ -1054,7 +1212,41 @@ function readRow(text: string, line: number, fields: string[]): ListedSub | Unre
         !/\b[A-Z]{2}\s+\d{5}(-\d{4})?\b/.test(field) &&
         !/^(?:lic|license|licence|dir|reg)\b/i.test(field);
 
+  /**
+   * THE SCOPE COLUMN, WHEN THE HEADING NAMES ONE — AND "ACT" IS WHY THIS MATTERS.
+   *
+   * `eligible` requires four letters, which is right for a predicate guessing at
+   * an unknown column order: a three-character field is far more often an
+   * abbreviation, a code or a bid-item number than a portion of work. But the
+   * real corpus prints **`ACT`** — acoustical ceiling tile, one of this product's
+   * five trades — as a scope cell, and it appears on nine of 154 rows.
+   *
+   * Measured on the real document: before the column plan that row's scope read
+   * `"Simi Valley"`, its own city, which is a false claim. With the plan reading
+   * name and city but not scope it read `null`, which is better but still a loss.
+   * With the column honoured it reads `ACT`, which is what the document says.
+   *
+   * The length floor is therefore a property of GUESSING, not of scopes, and it
+   * is dropped exactly where the guessing stops. The identifier and figure tests
+   * are kept, because a heading and a row can still disagree and a disagreement
+   * is not permission to quote a licence number as a portion of work.
+   */
+  const plannedScopeIndex = usablePlan ? usablePlan.indexOf("scope") : -1;
+  const plannedScope =
+    plannedScopeIndex !== -1 && plannedScopeIndex !== nameIndex
+      ? ((candidate) =>
+          /[A-Za-z]{2}/.test(candidate) &&
+          candidate !== city &&
+          licenceOnly(candidate) === null &&
+          registrationOnly(candidate) === null &&
+          !moneyOnly(candidate) &&
+          !percentOnly(candidate)
+            ? candidate
+            : null)(fields[plannedScopeIndex])
+      : null;
+
   const scope =
+    plannedScope ??
     rest.find((field) => eligible(field) && tradeMatchFor(field).scope !== null) ??
     rest.find(eligible) ??
     null;
@@ -1261,6 +1453,18 @@ export function parseSubListing(text: string): SubListingParse {
   const singles: { line: number; text: string }[] = [];
 
   /**
+   * The column order, learned from the heading row if the document prints one.
+   *
+   * Set when a line is filed as "the table's column headings" and kept for the
+   * rows that follow, because that is the order they are in. A document with two
+   * primes and two heading rows re-learns at the second, which is correct: the
+   * second table's order is what its own rows follow. Null until then, and
+   * `readRow` falls back to its predicate path whenever it is null or does not
+   * match the row's shape.
+   */
+  let columnPlan: (ColumnKind | null)[] | null = null;
+
+  /**
    * THE FORM SHAPE IS RECOGNISED AND REFUSED, WITH EVERY LINE STILL ACCOUNTED FOR.
    *
    * Each non-blank line goes to `ignored` under one named reason, so the
@@ -1312,6 +1516,12 @@ export function parseSubListing(text: string): SubListingParse {
     const fields = splitFields(raw);
     const furniture = furnitureReason(raw, fields);
     if (furniture) {
+      if (furniture === "the table's column headings") {
+        // Only replace a plan with a better-understood one; a heading that
+        // yields nothing usable must not erase what an earlier one taught us.
+        const learned = columnPlanFrom(fields);
+        if (learned) columnPlan = learned;
+      }
       ignored.push({ line, text: raw, why: furniture });
       return;
     }
@@ -1374,7 +1584,7 @@ export function parseSubListing(text: string): SubListingParse {
       return;
     }
 
-    const result = readRow(raw, line, fields);
+    const result = readRow(raw, line, fields, columnPlan);
     if (isUnread(result)) unread.push(result);
     else rows.push(result);
   });
