@@ -1680,15 +1680,31 @@ const BC_FAMILIES: readonly (readonly [BcFamily, RegExp])[] = [
  * each side — which is what absorbs the real `Subcontractor 2- Location` that
  * five of six Berkeley documents print.
  */
-function bcLeadingField(raw: string): string {
-  const match = /^\s*(.*?)(?:\s{2,}|$)/.exec(raw);
-  return (match?.[1] ?? "")
+/**
+ * ONE expression for where the label stops, shared by the detector above and the
+ * reader below. `MONEY`/`moneyOnly` further up this file is the scar: two
+ * expressions that must agree about the same thing had drifted, and the drift was
+ * invisible until something asked the second question.
+ */
+function leadingFieldSpan(raw: string): { label: string; end: number } {
+  const match = /^(\s*)(.*?)(?:\s{2,}|$)/.exec(raw);
+  const indent = match?.[1] ?? "";
+  const label = match?.[2] ?? "";
+  return { label, end: indent.length + label.length };
+}
+
+function normaliseBcLabel(label: string): string {
+  return label
     .replace(/\s+/g, " ")
     .trim()
     .replace(/:$/, "")
     .replace(/\s*-\s*/g, " - ")
     .trim()
     .toLowerCase();
+}
+
+function bcLeadingField(raw: string): string {
+  return normaliseBcLabel(leadingFieldSpan(raw).label);
 }
 
 function bcFamilyOf(leading: string): BcFamily | null {
@@ -1735,6 +1751,428 @@ const FORM_REFUSAL: Record<FormShape, string> = {
     "this looks like a filled subcontractor FORM — the kind that prints a label on the left (“Name of Business”, “License No.”) with each bidder's answers in columns to the right of it — and this reader only understands a column TABLE, one subcontractor per line. Nothing on this page has been read as a subcontractor, deliberately: read as a table this shape produces dozens of rows that are not subcontractors at all, including on documents that list none. Paste the subcontractor table from a bid tabulation or an award packet instead, or send this document to Diego so the form reader can be built against it.",
 };
 
+/* ------------------------------------------------------------------------- *
+ * READING THE LABELLED-COLUMN FORM, WHICH UNTIL NOW WAS ONLY REFUSED.
+ *
+ * The refusal above stopped fourteen fabricated leads. It did not get anybody a
+ * prospect, and UC Berkeley and UC Davis Health are where this product's trades
+ * actually appear: Caltrans builds roads, and across fourteen of its listings
+ * these five trades turned up in exactly one.
+ *
+ * **WHAT THIS CLAIMS AND WHAT IT DELIBERATELY DOES NOT.** A page carries up to
+ * six bidders side by side, so one label line holds up to six answers. Two
+ * questions come out of that and they are not equally answerable:
+ *
+ *   1. WHICH FIRMS ARE LISTED, with trade, city, licence and DIR.
+ *   2. WHICH BIDDER listed which of them — the GC relationship.
+ *
+ * Every failure mode in the corpus lives in the second. `ucb_bot` prints FIVE
+ * bidders in its header and FOUR columns on every row, because bidder one listed
+ * nothing — so an ordinal reading attributes every row in that file to the wrong
+ * GC. `ucb_stanley` and `ucb_dwinelle` each have slots in that state. And
+ * matching the header's grid to the values' grid is not available as a fallback:
+ * in `ucdavis_9579290` the two do not coincide.
+ *
+ * So this answers question 1 and says so. A row carries the firm; the document
+ * names the project; the bidders are a known short list of GCs on that project.
+ * "One of these GCs" is a true and useful thing to hand somebody. A guess at
+ * which one is a wrong thing said confidently down a telephone, which is what
+ * this file exists to prevent.
+ * ------------------------------------------------------------------------- */
+
+/** A value read off a labelled line, with the column it started at. */
+type LabelledValue = { offset: number; text: string };
+
+/**
+ * The values to the right of the label, each with its start offset.
+ *
+ * A value ends at a run of two or more spaces, which is the only separator these
+ * documents have: a SINGLE space is inside a value (`Metal Stud Framing`), and
+ * that distinction is what makes the shape readable at all. Tabs break a value
+ * too, though `pdftotext -layout` has never emitted one here.
+ */
+function valuesFrom(raw: string, from: number): LabelledValue[] {
+  const out: LabelledValue[] = [];
+  let i = from;
+  while (i < raw.length) {
+    while (i < raw.length && (raw[i] === " " || raw[i] === "\t")) i += 1;
+    if (i >= raw.length) break;
+    const start = i;
+    let last = i;
+    while (i < raw.length) {
+      const here = raw[i] ?? "";
+      const next = raw[i + 1] ?? "";
+      if (here === "\t") break;
+      if (here === " " && (next === " " || next === "\t")) break;
+      if (here !== " ") last = i;
+      i += 1;
+    }
+    const text = raw.slice(start, last + 1).trim();
+    if (text.length > 0) out.push({ offset: start, text });
+  }
+  return out;
+}
+
+/**
+ * Column representatives, merging offsets within two characters of each other: a
+ * form feed shifts a line's offsets by one, and a proportional font rendered onto
+ * a character grid drifts by one more.
+ *
+ * The representative is the FIRST offset in a cluster rather than its mean, so
+ * the grid cannot creep as more rows are read.
+ */
+function gridOf(offsets: readonly number[]): number[] {
+  const columns: number[] = [];
+  for (const offset of [...offsets].sort((a, b) => a - b)) {
+    const last = columns[columns.length - 1];
+    if (last !== undefined && offset - last <= 2) continue;
+    columns.push(offset);
+  }
+  return columns;
+}
+
+function nearestColumn(grid: readonly number[], offset: number): number {
+  let best = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  grid.forEach((column, index) => {
+    const distance = Math.abs(column - offset);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = index;
+    }
+  });
+  return best;
+}
+
+/** `Subcontractor 7 for Alternate - Name of Business` -> slot 7, alternates. */
+const BC_SLOT_IN_LABEL = /^subcontractor (\d+)( for alternate)? - /;
+/** UC Davis Health prints the slot on its OWN line: `SUBCONTRACTOR 1:`. */
+const BC_SLOT_HEADER = /^subcontractor (\d+)$/;
+/** An unused slot. Every source in the corpus writes exactly this. */
+const BC_UNUSED = /^n\/?a\.?$/i;
+
+/**
+ * A licence as these documents print it: six or seven bare digits. Anything else
+ * is still CLAIMED and carries a concern, because `C-10 1030181`, `9028` and `na`
+ * are all real printed values and a person can see at a glance which is which.
+ * Refusing them would delete a prospect to avoid being wrong about a field the
+ * person is about to read anyway.
+ */
+const BC_PLAIN_LICENCE = /^\d{6,7}$/;
+/** A DIR registration: ten digits. Nine and eleven both occur, as typos. */
+const BC_PLAIN_DIR = /^\d{10}$/;
+/** A street address where a city should be. One real document does this. */
+const BC_ADDRESS_IN_CITY =
+  /\d+\s+\S+\s+(?:st|street|ave|avenue|rd|road|blvd|way|dr|drive|ln|lane|ct|court|pl|place)\b/i;
+
+/**
+ * A LABEL AND ITS FIRST VALUE SEPARATED BY ONE SPACE, WHICH NO AMOUNT OF
+ * 2+-SPACE SPLITTING CAN SEE.
+ *
+ * Found by building a fixture whose column happened to land one character after
+ * the longest label — `Subcontractor 1 - Location of Business (city)` indented by
+ * six is 51 characters, and a value at 52 is one space away. The leading field
+ * then reads `Subcontractor 1 - Location of Business (city) 1 Example Way,
+ * Kestrel, CA 90001`, matches no family, and the city is dropped **with nothing
+ * said** — the silent loss this file exists to prevent. The spec's failure 11
+ * records the same adjacency in a real Caltrans document.
+ *
+ * The recovery is deterministic rather than fuzzy: trim one trailing word at a
+ * time and ask whether what remains is a whole family label. The family patterns
+ * are anchored whole-string expressions, so this is not a substring match — a
+ * prefix either IS a label or it is not. Bounded at eight trims, which is longer
+ * than the longest label here, so a line of prose cannot be walked into a match.
+ *
+ * It returns null in the ordinary case, so the common path is untouched.
+ */
+/**
+ * The COMPLETE form of each family label, as distinct from the fragments a wrapped
+ * label leaves behind (`Business`, `Name of`, `(city)`, `No.`).
+ *
+ * ONLY A COMPLETE LABEL MAY ABSORB AN ADJACENT VALUE, and the fragment list is
+ * exactly why. `Name of Licensee   Alpha Example Builders Inc` is the prime's own
+ * licence block, already cleanly delimited; trim one word and the head is
+ * `Name of`, which IS a name fragment — so the recovery read `Licensee` as a
+ * company and the prime's block arrived as two phantom subcontractors. Measured:
+ * it took a one-bidder document from 3 rows to 5.
+ *
+ * A fragment cannot have a value adjacent to it on its own line BY DEFINITION:
+ * what follows the tail of a wrapped label is the rest of that label, which is on
+ * the line above. So the distinction is not a heuristic, it is the shape.
+ */
+const BC_WHOLE_LABELS: readonly RegExp[] = [
+  /^name of business$/,
+  /^location of business(?: \(city\))?$/,
+  /^licen[cs]e no\.?$/,
+  /^dir registration(?: no\.?)?$/,
+  /^portion of the work(?: activity)?$/,
+];
+
+function isWholeBcLabel(normalised: string): boolean {
+  const bare = normalised.replace(BC_SLOT_PREFIX, "");
+  return BC_WHOLE_LABELS.some((pattern) => pattern.test(bare));
+}
+
+function labelRunTogetherWithValue(
+  label: string,
+  end: number,
+): { label: string; value: LabelledValue; end: number } | null {
+  if (bcFamilyOf(normaliseBcLabel(label)) !== null) return null;
+  const words = label.split(" ");
+  for (let trimmed = 1; trimmed <= 8 && trimmed < words.length; trimmed += 1) {
+    const head = words.slice(0, words.length - trimmed).join(" ");
+    if (!isWholeBcLabel(normaliseBcLabel(head))) continue;
+    const tail = words.slice(words.length - trimmed).join(" ").trim();
+    if (tail.length === 0) return null;
+    return {
+      label: head,
+      value: { offset: end - tail.length, text: tail },
+      end,
+    };
+  }
+  return null;
+}
+
+type LabelledFormRead = {
+  rows: ListedSub[];
+  ignored: IgnoredLine[];
+  problems: string[];
+  /** Every non-blank line, so the caller can keep its own partition honest. */
+  nonBlankLines: number;
+};
+
+/**
+ * One page's worth of state. A page is the unit because the grid is: one real
+ * document's grid runs {56,133} then {51,83} then {50,82} then {51,76} across
+ * four pages, with the indentation moving 6 -> 0 -> 5.
+ */
+type SlotRead = {
+  firstLine: number;
+  sourceLines: Set<number>;
+  byFamily: Map<BcFamily, Map<number, LabelledValue>>;
+};
+
+function readLabelledColumnsForm(text: string): LabelledFormRead {
+  const rows: ListedSub[] = [];
+  const ignored: IgnoredLine[] = [];
+  const problems: string[] = [];
+  let nonBlankLines = 0;
+
+  /** Pages, keeping TRUE line numbers so the evidence link still works. */
+  const pages: { line: number; raw: string }[][] = [[]];
+  text.split(/\r?\n/).forEach((raw, index) => {
+    const page = pages[pages.length - 1];
+    if (!raw.includes("\f")) {
+      page?.push({ line: index + 1, raw });
+      return;
+    }
+    const before = raw.slice(0, raw.indexOf("\f"));
+    if (before.trim()) page?.push({ line: index + 1, raw: before });
+    const after = raw.slice(raw.lastIndexOf("\f") + 1);
+    const next: { line: number; raw: string }[] = [];
+    if (after.trim()) next.push({ line: index + 1, raw: after });
+    pages.push(next);
+  });
+
+  /**
+   * **THE SLOTS OUTLIVE THE PAGE AND THE GRID DOES NOT**, which is the one place
+   * these two notions come apart. `ucb_minor485` breaks a page in the MIDDLE of a
+   * slot: the firm's name is on page one at offset 133 and its licence on page two
+   * at offset 83. Those are the same bidder, so they belong in one row — but they
+   * are not the same OFFSET, so the grid cannot be shared.
+   *
+   * The resolution is that a page-local column INDEX is comparable across pages,
+   * because the bidders keep their left-to-right order on every page. Index one on
+   * page one is index one on page two. (If a page omitted a bidder's column
+   * entirely the indices would shift, which is the ragged problem one level up and
+   * not solvable without the bidder header, whose offsets do not match the values'
+   * — see above. No document in the corpus does it.)
+   *
+   * Keying the slots per page instead loses the licence and the DIR of every firm
+   * in a split slot, silently, because the page-two group has no name and emits no
+   * row at all. That is how this was found.
+   */
+  const slots = new Map<string, SlotRead>();
+
+  for (const page of pages) {
+    /** What was read, before any column is assigned — the grid needs all of it. */
+    const records: {
+      key: string;
+      family: BcFamily;
+      values: LabelledValue[];
+      line: number;
+    }[] = [];
+    const offsets: number[] = [];
+    let slot: string | null = null;
+    let series = "base";
+    /**
+     * A wrapped label waiting for its values, with the line it was opened at.
+     *
+     * THE DISTANCE BOUND IS NOT DECORATION. Without it a pending label is
+     * satisfied by "the next line that has fields", whatever that line is — and
+     * in `ucdavis_9579290` an empty slot's `DIR Registration No.` label is five
+     * lines above an `SBE   N/A   N/A` row, so the N/A becomes the registration.
+     * There it is harmless, because the slot has no name and emits no row. It is
+     * harmless by luck rather than by design, which is the kind of thing this
+     * repo keeps paying for. A wrap puts its values on the next line or the one
+     * after; three-line label wraps are real, and each of those lines re-opens
+     * the pending label, so the bound is measured from the LAST label line.
+     */
+    let pending: { family: BcFamily; key: string; line: number } | null = null;
+
+    for (const { line, raw } of page) {
+      if (!raw.trim()) continue;
+      nonBlankLines += 1;
+
+      const { label, end } = leadingFieldSpan(raw);
+      const plain = valuesFrom(raw, end);
+      const adjacent = labelRunTogetherWithValue(label, end);
+      const normalised = normaliseBcLabel(adjacent?.label ?? label);
+      const values =
+        adjacent === null ? plain : [adjacent.value, ...valuesFrom(raw, end)];
+
+      const header = BC_SLOT_HEADER.exec(normalised);
+      if (header?.[1] !== undefined) {
+        slot = header[1];
+        series = "base";
+        pending = null;
+        ignored.push({ line, text: raw, why: "a subcontractor slot heading" });
+        continue;
+      }
+
+      const inLabel = BC_SLOT_IN_LABEL.exec(normalised);
+      if (inLabel?.[1] !== undefined) {
+        slot = inLabel[1];
+        series = inLabel[2] === undefined ? "base" : "alternate";
+      }
+
+      const family = bcFamilyOf(normalised);
+
+      // A label with nothing to its right is a WRAP: its values are on a later
+      // line, and any number of label-only lines may sit between (three-line
+      // wraps are real). The pending family survives all of them.
+      if (values.length === 0) {
+        if (family !== null) pending = { family, key: `${series}:${slot ?? "?"}`, line };
+        ignored.push({
+          line,
+          text: raw,
+          why:
+            family === null
+              ? "not part of the subcontractor list"
+              : "a label whose values are on a later line",
+        });
+        continue;
+      }
+
+      const stale = pending !== null && line - pending.line > 2;
+      const target =
+        family !== null
+          ? { family, key: `${series}:${slot ?? "?"}` }
+          : stale
+            ? null
+            : pending;
+      if (target === null) {
+        ignored.push({ line, text: raw, why: "not part of the subcontractor list" });
+        continue;
+      }
+
+      records.push({ ...target, values, line });
+      for (const value of values) offsets.push(value.offset);
+      pending = null;
+    }
+
+    const grid = gridOf(offsets);
+    for (const record of records) {
+      const read: SlotRead = slots.get(record.key) ?? {
+        firstLine: record.line,
+        sourceLines: new Set(),
+        byFamily: new Map(),
+      };
+      slots.set(record.key, read);
+      read.sourceLines.add(record.line);
+      const byColumn = read.byFamily.get(record.family) ?? new Map();
+      read.byFamily.set(record.family, byColumn);
+      for (const value of record.values) {
+        const column = nearestColumn(grid, value.offset);
+        // First writer wins: a repeated label inside one slot is the document
+        // restating it, not a second answer.
+        if (!byColumn.has(column)) byColumn.set(column, value);
+      }
+    }
+  }
+
+  for (const [key, read] of slots) {
+    const columns = new Set<number>();
+    for (const byColumn of read.byFamily.values()) {
+      for (const column of byColumn.keys()) columns.add(column);
+    }
+    for (const column of [...columns].sort((a, b) => a - b)) {
+      const at = (family: BcFamily): string | null =>
+        read.byFamily.get(family)?.get(column)?.text ?? null;
+
+      const name = at("name");
+      if (name === null || BC_UNUSED.test(name)) continue;
+
+      const portionOfWork = at("portion");
+      const city = at("city");
+      const licence = at("lic");
+      const registration = at("dir");
+      const concerns: string[] = [];
+
+      if (licence !== null && !BC_PLAIN_LICENCE.test(licence)) {
+        concerns.push(
+          `the licence reads "${licence}", which is not the six or seven digits this form usually carries — check it against the document`,
+        );
+      }
+      if (registration !== null && !BC_PLAIN_DIR.test(registration)) {
+        concerns.push(
+          `the DIR registration reads "${registration}", which is not the ten digits a registration carries — check it against the document`,
+        );
+      }
+      if (city !== null && BC_ADDRESS_IN_CITY.test(city)) {
+        concerns.push(
+          `the city field holds what looks like a street address ("${city}") — the city may be only part of it`,
+        );
+      }
+      if (key.startsWith("alternate:")) {
+        concerns.push(
+          "this was listed against an ALTERNATE rather than the base bid, so the work may not be in the contract at all",
+        );
+      }
+
+      rows.push({
+        name,
+        sourceText: [...read.sourceLines]
+          .sort((a, b) => a - b)
+          .map((line) => text.split(/\r?\n/)[line - 1] ?? "")
+          .join("\n"),
+        line: read.firstLine,
+        portionOfWork,
+        tradeScope: tradeMatchFor(portionOfWork).scope,
+        licence,
+        registration,
+        city,
+        amount: null,
+        percentOfBid: null,
+        concerns,
+      });
+    }
+  }
+
+  if (rows.length === 0) {
+    problems.push(
+      "this is the labelled form shape — labels on the left, each bidder's answers in a column to the right — and not one subcontractor was read from it. Either every slot is empty, which is a real and ordinary thing for a package bid or a courtesy listing, or this page's text came out of the PDF in a shape this reader does not understand. Nothing has been invented either way. Look at the page itself before concluding there are no subcontractors on it.",
+    );
+    return { rows, ignored, problems, nonBlankLines };
+  }
+
+  problems.push(
+    "READ, BUT WITHOUT SAYING WHICH BIDDER LISTED WHOM. This form prints several general contractors side by side, and this reader does not attribute a subcontractor to one of them — one real document names five bidders and prints only four columns, so matching them up by position puts every row against the wrong GC. Each row below is a firm that WAS listed on this project by one of the bidders on the page. Treat the GC as unknown rather than as the first one named.",
+  );
+
+  return { rows, ignored, problems, nonBlankLines };
+}
+
 export function parseSubListing(text: string): SubListingParse {
   const lines = text.split(/\r?\n/);
   const { header, problems } = readHeader(lines);
@@ -1774,6 +2212,40 @@ export function parseSubListing(text: string): SubListingParse {
    * because a problem was raised. No row is invented and no count is implied.
    */
   const formShape = formShapedListing(text);
+
+  /**
+   * THE LABELLED-COLUMN FORM IS NOW READ RATHER THAN REFUSED, and the Caltrans
+   * numbered-block form still is not — two shapes, two outcomes, one dispatch.
+   *
+   * The reconciliation is reported differently here and the reason is structural
+   * rather than a shortcut: the partition this file rests on assumes ONE ROW PER
+   * LINE, and in this form one label line carries up to six subcontractors' data
+   * while one subcontractor is assembled from five lines. `rowsParsed` and
+   * `nonBlankLines` therefore cannot be compared, so `agreed` is false and a
+   * problem says why. It is not claiming a loss; it is refusing to claim a
+   * completeness it cannot compute. Reading these counts as a partition is the
+   * mistake the whole `agreed` apparatus exists to prevent.
+   */
+  if (formShape === "labelled-columns") {
+    const form = readLabelledColumnsForm(text);
+    return {
+      header,
+      rows: form.rows,
+      unread: [],
+      ignored: form.ignored,
+      problems: [...problems, ...form.problems],
+      reconciliation: {
+        nonBlankLines: form.nonBlankLines,
+        rowsParsed: form.rows.length,
+        headerLines: 0,
+        ignoredLines: form.ignored.length,
+        unreadLines: 0,
+        accountedFor: form.ignored.length,
+        agreed: false,
+      },
+    };
+  }
+
   if (formShape !== null) {
     lines.forEach((raw, index) => {
       if (!raw.trim()) return;

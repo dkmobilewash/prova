@@ -1003,23 +1003,38 @@ LIST OF SUBCONTRACTORS:
       Subcontractor 2 - License No.                     448120                           N/A
       Subcontractor 2 - DIR Registration No.            1000889922                       N/A`;
 
-  it("invents no subcontractor from it, and says which form it is", () => {
+  /**
+   * **THESE TWO TESTS USED TO ASSERT A REFUSAL, AND THE CHANGE IS THE POINT.**
+   * They were written when this shape was recognised and declined; the reader in
+   * the describe below now reads it. What they assert instead is the thing the
+   * refusal was protecting — that nothing is INVENTED — which is a property of
+   * both the old behaviour and the new one, and the only one that ever mattered.
+   * Every name below is a firm the document actually prints.
+   */
+  it("reads the firms the document names, and invents nothing else", () => {
     const parsed = parseSubListing(LABELLED);
-    expect(parsed.reconciliation.rowsParsed).toBe(0);
-    expect(parsed.rows).toEqual([]);
-    expect(parsed.reconciliation.agreed).toBe(false);
-    // The message must name THIS form rather than the numbered-block one, since a
-    // reader holding a BuildingConnected export cannot act on advice about blocks.
-    expect(parsed.problems.join(" ")).toMatch(/columns to the right of it/);
-    expect(parsed.problems.join(" ")).not.toMatch(/numbered block/);
+    expect(parsed.rows.map((r) => r.name)).toEqual([
+      "Example Wallworks Inc",
+      "Harbor Interiors LLC",
+      "Crestline Lathing Co",
+    ]);
+    // Bidder two answered slot 2 with N/A, so there is no third-and-fourth row.
+    expect(parsed.rows).toHaveLength(3);
+    for (const row of parsed.rows) {
+      expect(LABELLED).toContain(row.name);
+    }
   });
 
-  it("accounts for every line it refused, so no count is implied", () => {
+  it("counts every non-blank line, and refuses to call the counts a partition", () => {
     const parsed = parseSubListing(LABELLED);
     const nonBlank = LABELLED.split("\n").filter((l) => l.trim()).length;
     expect(parsed.reconciliation.nonBlankLines).toBe(nonBlank);
-    expect(parsed.reconciliation.accountedFor).toBe(nonBlank);
     expect(parsed.unread).toEqual([]);
+    // `agreed` is false here for a structural reason rather than a defect: one
+    // label line carries several subcontractors' data and one subcontractor is
+    // assembled from five lines, so rows and lines cannot be compared at all.
+    expect(parsed.reconciliation.agreed).toBe(false);
+    expect(parsed.problems.join(" ")).toMatch(/does not attribute a subcontractor/);
   });
 
   /**
@@ -1044,13 +1059,6 @@ LIST OF SUBCONTRACTORS:
     expect(parsed.problems.join(" ")).not.toMatch(/this looks like a filled/);
   });
 
-  /**
-   * And the prime's own licence block, which every one of these bid-results
-   * sheets carries. It uses `Name of Licensee` and `License Number`, neither of
-   * which is a family, so it scores zero — stated as a test because the obvious
-   * "widen the patterns" tidy-up would make this document refuse and take the
-   * table above with it.
-   */
   /**
    * THE CASE THAT MAKES THE LICENCE THRESHOLD LOAD-BEARING, and the only one
    * found that does. Two primes' tables pasted together print the heading TWICE,
@@ -1077,17 +1085,351 @@ LIST OF SUBCONTRACTORS:
     ]);
   });
 
-  it("is not triggered by the prime's own licence block", () => {
+  /**
+   * And the prime's own licence block, which every one of these bid-results sheets
+   * carries. It uses `Name of Licensee` and `License Number`, neither of which is
+   * a family, so it scores zero — stated as a test because the obvious "widen the
+   * patterns" tidy-up would make this document refuse and take the tables above
+   * with it.
+   *
+   * **AND IT MUST INVENT NOTHING FROM IT EITHER**, which is a second and sharper
+   * assertion than not refusing. The reader recovers a label that has run together
+   * with its value by trimming trailing words until what is left is a label —
+   * and `Name of Licensee` trims to `Name of`, which is a wrap FRAGMENT of the
+   * name family. Before the recovery was restricted to WHOLE labels, this block
+   * produced a subcontractor called "Licensee" and took a one-bidder document from
+   * three rows to five.
+   */
+  it("is not triggered by the prime's licence block, and invents nothing from it", () => {
+    const BLOCK = [
+      "CALIFORNIA CONTRACTOR'S LICENSE",
+      "Name of Licensee          Alpha Example Builders Inc     Bravo Example Construction",
+      "Classification            A, B                           B",
+      "License Number            1250301                        1250308",
+      "DIR Registration Number   1900000901                     1900000912",
+    ].join("\n");
+    expect(parseSubListing(BLOCK).problems.join(" ")).not.toMatch(/this looks like a filled/);
+    // And inside a document that IS this form, the block must contribute no row.
+    const withBlock = parseSubListing(`${LABELLED}\n\n${BLOCK}`);
+    expect(withBlock.rows.map((r) => r.name)).not.toContain("Licensee");
+    expect(withBlock.rows.map((r) => r.name)).toEqual([
+      "Example Wallworks Inc",
+      "Harbor Interiors LLC",
+      "Crestline Lathing Co",
+    ]);
+  });
+});
+
+/**
+ * READING THAT FORM, HAVING SPENT A COMMIT REFUSING IT.
+ *
+ * The refusal above is the floor, not the capability: UC Berkeley and UC Davis
+ * Health are where this product's trades appear, and a refusal gets nobody a
+ * prospect. What this reads is WHICH FIRMS ARE LISTED. What it deliberately does
+ * not read is WHICH BIDDER listed them, and the asymmetry is measured rather than
+ * cautious — one real document names five bidders and prints four columns, so an
+ * ordinal attribution puts every row in it against the wrong GC.
+ *
+ * Cross-checked against an independent prototype written from the same documents:
+ * both return 27, 27, 11, 41, 3 and 4 rows on the six fixtures built from them.
+ * Two implementations agreeing is worth more than either one's own test.
+ *
+ * The offsets below are the real documents' structure at a narrower gauge — the
+ * originals put their columns at 132, 203, 279 and 361, which would make every
+ * line here 400 characters wide and no clearer. Every identifier is invented.
+ */
+describe("the labelled-column form, read rather than refused", () => {
+  const ALIGNED = `LIST OF SUBCONTRACTORS:
+      Subcontractor 1 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)       Metal Stud Framing & Drywall  DRYWALL/FRAMING
+      Subcontractor 1 - Name of Business            Example Wallworks Inc         Harbor Interiors LLC
+      Subcontractor 1 - Location of Business (city) Fairview                      FAIRVIEW
+      Subcontractor 1 - License No.                 884201                        903774
+      Subcontractor 1 - DIR Registration No.        1000447788                    2000552211
+      Subcontractor 2 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)
+      Subcontractor 2 - Name of Business
+      Subcontractor 2 - Location of Business (city)
+      Subcontractor 2 - License No.
+      Subcontractor 2 - DIR Registration No.`;
+  const RAGGED = `LIST OF SUBCONTRACTORS:
+      Subcontractor 1 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)       Site Demolition               Electrical                    Acoustical Ceilings
+      Subcontractor 1 - Name of Business            Dummy Demolition Group        Notional Power Co             Mock Acoustics Inc
+      Subcontractor 1 - License No.                 884201                        903774                        771002
+      Subcontractor 1 - DIR Registration No.        1000447788                    2000552211                    1000889922
+      Subcontractor 2 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)                                     Lath and Plaster              Spray Applied Fireproofing
+      Subcontractor 2 - Name of Business                                          Crestline Lathing Co          Vantage Fire Protection
+      Subcontractor 2 - License No.                                               448120                        662015
+      Subcontractor 2 - DIR Registration No.                                      1000330044                    1000770011`;
+  const UNUSED = `LIST OF SUBCONTRACTORS:
+      Subcontractor 1 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)       Metal Stud Framing            N/A
+      Subcontractor 1 - Name of Business            Example Wallworks Inc         N/A
+      Subcontractor 1 - License No.                 884201                        N/A
+      Subcontractor 1 - DIR Registration No.        1000447788                    N/A
+      Subcontractor 2 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)
+      Subcontractor 2 - Name of Business
+      Subcontractor 2 - Location of Business (city)
+      Subcontractor 2 - License No.
+      Subcontractor 2 - DIR Registration No.`;
+  const ODD = `LIST OF SUBCONTRACTORS:
+      Subcontractor 1 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)       Acoustical Ceilings
+      Subcontractor 1 - Name of Business            Mock Acoustics Inc
+      Subcontractor 1 - Location of Business (city) 1 Example Way, Kestrel, CA 90001
+      Subcontractor 1 - License No.                 C-10 1250007
+      Subcontractor 1 - DIR Registration No.        19000000550
+      Subcontractor 2 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)
+      Subcontractor 2 - Name of Business
+      Subcontractor 2 - Location of Business (city)
+      Subcontractor 2 - License No.
+      Subcontractor 2 - DIR Registration No.`;
+  const PAGED = `LIST OF SUBCONTRACTORS:
+      Subcontractor 1 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)       Metal Stud Framing            Drywall
+      Subcontractor 1 - Name of Business            Example Wallworks Inc         Harbor Interiors LLC
+      Subcontractor 1 - License No.                 884201                        903774
+
+  Subcontractor 2 - Portion of the Work Activity
+  (e.g. electrical, mechanical, concrete)     Lath and Plaster            Fireproofing
+  Subcontractor 2 - Name of Business          Crestline Lathing Co        Vantage Fire Protection
+  Subcontractor 2 - License No.               448120                      662015`;
+  const DISTANT = `LIST OF SUBCONTRACTORS:
+      Subcontractor 1 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)       Metal Stud Framing
+      Subcontractor 1 - Name of Business            Example Wallworks Inc
+      Subcontractor 1 - License No.                 884201
+      Subcontractor 1 - DIR Registration No.
+      Amount of Subcontract
+      Bonding
+      Insurance
+      SBE                                           9999999999
+      Subcontractor 2 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)
+      Subcontractor 2 - Name of Business
+      Subcontractor 2 - Location of Business (city)
+      Subcontractor 2 - License No.
+      Subcontractor 2 - DIR Registration No.`;
+
+  const GAPPED = `LIST OF SUBCONTRACTORS:
+      Subcontractor 1 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)                                     Lath and Plaster              Spray Applied Fireproofing
+      Subcontractor 1 - Name of Business                                                                        Vantage Fire Protection
+      Subcontractor 1 - License No.                                               448120                        662015
+      Subcontractor 1 - DIR Registration No.                                      1000330044                    1000770011
+      Subcontractor 2 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)
+      Subcontractor 2 - Name of Business
+      Subcontractor 2 - License No.
+      Subcontractor 2 - DIR Registration No.`;
+
+  const SPLIT_SLOT = `LIST OF SUBCONTRACTORS:
+      Subcontractor 1 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)       Acoustical Ceilings           Metal Stud Framing
+      Subcontractor 1 - Name of Business            Mock Acoustics Inc            Example Wallworks Inc
+
+  Subcontractor 1 - License No.               771002                      884201
+  Subcontractor 1 - DIR Registration No.      1000889922                  1000447788
+  Subcontractor 2 - Portion of the Work Activity
+  (e.g. electrical, mechanical, concrete)
+  Subcontractor 2 - Name of Business
+  Subcontractor 2 - License No.
+  Subcontractor 2 - DIR Registration No.`;
+  const DRIFTED = `LIST OF SUBCONTRACTORS:
+      Subcontractor 1 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)       Acoustical Ceilings           Metal Stud Framing
+      Subcontractor 1 - Name of Business             Mock Acoustics Inc            Example Wallworks Inc
+      Subcontractor 1 - License No.                 771002                        884201
+      Subcontractor 2 - Portion of the Work Activity
+      (e.g. electrical, mechanical, concrete)
+      Subcontractor 2 - Name of Business
+      Subcontractor 2 - License No.
+      Subcontractor 2 - DIR Registration No.`;
+
+  it("reads one row per bidder column, each paired with its OWN answers", () => {
+    const parsed = parseSubListing(ALIGNED);
+    expect(
+      parsed.rows.map((r) => [r.name, r.portionOfWork, r.city, r.licence, r.registration]),
+    ).toEqual([
+      ["Example Wallworks Inc", "Metal Stud Framing & Drywall", "Fairview", "884201", "1000447788"],
+      ["Harbor Interiors LLC", "DRYWALL/FRAMING", "FAIRVIEW", "903774", "2000552211"],
+    ]);
+    expect(parsed.rows.map((r) => r.tradeScope)).toEqual([
+      "METAL_FRAMING_DRYWALL",
+      "METAL_FRAMING_DRYWALL",
+    ]);
+  });
+
+  /**
+   * A slot that leaves a COLUMN empty — `ucb_bot`'s real shape, five bidders in
+   * the header and four columns on every row. Slot 1 fills three columns; slot 2
+   * leaves the first one blank. Every firm must keep its own trade.
+   */
+  it("reads a slot that leaves a column empty without shifting the rest", () => {
+    const parsed = parseSubListing(RAGGED);
+    expect(parsed.rows.map((r) => [r.name, r.portionOfWork, r.licence])).toEqual([
+      ["Dummy Demolition Group", "Site Demolition", "884201"],
+      ["Notional Power Co", "Electrical", "903774"],
+      ["Mock Acoustics Inc", "Acoustical Ceilings", "771002"],
+      ["Crestline Lathing Co", "Lath and Plaster", "448120"],
+      ["Vantage Fire Protection", "Spray Applied Fireproofing", "662015"],
+    ]);
+  });
+
+  /**
+   * AND THE CASE THAT ACTUALLY SEPARATES "NEAREST COLUMN" FROM "ORDINAL", which
+   * the test above does NOT. There, every family line in a slot carries the same
+   * number of values, so counting from the left and measuring from the left agree.
+   * Ordinal reading only breaks when the families DISAGREE within one slot — which
+   * is `ucb_dwinelle`'s real shape, a slot whose single value sits in column two.
+   *
+   * Here the portion line carries two trades and the name line carries one firm,
+   * in the SECOND column. Ordinal pairs that firm with the FIRST trade, filing
+   * `Vantage Fire Protection` as doing lath and plaster. Nearest-column gives it
+   * its own.
+   *
+   * Written because the obvious test was the wrong test: replacing the column
+   * assignment with `values.indexOf(value)` left all 363 tests green, including
+   * the one above, which was written for exactly this decision.
+   */
+  it("pairs a lone value with ITS column, not with the first one", () => {
+    const parsed = parseSubListing(GAPPED);
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0]?.name).toBe("Vantage Fire Protection");
+    expect(parsed.rows[0]?.portionOfWork).toBe("Spray Applied Fireproofing");
+    expect(parsed.rows[0]?.tradeScope).toBe("FIREPROOFING");
+    expect(parsed.rows[0]?.licence).toBe("662015");
+    expect(parsed.rows[0]?.registration).toBe("1000770011");
+  });
+
+  it("emits nothing for a slot a bidder answered N/A", () => {
+    const parsed = parseSubListing(UNUSED);
+    expect(parsed.rows.map((r) => r.name)).toEqual(["Example Wallworks Inc"]);
+  });
+
+  /**
+   * The grid does not survive a page boundary — one real document's runs
+   * {56,133} -> {51,83} -> {50,82} -> {51,76}, with the indentation moving
+   * 6 -> 0 -> 5. Derived once for the whole document, page two's columns merge
+   * into page one's and the pairing is scrambled.
+   */
+  it("derives the grid per PAGE, so a form feed cannot scramble the pairing", () => {
+    const parsed = parseSubListing(PAGED);
+    expect(parsed.rows.map((r) => [r.name, r.portionOfWork])).toEqual([
+      ["Example Wallworks Inc", "Metal Stud Framing"],
+      ["Harbor Interiors LLC", "Drywall"],
+      ["Crestline Lathing Co", "Lath and Plaster"],
+      ["Vantage Fire Protection", "Fireproofing"],
+    ]);
+  });
+
+  /**
+   * Every one of these three is a real printed value from the corpus. None is
+   * refused: the row is claimed and the oddity is named, because a person is
+   * about to read the document anyway and deleting the prospect to avoid being
+   * wrong about its licence format costs more than it saves.
+   */
+  /**
+   * A SLOT SPLIT BY THE PAGE BREAK, which is what makes the per-page grid
+   * load-bearing rather than tidy. `ucb_minor485` has two form feeds and one of
+   * them lands mid-block.
+   *
+   * Page one's columns are at 52 and 82; page two's at 46 and 74. Derived ONCE
+   * for the whole document those are four columns, so this slot's name lands in
+   * column three and its licence in column two — the licence is silently lost and
+   * the firm arrives with no identifier at all. Derived per page they are both
+   * column index one, and the firm keeps its licence.
+   *
+   * The test above this one does not catch that: there the two pages hold
+   * DIFFERENT slots, which are keyed separately anyway, so a single global grid
+   * gets the same answer. Removing the page split left all 366 tests green.
+   */
+  it("keeps a slot together when the page breaks in the middle of it", () => {
+    const parsed = parseSubListing(SPLIT_SLOT);
+    expect(parsed.rows.map((r) => [r.name, r.portionOfWork, r.licence, r.registration])).toEqual([
+      ["Mock Acoustics Inc", "Acoustical Ceilings", "771002", "1000889922"],
+      ["Example Wallworks Inc", "Metal Stud Framing", "884201", "1000447788"],
+    ]);
+  });
+
+  /**
+   * And the two-character tolerance the grid is built with, which nothing else
+   * here exercises: this fixture puts ONE line's values a single character to the
+   * right of the others', the way a form feed shifts the line after it. Without
+   * the tolerance those become columns of their own and every firm loses the
+   * fields that drifted.
+   */
+  it("tolerates a one-character drift rather than inventing a column", () => {
+    const parsed = parseSubListing(DRIFTED);
+    expect(parsed.rows.map((r) => [r.name, r.portionOfWork, r.licence])).toEqual([
+      ["Mock Acoustics Inc", "Acoustical Ceilings", "771002"],
+      ["Example Wallworks Inc", "Metal Stud Framing", "884201"],
+    ]);
+  });
+
+  it("claims an odd licence, an odd DIR and an address-in-city, and says so", () => {
+    const parsed = parseSubListing(ODD);
+    expect(parsed.rows).toHaveLength(1);
+    const [row] = parsed.rows;
+    expect(row?.name).toBe("Mock Acoustics Inc");
+    expect(row?.licence).toBe("C-10 1250007");
+    expect(row?.registration).toBe("19000000550");
+    expect(row?.concerns.join(" ")).toMatch(/C-10 1250007/);
+    expect(row?.concerns.join(" ")).toMatch(/19000000550/);
+    expect(row?.concerns.join(" ")).toMatch(/street address/);
+  });
+
+  /**
+   * A wrapped label's values are on the next line or the one after. Without a
+   * bound, "the next line that HAS values" reaches five lines down — and in
+   * `ucdavis_9579290` that line is an `SBE` row, so its value becomes a DIR
+   * registration. There it is harmless only because the slot has no name and
+   * emits no row; here the slot has a name, so the wrong value would ship.
+   */
+  it("does not let a label five lines up swallow an unrelated value", () => {
+    const parsed = parseSubListing(DISTANT);
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0]?.name).toBe("Example Wallworks Inc");
+    expect(parsed.rows[0]?.registration).toBeNull();
+  });
+
+  /** The honesty, as a test rather than a comment, because it is the deliverable. */
+  it("says it is not attributing a subcontractor to a bidder", () => {
+    const parsed = parseSubListing(ALIGNED);
+    expect(parsed.problems.join(" ")).toMatch(/does not attribute a subcontractor/);
+    expect(parsed.problems.join(" ")).toMatch(/Treat the GC as unknown/);
+  });
+
+  /**
+   * Zero subcontractors and a failure to read are DIFFERENT OUTCOMES. Three of
+   * nine real Berkeley files legitimately list nobody — a package bid, a courtesy
+   * listing — and reporting that as a parse failure makes a correct day look
+   * broken.
+   */
+  it("distinguishes an empty form from an unreadable one", () => {
+    const parsed = parseSubListing(
+      UNUSED.replace(/Example Wallworks Inc/, "N/A").replace(/Metal Stud Framing/, "N/A"),
+    );
+    expect(parsed.rows).toEqual([]);
+    expect(parsed.problems.join(" ")).toMatch(/not one subcontractor was read/);
+    expect(parsed.problems.join(" ")).toMatch(/real and ordinary thing/);
+  });
+
+  /** And the numbered-block form is still refused; two shapes, two outcomes. */
+  it("still refuses the Caltrans numbered-block form", () => {
     const parsed = parseSubListing(
       [
-        "CALIFORNIA CONTRACTOR'S LICENSE",
-        "Name of Licensee          Alpha Example Builders Inc     Bravo Example Construction",
-        "Classification            A, B                           B",
-        "License Number            1250301                        1250308",
-        "DIR Registration Number   1900000901                     1900000912",
+        "DES-OE-0102.2C(REV 04/2025)",
+        "1) List this subcontractor?        YES      NO",
+        "     Business Name VANTAGE WALL SYSTEMS    Location City RIVERBEND  State CA",
       ].join("\n"),
     );
-    expect(parsed.problems.join(" ")).not.toMatch(/this looks like a filled/);
+    expect(parsed.rows).toEqual([]);
+    expect(parsed.problems.join(" ")).toMatch(/numbered block/);
   });
 });
 

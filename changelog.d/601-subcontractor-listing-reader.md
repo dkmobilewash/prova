@@ -623,6 +623,77 @@ Mutation-tested two ways. Removing the acronym loop reds 2 tests. **"Tidying" `A
 into `TRADE_KEYWORDS` as a lowercase word reds 21** — which is the point of the
 trap tests, since that refactor is the tempting one.
 
+### The labelled-column form is now READ, and says which question it is not answering
+
+The refusal above is a floor, not a capability. UC Berkeley and UC Davis Health are
+where this product's trades appear, and a refusal gets nobody a prospect.
+
+**Two questions come out of a page with six bidders side by side, and they are not
+equally answerable.** Which firms are listed, with trade, city, licence and DIR —
+and which BIDDER listed each of them. Every failure mode in the corpus lives in the
+second: one real document names five bidders and prints four columns, because bidder
+one listed nothing, so an ordinal attribution puts every row in it against the wrong
+GC. Matching the bidder header's offsets to the values' offsets is not available as
+a fallback either; in one document they do not coincide.
+
+So the reader answers the first and says, as a document-level problem, that it is
+not answering the second. "One of these GCs on this project" is true and useful. A
+guess at which one is a wrong thing said confidently down a telephone.
+
+**Cross-checked against an independent prototype** written from the same documents
+by a separate pass: both return 27, 27, 11, 41, 3 and 4 rows on the six fixtures.
+Two implementations agreeing beats either one's own test.
+
+Eight mutations, each landed and each reding its own assertions — and three of them
+were written only after the first version of the test failed to distinguish
+anything:
+
+- **nearest column replaced by ordinal position.** The obvious test did NOT catch
+  this: when every family line in a slot carries the same number of values,
+  counting from the left and measuring from the left agree. It takes a slot whose
+  families DISAGREE — a portion line with two trades and a name line with one firm,
+  in the second column — and then ordinal files that firm under the other trade.
+- **one grid for the document instead of per page.** Also not caught at first: two
+  pages holding different slots are keyed separately anyway. It takes a slot SPLIT
+  by the page break, which a real document does — the name on page one at offset
+  133, the licence on page two at offset 83. A single grid makes those different
+  columns and the licence is silently lost.
+- **the slots keyed per page.** Found by that same test: slots must outlive the
+  page while the grid must not, because a page-local column INDEX is comparable
+  across pages and an offset is not.
+- the N/A filter, the wrap distance bound, the run-together recovery, the
+  two-character grid tolerance, and the bidder-attribution warning.
+
+**A label and its value separated by ONE space defeats 2+-space splitting**, and
+that cost a field silently. The recovery trims trailing words until what remains is
+a label. It must accept only a WHOLE label, never a wrap fragment: `Name of
+Licensee` trims to `Name of`, which is a name fragment, so the prime's own licence
+block produced a subcontractor called "Licensee" and took a one-bidder document
+from 3 rows to 5. A fragment cannot have a value adjacent to it on its own line by
+definition — what follows the tail of a wrapped label is the rest of that label, on
+the line above.
+
+Concerns rather than refusals, on values that are all real in the corpus: a licence
+that is not 6-7 digits (`C-10 1030181`, `9028`, `na`), a DIR that is not 10 digits,
+a street address in the city field, and an alternates-only listing. `agreed` is
+false for a structural reason stated in the code: one label line carries several
+subcontractors and one subcontractor is assembled from five lines, so rows and
+lines cannot be compared at all.
+
+**Not read, and the reason is a measurement.** `Amount of Subcontract` is the only
+per-sub dollar figure anywhere in the corpus and it sits on its own offset grid: in
+the one document that has it, slot 1's `$6,625` starts at 96 while the two name
+columns are at 49 and 104 — so nearest-column would attach bidder one's amount to
+bidder two's subcontractor. A wrong dollar figure is worse than none.
+
+**A known gap, stated rather than discovered later:** a pasted EXCERPT of a single
+slot is not detected as this form at all, because the thresholds need the name and
+licence families twice and one slot prints each once. It falls through to the table
+reader. The thresholds cannot be lowered without risking a wrapped table heading,
+which is a real shape four of twenty lists print.
+
+368 tests across 16 files.
+
 ### The form refusal was keyed on one publisher, and a second form was inventing leads
 
 The Caltrans refusal argues — correctly — that keying on the LABELS would refuse
