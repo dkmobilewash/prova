@@ -2232,6 +2232,45 @@ anything about SIZE.
   on never appeared.** A defect inside dead code is invisible to every
   instrument, including the ones written for that exact defect.
 
+- **A FILE THE AGENT BROWSER CANNOT FETCH, AND THE SEED THAT MAKES IT NOT
+  MATTER.** 2026-10-03, verifying #596's payroll export.
+
+  Two dead ends, both found the expensive way, so nobody spends the evening
+  again:
+
+    - **`javascript_tool` refuses a fetch whose URL carries a QUERY STRING**
+      — it comes back `[BLOCKED: Cookie/query string data]`. That kills the
+      obvious trick of fetching a download URL from the page's own context to
+      read its bytes without downloading anything, because every such route
+      here is `?jobId=…&weekStart=…`. Rewriting the call to hide the URL does
+      not help; the guard is on the data, not the spelling.
+    - **`chrome://downloads` is unreachable** ("Can't interact with
+      browser-internal URLs"), so the agent cannot even find out where a file
+      landed. And `~/Downloads` is not necessarily where it went: this
+      machine runs FOUR connected Chrome instances, and a download triggered
+      in one of them is invisible from the others.
+
+  So **a file download is a human step**: the person clicks, and then either
+  pastes the contents or says where it saved. Write down what the file MUST
+  contain BEFORE asking — predicting first is what stops a wrong figure being
+  rationalised once it is on screen.
+
+  **The real fix is upstream, and it is the part worth copying.** The reason
+  a production download was needed at all is that `e2e/lib/seedDatabase.ts`
+  created a company, a contact and a job and nothing else — no crew, no craft
+  classifications, no time entries. So `payroll-export.spec.ts` could prove
+  the route, the content type, the filename, the header order and the 403,
+  and could not prove **one figure in the file**. That is not a weak spec; it
+  is the boundary of what an empty database can be asked.
+
+  The seed now carries a fixed week of hours — ONE employee in TWO
+  classifications, which is the smallest shape that catches all three of the
+  mistakes the export exists to prevent: an unknown wage written as `0`
+  instead of blank, a `rateKnown` flag that does not follow it, and a per
+  diem repeated onto a second row and therefore paid twice. **When a check
+  needs real rows to say anything, grow the fixture rather than reaching for
+  production.**
+
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.
 - `CHANGELOG.md`: newest first; says why decisions were made and the
