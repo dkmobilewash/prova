@@ -315,6 +315,7 @@ model User {
   /// AI settings rows this person last changed — an audit line on an
   /// owner-only switch, not a thing they own.
   aiSettingsChanged         CompanyAiSettings[]
+  sheetPins SheetPin[] @relation("SheetPinCreatedBy")
 
   @@index([companyId])
 }

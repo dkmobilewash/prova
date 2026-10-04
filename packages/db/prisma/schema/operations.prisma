@@ -239,6 +239,8 @@ model PunchListItem {
   updatedAt DateTime @updatedAt
 
   @@unique([companyId, clientOperationId])
+
+  sheetPins SheetPin[] @relation("SheetPinPunchItem")
   @@index([companyId])
   @@index([jobId])
   @@index([jobId, status])
@@ -888,9 +890,111 @@ model DrawingRevision {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  sheetPages SheetPage[]
+
   @@unique([setId, label])
   @@index([setId])
 }
+
+/// ONE PAGE OF A DRAWING REVISION, AND THE RASTER A PHONE CAN ACTUALLY DRAW ON.
+///
+/// A `DrawingRevision` holds a PDF and nothing else — no pages, no geometry. A
+/// pin needs a page to sit on and a picture to sit over, which is what this is.
+///
+/// `imageUrl` exists because THE PHONE CANNOT RENDER A PDF. There is no PDF
+/// renderer in `apps/mobile` and the only graphics dependency is
+/// `react-native-svg`, so the field half of pinning is an `<Image>` of this
+/// raster with an SVG overlay on top — no new native module, and offline comes
+/// free from the existing media cache. The web still renders the real PDF
+/// through pdfjs, so the raster is the phone's copy, never the source of truth.
+///
+/// `widthPt`/`heightPt` are the page's own dimensions at `scale: 1`, stored so
+/// a consumer can turn a stored `y` back into a position without opening the
+/// PDF. They are NOT needed to compute a distance — see `lib/sheet-geometry.ts`
+/// for why both axes divide by the width — and nothing should start using them
+/// for one.
+model SheetPage {
+  id         String          @id @default(cuid())
+  revisionId String
+  revision   DrawingRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  pageNumber Int
+  label      String?
+
+  /// The page at `scale: 1`, in PDF points, after pdf.js has applied /Rotate.
+  widthPt  Float
+  heightPt Float
+
+  /// The rasterised page the phone draws on. Null until rasterising has run,
+  /// which is why every reader must treat a page with no image as "not ready"
+  /// rather than as an error.
+  imageUrl     String?
+  imageWidthPx Int?
+
+  pins SheetPin[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([revisionId, pageNumber])
+  @@index([revisionId])
+}
+
+enum SheetPinKind {
+  PHOTO
+  PUNCH
+  NOTE
+}
+
+/// A POINT ON A SHEET THAT SAYS "THIS, HERE".
+///
+/// `x` and `y` are in the page-width box documented in `lib/sheet-geometry.ts`:
+/// `x` runs 0..1 and `y` runs 0..H/W, BOTH divided by the width. That is the
+/// same convention `TakeoffMeasurement` uses, deliberately, so one sheet cannot
+/// carry two coordinate systems.
+///
+/// WHY THIS IS NOT A `TakeoffMeasurement`. That model requires a
+/// `calibrationId` — a measurement with no scale is meaningless. A pin needs no
+/// scale at all: you pin a photo to a wall without ever telling the app how big
+/// the wall is. Reusing that table would have meant making calibration
+/// optional, which weakens the measurement model to serve a different feature.
+///
+/// THE TARGET DELETIONS ARE SetNull ON PURPOSE. Deleting the photo a pin points
+/// at does not delete the pin: somebody stood on that spot and flagged it, and
+/// that record outlives the attachment. A pin whose target is gone renders as a
+/// bare mark — which is honest — rather than vanishing and taking the knowledge
+/// that anything was ever flagged there with it.
+model SheetPin {
+  id     String    @id @default(cuid())
+  pageId String
+  page   SheetPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  /// Page-width units. See lib/sheet-geometry.ts — y is NOT a fraction of height.
+  x Float
+  y Float
+
+  kind SheetPinKind
+
+  mediaId String?
+  media   JobMedia? @relation("SheetPinMedia", fields: [mediaId], references: [id], onDelete: SetNull)
+
+  punchItemId String?
+  punchItem   PunchListItem? @relation("SheetPinPunchItem", fields: [punchItemId], references: [id], onDelete: SetNull)
+
+  /// Only for kind NOTE. A note pin carries its own words; the other two kinds
+  /// borrow theirs from what they point at.
+  note String?
+
+  createdByUserId String?
+  createdBy       User?   @relation("SheetPinCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([pageId])
+  @@index([mediaId])
+  @@index([punchItemId])
+}
+
+
 
 /// One line of a job's closeout checklist — final lien waiver, as-builts,
 /// O&M manuals, warranty letter, final certified payroll.
