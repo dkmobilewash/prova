@@ -13,6 +13,8 @@ import {
   SALES_SIGNAL_KINDS,
   type ReviewDecision,
 } from "@/lib/sales-qualification";
+import { parseSubListing } from "@/lib/sub-listing/parse";
+import { PRIME_OUTCOMES, signalsForSub } from "@/lib/sub-listing/signals";
 import { prisma } from "@prova/db";
 import {
   InputError,
@@ -25,6 +27,7 @@ import {
   joinWithConjunction,
   runAction,
   type ActionResult,
+  type ActionResultWith,
 } from "./shared";
 
 // `InputError` and `runAction` are imported from ./shared rather than
@@ -772,4 +775,182 @@ export async function updateSalesLeadSignal(
     revalidatePath("/sales");
     return ok;
   });
+}
+
+/* --------------------------------------------------------------------- */
+/* Reading a public subcontractor listing                                 */
+/* --------------------------------------------------------------------- */
+
+/**
+ * IMPORTING SUBCONTRACTORS OFF A PUBLIC BID OR AWARD DOCUMENT.
+ *
+ * The acquisition motion: find a project out to bid or recently awarded, find
+ * the subs named on it, and reach each one about their own job. `lib/sub-listing/`
+ * does the reading; this does the writing, and the two halves are deliberately
+ * separate because one is pure and testable and the other is not.
+ *
+ * ── THE CLIENT CANNOT INVENT A SUBCONTRACTOR ──
+ *
+ * The browser parses the pasted text to show a review table, and then the
+ * confirm sends **the raw text again** and this function parses it a second
+ * time with the same parser. Nothing the screen displays is trusted: a row that
+ * is not in the server's own reading of the document cannot be imported,
+ * because the server never sees the client's rows at all. That is
+ * `SpreadsheetImport`'s rule — *"what lands can never be something this
+ * component invented"* — and it matters more here, because what lands is a
+ * sourced claim somebody will read down a telephone.
+ *
+ * The selection arrives as LINE NUMBERS, which is the only thing the two
+ * parses are guaranteed to agree on. If the counts do not match, the import is
+ * refused rather than reconciled — a listing that reads differently on the
+ * server than it did in the browser is not something to guess about.
+ *
+ * ── EVERYTHING LANDS PROPOSED ──
+ *
+ * `createSalesLeadSignal` forces `CONFIRMED` and stamps the reviewer, on the
+ * theory that a person typing a signal in IS the review. Nothing here is typed
+ * by a person, so nothing here may claim to have been reviewed: every row lands
+ * `PROPOSED` with no reviewer, and the band cannot move until somebody presses
+ * Confirm on the lead. A machine-proposed signal that counted toward a band
+ * would make the band measure how much reading happened rather than what is
+ * known.
+ *
+ * ── NO MODEL, AND THAT IS A LANE DECISION AS WELL AS A DESIGN ONE ──
+ *
+ * This reads a table with a parser, not a document with a model. AI extraction
+ * is Diego's lane (CLAUDE.md, from 2026-09-26), so a model-based reader here
+ * would be in the wrong lane AND would carry the invention failure
+ * `lib/research/bidResearch.eval.ts` exists to measure. A subcontractor listing
+ * is a table; a parser is the right instrument and the cheaper one.
+ */
+export type SubListingImportSummary = {
+  leadsCreated: number;
+  leadsAttached: number;
+  signalsProposed: number;
+  rowsSkipped: number;
+};
+
+/** One pasted page's worth. A listing with more rows than this is a document
+ *  nobody has reviewed, and the review is the point. */
+const MAX_LISTING_ROWS = 60;
+
+export async function importSubListing(
+  formData: FormData,
+): Promise<ActionResultWith<SubListingImportSummary>> {
+  const { company, ...user } = await requireCompanyContext();
+  try {
+    assertSalesAccess({ company, role: user.role });
+
+    const listingText = required(formData, "listingText", "The listing you pasted");
+
+    // Same refusal as a hand-typed signal, for the same reason: a claim with no
+    // page behind it is a rumour that gets read as a fact on a call.
+    const link = optionalLinkFromForm(formData, "sourceUrl", "The source link");
+    if (!link.ok) return { ok: false, error: link.error };
+    if (!link.value) {
+      return {
+        ok: false,
+        error:
+          "This needs the page you read the listing on. Without a source every signal from it is a rumour, and it will be read as a fact on a call.",
+      };
+    }
+    const sourceUrl = link.value;
+    const sourceTitle = text(formData, "sourceTitle") || null;
+    const primeOutcome = requiredEnum(
+      formData,
+      "primeOutcome",
+      PRIME_OUTCOMES,
+      "whether the prime's bid won",
+    );
+
+    const parsed = parseSubListing(listingText);
+
+    const wanted = text(formData, "lines")
+      .split(",")
+      .map((entry) => Number.parseInt(entry.trim(), 10))
+      .filter((line) => Number.isInteger(line));
+    const unique = [...new Set(wanted)];
+
+    if (unique.length === 0) return { ok: false, error: "Pick at least one subcontractor to add." };
+    if (unique.length > MAX_LISTING_ROWS) {
+      return {
+        ok: false,
+        error: `That is ${unique.length} subcontractors at once. Import up to ${MAX_LISTING_ROWS} so the reading stays something a person has actually looked at.`,
+      };
+    }
+
+    const chosen = parsed.rows.filter((row) => unique.includes(row.line));
+    if (chosen.length !== unique.length) {
+      return {
+        ok: false,
+        error:
+          "The listing does not read the same way now as it did on screen, so nothing was added. Paste it again and pick from the fresh reading.",
+      };
+    }
+
+    const summary = await prisma.$transaction(async (tx) => {
+      let leadsCreated = 0;
+      let leadsAttached = 0;
+      let signalsProposed = 0;
+      let rowsSkipped = 0;
+
+      for (const row of chosen) {
+        const proposals = signalsForSub(row, parsed.header, primeOutcome);
+        if (proposals.length === 0) {
+          // A row with no checkable fact would produce a lead with nothing on
+          // it, which is worse than no lead: it reads as researched.
+          rowsSkipped += 1;
+          continue;
+        }
+
+        const attachTo = text(formData, `attach:${row.line}`);
+        let leadId: string;
+
+        if (attachTo) {
+          // Re-read and re-scope INSIDE the transaction. The candidate list the
+          // reviewer chose from was rendered from an earlier read.
+          const existing = await tx.salesLead.findUnique({ where: { id: attachTo } });
+          if (!existing || existing.companyId !== company.id) {
+            throw new InputError(
+              "One of the leads you chose to add to is no longer there, so nothing was added. Paste the listing again.",
+            );
+          }
+          leadId = existing.id;
+          leadsAttached += 1;
+        } else {
+          const created = await tx.salesLead.create({
+            data: {
+              companyId: company.id,
+              companyName: row.name,
+              source: "OUTBOUND",
+            },
+          });
+          leadId = created.id;
+          leadsCreated += 1;
+        }
+
+        await tx.salesLeadSignal.createMany({
+          data: proposals.map((proposal) => ({
+            companyId: company.id,
+            leadId,
+            kind: proposal.kind,
+            claim: proposal.claim,
+            sourceUrl,
+            sourceTitle,
+            // PROPOSED, with no reviewer. Nothing here was reviewed by anybody.
+            state: "PROPOSED" as const,
+          })),
+        });
+        signalsProposed += proposals.length;
+      }
+
+      return { leadsCreated, leadsAttached, signalsProposed, rowsSkipped };
+    });
+
+    revalidatePath("/sales");
+    return { ok: true, value: summary };
+  } catch (err) {
+    if (err instanceof InputError) return { ok: false, error: err.message };
+    throw err;
+  }
 }

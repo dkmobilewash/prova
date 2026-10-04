@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { SalesLeadForm } from "@/components/SalesLeadForm";
+import { SubListingImport } from "@/components/SubListingImport";
 import { SalesLeadRow } from "@/components/SalesLeadRow";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { viewerToday } from "@/lib/viewerToday";
@@ -267,7 +268,15 @@ export default async function SalesPage() {
         </ul>
       )}
 
-      <SalesLeadForm />
+      <div className="flex flex-col gap-3">
+        <SalesLeadForm />
+        {/* Reading a public listing sits beside adding a lead by hand, because
+            it is the same decision made at a different scale: one company you
+            heard about, or every sub a prime named on one job. */}
+        <SubListingImport
+          leads={leads.map((lead) => ({ id: lead.id, companyName: lead.companyName }))}
+        />
+      </div>
     </div>
   );
 }

@@ -1,0 +1,390 @@
+"use client";
+
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { importSubListing } from "@/lib/actions";
+import { Spinner } from "@/components/Spinner";
+import { parseSubListing } from "@/lib/sub-listing/parse";
+import { importSummaryFor, signalsForSub, type PrimeOutcome } from "@/lib/sub-listing/signals";
+import { leadCandidatesFor } from "@/lib/sub-listing/leadMatch";
+import { tradeScopeLabel } from "@/lib/trade-scopes";
+
+/**
+ * PASTE A PUBLIC SUBCONTRACTOR LISTING, SEE EXACTLY WHAT WAS READ, IMPORT WHAT
+ * IS RIGHT.
+ *
+ * ── WHY THIS LEADS WITH WHAT IT COULD NOT READ ──
+ *
+ * The screen's first job is not to show the subcontractors. It is to show
+ * whether the reading is COMPLETE, because a listing read as seven subs when it
+ * holds eleven produces four prospects nobody will ever know are missing. So the
+ * reconciliation sits at the top, above the rows, and a disagreement is stated
+ * in a sentence rather than implied by a count.
+ *
+ * ── THE PARSE HERE IS FOR DISPLAY ──
+ *
+ * `SpreadsheetImport`'s rule, and it applies with more force to this than to a
+ * catalog: the confirm sends **the raw text**, and the server parses it again
+ * with the same parser, so what lands can never be something this component
+ * invented. The selection travels as LINE NUMBERS — the only thing two parses of
+ * the same document are guaranteed to agree about.
+ *
+ * ── WHY A TEXTAREA AND NOT A FILE UPLOAD ──
+ *
+ * The obvious move is to accept the PDF. `pdfjs-dist` is already a dependency
+ * and `lib/intake/pdf-text.ts` already extracts text in the browser — but it
+ * reads the FIRST PAGE ONLY and caps at 4,000 characters. On a listing that runs
+ * to a second page, that silently drops subcontractors, which is the one defect
+ * this whole feature is built to prevent. A paste cannot truncate without the
+ * person seeing it happen.
+ *
+ * So: paste in slice one, deliberately. PDF belongs here only once it reports
+ * truncation as loudly as `unread` does.
+ *
+ * ── AND WHY IT ASKS WHETHER THE BID WON ──
+ *
+ * In California the listing is filed WITH THE BID, by EVERY prime. The document
+ * cannot tell you whether that prime was awarded the job, so this asks, and
+ * defaults to not knowing. It is the difference between a claim that opens a
+ * conversation and a claim that congratulates a man on a job he lost.
+ */
+
+type ExistingLead = { id: string; companyName: string };
+
+export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [listingText, setListingText] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceTitle, setSourceTitle] = useState("");
+  const [primeOutcome, setPrimeOutcome] = useState<PrimeOutcome>("UNKNOWN");
+  const [skipped, setSkipped] = useState<Record<number, true>>({});
+  const [attach, setAttach] = useState<Record<number, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const parsed = useMemo(() => parseSubListing(listingText), [listingText]);
+
+  // Rows of one of our five trades are checked by default; the rest are not.
+  // An electrical sub on the same form is not a prospect, and making a person
+  // untick twelve of them is how they stop reading the list.
+  const included = parsed.rows.filter(
+    (row) => !skipped[row.line] && (row.tradeScope !== null || attach[row.line]),
+  );
+
+  function reset() {
+    setOpen(false);
+    setListingText("");
+    setSourceUrl("");
+    setSourceTitle("");
+    setPrimeOutcome("UNKNOWN");
+    setSkipped({});
+    setAttach({});
+    setError(null);
+  }
+
+  if (!open) {
+    return (
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="self-start rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800"
+        >
+          Read a subcontractor listing
+        </button>
+        {done && <p className="text-xs text-tag-green-ink">{done}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const formData = new FormData();
+        formData.set("listingText", listingText);
+        formData.set("sourceUrl", sourceUrl);
+        formData.set("sourceTitle", sourceTitle);
+        formData.set("primeOutcome", primeOutcome);
+        formData.set("lines", included.map((row) => row.line).join(","));
+        for (const row of included) {
+          const chosen = attach[row.line];
+          if (chosen) formData.set(`attach:${row.line}`, chosen);
+        }
+        setError(null);
+        startTransition(async () => {
+          const result = await importSubListing(formData);
+          if (!result.ok) {
+            // Everything typed stays on screen. The source link is the refusal
+            // somebody will actually hit, and losing a pasted document to it
+            // would be worse than the refusal.
+            setError(result.error);
+            return;
+          }
+          const { leadsCreated, leadsAttached, signalsProposed, rowsSkipped } = result.value;
+          setDone(
+            `${signalsProposed} signal${signalsProposed === 1 ? "" : "s"} to check across ` +
+              `${leadsCreated} new lead${leadsCreated === 1 ? "" : "s"}` +
+              (leadsAttached > 0 ? ` and ${leadsAttached} you already had` : "") +
+              (rowsSkipped > 0 ? `. ${rowsSkipped} row${rowsSkipped === 1 ? "" : "s"} carried nothing checkable and were left out` : "") +
+              ".",
+          );
+          reset();
+          router.refresh();
+        });
+      }}
+      className="rounded-md border border-line-card bg-canvas p-4"
+    >
+      <h3 className="text-sm font-medium text-ink-body">Read a subcontractor listing</h3>
+      <p className="mt-1 text-xs text-ink-muted">
+        Paste the subcontractor list off a public bid or award document. In California it is the
+        &ldquo;Designation of Subcontractors&rdquo; filed with the bid; in Oregon the First-Tier
+        Subcontractor Disclosure. A bid tabulation names only the prime bidders, so it has nothing
+        to read here.
+      </p>
+
+      <label className="mt-4 flex flex-col gap-1 text-xs text-ink-label">
+        What the document says
+        <textarea
+          value={listingText}
+          onChange={(event) => setListingText(event.target.value)}
+          rows={8}
+          required
+          placeholder="Select the subcontractor table in the document and paste it here, column headings and all."
+          className="rounded-md border border-line-card bg-surface px-2 py-1 font-mono text-xs text-ink-body"
+        />
+      </label>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1 text-xs text-ink-label">
+          Link to the document
+          <input
+            type="url"
+            value={sourceUrl}
+            onChange={(event) => setSourceUrl(event.target.value)}
+            required
+            placeholder="https://…"
+            className="rounded-md border border-line-card bg-surface px-2 py-1 text-sm text-ink-body"
+          />
+          <span className="text-ink-muted">
+            Required. Every signal from this listing carries it, because a claim with no page behind
+            it gets read as a fact on a call.
+          </span>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-ink-label">
+          What to call the page (optional)
+          <input
+            type="text"
+            value={sourceTitle}
+            onChange={(event) => setSourceTitle(event.target.value)}
+            placeholder="Riverside USD — Lincoln Elementary award packet"
+            className="rounded-md border border-line-card bg-surface px-2 py-1 text-sm text-ink-body"
+          />
+        </label>
+      </div>
+
+      <fieldset className="mt-3">
+        <legend className="text-xs text-ink-label">
+          Did the prime on this form win the job?
+        </legend>
+        <div className="mt-1 flex flex-col gap-1 text-xs text-ink-body">
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="primeOutcome"
+              checked={primeOutcome === "UNKNOWN"}
+              onChange={() => setPrimeOutcome("UNKNOWN")}
+            />
+            Not sure — this is a listing filed with a bid
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="primeOutcome"
+              checked={primeOutcome === "AWARDED"}
+              onChange={() => setPrimeOutcome("AWARDED")}
+            />
+            Yes — I am reading an award, and this prime got it
+          </label>
+        </div>
+        <p className="mt-1 text-xs text-ink-muted">
+          A listing is filed with the bid by every prime, so most of the subs on one are not on the
+          job. Saying you are not sure keeps the claims honest.
+        </p>
+      </fieldset>
+
+      {listingText.trim() && (
+        <div className="mt-4 border-t border-line-row pt-4">
+          {/* The reconciliation leads, above the rows. A reading that lost a
+              subcontractor is the only failure here nobody would notice. */}
+          {parsed.reconciliation.agreed ? (
+            <p className="text-xs text-tag-green-ink">
+              Every line carrying an amount, a licence or a registration number was read
+              &mdash; {parsed.reconciliation.rowsParsed} of {parsed.reconciliation.candidateLines}.
+            </p>
+          ) : (
+            <p className="text-xs text-tag-rose-ink">
+              {parsed.unread.length} line{parsed.unread.length === 1 ? "" : "s"} carried data and
+              could not be read. Check {parsed.unread.length === 1 ? "it" : "them"} against the
+              document before trusting this list &mdash; a sub who was never read is a sub nobody
+              notices is missing.
+            </p>
+          )}
+
+          {parsed.unread.length > 0 && (
+            <ul className="mt-2 flex flex-col gap-1">
+              {parsed.unread.map((line) => (
+                <li key={line.line} className="text-xs text-ink-muted">
+                  <span className="font-mono">line {line.line}</span>: {line.why}
+                  <span className="block font-mono text-ink-label">{line.text.trim()}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <dl className="mt-3 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
+            {(
+              [
+                ["Project", parsed.header.project],
+                ["Agency", parsed.header.agency],
+                ["Prime on this form", parsed.header.prime],
+                ["Bid opened", parsed.header.bidDate],
+              ] as const
+            ).map(([label, value]) => (
+              <div key={label} className="flex gap-2">
+                <dt className="text-ink-label">{label}</dt>
+                <dd className={value ? "text-ink-body" : "text-ink-muted"}>
+                  {value ?? "not on the page"}
+                </dd>
+              </div>
+            ))}
+          </dl>
+
+          {parsed.rows.length === 0 ? (
+            <p className="mt-4 text-xs text-ink-muted">
+              No subcontractors read yet. A listing usually has a licence or registration number on
+              each row &mdash; if yours does not, paste a few more columns.
+            </p>
+          ) : (
+            <ul className="mt-4 flex flex-col gap-3">
+              {parsed.rows.map((row) => {
+                const candidates = leadCandidatesFor(row.name, leads);
+                const proposals = signalsForSub(row, parsed.header, primeOutcome);
+                const checked = !skipped[row.line] && (row.tradeScope !== null || !!attach[row.line]);
+                return (
+                  <li key={row.line} className="rounded-md border border-line-card p-3">
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) =>
+                          setSkipped((current) => {
+                            const next = { ...current };
+                            if (event.target.checked) delete next[row.line];
+                            else next[row.line] = true;
+                            return next;
+                          })
+                        }
+                        className="mt-0.5"
+                        aria-label={`Add ${row.name}`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-ink-body">{row.name}</p>
+                        <p className="text-xs text-ink-label">
+                          {row.tradeScope ? (
+                            <span className="text-tag-blue-ink">{tradeScopeLabel(row.tradeScope)}</span>
+                          ) : (
+                            <span className="text-ink-muted">not one of our five trades</span>
+                          )}
+                          {row.portionOfWork ? ` · ${row.portionOfWork}` : ""}
+                          {row.city ? ` · ${row.city}` : ""}
+                        </p>
+                        <p className="mt-1 font-mono text-xs text-ink-muted">
+                          line {row.line}: {row.sourceText}
+                        </p>
+
+                        {row.concerns.length > 0 && (
+                          <ul className="mt-1 flex flex-col gap-0.5">
+                            {row.concerns.map((concern) => (
+                              <li key={concern} className="text-xs text-tag-amber-ink">
+                                {concern}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+
+                        <p className="mt-1 text-xs text-ink-label">
+                          {importSummaryFor(row, parsed.header, primeOutcome)}
+                        </p>
+
+                        {proposals.length > 0 && checked && (
+                          <ul className="mt-1 flex flex-col gap-0.5">
+                            {proposals.map((proposal) => (
+                              <li key={proposal.kind} className="text-xs text-ink-muted">
+                                {proposal.claim}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+
+                        {candidates.length > 0 && (
+                          <label className="mt-2 flex flex-col gap-1 text-xs text-ink-label">
+                            Already a lead?
+                            <select
+                              value={attach[row.line] ?? ""}
+                              onChange={(event) =>
+                                setAttach((current) => ({ ...current, [row.line]: event.target.value }))
+                              }
+                              className="rounded-md border border-line-card bg-surface px-2 py-1 text-sm text-ink-body"
+                            >
+                              <option value="">No — add a new lead</option>
+                              {candidates.map((candidate) => (
+                                <option key={candidate.lead.id} value={candidate.lead.id}>
+                                  {candidate.lead.companyName}
+                                  {candidate.confidence === "SAME" ? " (same name)" : " (similar name)"}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {error && <p className="mt-3 text-xs text-tag-rose-ink">{error}</p>}
+
+      <div className="mt-4 flex gap-2">
+        <button
+          type="submit"
+          disabled={pending || included.length === 0}
+          className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-neutral-900 disabled:opacity-60"
+        >
+          {pending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Adding…
+            </span>
+          ) : (
+            `Add ${included.length} subcontractor${included.length === 1 ? "" : "s"}`
+          )}
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={reset}
+          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
