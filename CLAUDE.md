@@ -2227,12 +2227,50 @@ anything about SIZE.
   frame, and Clerk hands `SignIn`/`SignUp` a `fallback` prop with
   `renderWhileLoading: true` so the waiting state is something IT draws.
 
-  And the open half, recorded rather than closed: `SignIn` and `SignUp` carry
+  And the open half — **MEASURED 2026-10-04, and it was open because nobody
+  had an instrument, not because it was hard.** `SignIn` and `SignUp` carry
   the same `clerk.loaded &&` branch as `UserButton`
   (`chunk-THNCS7QR.mjs:556` and `:577`), so the race exists on those two
-  pages in principle. The only evidence against it is that the journey's
-  monitor is attached BEFORE `signInAs` and no run has ever named `/sign-in`.
-  That is weak, and it is the honest state of it.
+  pages in principle. The only evidence against it used to be that the
+  journey's monitor is attached BEFORE `signInAs` and no run has ever named
+  `/sign-in` — which this file called weak, and it was.
+
+  A real Chromium against the preview, 48 loads with a `pageerror` monitor:
+
+  | arm | loads | hydrated | Clerk card | #418 |
+  | --- | --- | --- | --- | --- |
+  | control, before | 3 | 3 | 3 | **3** |
+  | `/sign-in` | 24 | 24 | 23 | **0** |
+  | `/sign-up` | 24 | 24 | 21 | **0** |
+  | control, after | 2 | 2 | 2 | **2** |
+
+  The controls are the whole reason the zeros are readable, and they run at
+  BOTH ends so a mid-run harness death cannot hide behind them. The control
+  injects one `<div>` into `<body>` from `addInitScript` before any page
+  script — the ColorZilla mechanism from the #61 entry — and its success
+  criterion is that the node is REGENERATED AWAY (3 of 3, 2 of 2), because
+  React says the tree "will be regenerated on the client". Against the signed-in
+  shell's own measured rate of 12 in 40, P(0 in 48) is about 10^-8.
+
+  **Two bounds, because the second one is the real limit.** This is a preview
+  deployment, not a GitHub runner, and the defect is a race. And the dangerous
+  ordering is Clerk's script winning against hydration — on 1 of 24 and 3 of 24
+  loads the Clerk card had not rendered at all by the 1.8s mark, which means
+  those loads could not have mismatched even in principle, so the fast-Clerk
+  case is probably UNDER-sampled. Strong evidence the exemption is safe at
+  anything like the shell's rate; not proof at a low one.
+
+  Three harness failures happened before this produced a number, and all three
+  were mine rather than the app's: a control that re-served a decoded body with
+  the original `content-encoding: br`, so nothing parsed and 48 loads were
+  measured against a blank document; a replacement using Playwright's
+  `route.fetch()`, which this container's egress proxy answers **403** (browser
+  navigation is allowed, Playwright's Node-side fetch is a separate path — do
+  not route around it); and a hydration gate reading only
+  `document.querySelector("body *")`, which reported `hydrated: 0` on a control
+  that was firing perfectly, because after a mismatch React regenerates the tree
+  and the first element is no longer one it owns. Scan many elements for a
+  `__reactFiber$` key, not one.
 
   **How the census keeps itself honest.** It counts the files it parsed
   against a second expression that shares no regex with the first, requires
