@@ -47,10 +47,19 @@ product, not the reverse, for the third time in one session.
 **ESTABLISHED BY CONTROL, NOT BY ARGUMENT: a full LOCAL `pnpm test:e2e` run
 fails ~21 specs with `Unique constraint failed on (clerkId)` from
 `prisma.user.create()`, and it does so WITH THIS BRANCH REVERTED TOO.** It is
-a concurrent sign-in race in the local parallel run, pre-existing and not
-this change. CI runs the same suite without it. Recorded so the next person
-who sees that wall of red locally does not spend the afternoon on their own
-diff — reverting and re-running is a five-minute control and answers it.
+a concurrent sign-in race, pre-existing and not this change. Recorded so the
+next person who sees that wall of red locally does not spend the afternoon on
+their own diff — reverting and re-running is a five-minute control and
+answers it.
+
+**Corrected before this merged, from CI's own log rather than from the
+assumption:** the first draft of this paragraph said "CI runs the same suite
+without it". It does not. CI's run of this very branch logs the SAME
+constraint error **fourteen times** and still finishes with zero non-hydration
+failures — so the race happens in both places and is merely SURVIVED in CI,
+where the local run lets it take specs down. "It does not happen there" and
+"it does not fail there" are different claims, and only the second one is
+true.
 
 559 files / 8700 tests, typecheck and lint clean; the three payroll specs
 pass in isolation.
