@@ -6,6 +6,8 @@ import { prisma } from "@prova/db";
 import { actionFail as fail, actionOk as ok, runAction, type ActionResult } from "./shared";
 import { parseNumericInput } from "@/lib/numeric-input";
 import { can } from "@/lib/permissions";
+import { put } from "@vercel/blob";
+import { rasterisePage } from "@/lib/sheet-raster";
 import { pinContentProblem, pinPlacementProblem, type SheetPinKind } from "@/lib/sheet-pins";
 
 /**
@@ -182,6 +184,64 @@ export async function ensureSheetPages(revisionId: string, pages: SheetPageInput
         heightPt: p.heightPt,
       })),
       skipDuplicates: true,
+    });
+    revalidatePath("/drawings");
+    return ok;
+  });
+}
+
+/**
+ * Render a revision's sheets to images, so the PHONE has something to draw on.
+ *
+ * `apps/mobile` has no PDF renderer and no WebView — `react-native-svg` is its
+ * only graphics dependency — so the field half of pinning is an `<Image>` of
+ * this raster with an SVG overlay. That choice is what keeps the phone free of
+ * a new native module, and it is why this runs on the server at all.
+ *
+ * ONE PAGE PER CALL, ON PURPOSE. A plan set is tens of sheets at a couple of
+ * megabytes each; rendering them in one request is a function timeout waiting
+ * to happen, and a partial failure would leave no way to tell which sheets had
+ * been done. A page that already has an `imageUrl` is skipped, so calling this
+ * repeatedly walks the set forwards and is safe to retry.
+ *
+ * It returns ok with nothing left to do rather than failing, because "every
+ * sheet is already rendered" is success, not an error.
+ */
+export async function rasteriseNextSheet(revisionId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+
+    const revision = await prisma.drawingRevision.findFirst({
+      where: { id: revisionId, set: { companyId: context.company.id } },
+      select: { id: true, fileUrl: true },
+    });
+    if (!revision) return fail("That drawing revision is not on this account.");
+    if (!revision.fileUrl) return fail("That revision has no drawing attached.");
+
+    const next = await prisma.sheetPage.findFirst({
+      where: { revisionId: revision.id, imageUrl: null },
+      orderBy: { pageNumber: "asc" },
+      select: { id: true, pageNumber: true },
+    });
+    if (!next) return ok; // every sheet is rendered; nothing to do is success
+
+    const response = await fetch(revision.fileUrl);
+    if (!response.ok) {
+      return fail("That drawing could not be fetched, so its sheets could not be rendered.");
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+
+    const raster = await rasterisePage(bytes, next.pageNumber);
+    const stored = await put(`sheets/${revision.id}/${next.pageNumber}.png`, raster.png, {
+      access: "public",
+      addRandomSuffix: true,
+      contentType: "image/png",
+    });
+
+    await prisma.sheetPage.update({
+      where: { id: next.id },
+      data: { imageUrl: stored.url, imageWidthPx: raster.widthPx },
     });
     revalidatePath("/drawings");
     return ok;

@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ensureSheetPages } from "@/lib/actions";
+import { ensureSheetPages, rasteriseNextSheet } from "@/lib/actions";
 import { SheetPinViewer } from "./SheetPinViewer";
+import { Spinner } from "./Spinner";
 import type { SheetPinKind } from "@/lib/sheet-pins";
 
 /**
@@ -25,6 +26,7 @@ type Page = {
   pageNumber: number;
   widthPt: number;
   heightPt: number;
+  imageUrl: string | null;
   pins: {
     id: string;
     x: number;
@@ -47,6 +49,8 @@ export function SheetPinSurface({
   pages: Page[];
 }) {
   const [index, setIndex] = useState(0);
+  const [rendering, setRendering] = useState(false);
+  const [renderError, setRenderError] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(pages.length === 0);
   const [error, setError] = useState<string | null>(null);
   const attempted = useRef(false);
@@ -107,9 +111,55 @@ export function SheetPinSurface({
   }
 
   const page = pages[Math.min(index, pages.length - 1)];
+  const unrendered = pages.filter((p) => p.imageUrl === null).length;
+
+  async function renderForThePhone() {
+    setRendering(true);
+    setRenderError(null);
+    // One sheet per call — see `rasteriseNextSheet`. Walk until it stops
+    // finding work, so a set of thirty sheets does not need thirty clicks.
+    for (let i = 0; i < pages.length; i += 1) {
+      const result = await rasteriseNextSheet(revisionId);
+      if (!result.ok) {
+        setRenderError(result.error);
+        setRendering(false);
+        return;
+      }
+    }
+    setRendering(false);
+    window.location.reload();
+  }
 
   return (
     <div className="space-y-3">
+      {unrendered > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-slate-700 bg-slate-900/60 p-3 text-sm">
+          <span className="text-slate-300">
+            {/* The phone cannot open a PDF, so a sheet is only usable in the
+                field once it has been rendered to an image. Said in those
+                words rather than "not processed", which tells a foreman
+                nothing about what they can and cannot do on site. */}
+            {unrendered} of {pages.length} {pages.length === 1 ? "sheet is" : "sheets are"} not ready for the
+            phone yet.
+          </span>
+          <button
+            type="button"
+            onClick={renderForThePhone}
+            disabled={rendering}
+            className="rounded-md bg-sky-500 px-3 py-2 text-sm font-medium text-slate-950 disabled:opacity-50"
+          >
+            {rendering ? (
+              <>
+                <Spinner />
+                Preparing…
+              </>
+            ) : (
+              "Prepare for the phone"
+            )}
+          </button>
+          {renderError && <span className="text-rose-300">{renderError}</span>}
+        </div>
+      )}
       {pages.length > 1 && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-slate-400">Sheet</span>

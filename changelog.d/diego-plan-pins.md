@@ -80,3 +80,74 @@ out and pins ship whole. That is rule 1 working as written rather than being
 argued around.
 
 568 files / 8846 tests, typecheck, lint and a full production build clean.
+
+---
+
+### The sheets a phone can actually draw on (Diego)
+
+Second commit on this branch. The field half starts here: `apps/mobile` has no
+PDF renderer and no WebView — `react-native-svg` is its only graphics
+dependency — so a sheet is only usable on site once the server has turned it
+into a picture.
+
+**CLAUDE.md SAYS SERVER-SIDE `page.render()` FAILS. IT DOES NOT, AND THE CAUSE
+OF THE ORIGINAL REPORT WAS A MISSING OPTIONAL DEPENDENCY.** pdfjs declares
+`@napi-rs/canvas` as optional; nothing had installed it, so the call threw
+`Cannot read properties of null (reading 'canvas')` — the exact error
+`lib/plan-ingest/planPdf.ts` records. With the package present a page renders.
+That file is still right about its OWN job: plan ingest reads text, and
+"rasterising throws away the thing we came for" stands. This one wants the
+opposite thing from the same library.
+
+**PNG, not JPEG, measured rather than assumed:** 27KB against 43KB at the same
+width on line-work — the reverse of the photo case, because a drawing is flat
+colour with hard edges, which is what PNG is best at and JPEG is worst at.
+
+**TWO MUTATIONS SURVIVED THE FIRST RUN AND THE REASON WAS THE FIXTURE.**
+
+| mutation | against `plan-sheet.pdf` | against the new fixture |
+| --- | --- | --- |
+| raster squared, aspect destroyed | **green** | **RED** |
+| paper not painted white | **green** | still green — see below |
+| out-of-range page accepted | RED | RED |
+
+`plan-sheet.pdf` is **200x200 — square** — so "aspect preserved" compared 1 to
+1 and passed however the canvas was sized. That is the same trap this branch's
+own pin tests were built to avoid three hours earlier, walked into from the
+other side. `e2e/fixtures/wide-sheet.pdf` is 505 bytes of hand-written PDF at
+420x300 (the 42:30 of a D-size sheet, so `y` tops out at 0.714) drawing
+line-work on nothing — small enough to read in the diff rather than take on
+trust.
+
+**AND THE SECOND SURVIVOR WAS DEAD CODE, SO IT WAS DELETED.** `rasterisePage`
+painted the canvas white first, with a comment saying a PDF page is transparent
+where nothing is drawn. No mutation could make that go red, which is the signal
+— and a probe said why: **pdf.js paints the canvas white itself**, so the corner
+pixel is 255,255,255,255 either way. The fill was redundant and its comment was
+wrong. The test stayed, repurposed: it no longer guards our code, it guards that
+ASSUMPTION, and goes red the day a pdfjs upgrade stops doing it and the phone
+starts showing black-on-black line-work.
+
+**A THIRD FAILURE WAS THE INSTRUMENT, NOT THE CODE.** The white-paper probe
+first read `[0,0,0,0]` — transparent — because it used `new Image(); img.src =
+png` and never awaited the decode, so `drawImage` drew nothing. Checked against
+the canvas directly (white before AND after the render) before touching
+`rasterisePage`. A control that fails is the instruction to fix the harness.
+
+**THE BUILD CAUGHT WHAT 8,855 TESTS COULD NOT.** `@napi-rs/canvas` ships a
+native `.node` binary, and importing it reached the actions barrel through
+`lib/actions/sheetPins.ts`; webpack tried to PARSE the binary and the build
+died. Typecheck and the full suite were green throughout, because neither
+bundles anything — this repo's "a green build is necessary and nowhere near
+sufficient" rule arriving from the other direction. Making the import dynamic
+did NOT fix it: webpack follows an `import()` too.
+
+The fix is `serverExternalPackages: ["@napi-rs/canvas"]`, and `next.config.mjs`
+now carries the reason it is not the mistake `planPdf.ts` warns about: that
+warning is about **pdfjs**, which is pure JavaScript and bundles fine. A
+compiled Skia cannot be bundled at all. One name on that list, not two.
+
+One sheet per call, skipping any that already has an image, so a thirty-sheet
+set walks forwards and is safe to retry rather than being one function timeout.
+
+569 files / 8855 tests, typecheck, lint and a full production build clean.

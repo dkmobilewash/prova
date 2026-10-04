@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^6.9.6",
+    "@napi-rs/canvas": "^1.0.10",
     "@prova/db": "workspace:*",
     "@prova/integrations": "workspace:*",
     "@prova/ui": "workspace:*",

@@ -29,6 +29,7 @@ export default async function RevisionPage({ params }: { params: Promise<{ revis
           pageNumber: true,
           widthPt: true,
           heightPt: true,
+          imageUrl: true,
           pins: {
             orderBy: { createdAt: "asc" },
             select: {
