@@ -201,3 +201,65 @@ would make a drawing that exists look like one that does not. And a pin carries
 deleted still renders with no second request for words that are gone.
 
 570 files / 8869 tests, typecheck, lint and a full production build clean.
+
+---
+
+### The sheet on the phone: an image, an SVG overlay, and a tap (Diego)
+
+Fourth commit on this branch. `app/sheets/[jobId].tsx` — the field surface.
+Reached from the Drawings screen rather than a tenth tile on the job hub,
+because a sheet belongs to a drawing and that is how somebody looks for it.
+
+**`app/drawings/[jobId].tsx` SAYS IN ITS OWN HEADER THAT "THERE ARE NO SHEETS
+IN THIS PRODUCT".** That was true when it was written and is what this changes:
+a revision's PDF is rendered at the office into one image per page, which is
+what a phone can draw a pin on. The link added to that screen carries the
+correction in a comment beside it, because the header above it still reads the
+old way to anyone who scrolls past.
+
+**An `<Image>` and `react-native-svg`, and no new native module.** The tap
+stores `x = locationX / width` and `y = locationY / width` — BOTH over the
+width, the page-width box `apps/web/lib/sheet-geometry.ts` defines. A pin
+dropped on a ladder lands in the same place on the web, which is the entire
+point of not inventing a second coordinate system.
+
+**TWO LIMITS WRITTEN INTO THE FILE RATHER THAN DISCOVERED ON A LADDER.** There
+is no pinch-zoom: a D-size sheet at phone width is enough to place a pin
+against a visible feature and NOT enough to read a dimension string, and zoom
+needs a gesture library this app does not carry. And only a NOTE pin can be
+PLACED here — a photo or punch pin needs a picker for what it points at, which
+is its own screen. Pins of every kind are SHOWN.
+
+**Four censuses caught it and each was right**, which is the fourth time on
+this branch they have paid for themselves: `cache-parity` (a key screens read
+and the prefetch never fills), `offline-notes` (I had dropped `emptyFor` to
+silence a type error, which is exactly how a screen loses the ability to tell
+"no sheets" from "could not load"), `strings-census` twice — once for an
+unclassified screen and once for a key nothing asked for.
+
+**That second strings failure caught a half-applied edit.** The link's STYLES
+landed and the button itself did not, because the anchor text did not match.
+The result was a screen with an orphan style, an unused translation, and no way
+to reach the new screen — and typecheck was green, because none of that is a
+type error. The census found it in seconds.
+
+| mutation | result |
+| --- | --- |
+| control | green |
+| **the screen renders nothing** | **RED** |
+| a not-ready sheet hidden instead of said | **RED** |
+| pins reduced to dots with no words | **RED** |
+
+The first is the decisive one from CLAUDE.md's `expo-router` entry: if "make it
+render nothing" leaves a suite green, the suite is measuring a mock.
+
+**WHAT THESE TESTS CANNOT SEE, and it is most of what matters on a phone.**
+They render in happy-dom, which does no layout and returns zeros from
+`getBoundingClientRect` — so nothing here checks that a pin lands where somebody
+tapped, that the image fills the width, or that a 56pt button is 56pt. That
+needs a device. The simulator route now exists (DeviceHub, since #620 made the
+app launch at all) but the local build carries no
+`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`, so it stops at the sign-in gate before
+reaching this screen. **This screen has not been seen running.**
+
+Mobile 40 files / 334 tests, screens 16 / 78, typecheck and lint clean.
