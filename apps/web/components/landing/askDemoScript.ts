@@ -377,6 +377,8 @@ export const CAN_DO: readonly CanDoGroup[] = [
     items: [
       { text: "raise an RFI", commands: ["raise_rfi"] },
       { text: "send an email", commands: ["send_email"] },
+      // The offer after "I don't know": who the rows name, drafted to.
+      { text: "ask whoever would know", commands: ["ask_who_would_know"] },
       { text: "add a contact", commands: ["add_contact"] },
     ],
   },

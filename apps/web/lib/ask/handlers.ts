@@ -22,7 +22,7 @@ import {
   determinationStandingLine,
   type DeterminationMarker,
 } from "@/lib/determination-standing";
-import { daysBetween } from "./dates";
+import { dayLabel, daysBetween, parsePastDay } from "./dates";
 import {
   arBalanceFor,
   calculateArAgingInvoice,
@@ -149,6 +149,8 @@ type Input = {
    * because every filter here is, and because "40,000" is what somebody
    * types — parsed by the app, never by the model. */
   areaSqFt?: string;
+  /** who_would_know's day, in the person's own words; parsed by dates.ts. */
+  day?: string;
 };
 
 const iso = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : null);
@@ -196,6 +198,7 @@ export const HANDLERS: Record<
 > = {
   crew_assignments: (companyId) => crewAssignments(companyId),
   crew_schedule: crewSchedule,
+  who_would_know: whoWouldKnow,
   open_punch_list: openPunchList,
   compliance_status: (companyId) => complianceStatus(companyId),
   drawing_currency: drawingCurrency,
@@ -391,6 +394,196 @@ async function crewAssignments(companyId: string): Promise<ToolResult> {
     citations: [{ label: "Schedule", href: "/schedule" }],
     unavailable:
       jobs.length === 0 ? "No jobs are in progress, so nobody is assigned anywhere." : undefined,
+  };
+}
+
+/**
+ * Who the rows name for a job and a day — the second half of the attendance
+ * refusal, and deliberately not the first half.
+ *
+ * Three sources, each read from its own table and each labelled with where
+ * it came from, because the label IS the honesty: "filed that day's report"
+ * is a fact about paperwork, "was on the schedule" is a fact about a plan,
+ * "is assigned to the job" is a roster with no date on it. None of the
+ * three is attendance, the result says so in a field the model is shown,
+ * and no handler here will ever add a fourth source that is.
+ *
+ * The asker is marked when the rows name them, so the model does not offer
+ * to email the person asking. A crew member (no login) has no email and is
+ * marked `canBeEmailed: false` rather than dropped — dropping them would
+ * make "nobody on the data" true when it is not, and the person deserves
+ * to know the schedule names somebody the app cannot reach.
+ */
+async function whoWouldKnow(companyId: string, input: Input, actor?: ToolActor): Promise<ToolResult> {
+  const citations = [
+    { label: "Field reports", href: "/field-reports" },
+    { label: "Schedule", href: "/schedule" },
+  ];
+  const wanted = input.jobName?.trim();
+  if (!wanted) {
+    return { data: null, citations, unavailable: "Which job? Nothing here names a person without one." };
+  }
+  const mismatch = await jobNameMismatch(companyId, wanted);
+  if (mismatch) return { data: null, citations, unavailable: mismatch };
+
+  const job = await prisma.job.findFirst({
+    where: { companyId, name: { contains: wanted, mode: "insensitive" } },
+    select: {
+      id: true,
+      name: true,
+      contactId: true,
+      contact: { select: { name: true } },
+      assignments: { select: { user: { select: { id: true, name: true, email: true } } } },
+    },
+    orderBy: { name: "asc" },
+  });
+  if (!job) return { data: null, citations, unavailable: `No job matches "${wanted}".` };
+
+  const today = await viewerToday();
+  const saidDay = input.day?.trim() || undefined;
+  const day = saidDay ? parsePastDay(saidDay, today) : null;
+  if (saidDay && !day) {
+    return {
+      data: null,
+      citations,
+      unavailable: `I can't read "${saidDay}" as a day. Say it as a date — 'September 22', '9/22', 'last Tuesday' — and I'll look again.`,
+    };
+  }
+  const dayStart = day ? new Date(`${day}T00:00:00.000Z`) : null;
+
+  const you = actor?.userId ?? null;
+  type UserShape = { id: string; name: string | null; email: string };
+  const person = (user: UserShape) => ({
+    name: user.name?.trim() || NAME_NOT_RECORDED,
+    email: user.email,
+    canBeEmailed: true,
+    isYou: you !== null && user.id === you,
+  });
+  type CrewShape = { legalFirstName: string; legalMiddleName: string | null; legalLastName: string; phone: string | null };
+  // A crew member has no login and no email here. Their phone, if any, is
+  // on the Team page; this app cannot message them, and says so.
+  const crew = (row: CrewShape) => ({
+    name: crewMemberName(row).label,
+    email: null,
+    canBeEmailed: false,
+    hasPhoneOnFile: Boolean(row.phone),
+    isYou: false,
+  });
+
+  // The report for THAT day, or the most recent one when no day was said.
+  const report = await prisma.dailyFieldReport.findFirst({
+    where: { companyId, jobId: job.id, ...(dayStart ? { reportDate: dayStart } : {}) },
+    select: { reportDate: true, filedBy: { select: { id: true, name: true, email: true } } },
+    orderBy: { reportDate: "desc" },
+  });
+
+  const crewSelect = { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true, phone: true } };
+  const [scheduled, hours, gcPeople] = await Promise.all([
+    dayStart
+      ? prisma.crewScheduleDay.findMany({
+          where: { companyId, jobId: job.id, workDate: dayStart },
+          select: { scheduledUser: { select: { id: true, name: true, email: true } }, crewMember: crewSelect },
+          orderBy: { createdAt: "asc" },
+        })
+      : [],
+    // Hours LOGGED against the job that day. TimeEntry has no companyId of
+    // its own; the job it hangs off was just read in-company, which is the
+    // scope. Paperwork, not a register — the row says so.
+    dayStart
+      ? prisma.timeEntry.findMany({
+          where: { jobId: job.id, date: dayStart },
+          select: { employeeUser: { select: { id: true, name: true, email: true } }, crewMember: crewSelect },
+          orderBy: { createdAt: "asc" },
+        })
+      : [],
+    // The GC's own people on this job — a superintendent walks the site.
+    // Read only when the asker could open the People section of the
+    // contact page, exactly as contact_lookup does: it renders inside
+    // /contacts/[id]'s MANAGE_ESTIMATING branch, and a tool must not hand
+    // over what the screen beside it withholds.
+    actor && can(actor.principal, "MANAGE_ESTIMATING")
+      ? prisma.contactPerson.findMany({
+          where: { companyId, contactId: job.contactId },
+          select: { id: true, name: true, title: true, email: true, phone: true },
+          orderBy: { name: "asc" },
+        })
+      : null,
+  ]);
+
+  const filedReport = report
+    ? {
+        day: iso(report.reportDate),
+        source: "filed that day's daily field report" as const,
+        who: report.filedBy ? person(report.filedBy) : null,
+      }
+    : null;
+  const worker = (row: { scheduledUser?: UserShape | null; employeeUser?: UserShape | null; crewMember: CrewShape | null }) => {
+    const user = row.scheduledUser ?? row.employeeUser ?? null;
+    if (user) return person(user);
+    if (row.crewMember) return crew(row.crewMember);
+    return { name: NAME_NOT_RECORDED, email: null, canBeEmailed: false, isYou: false };
+  };
+  const onSchedule = scheduled.map((row) => ({
+    ...worker(row),
+    source: "was on the crew schedule for that day — planned, not attended" as const,
+  }));
+  const loggedHours = hours.map((row) => ({
+    ...worker(row),
+    source: "logged hours on the job that day — paperwork somebody filed, not a register" as const,
+  }));
+  const assigned = job.assignments.map((a) => ({
+    ...person(a.user),
+    source: "is assigned to the job — a roster with no date on it" as const,
+  }));
+  const atTheGc = (gcPeople ?? []).map((p) => ({
+    name: p.name,
+    title: p.title,
+    at: job.contact.name,
+    email: p.email,
+    canBeEmailed: Boolean(p.email),
+    hasPhoneOnFile: Boolean(p.phone),
+    isYou: false,
+    source: `works for ${job.contact.name}, the GC on this job — their superintendent walks the site` as const,
+  }));
+
+  const named = [
+    ...(filedReport?.who ? [filedReport.who] : []),
+    ...onSchedule,
+    ...loggedHours,
+    ...assigned,
+    ...atTheGc,
+  ];
+  const askable = named.filter((p) => p.canBeEmailed && !p.isYou);
+
+  return {
+    data: {
+      job: job.name,
+      day,
+      dayAsSaid: saidDay ?? null,
+      dayLabel: day ? dayLabel(day) : null,
+      // Spelled out in the data, not only in the description: a caveat the
+      // model is handed beside the names is one it repeats.
+      attendanceIsRecorded: false,
+      means: "nobody here recorded who was on site; these are the people the rows name for this job and day, which is who to ask",
+      filedReport,
+      onScheduleThatDay: onSchedule,
+      loggedHoursThatDay: loggedHours,
+      assignedToJob: assigned,
+      atTheGc,
+      // Said, not silently empty: an empty GC list for someone who cannot
+      // see the People section is not "the GC has nobody on this job".
+      gcPeopleWithheld: gcPeople === null,
+    },
+    summary: {
+      peopleNamed: named.length,
+      peopleWhoCanBeEmailed: askable.length,
+      namedWithNoEmail: named.filter((p) => !p.canBeEmailed).length,
+    },
+    citations,
+    unavailable:
+      named.length === 0
+        ? `Nothing on ${job.name} names anyone for ${day ? dayLabel(day) : "that day"}: no field report was filed for it, nobody was on the schedule, no hours were logged, nobody is assigned to the job${gcPeople === null ? "" : `, and ${job.contact.name} has no people on file`}. There is no one on the data to ask.`
+        : undefined,
   };
 }
 

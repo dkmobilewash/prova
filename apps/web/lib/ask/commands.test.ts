@@ -139,6 +139,7 @@ describe("who is offered what", () => {
       "add_punch_items",
       "log_time_entry",
       "send_email",
+      "ask_who_would_know",
       "reschedule_job",
       "schedule_crew",
     ]);
@@ -156,6 +157,7 @@ describe("who is offered what", () => {
       "add_catalog_line",
       "raise_rfi",
       "send_email",
+      "ask_who_would_know",
       "reschedule_job",
       "log_bid_invitation",
       "add_bid_pursuit",
@@ -238,12 +240,21 @@ describe("who is offered what", () => {
     }
   });
 
-  it("registers the outward send as T4 and HANDOFF only — a tap never sends", () => {
+  it("registers the outward sends as T4 and HANDOFF only — a tap never sends", () => {
+    // Two, since 2026-09-27: send_email to a contact, ask_who_would_know to a
+    // person on the team. Both open the same composer and neither sends;
+    // the person's press of Send there is the send. Anything added here
+    // must be HANDOFF or commands.ts's "T5 has no member" stops being true.
     const outward = COMMANDS.filter((c) => c.tier === "T4_OUTWARD");
-    expect(outward.map((c) => c.name)).toEqual(["send_email"]);
+    expect(outward.map((c) => c.name)).toEqual(["send_email", "ask_who_would_know"]);
     for (const command of outward) {
       expect(command.mode, command.name).toBe("HANDOFF");
       expect(command.execute, command.name).toBeUndefined();
+      expect(command.handoffHref!("x"), command.name).toBe("/messages?draft=x");
+      // Both land on sendOutboundEmail, which demands MANAGE_JOBS — so the
+      // card is offered on exactly the capability the send will check.
+      expect(command.action, command.name).toBe("sendOutboundEmail");
+      expect(command.capability, command.name).toBe("MANAGE_JOBS");
     }
   });
 
@@ -315,6 +326,11 @@ describe("read-tool capabilities match the pages they cite", () => {
     // right way round — a tool stricter than the screen beside it refuses
     // what the person can already read.
     crew_schedule: null,
+    // Cites /field-reports (who filed the day's report) and the open
+    // /schedule. The stricter of the two, per the rule above — and the
+    // right one on its own terms: the name it returns first is the filer of
+    // a report only MANAGE_FIELD can read.
+    who_would_know: ROUTE_CAPABILITY["/field-reports"],
     open_punch_list: ROUTE_CAPABILITY["/punch-lists"],
     compliance_status: ROUTE_CAPABILITY["/compliance"],
     drawing_currency: ROUTE_CAPABILITY["/drawings"],
