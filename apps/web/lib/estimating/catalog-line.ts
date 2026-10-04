@@ -1,4 +1,4 @@
-import { Prisma, prisma, type CostCategory, type TradeScope } from "@prova/db";
+import { Prisma, prisma, type CostCategory, type IndirectCostKind, type TradeScope } from "@prova/db";
 import { parseNumericInput } from "@/lib/numeric-input";
 import type { ActionResultWith } from "@/lib/actions/shared";
 import { NOT_ESTIMATE_STAGE } from "./draft-lines";
@@ -87,6 +87,7 @@ export function catalogLineFields(entry: {
   productionRate: Prisma.Decimal | null;
   tradeScope: TradeScope | null;
   costCategory: CostCategory | null;
+  indirectKind: IndirectCostKind | null;
   craftClassificationId: string | null;
 }) {
   return {
@@ -135,6 +136,15 @@ export function catalogLineFields(entry: {
       // a default here would be the number nobody chose that its own comment
       // refuses.
       costCategory: entry.costCategory,
+      // WHICH GENERAL CONDITION THIS IS, when the entry says so — a straight
+      // copy like `costCategory` above, and for the same reason: the catalog is
+      // where a company declares what a thing IS, once, rather than every
+      // estimator deciding again on every bid.
+      //
+      // It has to land on the line or `missingIndirects` cannot see it, and an
+      // estimate built entirely from the catalog would be told it has nothing
+      // for supervision while carrying the company's own supervision line.
+      indirectKind: entry.indirectKind,
       craftClassificationId: entry.craftClassificationId,
       // Records which template this came from, so /catalog can later report
       // how work priced from it actually costed. A reference, not a live

@@ -310,6 +310,26 @@ model LineItemCatalogEntry {
   /// uncoded, and the recap says so.
   costCategory            CostCategory?
 
+  /// WHICH GENERAL-CONDITIONS COST THIS ENTRY IS, when it is one — and so WHERE
+  /// THE COMPANY'S OWN FIGURE FOR IT LIVES.
+  ///
+  /// "Supervision — 1 WK @ $2,400 cost, no price" is a legal catalog entry
+  /// today and always was: `defaultBudgetedUnitCost` set, `defaultUnitPrice`
+  /// null, which `catalogLineFields` copies into a cost-only line. What was
+  /// missing is that nothing could tell it was the supervision one, so nothing
+  /// could offer it when a bid had no supervision on it.
+  ///
+  /// This is the mechanism `ARCHITECTURE.md` already sanctions — "a template
+  /// for the same `jobLineItem.create` call" — rather than a second table of
+  /// company defaults. An entry stays a starting point: changing the figure
+  /// here never moves a bid already built, exactly as the catalog has always
+  /// behaved.
+  ///
+  /// Nullable with NO BACKFILL, like `costCategory` above and for the same
+  /// reason: an entry nobody has tagged is untagged, and nothing infers it from
+  /// a description.
+  indirectKind            IndirectCostKind?
+
   craftClassificationId   String?
   craftClassification     CraftClassification? @relation(fields: [craftClassificationId], references: [id])
 

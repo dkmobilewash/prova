@@ -30,6 +30,8 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import { addCatalogLine } from "@/lib/estimating/catalog-line";
+import { addIndirectLine } from "@/lib/estimating/add-indirect";
+import { isIndirectCostKind } from "@/lib/estimating/indirect-costs";
 import { createBidInvitationRecord } from "@/lib/estimating/bid-invitation";
 import { issueEstimateVersionNumber } from "@/lib/estimating/estimate-version";
 
@@ -307,6 +309,40 @@ export async function addLineItemFromCatalog(jobId: string, formData: FormData):
   }
 
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
+}
+
+/**
+ * Adds one general-conditions line the estimate had nothing for.
+ *
+ * The way out of the sentence `missingIndirects` produces — CLAUDE.md's "real
+ * empty states with a way out", and the thing `setLineBudgetedCost` says is
+ * missing when a screen names a problem and leaves the fix elsewhere.
+ *
+ * The request carries a KIND and nothing else — no description and no cost. The
+ * figure is read from the company's own catalog entry server-side, because this
+ * writes the column the bid recap marks up and a number the browser sent must
+ * not be able to reach it (#105 finding 3). The body is in
+ * `lib/estimating/add-indirect.ts`; the sentences it returns are the core's.
+ */
+export async function addIndirectCostLine(jobId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
+
+  // NARROWED, never cast — #527's scar, where an unrecognised value was
+  // silently coerced and quietly cleared a line's cost type with a success
+  // response.
+  const kind = String(formData.get("kind") ?? "").trim();
+  if (!isIndirectCostKind(kind)) {
+    return actionFail("That isn't a kind of general conditions this app knows.");
+  }
+
+  const added = await addIndirectLine(company.id, { jobId, kind });
+  if (!added.ok) return actionFail(added.error);
+
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/jobs/${jobId}/estimate`);
   return actionOk;
 }
 
