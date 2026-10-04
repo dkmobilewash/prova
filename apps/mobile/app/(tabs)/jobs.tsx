@@ -1,6 +1,6 @@
 import { useAuth } from "@clerk/expo";
-import { Redirect, router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Redirect, router, useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppHeader } from "@/components/AppHeader";
@@ -62,15 +62,15 @@ export default function JobsScreen() {
     setLoaded(true);
   }, [getToken]);
 
-  useEffect(() => {
-    if (!isSignedIn) return;
-    // Awaited inside its own async closure, as punch-list/[jobId] does: a
-    // bare `load()` in the effect body is a synchronous setState-in-effect
-    // to react-hooks/set-state-in-effect, and that failed CI's lint.
-    (async () => {
-      await load();
-    })();
-  }, [isSignedIn, load]);
+  // On focus, not once on mount — a tab stays mounted when you switch away
+  // from it, so a mount effect runs once per app launch and the list ages
+  // silently. See the note on the alerts tab, where that was measured.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isSignedIn) return;
+      void load();
+    }, [isSignedIn, load]),
+  );
 
   if (!isLoaded) return <Text style={styles.loading}>{t("common.loading")}</Text>;
   if (!isSignedIn) return <Redirect href="/sign-in" />;
