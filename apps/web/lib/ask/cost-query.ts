@@ -38,7 +38,7 @@ import {
 
 /** A unit an allowance is denominated in, and the features that consume it. */
 type Unit = {
-  key: "planSheets" | "addendumPages" | "documentPages" | "questions";
+  key: "planSheets" | "addendumPages" | "specPages" | "documentPages" | "questions";
   label: string;
   /** What one of them is called in a sentence. */
   noun: string;
@@ -171,6 +171,33 @@ export async function loadCostReport(companyId: string, from: Date): Promise<Cos
       used: claimed.addendumPagesUsed,
       failed: claimed.failedAddendumPages,
       allowance: settings?.addendumPagesPerMonth ?? null,
+    },
+    {
+      // MISSING UNTIL 2026-10-04, and the click-through of #604 is what found
+      // it: "the Cost per unit of work section has rows for plan sheets,
+      // addendum pages and document pages, but none for spec pages, even though
+      // the read is counted in usage and cost."
+      //
+      // Exactly right, and the consequence is the part worth recording. Spec
+      // pages were registered in eight places that FAIL TO COMPILE when one is
+      // missed — `AI_FEATURES`, `FEATURE_MODEL`, the `AiFeature` enum,
+      // `AI_FEATURE_LABEL`, `AI_FEATURE_DESCRIPTION`, `AskUsageFeature`, the
+      // gate census, `FEATURE_LABELS` — and this list is not one of them. So
+      // `spec-read` showed up in the per-FEATURE spend (the tester saw its
+      // 10,894-token call) while the per-UNIT figure, the one thing step 2 of
+      // the AI plan exists to produce, was never computed for it.
+      //
+      // CLAUDE.md's #526 entry names this shape: a guard that a list is
+      // COMPLETE cannot notice a SECOND list. `unitCensus.test.ts` now asks the
+      // other question — is every metered unit here — because nothing is ever
+      // missing from a list nobody checks.
+      key: "specPages",
+      label: "Spec section pages read",
+      noun: "page",
+      features: ["spec-read"],
+      used: claimed.specPagesUsed,
+      failed: claimed.failedSpecPages,
+      allowance: settings?.specPagesPerMonth ?? null,
     },
     {
       key: "documentPages",
