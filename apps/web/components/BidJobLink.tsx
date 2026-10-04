@@ -9,8 +9,23 @@ import type { BidOutcome } from "@/lib/bid-outcome";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 
 /**
- * The link between a won bid and the job it became, and what that comparison
- * says once the job is finished.
+ * The link between a bid and the job that is the same piece of work, and what
+ * the comparison says once that job is finished.
+ *
+ * ── THE LINK IS NOT ONLY FOR A WON BID, AND SAYING SO IS THE FIX ──
+ *
+ * It reads "became" nowhere now. A bid is linked to a job so that a carried
+ * quote can reach that job's estimate and an addendum can be checked against
+ * its takeoff — both of which happen while the bid is still out. `linkBidToJob`
+ * stopped requiring WON in #619 and the page kept rendering this behind
+ * `bid.status === "WON"`, so the capability existed and could not be reached.
+ *
+ * THE COMPARISON STAYS WON-ONLY, and that is a different question from the
+ * link. `outcome` is null until `loadBidOutcomes` has one, which it only does
+ * for a WON bid — a lost bid costed against its own unbuilt job is exactly the
+ * "real-looking number that will be remembered and repeated" that
+ * `bid-outcome.ts` refuses. So a linked-but-not-won bid shows the link and says
+ * plainly that the comparison comes later, rather than showing a blank.
  *
  * THE VERDICT AND THE REFUSAL COME FROM THE SAME PLACE. `bidOutcome` decides
  * whether there is anything to say; this renders either its sentence or its
@@ -25,7 +40,8 @@ export function BidJobLink({
   sentence,
 }: {
   bidInvitationId: string;
-  linked: { jobId: string; jobName: string; outcome: BidOutcome } | null;
+  /** `outcome` is null until the bid is WON — see the header. */
+  linked: { jobId: string; jobName: string; outcome: BidOutcome | null } | null;
   jobs: (JobOption & { claimedByBidId: string | null })[];
   /** Pre-rendered on the server by `settledSentence`, so the money format is
    * the app's own. Null for anything not settled. */
@@ -39,7 +55,9 @@ export function BidJobLink({
       <div className="mt-2 rounded-md border border-line-row bg-surface-card p-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-sm text-ink-body">
-            Became <span className="font-medium text-ink">{linked.jobName}</span>
+            {/* "Became" was true only of a won bid and this control is no
+                longer won-only. This wording is true the whole way through. */}
+            This bid is for <span className="font-medium text-ink">{linked.jobName}</span>
           </p>
           <ActionForm action={linkBidToJob.bind(null, bidInvitationId)} className="shrink-0">
             {/* Unlinking is the same control with nothing picked — see the
@@ -54,19 +72,29 @@ export function BidJobLink({
           </ActionForm>
         </div>
 
-        {sentence ? (
-          <p
-            className={`mt-1 text-sm font-medium ${
-              (outcome.costVsBid ?? 0) > 0 ? "text-tag-rose-ink" : "text-tag-emerald-ink"
-            }`}
-          >
-            {sentence}
+        {/* NO OUTCOME MEANS NOT WON YET, not "nothing to say". Saying which is
+            the difference between a feature that looks broken and one that is
+            waiting — and it never implies a figure, because there is not one
+            to imply. */}
+        {outcome === null ? (
+          <p className="mt-1 text-xs text-ink-muted">
+            Linked. What the job actually cost against what you bid appears here once this bid is marked won.
           </p>
         ) : (
-          <p className="mt-1 text-xs text-ink-muted">{outcome.because}</p>
-        )}
+          <>
+            {sentence ? (
+              <p
+                className={`mt-1 text-sm font-medium ${
+                  (outcome.costVsBid ?? 0) > 0 ? "text-tag-rose-ink" : "text-tag-emerald-ink"
+                }`}
+              >
+                {sentence}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-ink-muted">{outcome.because}</p>
+            )}
 
-        <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-ink-muted">
+            <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-ink-muted">
           <div>
             <dt className="inline">Bid </dt>
             <dd className="inline text-ink-body">{outcome.bidAmount === null ? "—" : money(outcome.bidAmount)}</dd>
@@ -81,8 +109,10 @@ export function BidJobLink({
                 being expected to remember. */}
             <dt className="inline">{outcome.state === "SETTLED" ? "Final cost " : "Cost to date "}</dt>
             <dd className="inline text-ink-body">{money(outcome.actualCostToDate)}</dd>
-          </div>
-        </dl>
+              </div>
+            </dl>
+          </>
+        )}
       </div>
     );
   }
@@ -94,7 +124,7 @@ export function BidJobLink({
         onClick={() => setPicking(true)}
         className="mt-2 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
       >
-        Link to the job this became
+        Link the job this bid is for
       </button>
     );
   }
@@ -106,7 +136,7 @@ export function BidJobLink({
       onSuccess={() => setPicking(false)}
     >
       <label className="flex flex-col gap-1 text-xs text-ink-label">
-        Which job did this become?
+        Which job is this bid for?
         <select
           name="jobId"
           defaultValue=""

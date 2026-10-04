@@ -171,23 +171,24 @@ export function missingIndirects(
   }));
 }
 
-/**
- * The sentence, or null when nothing is missing.
+/*
+ * `missingIndirectsSentence` WAS HERE AND IS DELETED, 2026-10-04. It built
+ * "This estimate carries nothing for Cleanup and Dumpsters." and NOTHING EVER
+ * CALLED IT — `MissingIndirects.tsx` writes its own sentence, which is the one
+ * on screen. Found by clicking the feature, not by any check here: the
+ * function had its own passing unit tests, and a test on a pure function
+ * proves the function works while saying nothing about anybody using it. The
+ * "written, documented, and never called" shape CLAUDE.md names, with a test
+ * suite on top of it.
  *
- * NULL RATHER THAN AN EMPTY STRING so the caller renders nothing instead of an
- * empty box — `proposalPriceWarning` and `underCostWarning` both do this.
+ * It is deleted rather than wired up, because the buttons below the sentence
+ * already name every missing kind — so a sentence that also named them was
+ * duplicating the list beside it, and two copies of one wording is the defect
+ * `CostCategory` taught this repo to look for. The component's generic wording
+ * plus the named buttons is the version that was always on screen and is the
+ * better of the two.
  *
- * It names the kinds and stops. It does not say the bid is wrong, because an
- * estimate with no dumpster line is usually an estimate that needs no dumpster;
- * and it does not say what to do, because adding the line, excluding the scope
- * in the proposal, and leaving it alone are all right answers.
+ * Recorded instead of quietly removed because the PR that shipped it claimed
+ * the sentence named the kinds. It did not, and that claim is corrected in
+ * `changelog.d/` rather than left for the next reader to trip over.
  */
-export function missingIndirectsSentence(missing: readonly MissingIndirect[]): string | null {
-  if (missing.length === 0) return null;
-  const names = missing.map((item) => item.label);
-  const list =
-    names.length === 1
-      ? names[0]
-      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  return `This estimate carries nothing for ${list}. Add what applies, or leave them out on purpose.`;
-}

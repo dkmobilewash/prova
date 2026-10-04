@@ -5,7 +5,6 @@ import {
   INDIRECT_COST_KINDS,
   INDIRECT_COST_LABEL,
   missingIndirects,
-  missingIndirectsSentence,
   type IndirectCatalogEntry,
 } from "./indirect-costs";
 
@@ -37,13 +36,6 @@ group("it names what is absent", () => {
   it("reports nothing on an estimate that carries all of them", () => {
     const lines = INDIRECT_COST_KINDS.map((kind) => ({ indirectKind: kind }));
     expect(missingIndirects(lines, [])).toEqual([]);
-    expect(missingIndirectsSentence([])).toBeNull();
-  });
-
-  it("reports nothing on an empty list of kinds, rather than an empty sentence", () => {
-    // NULL, not "". The caller renders nothing instead of an empty box — the
-    // same contract `proposalPriceWarning` and `underCostWarning` keep.
-    expect(missingIndirectsSentence([])).toBeNull();
   });
 
   it("keeps declaration order, not discovery order", () => {
@@ -125,41 +117,18 @@ group("the company's own figure rides along", () => {
   });
 });
 
-group("the sentence", () => {
-  it("names one kind without a stray conjunction", () => {
-    const missing = missingIndirects(
-      INDIRECT_COST_KINDS.filter((k) => k !== "CLEANUP").map((kind) => ({ indirectKind: kind })),
-      [],
-    );
-    const sentence = missingIndirectsSentence(missing)!;
-    expect(sentence).toContain("nothing for Cleanup.");
-    expect(sentence).not.toContain(" and Cleanup");
-  });
-
-  it("joins two with 'and', and three with commas and an 'and'", () => {
-    const keep = (...kinds: string[]) =>
-      missingIndirectsSentence(
-        missingIndirects(
-          INDIRECT_COST_KINDS.filter((k) => !kinds.includes(k)).map((kind) => ({ indirectKind: kind })),
-          [],
-        ),
-      )!;
-    expect(keep("CLEANUP", "DUMPSTERS")).toContain("Cleanup and Dumpsters");
-    expect(keep("PERMITS", "CLEANUP", "DUMPSTERS")).toContain("Permits & testing, Cleanup and Dumpsters");
-  });
-
-  it("never says the bid is wrong, and never says what to do", () => {
-    // An estimate with no dumpster line is usually an estimate that needs no
-    // dumpster. Adding the line, excluding the scope in the proposal, and
-    // leaving it alone are all right answers — `lien-waiver.ts`'s rule, that
-    // refusing to accept the world as it is teaches people to route around you.
-    const sentence = missingIndirectsSentence(missingIndirects([], []))!.toLowerCase();
-    for (const forbidden of ["missing", "incomplete", "you must", "you should", "error", "required"]) {
-      expect(sentence, forbidden).not.toContain(forbidden);
-    }
-    expect(sentence).toContain("on purpose");
-  });
-});
+/*
+ * `group("the sentence")` WAS HERE. Three tests, all passing, all about a
+ * function nothing called — the conjunction cases went with it, since the
+ * wording that reaches a screen names no kinds and so joins nothing.
+ *
+ * THE ONE PROPERTY WORTH KEEPING MOVED RATHER THAN DIED: "never says the bid
+ * is wrong, and never says what to do" is the advisory-tone rule this whole
+ * feature rests on, and it was being asserted against text no user could read.
+ * It is now in `components/missingIndirects.test.tsx`, against the sentence
+ * that is actually rendered. A property is only as good as the thing it is
+ * pointed at.
+ */
 
 group("the labels cannot fall behind the enum", () => {
   it("names every kind, with what it covers", () => {
