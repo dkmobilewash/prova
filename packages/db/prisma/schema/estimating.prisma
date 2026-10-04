@@ -75,7 +75,33 @@ model BidInvitation {
   specSections BidSpecSection[]
   specReadings BidSpecReading[]
 
-  /// THE JOB THIS BID BECAME, when it was won and somebody linked it.
+  /// THE JOB THIS BID IS THE SAME PIECE OF WORK AS — the estimate it is being
+  /// built on before the award, and the job it became after one.
+  ///
+  /// ── THE MEANING CHANGED ON 2026-10-04, AND THE NAME HAS NOT CAUGHT UP ──
+  ///
+  /// This read "THE JOB THIS BID BECAME, when it was won and somebody linked
+  /// it", and `linkBidToJob` refused anything not already WON. That was
+  /// coherent, and it made one thing impossible: an estimator building a number
+  /// on a job, with a levelled subcontractor quote in front of them, had no way
+  /// to say the two were the same work until the bid was won — which is after
+  /// every decision the quote informs.
+  ///
+  /// So the link is settable at any status now. **`status` is what says whether
+  /// it was won**, which is what that column has always been for, and anything
+  /// asking "what did we bid against what it cost" must read THAT rather than
+  /// infer won-ness from this link existing. `bid-outcome-query.ts` did infer
+  /// it — `where: { wonJobId: { not: null } }` with no status check — so once
+  /// this relaxed, every bid still being estimated would have entered the
+  /// bid-versus-actual comparison as though it had been won, on the one figure
+  /// whose job is to teach an estimator. Fixed in the same change.
+  ///
+  /// THE COLUMN NAME IS NOW SLIGHTLY WRONG AND IS DELIBERATELY LEFT ALONE. A
+  /// rename is a drop and an add as far as the running build is concerned, and
+  /// CLAUDE.md's #378 scar is precisely that: the migration lands in seconds
+  /// while Vercel is still building the commit that stops reading the old name.
+  /// It wants its own expand-then-contract pair rather than a ride along a
+  /// feature.
   ///
   /// Nullable and SET NULL, never required: most invitations never become a
   /// job at all, a won bid may be linked days after the job is created, and a
@@ -87,12 +113,13 @@ model BidInvitation {
   /// job bid at" a question with two answers. Re-bidding a project that was
   /// lost and re-tendered is a second BidInvitation; the link moves.
   ///
-  /// NOT set automatically, and that is the design rather than a gap. Nothing
-  /// in the data says which job a bid became — the names rarely match, the
-  /// dates rarely line up, and a fuzzy match here would attach a bid amount
-  /// to the wrong job's costs and then teach the estimator from it. A person
-  /// picks it, the same posture `JobLineItem.sourceCatalogEntryId` takes
-  /// ("deliberately NOT backfilled by fuzzy-matching descriptions").
+  /// NOT set automatically, and that is unchanged by the above. Nothing in the
+  /// data says which job a bid is — the names rarely match, the dates rarely
+  /// line up, and a fuzzy match here would attach a bid amount to the wrong
+  /// job's costs and then teach the estimator from it. A person picks it, the
+  /// same posture `JobLineItem.sourceCatalogEntryId` takes ("deliberately NOT
+  /// backfilled by fuzzy-matching descriptions"). Relaxing WHEN it may be set
+  /// does not relax WHO sets it.
   wonJobId String? @unique
   wonJob   Job?    @relation("BidInvitationWonJob", fields: [wonJobId], references: [id], onDelete: SetNull)
 
