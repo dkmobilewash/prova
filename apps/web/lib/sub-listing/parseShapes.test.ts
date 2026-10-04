@@ -800,3 +800,110 @@ describe("a city without a state code is a city, not a portion of work", () => {
     }
   });
 });
+
+/**
+ * THE FIRST REAL DOCUMENT, AND IT IS NOT A TABLE.
+ *
+ * Every case in `subListingCases.ts` is a column table and its header says in as
+ * many words that no real bid or award document had been read when they were
+ * written. One has now been read: a Caltrans Bid Book, pulled from the public
+ * Post-Bid Files portal (`ppmoe.dot.ca.gov/cc?id=cc_post_bids`, no login), which
+ * carries the state's own `SUBCONTRACTOR LIST` form, `DES-OE-0102.2C`.
+ *
+ * It is a FORM, not a table — sixty numbered blocks, the labels printed beside
+ * the values instead of above them in a heading row. Measured against the real
+ * document before this guard existed, `readRow` returned **228 rows for three
+ * subcontractors**, and on a clean paste of only the filled blocks it reported
+ * `agreed: true` with fifteen rows and not one real company. That is the exact
+ * silent-wrong-answer this parser's whole partition design exists to prevent,
+ * and it survived 325 tests because every fixture was a guess at the format.
+ *
+ * **The fixture below is INVENTED and must stay invented.** The real document
+ * names real subcontractors who did not agree to be test data; the project rule
+ * is that they never enter a committed fixture. What is copied from the real
+ * document is the SHAPE — the numbered toggle, the inline labels, the bare
+ * licence with no class prefix, the registration label wrapping mid-phrase, the
+ * per-item percentage table, and the form's own `Sample Data Entry` block, which
+ * a column reader turns into phantom subcontractors called "striping" and
+ * "reinforcement".
+ */
+describe("a filled subcontractor FORM is recognised and refused, not mis-read", () => {
+  const FORM = `Contract ID: 06-1C3404                CALIFORNIA DEPARTMENT OF TRANSPORTATION
+Bidder: Riverbend Constructors, Inc.                       Bidder ID: VC0000000000
+
+STATE OF CALIFORNIA - DEPARTMENT OF TRANSPORTATION
+SUBCONTRACTOR LIST
+DES-OE-0102.2C(REV 04/2025)
+
+Sample Data Entry:
+
+Item    %     Description
+
+6       75    striping
+
+42      15    reinforcement
+
+54     100
+
+1) List this subcontractor?        YES      NO
+     Business Name VANTAGE WALL SYSTEMS    Location City RIVERBEND  State CA
+       California Contractor License Number          712345        Public Works Contractor            Registration
+Number    1000447788
+     Portion of Work Subcontracted
+     Item             %                      Description
+   1      50.00%     METAL STUD FRAMING
+   5      100.00%     GYPSUM BOARD AND FINISH
+
+2) List this subcontractor?       YES      NO
+     Business Name CRESTLINE PLASTERING    Location City FORT HOLLOW  State CA
+       California Contractor License Number          448120        Public Works Contractor            Registration
+Number    1000552211
+     Portion of Work Subcontracted
+     Item             %                      Description
+   9      100.00%     LATH AND CEMENT PLASTER`;
+
+  it("invents no subcontractor rather than inventing a wrong one", () => {
+    const parsed = parseSubListing(FORM);
+    expect(parsed.reconciliation.rowsParsed).toBe(0);
+    expect(parsed.rows).toEqual([]);
+  });
+
+  it("refuses to claim agreement, and names the form in a problem", () => {
+    const parsed = parseSubListing(FORM);
+    expect(parsed.reconciliation.agreed).toBe(false);
+    expect(parsed.problems.join(" ")).toMatch(/looks like a filled subcontractor FORM/);
+  });
+
+  it("keeps the partition whole — every non-blank line is still accounted for", () => {
+    const parsed = parseSubListing(FORM);
+    expect(parsed.reconciliation.accountedFor).toBe(parsed.reconciliation.nonBlankLines);
+  });
+
+  it("never turns the form's own Sample Data Entry block into subcontractors", () => {
+    // "striping" and "reinforcement" are the sample values the real form prints.
+    // A column reader read both as companies; nothing may surface them now.
+    const parsed = parseSubListing(FORM);
+    const names = parsed.rows.map((row) => row.name.toLowerCase());
+    expect(names).not.toContain("striping");
+    expect(names).not.toContain("reinforcement");
+  });
+
+  /**
+   * THE MARKERS ARE DELIBERATELY NOT THE LABELS, AND THIS IS THE CONTROL FOR IT.
+   *
+   * A legitimate column table may perfectly well head its columns "Business
+   * Name", "Location City" and "State". Keying the refusal on those labels would
+   * refuse documents this parser reads correctly today, so it keys on the
+   * numbered toggle and the form's revision id, neither of which can appear in a
+   * pasted table. Without this control the refusal could silently widen until it
+   * swallowed the working case.
+   */
+  it("does NOT refuse a column table whose headings happen to use the same words", () => {
+    const table = `Business Name              Location City      State   License
+Vantage Wall Systems       Riverbend          CA      712345
+Crestline Plastering       Fort Hollow        CA      448120`;
+    const parsed = parseSubListing(table);
+    expect(parsed.problems.join(" ")).not.toMatch(/looks like a filled subcontractor FORM/);
+    expect(parsed.reconciliation.rowsParsed).toBeGreaterThan(0);
+  });
+});

@@ -1182,6 +1182,56 @@ function isUnread(value: ListedSub | UnreadLine): value is UnreadLine {
  * selected out of a public document and pasted, which is the whole reason this
  * is trustworthy — the evidence is on their screen while they review it.
  */
+/**
+ * A FORM-SHAPED LISTING, WHICH THIS PARSER CANNOT READ — AND SAYS SO.
+ *
+ * Every fixture in `subListingCases.ts` is a COLUMN TABLE, and its own header
+ * says it is a guess: no real document had been read when they were written.
+ * One has now been read — a Caltrans Bid Book pulled from the public Post-Bid
+ * Files portal — and it is not a column table at all. It is a FORM: sixty
+ * numbered blocks, four of them filled, with the labels inline beside the
+ * values rather than above them in a heading row:
+ *
+ *     1) List this subcontractor?        YES      NO
+ *          Business Name ACME WALL SYSTEMS    Location City GOSHEN  State CA
+ *            California Contractor License Number    854894
+ *          Item      %        Description
+ *        1     50.00%    LEAD COMPLIANCE PLAN
+ *
+ * Measured against the real document, `readRow` returns **228 rows for three
+ * subcontractors**, none of them clean: the per-item description lines become
+ * companies, the form's own `Sample Data Entry` block becomes two phantom subs
+ * ("striping", "reinforcement"), the page furniture becomes rows, and the one
+ * line carrying a company name is eaten by the heading-majority branch because
+ * it genuinely contains the words Name, City and State.
+ *
+ * **Why the refusal rather than a patch.** The comment above `accountedFor`
+ * predicted this exact loss — "the row carrying NONE of them… eaten by the
+ * heading-majority branch" — and says the fix belongs in `splitFields` and
+ * `furnitureReason`, not in a guard over the set-aside pile, which was built,
+ * measured dead across 308 tests, and deleted. That is still right. Reading
+ * this shape needs a block reader keyed on the numbered toggle, which is a new
+ * top-level path rather than a patch, and it is not in this change. What IS in
+ * this change is refusing to pretend: 228 junk rows would import 228 junk
+ * leads, and a lead named "Business Name ACME WALL SYSTEMS" is worse than no
+ * lead, because somebody would have to find and delete it — and every lead this
+ * importer writes is currently undeletable.
+ *
+ * **Deliberately keyed on two unmistakable markers, not on the labels.** A
+ * heading row in a legitimate column table can perfectly well read
+ * "Business Name   Location City   State", so matching the labels would refuse
+ * documents this parser reads correctly today. The numbered toggle and the
+ * form's own revision id cannot appear in a pasted table. Conservative on
+ * purpose: a false positive here costs a working capability, a false negative
+ * only leaves the behaviour this change found.
+ */
+const FORM_BLOCK_TOGGLE = /^\s*\d+\)\s*List this subcontractor\?/im;
+const FORM_REVISION_ID = /\bDES-OE-0102\b/i;
+
+function formShapedListing(text: string): boolean {
+  return FORM_BLOCK_TOGGLE.test(text) || FORM_REVISION_ID.test(text);
+}
+
 export function parseSubListing(text: string): SubListingParse {
   const lines = text.split(/\r?\n/);
   const { header, problems } = readHeader(lines);
@@ -1194,6 +1244,45 @@ export function parseSubListing(text: string): SubListingParse {
 
   /** One-column lines, held back: a wrap, or prose. Decided after the rows. */
   const singles: { line: number; text: string }[] = [];
+
+  /**
+   * THE FORM SHAPE IS RECOGNISED AND REFUSED, WITH EVERY LINE STILL ACCOUNTED FOR.
+   *
+   * Each non-blank line goes to `ignored` under one named reason, so the
+   * partition this file's whole design rests on still holds — `accountedFor`
+   * equals `nonBlankLines` — and `agreed` reads false on its third conjunct
+   * because a problem was raised. No row is invented and no count is implied.
+   */
+  if (formShapedListing(text)) {
+    lines.forEach((raw, index) => {
+      if (!raw.trim()) return;
+      nonBlankLines += 1;
+      ignored.push({
+        line: index + 1,
+        text: raw,
+        why: "this is a form, not a table — see the problem above",
+      });
+    });
+    problems.push(
+      "this looks like a filled subcontractor FORM — the kind with one numbered block per subcontractor and the labels printed beside the values — and this reader only understands a column TABLE. Nothing on this page has been read as a subcontractor, deliberately, because reading it wrongly would import leads that are not real. Paste the subcontractor table from a bid tabulation or an award packet instead, or send this document to Diego so the form reader can be built against it.",
+    );
+    return {
+      header,
+      rows,
+      unread,
+      ignored,
+      problems,
+      reconciliation: {
+        nonBlankLines,
+        rowsParsed: 0,
+        headerLines,
+        ignoredLines: ignored.length,
+        unreadLines: 0,
+        accountedFor: ignored.length + headerLines,
+        agreed: false,
+      },
+    };
+  }
 
   lines.forEach((raw, index) => {
     const line = index + 1;

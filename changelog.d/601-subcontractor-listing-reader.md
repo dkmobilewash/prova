@@ -372,6 +372,59 @@ because `onChange={(event) => …}` contains a `>` that ends `[^>]*?` before
 `className`. The 11 are pre-existing and span both lanes, so they are an issue
 rather than a guard needing an 11-entry exemption list.
 
+### A real document was finally read, and it is not a table
+
+Caltrans publishes Post-Bid Files publicly, no login — `ppmoe.dot.ca.gov/cc?id=cc_post_bids`
+— per bid-opening date, per contract, **per bidder**, not only the winner. A Bid
+Book from it carries the state's own `SUBCONTRACTOR LIST` form, `DES-OE-0102.2C`.
+The URL recorded in the research note is dead; the host still answers 200 with an
+empty Angular shell, which is the kind of 200 that means nothing. A real browser
+was needed to see that at all.
+
+**The document is a FORM, not a column table**, and every fixture in this PR is a
+column table. Sixty numbered blocks, labels printed beside the values, the licence
+as bare digits with no class prefix, the registration label wrapping mid-phrase,
+percentages per bid item, and the form printing its own `Sample Data Entry` block.
+
+Measured against it, `readRow` returned **228 rows for three subcontractors**, none
+clean. On a paste of only the filled blocks it reported **`agreed: true`** with
+fifteen rows and no real company — the silent wrong answer this parser's whole
+partition design exists to prevent, surviving 325 tests because every fixture was
+a guess. `subListingCases.ts`'s own header predicted exactly this: the cases prove
+self-consistency and "do NOT prove it reads a real document, and no number of them
+ever will."
+
+**So the form shape is now recognised and refused rather than mis-read.** Every
+non-blank line goes to `ignored` under one named reason so the partition still
+holds, a problem names the form in plain words, and no row is invented — because
+228 junk rows would import 228 junk leads, and every lead this importer writes is
+currently undeletable.
+
+**What this change deliberately is NOT.** The comment above `accountedFor` already
+predicted this loss — "the row carrying NONE of them… eaten by the heading-majority
+branch" — and says the fix belongs in `splitFields`/`furnitureReason`, not in a
+guard over the set-aside pile, which was built, measured dead across 308 tests and
+deleted with a note telling the next person not to rebuild it. That note was right
+and saved an hour. Reading this shape needs a block reader keyed on the numbered
+toggle: a new top-level path, named as follow-up, not attempted here.
+
+It also explains an inconsistency the diagnosis left open: `KRC SAFETY CO INC` and
+`MIDSTATE BARRIER INC` became rows while a third company vanished, because
+`hasDataEvidence` rescues a line carrying an entity marker and the third company
+has no `Inc` — and the form writes `State CA` rather than `GOSHEN, CA`, so the
+comma-state pattern misses too.
+
+The refusal is keyed on the numbered toggle and the form's revision id, **not on
+the field labels**, because a legitimate table may head its columns "Business Name
+/ Location City / State". There is a control test for precisely that, and the
+mutation keying it on labels turns the control red. Mutation-tested both ways: the
+detector disabled reds three refusal assertions (228 rows return), the labels
+variant reds the control. 330 tests, up from 325.
+
+One harness failure on the way, caught by its own landing check: a `sed` mutation
+whose pattern contained `|` never applied, and that arm reported a clean 330. A
+mutation run that does not assert the mutation LANDED is a vacuous green.
+
 **Still unverified, and unchanged as the honest headline: no real bid or award
 document has been read.** Every fixture is a guess about a form nobody here has
 opened, the suite is deliberately green over the remaining documented
