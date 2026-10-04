@@ -278,6 +278,7 @@ model User {
   takeoffPlansUploaded                 TakeoffPlan[]                 @relation("TakeoffPlanUploadedBy")
   planSheetProposalsAccepted           PlanSheetProposal[]           @relation("PlanSheetProposalAcceptedBy")
   bidAddendumReadingsStarted           BidAddendumReading[]
+  bidSpecReadingsStarted               BidSpecReading[]
   bidAddendumDecisions                 BidAddendumItemDecision[]
   planIngestJobsStarted                PlanIngestJob[]
   takeoffCalibrations                  TakeoffScaleCalibration[]     @relation("TakeoffCalibrationBy")

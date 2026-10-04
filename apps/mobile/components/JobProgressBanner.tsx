@@ -31,26 +31,20 @@ export function JobProgressBanner({
   value,
   left,
   right,
-  empty,
 }: {
-  /** 0..1, or **null when there is nothing to measure** — a job with no
-   * punch items has not failed to close any, so it must not render 0%. */
-  value: number | null;
+  /** 0..1. **Never null**: "there is nothing to measure" is decided by the
+   * CALLER, which renders no band at all — a job with no punch items has
+   * not failed to close any, and a band saying so is still a box on a
+   * screen that had nothing to report. This used to accept null and an
+   * `empty` string, and neither could be reached: `punchBreakdown` returns
+   * null with no rows, so the caller's own gate fired first and `total` was
+   * never 0. Dead from the day it shipped. */
+  value: number;
   left: { label: string; value: string };
   right: { label: string; value: string };
-  /** Shown instead of the ring and stats when `value` is null. */
-  empty: string;
 }) {
   const p = usePalette();
   const s = makeStyles(p);
-
-  if (value == null) {
-    return (
-      <View style={s.band}>
-        <Text style={s.emptyText}>{empty}</Text>
-      </View>
-    );
-  }
 
   return (
     <View style={s.band}>
@@ -97,11 +91,6 @@ function makeStyles(p: Palette) {
       color: p.colors.surface,
       fontSize: typography.size.lg,
       fontWeight: "700",
-    },
-    emptyText: {
-      color: p.colors.surface,
-      fontSize: typography.size.sm,
-      opacity: 0.9,
     },
   });
 }

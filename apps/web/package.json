@@ -18,7 +18,8 @@
     "eval:draft-lines": "vitest run --config vitest.eval.config.mts lib/estimating/draftLines.eval.ts",
     "eval:bid-research": "vitest run --config vitest.eval.config.mts lib/research/bidResearch.eval.ts",
     "eval:lead-search": "vitest run --config vitest.eval.config.mts lib/leads/leadSearch.eval.ts",
-    "eval:symbols": "vitest run --config vitest.eval.config.mts lib/takeoff/symbolCount.eval.ts"
+    "eval:symbols": "vitest run --config vitest.eval.config.mts lib/takeoff/symbolCount.eval.ts",
+    "eval:specs": "vitest run --config vitest.eval.config.mts lib/specs/specRead.eval.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.9.6",

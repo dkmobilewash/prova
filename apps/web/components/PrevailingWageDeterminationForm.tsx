@@ -115,8 +115,9 @@ export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
       <DeterminationFactsFields fieldClassName={field} labelClassName={factsLabel} />
       <p className="text-xs text-ink-muted">
         Read the number, dates and the asterisk off the determination itself. Leave blank what it
-        doesn&rsquo;t say; you can add them on the row later. No rate is entered anywhere — the rate
-        stays on the document.
+        doesn&rsquo;t say; you can add them on the row later. The rates this determination publishes
+        are entered on its row once it is attached, under &ldquo;Add a rate from this
+        determination&rdquo;.
       </p>
 
       {/* The submit sits BELOW the document facts, not beside the

@@ -239,10 +239,9 @@ export default function JobHubScreen() {
           * state. The tile says how much; this says what needs you. */}
       {punch ? (
         <JobProgressBanner
-          value={punch.total ? punch.verified / punch.total : null}
+          value={punch.verified / punch.total}
           left={{ label: "Open", value: String(punch.open) }}
           right={{ label: "Awaiting check", value: String(punch.ready) }}
-          empty="No punch items on this job yet"
         />
       ) : null}
 

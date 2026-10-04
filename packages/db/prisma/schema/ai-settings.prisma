@@ -81,6 +81,28 @@ enum AiFeature {
   /// `affectsPricedScope`, not `acknowledgedOn`, not `issuedOn`. It lists what a
   /// document says; the assertions on the bid stay the estimator's.
   ADDENDUM_READ
+
+  /// `extractSpecSection` — reading a CSI spec section from the bid documents
+  /// and listing what in it COSTS MONEY, for the estimator to check against
+  /// their number.
+  ///
+  /// ITS OWN MEMBER, and this is the fourth turn of the argument above rather
+  /// than a new one. A spec section is the architect's document, not the GC's
+  /// and not a competitor's, and it is the one of the four a contractor is most
+  /// likely to be relaxed about — there is nothing commercially sensitive in a
+  /// published gypsum-board spec. Which is exactly why it gets its own switch:
+  /// somebody who turned the quote reader off because it reads competitors'
+  /// pricing has said nothing about this, and folding the two together would
+  /// make their answer mean something they did not say.
+  ///
+  /// WHAT IT MAY NOT DO, recorded here for the same reason as the entry above:
+  /// it writes nothing another module reads. Not a `BidRequirement` row — which
+  /// `bid-responsiveness.ts` reads to decide a bid is non-responsive, and whose
+  /// `required` column defaults to true, so an invented one would default to
+  /// condemning the bid. Not `affectsPricedScope`. It lists what a section
+  /// demands and whether that costs money; whether the bid CARRIES the cost is a
+  /// judgement about an estimate the model has never seen.
+  SPEC_READ
 }
 
 /// One row per company. Absent means every default below.
@@ -150,6 +172,16 @@ model CompanyAiSettings {
   /// — because it is what the plan includes rather than a preference, the same
   /// call `planSheetsPerMonth` records.
   addendumPagesPerMonth Int @default(600)
+
+  /// Spec-section pages a month. `ask-allowance.prisma` carries the whole
+  /// argument for why this is a fifth unit rather than more addendum pages, and
+  /// for how 1,800 was arrived at after 600 turned out to be based on a wrong
+  /// page estimate.
+  ///
+  /// Not editable by the company, for the same reason as the two above: it is
+  /// what the plan includes rather than a preference, and a form that posted it
+  /// would let an owner raise their own paid allowance by editing one input.
+  specPagesPerMonth Int @default(1800)
 
   /// Override the model for every feature on this company, e.g. a customer who
   /// wants the cheapest option on everything.

@@ -68,6 +68,13 @@ model BidInvitation {
   /// a per-BID question: which scopes has more than one addendum touched.
   addendumReadings BidAddendumReading[]
 
+  /// The spec sections in this bid's book, and the readings of them — see
+  /// bid-specs.prisma. Both reached from here for the same reason the addendum
+  /// readings are: the per-bid questions ("which sections have been read", "what
+  /// did reading them cost") are per invitation.
+  specSections BidSpecSection[]
+  specReadings BidSpecReading[]
+
   /// THE JOB THIS BID BECAME, when it was won and somebody linked it.
   ///
   /// Nullable and SET NULL, never required: most invitations never become a

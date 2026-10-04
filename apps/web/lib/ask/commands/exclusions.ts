@@ -80,6 +80,11 @@ export const notYetRegistered: Exclusion[] = [
       "Reading a sub's quote. It spends the company's paid document allowance on a file, and what it returns is a SUGGESTION a person corrects in the form before saving — so a command would either spend money on a prompt's say-so or hand the model's own reading straight to `saveBidQuote`, which is the one thing this feature is built not to do. The estimator uploads the quote where they log it. Never a command.",
   },
   {
+    action: "specRead.*",
+    reason:
+      "Reading a spec section for what it demands that costs money. Excluded for `quoteRead.*`'s reason above and one of its own. It spends the company's paid spec allowance on a thirty-to-sixty-page file, so a command would spend real money on a prompt's say-so — and a section is the biggest single charge of any document this app reads, which makes it the worst candidate for a path where the decision to spend is a sentence a model composed. The attach and the read are also deliberately two actions, so that uploading the wrong section costs nothing; a command collapsing them is exactly the shape that mistake needs to stay cheap. And what it returns is a list to CHECK AGAINST A NUMBER THE MODEL HAS NEVER SEEN: an Ask card saying 'this section demands Level 5' beside a bid the assistant cannot read would invite the one conclusion the whole feature refuses to draw. The estimator attaches the section where they log it, on /bids. Never a command.",
+  },
+  {
     action: "aiSettings.*",
     reason:
       "The switch that decides whether AI runs for this company at all. Reachable from a prompt it would let the assistant be asked to re-enable itself, or to turn off the audit trail of its own proposals — a model must never hold the control over whether a model is used. Owner-only on /settings/assistant, and permanently never a command.",

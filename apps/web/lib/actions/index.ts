@@ -81,6 +81,7 @@ export * from "./wallTypes";
 export * from "./bidRecap";
 export * from "./quoteRead";
 export * from "./addendumRead";
+export * from "./specRead";
 export * from "./projectLookup";
 export * from "./leadSearch";
 export * from "./aiSettings";

@@ -428,7 +428,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "Whether the assistant is on for your company, any features you switched off, " +
       "and your monthly plan-sheet allowance. Absent means every default was in use.",
     columns: [
-      "id", "aiEnabled", "disabledFeatures", "planSheetsPerMonth", "addendumPagesPerMonth", "modelOverride",
+      "id", "aiEnabled", "disabledFeatures", "planSheetsPerMonth", "addendumPagesPerMonth", "specPagesPerMonth", "modelOverride",
       "updatedByUserId", "createdAt", "updatedAt",
     ],
     scope: byCompany,
@@ -689,6 +689,21 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "Nothing here is an assertion about the bid: whether an addendum changed work already " +
       "priced is the estimator's own tick on the addendum itself, which IS exported.",
     models: ["BidAddendumReading", "BidAddendumItemDecision"],
+  },
+  {
+    key: "bid-spec-readings",
+    title: "The spec sections logged on each bid, and what was read off them",
+    detail:
+      "A spec section logged against a bid — its number, its title and the PDF — plus one row " +
+      "per read run recording what the model said that section demands that costs money. " +
+      "Not exported yet, and the two halves differ the way the addendum pair above does. The " +
+      "SECTION is a person's own record that 09 21 16 is in this bid's book, which is the half " +
+      "worth exporting one day; the READING is a record of what a model said about a PDF this " +
+      "file does not contain, and re-reading is what produces a current one. Omitted because " +
+      "no dataset has been written, not because it would be meaningless. Nothing here is an " +
+      "assertion about the bid: whether the bid carries a cost the section demands is the " +
+      "estimator's judgement about an estimate the model never saw.",
+    models: ["BidSpecSection", "BidSpecReading"],
   },
   {
     key: "retainage-and-backcharges",
