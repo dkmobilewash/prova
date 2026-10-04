@@ -12,6 +12,7 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { groupProposalClauses, PROPOSAL_CLAUSE_HEADINGS } from "@/lib/proposal-clauses";
 import { bidRecap, RECAP_RATE_KEYS, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
 import { proposalPriceState, proposalPriceWarning } from "@/lib/estimating/proposal-recap-currency";
+import { bidMargin, underCostWarning } from "@/lib/estimating/bid-margin";
 
 /**
  * A job's bid proposal — the scope + price + exclusions document a sub sends
@@ -116,6 +117,24 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
   );
   const priceWarning = proposalPriceWarning(recapState);
 
+  // DOES THIS BID COVER ITS OWN COST? The same conversion as above, over the
+  // same lines — `budgetedUnitCost`, never `currentEstimatedUnitCost`. Nothing
+  // new is queried: the page already reads every live line's cost to compute
+  // `addedTotal`, and it has never RENDERED one, which is the point of the
+  // print:hidden box below.
+  const marginWarning = underCostWarning(
+    bidMargin(
+      job.lineItems.map((line) => ({
+        id: line.id,
+        quantity: Number(line.quantity),
+        unitCost: line.budgetedUnitCost != null ? Number(line.budgetedUnitCost) : null,
+        unitPrice: line.unitPrice != null ? Number(line.unitPrice) : null,
+        costCategory: (line.costCategory as CostCategoryValue | null) ?? null,
+      })),
+    ),
+    money,
+  );
+
   return (
     // A document, so "reading" — and `print:p-0` so the printed page runs to
     // the browser's own margins, the way the G702/G703 does.
@@ -136,6 +155,18 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
       {priceWarning && (
         <p className="mb-6 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink print:hidden">
           {priceWarning}
+        </p>
+      )}
+
+      {/* PRINT:HIDDEN FOR THE SAME REASON AND MORE SO. This page deliberately
+          shows the GC no cost figure at all — the schedule of values prints
+          prices and nothing else. A margin on the printed page would hand a
+          customer our cost base, which is worse than the sentence above it.
+          Rose rather than amber: the warnings above are fields somebody forgot
+          to fill in, and this one is a bid that does not cover the work. */}
+      {marginWarning && (
+        <p className="mb-6 rounded-md bg-tag-rose px-3 py-2 text-sm text-tag-rose-ink print:hidden">
+          {marginWarning}
         </p>
       )}
 
