@@ -468,3 +468,75 @@ describe("a spec-section number does not beat the contractor's real licence", ()
     expect(row.registration).toBeNull();
   });
 });
+
+/**
+ * THE INVARIANT BEHIND THE VERDICT: NOTHING ROW-SHAPED REACHES THE SET-ASIDE PILE.
+ *
+ * `reconciliation.agreed`'s first conjunct is `accountedFor === nonBlankLines`,
+ * and a fourth review established that it is a TAUTOLOGY — every non-blank line
+ * is pushed into exactly one of four buckets, so the sum cannot disagree. The
+ * third fires only on a conflicting header value. That left `unread.length === 0`
+ * carrying the whole verdict, which is why every defect this parser has had
+ * reported `agreed: true`: each one put a subcontractor in `ignored` with a
+ * confident reason, and `agreed` cannot see `ignored`.
+ *
+ * `parseSubListing` now raises a problem when a set-aside line looks like a row.
+ * **That branch is UNREACHABLE today and this suite says so rather than implying
+ * otherwise** — six constructed attempts (a totals line that is also a company, a
+ * heading-majority row carrying identifiers, a page-number line with a company in
+ * it, an alternate with a licence, a wrap continuation that is a whole row, and
+ * prose naming a company and a licence) all failed to land a row-shaped line in
+ * `ignored`, because `hasDataEvidence` rescues it upstream and `looksLikeARow`
+ * outranks the continuation branch.
+ *
+ * A conjunct over the set-aside pile was written for this and then DELETED, for
+ * the reason `parse.ts` now records: removing it changed no outcome across 308
+ * tests. What is kept is this block, and it is kept with its limit stated —
+ * **it cannot fail against today's corpus.** Disabling `hasDataEvidence`
+ * altogether reds eleven other tests and not one of these, because a well-formed
+ * row does not trip the furniture branches even with the rescue gone.
+ *
+ * It is a forward guard, not a regression caught: it asks of every fixture the
+ * question nobody was asking, so a future fixture that DOES lose a row to the
+ * pile fails here instead of passing quietly. The second case below is the part
+ * that can fail today — it keeps the predicate from rotting into one that matches
+ * nothing, which is how a check of this shape goes vacuous.
+ */
+describe("across every fixture, nothing set aside looks like a subcontractor", () => {
+  const looksLikeARow = (text: string) =>
+    [
+      /\b\d{6,10}\b/,
+      /[A-Z][A-Za-z.\-]+,\s*[A-Z]{2}\b/,
+      /\b(?:inc|llc|corp|corporation|co|company|ltd|llp|lp|systems|builders|construction|contractors|interiors|enterprises|group|industries)\b\.?/i,
+    ].filter((pattern) => pattern.test(text)).length >= 2;
+
+  it.each(SUB_LISTING_CASES.map((subject) => [subject.id, subject.text] as const))(
+    "%s sets aside nothing that reads as a row",
+    (_id, text) => {
+      const parsed = parseSubListing(text);
+      const offenders = parsed.ignored.filter(
+        (line) => !line.why.startsWith("read as the continuation of") && looksLikeARow(line.text),
+      );
+      expect(offenders.map((line) => `line ${line.line}: ${line.text.trim()}`)).toEqual([]);
+    },
+  );
+
+  it("and the predicate is not vacuous — it does recognise a row when shown one", () => {
+    // Without this the block above would pass over an empty question, which is the
+    // failure mode CLAUDE.md names for every deriving check in this repo.
+    expect(looksLikeARow("Acme Drywall, Inc.  Fontana, CA  884201  Drywall")).toBe(true);
+    expect(looksLikeARow("Page 3 of 7")).toBe(false);
+    expect(looksLikeARow("Questions: (916) 555-0134")).toBe(false);
+  });
+
+  it("reports a row-shaped line rather than setting it aside, which is why the pile stays clean", () => {
+    // This is the mechanism the block above depends on, asserted directly: a line
+    // carrying a company, a place and a licence goes to `unread` — loud — and not
+    // to `ignored`. The invariant holds because of THIS, not because of any check
+    // over the pile afterwards.
+    const parsed = parseSubListing("Page 1 of 3 Acme Drywall, Inc. Fontana, CA 884201");
+    expect(parsed.ignored).toEqual([]);
+    expect(parsed.unread).toHaveLength(1);
+    expect(parsed.reconciliation.agreed).toBe(false);
+  });
+});

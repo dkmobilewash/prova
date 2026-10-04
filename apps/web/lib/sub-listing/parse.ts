@@ -795,6 +795,27 @@ function hasDataEvidence(trimmed: string, fields: string[]): boolean {
   return false;
 }
 
+/**
+ * DOES THIS TEXT LOOK LIKE A WHOLE TABLE ROW?
+ *
+ * Two of three — a 6-to-10 digit licence or registration, a "City, ST", a
+ * company entity marker. Extracted so ONE definition serves both callers: the
+ * one-column branch, which uses it to tell a squashed row from a wrap fragment,
+ * and `agreed`, which uses it to ask whether anything in the set-aside pile looks
+ * like a subcontractor. Two copies of this question would be the "is there a
+ * second list" defect CLAUDE.md records, in a file that already has three
+ * entries about it.
+ */
+function looksLikeARow(text: string): boolean {
+  return (
+    [
+      /\b\d{6,10}\b/, // a contractor licence or a public-works registration
+      /[A-Z][A-Za-z.\-]+,\s*[A-Z]{2}\b/, // "Fontana, CA" anywhere in the line
+      ENTITY_MARKER,
+    ].filter((pattern) => pattern.test(text)).length >= 2
+  );
+}
+
 function furnitureReason(line: string, fields: string[]): string | null {
   const trimmed = line.trim();
 
@@ -1108,12 +1129,7 @@ export function parseSubListing(text: string): SubListingParse {
      * run, which excludes a year, a time and a phone number's last group
      * outright, and it still has to be joined by a second signal.
      */
-    const rowSignals = [
-      /\b\d{6,10}\b/, // a contractor licence or a public-works registration
-      /[A-Z][A-Za-z.\-]+,\s*[A-Z]{2}\b/, // "Fontana, CA" in the middle of a line
-      ENTITY_MARKER,
-    ].filter((pattern) => pattern.test(single.text)).length;
-    const looksLikeItsOwnRow = rowSignals >= 2;
+    const looksLikeItsOwnRow = looksLikeARow(single.text);
 
     if (above && cutOff && !looksLikeItsOwnRow) {
       above.concerns.push(
@@ -1206,6 +1222,35 @@ export function parseSubListing(text: string): SubListingParse {
     );
   }
 
+  /**
+   * `agreed`'s FIRST CONJUNCT IS A TAUTOLOGY, AND THE FIX FOR IT WAS DEAD CODE.
+   *
+   * A fourth review established the defect correctly: `accountedFor ===
+   * nonBlankLines` can never disagree, because every non-blank line is pushed into
+   * exactly one of four buckets. The third conjunct fires only on a conflicting
+   * header value. So `unread.length === 0` carries the whole verdict, and every
+   * defect this parser has had reported `agreed: true` — each put a subcontractor
+   * in `ignored` with a confident reason, where `agreed` cannot see it.
+   *
+   * **A conjunct asking whether any set-aside line looks like a row was written
+   * here, and then deleted, because it was measured and it was dead.** Six
+   * constructed attempts could not land a row-shaped line in `ignored` at all: a
+   * totals line that is also a company, a heading-majority row carrying
+   * identifiers, a page-number line with a company in it, an alternate with a
+   * licence, a wrap continuation that is a whole row, and prose naming a company
+   * and a licence. `hasDataEvidence` rescues anything with identifiers before the
+   * furniture tests run, and `looksLikeARow` outranks the continuation branch. And
+   * the decisive measurement: DELETING the branch changed no test outcome across
+   * 308, which is this file's own stated definition of dead logic.
+   *
+   * So the hole is real and it is NOT where the review placed it. A row carrying
+   * identifiers can no longer reach `ignored`; what is still lost is the row
+   * carrying NONE of them — a bare surname, a city with no state code, no licence
+   * column pasted — eaten by the heading-majority branch. No predicate over the
+   * set-aside pile can see that, because by construction there is nothing in it to
+   * see. `splitFields` and `furnitureReason` are where that gets fixed, not here,
+   * and this comment exists so the next person does not rebuild the dead guard.
+   */
   const accountedFor = rows.length + unread.length + ignored.length + headerLines;
 
   return {
