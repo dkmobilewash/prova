@@ -633,6 +633,53 @@ function parsePercent(raw: string): number | null {
 }
 
 /** Every one of our trades a portion of work mentions, best first. */
+/**
+ * UPPERCASE TRADE ACRONYMS, MATCHED AS WHOLE WORDS AND CASE-SENSITIVELY.
+ *
+ * ── WHY THESE CANNOT LIVE IN `TRADE_KEYWORDS` ──
+ *
+ * `tradeMatchFor` lowercases the scope and asks `haystack.includes(keyword)`.
+ * That is right for words — "acoustic" should match "acoustical" — and fatal for
+ * a three-letter acronym: the keyword `"act"` would match **Contract**,
+ * **Contractor**, **Compaction**, **Extraction** and **Practice**, so a scope
+ * reading "Contract Work" would be filed as acoustical ceilings and ticked for
+ * import. Checked before writing this, not after.
+ *
+ * ── WHY IT IS WORTH THE SEPARATE MECHANISM ──
+ *
+ * `TRADE_KEYWORDS` already carries `"act ceiling"`, so somebody anticipated the
+ * acronym and assumed it would be written beside the word. The real documents
+ * write it bare: three of 154 rows in the UCLA corpus have a scope of exactly
+ * `ACT`, and all three are genuinely acoustical firms — their names say so.
+ *
+ * Those three were arriving with `tradeScope: null`, and `shouldInclude` ticks a
+ * row only when the trade matched, so each was **UNTICKED and silently left out
+ * of the import** — a lost prospect wearing the appearance of a deliberate
+ * exclusion, which is a shape this file has paid for before.
+ *
+ * ── THE BOUND, STATED RATHER THAN PRETENDED AWAY ──
+ *
+ * Matched against the ORIGINAL string, case-sensitively, with word boundaries. A
+ * scope writing `act` in lower case is therefore missed, deliberately: the
+ * uppercase requirement is the whole reason "Contract" is safe. In US
+ * construction `ACT` is Acoustical Ceiling Tile essentially without exception;
+ * if a document ever uses it for something else this is where to look.
+ *
+ * Total `Record` on purpose, following `TRADE_KEYWORDS`: adding a trade forces a
+ * decision here rather than silently inheriting no acronym.
+ */
+const TRADE_ACRONYMS: Record<TradeScopeValue, readonly RegExp[]> = {
+  METAL_FRAMING_DRYWALL: [],
+  LATH_PLASTER: [],
+  EIFS: [],
+  // ACT — Acoustical Ceiling Tile. Three of 154 real rows spell it exactly this.
+  ACOUSTICAL_CEILINGS: [/\bACT\b/],
+  // SFRM is already in TRADE_KEYWORDS as a lowercase word, where substring
+  // matching is harmless for a four-letter string that is not a fragment of
+  // anything. It does not need to be here.
+  FIREPROOFING: [],
+};
+
 export function tradeMatchFor(portionOfWork: string | null): {
   scope: TradeScopeValue | null;
   alsoMatched: TradeScopeValue[];
@@ -648,6 +695,22 @@ export function tradeMatchFor(portionOfWork: string | null): {
     for (const keyword of keywords) {
       if (!haystack.includes(keyword)) continue;
       best.set(scope, Math.max(best.get(scope) ?? 0, keyword.length));
+    }
+  }
+
+  // The acronyms run against the ORIGINAL string, because their safety is their
+  // case. They score by match length like any other keyword, so a scope naming
+  // both an acronym and a longer word still ranks the longer word first and the
+  // acronym lands in `alsoMatched` — which is the existing tie machinery, not a
+  // new rule.
+  for (const [scope, patterns] of Object.entries(TRADE_ACRONYMS) as [
+    TradeScopeValue,
+    readonly RegExp[],
+  ][]) {
+    for (const pattern of patterns) {
+      const found = portionOfWork.match(pattern);
+      if (!found) continue;
+      best.set(scope, Math.max(best.get(scope) ?? 0, found[0].length));
     }
   }
   if (best.size === 0) return { scope: null, alsoMatched: [] };

@@ -595,6 +595,34 @@ returned all-nulls, and every test stayed green because the parser simply fell b
 to its old behaviour. What caught it was the TODAY tests NOT going red — a fix that
 changes nothing is the same shape as a fix that is not wired up.
 
+### `ACT` was silently excluding real acoustical-ceiling prospects
+
+Three of 154 real rows have a scope of exactly **`ACT`** — Acoustical Ceiling Tile
+— and all three are genuinely acoustical firms; their company names say so. They
+matched no trade, and `shouldInclude` ticks a row only when the trade matched, so
+each arrived **UNTICKED and was silently left out of the import**. A lost prospect
+wearing the appearance of a deliberate exclusion.
+
+`TRADE_KEYWORDS` already carried `"act ceiling"`, so the acronym was anticipated
+and assumed to be written beside the word. The documents write it bare.
+
+**It cannot be fixed by adding `"act"` to that list, and checking why came first.**
+`tradeMatchFor` lowercases the scope and asks `haystack.includes(keyword)`, so the
+keyword `"act"` would also match **Contract**, **Contractor**, **Compaction**,
+**Extraction** and **Practice** — filing "Contract Work" as acoustical ceilings and
+ticking it for import. So acronyms get their own list, matched case-SENSITIVELY on
+word boundaries against the original string. Lower-case `act` is therefore missed
+deliberately: the case is what makes "Contract" safe, and the bound is recorded
+rather than left as a surprise.
+
+Measured against all 12 distinct real scope strings in the five trades: 11 already
+matched, including `Suspension Ceiling`, `Firestopping`, and both multi-trade cells
+(one of them via "Gypsum Board"). `ACT` was the only gap.
+
+Mutation-tested two ways. Removing the acronym loop reds 2 tests. **"Tidying" `ACT`
+into `TRADE_KEYWORDS` as a lowercase word reds 21** — which is the point of the
+trap tests, since that refactor is the tempting one.
+
 **Still unverified, and unchanged as the honest headline: no real bid or award
 document has been read.** Every fixture is a guess about a form nobody here has
 opened, the suite is deliberately green over the remaining documented

@@ -199,3 +199,84 @@ describe("the ordering cannot be read with indexOf again", () => {
     expect(PARSE_CODE).toMatch(/Number\.MAX_SAFE_INTEGER/);
   });
 });
+
+/**
+ * `ACT` — THE ACRONYM THE REAL DOCUMENTS USE, AND THE SUBSTRING TRAP IT SITS IN.
+ *
+ * `TRADE_KEYWORDS` already carried `"act ceiling"`, so the acronym was
+ * anticipated and assumed to be written beside the word. Three of 154 rows in the
+ * real UCLA corpus have a scope of exactly **`ACT`** — Acoustical Ceiling Tile —
+ * and all three are genuinely acoustical firms; their company names say so.
+ *
+ * They were matching NOTHING, and `shouldInclude` ticks a row only when the trade
+ * matched, so each arrived UNTICKED and was silently left out of the import. A
+ * lost prospect wearing the appearance of a deliberate exclusion.
+ *
+ * **It cannot be fixed by adding `"act"` to `TRADE_KEYWORDS`**, and that is the
+ * whole reason `TRADE_ACRONYMS` exists: that list is matched with
+ * `haystack.includes(keyword)` against a LOWERCASED scope, so the keyword `"act"`
+ * would also match Contract, Contractor, Compaction, Extraction and Practice —
+ * filing "Contract Work" as acoustical ceilings and ticking it for import.
+ *
+ * So the acronym is matched case-SENSITIVELY and on word boundaries, against the
+ * original string. The traps below are the point of the test, not decoration: if
+ * someone later moves `ACT` into `TRADE_KEYWORDS` for tidiness, they go red.
+ */
+describe("ACT is read as acoustical ceilings without swallowing Contract", () => {
+  it("matches the bare acronym the documents print", () => {
+    expect(tradeMatchFor("ACT").scope).toBe("ACOUSTICAL_CEILINGS");
+  });
+
+  it("does NOT match any word that merely contains the letters", () => {
+    for (const trap of [
+      "Contract Work",
+      "Contractor",
+      "General Contract",
+      "Compaction",
+      "Soil Compaction and Grading",
+      "Extraction",
+      "Practice Field",
+    ]) {
+      expect(tradeMatchFor(trap).scope, trap).not.toBe("ACOUSTICAL_CEILINGS");
+    }
+  });
+
+  /**
+   * Lower case is missed ON PURPOSE — the case is what makes "Contract" safe.
+   * Recorded as a deliberate bound rather than left as a surprise.
+   */
+  it("deliberately misses a lower-case 'act', because the case is the safety", () => {
+    expect(tradeMatchFor("act").scope).not.toBe("ACOUSTICAL_CEILINGS");
+  });
+
+  /**
+   * An acronym scores by its match length like any other keyword, so a scope
+   * naming both still ranks the longer word first and reports the acronym as
+   * also-matched. That is the existing tie machinery, not a new rule.
+   */
+  it("ranks a longer trade word above the acronym and reports both", () => {
+    const match = tradeMatchFor("ACT / Drywall Patch");
+    expect(match.scope).toBe("METAL_FRAMING_DRYWALL");
+    expect(match.alsoMatched).toContain("ACOUSTICAL_CEILINGS");
+  });
+
+  /** The other eleven real scope strings from the corpus, unchanged. */
+  it("leaves every other real scope string reading as it did", () => {
+    const expected: [string, string][] = [
+      ["Acoustical Ceiling", "ACOUSTICAL_CEILINGS"],
+      ["Acoustical Ceilings", "ACOUSTICAL_CEILINGS"],
+      ["Suspension Ceiling", "ACOUSTICAL_CEILINGS"],
+      ["Drywall", "METAL_FRAMING_DRYWALL"],
+      ["Drywall & Metal Framing", "METAL_FRAMING_DRYWALL"],
+      ["Framing Drywall", "METAL_FRAMING_DRYWALL"],
+      ["Framing/ Drywall", "METAL_FRAMING_DRYWALL"],
+      ["Unistrut Overhead Support/ Drywall", "METAL_FRAMING_DRYWALL"],
+      ["Demolition, Framing, Drywall, Casework, Ceiling", "METAL_FRAMING_DRYWALL"],
+      ["Mechanical, Carpentry Gypsum Board System, Plumbing, Painting", "METAL_FRAMING_DRYWALL"],
+      ["Firestopping", "FIREPROOFING"],
+    ];
+    for (const [scope, want] of expected) {
+      expect(tradeMatchFor(scope).scope, scope).toBe(want);
+    }
+  });
+});
