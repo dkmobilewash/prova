@@ -30,7 +30,20 @@ export type BidDefaultsView = Record<string, string | null>;
  */
 const FIELDS = RECAP_RATE_KEYS.map((key) => ({ key: key as string, ...RECAP_RATE_FIELDS[key] }));
 
-export function BidDefaultsForm({ defaults }: { defaults: BidDefaultsView | null }) {
+export function BidDefaultsForm({
+  defaults,
+  wastePercent,
+}: {
+  defaults: BidDefaultsView | null;
+  /**
+   * SEPARATE FROM `defaults` ON PURPOSE. That object is built from
+   * `RECAP_RATE_KEYS` and waste is not a recap rate — it changes how much
+   * material a takeoff asks for, not what the GC is charged for it. Folding it
+   * into the rate map would put it one careless `Object.keys` away from being
+   * multiplied into a bid total.
+   */
+  wastePercent: string | null;
+}) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -66,6 +79,32 @@ export function BidDefaultsForm({ defaults }: { defaults: BidDefaultsView | null
           </label>
         ))}
       </div>
+
+      {/* BELOW THE RATES AND VISIBLY NOT ONE OF THEM. Same row shape so it is
+          not a special case to fill in, its own heading so nobody reads it as
+          a markup. Blank means nobody has decided and the takeoff falls back
+          to 10 — which is what the takeoff form already prefilled, so leaving
+          it blank changes nothing. */}
+      <div className="border-t border-line-card pt-3">
+        <label className="flex flex-col gap-1 text-xs text-ink-label">
+          Material waste
+          <span className="flex w-fit items-center gap-1">
+            <input
+              name="defaultWastePercent"
+              defaultValue={wastePercent ?? ""}
+              inputMode="decimal"
+              placeholder="10"
+              className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+            />
+            <span className="text-ink-muted">%</span>
+          </span>
+          <span className="text-ink-muted">
+            What a takeoff adds for cuts and offcuts. Blank uses 10%. This is not a markup — it buys more material, it
+            does not charge more for it.
+          </span>
+        </label>
+      </div>
+
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"

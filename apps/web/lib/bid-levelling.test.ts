@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   bidQuoteProblem,
+  carriedQuoteLapsed,
   exclusionLines,
   levelBid,
   levelPackage,
   outstandingNote,
+  quoteFreshness,
   requestState,
   type LevelQuote,
 } from "./bid-levelling";
@@ -306,5 +308,94 @@ describe("bidQuoteProblem accepts a request with no price on it", () => {
       "what this quote is for",
     );
     expect(bidQuoteProblem({ packageLabel: "EIFS", vendorName: "", amount: null })).toContain("whoever gave it");
+  });
+});
+
+/**
+ * WHETHER THE PRICE IS STILL GOOD — the question none of the other dates on a
+ * `BidQuote` answers. A quote can be ANSWERED, comparable, carried and inside
+ * the number a GC was sent while the price itself lapsed weeks ago; before
+ * `validUntil` that was not merely unreported, it was inexpressible.
+ */
+describe("whether a quote's price has lapsed", () => {
+  const TODAY = "2026-10-04";
+
+  it("says nothing when the sub named no expiry and the price is recent", () => {
+    expect(quoteFreshness(quote({ id: "a", vendorName: "Acme", amount: 82_000 }), TODAY)).toBeNull();
+  });
+
+  it("is INCLUSIVE of the last day — a price held until the 4th is good on the 4th", () => {
+    // The off-by-one that matters: the wrong end tells somebody a live price
+    // is dead on the one day they most need it. Reused from `isExpired`
+    // rather than restated here, and this is the test that proves the reuse.
+    const onTheDay = quote({ id: "a", vendorName: "Acme", amount: 82_000, validUntil: TODAY });
+    expect(quoteFreshness(onTheDay, TODAY)).toBeNull();
+
+    const dayAfter = quote({ id: "a", vendorName: "Acme", amount: 82_000, validUntil: "2026-10-03" });
+    expect(quoteFreshness(dayAfter, TODAY)?.level).toBe("expired");
+  });
+
+  it("reports an old price with no expiry as stale, not expired", () => {
+    const old = quote({ id: "a", vendorName: "Acme", amount: 82_000, quotedOn: "2026-05-01" });
+    expect(quoteFreshness(old, TODAY)?.level).toBe("stale");
+  });
+
+  it("lets the sub's own date outrank our rule of thumb", () => {
+    // An old quote the sub says still holds is LIVE. Flagging it stale as well
+    // would report one quote twice for the same reason.
+    const oldButHeld = quote({
+      id: "a",
+      vendorName: "Acme",
+      amount: 82_000,
+      quotedOn: "2026-05-01",
+      validUntil: "2026-12-31",
+    });
+    expect(quoteFreshness(oldButHeld, TODAY)).toBeNull();
+  });
+
+  it("says nothing about a request nobody has answered", () => {
+    // No price, nothing to be old about — and `requestState` already reports
+    // this row. Saying "stale" too would be the same fact in two vocabularies.
+    const awaited = quote({ id: "a", vendorName: "Acme", amount: null, quotedOn: null });
+    expect(quoteFreshness(awaited, TODAY)).toBeNull();
+  });
+});
+
+describe("a lapsed price that is the one we carried", () => {
+  const TODAY = "2026-10-04";
+  const carried = (over: Partial<LevelQuote> & { carriedAt?: string | null }) => ({
+    ...quote({ id: "a", vendorName: "Acme", amount: 82_000, ...over }),
+    carriedAt: over.carriedAt ?? null,
+  });
+
+  it("is silent when the carried price still stands", () => {
+    expect(carriedQuoteLapsed([carried({ carriedAt: "2026-10-01", validUntil: "2026-12-31" })], TODAY)).toBeNull();
+  });
+
+  it("NAMES THE VENDOR AND THE DATE when the carried price has lapsed", () => {
+    const warning = carriedQuoteLapsed([carried({ carriedAt: "2026-10-01", validUntil: "2026-09-01" })], TODAY);
+    expect(warning).toContain("Acme");
+    expect(warning).toContain("2026-09-01");
+    // It asks for a confirmation rather than declaring the bid wrong: subs
+    // honour lapsed numbers all the time and this module cannot know.
+    expect(warning).toContain("Confirm");
+  });
+
+  it("IGNORES A LAPSED QUOTE NOBODY CARRIED, which is the whole point", () => {
+    // An expired price we did not use is not a fact about our bid. Warning on
+    // it would make the warning routine, and a routine warning is unread.
+    expect(carriedQuoteLapsed([carried({ carriedAt: null, validUntil: "2026-09-01" })], TODAY)).toBeNull();
+  });
+
+  it("counts them when more than one carried price has lapsed", () => {
+    const warning = carriedQuoteLapsed(
+      [
+        carried({ carriedAt: "2026-10-01", validUntil: "2026-09-01" }),
+        { ...carried({ carriedAt: "2026-10-01", validUntil: "2026-08-15" }), id: "b", vendorName: "Beta" },
+      ],
+      TODAY,
+    );
+    expect(warning).toContain("2 carried prices");
+    expect(warning).toContain("Beta");
   });
 });

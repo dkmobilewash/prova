@@ -140,6 +140,33 @@ model BidQuote {
   /// cost is a figure somebody will be held to.
   carriedAt DateTime?
 
+  /// HOW LONG THEY SAID IT HOLDS. Null when they did not say, which is most
+  /// of the time and is not a problem to be filled in with a guess.
+  ///
+  /// THE GAP THIS CLOSES: every other date here is about the conversation —
+  /// when we asked, when it was due, when they answered, when they declined,
+  /// when we carried it. None of them says whether the PRICE is still good. So
+  /// "Alpha's number lapsed three weeks ago and it is still inside our bid"
+  /// was not merely unreported, it was inexpressible.
+  ///
+  /// IT IS THEIR STATEMENT, NOT OUR RULE OF THUMB, and the two are kept apart
+  /// deliberately — `VendorPriceQuote` already learned this on the price-book
+  /// side. A date the sub gave outranks any staleness heuristic of ours until
+  /// it lapses, at which point expiry is the truer answer anyway; applying
+  /// both would flag one quote twice for the same reason.
+  ///
+  /// INCLUSIVE OF THE LAST DAY wherever it is read — a price held "until the
+  /// 30th" is good ON the 30th. `isExpired` in `components/vendorPricing.ts`
+  /// is the one implementation of that off-by-one and this reuses it rather
+  /// than restating it, because getting it wrong tells somebody a live price
+  /// is dead on the one day they most need it.
+  ///
+  /// ADVISORY, NEVER A REFUSAL. A lapsed quote can still be carried and still
+  /// put on an estimate: subs honour old numbers all the time, and the
+  /// estimator is the one who knows whether this one will. The app says the
+  /// date passed and leaves the judgement where it belongs.
+  validUntil DateTime?
+
   /// WHAT THIS QUOTE LEAVES OUT, one exclusion per line as the sub wrote it.
   ///
   /// A COLUMN AND NOT A LINE IN `notes`, because this is the field that

@@ -48,16 +48,19 @@ export function BidWizardLineItems({
   jobId,
   lineItems,
   catalogEntries,
+  defaultWastePercent,
 }: {
   jobId: string;
   lineItems: WizardLineItem[];
   catalogEntries: WizardCatalogOption[];
+  /** Threaded through to the takeoff form this wizard step embeds. */
+  defaultWastePercent: string | null;
 }) {
   return (
     <div className="flex flex-col gap-4">
       <ManualAddForm jobId={jobId} />
       {catalogEntries.length > 0 && <CatalogAddForm jobId={jobId} catalogEntries={catalogEntries} />}
-      <TakeoffForm jobId={jobId} />
+      <TakeoffForm jobId={jobId} defaultWastePercent={defaultWastePercent} />
 
       <div className="rounded-lg border border-line-card bg-surface p-4">
         <h3 className="mb-2 text-sm font-semibold text-ink-label">On this estimate</h3>

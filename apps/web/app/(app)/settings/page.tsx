@@ -679,7 +679,10 @@ export default async function SettingsPage({
           <span className="text-ink-label">Bid recap</span> on a new job — that job then keeps its
           own rates, so changing these never moves a bid you have already built or sent.
         </p>
-        <BidDefaultsForm defaults={bidDefaults} />
+        <BidDefaultsForm
+          defaults={bidDefaults}
+          wastePercent={bidDefaultsRow?.defaultWastePercent?.toString() ?? null}
+        />
       </section>
 
       {/* Phase codes sit here, after the licences and before the insurance,
