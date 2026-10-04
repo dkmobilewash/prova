@@ -194,7 +194,15 @@ export type ListedSub = {
   /** A public-works contractor registration number as printed. */
   registration: string | null;
   city: string | null;
-  /** Whole dollars. Only ever rendered into a sentence, never stored as money. */
+  /**
+   * The amount as the document printed it, to the CENT — not whole dollars,
+   * which is what this line said until `parseAmount` stopped rounding. Only
+   * ever rendered into a sentence, never stored as money.
+   *
+   * Null is the normal case rather than a failure: California's §4104 listing
+   * has no dollar column at all. Null ALSO means the row carried figures and
+   * this refused to choose between them, which arrives as a concern.
+   */
   amount: number | null;
   percentOfBid: number | null;
   /**
