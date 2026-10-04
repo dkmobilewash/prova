@@ -223,3 +223,71 @@ describe("a scope that ran off the end of the line", () => {
     expect(trade.claim).toContain("Metal framing / drywall");
   });
 });
+
+/**
+ * A WRAPPED PROJECT NAME, WHICH IS THE SAME DEFECT AS A WRAPPED SCOPE ON THE
+ * HALF OF THE SENTENCE THAT NAMES THE MAN'S JOB.
+ *
+ * `looksCutOff` is exported from `parse.ts` with a comment saying it exists so a
+ * claim can MARK a fragment rather than quote it, and for three reviews it was
+ * applied to `portionOfWork` only. A project name wraps the same way — "Project:
+ * Lincoln Elementary School Modernization and" with "Site Improvements, Phase 2"
+ * on the next line — and the truncation went into the two claims that name the
+ * job, with nothing on screen to say so.
+ */
+describe("a project name that visibly does not finish is marked, not quoted whole", () => {
+  const wrapped = [
+    "Project: Lincoln Elementary School Modernization and",
+    "Site Improvements, Phase 2",
+    "Prime: Swinerton Builders",
+    "Acme Interiors, Inc.\tFontana, CA\tLic. 884201\tDrywall",
+  ].join("\n");
+
+  it("raises a problem naming the truncated value, so the screen says so", () => {
+    const parsed = parseSubListing(wrapped);
+    expect(parsed.problems).toHaveLength(1);
+    expect(parsed.problems[0]).toContain("visibly does not finish");
+    expect(parsed.problems[0]).toContain("Lincoln Elementary School Modernization and");
+    // And the verdict cannot read clean over it.
+    expect(parsed.reconciliation.agreed).toBe(false);
+  });
+
+  it("marks the fragment in the PROJECT and GC claims rather than asserting it whole", () => {
+    const parsed = parseSubListing(wrapped);
+    const claims = signalsForSub(parsed.rows[0], parsed.header, "AWARDED");
+    const project = claims.find((claim) => claim.kind === "PROJECT")!.claim;
+    const gc = claims.find((claim) => claim.kind === "GC_RELATIONSHIP")!.claim;
+    // The ellipsis is the whole fix: it is the difference between naming a job
+    // and naming a job we have only half of.
+    expect(project).toContain("Modernization and…");
+    expect(gc).toContain("Modernization and…");
+  });
+
+  it("leaves a project name that DOES finish completely alone", () => {
+    const clean = parseSubListing(
+      [
+        "Project: Lincoln Elementary Modernization",
+        "Prime: Swinerton Builders",
+        "Acme Interiors, Inc.\tFontana, CA\tLic. 884201\tDrywall",
+      ].join("\n"),
+    );
+    expect(clean.problems).toEqual([]);
+    expect(clean.reconciliation.agreed).toBe(true);
+    const claims = signalsForSub(clean.rows[0], clean.header, "AWARDED");
+    const project = claims.find((claim) => claim.kind === "PROJECT")!.claim;
+    expect(project).toContain("Lincoln Elementary Modernization,");
+    expect(project).not.toContain("…");
+  });
+
+  it("guards the agency and the bid date the same way", () => {
+    const parsed = parseSubListing(
+      [
+        "Agency: Fontana Unified School District and",
+        "Acme Interiors, Inc.\tFontana, CA\tLic. 884201\tDrywall",
+      ].join("\n"),
+    );
+    expect(parsed.problems).toHaveLength(1);
+    expect(parsed.problems[0]).toContain("agency");
+    expect(parsed.problems[0]).toContain("visibly does not finish");
+  });
+});

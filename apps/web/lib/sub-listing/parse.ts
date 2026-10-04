@@ -697,6 +697,29 @@ function readHeader(lines: string[]): { header: SubListingParse["header"]; probl
     const values = seen.get(key) ?? [];
     if (values.length === 1) {
       header[key] = values[0];
+      /**
+       * A HEADER VALUE CAN WRAP TOO, AND `looksCutOff` WAS EXPORTED FOR EXACTLY
+       * THIS AND APPLIED ONLY TO THE PORTION OF WORK.
+       *
+       * "Project: Lincoln Elementary School Modernization and" / "Site
+       * Improvements, Phase 2" puts the second half on its own line, which is
+       * one column and is filed as prose. So the project name was truncated at
+       * a conjunction and went straight into the two claims that name the man's
+       * JOB — `PROJECT` and `GC_RELATIONSHIP` — reading "Works under Swinerton
+       * Builders — their subcontractor on Lincoln Elementary School
+       * Modernization and". No concern, no problem, `agreed: true`.
+       *
+       * The trade claim has been hedged against this since the first review, and
+       * the claim naming the project was not: the same defect, on the half of
+       * the sentence that is harder to shrug off. `signals.ts` hedges it now,
+       * and this raises a problem so the screen says so rather than leaving the
+       * hedge as the only sign.
+       */
+      if (looksCutOff(values[0])) {
+        problems.push(
+          `the ${key === "bidDate" ? "bid date" : key} reads "${values[0]}" and visibly does not finish — it has probably wrapped onto the next line, which this reader cannot join up. Check it before any claim quoting it goes out.`,
+        );
+      }
     } else if (values.length > 1) {
       const { plural, consequence } = HEADER_CONFLICT[key];
       problems.push(

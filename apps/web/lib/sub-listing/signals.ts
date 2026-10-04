@@ -109,7 +109,13 @@ function atLine(line: number): string {
  * sentence, and this is read aloud on a phone call.
  */
 function projectPhrase(header: SubListingParse["header"]): string | null {
-  const project = header.project?.trim() || null;
+  // A wrapped project name is marked, exactly as a wrapped portion of work is.
+  // The TRADE claim has hedged this since the first review and the two claims
+  // that name the man's JOB did not — so a project truncated at a conjunction
+  // was read down a telephone as though it were the whole name. `parse.ts`
+  // raises a problem about it too; this is the half that reaches the sentence.
+  const raw = header.project?.trim() || null;
+  const project = raw && looksCutOff(raw) ? `${raw}…` : raw;
   const agency = header.agency?.trim() || null;
   if (project && agency) return `${project} (${agency})`;
   return project ?? agency ?? null;
