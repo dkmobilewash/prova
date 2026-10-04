@@ -153,3 +153,49 @@ twenty-line essay on why a second copy must not exist. All six are identical
 today, so nothing is broken — it is #526's defect waiting for somebody to add a
 sixth trade. Issue #608, with the census that would catch it. This reader imports
 the canonical module and adds no seventh copy.
+
+### And the action is executed now, not just read
+
+The review's fair criticism was that `importSubListing`'s behaviour — tenant
+scoping, the dedupe, the PROPOSED-only promise — was all verified by reading the
+code and a source census, never by running it. `subListing.dbtest.ts` runs it.
+Eight cases against a real Postgres, and the four that matter are the ones a
+source census structurally cannot make: every row lands `PROPOSED` with both
+reviewer columns NULL **and `qualify` still returns THIN** on a lead the importer
+just filled; attaching to another company's lead is refused with no partial
+write; the same subcontractor on two rows of one listing becomes ONE lead; and a
+multi-prime document names no prime in any claim even with *awarded* ticked.
+
+Mutation-checked: stamping CONFIRMED + a reviewer, removing the dedupe, removing
+the cross-company check, and removing the staleness guard each turn exactly one
+case red.
+
+**It found a bug on its first run, in the test rather than the code, and that is
+worth recording.** Six of eight cases failed with `Not found` — because
+`assertSalesAccess` reads `isProvaOperator` off the CONTEXT, and the mocked
+`requireCompanyContext` did not carry it even though the company row in the
+database did. The guard was working; the harness was lying to it. A thing you
+only learn by running it.
+
+**How it was run here, since the toolchain is supposed to be unusable in an agent
+container.** It is usable, narrowly, and the earlier claim in this session that a
+dbtest was impossible was wrong:
+
+  - `pnpm install --frozen-lockfile --filter @prova/db` COMPLETES. The full
+    install dies on `cdn.sheetjs.com` (403 through the egress proxy), but `xlsx`
+    is an `apps/web` dependency, so a filtered install of the db package is
+    untouched by it — and it generates the Prisma client and fetches the query
+    engine;
+  - Postgres 16 is already installed at `/usr/lib/postgresql/16/bin`, just not on
+    `PATH`. It refuses to run as root, and the scratchpad's root-owned parents are
+    not traversable by the `postgres` user, so the data directory goes somewhere
+    that user owns. `prisma migrate deploy` then applies all migrations, so the
+    scratch database is real and current;
+  - `apps/web/node_modules/@prova/db` does not exist, and `next` is not installed.
+    Both are resolved by aliases in a LOCAL vitest config — `@prova/db` to the
+    package source, `next/headers` and `next/navigation` to small stubs. Nothing
+    in the repo changes, and CI resolves the real modules.
+
+The limit is worth stating as plainly as the recipe: this reaches the db suite,
+not the signed-in e2e suite, which still needs a browser the egress proxy will
+not let near Clerk's FAPI host.
