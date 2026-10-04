@@ -3,6 +3,7 @@ import { extractSpecSection, SPEC_SECTION_PROMPT_VERSION, modelFor } from "@prov
 import { requireEvalApiKey } from "@/lib/ai/evalApiKey";
 import { SPEC_CASES, type SpecCase } from "./specCases";
 import { specSectionPdf } from "./specFixtures";
+import { normaliseForQuoteMatch, whyNot } from "./quoteMatch";
 
 // AT COLLECTION, before any case runs. A suite that needs a key it does not have
 // must fail loudly rather than skip: a green run of zero cases and a green run
@@ -85,11 +86,9 @@ const verdicts: Verdict[] = [];
 const model = modelFor("SPEC_READ").model;
 const RANK = { LOW: 0, MEDIUM: 1, HIGH: 2 } as const;
 
-/** Whitespace-insensitive containment, because a PDF's extracted text wraps
- *  where the page wrapped and a quote copied off it will not match byte for
- *  byte. Never a looser match than that: the point is that the sentence IS in
- *  the document. */
-const flat = (value: string) => value.replace(/\s+/g, " ").trim().toLowerCase();
+/** For the FORBIDDEN-phrase scan only — see `quoteMatch.ts` for the quote
+ *  check, which needs more than this and says why. */
+const flat = (value: string) => normaliseForQuoteMatch(value);
 
 async function runCase(kase: SpecCase): Promise<void> {
   const extraction = await extractSpecSection({
@@ -98,7 +97,6 @@ async function runCase(kase: SpecCase): Promise<void> {
     fileName: `${kase.id}.pdf`,
   });
 
-  const source = flat(kase.lines.join(" "));
   const forbidden = (kase.forbidden ?? []).map(flat);
 
   const invented: string[] = [];
@@ -110,12 +108,15 @@ async function runCase(kase: SpecCase): Promise<void> {
     if (forbidden.some((phrase) => haystack.includes(phrase))) {
       invented.push(`${finding.kind}: ${finding.label}`);
     }
-    // THE QUOTE MUST BE IN THE DOCUMENT. A short quote is not evidence of
-    // anything — "Level 5" appears in a section that says Level 5 is not
-    // required — so a floor is applied before the containment check.
-    const quote = flat(finding.quote);
-    if (quote.length < 12 || !source.includes(quote)) {
-      unquoted.push(`${finding.kind}: "${finding.quote}"`);
+    // THE QUOTE MUST BE IN THE DOCUMENT, decided by `quoteMatch.ts` — which
+    // is guarded by a FREE test, because a matcher that rules on fabrication
+    // must not be exercised only by a run that costs money. The reason is
+    // reported, so "too short to be evidence" and "not on the page" never
+    // reach a reader as one verdict: the first is a weak citation, the second
+    // is an invented one.
+    const problem = whyNot(finding.quote, kase.lines);
+    if (problem !== null) {
+      unquoted.push(`${finding.kind} (${problem}): "${finding.quote}"`);
     }
     if (kase.ceiling && RANK[finding.confidence] > RANK[kase.ceiling]) {
       overclaimed.push(`${finding.kind} at ${finding.confidence}`);
