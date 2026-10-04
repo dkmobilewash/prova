@@ -90,6 +90,42 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
     shouldInclude(row, chosen[row.line]);
   const included = parsed.rows.filter(includes);
 
+  /**
+   * THE SELECTION IS KEYED BY LINE NUMBER, SO IT DIES WITH THE TEXT IT WAS
+   * MADE ON. CLEAR IT HERE OR IT ALIASES ONTO A DIFFERENT SUBCONTRACTOR.
+   *
+   * This file's own header says the selection travels as line numbers because
+   * they are "the only thing two parses of the same document are guaranteed to
+   * agree about". That is true, and it is true only of two parses of the SAME
+   * document. `chosen` and `attach` are `Record<number, …>` keyed by line, and
+   * they used to be cleared in `reset()` alone — on cancel and on success —
+   * which means they SURVIVED an edit to the paste. Line 9 is a key into a
+   * document that no longer exists.
+   *
+   * What that cost, which is worse than a wrong tick box: a reviewer picks
+   * "Already a lead? → Acme Drywall, Inc." on line 9, setting
+   * `attach[9] = acmeLeadId`. They then re-paste a corrected block with one
+   * extra line at the top. Line 9 is now Baker Plastering. The `<select>`
+   * renders only when `candidates.length > 0`, so if Baker has no name
+   * candidate THERE IS NO DROPDOWN ON SCREEN AT ALL — and the submit loop
+   * still reads `attach[row.line]` unconditionally and sends
+   * `attach:9 = acmeLeadId`. Server-side the only checks are that the lead
+   * exists and belongs to the company; nothing compares the lead's name to the
+   * row's name. Baker Plastering's claims land on Acme Drywall's lead, with
+   * nothing anywhere on the screen having said so. `chosen` aliases the same
+   * way, more quietly: an explicit untick at line 12 becomes an untick of
+   * whatever lands on line 12 next.
+   *
+   * So re-pasting costs the reviewer their ticks, deliberately. Re-reading a
+   * list is the cheap failure; writing one sub's evidence onto another sub's
+   * lead is the one this whole feature exists to prevent.
+   */
+  function setListingTextAndResetSelection(next: string) {
+    setListingText(next);
+    setChosen({});
+    setAttach({});
+  }
+
   function reset() {
     setOpen(false);
     setListingText("");
@@ -167,7 +203,7 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
         <textarea
           name="listingText"
           value={listingText}
-          onChange={(event) => setListingText(event.target.value)}
+          onChange={(event) => setListingTextAndResetSelection(event.target.value)}
           rows={8}
           required
           placeholder="Select the subcontractor table in the document and paste it here, column headings and all."
@@ -245,20 +281,65 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
             </p>
           ))}
 
-          {parsed.unread.length === 0 ? (
+          {/* THE PARTITION BROKE, WHICH IS OUR BUG AND NOT THE DOCUMENT'S.
+              `accountedFor` is the sum of the four buckets and `parse.ts` says
+              in its own header that it "must equal `nonBlankLines` — if it
+              does not, this parser has a hole and the screen must say so
+              rather than imply completeness". Nothing said so: until now the
+              screen never read this number at all. It is separated from the
+              `unread` line below on purpose — an unread line is a sentence
+              about the document, and the reviewer can go and look at it; this
+              is a sentence about the reader, and there is nothing on the page
+              for them to check. Impossible by construction today (each line is
+              pushed into exactly one bucket), which is precisely why it needs
+              a visible failure rather than an assumption: the next person to
+              add a bucket is the one who will find out. */}
+          {parsed.reconciliation.accountedFor !== parsed.reconciliation.nonBlankLines && (
+            <p className="text-xs text-tag-rose-ink">
+              Only {parsed.reconciliation.accountedFor} of{" "}
+              {parsed.reconciliation.nonBlankLines} lines were accounted for. That is a bug in
+              the reader, not a problem with your document &mdash; do not trust this list, it may
+              be missing subcontractors that are on the page. Send the text you pasted along with
+              this message.
+            </p>
+          )}
+
+          {parsed.unread.length > 0 && (
+            <p className="text-xs text-tag-rose-ink">
+              {parsed.unread.length} line{parsed.unread.length === 1 ? "" : "s"} could not be read.
+              Check {parsed.unread.length === 1 ? "it" : "them"} against the document before
+              trusting this list &mdash; a sub who was never read is a sub nobody notices is
+              missing.
+            </p>
+          )}
+
+          {/* THE GREEN SENTENCE IS `agreed`, NOT A SECOND OPINION ABOUT IT.
+              This read `parsed.unread.length === 0`, which is one of the three
+              conjuncts of `reconciliation.agreed` — so a document-level
+              `problem` (a multi-prime packet is the one that happens) printed
+              the rose problem line and this green "all N lines accounted for"
+              sentence AT THE SAME TIME, and a reviewer who reads the
+              reassurance last reads it as the verdict. A broken partition did
+              the same, silently.
+
+              And the other half, which is why this is a fix and not a tidy-up:
+              `agreed` exists to detect a broken partition, and `.agreed` was
+              referenced by `parse.test.ts` and by NOTHING ELSE — no screen, no
+              action. CLAUDE.md's "written, documented, and never called", with
+              the twist that the uncalled thing was a FIELD whose only job is
+              to be consulted. If the partition had ever broken, the field that
+              noticed would have been read by nobody.
+
+              So the completeness verdict is computed in one place and rendered
+              here. A new conjunct in `agreed` reaches this sentence with no
+              edit to this file, which is the point. */}
+          {parsed.reconciliation.agreed && (
             <p className="text-xs text-tag-green-ink">
               All {parsed.reconciliation.nonBlankLines} lines accounted for &mdash;{" "}
               {parsed.reconciliation.rowsParsed} subcontractor
               {parsed.reconciliation.rowsParsed === 1 ? "" : "s"},{" "}
               {parsed.reconciliation.headerLines} header, {parsed.reconciliation.ignoredLines} set
               aside.
-            </p>
-          ) : (
-            <p className="text-xs text-tag-rose-ink">
-              {parsed.unread.length} line{parsed.unread.length === 1 ? "" : "s"} could not be read.
-              Check {parsed.unread.length === 1 ? "it" : "them"} against the document before
-              trusting this list &mdash; a sub who was never read is a sub nobody notices is
-              missing.
             </p>
           )}
 
