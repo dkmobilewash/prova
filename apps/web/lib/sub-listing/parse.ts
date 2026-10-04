@@ -451,13 +451,58 @@ function moneyOnly(field: string): boolean {
   return withoutMoney(field).replace(/[\s.,]/g, "") === "";
 }
 
-/** The same question for a percentage, allowing the label a form prints. */
+/**
+ * A PERCENTAGE COLUMN, AND WHETHER THE DOCUMENT SAID WHAT IT IS A PERCENTAGE OF.
+ *
+ * `percentOnly` used to answer one question and `percentOfBid` was set from any
+ * field that passed it, so **every** lone percentage became "listed at N% of the
+ * bid". A fourth review observed `110%` and `999%` accepted silently — neither
+ * can be a share of anything — and named the two columns that make the plausible
+ * values worse than the absurd ones: a payment or performance bond column prints
+ * **100%**, and a retention column prints **5%**. A DBE participation column
+ * prints a small number too. All three belong on a public bid document, and all
+ * three would have been claimed as this subcontractor's share of the bid.
+ *
+ * **The first version of this fix refused a bare percentage outright, and two
+ * existing tests were right to fail it.** One fixture exists precisely because a
+ * form may carry a percentage column instead of a dollar column, so refusing
+ * every unlabelled percentage deletes that capability — on the strength of a
+ * guess about bond columns, to guard against another guess, in a file where
+ * EVERY fixture is synthetic and no real form has been read. Removing a
+ * capability needs better evidence than that.
+ *
+ * What the architecture already provides is the right answer. Every signal lands
+ * PROPOSED and a person confirms it, so the useful move is not to withhold the
+ * figure but to tell that person what else it could be. A bare percentage is
+ * claimed AND carries a concern naming the alternatives.
+ *
+ * Over 100 is different in kind and is refused outright: no confirmation by
+ * anybody can make "999% of the bid" true, so there is nothing for a reviewer to
+ * decide.
+ */
+const BID_SHARE_LABEL = /\bof\s*(?:the\s*)?(?:total\s*)?(?:base\s*)?bid\b/i;
+
+function percentColumn(field: string): { value: number; labelled: boolean } | null {
+  if (!PERCENT.test(field)) return null;
+  const labelled = BID_SHARE_LABEL.test(field);
+  const rest = field
+    .replace(/\b\d{1,3}(?:\.\d+)?\s?%/, " ")
+    .replace(BID_SHARE_LABEL, " ")
+    .replace(/[\s.,:]/g, "");
+  if (rest !== "") return null;
+  const value = parsePercent(field);
+  // Over 100 is not a share of anything, whatever the label claims.
+  if (value === null || value > 100) return null;
+  return { value, labelled };
+}
+
+/** Kept for the scope slot, which only needs to know it IS a percentage column. */
 function percentOnly(field: string): boolean {
   if (!PERCENT.test(field)) return false;
   return (
     field
       .replace(/\b\d{1,3}(?:\.\d+)?\s?%/, " ")
-      .replace(/\bof\s*(?:the\s*)?(?:total\s*)?(?:base\s*)?bid\b/i, " ")
+      .replace(BID_SHARE_LABEL, " ")
       .replace(/[\s.,:]/g, "") === ""
   );
 }
@@ -951,9 +996,16 @@ function readRow(text: string, line: number, fields: string[]): ListedSub | Unre
   const amounts = [...new Set(rest.filter(moneyOnly).map(parseAmount))].filter(
     (value): value is number => value !== null,
   );
-  const percents = [...new Set(rest.filter(percentOnly).map(parsePercent))].filter(
-    (value): value is number => value !== null,
-  );
+  const percentCols = rest
+    .map(percentColumn)
+    .filter((found): found is { value: number; labelled: boolean } => found !== null);
+  // A percentage over 100 is dropped by `percentColumn`, and dropping it in
+  // silence would break this file's own rule that a refusal is never silence.
+  const impossiblePercents = rest
+    .filter((field) => percentOnly(field))
+    .map(parsePercent)
+    .filter((value): value is number => value !== null && value > 100);
+  const percents = [...new Set(percentCols.map((found) => found.value))];
   const amount = amounts.length === 1 ? amounts[0] : null;
   const percentOfBid = percents.length === 1 ? percents[0] : null;
 
@@ -986,7 +1038,18 @@ function readRow(text: string, line: number, fields: string[]): ListedSub | Unre
   }
   if (percents.length > 1) {
     concerns.push(
-      `this row carries ${percents.length} separate percentage columns and nothing says which is the share of the bid — no percentage will be claimed`,
+      `this row carries ${percents.length} columns labelled as a share of the bid and nothing says which is this subcontractor's — no percentage will be claimed`,
+    );
+  }
+  if (impossiblePercents.length > 0) {
+    concerns.push(
+      `this row prints ${impossiblePercents.map((value) => `${value}%`).join(" and ")}, which cannot be a share of a bid — read as something else entirely and not claimed`,
+    );
+  }
+  if (percents.length <= 1 && percentCols.some((found) => !found.labelled)) {
+    const bare = percentCols.filter((found) => !found.labelled).map((found) => `${found.value}%`);
+    concerns.push(
+      `this row carries ${bare.join(" and ")} in a column that does not say what it is a percentage OF — a bond column prints 100%, a retention column prints 5%, and a share of the bid looks the same, so no percentage will be claimed`,
     );
   }
 

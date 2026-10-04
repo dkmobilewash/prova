@@ -655,3 +655,51 @@ describe("a row that wraps across two columns does not become a second subcontra
     expect(lower.rows[1].portionOfWork).toBe("exterior plaster");
   });
 });
+
+/**
+ * A PERCENTAGE COLUMN THAT DOES NOT SAY WHAT IT IS A PERCENTAGE OF.
+ *
+ * Every lone percentage became "listed at N% of the bid". A fourth review
+ * observed `110%` and `999%` accepted in silence — neither can be a share of
+ * anything — and named the plausible values as the worse problem: a payment or
+ * performance bond column prints **100%** and a retention column prints **5%**.
+ * Both belong on a public bid document and both would have been claimed as this
+ * subcontractor's share of the bid.
+ */
+describe("a percentage is claimed with its ambiguity attached, not silently", () => {
+  const withCell = (cell: string) =>
+    parseSubListing(`Acme Drywall, Inc.\tFontana, CA\tDrywall\t${cell}`).rows[0];
+
+  it("refuses a percentage that cannot be a share of anything, and says it saw it", () => {
+    for (const cell of ["110%", "999%"]) {
+      const row = withCell(cell);
+      expect(row.percentOfBid).toBeNull();
+      // Refused is not the same as unmentioned — this file's standing rule.
+      expect(row.concerns.join(" ")).toContain("cannot be a share of a bid");
+    }
+  });
+
+  it("claims a bare percentage but names what else the column could be", () => {
+    // The first version of this fix REFUSED a bare percentage, and two existing
+    // tests were right to fail it: a fixture exists because a form may carry a
+    // percentage column instead of a dollar column, so refusing deletes that
+    // capability on the strength of a guess. Every signal lands PROPOSED and a
+    // person confirms it, so the useful move is to tell them what else it may be.
+    for (const [cell, value] of [
+      ["100%", 100],
+      ["5%", 5],
+      ["8.4%", 8.4],
+    ] as const) {
+      const row = withCell(cell);
+      expect(row.percentOfBid).toBe(value);
+      expect(row.concerns.join(" ")).toContain("does not say what it is a percentage OF");
+      expect(row.concerns.join(" ")).toContain("bond column prints 100%");
+    }
+  });
+
+  it("says nothing when the document labelled the column itself", () => {
+    const row = withCell("15% of bid");
+    expect(row.percentOfBid).toBe(15);
+    expect(row.concerns.join(" ")).not.toContain("does not say what it is a percentage OF");
+  });
+});
