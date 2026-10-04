@@ -151,3 +151,53 @@ One sheet per call, skipping any that already has an image, so a thirty-sheet
 set walks forwards and is safe to retry rather than being one function timeout.
 
 569 files / 8855 tests, typecheck, lint and a full production build clean.
+
+---
+
+### `/api/v1/sheets` — what the phone asks for and what it may write (Diego)
+
+Third commit on this branch. `GET` returns every sheet of a job's drawings with
+its pins; `POST` places one. `MANAGE_JOBS`, matching both the web route and the
+phone's existing drawings endpoint — the same records, so the same gate. FIELD
+holds it, which is the point: a foreman is exactly who pins a photo to a wall.
+
+**THE SCHEMA GREW TWO COLUMNS BEFORE THE ROUTE WAS WRITTEN, AND THE REASON IS A
+SCAR THAT IS NOT MINE.** The punch-list route states it in its own source:
+
+> *THE READ IS NOT THE GUARANTEE — the unique index is. Two requests carrying
+> the same key can both pass this check before either inserts, and production
+> did exactly that on 2026-09-20… a 500 for a request whose whole purpose was
+> to be safely repeatable.*
+
+The phone queues pins without signal and flushes them later, so every POST here
+is one a retry may repeat. `SheetPin` therefore carries `clientOperationId`
+under `@@unique([companyId, clientOperationId])` — which is why it also carries
+a denormalised `companyId`, since a unique key has to live on one table. Every
+read still scopes through the join; that column never decides who may see a pin.
+
+The test that matters is not "a replay returns the same row". It is **"a replay
+that LOSES THE RACE still returns the same row"** — the case a read-based check
+passes and only the index catches.
+
+| mutation | result |
+| --- | --- |
+| control | green |
+| **the catch removed, so a lost race 500s** (the 2026-09-20 bug) | **RED** |
+| `y` bounded as if the page were square | **RED** |
+| POST's capability guard removed | **RED** |
+| another company's photo accepted as a pin target | **RED** |
+
+**A TEST THAT ASSERTED NOTHING, CAUGHT BY ITS OWN FAILURE.** The permission
+case used `jobFunction: "ESTIMATING"` — which this app does not have. The real
+one is `ESTIMATOR`, and it HOLDS `MANAGE_JOBS`, so the assertion was about a
+role that falls through to whatever the default is. `ACCOUNTING` is the job
+function that genuinely lacks it, and the test says so in a comment rather than
+just using the right string: a made-up role passes a permission test quietly.
+
+**Two things the payload does on purpose.** A sheet with a null `imageUrl` is
+SENT, not hidden — it means "nobody has prepared this one yet", and hiding it
+would make a drawing that exists look like one that does not. And a pin carries
+`punchItemDescription` flattened onto it, so a pin whose punch item was later
+deleted still renders with no second request for words that are gone.
+
+570 files / 8869 tests, typecheck, lint and a full production build clean.

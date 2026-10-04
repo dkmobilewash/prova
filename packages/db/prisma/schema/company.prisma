@@ -167,6 +167,7 @@ model Company {
   workerCertifications      WorkerCertification[]
   requiredCertifications    CertificationRequirement[]
   bidPursuits               BidPursuit[]
+  sheetPins SheetPin[]
 }
 
 enum UserRole {

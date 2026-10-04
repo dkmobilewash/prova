@@ -965,6 +965,14 @@ enum SheetPinKind {
 /// that anything was ever flagged there with it.
 model SheetPin {
   id     String    @id @default(cuid())
+
+  /// Denormalised from page -> revision -> set, and ONLY so the idempotency
+  /// index below can exist: a unique key has to live on one table. Every read
+  /// still scopes through the join, which is the authorisation — this column
+  /// is never the thing that decides who may see a pin.
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
   pageId String
   page   SheetPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
 
@@ -987,8 +995,15 @@ model SheetPin {
   createdByUserId String?
   createdBy       User?   @relation("SheetPinCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
 
+  /// What makes a retried offline POST replay instead of duplicating. The
+  /// READ in the route is not the guarantee -- this index is: two flushes
+  /// carrying the same key can both pass a findUnique before either inserts,
+  /// and production did exactly that on 2026-09-20 (see the punch-list route).
+  clientOperationId String?
+
   createdAt DateTime @default(now())
 
+  @@unique([companyId, clientOperationId])
   @@index([pageId])
   @@index([mediaId])
   @@index([punchItemId])

@@ -106,6 +106,7 @@ export async function createSheetPin(pageId: string, formData: FormData): Promis
 
     await prisma.sheetPin.create({
       data: {
+        companyId: context.company.id,
         pageId: page.id,
         x,
         y,
