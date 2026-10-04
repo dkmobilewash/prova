@@ -978,7 +978,46 @@ export function parseSubListing(text: string): SubListingParse {
     const above = [...rows].reverse().find((row) => row.line < single.line);
     const cutOff =
       above && (DANGLING.test(above.name) || (above.portionOfWork ? DANGLING.test(above.portionOfWork) : false));
-    if (above && cutOff) {
+    /**
+     * DOES THIS ONE COLUMN LOOK LIKE A WHOLE ROW? AND IT OUTRANKS THE CONTINUATION TEST.
+     *
+     * The first version of this fix put the continuation branch first, on the
+     * reasoning that a wrapped cell's second half may carry an entity marker
+     * ("Interiors, Inc.") and so cannot be told from a row by that alone. True,
+     * and it misses the worse case: a single-spaced row that happens to FOLLOW
+     * a genuinely cut-off row is swallowed as that row's continuation, which
+     * does not merely lose it — it pushes a concern onto a SURVIVING row saying
+     * that other subcontractor's text "may be the rest of this row", and that
+     * row's claim is what somebody reads down a telephone.
+     *
+     * What separates them is how MANY things the line carries at once. A wrap
+     * fragment is the tail of ONE cell, so it has one signal at most
+     * ("Interiors, Inc." is an entity marker and nothing else). A squashed row
+     * is a whole table entry, so it has a licence AND a place AND usually a
+     * company marker. Two of the three is the line.
+     *
+     * The first version of this test was `/\d{4,}/` — any run of four digits —
+     * reusing `hasDataEvidence`, and the existing furniture case caught it
+     * within the minute: "Questions: (916) 555-0134" carries the four-digit run
+     * `0134`, and "Printed 2026-03-04" carries `2026`. Both became "a
+     * subcontractor we could not read", on a page that has none. That is the
+     * safe direction to be wrong in and it is still wrong — a reader told a
+     * clean document has an unread subcontractor stops trusting the one that
+     * really does, and `agreed` would go false on every form with a phone
+     * number in the footer.
+     *
+     * So the digit test is LICENCE-shaped (six to ten) rather than any long
+     * run, which excludes a year, a time and a phone number's last group
+     * outright, and it still has to be joined by a second signal.
+     */
+    const rowSignals = [
+      /\b\d{6,10}\b/, // a contractor licence or a public-works registration
+      /[A-Z][A-Za-z.\-]+,\s*[A-Z]{2}\b/, // "Fontana, CA" in the middle of a line
+      ENTITY_MARKER,
+    ].filter((pattern) => pattern.test(single.text)).length;
+    const looksLikeItsOwnRow = rowSignals >= 2;
+
+    if (above && cutOff && !looksLikeItsOwnRow) {
       above.concerns.push(
         `line ${single.line} ("${single.text.trim()}") has one column and may be the rest of this row`,
       );
@@ -987,13 +1026,86 @@ export function parseSubListing(text: string): SubListingParse {
         text: single.text,
         why: `read as the continuation of line ${above.line}`,
       });
-    } else {
-      ignored.push({
+      continue;
+    }
+
+    /**
+     * A ONE-COLUMN LINE THAT CARRIES DATA IS A ROW WE FAILED TO SPLIT, NOT PROSE.
+     *
+     * This branch used to file every remaining single straight into `ignored`
+     * as "a heading or prose", and that is how the completeness guarantee came
+     * out false for the THIRD time in this file's life. `splitFields` splits on
+     * tabs, two-or-more spaces and pipes — so a table copied out of a PDF with
+     * SINGLE spaces between its columns arrives as one field per line, every row
+     * lands here, and every row was quietly set aside. Reproduced with the real
+     * parser on an ordinary three-sub listing: `rowsParsed: 0`, `unread: 0`,
+     * `problems: 0`, `agreed: TRUE` — so the screen printed the green "All 5
+     * lines accounted for — 0 subcontractors, 2 header, 3 set aside" over three
+     * subcontractors it had lost.
+     *
+     * The partition was sound the whole time, which is exactly why nothing
+     * caught it: `accountedFor` equalled `nonBlankLines`, every line had a
+     * bucket and every bucket had a reason. **A bucket with a confident wrong
+     * reason loses a subcontractor as thoroughly as no bucket at all** — the
+     * same sentence `hasDataEvidence` was written for, arriving one branch
+     * further down, which is a fair warning about how far a lesson travels.
+     *
+     * The two-of-three rule above decides it, and the same rule in both places
+     * is deliberate: the question "is this a row" cannot have two answers
+     * depending on what the line above happens to look like.
+     */
+    if (looksLikeItsOwnRow) {
+      unread.push({
         line: single.line,
         text: single.text,
-        why: "one column only — a heading or prose, not a table row",
+        why: "this line carries subcontractor data but arrived as a single column — the columns are probably separated by single spaces, which cannot be told apart from the spaces inside a company name",
       });
+      continue;
     }
+
+    ignored.push({
+      line: single.line,
+      text: single.text,
+      why: "one column only — a heading or prose, not a table row",
+    });
+  }
+
+  /**
+   * THE BACKSTOP, for a single-column row with no data evidence at all.
+   *
+   * "Smith Plastering  Fontana CA" has no entity marker, no licence and no
+   * "City, ST", so the test above cannot rescue it and it is still filed as
+   * prose. What CANNOT be innocent is a document that produced no
+   * subcontractors at all while producing lines of exactly that shape: that is
+   * a parse failure, and `agreed` must not read true over it.
+   *
+   * **It also requires the page to have announced itself as a listing**, which is
+   * the part the first version got wrong and `noise-only` caught in a minute. A
+   * cover sheet reading "Page 3 of 7 / Addendum No. 2 acknowledged / Questions:
+   * (916) 555-0134" parses to zero rows and two one-column lines, so the first
+   * version told the reviewer the READER was broken on a page that simply has no
+   * table on it. Zero subcontractors is the correct reading of that page, not a
+   * failure to read it — and a guard that cries wolf on every pasted cover sheet
+   * is one nobody reads by the second week.
+   *
+   * A header line (`Project:`, `Prime:`, `Agency:`, a bid date) is the page
+   * saying it is a bid document. Zero subcontractors on a page that names a
+   * project is worth a sentence; zero on a page that names nothing is not.
+   *
+   * Deliberately narrow — it fires only when NOTHING parsed. A document that
+   * read nine subs and lost a tenth to single spacing is still a quiet loss,
+   * and saying so is better than implying otherwise: widening this needs a real
+   * document to calibrate against, and `splitFields` learning column positions
+   * is the actual fix rather than this. Widening `splitFields` to split single
+   * spaces is NOT that fix and has been measured — it returns names like
+   * "Systems" and "Inc.", because a space inside "Valley Interior Systems" is
+   * indistinguishable from the gap before the city column.
+   */
+  const unsplitLooking = ignored.filter((line) => line.why.startsWith("one column only")).length;
+  if (rows.length === 0 && unsplitLooking > 0 && headerLines > 0) {
+    problems.push(
+      `nothing on this page was read as a subcontractor, and ${unsplitLooking} line${unsplitLooking === 1 ? " was" : "s were"} set aside as having only one column. That usually means the columns are separated by single spaces rather than tabs — try pasting from the original document, or paste one column at a time. Do not take the counts below as a reading of this page.`,
+    );
   }
 
   const accountedFor = rows.length + unread.length + ignored.length + headerLines;

@@ -78,25 +78,38 @@ describe("a table whose columns are separated by SINGLE spaces", () => {
    */
   const parsed = parseSubListing(caseNamed("single-space-columns"));
 
-  it("TODAY loses every subcontractor to the one-column branch — a real defect", () => {
+  /**
+   * FIXED. These two cases were written as `TODAY` reproductions and they turned
+   * red when the parser was fixed, which is exactly what that convention is for
+   * — the fixture gets updated, the test is not deleted.
+   *
+   * What changed: a one-column line carrying two of {a 6–10 digit licence, a
+   * "City, ST", a company entity marker} is now read as a row this parser could
+   * not split, and goes to `unread` rather than to `ignored` as prose.
+   */
+  it("REPORTS every subcontractor it could not split, instead of filing them as prose", () => {
     expect(parsed.rows).toHaveLength(0);
-    expect(parsed.ignored).toHaveLength(3);
-    for (const line of parsed.ignored) {
-      expect(line.why).toBe("one column only — a heading or prose, not a table row");
+    expect(parsed.ignored).toHaveLength(0);
+    expect(parsed.unread).toHaveLength(3);
+    for (const line of parsed.unread) {
+      expect(line.why).toContain("arrived as a single column");
     }
+    // The company names are on screen for the reviewer, which is the whole point
+    // of the bucket: a line they can go and look at beats a count they cannot.
+    expect(parsed.unread.map((line) => line.text).join(" ")).toContain("Valley Interior Systems");
   });
 
-  it("TODAY still reports `agreed: true` over that loss, because `agreed` cannot see `ignored`", () => {
-    // THE REASON THIS SHAPE IS SEVERE RATHER THAN MERELY WRONG. `agreed` is
+  it("no longer reports `agreed: true` over the loss", () => {
+    // THE REASON THIS SHAPE WAS SEVERE RATHER THAN MERELY WRONG. `agreed` is
     // `accountedFor === nonBlankLines && !unread.length && !problems.length`, and
-    // three subcontractors in `ignored` satisfy all three terms. The screen prints
-    // a green "every line was read" sentence over a page that lost every row —
-    // which is the exact failure parse.ts's header says the rewrite was for, and
-    // it survived the rewrite by arriving through a different bucket.
-    expect(parsed.unread).toHaveLength(0);
-    expect(parsed.problems).toEqual([]);
-    expect(parsed.reconciliation.agreed).toBe(true);
+    // three subcontractors sitting in `ignored` satisfied all three terms — so the
+    // screen printed a green "every line was read" sentence over a page that had
+    // lost every row. That is the exact failure parse.ts's header says the rewrite
+    // was for, and it survived the rewrite by arriving through a different bucket.
+    // Moving them to `unread` is what makes the verdict honest, not a new counter.
+    expect(parsed.reconciliation.agreed).toBe(false);
     expect(parsed.reconciliation.rowsParsed).toBe(0);
+    expect(parsed.reconciliation.unreadLines).toBe(3);
   });
 
   it("does at least account for the lines, which is the one guarantee that holds", () => {
@@ -113,28 +126,43 @@ describe("a single-spaced row that follows a row which looks cut off", () => {
    */
   const parsed = parseSubListing(caseNamed("single-space-after-wrap"));
 
-  it("TODAY swallows a whole second subcontractor as the first one's continuation — a real defect", () => {
+  /**
+   * FIXED, and this is the case that decided the SHAPE of the fix.
+   *
+   * The first version put the continuation test first, which left this one
+   * broken — a complete but single-spaced row satisfies "the line above looks cut
+   * off" and was swallowed. So the row test now OUTRANKS the continuation test,
+   * and the discriminator is how many signals the line carries: a wrap fragment
+   * is the tail of one cell and has at most one, a squashed row has a licence and
+   * a place and usually a company marker.
+   */
+  it("reports the second subcontractor instead of swallowing it as a continuation", () => {
     expect(parsed.rows).toHaveLength(1);
     expect(parsed.rows[0].name).toBe("Sierra Wall Systems");
-    expect(parsed.ignored).toHaveLength(1);
-    expect(parsed.ignored[0].why).toBe("read as the continuation of line 2");
+    expect(parsed.ignored).toHaveLength(0);
+    expect(parsed.unread).toHaveLength(1);
     // Kings Acoustical is a sub in our trades, with its own city, licence, scope
-    // and amount, and it is nowhere in `rows`.
-    expect(parsed.ignored[0].text).toContain("Kings Acoustical");
+    // and amount. It is not in `rows` — this parser still cannot split it — but it
+    // is now on screen rather than filed under another company's name.
+    expect(parsed.unread[0].text).toContain("Kings Acoustical");
   });
 
-  it("TODAY writes a FALSE concern onto the surviving row, which is worse than losing one", () => {
-    // A lost row is a lead nobody contacts. This is a lead that gets contacted
-    // with a sentence derived from another company's row attached to it. `concerns`
-    // is rendered for the person reviewing the import, so this is a statement that
-    // Kings Acoustical's entire row "may be the rest of" Sierra Wall Systems'.
+  it("no longer writes a FALSE concern onto the surviving row, which was the worse half", () => {
+    // A lost row is a lead nobody contacts. The old behaviour was worse: a lead
+    // that DOES get contacted, carrying a sentence derived from another company's
+    // row. `concerns` is rendered for the person reviewing the import, so it
+    // stated that Kings Acoustical's entire row "may be the rest of" Sierra Wall
+    // Systems'. Sierra keeps exactly one concern now — the true one, about its own
+    // scope visibly not finishing.
     const concerns = parsed.rows[0].concerns;
-    expect(concerns.some((concern) => concern.includes("may be the rest of this row"))).toBe(true);
-    expect(concerns.some((concern) => concern.includes("Kings Acoustical"))).toBe(true);
+    expect(concerns.some((concern) => concern.includes("may be the rest of this row"))).toBe(false);
+    expect(concerns.some((concern) => concern.includes("Kings Acoustical"))).toBe(false);
+    expect(concerns).toHaveLength(1);
+    expect(concerns[0]).toContain("looks cut off");
   });
 
-  it("TODAY reports `agreed: true` over that too", () => {
-    expect(parsed.reconciliation.agreed).toBe(true);
+  it("no longer reports `agreed: true` over it", () => {
+    expect(parsed.reconciliation.agreed).toBe(false);
   });
 });
 
@@ -225,6 +253,116 @@ describe("a bare undelimited number winning the licence slot", () => {
 
   it("TODAY raises no concern about either, so nothing on screen marks the row as doubtful", () => {
     expect(row.concerns).toEqual([]);
+    expect(parsed.reconciliation.agreed).toBe(true);
+  });
+});
+
+/**
+ * THE BACKSTOP, AND THE REASON IT NEEDED ITS OWN CASE.
+ *
+ * The fix above moves a one-column line to `unread` when it carries two of
+ * {licence, "City, ST", entity marker}. A row can be single-spaced AND carry
+ * none of that — "Smith Plastering  Fontana CA" has no comma before the state,
+ * no entity suffix and no licence — so it is still filed as prose, and the fix
+ * cannot see it.
+ *
+ * `parseSubListing` therefore raises a problem when NOTHING parsed and lines of
+ * that shape are present. Written, and for one commit nothing exercised it: the
+ * two single-space fixtures now send all their rows to `unread`, so `ignored` is
+ * empty and the backstop never fires on either. That is this repo's recurring
+ * "written, documented, and never called" shape, caught here only because the
+ * mutation plan asked which assertion would go red and the answer was none.
+ */
+describe("a page that parsed nothing at all says so, even when no line looks like data", () => {
+  const parsed = parseSubListing(
+    ["Project: Lincoln Elementary Modernization", "Smith Plastering Fontana CA"].join("\n"),
+  );
+
+  it("raises a problem rather than reporting a clean read of zero subcontractors", () => {
+    expect(parsed.reconciliation.rowsParsed).toBe(0);
+    expect(parsed.unread).toHaveLength(0);
+    expect(parsed.ignored).toHaveLength(1);
+    expect(parsed.problems).toHaveLength(1);
+    expect(parsed.problems[0]).toContain("nothing on this page was read as a subcontractor");
+    // It names the likely cause, because "try pasting again" with no reason is
+    // advice nobody follows.
+    expect(parsed.problems[0]).toContain("single spaces");
+  });
+
+  it("keeps `agreed` false, which is the only thing standing between this and a green verdict", () => {
+    expect(parsed.reconciliation.agreed).toBe(false);
+  });
+
+  it("does NOT fire when the page legitimately has no table — only furniture", () => {
+    // `noise-only` is a page number, an addendum note and a phone number. Nothing
+    // parsed there either, and that is the correct reading of the page rather than
+    // a failure to read it — so the problem must stay silent, or every pasted
+    // cover sheet reports a bug. This case caught the first version of the
+    // backstop doing exactly that, which is why the guard also requires the page
+    // to have announced itself as a listing with a header line.
+    const furniture = parseSubListing(caseNamed("noise-only"));
+    expect(furniture.reconciliation.headerLines).toBe(0);
+    expect(furniture.reconciliation.rowsParsed).toBe(0);
+    expect(furniture.problems).toEqual([]);
+  });
+
+  it("stays silent when the page DID parse rows, because then zero is not the signal", () => {
+    const mixed = parseSubListing(
+      [
+        "Acme Drywall, Inc.\tFontana, CA\tLic. 884201\tDrywall",
+        "Smith Plastering Fontana CA",
+      ].join("\n"),
+    );
+    expect(mixed.reconciliation.rowsParsed).toBe(1);
+    expect(mixed.problems).toEqual([]);
+    // And the honest limit, asserted so nobody reads the fix as broader than it
+    // is: that second row IS lost, quietly, and only `splitFields` learning
+    // column positions can fix it.
+    expect(mixed.ignored).toHaveLength(1);
+    expect(mixed.ignored[0].why).toContain("one column only");
+  });
+});
+
+/**
+ * WHY THE DIGIT TEST IS LICENCE-SHAPED AND NOT MERELY LONG.
+ *
+ * Added because a mutation SURVIVED. Loosening `\b\d{6,10}\b` back to `\d{4,}`
+ * — the first, wrong version of this fix — broke nothing in 278 tests, because
+ * the furniture fixture's lines carry only ONE signal either way and the
+ * two-of-three rule rejects them on the count alone. So the width was doing real
+ * work with nothing asserting it, which is the state a surviving mutation is
+ * always reporting.
+ *
+ * The case that needs it is a footer line that carries a second signal by
+ * accident. A phone number plus a place is two signals under the loose pattern
+ * and one under the right one.
+ */
+describe("a footer line carrying a phone number and a place is still not a subcontractor", () => {
+  const parsed = parseSubListing(
+    [
+      "Project: Lincoln Elementary Modernization",
+      "Acme Drywall, Inc.\tFontana, CA\tLic. 884201\tDrywall",
+      "Questions: (916) 555-0134 Sacramento, CA",
+    ].join("\n"),
+  );
+
+  it("does not read it as a row this parser failed to split", () => {
+    // `555-0134` has a four-digit run and `Sacramento, CA` is a place, so under
+    // `\d{4,}` this line scores two and is reported as a lost subcontractor on a
+    // page that has exactly one. A licence is six to ten digits; a phone number's
+    // last group is four, and that is the whole distinction.
+    expect(parsed.reconciliation.rowsParsed).toBe(1);
+    expect(parsed.rows[0].name).toBe("Acme Drywall, Inc.");
+    expect(parsed.unread).toHaveLength(0);
+    expect(parsed.ignored).toHaveLength(1);
+    expect(parsed.ignored[0].why).toContain("one column only");
+  });
+
+  it("leaves the verdict clean, because nothing on this page was in fact lost", () => {
+    // The cost of getting this wrong is not a lost row — it is `agreed` going
+    // false on a page that read correctly, which spends the reviewer's trust on
+    // nothing. A guard that cries wolf is read as noise by the second week.
+    expect(parsed.problems).toEqual([]);
     expect(parsed.reconciliation.agreed).toBe(true);
   });
 });

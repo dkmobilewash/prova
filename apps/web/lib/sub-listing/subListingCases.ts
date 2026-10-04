@@ -451,17 +451,17 @@ export const SUB_LISTING_CASES: SubListingCase[] = [
   },
   {
     id: "single-space-columns",
-    why: "TODAY a single-space-separated table loses EVERY row to `ignored` as \"one column only\", with `agreed` still true — a real defect, and the refutation of this file's old \"loses nothing silently\" claim",
+    why: "a single-space-separated table cannot be split into columns, so every row is REPORTED as unread rather than filed as prose. Until 2026-10-04 all three went to `ignored` as \"one column only\" with `agreed` still true, which refuted this file's old \"loses nothing silently\" claim; the rows are still not parsed, but nothing is lost quietly",
     text: SINGLE_SPACE_COLUMNS,
     expectRows: 0,
-    expectUnread: 0,
+    expectUnread: 3,
   },
   {
     id: "single-space-after-wrap",
-    why: "TODAY a single-space row following a cut-off row is swallowed as that row's continuation AND pushes a false concern onto it — the same defect as above, now corrupting a neighbour",
+    why: "a single-space row following a cut-off row is reported, not swallowed. Until 2026-10-04 it was attributed as that row's continuation AND pushed a false concern onto it — a neighbour corrupted rather than merely a row lost, which is why the row test now outranks the continuation test",
     text: SINGLE_SPACE_AFTER_WRAP,
     expectRows: 1,
-    expectUnread: 0,
+    expectUnread: 1,
   },
   {
     id: "total-in-a-company-name",
