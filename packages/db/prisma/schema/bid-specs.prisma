@@ -1,0 +1,195 @@
+// WHAT A SPEC SECTION DEMANDS THAT COSTS MONEY — and nothing else.
+//
+// A GC's invitation arrives with a spec book. For a framing/drywall/plaster/
+// EIFS/ceilings/fireproofing sub the money is in two or three sections of
+// Division 09, and each one is thirty-odd pages of requirements written by an
+// architect. The estimator's fear is specific: a requirement that costs money
+// and was not in the number. Level 5 finish where Level 4 was bid. A UL
+// assembly that changes the stud gauge. A field mock-up nobody priced. "No
+// substitutions" on a product that costs twice the catalogue's.
+//
+// Until now nothing in this app had ever read a specification. An audit of the
+// whole estimating workflow on 2026-10-02 confirmed it against source: no
+// specification model, no reader, no `AI_FEATURES` member. The only prior hits
+// anywhere were `BidAddendumReferenceKind.SPEC_SECTION` — a LABEL on an
+// addendum item — and a free-text `specSection` on RFI and submittal forms.
+//
+// ── NOTHING IN THIS FILE IS AN ASSERTION ABOUT THE BID ──
+//
+// `bid-addenda.prisma`'s rule, copied rather than re-argued, because the same
+// review already paid for it. No reading here writes `BidRequirement`, and that
+// one deserves naming because it is the obvious thing to build: a finding like
+// "submit a fire-test report for the head-of-wall assembly" is exactly the
+// attestable shape `BidRequirement.OTHER` exists for.
+//
+// It must not, for two reasons the schema next door states itself.
+// `lib/bid-responsiveness.ts` READS `BidRequirement` to decide whether a bid is
+// reported non-responsive — so a model writing one would be writing a field
+// another module reads, which is precisely what the addendum reader is built
+// not to do. And `required Boolean @default(true)` means a model-invented row
+// would default to "this bid is non-responsive without it": the destructive
+// direction that killed the first addendum design, where accepting `false`
+// silently removed a live warning.
+//
+// If a finding should ever become a requirement, it is a person pressing "add
+// this as a requirement", never an accepted proposal.
+//
+// ── AND IT DOES NOT SAY WHETHER THE BID CARRIES THE COST ──
+//
+// The model is handed the section and nothing else — not the estimate, not the
+// takeoff, not the catalogue. Whether a requirement is already priced is a
+// judgement about numbers it has never seen, which is the same objection
+// `ask/commands/estimating.ts` made when it refused `saveBidAddendum` to the
+// assistant. So there is no `carried` field in this file, deliberately, and a
+// reader looking for one should find this paragraph instead.
+
+/// One section of one bid's spec book.
+///
+/// HANGS OFF THE INVITATION, NOT A JOB, for `pursuits.prisma`'s reason: most
+/// invitations are declined or lost and never become a job, so a `jobId` here
+/// would be null on nearly every row. It also keeps both models out of the
+/// cleanup scripts entirely — `takeoff.prisma`'s rule, since everything here
+/// CASCADEs from `BidInvitation` and nothing carries a `jobId` for
+/// `clean-test-jobs.mjs` to count.
+///
+/// THE COST OF THAT CHOICE, STATED: a spec section is genuinely both a bid
+/// document and a construction document — it arrives with the ITB and it
+/// governs submittals after award. This models the bid half only. The post-award
+/// use reaches it through `BidInvitation.wonJobId`, which is person-set and
+/// nullable, and a job-scoped spec surface would be a different feature rather
+/// than a wider version of this one.
+model BidSpecSection {
+  id              String        @id @default(cuid())
+  bidInvitationId String
+  bidInvitation   BidInvitation @relation(fields: [bidInvitationId], references: [id], onDelete: Cascade)
+
+  /// The section number AS PRINTED — "09 21 16", "Section 09 22 16". Free text
+  /// and never validated against MasterFormat, which is a decision this repo has
+  /// now made five times: "a product that refuses a code for not being in a
+  /// standard list is a product nobody can enter their own budget into."
+  sectionNumber String
+  /// What the section is called on its own first page. Null when nobody typed it.
+  title         String?
+
+  /// The PDF, and the name it was uploaded under. Both nullable: logging that
+  /// section 09 21 16 is in this bid's book is useful before anybody has the
+  /// file, and the `DrawingRevision` pair is the existing shape for this.
+  fileUrl  String?
+  fileName String?
+
+  /// THE IN-FLIGHT CLAIM, and it is NOT the double-read window the addendum
+  /// reader uses.
+  ///
+  /// That reader guards a double-click with `createdAt >= now - 30s` over its
+  /// own readings, and `FEATURE-AUDIT.md` carries #563 open against exactly
+  /// that: "the save looks like it failed and a retry duplicates it". The race
+  /// is plain once named — the first read's row is not committed when the second
+  /// read's check runs, so the window sees nothing and both calls bill.
+  ///
+  /// So this is a CLAIM instead, which is the pattern `PlanIngestTask` already
+  /// proves: `updateMany` on `readInFlightAt: null` is atomic in Postgres, two
+  /// racing reads produce one winner and one zero-count update, and `count === 0`
+  /// IS the refusal with no window between checking and claiming.
+  ///
+  /// WITH AN EXPIRY, because CLAUDE.md names the alternative: "a claim column
+  /// with no expiry converts a resumable job into a permanently stuck one, which
+  /// is worse than not being resumable at all". A read that dies mid-call leaves
+  /// this set; `SPEC_READ_LEASE_MS` is how long before another read may take it.
+  readInFlightAt DateTime?
+
+  notes String?
+
+  readings  BidSpecReading[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([bidInvitationId, sectionNumber])
+}
+
+/// One read run over one section — immutable, append-only.
+model BidSpecReading {
+  id               String         @id @default(cuid())
+  bidSpecSectionId String
+  bidSpecSection   BidSpecSection @relation(fields: [bidSpecSectionId], references: [id], onDelete: Cascade)
+
+  /// DENORMALISED, and the query is named rather than implied: "what did reading
+  /// the specs on this bid cost" and "which sections have been read" are both
+  /// per INVITATION, and without this column they join through every section.
+  ///
+  /// THERE IS DELIBERATELY NO `companyId`, the same call `BidAddendumReading`
+  /// makes: it would be a third copy of one id — invitation, section, reading —
+  /// and `union-tenancy-audit.mjs` exists because of that exact shape, where "a
+  /// write path that sets one and forgets the other creates a row filed under
+  /// company A hanging off company B's local, silently, with every constraint
+  /// satisfied." Tenancy comes through the join.
+  bidInvitationId String
+  bidInvitation   BidInvitation @relation(fields: [bidInvitationId], references: [id], onDelete: Cascade)
+
+  /// WHAT THE MODEL RETURNED, exactly as it returned it.
+  ///
+  /// JSON RATHER THAN A CHILD TABLE, for `BidAddendumReading`'s reason: a table
+  /// earns its keep when something queries or mutates one row of it, and nothing
+  /// will. No screen filters findings and no action updates one — there are
+  /// deliberately no per-finding decisions in this version, see below. JSON is
+  /// also immutable by construction, which a column-per-field row is not.
+  ///
+  /// Each element: `ordinal`, `kind` (a `BidSpecFindingKind` value), `label`,
+  /// `requirement` (what the section demands, in its own words), `whyItCosts`
+  /// (one line an estimator can act on), `confidence`, `sourcePageLabel`, and
+  /// `quote` — the sentence it was read from. The quote and the page label are
+  /// what make `intake.prisma`'s standard reachable: "a reason nobody can check
+  /// is a reason nobody can overrule."
+  findings Json
+
+  /// Why the reader read it the way it did, checkable against the document.
+  readingReason String
+
+  /// Pages charged against `AskAllowancePeriod.specPagesUsed`. Stored because
+  /// the screen says what a re-read will cost before somebody presses it.
+  pagesCharged Int
+
+  model         String
+  promptVersion String
+
+  startedByUserId String?
+  startedBy       User?   @relation(fields: [startedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([bidSpecSectionId, createdAt])
+  @@index([bidInvitationId])
+}
+
+/// How findings are GROUPED on screen, and nothing more.
+///
+/// Diego's eight plus `GENERAL`, chosen against the six trades this product is
+/// for. `GENERAL` is the deliberate escape and the reason this enum can never
+/// refuse a finding — `BidAddendumReferenceKind`'s stated rule: "this enum only
+/// decides how findings are grouped and can never refuse one." A section that
+/// demands something none of the eight covers still produces a finding.
+///
+/// THERE IS NO `SUBMITTAL` MEMBER, and that is a scope decision rather than an
+/// omission: Diego chose cost drivers over submittals, because what a section
+/// obliges you to SUBMIT is paperwork the won job needs, while what it obliges
+/// you to BUILD is money this bid either carries or does not. A submittal that
+/// costs real money to prepare arrives under `TESTING` or `MOCK_UP`.
+enum BidSpecFindingKind {
+  /// Level 4 against Level 5, skim coat, veneer plaster.
+  FINISH_LEVEL
+  /// A UL assembly, a 1- or 2-hour rating, head-of-wall, firestopping.
+  FIRE_RATING
+  /// STC or NIC ratings, acoustic insulation, sealant at the deck.
+  ACOUSTIC
+  /// A sample panel or a field mock-up somebody has to build and get approved.
+  MOCK_UP
+  /// Third-party inspection, field quality control, testing agencies.
+  TESTING
+  /// "No substitutions", a sole-sourced product, a named manufacturer.
+  NAMED_PRODUCT
+  /// Extra material left on site at closeout.
+  ATTIC_STOCK
+  /// Deflection criteria (L/240, L/360), height limits, wind load.
+  PERFORMANCE
+  /// Anything the eight above do not cover.
+  GENERAL
+}

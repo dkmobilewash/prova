@@ -21,6 +21,21 @@ const routerPush = vi.fn();
 const routerReplace = vi.fn();
 const routerBack = vi.fn();
 const routerNavigate = vi.fn();
+// `canGoBack` decides whether a screen reached by a NOTIFICATION TAP shows a
+// way home: a cold-start tap leaves it as the only entry on the stack, so
+// there is no back chevron and the screen is a dead end (app/alerts.tsx).
+// Defaults to TRUE — the ordinary in-app case — so a test that wants the
+// stranded one asks for it and every other screen keeps its normal header.
+export let routerCanGoBack = true;
+export function setCanGoBack(value: boolean): void {
+  routerCanGoBack = value;
+}
+
+/** Every `options` object a screen handed to `<Stack.Screen>` this test.
+ * Recorded because the component renders NULL — the header it configures
+ * is drawn by the navigator, which does not exist here, so the only
+ * askable question is what the screen requested. */
+export const stackScreenOptions: Record<string, unknown>[] = [];
 vi.mock("expo-router", async () => {
   const react = await import("react");
   return {
@@ -33,15 +48,25 @@ vi.mock("expo-router", async () => {
       replace: routerReplace,
       back: routerBack,
       navigate: routerNavigate,
+      canGoBack: () => routerCanGoBack,
     }),
     router: {
       push: routerPush,
       replace: routerReplace,
       back: routerBack,
       navigate: routerNavigate,
+      canGoBack: () => routerCanGoBack,
     },
     useFocusEffect: (effect: () => void | (() => void)) => react.useEffect(effect, [effect]),
     Redirect: () => null,
+    // Sets header options on the screen it is rendered in. Renders nothing,
+    // which is why a screen can drop it anywhere in its tree.
+    Stack: {
+      Screen: ({ options }: { options?: Record<string, unknown> }) => {
+        if (options) stackScreenOptions.push(options);
+        return null;
+      },
+    },
     Link: ({ children }: { children?: unknown }) => children ?? null,
   };
 });
@@ -49,6 +74,14 @@ vi.mock("expo-router", async () => {
 // The icon font is a native asset; the glyph names are covered by
 // icon-names.test.ts.
 vi.mock("@expo/vector-icons/Ionicons", () => ({ default: () => null }));
+// Untranspiled ESM in the published package — the screens suite only ever
+// asserts text, and the ring's geometry is tested as pure maths in
+// lib/progress-arc.test.ts rather than through a render.
+vi.mock("react-native-svg", () => ({
+  default: () => null,
+  Svg: () => null,
+  Circle: () => null,
+}));
 
 // Clerk. A token that resolves is the ONLINE case; a test that wants the
 // offline one makes the API reject, which is what a phone does.

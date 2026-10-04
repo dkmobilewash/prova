@@ -19,6 +19,7 @@ import {
 } from "@/components/vendorPricing";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 
 /** One quote in an item's history: reading, editing, or confirming a
  * delete. Delete asks twice, because removing a quote silently changes what
@@ -99,7 +100,14 @@ export function VendorPriceQuoteRow({
               disabled={isPending}
               className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
-              {isPending ? "Saving…" : "Save changes"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save changes"
+              )}
             </button>
             <button
               type="button"

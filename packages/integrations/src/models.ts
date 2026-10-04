@@ -53,7 +53,10 @@ export const AI_FEATURES = {
   DRAFT_ESTIMATE_LINES: "draft-estimate-lines",
   BID_RESEARCH: "bid-research",
   LEAD_SEARCH: "lead-search",
+  QUOTE_EXTRACT: "quote-extract",
   PLAN_INGESTION: "plan-ingestion",
+  ADDENDUM_READ: "addendum-read",
+  SPEC_READ: "spec-read",
 } as const;
 
 export type AiFeatureKey = keyof typeof AI_FEATURES;
@@ -72,9 +75,27 @@ const FEATURE_MODEL: Record<AiFeatureKey, string> = {
   DRAFT_ESTIMATE_LINES: OPUS_5,
   BID_RESEARCH: OPUS_5,
   LEAD_SEARCH: OPUS_5,
+  // Opus, and worth saying why when the neighbour below is Haiku: this reads ONE
+  // document per bid, not three hundred pages, so the cheap model buys almost
+  // nothing — and what it would risk is a misread price on the number an
+  // estimator is about to level two subs against. Volume is what justifies
+  // Haiku for ingestion; there is no volume here.
+  QUOTE_EXTRACT: OPUS_5,
   // The one cheap default, at Diego's direction, subject to the eval. Three
   // hundred calls per plan set is where a fifth of the price is worth having.
   PLAN_INGESTION: HAIKU_4_5,
+  // Opus, and the argument cuts closer here than anywhere else on this list.
+  // An addendum reader is 2-6 documents per bid rather than the quote reader's
+  // one, so it IS more volume — but the test this file applies is not "more
+  // than one", it is the one in the header: every feature is Opus unless Diego
+  // asked otherwise, and he asked for exactly one thing, "high-volume page
+  // work (classification, title blocks)". Three documents is not three hundred
+  // pages, and the per-document stakes are the quote's rather than a sheet's:
+  // a missed item on a GC's letter is a scope change nobody re-priced, on a
+  // document submitted once. The eval is what may reverse this, not this
+  // comment.
+  ADDENDUM_READ: OPUS_5,
+  SPEC_READ: OPUS_5,
 };
 
 /** `ANTHROPIC_MODEL_PLAN_INGESTION` etc. — the per-feature env override. */

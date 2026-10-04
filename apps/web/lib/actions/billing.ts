@@ -12,7 +12,14 @@ import { can } from "@/lib/permissions";
 import { viewerToday } from "@/lib/viewerToday";
 import { money as formatMoney } from "@/lib/money";
 import { prisma, Prisma } from "@prova/db";
-import { revokeToken, refreshTokens, getCompanyInfo, generateWipNarrative, type QuickBooksCompanyInfo } from "@prova/integrations";
+import {
+  revokeToken,
+  refreshTokens,
+  getCompanyInfo,
+  generateWipNarrative,
+  WIP_NARRATIVE_PROMPT_VERSION,
+  type QuickBooksCompanyInfo,
+} from "@prova/integrations";
 import { calculateLineItemWip, calculateJobWip } from "@/lib/wip";
 import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
@@ -28,6 +35,7 @@ import { createRetainageReleaseRecord } from "@/lib/billing/retainage-release";
 import { readPaymentEntry } from "@/lib/billing/payment-entry";
 import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
 import { payAppEntryError, payAppRowsFromForm, payAppTotal } from "@/lib/pay-application";
+import { scheduledValueFor } from "@/lib/pay-application-query";
 import { recordAskUsage } from "@/lib/ask/usage";
 import { aiGate } from "@/lib/ai/settings";
 import {
@@ -454,9 +462,13 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   // concurrent submissions from both landing (the loser fails on the
   // constraint), so this is a guard against a person's mistake rather than
   // a concurrency control, and it does not pretend otherwise.
+  // `isDeleted` is load-bearing and its absence WAS issue #567: without it
+  // `scheduledValueFor` cannot tell a live line from one a deductive change
+  // order removed, and a removed line gets checked against its
+  // pre-deduction value.
   const sovLines = await prisma.jobLineItem.findMany({
     where: { jobId },
-    select: { id: true, description: true, quantity: true, unitPrice: true },
+    select: { id: true, description: true, quantity: true, unitPrice: true, isDeleted: true },
   });
   const sovById = new Map(sovLines.map((line) => [line.id, line]));
 
@@ -471,14 +483,25 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
     .map((row) => {
       const line = sovById.get(row.lineItemId);
       const prior = priorRows.filter((p) => p.lineItemId === row.lineItemId);
+      const previousBilled = prior.reduce((sum, p) => sum + Number(p.thisPeriodBilled), 0);
+      const previousMaterialsStored = prior.reduce(
+        (sum, p) => sum + Number(p.materialsStoredValue),
+        0,
+      );
       return payAppEntryError({
         lineItemId: row.lineItemId,
         description: line?.description ?? "This line item",
-        // Same expression the job page and the report use for a live line.
-        scheduledValue: line ? Number(line.quantity) * Number(line.unitPrice ?? 0) : 0,
-        previousBilled: prior.reduce((sum, p) => sum + Number(p.thisPeriodBilled), 0),
+        // THE SAME FUNCTION the job page and the report use — not a copy of
+        // its live-line half, which is what shipped and is issue #567.
+        //
+        // The floor is PRIOR earnings, excluding the period being submitted,
+        // and that is not the number the render side passes. See
+        // `scheduledValueFor`'s own comment for why passing the inclusive
+        // figure here would make the ceiling vacuous rather than stricter.
+        scheduledValue: scheduledValueFor(line, previousBilled + previousMaterialsStored),
+        previousBilled,
         thisPeriodBilled: row.thisPeriodBilled,
-        previousMaterialsStored: prior.reduce((sum, p) => sum + Number(p.materialsStoredValue), 0),
+        previousMaterialsStored,
         materialsStoredValue: row.materialsStoredValue,
       });
     })
@@ -1061,6 +1084,7 @@ export async function generateJobWipNarrative(
       usage,
       outcome: "answered",
       feature: "wip-narrative",
+      promptVersion: WIP_NARRATIVE_PROMPT_VERSION,
     }),
     gate.model,
   );

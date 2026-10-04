@@ -322,5 +322,15 @@ export const fieldExclusions: Exclusion[] = [
   { action: "createMaterialOrder", reason: "A counter-numbered order with a vendor, a promised date and a reference the person types; a later phase once the vendor resolver exists." },
   { action: "updateMaterialOrder", reason: "Editing an order is done on the material orders page, where the order being changed is visible." },
   { action: "deleteMaterialDelivery", reason: "Deletes are never commands (T5); this is also how a wrongly closed order is reopened, on the page." },
+  // The rates a prevailing wage determination publishes, added 2026-10-02.
+  {
+    action: "addDeterminationWageRate",
+    reason:
+      "Figures copied off a government document, one classification at a time, beside the document they came from. A card would put a model between somebody and a PDF they are reading digit by digit, which is the one place a plausible number is worse than no number.",
+  },
+  {
+    action: "deleteDeterminationWageRate",
+    reason: "Deletes are never commands (T5); a published wage rate is what a certified payroll is argued from.",
+  },
   { action: "deleteMaterialOrder", reason: "Deletes are never commands (T5); owner-only on the page." },
 ];

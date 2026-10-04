@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { deleteDocument } from "@/lib/blob";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
@@ -1131,8 +1132,28 @@ export async function deleteBidAddendum(addendumId: string): Promise<ActionResul
   }
   const { company } = context;
 
+  // THE FILE GOES WITH THE ROW, and this read exists only to make that possible.
+  //
+  // An addendum can carry the GC's PDF since `attachAddendumDocument` shipped,
+  // and a blob is `access: "public"` — unguessable but permanent and
+  // unauthenticated. Deleting the row without deleting the file leaves a
+  // customer's bid document readable forever by anyone who ever had the URL,
+  // with nothing in the app pointing at it and nothing that would ever collect
+  // it. That is #106's third finding, which `lib/blob.ts` describes, and it
+  // would have been introduced by the PR that added the column rather than
+  // inherited.
+  const addendum = await prisma.bidAddendum.findFirst({
+    where: { id: addendumId, companyId: company.id },
+    select: { fileUrl: true },
+  });
+
   const deleted = await prisma.bidAddendum.deleteMany({ where: { id: addendumId, companyId: company.id } });
   if (deleted.count === 0) return actionFail("That addendum is already gone. Reload the page.");
+
+  // AFTER the row is gone, and failures are swallowed by `deleteDocument`. The
+  // row is the record; a stranded blob is a tidiness problem, and refusing the
+  // delete because a storage call failed would be the worse of the two.
+  if (addendum?.fileUrl) await deleteDocument(addendum.fileUrl);
 
   revalidatePath("/bids");
   return actionOk;

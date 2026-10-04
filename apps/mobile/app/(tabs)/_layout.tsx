@@ -12,21 +12,41 @@ import { typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 
 /**
- * Three destinations plus one button — the whole of the app's top level.
+ * Five destinations plus one button — the whole of the app's top level.
  *
  *   Home     what today looks like on the job you are on
  *   Jobs     every job, and how you change which one you are on
- *   More     the account, the outbox, the reminder
+ *   Alerts   what needs attention, across the company
+ *   Outbox   what this phone has not managed to send yet
+ *   Settings the account, the language, the reminder
  *   ＋        the capture sheet: Photo first, then everything a field day
  *            produces, filed against the CURRENT JOB
  *
+ * ALERTS AND OUTBOX WERE HIDDEN DESTINATIONS UNTIL NOW, and promoting them
+ * is a structural fix rather than a rearrangement. Alerts was reachable
+ * only by tapping a push notification; Outbox only from a row inside
+ * Settings. Both are things a person needs to be able to CHECK without
+ * being prompted — "did my report actually send?" is the question a queue
+ * exists to answer, and it was two taps inside a menu.
+ *
+ * Moving them into this group does NOT change their URLs. `(tabs)` is a
+ * route group, so `/alerts` and `/outbox` are still `/alerts` and
+ * `/outbox`: every `router.push` and the notification tap router
+ * (lib/push-target.ts) keep working untouched.
+ *
+ * AND IT RETIRES THE COLD-START DEAD END ON /alerts STRUCTURALLY. That bug
+ * — a notification tap from a killed app landing on a screen with no back
+ * chevron and no tab bar — took four releases to fix (#548, #553, #554,
+ * #555). A tab destination cannot have it: the bar is always rendered.
+ * `WayHome` is therefore removed from Alerts and kept on `/job/[jobId]`,
+ * which is still outside this group. See push-destination-exit.test.ts,
+ * which now asserts exactly that split rather than one blanket rule.
+ *
  * Create and Camera used to be tabs. They were doorways — the Create tab
  * was a launcher and the Camera tab redirected away the moment it was
- * focused — and two of five slots for doorways is how a foreman's thumb
- * gets a busy bar. One button opens the same actions in a sheet, and
- * Photo still opens the shutter directly (?open=camera), so a photo stays
- * two taps from anywhere. The button is gated by MANAGE_FIELD exactly as
- * the old tabs were: an estimator sees three tabs and no button.
+ * focused — so one button opens the same actions in a sheet, and Photo
+ * still opens the shutter directly (?open=camera). The button is gated by
+ * MANAGE_FIELD: an estimator sees the tabs and no button.
  *
  * The queue's drain timer is NOT here: it lives in the root layout so it
  * keeps running during a handover, when the tabs are not mounted.
@@ -91,12 +111,35 @@ export default function TabsLayout() {
           }}
         />
         <Tabs.Screen
+          name="alerts"
+          options={{
+            title: t("nav.alerts"),
+            // Alerts draws its own large title inside the safe area.
+            headerShown: false,
+            tabBarIcon: ({ color, focused }) => <Icon name="alert" color={color} filled={focused} size={24} />,
+          }}
+        />
+        <Tabs.Screen
+          name="outbox"
+          options={{
+            // `nav.tab.outbox`, NOT `nav.outbox`. A tab label and a screen
+            // title are different things and this is the proof: "Waiting to
+            // send" is a good large title on the screen itself, and in the
+            // bar it rendered as "Waiting t…" on a real phone — a truncated
+            // word is worse than a short one. The screen, the Settings row
+            // and the section header all still say "Waiting to send".
+            title: t("nav.tab.outbox"),
+            headerShown: false,
+            tabBarIcon: ({ color, focused }) => <Icon name="outbox" color={color} filled={focused} size={24} />,
+          }}
+        />
+        <Tabs.Screen
           name="settings"
           options={{
             title: t("settings.title"),
-            // More draws its own large title inside the safe area.
+            // Settings draws its own large title inside the safe area.
             headerShown: false,
-            tabBarIcon: ({ color, focused }) => <Icon name="more" color={color} filled={focused} size={24} />,
+            tabBarIcon: ({ color, focused }) => <Icon name="settings" color={color} filled={focused} size={24} />,
           }}
         />
       </Tabs>

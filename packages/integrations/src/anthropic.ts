@@ -35,7 +35,16 @@ type AnthropicUsage = {
   cache_creation_input_tokens?: number | null;
 };
 
-async function reportUsage(
+/**
+ * EXPORTED so a model caller in another file can report the same way.
+ *
+ * It was private until `quotes.ts` needed it, and the alternative was a second
+ * copy of "report before checking the result, because a call that produced
+ * nothing usable still cost the money". Two copies of that rule is how one of
+ * them stops being true — the same argument that kept feature 5 off a second
+ * quote model. One helper, one place, whatever file the caller lives in.
+ */
+export async function reportUsage(
   onUsage: ModelUsageReporter | undefined,
   usage: AnthropicUsage | null | undefined,
 ): Promise<void> {
@@ -59,6 +68,32 @@ async function reportUsage(
 // interprets numbers it's handed. Financial figures on a WIP schedule have
 // to be exactly reproducible, which is why the math lives in plain
 // TypeScript and this module's only job is explaining what the math means.
+/**
+ * THE THREE PROMPT VERSIONS IN THIS FILE, AND WHY ALL THREE ARRIVED AT ONCE.
+ *
+ * `docs/ai/DECISIONS.md` wanted a version on every prompt so a later claim that a
+ * prompt change improved something can be attributed to one side of it or the
+ * other. `promptVersionCensus.test.ts` enforces it — and the shape of that census
+ * is why this is three constants rather than the one the work called for.
+ *
+ * It derives the versioned features from each file in this package: a file that
+ * declares a `*_PROMPT_VERSION` and resolves features with `modelFor(...)` has a
+ * versioned prompt for EVERY feature it resolves. That was exactly right while
+ * every versioned prompt lived in a single-feature file (`planSheets.ts`,
+ * `addenda.ts`, `quotes.ts`, `leads.ts`, `research.ts`, `ask.ts` are one apiece).
+ * This file is the only one holding three.
+ *
+ * So versioning the draft prompt alone turned the census red on the other two —
+ * proved by doing it, not predicted: it named `billing.ts` recording
+ * `wip-narrative` and `compliance.ts` recording `compliance-extract` without a
+ * version. The alternative was splitting a 150-line function into its own module
+ * to dodge a guard that was right. Versioning all three is additive, smaller, and
+ * closes the attribution gap on two features nobody had got to yet.
+ *
+ * Each starts at `.1`. BUMP THE ONE YOU CHANGE — a version that moves when its
+ * prompt did not is worse than no version, because it splits one prompt's rows
+ * into two populations that are actually the same.
+ */
 const SYSTEM_PROMPT = `You are a construction-industry financial analyst helping a general contractor read a job's WIP (work-in-progress) percentage-of-completion report.
 
 You will be given ALREADY-COMPUTED figures for one job: contract value, percent complete, earned revenue, billed-to-date, and over/under-billing, plus a per-line-item breakdown. Every number you receive is exact and final — do not recompute, restate as a different value, or "correct" any figure. Your job is interpretation only: explain what the numbers mean and flag anything a project manager or the company's surety/lender would want to know.
@@ -95,6 +130,8 @@ export interface WipNarrativeJobSummary {
  * The figures themselves come from the caller (lib/wip.ts) — this function
  * never touches the database or does any arithmetic of its own.
  */
+export const WIP_NARRATIVE_PROMPT_VERSION = "wip-narrative.1";
+
 export async function generateWipNarrative(
   summary: WipNarrativeJobSummary,
   onUsage?: ModelUsageReporter,
@@ -155,6 +192,8 @@ export interface ComplianceDocumentExtraction {
    * stands out. */
   notes: string | null;
 }
+
+export const COMPLIANCE_PROMPT_VERSION = "compliance-extract.1";
 
 const EXTRACTION_TOOL_NAME = "record_compliance_document";
 
@@ -300,6 +339,8 @@ export interface DraftLineItem {
  * dropped in practice — but the cap is here rather than unbounded. */
 const MAX_REFERENCE_CATALOG_ENTRIES = 200;
 const MAX_REFERENCE_WON_BIDS = 40;
+
+export const DRAFT_LINES_PROMPT_VERSION = "draft-estimate-lines.1";
 
 const DRAFT_TOOL_NAME = "record_draft_line_items";
 

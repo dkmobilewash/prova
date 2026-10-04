@@ -13,6 +13,7 @@ import {
   ownerRefusal,
   runAction,
   type ActionResult,
+  optionalLinkOrThrow,
 } from "./shared";
 
 /**
@@ -60,20 +61,6 @@ function sourceFromForm(formData: FormData): string {
 
 /** http(s) only: this string goes straight into an href, so a `javascript:`
  * or `data:` URL would be an injection vector. Same guard as certifications. */
-function optionalLink(formData: FormData, key: string): string | null {
-  const raw = text(formData, key);
-  if (!raw) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    throw new InputError("The link needs to be a full URL, starting with https://");
-  }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new InputError("The link needs to start with https://");
-  }
-  return parsed.toString();
-}
 
 function duplicateDateMessage(date: Date) {
   return `A rate effective ${date.toISOString().slice(0, 10)} is already on file. If the bureau revised it, edit that one.`;
@@ -87,7 +74,7 @@ export async function recordExperienceModRate(formData: FormData): Promise<Actio
     const effectiveDate = effectiveDateFromForm(formData);
     const rate = rateFromForm(formData);
     const source = sourceFromForm(formData);
-    const sourceUrl = optionalLink(formData, "sourceUrl");
+    const sourceUrl = optionalLinkOrThrow(formData, "sourceUrl");
 
     try {
       await prisma.experienceModRate.create({
@@ -130,7 +117,7 @@ export async function updateExperienceModRate(rateId: string, formData: FormData
       data: {
         rate: rateFromForm(formData),
         source: sourceFromForm(formData),
-        sourceUrl: optionalLink(formData, "sourceUrl"),
+        sourceUrl: optionalLinkOrThrow(formData, "sourceUrl"),
         note: text(formData, "note") || null,
       },
     });

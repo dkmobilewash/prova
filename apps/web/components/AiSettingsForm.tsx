@@ -3,6 +3,7 @@
 import { useState, useTransition, type FormEvent } from "react";
 import { saveCompanyAiSettings } from "@/lib/actions";
 import { AI_FEATURE_DESCRIPTION, AI_FEATURE_KEYS, AI_FEATURE_LABEL } from "@/lib/ai/features";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * What AI is allowed to do for this company — the first thing on
@@ -160,7 +161,14 @@ export function AiSettingsForm({ settings }: { settings: AiSettingsView }) {
           disabled={isPending}
           className="min-h-[48px] rounded-md bg-neutral-800 px-4 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Save AI settings"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save AI settings"
+          )}
         </button>
         {error && <p className="text-sm text-tag-amber-ink">{error}</p>}
         {saved && !error && (

@@ -4,6 +4,7 @@ import {
   researchProject,
   RESEARCH_FIELD_LABELS,
   RESEARCH_MAX_SEARCHES,
+  RESEARCH_PROMPT_VERSION,
   type AskAttachmentBlock,
   streamToolConversation,
   type AskToolCallMeta,
@@ -834,6 +835,7 @@ export async function* streamAnswer(
         usage: result.usage,
         outcome: result.ok ? "answered" : `error:${result.reason}`,
         feature: "bid-research",
+        promptVersion: RESEARCH_PROMPT_VERSION,
       });
     }
     if (!result.ok) return { ok: false };

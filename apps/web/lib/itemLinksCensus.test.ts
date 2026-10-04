@@ -73,7 +73,13 @@ function builtPairs(): Pair[] {
     const borrowed = HREFS_BUILT_ELSEWHERE[name];
     let pending: { kind: string; line: number } | null = null;
     text.split("\n").forEach((line, i) => {
-      const kind = /^\s*kind: "([A-Z_]+)",\s*$/.exec(line);
+      // [A-Z0-9_], not [A-Z_]. DAS140_NOTICE and DAS142_DISPATCH were the
+      // first kinds with a DIGIT in the name — the form numbers are the
+      // names — and the narrower class matched neither, so this census
+      // reported both as having no href at all. It failed by NAME rather
+      // than quietly shrinking its set, which is what the size assertion
+      // below is for; widening the class is the fix, not renaming a form.
+      const kind = /^\s*kind: "([A-Z0-9_]+)",\s*$/.exec(line);
       if (kind) {
         pending = { kind: kind[1], line: i + 1 };
         return;

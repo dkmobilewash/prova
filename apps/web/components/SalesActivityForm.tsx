@@ -8,6 +8,7 @@ import {
   type OpportunityOption,
 } from "@/components/SalesActivityFields";
 import { localToday } from "@/components/localToday";
+import { Spinner } from "@/components/Spinner";
 
 export function SalesActivityForm({
   leadId,
@@ -83,7 +84,14 @@ export function SalesActivityForm({
           disabled={isPending}
           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Save"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save"
+          )}
         </button>
         <button
           type="button"

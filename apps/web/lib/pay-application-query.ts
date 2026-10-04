@@ -134,12 +134,50 @@ export interface PayAppAssembly {
  * The billed-to-date floor is for REMOVED lines only. A LIVE line with a
  * null unitPrice is a cost-only budget line (general conditions, overhead)
  * and genuinely has $0 of contract value; jobs.prisma says so explicitly.
+ *
+ * EXPORTED, AND THE SECOND ARGUMENT IS NOT THE SAME NUMBER AT BOTH CALL
+ * SITES — THAT IS DELIBERATE AND IS THE WHOLE OF ISSUE #567.
+ *
+ * `submitPayApplication` used to carry its own copy of the live-line half
+ * of this expression, under a comment reading "Same expression the job page
+ * and the report use for a live line". The qualifier was the defect: it did
+ * not select `isDeleted`, so a removed line had no second branch and was
+ * checked against its PRE-DEDUCTION value. A line of $40,000 with $10,000
+ * billed, then removed by an approved deductive change order, accepted
+ * another $25,000 — money claimed against scope the GC had already taken
+ * back, on the document they pay against.
+ *
+ * Both sides call this now. What they pass as `removedLineFloor` differs:
+ *
+ *   RENDER (below)  total completed and stored to date INCLUDING this
+ *                   period, so a removed-but-billed line prints at exactly
+ *                   what it earned: 100% complete, balance to finish $0.
+ *   SUBMIT          PRIOR earnings only — previousBilled +
+ *                   previousMaterialsStored, excluding the period being
+ *                   submitted.
+ *
+ * DO NOT "SIMPLIFY" THOSE INTO ONE ARGUMENT. The ceiling in
+ * `payAppEntryError` compares `totalCompletedAndStoredToDate` against this
+ * value, and that total IS the render side's floor — so passing the
+ * inclusive figure at submit makes the comparison `x > x`, false for every
+ * input, and a removed line would accept ANY amount. That is strictly worse
+ * than the bug this fixed, which at least capped at the original value.
+ *
+ * Prior earnings is also the right rule rather than merely a safe one: a
+ * deductive change order takes back the UNBILLED remainder, so there is no
+ * scope left to bill NEW work against, while work already performed and
+ * certified stays billed. A downward correction on such a line still works
+ * — it is bounded separately by the can't-un-bill-what-was-never-billed
+ * guard at the top of `payAppEntryError`.
  */
-function scheduledValueFor(lineItem: PayAppJobLineItem | undefined, earnedToDate: number): number {
+export function scheduledValueFor(
+  lineItem: PayAppJobLineItem | undefined,
+  removedLineFloor: number,
+): number {
   if (lineItem && !lineItem.isDeleted) {
     return Number(lineItem.quantity) * Number(lineItem.unitPrice ?? 0);
   }
-  return Math.max(0, earnedToDate);
+  return Math.max(0, removedLineFloor);
 }
 
 /** A removed line keeps its real description — the placeholder is only for

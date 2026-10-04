@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
+import { Spinner } from "@/components/Spinner";
 import { usePathname } from "next/navigation";
 import { boundTurns, type AskTurn } from "@/lib/ask/turns";
 import {
@@ -26,6 +27,7 @@ import {
 } from "@/lib/actions";
 import { upload } from "@vercel/blob/client";
 import { intakeUploadErrorMessage } from "@/lib/intake/upload";
+import { firstPageTextPreview } from "@/lib/intake/pdf-text";
 import {
   ASK_ATTACHMENT_ACCEPT,
   askAttachmentTypeOrSizeProblem,
@@ -262,7 +264,12 @@ export function AskPanel() {
   const answerRef = useRef("");
   const askedRef = useRef("");
   const [isAsking, setIsAsking] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  // A TEXTAREA now, not an input. A single-line input scrolls the caret off
+  // to the right and takes the beginning of the question with it, so anybody
+  // typing more than a few words cannot read back what they typed without
+  // dragging the cursor home. This box invites long sentences — the whole
+  // draft-estimate flow is one — so it has to show them.
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // "Ask C Stream to do it" on an empty state (EmptyState.tsx): the sentence
   // lands in the box and waits. Never sent from here — the person reads it,
@@ -309,6 +316,14 @@ export function AskPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadSeq = useRef(0);
   const sentAttachmentRef = useRef<AskAttachmentRef | null>(null);
+  /* The attached PDF's first page, read in this tab while it uploaded, for
+     the free classifier if the person later taps to file it in the tray.
+     Deliberately BESIDE the ref rather than on it: `AskAttachmentRef` is
+     parsed back out of a request body by `attachmentRefOf`, so a field added
+     there widens a validated trust boundary, and this text is of no use to
+     the question itself — the model is handed the whole document. Keyed by
+     blob URL so a second attachment cannot inherit the first one's text. */
+  const attachmentTextRef = useRef<{ url: string; text: string } | null>(null);
 
   // The scrollback, and the clock the staleness marks are measured against.
   // Both start empty and are filled in an effect: the server renders no
@@ -562,6 +577,7 @@ export function AskPanel() {
     uploadSeq.current += 1;
     setAttachment(null);
     setAttachError(null);
+    attachmentTextRef.current = null;
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -587,13 +603,20 @@ export function AskPanel() {
     try {
       // The intake route, unchanged: it signs a token for this company's
       // intake folder only. See app/api/intake/upload/route.ts.
-      const blob = await upload(prepared.value.pathname, file, {
-        access: "public",
-        contentType: file.type,
-        handleUploadUrl: "/api/intake/upload",
-        clientPayload: JSON.stringify({ contentType: file.type }),
-      });
+      // Read the first page alongside the upload, not after it: this is the
+      // only moment the File itself is in hand. `fileInIntake` runs later,
+      // from a tap, with nothing but a ref — by then the bytes are gone.
+      const [blob, textPreview] = await Promise.all([
+        upload(prepared.value.pathname, file, {
+          access: "public",
+          contentType: file.type,
+          handleUploadUrl: "/api/intake/upload",
+          clientPayload: JSON.stringify({ contentType: file.type }),
+        }),
+        firstPageTextPreview(file),
+      ]);
       if (seq !== uploadSeq.current) return;
+      attachmentTextRef.current = textPreview ? { url: blob.url, text: textPreview } : null;
       setAttachment({
         status: "ready",
         name: file.name,
@@ -615,6 +638,11 @@ export function AskPanel() {
       formData.set("fileName", ref.name);
       formData.set("contentType", ref.contentType);
       formData.set("byteSize", String(ref.size));
+      // Only for the file this text was read from, and only when there was
+      // any. A mismatch or a null means the row is classified on its
+      // filename, which is what every row got before this existed.
+      const captured = attachmentTextRef.current;
+      if (captured && captured.url === ref.url) formData.set("textPreview", captured.text);
       const result = await recordIntakeDocument(formData);
       setFiled(
         result.ok
@@ -953,11 +981,22 @@ export function AskPanel() {
               hang rather than as work. */}
           {(status || progress) && (
             <p
-              className="mt-2 whitespace-pre-line text-base leading-relaxed text-ink-body"
+              // `flex items-start` and a spinner. The comment above has said
+              // since it was written that a static message for eight seconds
+              // reads as a hang — and then showed a static message. This is
+              // the line that is on screen for the whole wait, so it is the
+              // one that most needed to move.
+              //
+              // `mt-1` on the spinner and `items-start` rather than `center`:
+              // the status text wraps to two lines on a narrow panel, and a
+              // centred spinner beside a two-line message sits in the gap
+              // between them.
+              className="mt-2 flex items-start gap-2 whitespace-pre-line text-base leading-relaxed text-ink-body"
               data-ask="progress"
               aria-live="polite"
             >
-              {progress || status}
+              <Spinner className="mt-1" />
+              <span>{progress || status}</span>
             </p>
           )}
 
@@ -1163,17 +1202,46 @@ export function AskPanel() {
           // the first two-question click test.
           setQuestion("");
         }}
-        className="flex gap-2"
+        // `items-end` so the button and the attach control stay on the last
+        // line as the box grows, rather than floating at the middle of a
+        // four-line question.
+        className="flex items-end gap-2"
         data-tour="ask-box"
       >
-        <input
-          ref={inputRef}
+        <textarea
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
+          // ENTER SENDS, SHIFT+ENTER makes a new line. A textarea's own
+          // default is the opposite, and the default is wrong here: this is a
+          // chat box, every chat box in the world sends on Enter, and somebody
+          // demoing it will press Enter. Shift+Enter is the escape hatch for a
+          // deliberate line break.
+          //
+          // `requestSubmit` rather than calling the handler: it runs the form's
+          // own submit path, so the disabled-while-in-flight and empty-question
+          // rules on the button below apply to the keyboard too instead of
+          // being duplicated here.
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.shiftKey) return;
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }}
           placeholder="Ask about your jobs, money, drawings, crews — or start an estimate…"
           aria-label="Ask about your jobs"
           maxLength={1000}
-          className="min-w-0 flex-1 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
+          rows={1}
+          // GROWS WITH THE TEXT, up to about six lines, then scrolls. Driven
+          // off `scrollHeight` on every render rather than from a keystroke
+          // handler, so it is also right when the value is set from somewhere
+          // else — a suggestion chip, a clarify prompt, the mic — and not only
+          // when a person types.
+          ref={(node) => {
+            inputRef.current = node;
+            if (!node) return;
+            node.style.height = "auto";
+            node.style.height = `${Math.min(node.scrollHeight, 144)}px`;
+          }}
+          className="min-w-0 flex-1 resize-none overflow-y-auto rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
         />
         {/* Attach a file. The input is hidden and the button opens it; the
             upload starts on pick, so sending is not held up by it. */}
@@ -1253,7 +1321,18 @@ export function AskPanel() {
           disabled={question.trim() === "" || isAsking || attachment?.status === "uploading"}
           className="shrink-0 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isAsking ? "Looking…" : "Ask"}
+          {isAsking ? (
+            // The spinner, because "Looking…" on its own stopped moving and
+            // read as a crash. The word stays — it is what a screen reader
+            // gets, and it is what says WHAT is happening rather than merely
+            // that something is.
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Looking…
+            </span>
+          ) : (
+            "Ask"
+          )}
         </button>
       </form>
 

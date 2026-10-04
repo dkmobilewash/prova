@@ -10,6 +10,7 @@ import {
   actionOk as ok,
   runAction as sharedRunAction,
   type ActionResult,
+  optionalLinkOrThrow,
 } from "./shared";
 
 /** Failures are RETURNED — production redacts a thrown Server Action
@@ -86,20 +87,6 @@ function optionalDays(formData: FormData, key: string, label: string): number | 
 
 /** Only http(s): this string goes into an href, so a javascript: URL would
  * be an injection vector. Same rule as closeout document links. */
-function optionalLink(formData: FormData, key: string, label: string): string | null {
-  const raw = text(formData, key);
-  if (!raw) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    throw new InputError(`${label} needs to be a full URL, starting with https://`);
-  }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new InputError(`${label} needs to start with https://`);
-  }
-  return parsed.toString();
-}
 
 /**
  * True for the database-level non-overlap constraint on rule sets.
@@ -165,8 +152,8 @@ function ruleSetDataFrom(formData: FormData) {
     filingFrequency: enumFrom(formData, "filingFrequency", FREQUENCIES, "Filing frequency"),
     filingDueDays: optionalDays(formData, "filingDueDays", "Filing due"),
     formName: text(formData, "formName") || null,
-    portalUrl: optionalLink(formData, "portalUrl", "Filing portal"),
-    sourceUrl: optionalLink(formData, "sourceUrl", "Source"),
+    portalUrl: optionalLinkOrThrow(formData, "portalUrl", "Filing portal"),
+    sourceUrl: optionalLinkOrThrow(formData, "sourceUrl", "Source"),
     note: text(formData, "note") || null,
     effectiveFrom,
     effectiveTo,

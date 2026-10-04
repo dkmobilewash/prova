@@ -8,6 +8,7 @@ import type { ActionResult } from "@/lib/actions/shared";
 import type { Alert } from "@/lib/alerts";
 import { inputClass, labelClass } from "@/components/RfiFields";
 import { kindLabel, severityBadgeClass, severityLabel } from "@/components/alertLabels";
+import { Spinner } from "@/components/Spinner";
 import { money } from "@/lib/money";
 
 const btn =
@@ -90,7 +91,14 @@ export function AlertRow({ alert, silenced }: { alert: Alert; silenced: boolean 
                 disabled={isPending}
                 className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
               >
-                {isPending ? "Saving…" : "Snooze"}
+                {isPending ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Spinner />
+                    Saving…
+                  </span>
+                ) : (
+                  "Snooze"
+                )}
               </button>
               <button
                 type="button"

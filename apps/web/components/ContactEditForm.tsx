@@ -11,6 +11,7 @@ import {
 import { inputClass, labelClass } from "@/components/RfiFields";
 import { classifyRenewal, renewalTiming } from "@/lib/compliance-expiry";
 import { SubmitButton } from "@/components/SubmitButton";
+import { Spinner } from "@/components/Spinner";
 
 export type ContactEditDefaults = ContactDefaults & {
   defaultRetainagePercent: string | null;
@@ -128,7 +129,14 @@ export function ContactEditForm({
         disabled={isPending}
         className="mt-2 inline-flex w-fit items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
       >
-        {isPending ? "Saving…" : "Save"}
+        {isPending ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Spinner />
+            Saving…
+          </span>
+        ) : (
+          "Save"
+        )}
       </SubmitButton>
     </form>
   );

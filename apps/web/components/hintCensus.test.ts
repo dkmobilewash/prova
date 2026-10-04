@@ -124,11 +124,61 @@ function insideAHint(regions: [number, number][], index: number): boolean {
 
 const CONTROL_TAGS = new Set(["button", "SubmitButton"]);
 
-/** The element whose opening tag most recently opened before `index`. */
+/**
+ * The element that ENCLOSES `index` — stepping over any sibling element that
+ * opens and closes before it.
+ *
+ * This used to take the tag whose `<` most recently preceded `index`, which is
+ * the same thing only while the label is the button's FIRST child. The spinner
+ * sweep of 2026-09-30 broke that assumption at five money controls by wrapping
+ * every in-flight label:
+ *
+ *     <button …>
+ *       {isPending ? (
+ *         <span className="inline-flex items-center gap-1.5">
+ *           <Spinner />
+ *           Saving…
+ *         </span>
+ *       ) : (
+ *         "Save backcharge"     ← the nearest `<` to the left is now `</span>`
+ *       )}
+ *     </button>
+ *
+ * `</span>` fails the name regex, so the old version returned null and
+ * `controlLabelAt` found NOTHING for those five labels. The census was right to
+ * go red — it cannot tell "this button was renamed" from "I can no longer see
+ * this button", and it must never assume the second. But the buttons were not
+ * renamed, and the labels are still the text of a `<button>`; the model of
+ * "enclosing" was one level too shallow.
+ *
+ * So it now walks left keeping a depth count: a closing tag deepens, a
+ * self-closing element is balanced and skipped, and an opening tag either
+ * closes an earlier `</…>` or — at depth zero — is the answer. `<h2>Log a
+ * backcharge</h2>` still resolves to `h2` and is still not a control, which is
+ * the exclusion this function exists for.
+ */
 function enclosingTag(source: string, index: number): string | null {
-  const open = source.lastIndexOf("<", index);
-  if (open === -1) return null;
-  return /^<\s*([A-Za-z][A-Za-z0-9_.]*)/.exec(source.slice(open, index))?.[1] ?? null;
+  let at = index;
+  let depth = 0;
+  while (at > 0) {
+    const open = source.lastIndexOf("<", at - 1);
+    if (open === -1) return null;
+    const rest = source.slice(open);
+    const end = rest.indexOf(">");
+    const token = end === -1 ? rest : rest.slice(0, end + 1);
+    at = open;
+
+    if (token.startsWith("</")) {
+      depth += 1;
+      continue;
+    }
+    const name = /^<\s*([A-Za-z][A-Za-z0-9_.]*)/.exec(token)?.[1];
+    if (!name) continue; // `<` as a comparison or an arrow, not a tag
+    if (token.endsWith("/>")) continue; // self-closing: opens and closes here
+    if (depth === 0) return name;
+    depth -= 1;
+  }
+  return null;
 }
 
 /** Indexes where `label` is the text of a button rather than a heading or a
@@ -257,6 +307,32 @@ describe("the control-hint census", () => {
       ]);
       expect(controlLabelAt("<SubmitButton>Log payment</SubmitButton>", "Log payment")).toHaveLength(1);
       expect(controlLabelAt("<p>Log payment</p>", "Log payment")).toEqual([]);
+    });
+
+    it("reads a label past the spinner branch that now sits beside it", () => {
+      /* The exact shape the 2026-09-30 spinner sweep gave every in-flight
+       * button, pinned here because `enclosingTag`'s own header explains it in
+       * prose and prose does not fail a build. Without this the scanner can
+       * regress to nearest-`<` and only five curated MONEY_CONTROLS entries
+       * stand between that and a census over an empty set. */
+      const source = [
+        '<button type="submit">',
+        "  {pending ? (",
+        '    <span className="inline-flex items-center gap-1.5">',
+        "      <Spinner />",
+        "      Saving…",
+        "    </span>",
+        "  ) : (",
+        '    "Log payment"',
+        "  )}",
+        "</button>",
+      ].join("\n");
+      expect(controlLabelAt(source, "Log payment")).toHaveLength(1);
+      // The pending word belongs to the span it is in, not to the button —
+      // which is right, and is why the label is what this census tracks.
+      expect(enclosingTag(source, source.indexOf("Saving…"))).toBe("span");
+      // A label in a sibling element is still not this button's.
+      expect(controlLabelAt("<button>Save</button><p>Log payment</p>", "Log payment")).toEqual([]);
     });
   });
 

@@ -6,14 +6,13 @@ import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
 import { money } from "@/lib/money";
 import { formatHours } from "@/lib/render-hours";
-import { buildCertifiedPayrollSummary, type CertifiedPayrollTimeEntryInput } from "@/lib/certified-payroll";
 import {
   certifiedPayrollWeekStart,
   certifiedPayrollWeekWindow,
   openingCertifiedPayrollWeek,
 } from "@/lib/certified-payroll-week";
-import { loadCertifiedPayrollWeekEntries, loadLatestTimeEntryDate } from "@/lib/certified-payroll-query";
-import type { FringeRateScheduleInput } from "@/lib/labor-cost";
+import { loadLatestTimeEntryDate } from "@/lib/certified-payroll-query";
+import { loadCertifiedPayrollWeekSummary } from "@/lib/certified-payroll-week.summary";
 import { timeEntryWorkerName, timeEntryWorkerId } from "@/lib/worker-name";
 
 const PAY_TYPE_COLUMNS = [
@@ -92,59 +91,23 @@ export default async function CertifiedPayrollPage({
   const previousWeek = addDays(weekStart, -7);
   const nextWeek = addDays(weekStart, 7);
 
-  const [entries, craftClassifications] = await Promise.all([
-    loadCertifiedPayrollWeekEntries(company.id, job.id, weekStart),
-    prisma.craftClassification.findMany({
-      where: { companyId: company.id },
-      // Deterministic even though findEffectiveFringeRateSchedule no
-      // longer depends on fetch order to break a same-day tie — #104
-      // finding 3, so the raw list itself reads sensibly too.
-      include: { fringeRateSchedules: { orderBy: { effectiveFrom: "desc" } } },
-    }),
-  ]);
-
-  const fringeSchedulesByCraft = new Map<string, FringeRateScheduleInput[]>(
-    craftClassifications.map((craft) => [
-      craft.id,
-      craft.fringeRateSchedules.map((s) => ({
-        baseWage: Number(s.baseWage),
-        pensionRate: s.pensionRate != null ? Number(s.pensionRate) : null,
-        vacationRate: s.vacationRate != null ? Number(s.vacationRate) : null,
-        healthWelfareRate: s.healthWelfareRate != null ? Number(s.healthWelfareRate) : null,
-        trainingRate: s.trainingRate != null ? Number(s.trainingRate) : null,
-        effectiveFrom: s.effectiveFrom,
-        effectiveTo: s.effectiveTo,
-      })),
-    ]),
+  // Both the screen and /api/payroll-export read this one function, so a
+  // payroll file can never disagree with the week it was downloaded from.
+  const { entries, summaries: employeeSummaries } = await loadCertifiedPayrollWeekSummary(
+    company.id,
+    job.id,
+    weekStart,
   );
 
-  // Who has no name on their account. Collected before the summary is built,
-  // because it groups by employeeUserId and the identity is gone by the time
-  // the rows come back out.
+  // Who has no name on their account. Collected from the raw entries,
+  // because the summary groups by employeeUserId and the identity is gone
+  // by the time the rows come back out.
   const missingName = new Map<string, string>();
   for (const entry of entries) {
     if (timeEntryWorkerName(entry).nameMissing) {
       missingName.set(timeEntryWorkerId(entry), entry.employeeUser?.email ?? "");
     }
   }
-
-  const summaryInputs: CertifiedPayrollTimeEntryInput[] = entries.map((entry) => ({
-    employeeUserId: timeEntryWorkerId(entry),
-    // NOT `name ?? email`. See lib/worker-name.ts — this column is a
-    // statement to a government agency about who did the work.
-    employeeName: timeEntryWorkerName(entry).label,
-    craftClassificationId: entry.craftClassificationId,
-    craftLabel: entry.craftClassification
-      ? `${entry.craftClassification.unionLocal.parentInternational} ${entry.craftClassification.unionLocal.localNumber} — ${entry.craftClassification.name}`
-      : null,
-    date: entry.date,
-    hours: Number(entry.hours),
-    payType: entry.payType,
-    perDiemAmount: entry.perDiemAmount != null ? Number(entry.perDiemAmount) : null,
-    travelPayAmount: entry.travelPayAmount != null ? Number(entry.travelPayAmount) : null,
-  }));
-
-  const employeeSummaries = buildCertifiedPayrollSummary(summaryInputs, fringeSchedulesByCraft);
   const weekTotalHours = employeeSummaries.reduce((sum, e) => sum + e.totalHours, 0);
   const anyUncomputed = employeeSummaries.some((e) => e.hasUncomputedHours);
 
@@ -152,10 +115,13 @@ export default async function CertifiedPayrollPage({
   // roll-up with no date on it, which is why an eight-day window could put
   // a foreign Sunday on a filing and no printout showed it. A day listed
   // here outside the header's range is a bug, visible on paper.
-  const hoursByDay = [...summaryInputs
-    .reduce((acc, entry) => {
+  // From the raw entries rather than the summary's inputs: the assembly
+  // moved into lib/certified-payroll-week.summary.ts, and these are the
+  // same rows it reads.
+  const hoursByDay = [...entries
+    .reduce((acc: Map<string, number>, entry) => {
       const key = isoDate(entry.date);
-      acc.set(key, (acc.get(key) ?? 0) + entry.hours);
+      acc.set(key, (acc.get(key) ?? 0) + Number(entry.hours));
       return acc;
     }, new Map<string, number>())
     .entries()].sort((a, b) => a[0].localeCompare(b[0]));
@@ -189,6 +155,18 @@ export default async function CertifiedPayrollPage({
         >
           Form WH-347 for this week →
         </Link>
+      </p>
+      {/* The hours going OUT. The register import reads a finished payroll
+          back in; until this existed nothing went the other way, so these
+          figures were retyped into whoever runs pay. A plain anchor, not a
+          Link: it is a file download, not a route. */}
+      <p className="mt-2 print:hidden">
+        <a
+          href={`/api/payroll-export?jobId=${job.id}&weekStart=${isoDate(weekStart)}`}
+          className="text-sm font-medium text-link hover:underline"
+        >
+          Download hours for payroll (CSV) →
+        </a>
       </p>
 
       <div className="mb-4 mt-4 flex items-center justify-between gap-3 print:hidden">

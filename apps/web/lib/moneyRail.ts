@@ -208,6 +208,8 @@ export async function getMoneyRailStages(
               returnedOn: true,
               outcome: true,
               responseNotes: true,
+              responseUrl: true,
+              responseFileName: true,
             },
           },
         },
@@ -246,6 +248,15 @@ export async function getMoneyRailStages(
       dueBack: isoDate(rev.dueBack),
       returnedOn: isoDate(rev.returnedOn),
       outcome: rev.outcome,
+      // Passed through rather than nulled. This file only asks
+      // `submittalState` whose court a package is in, so it has no use for
+      // the link — but two nullable TEXT columns cost nothing to select, and
+      // a `RevisionData` that carries the row's real values everywhere is
+      // worth more than one that is honest in some callers and convenient in
+      // others. The alternative was writing null here and a comment
+      // explaining the lie.
+      responseUrl: rev.responseUrl,
+      responseFileName: rev.responseFileName,
       responseNotes: rev.responseNotes,
     }));
     return submittalState(revisions) === "WITH_GC";

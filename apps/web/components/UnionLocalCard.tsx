@@ -16,6 +16,7 @@ import { FringeScheduleList } from "@/components/FringeScheduleList";
 import { localToday } from "@/components/localToday";
 import { ratioLabel } from "@/lib/apprentice-ratio";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 
 const btn =
   "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
@@ -155,7 +156,14 @@ export function UnionLocalCard({
             />
           </label>
           <button type="submit" disabled={isPending} className={btn}>
-            {isPending ? "Saving…" : "Save ratio"}
+            {isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Saving…
+              </span>
+            ) : (
+              "Save ratio"
+            )}
           </button>
           <button type="button" disabled={isPending} onClick={() => setOpen("none")} className={btn}>
             Cancel
@@ -284,7 +292,14 @@ export function UnionLocalCard({
               </label>
             )}
             <button type="submit" disabled={isPending} className={btn}>
-              {isPending ? "Saving…" : "Add"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Add"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setOpen("none")} className={btn}>
               Cancel

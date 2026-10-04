@@ -35,6 +35,7 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { closeoutChip } from "@/components/closeoutPackageLabels";
 import type { CloseoutBlocker, CloseoutStage } from "@/lib/closeout-readiness";
 import { jobPickerLabel } from "@/components/jobLabels";
+import { Spinner } from "@/components/Spinner";
 
 export type CloseoutJobData = {
   id: string;
@@ -253,7 +254,14 @@ export function CloseoutJobCard({
                     {error && <p className="text-sm text-red-400">{error}</p>}
                     <div className="flex gap-2">
                       <button type="submit" disabled={isPending} className={primaryBtn}>
-                        {isPending ? "Saving…" : "Save"}
+                        {isPending ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <Spinner />
+                            Saving…
+                          </span>
+                        ) : (
+                          "Save"
+                        )}
                       </button>
                       <button
                         type="button"
@@ -419,7 +427,14 @@ export function CloseoutJobCard({
             {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex gap-2">
               <button type="submit" disabled={isPending} className={primaryBtn}>
-                {isPending ? "Saving…" : "Save warranty"}
+                {isPending ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Spinner />
+                    Saving…
+                  </span>
+                ) : (
+                  "Save warranty"
+                )}
               </button>
               <button type="button" disabled={isPending} onClick={() => setOpenForm("none")} className={btn}>
                 Cancel
@@ -520,7 +535,14 @@ export function CloseoutJobCard({
                     {error && <p className="text-sm text-red-400">{error}</p>}
                     <div className="flex gap-2">
                       <button type="submit" disabled={isPending} className={primaryBtn}>
-                        {isPending ? "Saving…" : "Save"}
+                        {isPending ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <Spinner />
+                            Saving…
+                          </span>
+                        ) : (
+                          "Save"
+                        )}
                       </button>
                       <button
                         type="button"
@@ -627,7 +649,14 @@ export function CloseoutJobCard({
             {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex gap-2">
               <button type="submit" disabled={isPending} className={primaryBtn}>
-                {isPending ? "Saving…" : "Record callback"}
+                {isPending ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Spinner />
+                    Saving…
+                  </span>
+                ) : (
+                  "Record callback"
+                )}
               </button>
               <button type="button" disabled={isPending} onClick={() => setOpenForm("none")} className={btn}>
                 Cancel

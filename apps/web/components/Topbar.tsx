@@ -43,6 +43,7 @@ export function Topbar({
   principal,
   showsInternal = false,
   businessScope,
+  routesWithData,
   helpChannel,
 }: {
   companyName: string;
@@ -53,6 +54,10 @@ export function Topbar({
   /** The three onboarding questions' answers, or undefined for "hide
    * nothing" — see navGroupsFor in navItems.tsx. */
   businessScope?: BusinessScopeAnswers;
+  /** The hrefs this company already has rows behind, out of the ones the
+   * answers could hide — gathered server-side and handed down as data, so
+   * a route with live records behind it keeps its door. See navGroupsFor. */
+  routesWithData?: readonly string[];
   /** Resolved on the SERVER by `helpChannelFromEnv()` — see the note at the
    * top of this file. Plain data, so the panel can only offer what the
    * action will accept. */
@@ -61,7 +66,13 @@ export function Topbar({
   return (
     <div className="print:hidden flex h-14 shrink-0 items-center justify-between gap-3 border-b-2 border-brand bg-rail px-4 sm:px-6">
       {/* Renders nothing above md — the desktop rail is always visible there. */}
-      <MobileNav companyName={companyName} principal={principal} showsInternal={showsInternal} businessScope={businessScope} />
+      <MobileNav
+        companyName={companyName}
+        principal={principal}
+        showsInternal={showsInternal}
+        businessScope={businessScope}
+        routesWithData={routesWithData}
+      />
       <div className="ml-auto flex items-center gap-3">
         {/* Search, on every page, first — left of Ask, the bell and the
             avatar. It is the safety net that lets features come off the

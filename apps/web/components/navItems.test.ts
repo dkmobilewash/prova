@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { activeFooterHref, activeGroupHeading, NAV_FOOTER, NAV_GROUPS, NAV_ITEMS, navFooterFor, navGroupsFor } from "./navItems";
 import { JOB_FUNCTIONS } from "@/lib/permissions";
-import { UNANSWERED_SCOPE, type BusinessScopeAnswers } from "@/lib/businessScope";
+import { HIDEABLE_ROUTES, UNANSWERED_SCOPE, type BusinessScopeAnswers } from "@/lib/businessScope";
 
 /**
  * NAV_ITEMS and NAV_GROUPS are two lists that have to agree, and only ONE
@@ -299,6 +299,123 @@ describe("the business-scope nav filter (onboarding questions)", () => {
     const paperTrail = groups.find((g) => g.heading === "Paper trail");
     expect(paperTrail).toBeDefined();
     expect(paperTrail?.items.map((i) => i.href)).not.toContain("/submittals");
+  });
+
+  it("hides Backcharges only when the company works direct for owners and never under a GC", () => {
+    const directOnly: BusinessScopeAnswers = {
+      contractingRelationship: "DIRECT_FOR_OWNERS",
+      doesPublicWork: null,
+      filesMonthlyPayApps: null,
+    };
+    expect(hrefsIn(navGroupsFor(owner, { businessScope: directOnly }))).not.toContain("/backcharges");
+
+    for (const relationship of ["UNDER_GENERAL_CONTRACTORS", "BOTH"] as const) {
+      const scope: BusinessScopeAnswers = { ...directOnly, contractingRelationship: relationship };
+      expect(hrefsIn(navGroupsFor(owner, { businessScope: scope })), relationship).toContain("/backcharges");
+    }
+  });
+
+  it("keeps Financials as a group when Backcharges goes — the money rail is not what this feature thins", () => {
+    // Financials holds five items and /backcharges is one of them. A
+    // direct-for-owners company must still get cash flow, WIP, phase codes
+    // and lien deadlines: the point of the filter is one fewer label, never
+    // a company losing its money pages.
+    const directOnly: BusinessScopeAnswers = {
+      contractingRelationship: "DIRECT_FOR_OWNERS",
+      doesPublicWork: false,
+      filesMonthlyPayApps: false,
+    };
+    const financials = navGroupsFor(owner, { businessScope: directOnly }).find(
+      (g) => g.heading === "Financials",
+    );
+    expect(financials).toBeDefined();
+    expect(financials?.items.map((i) => i.href)).toEqual([
+      "/cash-flow",
+      "/wip",
+      "/phase-codes",
+      "/lien-deadlines",
+    ]);
+  });
+
+  it("keeps a route on the rail when the company already has rows behind it, whatever it answered", () => {
+    // THE DATA GUARD, through the rail rather than through the pure rule.
+    // `routesWithData` is gathered by app/(app)/layout.tsx and handed down as
+    // data; lib/businessScopeData.ts is the only half that knows a table
+    // name. A company that has logged backcharges keeps the door to them
+    // even after answering "direct for owners".
+    const directOnly: BusinessScopeAnswers = {
+      contractingRelationship: "DIRECT_FOR_OWNERS",
+      doesPublicWork: false,
+      filesMonthlyPayApps: false,
+    };
+    const blind = hrefsIn(navGroupsFor(owner, { businessScope: directOnly }));
+    expect(blind).not.toContain("/backcharges");
+    expect(blind).not.toContain("/submittals");
+
+    const guarded = hrefsIn(
+      navGroupsFor(owner, { businessScope: directOnly, routesWithData: ["/backcharges"] }),
+    );
+    expect(guarded).toContain("/backcharges");
+    // And only that one: data behind one route does not un-hide its
+    // neighbours, which is what a guard that merely checked "is the list
+    // non-empty" would do.
+    expect(guarded).not.toContain("/submittals");
+    expect(guarded).not.toContain("/prevailing-wage");
+    expect(guarded).not.toContain("/union-compliance");
+  });
+
+  it("with data behind every hideable route, the rail is identical to an unanswered company's", () => {
+    // Derived from HIDEABLE_ROUTES so a route added to the map is covered the
+    // day it is added, and asserted non-empty so an empty map cannot pass
+    // this vacuously.
+    expect(HIDEABLE_ROUTES.length).toBeGreaterThan(0);
+    const answeredNoToEverything: BusinessScopeAnswers = {
+      contractingRelationship: "DIRECT_FOR_OWNERS",
+      doesPublicWork: false,
+      filesMonthlyPayApps: false,
+    };
+    expect(
+      hrefsIn(
+        navGroupsFor(owner, {
+          businessScope: answeredNoToEverything,
+          routesWithData: [...HIDEABLE_ROUTES],
+        }),
+      ),
+    ).toEqual(hrefsIn(navGroupsFor(owner)));
+  });
+
+  it("routesWithData never grants a route the capability filter refuses", () => {
+    // The data guard un-hides; it must not un-gate. An ACCOUNTING member
+    // cannot reach /submittals (MANAGE_JOBS is not in its list), and naming
+    // it as a route with data must not put it back on the rail — the same
+    // rule the test below pins for the answers themselves.
+    const accounting = { role: "MEMBER" as const, jobFunction: "ACCOUNTING" as const };
+    expect(
+      hrefsIn(
+        navGroupsFor(accounting, {
+          businessScope: UNANSWERED_SCOPE,
+          routesWithData: [...HIDEABLE_ROUTES],
+        }),
+      ),
+    ).not.toContain("/submittals");
+  });
+
+  it("routesWithData on an unanswered company changes nothing at all", () => {
+    expect(
+      hrefsIn(navGroupsFor(owner, { businessScope: UNANSWERED_SCOPE, routesWithData: [...HIDEABLE_ROUTES] })),
+    ).toEqual(hrefsIn(navGroupsFor(owner)));
+    expect(hrefsIn(navGroupsFor(owner, { businessScope: UNANSWERED_SCOPE, routesWithData: [] }))).toEqual(
+      hrefsIn(navGroupsFor(owner)),
+    );
+  });
+
+  it("every route the map can hide is a real rail item — a rule for an href nothing renders is dead", () => {
+    // Scope assertion in the direction the map cannot check itself: a typo in
+    // a key ("/backcharge") would hide nothing and no test of the rule would
+    // notice, because nothing is ever missing from a filter that matches
+    // nothing. Checked against the rail the app actually builds.
+    const everyHref = hrefsIn(navGroupsFor(owner, { showsInternal: true }));
+    for (const href of HIDEABLE_ROUTES) expect(everyHref, href).toContain(href);
   });
 
   it("never hides anything the plain capability filter already removed, and vice versa — the two never fight", () => {

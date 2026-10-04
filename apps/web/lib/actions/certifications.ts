@@ -13,6 +13,7 @@ import {
   isUniqueConstraintError,
   runAction,
   type ActionResult,
+  optionalLinkOrThrow,
 } from "./shared";
 
 /** Actions in this module RETURN their failures instead of throwing them.
@@ -55,20 +56,6 @@ function optionalDate(formData: FormData, key: string, label: string): Date | nu
  * 1MB, and a photo of a card taken on a phone will exceed it. Only http(s)
  * is accepted: this string goes straight into an href, so a `javascript:`
  * or `data:` URL would be an injection vector. Same guard as drawings. */
-function optionalLink(formData: FormData, key: string): string | null {
-  const raw = text(formData, key);
-  if (!raw) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    throw new InputError("The link needs to be a full URL, starting with https://");
-  }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new InputError("The link needs to start with https://");
-  }
-  return parsed.toString();
-}
 
 type Kind = (typeof CERTIFICATION_KINDS)[number];
 
@@ -140,7 +127,7 @@ export async function recordWorkerCertification(formData: FormData): Promise<Act
         issuedOn,
         expiresOn,
         notes: text(formData, "notes") || null,
-        documentUrl: optionalLink(formData, "documentUrl"),
+        documentUrl: optionalLinkOrThrow(formData, "documentUrl"),
         documentLabel: text(formData, "documentLabel") || null,
         recordedByUserId: user.id,
       },
@@ -192,7 +179,7 @@ export async function updateWorkerCertification(
         issuedOn,
         expiresOn,
         notes: text(formData, "notes") || null,
-        documentUrl: optionalLink(formData, "documentUrl"),
+        documentUrl: optionalLinkOrThrow(formData, "documentUrl"),
         documentLabel: text(formData, "documentLabel") || null,
       },
     });

@@ -84,6 +84,8 @@ export default async function RfisPage({
     dueBy: isoDate(rfi.dueBy),
     answeredOn: isoDate(rfi.answeredOn),
     answer: rfi.answer,
+    answerUrl: rfi.answerUrl,
+    answerFileName: rfi.answerFileName,
     costImpact: rfi.costImpact,
     scheduleImpact: rfi.scheduleImpact,
     askedByName: rfi.askedBy?.name ?? null,

@@ -182,3 +182,83 @@ describe("the import batch limit and remaining flag", () => {
     expect(summary.message).toMatch(/press Import photos again/);
   });
 });
+
+/**
+ * THE PHOTO STORE REFUSING A WRITE USED TO BE A REDACTED CRASH WITH NO RECORD.
+ *
+ * `putImpl` was the one call in `importOne` outside a try/catch, while every
+ * other failure in that function returns "failed". So a blob-store problem threw
+ * past `explain()`, out of the Server Action, and into production's redaction —
+ * the operator saw a digest.
+ *
+ * The message was the lesser half. The throw happened BEFORE the summary block,
+ * so `lastImportedAt`, `lastImportStatus`, `lastImportMessage` and the sync-log
+ * row were never written, while rows already stored in that press persisted.
+ * `companycam.prisma` says those three columns exist because "an import that
+ * fails silently is indistinguishable from one nobody ran" — and this path made
+ * them do precisely nothing.
+ *
+ * It is not an exotic case: `BLOB_READ_WRITE_TOKEN` is not in
+ * `COMPANYCAM_REQUIRED_ENV`, so a card reads "Connected" and offers Import
+ * photos on an install with no store at all — and then every photo in the press
+ * takes this path.
+ */
+describe("a photo store that refuses the write", () => {
+  const refusingPut = (async () => {
+    throw new Error("No token found. Set BLOB_READ_WRITE_TOKEN.");
+  }) as unknown as NonNullable<Parameters<typeof runCompanyCamImport>[2]>["putImpl"];
+
+  it("does not throw out of the import", async () => {
+    photosByProject.proj_1 = [
+      { id: "1", processingStatus: "processed" },
+      { id: "2", processingStatus: "processed" },
+    ];
+    await expect(
+      runCompanyCamImport("company_A", "link_1", { putImpl: refusingPut }),
+    ).resolves.toBeDefined();
+  });
+
+  it("STILL WRITES THE SUMMARY ROW — the half that actually hurt", async () => {
+    photosByProject.proj_1 = [{ id: "1", processingStatus: "processed" }];
+    await runCompanyCamImport("company_A", "link_1", { putImpl: refusingPut });
+
+    /* The original defect in one assertion. The throw used to skip this block
+     * entirely, so the card kept whatever it last said — including a SUCCESS
+     * from an earlier press — while this one failed. */
+    expect(
+      linkUpdates,
+      "a press that failed to store anything wrote no summary row, so the card " +
+        "still shows the previous result and the failure is invisible",
+    ).toHaveLength(1);
+    expect(linkUpdates[0].data.lastImportStatus).toBe("FAILURE");
+  });
+
+  it("counts them apart from fetch failures, because the fault is ours", async () => {
+    photosByProject.proj_1 = [
+      { id: "1", processingStatus: "processed" },
+      { id: "2", processingStatus: "processed" },
+    ];
+    const summary = await runCompanyCamImport("company_A", "link_1", { putImpl: refusingPut });
+
+    expect(summary.unstorable).toBe(2);
+    expect(summary.imported).toBe(0);
+    expect(
+      summary.failed,
+      "these photos WERE fetched — counting them as fetch failures blames " +
+        "CompanyCam for our own storage being unavailable",
+    ).toBe(0);
+    expect(created, "nothing should have been written to the database").toHaveLength(0);
+  });
+
+  it("says whose problem it is, in the sentence the operator reads", async () => {
+    photosByProject.proj_1 = [{ id: "1", processingStatus: "processed" }];
+    const summary = await runCompanyCamImport("company_A", "link_1", { putImpl: refusingPut });
+
+    expect(summary.message).toContain("couldn't be saved");
+    expect(
+      summary.message,
+      "the operator's next move depends on knowing this is not a CompanyCam " +
+        "outage — without it they go and check CompanyCam, or ring them",
+    ).toContain("not a problem at CompanyCam");
+  });
+});

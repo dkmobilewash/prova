@@ -157,6 +157,8 @@ export const EN = {
   "drawings.empty.body": "Sets and revisions are recorded on the web, off the transmittal.",
   "schedule.empty.title": "Nobody is scheduled on this job.",
   "schedule.empty.body": "Days are planned on the web, under Deployment.",
+  "jobs.noMatch": "No jobs match that",
+  "jobs.search": "Search jobs",
   "jobs.onThisJob": "On this job",
   "jobs.empty.title": "No jobs yet",
   "jobs.empty.body": "Jobs appear here once they're created in the office.",
@@ -204,12 +206,13 @@ export const EN = {
   "nav.drawings": "Drawings",
   "nav.schedule": "Schedule",
   "nav.outbox": "Waiting to send",
+  "nav.tab.outbox": "Outbox",
   "nav.alerts": "Alerts",
 
   // The More tab. In scope for a reason that is almost circular: it is
   // where the language switch lives, and making somebody read an English
   // screen to find "Idioma" is the whole problem in miniature.
-  "settings.title": "More",
+  "settings.title": "Settings",
   "settings.account": "Account",
   "settings.account.owner": "Account owner — everything on this phone is yours to see",
   "settings.account.role":
@@ -451,9 +454,6 @@ export const EN = {
   "schedule.noHours": "No hours logged",
 
   // home-today
-  "home.greeting.morning": "Good morning",
-  "home.greeting.afternoon": "Good afternoon",
-  "home.greeting.evening": "Good evening",
   "home.today": "Today",
   "common.loading": "Loading…",
   "home.empty.notYours.title": "Today isn't your screen",
@@ -501,6 +501,10 @@ export const EN = {
   "common.throwAway": "Throw away",
   "common.notSavedItems.one": "1 item wasn't saved",
   "common.notSavedItems.many": "{count} items weren't saved",
+  /** The wordmark. Identical in both tables on purpose: a brand name is
+   * not translated, and the census cannot tell a brand from a sentence. */
+  "brand.wordmark": "C STREAM",
+  "header.avatar.a11y": "Open settings",
   "job.chip.on": "On this job",
   "job.chip.none": "No job picked",
   "job.chip.choose": "Choose one to get started",

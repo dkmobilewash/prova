@@ -322,7 +322,17 @@ export function ConfirmDelete({
 
   const confirmButton = action ? (
     <form action={action}>
-      <SubmitButton type="submit" className={confirmClassName}>
+      {/* `spinner={false}` is a GEOMETRY decision, not a style one, and it is
+          the same one this component's header states above: once the delete is
+          armed, this renders exactly the DOM it rendered before. A spinner
+          WIDENS the confirm, and the armed pair's boxes were measured in real
+          Chromium — see CLAUDE.md's "Cancel inherits the delete pixel" entry,
+          whose third axis is a confirm drifting under the delete's old pixel
+          because the pair stopped covering the same span. Nothing here may
+          move them without that measurement, so this button keeps its word
+          alone. The other 47 SubmitButtons in the app are not in a measured
+          cluster and do get one. */}
+      <SubmitButton type="submit" spinner={false} className={confirmClassName}>
         {confirmLabel}
       </SubmitButton>
     </form>

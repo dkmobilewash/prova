@@ -210,6 +210,22 @@ export async function loadJobMedia(
     capturedAtInputValue: formatCapturedAtInputValue(row.capturedAt, timeZone),
     sizeLabel: formatByteSize(row.byteSize),
     capturedByName: row.capturedBy?.name ?? null,
+    /* WHERE THIS PHOTO CAME FROM, and the reason it is derived here rather
+       than stored as a label: `companycamPhotoId` is the provenance, and
+       `media.prisma` says in as many words that "the galleries derive a
+       'CompanyCam' mark from this being non-null."
+
+       They did not. The column was written on every import and read by
+       nothing — seven references in the whole repo, all inside
+       `lib/companycam/import.ts`. The card the import promises ("marked as
+       imported") could not be drawn, because this map dropped the field
+       before the component ever saw it. The row has always carried it: the
+       query above uses `include`, so every scalar comes back.
+
+       That is the "written, documented, and never called" shape with the
+       missing half on the READ side, which is the half no census here can
+       see — a unique index guards the write, so every test stayed green. */
+    importedFrom: row.companycamPhotoId ? ("CompanyCam" as const) : null,
     sharedWithClientLabel: row.sharedWithClientAt
       ? formatCapturedAt(row.sharedWithClientAt, timeZone)
       : null,

@@ -26,6 +26,7 @@ import {
 import { localToday } from "@/components/localToday";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 
 export type MaterialOrderRowData = MaterialOrderDefaults & {
   id: string;
@@ -110,7 +111,14 @@ export function MaterialOrderRow({
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
-              {isPending ? "Saving…" : "Save changes"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save changes"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
               Cancel
@@ -184,7 +192,14 @@ export function MaterialOrderRow({
 
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
-              {isPending ? "Saving…" : "Record delivery"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Record delivery"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
               Cancel

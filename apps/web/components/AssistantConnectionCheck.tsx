@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { checkAssistantConnection } from "@/lib/actions/ask";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * One button on Settings → Assistant. The action returns a sentence either
@@ -32,7 +33,14 @@ export function AssistantConnectionCheck() {
         disabled={isPending}
         className="inline-flex w-fit items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800 disabled:opacity-50"
       >
-        {isPending ? "Checking…" : "Check connection"}
+        {isPending ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Spinner />
+            Checking…
+          </span>
+        ) : (
+          "Check connection"
+        )}
       </button>
       {result && (
         <p className={`text-sm ${result.ok ? "text-tag-green-ink" : "text-tag-rose-ink"}`}>{result.text}</p>

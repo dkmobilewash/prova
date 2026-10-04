@@ -8,6 +8,39 @@
    from the tokens in tailwind.config.ts, which is the whole point of the
    token pass: this re-skin was the config file plus a sweep of hardcoded
    utilities, not a rewrite of this file. */
+/* THE BROWSER PAINTS CONTROLS TOO, AND IT WAS STILL PAINTING THEM FOR A
+   LIGHT PAGE. Without this declaration a `<input type="date">` gets
+   Chrome's light-mode calendar glyph — measured at `#000000`, drawn on our
+   `#0f0f0f` field, which is 1.1:1 against the 3:1 floor this project sets
+   for non-text. Not dim. Invisible: the pick-a-date button on 112 date
+   fields was there the whole time and could not be seen. With
+   `color-scheme: dark` the same 35-pixel glyph is painted `#ffffff` —
+   19.2:1 — and the file-input chip stops being a near-white button on a
+   dark page.
+
+   Measured in real Chromium rather than reasoned about, because no test in
+   this repo can see it: happy-dom does no layout and no painting, so the
+   numbers above come from screenshotting the control and sampling pixels.
+   The instrument's own controls both held — the declaration read `normal`
+   then `dark`, and a plain text field, which our CSS paints entirely, was
+   byte-identical in both arms.
+
+   UNCONDITIONAL, and that is a fact about this app rather than a
+   shortcut. There is no `darkMode` in tailwind.config.ts and no
+   `data-theme` anywhere: the palette flipped to dark in full on
+   2026-09-11. The five printable documents that DO sit on white paper —
+   WH-347, DAS-140, DAS-142, the photo report, the union remittance, the
+   pay application — are white CARDS inside this dark shell, not white
+   pages, and each has zero native controls, so nothing on them is painted
+   by the browser and nothing on them is touched by this line. That is
+   what makes a root declaration safe instead of a sweep, and it is what
+   `colorSchemeGround.test.ts` holds: put a date field on white paper and
+   this declaration would paint it dark, so the test fails rather than the
+   document. */
+:root {
+  color-scheme: dark;
+}
+
 body {
   background-color: theme("colors.canvas");
   color: theme("colors.ink");

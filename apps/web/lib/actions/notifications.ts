@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { after } from "next/server";
 import { requireCompanyContext } from "@/lib/auth";
 import { dispatchAlertDigest } from "@/lib/notification-dispatch";
 import { dispatchAlertPush } from "@/lib/notification-push";
@@ -85,11 +86,38 @@ export async function sendMyAlertDigest(): Promise<ActionResult> {
   );
 
   // The push half is independent of the email outcome: its own claim
-  // namespace, its own config. Fire-and-forget — this button's result
-  // keeps speaking for the email, and the push outcome lands in the log.
-  void dispatchAlertPush(
-    { id: user.id, companyId: company.id, role: user.role, jobFunction: user.jobFunction },
-    today,
+  // namespace, its own config. Still fire-and-forget as far as the caller
+  // is concerned — this button's result keeps speaking for the email —
+  // but `after` rather than `void`, and the difference is the whole bug.
+  //
+  // WHY. This was `void dispatchAlertPush(...)`, and the push never once
+  // arrived while the email always did. A floating promise in a server
+  // action is not "later", it is "until the response is sent": Vercel may
+  // tear the function down the moment this action returns, and whatever
+  // the promise had left to do dies with it. `dispatchAlertPush` makes
+  // FIVE database round-trips — device tokens, loadAlerts, sent keys,
+  // claim, release — before it ever reaches `pushToUser`, so its window
+  // is hundreds of milliseconds wide.
+  //
+  // The control that named it: `assignCrewMember` is ALSO fire-and-forget
+  // (`void pushToUser(...)`, lib/actions/jobs.ts) and its push DOES
+  // arrive — because it is one HTTP call with a millisecond-wide window.
+  // Same shape, different odds. Both pushes were sent to the same phone
+  // 49 minutes apart on 2026-09-27; one landed and one did not, which is
+  // what ruled out the token, the key, the permission and the transport.
+  //
+  // It also explains the silence. Nothing was ever logged about the push
+  // failing, because nothing was alive to log it — so this bug could not
+  // be found from the server's own output, only by missing the banner.
+  //
+  // `after` keeps the response immediate and keeps the work alive until
+  // it finishes. The cron path never had this bug: `notification-run.ts`
+  // AWAITS `pushDispatch`, which is why the schedule was never suspect.
+  after(() =>
+    dispatchAlertPush(
+      { id: user.id, companyId: company.id, role: user.role, jobFunction: user.jobFunction },
+      today,
+    ),
   );
 
   revalidatePath("/alerts");

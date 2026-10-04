@@ -1,30 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { StatusBadge } from "@prova/ui";
-import { prisma } from "@prova/db";
 import { money } from "@/lib/money";
 import { countSharedJobMediaByJob } from "@/lib/job-media-query";
-import { isPortalAccessRevoked } from "@/lib/access-tokens";
+import { loadPortalContact } from "@/lib/portal-query";
 
 export default async function PortalPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
 
-  const contact = await prisma.contact.findUnique({
-    where: { portalToken: token },
-    include: {
-      company: true,
-      jobs: {
-        orderBy: { createdAt: "desc" },
-        include: { lineItems: { where: { isDeleted: false } } },
-      },
-    },
-  });
-
-  // Issue #106 finding 2: same revoked/INACTIVE check as
-  // /portal/[token]/jobs/[jobId] — see that page's comment for why this
-  // 404s rather than showing a different error for "revoked" than for
-  // "never existed".
-  if (!contact || isPortalAccessRevoked(contact)) {
+  // The whole boundary — which contact, which jobs, which fields — lives in
+  // lib/portal-query.ts. Null is "no such token, revoked, or inactive", kept
+  // deliberately indistinguishable; see that module and lib/access-tokens.ts.
+  const contact = await loadPortalContact(token);
+  if (!contact) {
     notFound();
   }
 
@@ -57,8 +45,16 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
       ) : (
         <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {contact.jobs.map((job) => {
+            /* The null check is explicit even though `loadPortalContact`
+               already excludes cost-only lines. It read
+               `Number(item.quantity) * Number(item.unitPrice)` and relied on
+               `Number(null)` being 0 — the same answer, reached by coercion
+               rather than by saying so, and differing from the shape
+               `ContractSummary` uses for the very same figure. Two formulas
+               that agree today is how this repo has been bitten before. */
             const total = job.lineItems.reduce(
-              (sum, item) => sum + Number(item.quantity) * Number(item.unitPrice),
+              (sum, item) =>
+                sum + (item.unitPrice != null ? Number(item.quantity) * Number(item.unitPrice) : 0),
               0,
             );
             const photoCount = sharedPhotoCounts.get(job.id) ?? 0;

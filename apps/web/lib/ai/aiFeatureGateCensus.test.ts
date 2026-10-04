@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { stripComments } from "./stripComments";
 import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { AI_FEATURE_KEYS } from "./settings";
 import type { AiFeatureKey } from "@prova/integrations/src/models";
 
@@ -50,55 +51,6 @@ const REPO = join(HERE, "..", "..", "..", "..");
 const PACKAGE_SRC = join(REPO, "packages", "integrations", "src");
 const APP = join(REPO, "apps", "web");
 
-/**
- * Comments out, string contents kept.
- *
- * A regex would do this wrong in a way that matters: `"https://..."` contains
- * `//`, and cutting from there to end of line would delete the rest of a real
- * line of code — which fails OPEN, since less text means fewer matches means a
- * smaller set means nothing missing. So this walks characters and tracks which
- * of the five states it is in. Proved against a fixture at the bottom of this
- * file rather than assumed.
- */
-export function stripComments(source: string): string {
-  let out = "";
-  let i = 0;
-  while (i < source.length) {
-    const two = source.slice(i, i + 2);
-    if (two === "//") {
-      while (i < source.length && source[i] !== "\n") i += 1;
-      continue;
-    }
-    if (two === "/*") {
-      i += 2;
-      while (i < source.length && source.slice(i, i + 2) !== "*/") i += 1;
-      i += 2;
-      continue;
-    }
-    const quote = source[i];
-    if (quote === '"' || quote === "'" || quote === "`") {
-      out += quote;
-      i += 1;
-      while (i < source.length) {
-        if (source[i] === "\\") {
-          out += source.slice(i, i + 2);
-          i += 2;
-          continue;
-        }
-        out += source[i];
-        if (source[i] === quote) {
-          i += 1;
-          break;
-        }
-        i += 1;
-      }
-      continue;
-    }
-    out += source[i];
-    i += 1;
-  }
-  return out;
-}
 
 /** Every `.ts` under a directory, recursively, tests excluded. */
 function sourceFiles(root: string): string[] {
@@ -207,6 +159,38 @@ function askDefaultFeature(code: string): string | null {
  */
 const GATE_EXEMPT = "lib/ask/eval/harness.ts";
 
+/**
+ * MODEL-CALLING FUNCTIONS THAT ARE INSTRUMENTS, NOT FEATURES — a SECOND and
+ * differently-shaped exemption, added 2026-10-02 with `countSymbols`.
+ *
+ * The exemption above is for a file that imports a model caller and is not
+ * gated. This one is for a function that **no app file imports at all**, which
+ * trips a different assertion: the one requiring every model-calling function to
+ * have a caller, because "written, documented, and never called" is a recurring
+ * shape here and that assertion is how it gets caught.
+ *
+ * `countSymbols` (`packages/integrations/src/symbols.ts`) is deliberately in that
+ * state. `docs/ai/DECISIONS.md` carries *"whether symbol-counting can reach a
+ * precision an estimator would accept"* as an open question, and
+ * `FEATURE-AUDIT.md:469` carries drawing takeoff via computer vision as Missing.
+ * The function exists so an eval can answer the question with a number — the
+ * sequence the Haiku title-block decision followed — and wiring it to a feature
+ * is a separate PR that needs the answer first. It takes no company, so gating it
+ * would mean inventing a company id to ask that company's permission to run our
+ * own eval, which is the same argument `GATE_EXEMPT` rests on.
+ *
+ * ── AND IT IS ASSERTED, NOT ASSERTED-TO-BE-FINE ──
+ *
+ * An exemption list is a hole, so the test below PINS the state that justifies
+ * each entry rather than merely skipping it: an instrument must be imported by
+ * at least one `*.eval.ts`, and by NO other file in the app. The first half
+ * means it is not dead; the second means it has not quietly become a path a
+ * customer reaches. The moment somebody wires one into an action, this census
+ * fails and says to gate it and take it off this list — which is exactly what
+ * should happen.
+ */
+const INSTRUMENTS_ONLY = ["countSymbols"] as const;
+
 describe("every AI feature is behind the per-company switch", () => {
   const { calls, siteCount, fileCount } = modelCalls();
 
@@ -274,6 +258,10 @@ describe("every AI feature is behind the per-company switch", () => {
     expect(byFn.size).toBeGreaterThanOrEqual(5);
     expect(verdicts.length).toBeGreaterThanOrEqual(byFn.size);
     for (const fn of byFn.keys()) {
+      // An INSTRUMENT is expected to have no app caller — that is its whole
+      // state, and the test below pins it instead. Skipping it here without
+      // that test would just be a hole.
+      if ((INSTRUMENTS_ONLY as readonly string[]).includes(fn)) continue;
       expect(
         verdicts.filter((verdict) => verdict.fn === fn && !verdict.exempt),
         `nothing in apps/web imports ${fn} — either it is dead, or this census stopped finding its callers`,
@@ -284,6 +272,51 @@ describe("every AI feature is behind the per-company switch", () => {
     expect(
       ungated.map((verdict) => `${verdict.file} calls ${verdict.fn} without aiGate(…, "${verdict.feature}")`),
     ).toEqual([]);
+  });
+
+  it("every INSTRUMENT is reached by an eval and by nothing else", () => {
+    // The pin behind `INSTRUMENTS_ONLY`. Two halves, and both matter:
+    //   - imported by at least one *.eval.ts  -> it is not dead code
+    //   - imported by no other app file       -> it is not a customer path
+    // A function that drifts either way fails here, naming which.
+    const everyFile: { path: string; code: string }[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === "node_modules" || entry.name === ".next") continue;
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+        } else if (/\.tsx?$/.test(entry.name)) {
+          everyFile.push({ path: relative(APP, full), code: stripComments(readFileSync(full, "utf8")) });
+        }
+      }
+    };
+    walk(APP);
+    // The scope assertion, because nothing is ever missing from a directory you
+    // do not walk: this walk INCLUDES the eval and test files the census's own
+    // `sourceFiles` deliberately skips, so it must be the larger set.
+    expect(everyFile.length).toBeGreaterThan(sourceFiles(APP).length);
+
+    for (const fn of INSTRUMENTS_ONLY) {
+      const importers = everyFile.filter((file) =>
+        new RegExp(`import[^;]*\\b${fn}\\b[^;]*from\\s*"@prova/integrations"`, "s").test(file.code),
+      );
+      const evals = importers.filter((file) => /\.eval\.tsx?$/.test(file.path));
+      const others = importers.filter((file) => !/\.eval\.tsx?$/.test(file.path));
+
+      expect(
+        evals.map((file) => file.path),
+        `${fn} is listed as an eval-only instrument but NO *.eval.ts imports it — so it is dead code, ` +
+          `not an instrument. Either point an eval at it or delete it.`,
+      ).not.toEqual([]);
+
+      expect(
+        others.map((file) => file.path),
+        `${fn} is listed as an eval-only instrument and these NON-eval files import it. If it is now a ` +
+          `feature, gate it behind aiGate(…) and remove it from INSTRUMENTS_ONLY — an instrument that a ` +
+          `customer can reach is an ungated AI feature.`,
+      ).toEqual([]);
+    }
   });
 
   it("keeps the one exemption an offline eval harness", () => {
@@ -299,12 +332,26 @@ describe("every AI feature is behind the per-company switch", () => {
 
   it("covers every feature the switch offers, and says which one is not built", () => {
     const covered = new Set(calls.map((call) => call.feature));
-    // PLAN_INGESTION is in the enum and has no model call yet: the switch was
-    // added BEFORE the feature so it cannot be retrofitted onto call sites
-    // afterwards, which is how the other six came to need this census. When
-    // ingestion lands, it joins `covered` and this list goes empty — and if
-    // somebody ships it ungated, the assertion above is what fails.
-    const notBuilt: AiFeatureKey[] = ["PLAN_INGESTION"];
+    // EMPTY NOW, AND THIS LIST DOING ITS JOB IS WHY. It held `PLAN_INGESTION`
+    // from #533 until 2026-09-28: the switch was added BEFORE the feature so it
+    // could not be retrofitted onto call sites afterwards, which is how the other
+    // six came to need this census in the first place. Its own comment said "when
+    // ingestion lands, it joins `covered` and this list goes empty", and that is
+    // what happened — `extractSheetTitleBlock` is gated by
+    // `lib/plan-ingest/titleBlock.ts`.
+    //
+    // Worth knowing what the landing looked like, because the gate was nearly
+    // invisible to this file: that stage injects its ports so it can be tested
+    // without a database, and the first version injected `typeof aiGate` — so the
+    // literal call lived at the call site and `deps.gate(...)` was all this census
+    // could see. It refused, correctly. The fix was not to teach this file about
+    // dependency injection but to stop the gate being swappable: the feature is
+    // bound once in the stage's production wiring, `aiGate(companyId,
+    // "PLAN_INGESTION")`, so no caller can pass a different one.
+    //
+    // A new feature added to the enum and not yet built goes back in here, with
+    // the date and the reason. Leaving it empty is the normal state.
+    const notBuilt: AiFeatureKey[] = [];
     const missing = AI_FEATURE_KEYS.filter((key) => !covered.has(key) && !notBuilt.includes(key));
     expect(missing).toEqual([]);
     for (const key of notBuilt) expect(covered.has(key)).toBe(false);

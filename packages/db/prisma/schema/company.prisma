@@ -91,6 +91,7 @@ model Company {
   craftClassifications      CraftClassification[]
   phaseCodes                PhaseCode[]
   fringeRateSchedules       FringeRateSchedule[]
+  determinationWageRates    DeterminationWageRate[]
   apprenticeRatioRules      ApprenticeRatioRule[]
   insurancePolicies         CompanyInsurancePolicy[]
   bonds                     CompanyBond[]
@@ -274,6 +275,10 @@ model User {
   sharedJobMedia                       JobMedia[]                    @relation("JobMediaSharedBy")
   jobMediaAnnotations                  JobMediaAnnotation[]          @relation("JobMediaAnnotationBy")
   takeoffPlansUploaded                 TakeoffPlan[]                 @relation("TakeoffPlanUploadedBy")
+  planSheetProposalsAccepted           PlanSheetProposal[]           @relation("PlanSheetProposalAcceptedBy")
+  bidAddendumReadingsStarted           BidAddendumReading[]
+  bidSpecReadingsStarted               BidSpecReading[]
+  bidAddendumDecisions                 BidAddendumItemDecision[]
   planIngestJobsStarted                PlanIngestJob[]
   takeoffCalibrations                  TakeoffScaleCalibration[]     @relation("TakeoffCalibrationBy")
   takeoffMeasurements                  TakeoffMeasurement[]          @relation("TakeoffMeasurementBy")

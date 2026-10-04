@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { pushPaymentToQuickBooks } from "@/lib/actions";
 import { Hint } from "@/components/Hint";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * Sends one recorded payment to QuickBooks, applied to its invoice.
@@ -98,7 +99,14 @@ export function PushPaymentToQuickBooks({
           disabled={isPending || blocked}
           className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-slate-500 disabled:opacity-50"
         >
-          {isPending ? "Sending…" : linkedQboId ? "Re-send payment" : "Send payment to QuickBooks"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Sending…
+            </span>
+          ) : (
+            linkedQboId ? "Re-send payment" : "Send payment to QuickBooks"
+          )}
         </button>
       </Hint>
 

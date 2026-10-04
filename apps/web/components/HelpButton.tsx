@@ -12,6 +12,7 @@ import {
 } from "@/lib/help-request";
 import { inputClass } from "@/components/RfiFields";
 import { WalkthroughTour, isAnchorShown } from "@/components/WalkthroughTour";
+import { Spinner } from "@/components/Spinner";
 import { walkthroughFor, type Walkthrough } from "@/lib/walkthroughs";
 import { browserStorage, markFinished, readFinished, shownSteps } from "@/lib/walkthroughs/engine";
 import { WALKTHROUGH_EVENT } from "@/lib/empty-state-events";
@@ -380,7 +381,14 @@ export function HelpButton({
                     disabled={isPending}
                     className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
                   >
-                    {isPending ? "Sending…" : "Send"}
+                    {isPending ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Spinner />
+                        Sending…
+                      </span>
+                    ) : (
+                      "Send"
+                    )}
                   </button>
                   <button
                     type="button"

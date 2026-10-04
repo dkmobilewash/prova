@@ -6,6 +6,7 @@ import type { ActionResult } from "@/lib/actions/shared";
 import { EquipmentFields, type EquipmentFieldValues } from "@/components/EquipmentFields";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 
 // One definition for the row's controls so they can't drift back under 44px a
 // button at a time. `inline-flex` + `items-center` is what makes min-h centre
@@ -93,7 +94,14 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
               disabled={isPending}
               className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
-              {isPending ? "Saving…" : "Save changes"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save changes"
+              )}
             </button>
             <button
               type="button"

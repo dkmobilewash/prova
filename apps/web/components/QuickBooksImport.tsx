@@ -6,6 +6,7 @@ import type { Bucket, QuickBooksPlan } from "@/lib/quickbooks-import";
 import { MAX_IMPORT_ROWS } from "@/lib/quickbooks-import";
 import { Counts, LeftOutList } from "@/components/JobberImport";
 import { ExistingList, Problems } from "@/components/SpreadsheetImport";
+import { Spinner } from "@/components/Spinner";
 import { money } from "@/lib/money";
 
 /**
@@ -270,7 +271,14 @@ export function QuickBooksImport() {
               aria-busy={saving || undefined}
               className="min-h-11 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {saving ? "Saving…" : total === 0 ? "Nothing new to add" : `Confirm — add ${total} ${total === 1 ? "record" : "records"}`}
+              {saving ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                total === 0 ? "Nothing new to add" : `Confirm — add ${total} ${total === 1 ? "record" : "records"}`
+              )}
             </button>
             <span className="text-xs text-ink-muted">
               Nothing already in C Stream is changed, and nothing is written to QuickBooks. Up to{" "}

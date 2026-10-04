@@ -40,6 +40,7 @@ type Bid = {
    * fixtures. */
   addenda: [];
   requirements: [];
+  specSections: [];
 };
 
 function bid(over: Partial<Bid> & { id: string }): Bid {
@@ -55,6 +56,7 @@ function bid(over: Partial<Bid> & { id: string }): Bid {
     lines: [],
     addenda: [],
     requirements: [],
+    specSections: [],
     ...over,
   };
 }

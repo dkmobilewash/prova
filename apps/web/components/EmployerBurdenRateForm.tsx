@@ -7,6 +7,7 @@ import {
   type EmployerBurdenRateDefaults,
 } from "@/components/EmployerBurdenRateFields";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 
 const EMPTY: EmployerBurdenRateDefaults = {
   effectiveDate: null,
@@ -77,7 +78,14 @@ export function EmployerBurdenRateForm() {
           disabled={isPending}
           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Save rate"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save rate"
+          )}
         </button>
         <button
           type="button"

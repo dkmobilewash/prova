@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { updateSalesLead } from "@/lib/actions";
 import { SalesLeadFields, type SalesLeadDefaults } from "@/components/SalesLeadFields";
 import { SubmitButton } from "@/components/SubmitButton";
+import { Spinner } from "@/components/Spinner";
 
 export function SalesLeadEditForm({ leadId, defaults }: { leadId: string; defaults: SalesLeadDefaults }) {
   const [isPending, startTransition] = useTransition();
@@ -41,7 +42,14 @@ export function SalesLeadEditForm({ leadId, defaults }: { leadId: string; defaul
         disabled={isPending}
         className="mt-2 inline-flex w-fit items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
       >
-        {isPending ? "Saving…" : "Save"}
+        {isPending ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Spinner />
+            Saving…
+          </span>
+        ) : (
+          "Save"
+        )}
       </SubmitButton>
     </form>
   );

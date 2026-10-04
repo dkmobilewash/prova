@@ -5,7 +5,8 @@ import { useState, useTransition } from "react";
 import { ActionForm } from "@/components/ActionForm";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { SubmitButton } from "@/components/SubmitButton";
-import { deleteBidQuote, recordBidQuoteDecline, saveBidQuote } from "@/lib/actions";
+import { deleteBidQuote, recordBidQuoteDecline, saveBidQuote, type QuoteSuggestion } from "@/lib/actions";
+import { QuoteReader, QuoteReadingNotes } from "@/components/QuoteReader";
 import {
   exclusionLines,
   levelBid,
@@ -37,11 +38,16 @@ const money = (value: number) =>
 
 export function BidLevelling({
   bidInvitationId,
+  companyId,
   quotes,
   vendors,
   today,
 }: {
   bidInvitationId: string;
+  /** Needed only by the quote reader's upload, which is scoped to the COMPANY:
+   *  a `BidInvitation` carries no `jobId`, and on a bid nobody has won there is
+   *  no job to file an attachment under. */
+  companyId: string;
   quotes: BidQuoteRow[];
   vendors: { id: string; name: string }[];
   /** The reader's calendar day, resolved on the server. Passed in rather than
@@ -67,7 +73,7 @@ export function BidLevelling({
     });
   };
 
-  const formProps = { bidInvitationId, vendors, usedLabels };
+  const formProps = { bidInvitationId, companyId, vendors, usedLabels };
 
   if (quotes.length === 0 && adding === null) {
     return (
@@ -378,8 +384,18 @@ function DeclineButton({
  * carries no `requestedOn`/`dueBy`, cannot erase the record of having asked at
  * the moment the answer arrives.
  */
-function QuoteForm({
+/**
+ * EXPORTED FOR ONE TEST, and the reason is the defect it guards.
+ *
+ * `quoteReaderNote.test.tsx` has to mount this component rather than
+ * `QuoteReader`, because the bug it pins does not exist in either component
+ * alone — `QuoteReader` kept its own message correctly and this form remounted
+ * correctly. It was the COMPOSITION: a `key` here, state there. A test of either
+ * half passes while the feature is broken, which is why the export is worth it.
+ */
+export function QuoteForm({
   bidInvitationId,
+  companyId,
   quote,
   vendors,
   usedLabels,
@@ -387,26 +403,77 @@ function QuoteForm({
   onDone,
 }: {
   bidInvitationId: string;
+  companyId: string;
   quote: BidQuoteRow | null;
   vendors: { id: string; name: string }[];
   usedLabels: string[];
   mode: "quote" | "request";
   onDone: () => void;
 }) {
+  /**
+   * What reading an uploaded quote proposed, or null.
+   *
+   * HELD HERE AND USED AS A DEFAULT, so every field below stays uncontrolled
+   * exactly as it was. `formKey` changes when a reading arrives, which remounts
+   * the form with the new defaults — two lines instead of rewriting every input
+   * into a controlled one, in a component that also serves the request shape and
+   * the edit shape. Anything already typed is replaced, which is what somebody
+   * asking to read the document wants.
+   */
+  const [suggestion, setSuggestion] = useState<QuoteSuggestion | null>(null);
+  const [formKey, setFormKey] = useState(0);
+
+  /** The suggestion's value when there is one, else the stored row's. A
+   *  suggestion of NULL for a field is meaningful — "the document did not say"
+   *  — so it falls through to the row rather than clearing it. */
+  const filled = {
+    packageLabel: suggestion?.packageLabel ?? quote?.packageLabel ?? "",
+    vendorName: suggestion?.vendorName || quote?.vendorName || "",
+    amount: suggestion?.amount?.toString() ?? quote?.amount?.toString() ?? "",
+    quotedOn: suggestion?.quotedOn ?? quote?.quotedOn ?? "",
+    exclusions: suggestion?.exclusions ?? quote?.exclusions ?? "",
+  };
+
   return (
     <ActionForm
+      key={formKey}
       action={saveBidQuote.bind(null, bidInvitationId)}
       className="flex flex-wrap items-start gap-2"
       onSuccess={onDone}
     >
       {quote && <input type="hidden" name="bidQuoteId" value={quote.id} />}
 
+      {/* Only on the quote shape: a request has no amount, date or exclusions
+          for a document to fill. The cautions sit ABOVE the fields, which is
+          AskProposal's convention — a warning under the thing it is about is
+          read after the decision has been made. */}
+      {mode === "quote" && (
+        <>
+          <QuoteReadingNotes suggestion={suggestion} />
+          <QuoteReader
+            bidInvitationId={bidInvitationId}
+            companyId={companyId}
+            /* HELD HERE BECAUSE THIS STATE IS ABOVE THE `key`. `setFormKey`
+               below remounts everything inside the ActionForm, so a message
+               kept in `QuoteReader` itself is destroyed by the same call that
+               fills the fields in — which is exactly what shipped, and what a
+               click-through on the preview caught. `suggestion` survives for
+               this reason and the allowance sentence rides on it. */
+            note={suggestion?.note ?? null}
+            onRead={(read) => {
+              setSuggestion(read);
+              setFormKey((n) => n + 1);
+            }}
+          />
+        </>
+      )}
+
       <label className="flex flex-col gap-1 text-xs text-ink-label">
         Package
         <input
           name="packageLabel"
           list="bid-packages"
-          defaultValue={quote?.packageLabel ?? ""}
+          defaultValue={filled.packageLabel}
           placeholder="Metal stud framing"
           className="w-44 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
         />
@@ -423,7 +490,7 @@ function QuoteForm({
         {mode === "request" ? "Who you're asking" : "Who quoted"}
         <input
           name="vendorName"
-          defaultValue={quote?.vendorName ?? ""}
+          defaultValue={filled.vendorName}
           placeholder="Acme Framing"
           className="w-40 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
         />
@@ -475,7 +542,7 @@ function QuoteForm({
             <input
               name="amount"
               inputMode="decimal"
-              defaultValue={quote?.amount?.toString() ?? ""}
+              defaultValue={filled.amount}
               placeholder="82000"
               className="w-28 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
             />
@@ -486,7 +553,7 @@ function QuoteForm({
             <input
               type="date"
               name="quotedOn"
-              defaultValue={quote?.quotedOn ?? ""}
+              defaultValue={filled.quotedOn}
               className="rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
             />
           </label>
@@ -496,7 +563,7 @@ function QuoteForm({
             <textarea
               name="exclusions"
               rows={3}
-              defaultValue={quote?.exclusions ?? ""}
+              defaultValue={filled.exclusions}
               placeholder={"Soffits\nFirestopping"}
               className="w-64 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
             />
