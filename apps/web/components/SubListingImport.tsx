@@ -148,6 +148,7 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
       <label className="mt-4 flex flex-col gap-1 text-xs text-ink-label">
         What the document says
         <textarea
+          name="listingText"
           value={listingText}
           onChange={(event) => setListingText(event.target.value)}
           rows={8}
@@ -162,6 +163,7 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
           Link to the document
           <input
             type="url"
+            name="sourceUrl"
             value={sourceUrl}
             onChange={(event) => setSourceUrl(event.target.value)}
             required
@@ -177,6 +179,7 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
           What to call the page (optional)
           <input
             type="text"
+            name="sourceTitle"
             value={sourceTitle}
             onChange={(event) => setSourceTitle(event.target.value)}
             placeholder="Riverside USD — Lincoln Elementary award packet"
@@ -333,6 +336,7 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
                           <label className="mt-2 flex flex-col gap-1 text-xs text-ink-label">
                             Already a lead?
                             <select
+                              name={`attach:${row.line}`}
                               value={attach[row.line] ?? ""}
                               onChange={(event) =>
                                 setAttach((current) => ({ ...current, [row.line]: event.target.value }))
