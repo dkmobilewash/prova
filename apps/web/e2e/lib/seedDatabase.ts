@@ -119,4 +119,98 @@ export async function seedDatabase(clerkIds: ClerkIds): Promise<void> {
       companyId: main.companyId,
     },
   });
+
+  await seedCertifiedPayrollWeek(main.companyId);
 }
+
+/**
+ * A WEEK OF HOURS, SO A TEST CAN CHECK THE NUMBERS AND NOT ONLY THE SHAPE.
+ *
+ * Until this existed the seed created a company, a contact and a job and
+ * nothing else — no crew, no classifications, no time entries. That is why
+ * `payroll-export.spec.ts` could prove the route, the content type, the
+ * filename, the header order and the 403, and could NOT prove a single
+ * figure in the file. Verifying those needed a real job on production and a
+ * human to download the CSV, which cost an evening on 2026-10-03.
+ *
+ * **The week is deliberately one employee in TWO classifications**, because
+ * that single shape exercises both of the refusals #596 was built around:
+ *
+ *   - the SECOND row has no craft, so no fringe schedule is in force and its
+ *     wage cost must come out EMPTY. Never 0 — a 0 in a pay run reads as
+ *     free labour, and the export writes `rateKnown: "no"` beside it so the
+ *     blank cannot be mistaken for a missing column;
+ *   - per diem and travel pay are EMPLOYEE totals, so they belong on the
+ *     first row only. Repeating them on the second pays them twice.
+ *
+ * Fixed dates, not relative ones: a spec has to be able to ask for this week
+ * by name, and a week computed from `now` would drift out from under it.
+ */
+const PAYROLL_WEEK_START = "2026-08-23"; // a Sunday; weeks run Sun–Sat
+
+async function seedCertifiedPayrollWeek(companyId: string) {
+  const job = await prisma.job.findFirst({
+    where: { companyId, name: { startsWith: E2E_TAG } },
+    select: { id: true },
+  });
+  if (!job) return;
+
+  const already = await prisma.timeEntry.findFirst({
+    where: { jobId: job.id },
+    select: { id: true },
+  });
+  if (already) return;
+
+  const employee = await prisma.user.findFirst({
+    where: { companyId, jobFunction: "FIELD" },
+    select: { id: true },
+  });
+  if (!employee) return;
+
+  const local = await prisma.unionLocal.create({
+    data: {
+      companyId,
+      parentInternational: "United Brotherhood of Carpenters",
+      localNumber: "1234",
+      jurisdictionName: `${E2E_TAG} Jurisdiction`,
+    },
+  });
+  const craft = await prisma.craftClassification.create({
+    data: { companyId, unionLocalId: local.id, name: "Drywall Finisher" },
+  });
+  // In force well before the seeded week, so the first row prices and the
+  // second one's blank is about the MISSING CRAFT rather than a date edge.
+  await prisma.fringeRateSchedule.create({
+    data: {
+      companyId,
+      craftClassificationId: craft.id,
+      baseWage: "50.00",
+      effectiveFrom: new Date("2026-01-01T00:00:00.000Z"),
+    },
+  });
+
+  await prisma.timeEntry.createMany({
+    data: [
+      {
+        jobId: job.id,
+        employeeUserId: employee.id,
+        craftClassificationId: craft.id,
+        date: new Date("2026-08-24T00:00:00.000Z"),
+        hours: "8",
+        payType: "STRAIGHT",
+        perDiemAmount: "75.00",
+        travelPayAmount: "50.00",
+      },
+      {
+        jobId: job.id,
+        employeeUserId: employee.id,
+        // No craft on purpose. This is the row whose wage must be blank.
+        date: new Date("2026-08-25T00:00:00.000Z"),
+        hours: "6",
+        payType: "STRAIGHT",
+      },
+    ],
+  });
+}
+
+export { PAYROLL_WEEK_START };

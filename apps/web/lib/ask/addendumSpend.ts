@@ -116,12 +116,15 @@ export async function claimAddendumPages(
       return { ok: false, error: stopSentence(ceiling, row.addendumPagesUsed, charge.pages) };
     }
 
+    // After this claim — `row` is read back following the increment.
+    const pagesLeft = Math.max(0, ceiling - row.addendumPagesUsed);
+
     return {
       ok: true,
       claim: { companyId, periodStart },
       charge,
-      note: pageChargeNote(charge),
-      pagesLeft: Math.max(0, ceiling - row.addendumPagesUsed),
+      note: pageChargeNote(charge, { noun: "addendum pages", left: pagesLeft, ceiling }),
+      pagesLeft,
     };
   } catch (err) {
     console.error(

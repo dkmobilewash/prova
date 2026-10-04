@@ -53,15 +53,52 @@ export function PriceBasisBadge({
 }
 
 /**
- * "≈ $X labor" beside the hours field. Read-only and informational — never
- * written into budgetedUnitCost, which stays the estimator's own number, the
- * same philosophy as the estimatedCostToComplete PM override.
+ * "≈ $X labor" beside the hours field.
+ *
+ * STILL NOT WRITTEN BY TYPING. `budgetedUnitCost` stays the estimator's own
+ * number — the same philosophy as the `estimatedCostToComplete` PM override,
+ * and the rule `setLineBudgetedCost` states as *"One number at a time, each one
+ * the estimator's own."* What changed on 2026-10-04 is that there is now a
+ * button to accept this figure deliberately; nothing fills it in behind anybody.
+ *
+ * ── AND IT SAYS WHEN THE FIGURE IS NOT IN THE BID ──
+ *
+ * The defect that earned this, from the 2026-10-04 workflow audit: a line with
+ * 80 hours of Local 300 journeyman, `costCategory: LABOR` and no
+ * `budgetedUnitCost` contributes **$0** to the bid while this very hint prints
+ * "≈ $5,600 labor" beside it. Both numbers were correct and the screen was a
+ * lie by omission — the bid recap leaves a costless line out of the cost base
+ * entirely (`pricedWithNoCost`), and nothing here said so.
+ *
+ * `inBid` is REQUIRED rather than optional, so a caller has to answer the
+ * question. A default would let the next screen that renders this quietly go
+ * back to claiming a figure it has not checked.
+ *
+ * The basis sentence comes from `laborCostBasisLabel`, not a literal. This used
+ * to hardcode "Burdened labor: base wage plus fringes" — using the word
+ * "burdened", which to a contractor means fully loaded, for a figure that had no
+ * employer FICA, FUTA/SUTA or workers' comp in it. That is the exact over-claim
+ * Cyrus removed from the job-cost side; generating the sentence from the rate
+ * means it cannot drift from the arithmetic again.
  */
-export function LaborCostHint({ cost }: { cost: number | null }) {
+export function LaborCostHint({
+  cost,
+  basis,
+  inBid,
+}: {
+  cost: number | null;
+  /** `laborCostBasisLabel(percent)` — what this figure is made of, in words. */
+  basis: string;
+  /** Whether this line carries a budgeted cost, so the figure reaches the bid. */
+  inBid: boolean;
+}) {
   if (cost === null) return null;
   return (
-    <span className="text-xs text-ink-body" title="Burdened labor: base wage plus fringes, at straight time">
-      ≈ {money(cost)} labor
+    <span
+      className={`text-xs ${inBid ? "text-ink-body" : "text-tag-amber-ink"}`}
+      title={`Labor at ${basis}, straight time. An estimate — it is written into the line's budgeted cost only when you press Use this.`}
+    >
+      ≈ {money(cost)} labor{inBid ? "" : " — not in the bid"}
     </span>
   );
 }

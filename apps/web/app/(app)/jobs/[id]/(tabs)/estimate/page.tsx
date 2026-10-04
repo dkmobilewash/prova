@@ -36,8 +36,15 @@ import {
 } from "@/lib/wip";
 import { jobEarnedRevenue, jobOverUnderBilling } from "@/lib/company-financials";
 import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
+import { fringeScheduleInput } from "@/lib/labor-cost";
+import { laborCostApplyDecision } from "@/lib/estimating/labor-cost-apply";
+import { UseLaborCostButton } from "@/components/UseLaborCostButton";
 import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
-import { employerBurdenPercentOnDay, laborCostBasisLabel } from "@/lib/employer-burden";
+import {
+  employerBurdenPercentOn,
+  employerBurdenPercentOnDay,
+  laborCostBasisLabel,
+} from "@/lib/employer-burden";
 import { serverToday } from "@/lib/serverToday";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { ActionForm } from "@/components/ActionForm";
@@ -265,24 +272,23 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
   }));
 
   const laborRateDate = laborRateDateFor(job, new Date());
+  // THE BURDEN IS RESOLVED AT THE LABOR RATE DATE, NOT TODAY, and the
+  // distinction is the same one `laborRateDateFor` exists for: this job's labor
+  // will be worked and paid around its start date, the fringes are already
+  // priced at that day, and a figure whose two halves answered as of different
+  // days would be a number nobody can reconcile. `burdenPercentToday` below is a
+  // different question — what LOGGED hours cost — and keeps its own date.
+  const burdenPercentForBid = employerBurdenPercentOn(employerBurdenRates, laborRateDate);
   const schedulesByCraft = new Map(
     craftClassifications.map((craft) => [
       craft.id,
-      craft.fringeRateSchedules.map((schedule) => ({
-        baseWage: Number(schedule.baseWage),
-        pensionRate: schedule.pensionRate != null ? Number(schedule.pensionRate) : null,
-        vacationRate: schedule.vacationRate != null ? Number(schedule.vacationRate) : null,
-        healthWelfareRate: schedule.healthWelfareRate != null ? Number(schedule.healthWelfareRate) : null,
-        trainingRate: schedule.trainingRate != null ? Number(schedule.trainingRate) : null,
-        effectiveFrom: schedule.effectiveFrom,
-        effectiveTo: schedule.effectiveTo,
-      })),
+      craft.fringeRateSchedules.map(fringeScheduleInput),
     ]),
   );
   const craftOptions = craftClassifications.map((craft) => ({
     id: craft.id,
     label: `${craft.unionLocal.parentInternational} ${craft.unionLocal.localNumber} — ${craft.name}`,
-    hourlyRate: burdenedHourlyRate(schedulesByCraft.get(craft.id) ?? [], laborRateDate),
+    hourlyRate: burdenedHourlyRate(schedulesByCraft.get(craft.id) ?? [], laborRateDate, burdenPercentForBid),
   }));
 
   const estimatedHoursByLineItem = new Map(
@@ -303,6 +309,30 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
         estimatedHoursByLineItem.get(item.id) ?? null,
         item.craftClassificationId ? (schedulesByCraft.get(item.craftClassificationId) ?? []) : [],
         laborRateDate,
+        burdenPercentForBid,
+      ),
+    ]),
+  );
+
+  // WHAT "USE THIS AS THE COST" WOULD DO TO EACH LINE, decided here with the
+  // same function the action re-runs before it writes. Rendering a button from
+  // one implementation and writing from another is how the two come to
+  // disagree — `catalog-quote-price.ts` states the rule and `QuoteLine` is the
+  // pattern.
+  const laborCostApplyByLineItem = new Map(
+    job.lineItems.map((item) => [
+      item.id,
+      laborCostApplyDecision(
+        {
+          quantity: Number(item.quantity),
+          laborHours: item.laborHours != null ? Number(item.laborHours) : null,
+          productionRate: item.productionRate != null ? Number(item.productionRate) : null,
+          budgetedUnitCost: item.budgetedUnitCost != null ? Number(item.budgetedUnitCost) : null,
+          costCategory: item.costCategory,
+        },
+        item.craftClassificationId ? (schedulesByCraft.get(item.craftClassificationId) ?? []) : [],
+        laborRateDate,
+        burdenPercentForBid,
       ),
     ]),
   );
@@ -791,7 +821,21 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                           className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                         />
                       </label>
-                      <LaborCostHint cost={estimatedLaborCostByLineItem.get(item.id) ?? null} />
+                      <LaborCostHint
+                        cost={estimatedLaborCostByLineItem.get(item.id) ?? null}
+                        basis={laborCostBasisLabel(burdenPercentForBid)}
+                        // A line with no budgeted cost is left out of the bid's
+                        // cost base entirely and marked up at nothing — the
+                        // recap's own `pricedWithNoCost`. Saying so here is the
+                        // half of #614 that fixes the money bug.
+                        inBid={item.budgetedUnitCost != null}
+                      />
+                      <UseLaborCostButton
+                        jobId={job.id}
+                        lineItemId={item.id}
+                        decision={laborCostApplyByLineItem.get(item.id)!}
+                        inBid={item.budgetedUnitCost != null}
+                      />
                       <ProductionBackCheckHint
                         check={productivityByLineItem.get(item.id) ?? null}
                         unit={item.unit}

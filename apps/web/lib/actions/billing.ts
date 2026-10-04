@@ -59,11 +59,24 @@ import {
  * person reading this has done nothing wrong, so it says what the thing is
  * and who can change it rather than "forbidden".
  *
- * Two of them, because the money on a job is withheld by two different
- * capabilities and the actions here answer to both. `/jobs/[id]/billing`
- * and `/jobs/[id]/retainage` withhold their whole tab on MANAGE_BILLING;
- * `/jobs/[id]/estimate` withholds on VIEW_JOB_COSTS. Each action asserts
- * the capability of the tab it is posted from — issue #383.
+ * Three of them. Two because the money on a job is withheld by two
+ * different capabilities and the actions here answer to both:
+ * `/jobs/[id]/billing` and `/jobs/[id]/retainage` withhold their whole tab
+ * on MANAGE_BILLING; `/jobs/[id]/estimate` withholds on VIEW_JOB_COSTS.
+ * Each action asserts the capability of the tab it is posted from — issue
+ * #383.
+ *
+ * The third is not a tab at all. `enablePortalAccess` and
+ * `revokeClientPortalAccess` sit on `/contacts/[id]` and the thing they
+ * refuse is not a figure on a screen — it is MINTING A BEARER CREDENTIAL
+ * for somebody outside the company. It gets its own sentence rather than
+ * reusing BILLING_ONLY because the noun differs: a person who posts to it
+ * has not been refused an invoice, they have been refused the power to
+ * hand a GC a link. Naming the control is the only way that sentence is
+ * worth anything, and nobody should ever see it anyway — the page hides
+ * the section (see `showsBilling` on `/contacts/[id]`), because a thrown
+ * Server Action message is a redacted digest in production and a refusal
+ * nobody can read is a dead button.
  *
  * WHY THE GUARD IS NEEDED AT ALL, since the tabs already withhold: a tab
  * that renders a sentence instead of a form stops a READER. A Server
@@ -76,6 +89,8 @@ const BILLING_ONLY =
   "Invoices and payments aren't part of your job function. The account owner sets who sees what, on the Team page.";
 const JOB_COSTS_ONLY =
   "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
+const PORTAL_ONLY =
+  "Giving a client portal access isn't part of your job function. The account owner sets who sees what, on the Team page.";
 
 /**
  * Creates a client-signing link for a job's contract. Only while ESTIMATE —
@@ -326,9 +341,40 @@ export async function signRequest(token: string, formData: FormData) {
  * (`revokeClientPortalAccess` followed by a rotate), but this app has no
  * UI asking for it yet and adding one un-asked is scope this issue didn't
  * need. Filed as a known gap rather than guessed at.
+ *
+ * MANAGE_BILLING, AND THIS IS THE ONE ACTION IN THIS MODULE WHERE THE
+ * GUARD IS NOT ABOUT WHO MAY SEE A NUMBER. `portalToken` is a bearer
+ * credential: whoever holds the link IS the GC, on an unauthenticated
+ * page, with no second factor and no expiry. #527 says so in code — it
+ * exports `portalRevokedAt` from the contact CSV and keeps `portalToken`
+ * in EXPORT_WITHHELD precisely because it is a bearer credential. Until
+ * now this app withheld that string from the customer's own export while
+ * letting any authenticated member of the company issue one, a FIELD
+ * foreman included.
+ *
+ * MANAGE_BILLING rather than anything else, derived from what the link
+ * actually opens. `/portal/[token]` renders the contract line items and
+ * their total (`ContractSummary`), the change orders, and every invoice
+ * with its payments and its retainage-adjusted balance — which is
+ * MANAGE_BILLING's own doc comment in lib/permissions.ts read back
+ * ("Invoices, pay applications, retainage"). It is also the narrowest
+ * capability that still holds everyone with a reason to send the link:
+ * ACCOUNTING, who raises the invoices, PROJECT_MANAGER, who drives the pay
+ * application, EXECUTIVE, and every OWNER. It removes FIELD — the hole —
+ * along with PAYROLL_COMPLIANCE and ESTIMATOR, of whom that file already
+ * says "Billing is out: what has been invoiced is not an estimator's
+ * business".
+ *
+ * NOT VIEW_JOB_COSTS, which the contract-paperwork four above take. That
+ * capability is scoped by its own comment to "Actual cost, forecast,
+ * margin and WIP on a job" — the inside view, none of which the portal
+ * shows a GC — and it would readmit ESTIMATOR. NOT MANAGE_JOBS, which
+ * FIELD holds, so it would close nothing.
  */
 export async function enablePortalAccess(contactId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) throw new Error(PORTAL_ONLY);
+  const { company } = context;
 
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
   if (!contact || contact.companyId !== company.id) {
@@ -353,9 +399,19 @@ export async function enablePortalAccess(contactId: string) {
  * finding 2 / #217 ("cannot be revoked, rotated, or even copied"; this
  * covers the revoke half). `enablePortalAccess` reactivates the same link
  * later if that's ever wanted.
+ *
+ * The same MANAGE_BILLING as `enablePortalAccess`, and deliberately not a
+ * looser one on the "revoking is safe" reasoning. It is not safe: this is
+ * the control that cuts a GC off from the invoices they are being asked to
+ * pay, mid-job, and the link cannot be rotated afterwards — enable brings
+ * the SAME token back. Whoever may hand out the credential is who may take
+ * it away; splitting the pair would mean a job function that can kill a
+ * live link it cannot restore.
  */
 export async function revokeClientPortalAccess(contactId: string) {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) throw new Error(PORTAL_ONLY);
+  const { company } = context;
 
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
   if (!contact || contact.companyId !== company.id) {

@@ -4,7 +4,7 @@ import {
   type AllowanceClaim,
   type MonthlyAllowance,
 } from "./allowance";
-import { attachmentPageCharge, pageChargeNote, type PageCharge } from "./pageCount";
+import { attachmentPageCharge, pageChargeNote, pageCountClause, type PageCharge } from "./pageCount";
 
 /**
  * SPENDING THE MONTHLY ALLOWANCE ON A DOCUMENT THAT IS NOT AN ASK QUESTION.
@@ -123,7 +123,7 @@ export async function claimDocumentPages(
       return {
         ok: false,
         error:
-          `That wasn't read — this document is ${pageChargeNote(charge)} and one upload can use at most ` +
+          `That wasn't read — this document is ${pageCountClause(charge)} and one upload can use at most ` +
           `${ceiling} of your company's ${allowance.pages} document pages a month. Nothing has been charged. ` +
           `Split it into smaller files and upload the parts you need read.`,
       };
@@ -140,7 +140,14 @@ export async function claimDocumentPages(
       ok: true,
       claim: claimed.claim,
       charge,
-      note: pageChargeNote(charge),
+      // `allowance.pages` is the company's monthly document-page ceiling and
+      // `claimed.left.pages` is what remains after this claim — the same pair
+      // the refusal above quotes, so the two read alike.
+      note: pageChargeNote(charge, {
+        noun: "document pages",
+        left: claimed.left.pages,
+        ceiling: allowance.pages,
+      }),
       pagesLeft: claimed.left.pages,
     };
   } catch (err) {
