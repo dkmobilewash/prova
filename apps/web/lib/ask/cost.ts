@@ -223,10 +223,15 @@ export type PeriodUsage = {
   pagesUsed: number;
   planSheetsUsed: number;
   addendumPagesUsed: number;
+  /** Spec section pages. Its own unit, never shared with addendum pages — a
+   *  section is 30-60 pages against an addendum's 2-20, so one ledger would
+   *  mean reading specs silently spending the allowance for reading addenda. */
+  specPagesUsed: number;
   failedQuestions: number;
   failedPages: number;
   failedPlanSheets: number;
   failedAddendumPages: number;
+  failedSpecPages: number;
 };
 
 export type AllowanceUsage = Omit<PeriodUsage, "periodStart"> & {
@@ -288,10 +293,12 @@ export function allowanceOver(periods: readonly PeriodUsage[], from: Date): Allo
     pagesUsed: 0,
     planSheetsUsed: 0,
     addendumPagesUsed: 0,
+    specPagesUsed: 0,
     failedQuestions: 0,
     failedPages: 0,
     failedPlanSheets: 0,
     failedAddendumPages: 0,
+    failedSpecPages: 0,
     straddled: false,
   };
   for (const period of periods) {
@@ -300,10 +307,12 @@ export function allowanceOver(periods: readonly PeriodUsage[], from: Date): Allo
     sum.pagesUsed += period.pagesUsed;
     sum.planSheetsUsed += period.planSheetsUsed;
     sum.addendumPagesUsed += period.addendumPagesUsed;
+    sum.specPagesUsed += period.specPagesUsed;
     sum.failedQuestions += period.failedQuestions;
     sum.failedPages += period.failedPages;
     sum.failedPlanSheets += period.failedPlanSheets;
     sum.failedAddendumPages += period.failedAddendumPages;
+    sum.failedSpecPages += period.failedSpecPages;
   }
   return sum;
 }

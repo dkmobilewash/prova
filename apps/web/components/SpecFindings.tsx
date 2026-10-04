@@ -3,7 +3,12 @@
 import { useRef, useState, useTransition } from "react";
 import { attachSpecSectionDocument, readSpecSection } from "@/lib/actions";
 import { uploadDocumentFile } from "@/lib/document-upload-client";
-import { SPEC_FINDING_LABEL, sortFindingsForReview, type SpecFindingView } from "@/lib/specs/spec-findings";
+import {
+  CONFIDENCE_WORD,
+  SPEC_FINDING_LABEL,
+  sortFindingsForReview,
+  type SpecFindingView,
+} from "@/lib/specs/spec-findings";
 
 /**
  * WHAT A SPEC SECTION DEMANDS THAT COSTS MONEY, under the section's own row.
@@ -112,9 +117,24 @@ export function SpecFindings({
       <summary className="cursor-pointer text-xs text-ink-muted">{summaryText}</summary>
 
       <div className="mt-2 space-y-2">
-        {error && <p className="text-xs text-tag-rose-ink">{error}</p>}
-        {note && <p className="text-xs text-ink-muted">{note}</p>}
+        {/* THE MESSAGE USED TO LIVE HERE, AT THE TOP, AND THAT IS WHY IT MOVED.
+            From the #604 click-through, step 7b: "you press 'Read it again' at
+            the bottom, below 9 findings, but the message appears at the top,
+            under the summary line. Someone who just pressed the button probably
+            won't see it. It also isn't announced to screen readers."
 
+            Both halves right. The refusal it describes is the gate refusal —
+            the one sentence telling an estimator why nothing happened and that
+            the owner can switch it back on — and it was rendering off the
+            bottom of nine findings' worth of scroll. A refusal nobody reads is
+            a dead button, which is the exact failure the ActionResult
+            convention exists to prevent; returning the string correctly and
+            then putting it where nobody looks loses the same ground at the last
+            step.
+
+            So `<Feedback>` renders immediately after whichever control was
+            pressed, and carries `role="alert"` so it is announced rather than
+            merely present. */}
         {!hasFile && (
           <>
             <input
@@ -140,6 +160,7 @@ export function SpecFindings({
               Up to 50MB, so a scanned section is fine. Attaching it costs nothing — reading it is a separate
               press.
             </p>
+            <Feedback error={error} note={note} />
           </>
         )}
 
@@ -156,14 +177,21 @@ export function SpecFindings({
             <p className="text-xs text-ink-muted">
               {fileName ?? "The attached PDF"} — charged to this month&apos;s spec pages.
             </p>
+            <Feedback error={error} note={note} />
           </>
         )}
 
         {reading && (
           <>
             <p className="text-xs text-ink-muted">
+              {/* "charged" is the word, not just "pages" — the #604
+                  click-through flagged that the line before the press promises
+                  the pages are "charged to this month's spec pages" and the
+                  line after it says only "3 pages", so the two do not read as
+                  the same fact. The figure a person checks the meter against
+                  should name what it is. */}
               Read {reading.readOn} · {reading.pagesCharged}{" "}
-              {reading.pagesCharged === 1 ? "page" : "pages"} · {reading.readingReason}
+              {reading.pagesCharged === 1 ? "page" : "pages"} charged · {reading.readingReason}
             </p>
 
             {findings.length === 0 ? (
@@ -180,14 +208,42 @@ export function SpecFindings({
                 {findings.map((finding) => (
                   <li key={`${finding.ordinal}-${finding.label}`} className="text-xs">
                     <div className="flex flex-wrap items-baseline gap-2">
-                      {/* A WORD AND A COLOUR, NEVER A COLOUR — and only LOW
-                          gets a badge, so the badge means "look here" rather
-                          than decorating every row. */}
-                      {finding.confidence === "LOW" && (
-                        <span className="rounded bg-tag-amber px-1.5 py-0.5 text-[11px] text-tag-amber-ink">
-                          least sure
-                        </span>
-                      )}
+                      {/* EVERY FINDING SAYS HOW SURE IT IS, and before
+                          2026-10-04 only the LOW ones did.
+
+                          The old comment here said "only LOW gets a badge, so
+                          the badge means 'look here' rather than decorating
+                          every row" — which is a real design instinct and was
+                          the wrong call. The click-through of #604 returned nine
+                          findings, every one of them MEDIUM or HIGH, and so the
+                          screen showed NO confidence anywhere. The tester could
+                          not check the lowest-first ordering because there was
+                          nothing to see, and reported it as unverifiable.
+
+                          That is worse than untidy. This whole feature is built
+                          on `DECISIONS.md`'s rule — "a count that is 85%
+                          accurate and says so is useful; a count that is 85%
+                          accurate and reads as certain is a wrong bid" — and a
+                          MEDIUM finding rendered identically to a HIGH one
+                          reads as certain. The eval cannot catch it: it reads
+                          the `confidence` field, which was correct the whole
+                          time. Only a person looking at the screen could, and
+                          one did.
+
+                          So the word is always there. The COLOUR is still only
+                          on LOW, which keeps the original instinct — the amber
+                          means "look here" — while `text-ink-muted` carries the
+                          other two. A word and a colour, never a colour, and
+                          never neither. */}
+                      <span
+                        className={
+                          finding.confidence === "LOW"
+                            ? "rounded bg-tag-amber px-1.5 py-0.5 text-[11px] text-tag-amber-ink"
+                            : "text-[11px] text-ink-muted"
+                        }
+                      >
+                        {CONFIDENCE_WORD[finding.confidence]}
+                      </span>
                       <span className="font-medium text-ink">{finding.label}</span>
                       <span className="text-ink-muted">{SPEC_FINDING_LABEL[finding.kind]}</span>
                     </div>
@@ -227,9 +283,35 @@ export function SpecFindings({
               Read {readCount} {readCount === 1 ? "time" : "times"} so far. Reading it again charges the pages
               again — worth it after a better prompt or a corrected PDF, not for a second opinion.
             </p>
+            {/* HERE, under the button that was pressed — not at the top of a
+                list nine findings long. See the note above. */}
+            <Feedback error={error} note={note} />
           </>
         )}
       </div>
     </details>
+  );
+}
+
+/**
+ * The one place a refusal or a note is rendered, placed beside the control that
+ * produced it.
+ *
+ * `role="alert"` rather than a bare paragraph: the #604 click-through noted the
+ * refusal "isn't announced to screen readers", and a gate refusal is the single
+ * message in this component a person most needs told. An alert region is
+ * announced the moment its content appears, which is exactly the semantics of
+ * "you pressed that and here is why nothing happened".
+ *
+ * Renders nothing at all when there is nothing to say, so no empty live region
+ * is left on the page for a reader to land in.
+ */
+function Feedback({ error, note }: { error: string | null; note: string | null }) {
+  if (error === null && note === null) return null;
+  return (
+    <div role="alert" aria-live="assertive" className="space-y-1">
+      {error && <p className="text-xs text-tag-rose-ink">{error}</p>}
+      {note && <p className="text-xs text-ink-muted">{note}</p>}
+    </div>
   );
 }

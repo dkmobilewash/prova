@@ -48,6 +48,25 @@ export const SPEC_FINDING_LABEL: Record<SpecFindingKind, string> = {
   GENERAL: "Other",
 };
 
+/**
+ * How sure the reading is, in words a person reads rather than a level.
+ *
+ * A TOTAL `Record`, so a fourth confidence value cannot be added without
+ * naming it here — the same reason `SPEC_FINDING_LABEL` above is total, and the
+ * reason #526 gives: a missing member rendering as `undefined` on a bid screen
+ * reads as a bug.
+ *
+ * Deliberately not "HIGH"/"MEDIUM"/"LOW". A database level shouted at an
+ * estimator says nothing about what to DO; "worth checking" and "least sure"
+ * say where to spend the next five minutes. `DocumentIntakeConfidence` made the
+ * same choice.
+ */
+export const CONFIDENCE_WORD: Record<SpecFindingView["confidence"], string> = {
+  HIGH: "clear in the section",
+  MEDIUM: "worth checking",
+  LOW: "least sure",
+};
+
 const CONFIDENCE_ORDER = { LOW: 0, MEDIUM: 1, HIGH: 2 } as const;
 
 /**
