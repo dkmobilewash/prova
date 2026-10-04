@@ -24,14 +24,26 @@
           "photosPermission": "C Stream adds photos from your library to a job."
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "./plugins/withSceneLifecycle"
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.cstream.prova",
       "deploymentTarget": "17.0",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIApplicationSceneManifest": {
+          "UIApplicationSupportsMultipleScenes": false,
+          "UISceneConfigurations": {
+            "UIWindowSceneSessionRoleApplication": [
+              {
+                "UISceneConfigurationName": "Default Configuration",
+                "UISceneDelegateClassName": "EXExpoAppSceneDelegate"
+              }
+            ]
+          }
+        }
       }
     },
     "android": {
