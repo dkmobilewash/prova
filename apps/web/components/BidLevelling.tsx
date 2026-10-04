@@ -5,7 +5,14 @@ import { useState, useTransition } from "react";
 import { ActionForm } from "@/components/ActionForm";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { SubmitButton } from "@/components/SubmitButton";
-import { deleteBidQuote, recordBidQuoteDecline, saveBidQuote, type QuoteSuggestion } from "@/lib/actions";
+import {
+  addCarriedQuoteToEstimate,
+  deleteBidQuote,
+  recordBidQuoteDecline,
+  saveBidQuote,
+  setBidQuoteCarried,
+  type QuoteSuggestion,
+} from "@/lib/actions";
 import { QuoteReader, QuoteReadingNotes } from "@/components/QuoteReader";
 import {
   exclusionLines,
@@ -31,7 +38,13 @@ import {
  * caution, above the numbers, and never in a collapsed section.
  */
 
-export type BidQuoteRow = LevelQuote & { notes: string | null; vendorId: string | null };
+export type BidQuoteRow = LevelQuote & {
+  notes: string | null;
+  vendorId: string | null;
+  /** When somebody said this is the price we are carrying. Null on every
+   *  quote nobody has decided about, which is most of them. */
+  carriedAt: string | null;
+};
 
 const money = (value: number) =>
   value.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -183,6 +196,48 @@ export function BidLevelling({
                         />
                       }
                     >
+                      {/* THE ESTIMATOR'S ANSWER. `bid-levelling.ts` refuses to
+                          name a winner — "lowest" above is an artefact of a
+                          sort and says so — and this is where the person who
+                          read the exclusions records what they actually
+                          carried. Marking one clears the others in the
+                          package, so the screen never shows two answers. */}
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        title={
+                          quote.carriedAt
+                            ? "This is the price in our bid. Press to un-mark it."
+                            : "Mark this as the price going into our bid."
+                        }
+                        onClick={() => {
+                          const form = new FormData();
+                          form.set("carried", quote.carriedAt ? "false" : "true");
+                          run(() => setBidQuoteCarried(quote.id, form));
+                        }}
+                        className={
+                          quote.carriedAt
+                            ? "rounded-md border border-link px-2 py-1 text-xs text-link disabled:opacity-50"
+                            : "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+                        }
+                      >
+                        {quote.carriedAt ? "Carrying this" : "Carry this"}
+                      </button>
+                      {/* ONLY ON THE CARRIED ONE, because this writes money
+                          onto an estimate and the decision has to have been
+                          made first. The refusal when no job is linked names
+                          what to do rather than failing quietly. */}
+                      {quote.carriedAt && (
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          title="Adds this as a subcontractor cost line on the linked job's estimate."
+                          onClick={() => run(() => addCarriedQuoteToEstimate(quote.id))}
+                          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+                        >
+                          Put on the estimate
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => setEditing(quote.id)}

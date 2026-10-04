@@ -343,7 +343,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "the same bid.",
     columns: [
       "id", "bidInvitationId", "packageLabel", "vendorId", "vendorName", "amount", "quotedOn",
-      "requestedOn", "dueBy", "declinedAt", "exclusions", "notes", "createdAt", "updatedAt",
+      "requestedOn", "dueBy", "declinedAt", "carriedAt", "exclusions", "notes", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },

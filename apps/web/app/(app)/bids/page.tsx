@@ -456,6 +456,7 @@ export default async function BidsPage({
                     requestedOn: day(quote.requestedOn),
                     dueBy: day(quote.dueBy),
                     declinedAt: day(quote.declinedAt),
+                    carriedAt: day(quote.carriedAt),
                     exclusions: quote.exclusions,
                     notes: quote.notes,
                   }),
