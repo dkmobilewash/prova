@@ -107,7 +107,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       // record. `priceBasis` says whether a price was a catalog match, a
       // past-bid inference or a guess, which is exactly the provenance a
       // person re-reading their own estimate needs.
-      "tradeScope", "costCategory", "productionRate", "priceBasis",
+      "tradeScope", "costCategory", "indirectKind", "productionRate", "priceBasis",
       "phaseCodeId", "wallTypeComponentId",
       "createdAt", "updatedAt",
     ],
@@ -255,7 +255,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     note: "Your own catalog of standard line items and their default rates.",
     columns: [
       "id", "description", "unit", "tradeScope", "defaultUnitPrice",
-      "defaultBudgetedUnitCost", "defaultLaborHours", "productionRate", "costCategory", "craftClassificationId",
+      "defaultBudgetedUnitCost", "defaultLaborHours", "productionRate", "costCategory", "indirectKind", "craftClassificationId",
       "createdAt", "updatedAt",
     ],
     scope: byCompany,

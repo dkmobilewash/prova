@@ -39,6 +39,8 @@ import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { fringeScheduleInput } from "@/lib/labor-cost";
 import { laborCostApplyDecision } from "@/lib/estimating/labor-cost-apply";
 import { UseLaborCostButton } from "@/components/UseLaborCostButton";
+import { missingIndirects } from "@/lib/estimating/indirect-costs";
+import { MissingIndirects } from "@/components/MissingIndirects";
 import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import {
   employerBurdenPercentOn,
@@ -279,6 +281,21 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
   // days would be a number nobody can reconcile. `burdenPercentToday` below is a
   // different question — what LOGGED hours cost — and keeps its own date.
   const burdenPercentForBid = employerBurdenPercentOn(employerBurdenRates, laborRateDate);
+
+  // WHICH GENERAL CONDITIONS THIS BID CARRIES NOTHING FOR. No new query: the
+  // lines and the catalog are both already in hand. Derived on every read and
+  // never stored — a stored "this bid has its indirects" is wrong the moment a
+  // line is deleted.
+  const missingIndirectLines = missingIndirects(
+    job.lineItems.map((item) => ({ indirectKind: item.indirectKind })),
+    catalogEntries.map((entry) => ({
+      id: entry.id,
+      description: entry.description,
+      indirectKind: entry.indirectKind,
+      defaultBudgetedUnitCost:
+        entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
+    })),
+  );
   const schedulesByCraft = new Map(
     craftClassifications.map((craft) => [
       craft.id,
@@ -708,6 +725,11 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                   : null
               }
             />
+            {/* BELOW THE RECAP, because it is a question about the cost base the
+                recap marks up, and above the line list, because the answer is a
+                new line. Nothing is checked or stored — `missingIndirects` is
+                derived on every read. */}
+            <MissingIndirects jobId={job.id} missing={missingIndirectLines} />
           </section>
 
           <section className="mb-10" data-tour="job-line-items">

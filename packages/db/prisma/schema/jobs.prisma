@@ -266,6 +266,34 @@ model JobLineItem {
   /// than by anything failing, because nothing can fail on a stale comment.
   costCategory CostCategory?
 
+  /// WHICH GENERAL-CONDITIONS COST THIS IS, when it is one. Null on every
+  /// ordinary line, which is every line that existed before 2026-10-04.
+  ///
+  /// A SECOND AXIS, NOT A SIXTH CostCategory. Indirect-ness and markup
+  /// treatment are different questions: supervision is LABOR that happens to be
+  /// general conditions, a dumpster is EQUIPMENT that happens to be. Adding a
+  /// member to CostCategory instead would have forced a new markup rate column
+  /// (RECAP_RATE_FIELDS is a total Record over it), touched the QuickBooks
+  /// account mapping, and split history permanently the way EQUIPMENT did —
+  /// for a fact that is not about markup at all.
+  ///
+  /// IT EXISTS SO SOMETHING CAN NOTICE ONE IS ABSENT. A forgotten mobilization
+  /// is money off the bottom line, and until now every indirect was
+  /// `CostCategory.OTHER` with a free-text description, so no screen could tell
+  /// supervision from permits. `lib/estimating/indirect-costs.ts` reads this.
+  ///
+  /// DECLARED, NEVER INFERRED. Nothing matches on a description string to
+  /// decide this — the rule this file already states for costCategory,
+  /// craftClassificationId and phaseCodeId. A line is an indirect because
+  /// somebody said so, either by tagging it or by adding it from a catalog
+  /// entry that carries the kind.
+  ///
+  /// It is on the LINE as well as on the catalog entry so that a HAND-TYPED
+  /// indirect counts as present. Without it, an estimator who typed
+  /// "Mobilization — $2,500" would be told they have no mobilization, which is
+  /// the cry-wolf failure `bid-margin.ts` was shaped to avoid.
+  indirectKind IndirectCostKind?
+
   /// Units per hour — the estimator's productivity assumption ("this crew
   /// hangs 62.5 SF/hr"). When set, estimated hours = quantity / productionRate
   /// unless laborHours is entered directly (which overrides). This is the
@@ -685,6 +713,55 @@ enum CostCategory {
   /// says that rather than letting the number imply otherwise.
   EQUIPMENT
   OTHER
+}
+
+/// THE GENERAL-CONDITIONS COSTS A SPECIALTY-TRADE SUB CARRIES, named so that
+/// something can notice one is missing.
+///
+/// The 2026-10-04 estimating audit found no way to tell these apart: every one
+/// was `CostCategory.OTHER` with a free-text description, and `OTHER`'s only
+/// documentation anywhere was a UI hint string ("Permits, testing, anything
+/// uncategorised elsewhere"). The mechanism for PRICING them was never missing
+/// — a cost-only JobLineItem has been correct since #512 — but nothing could
+/// recognise one, so nothing could say "this bid has nothing for cleanup".
+///
+/// A CLOSED LIST, not an open taxonomy. These are the eight a framing, drywall,
+/// plaster, EIFS, ceilings or fireproofing sub actually carries; a company with
+/// a ninth puts it on an ordinary untagged line, the same as today. Grouping
+/// and recognition only — it can never refuse a line, change a markup, or
+/// decide what anything costs.
+///
+/// NO AMOUNTS LIVE HERE. What supervision costs is the company's own figure, on
+/// its own `LineItemCatalogEntry`. This enum only says which thing it is.
+enum IndirectCostKind {
+  /// A foreman or superintendent whose time is not on a measured line.
+  SUPERVISION
+
+  /// Getting on site: crew travel, first delivery, setting up the gang box.
+  /// Nothing in the app matched the word "mobilization" before 2026-10-04.
+  MOBILIZATION
+
+  /// Permits, testing agencies, inspections — what `otherMarkupPercent`'s hint
+  /// has been quietly pointing at all along.
+  PERMITS
+
+  /// Final clean, daily clean, debris handling.
+  CLEANUP
+
+  /// Harnesses, barricades, fall protection, the safety plan itself.
+  SAFETY
+
+  /// Poly, dust walls, floor protection — the temporary work that protects
+  /// somebody else's finishes.
+  TEMPORARY_PROTECTION
+
+  /// Dumpsters and haul-off. Until now the repo's only treatment of a dumpster
+  /// was to EXCLUDE it in proposal prose, never to price it.
+  DUMPSTERS
+
+  /// As-builts, O&M manuals, warranty letters. These exist as unpriced closeout
+  /// deliverables (`STANDARD_CLOSEOUT_ITEMS`) and have never had a cost.
+  CLOSEOUT
 }
 
 /// An actual expense logged against a JobLineItem — references the line
