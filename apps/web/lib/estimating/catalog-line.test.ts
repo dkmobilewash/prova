@@ -70,6 +70,9 @@ const entry = {
   // precedence block at the bottom of this file. Tests that want one or the
   // other override it.
   productionRate: 62.5,
+  // #513. The figure the bid recap marks up BY — set on the fixture because the
+  // interesting cases are what happens when it is present and when it is not.
+  costCategory: "MATERIAL",
   craftClassificationId: "craft-1",
   tradeScope: "METAL_FRAMING_DRYWALL",
 };
@@ -287,5 +290,56 @@ describe("addCatalogLine — flat hours and a production rate together", () => {
     // null, so a stored zero reads as "no rate" anyway while looking like one
     // somebody entered.
     expect(call[0].data.productionRate).not.toBe(0);
+  });
+});
+
+/**
+ * #513 — THE COST TYPE AN AUTOMATED LINE ARRIVES WITH.
+ *
+ * `bid-recap.ts` marks up BY cost type and marks an uncategorised line up at
+ * NOTHING, deliberately: the alternative is a bid growing a number nobody
+ * chose. But not one of the four automated line-creating paths set it, and none
+ * of the templates carried one — so every line the product generated landed
+ * uncoded. **The more of the automation you used, the less of your bid got
+ * marked up**, and a bid built entirely from wall types, takeoff and the catalog
+ * carried zero markup until somebody hand-coded every row.
+ *
+ * These pin the inheritance. The NULL cases matter as much as the set ones: a
+ * default here would be the number `bid-recap.ts`'s own comment refuses.
+ */
+describe("a catalog-sourced line inherits the entry's cost type", () => {
+  it("carries the entry's category onto the line", async () => {
+    const data = await createdLineFor("600");
+    expect(data.costCategory).toBe("MATERIAL");
+  });
+
+  it("leaves it NULL when the entry has none, rather than defaulting to MATERIAL", async () => {
+    // The recap reports an uncoded line and marks it up at nothing. A default
+    // here would silently apply the material rate to work nobody classified.
+    fake.prisma.job.findFirst.mockResolvedValue({ id: "job-1", status: "ESTIMATE" });
+    fake.prisma.lineItemCatalogEntry.findFirst.mockResolvedValue({ ...entry, costCategory: null });
+    fake.prisma.jobLineItem.create.mockResolvedValue({ id: "li-1" });
+
+    await addCatalogLine("co-1", { jobId: "job-1", catalogEntryId: "cat-1", quantity: "600" });
+    const call = fake.prisma.jobLineItem.create.mock.calls.at(-1) as [
+      { data: Record<string, unknown> },
+    ];
+    expect(call[0].data.costCategory).toBeNull();
+    expect(call[0].data.costCategory).not.toBe("MATERIAL");
+  });
+
+  it("is a straight copy, not derived from the description", async () => {
+    // "5/8\" Type X board" reads as material to a person and that is exactly
+    // the inference this column replaces. Proved by giving a board-sounding
+    // entry a LABOR category and watching it land as LABOR.
+    fake.prisma.job.findFirst.mockResolvedValue({ id: "job-1", status: "ESTIMATE" });
+    fake.prisma.lineItemCatalogEntry.findFirst.mockResolvedValue({ ...entry, costCategory: "LABOR" });
+    fake.prisma.jobLineItem.create.mockResolvedValue({ id: "li-1" });
+
+    await addCatalogLine("co-1", { jobId: "job-1", catalogEntryId: "cat-1", quantity: "600" });
+    const call = fake.prisma.jobLineItem.create.mock.calls.at(-1) as [
+      { data: Record<string, unknown> },
+    ];
+    expect(call[0].data.costCategory).toBe("LABOR");
   });
 });

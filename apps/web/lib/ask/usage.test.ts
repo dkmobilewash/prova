@@ -67,6 +67,31 @@ describe("askAllowance", () => {
 });
 
 describe("recordAskUsage", () => {
+  it("WRITES THE WEB-SEARCH COUNT, which it silently dropped until step 2", async () => {
+    // The regression this column exists for. `AskUsageTotals.webSearches` has
+    // carried the count since lead search shipped, with a comment saying "each
+    // one bills on top of tokens, which is why it is counted apart from them" —
+    // and this insert never took it. Every searched pass before 2026-10-02 has
+    // a row that understates what it cost, by an amount nothing can recover:
+    // the API reported it once and nobody wrote it down.
+    //
+    // Which is why it is asserted on the INSERT rather than trusted to the
+    // spread: the field existed, the value existed, and the write did not.
+    fake.prisma.askUsage.create.mockResolvedValue({});
+    await recordAskUsage({
+      companyId: "co-1",
+      userId: "u-1",
+      model: "claude-opus-5",
+      usage: { ...totals, webSearches: 3 },
+      outcome: "answered",
+      feature: "lead-search",
+    });
+    expect(fake.prisma.askUsage.create.mock.calls[0][0].data).toMatchObject({
+      feature: "lead-search",
+      webSearches: 3,
+    });
+  });
+
   it("writes exactly the totals the loop reported, with the outcome", async () => {
     fake.prisma.askUsage.create.mockResolvedValue({});
     await recordAskUsage({ companyId: "co-1", userId: "u-1", model: "claude-opus-5", usage: totals, outcome: "proposal" });
@@ -83,9 +108,57 @@ describe("recordAskUsage", () => {
         outputTokens: 300,
         cacheReadTokens: 8000,
         cacheWriteTokens: 0,
+        // 0 because this fixture is an Ask pass with no web search. The field
+        // is optional on the totals type, so "a caller that never enables web
+        // search" and "a searcher that made no searches" both land here as 0 —
+        // they cost the same, which is all this column is for.
+        webSearches: 0,
         outcome: "proposal",
+        // Both NULL rather than absent, and written on every row. A company-
+        // wide question has no job and no prompt version, and a column that is
+        // sometimes missing and sometimes null is two states standing for one
+        // fact — which is what makes a spend report have to guess.
+        jobId: null,
+        promptVersion: null,
       },
     });
+  });
+
+  it("attributes spend to a job when the call had one", async () => {
+    fake.prisma.askUsage.create.mockResolvedValue({});
+    await recordAskUsage({
+      companyId: "co-1",
+      userId: "u-1",
+      model: "claude-opus-5",
+      usage: totals,
+      outcome: "answered",
+      feature: "wip-narrative",
+      jobId: "job-7",
+    });
+    // The point of the column: "which jobs is this AI bill going on" was
+    // unanswerable before, because every row was company-wide.
+    expect(fake.prisma.askUsage.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ jobId: "job-7", feature: "wip-narrative" }),
+    });
+  });
+
+  it("puts the job id in the log line and never a job name", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    fake.prisma.askUsage.create.mockResolvedValue({});
+    await recordAskUsage({
+      companyId: "co-1",
+      userId: "u-1",
+      model: "claude-opus-5",
+      usage: totals,
+      outcome: "answered",
+      jobId: "job-7",
+    });
+    expect(log).toHaveBeenCalledWith("[ask] usage", expect.objectContaining({ jobId: "job-7" }));
+    // Ids and counts only — the rule this line has followed since it was
+    // written. A job name in a runtime log is customer data in a place nobody
+    // audits.
+    expect(JSON.stringify(log.mock.calls)).not.toContain("Riverside");
+    log.mockRestore();
   });
 
   it("never throws: a row that fails to write is logged, and the answer already streamed", async () => {

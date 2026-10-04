@@ -100,7 +100,15 @@ export type Actor = { companyId: string; userId: string; principal: Principal };
 export type BidResearcher = (input: {
   projectName: string;
   location: string;
-}) => Promise<{ ok: true; suggestions: WebSuggestion[] } | { ok: false }>;
+}) => Promise<
+  | { ok: true; suggestions: WebSuggestion[] }
+  /** `sentence` is set only when the per-company AI switch refused, and it
+   *  carries the wording `lib/ai/settings.ts` owns. Everything else — a
+   *  search that failed, an organisation with no web access — stays an
+   *  unexplained false, because the card's existing warning already says the
+   *  only thing there is to say about it. */
+  | { ok: false; sentence?: string }
+>;
 
 /** Lead search: projects out to bid that nobody told the company about.
  * Takes ONLY the five trades as the enum, a city and a two-letter state,
@@ -115,7 +123,23 @@ export type BidResearcher = (input: {
 export type LeadFinderInput = Pick<LeadSearchInput, "trades" | "region" | "sizeBand" | "publicWorkOnly" | "bidsAfter">;
 export type LeadFinder = (
   input: LeadFinderInput,
-) => Promise<{ ok: true; leads: FoundLead[] } | { ok: false; reason: "unavailable" | "api" | "invalid" }>;
+) => Promise<
+  /** `searches` is the billed unit — web search costs per search on top of
+   *  tokens — and it is carried out here so a caller can SHOW it. The
+   *  /pipeline control shipped without it and a browser tester noticed the
+   *  project look-up printing a search count where lead search printed none;
+   *  money spent with nothing on screen saying so is the defect. The Ask
+   *  command ignores this field, which is why adding it broke nothing. */
+  | { ok: true; leads: FoundLead[]; searches: number }
+  /** `off` is the per-company AI switch, and it is the ONE failure that
+   *  carries its own `sentence`: every other reason is a code the command
+   *  turns into prose, but the switch's wording names who can turn it back
+   *  on and lives in `lib/ai/settings.ts`, so that one refusal reads the same
+   *  everywhere it appears. Its own member rather than folded into
+   *  `unavailable` because the log line has to tell "this company turned it
+   *  off" apart from "the web lookup is down". */
+  | { ok: false; reason: "unavailable" | "api" | "invalid" | "off"; sentence?: string }
+>;
 
 export type CommandContext = Actor & {
   /** The person's calendar date, resolved on the server by viewerToday().

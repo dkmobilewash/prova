@@ -65,18 +65,58 @@ export function hasNoScopeAnswers(answers: BusinessScopeAnswers): boolean {
  * Which nav routes each answer says to hide, and ONLY to hide — nothing in
  * this file ever grants a route access it did not already have.
  *
- * Deliberately short. The task names five things these answers "hang off":
- * retainage, certified payroll, prevailing wage, submittals and pay
- * applications. Prevailing wage and submittals are top-level routes in
- * `components/navItems.tsx` and are listed below. Certified payroll's
- * company-wide surface is `/union-compliance` ("Union & fringe" — apprentice
- * ratios and fringe remittance, which bite on the same public/prevailing-wage
- * jobs), also listed below. Retainage and pay applications have NO top-level
- * route at all as of the eight-tab job page (#385) — they are tabs inside
- * `app/(app)/jobs/[id]/**`, which is Diego's lane and out of scope for this
- * file. `filesMonthlyPayApps` is still collected and still drives the
- * profile line below; it has nothing to hide here until that lane wires a
- * gate into its own tabs.
+ * DELIBERATELY SHORT, AND THE SHORTNESS IS THE FINDING RATHER THAN A GAP.
+ * Widening this map was audited route by route on 2026-09-28, against the
+ * page and the Prisma model behind each one rather than against its label.
+ * Almost the whole rail is the sub's OWN operations — its schedule, its
+ * crews, its material, its money, its cards at the gate — and none of that
+ * changes shape because of who signs the contract. What these answers can
+ * honestly hide is the COUNTERPARTY-SHAPED routes: the ones whose records
+ * exist only because somebody above you in the chain sent you paper.
+ *
+ * The bar each entry has to clear is not "uses it less". It is: a company
+ * that answered this way would never use the page, and would be RELIEVED
+ * not to see it. A wrongly hidden entry is worse than a visible one nobody
+ * clicks, because it teaches a contractor that the product lacks a feature
+ * it has — NAV-IA-AUDIT.md is 180 lines of what that costs, six built
+ * features cut from the rail and four later restored, and its own verdict
+ * on the last two: "Deferring a feature and lying about it are different
+ * acts; only the first was decided." A route that does not clear the bar
+ * stays visible and gets argued in a PR, not guessed at here.
+ *
+ * Routes weighed and DELIBERATELY LEFT OUT, recorded so the next person does
+ * not re-derive them (the reasoning is the model's, not a hunch):
+ *
+ *   - `/rfis` — an Rfi is a dated question about a set of drawings and the
+ *     answer that came back. Its only GC mention explains why numbers are
+ *     never reissued. A company contracting direct for owners asks the
+ *     architect the same questions and needs the same dated record to hang a
+ *     change order on, so this is not GC-shaped, it is drawing-shaped.
+ *   - `/drawings` — DrawingRevision's whole point is `receivedOn`: "when it
+ *     actually reached us… a revision that exists and isn't in the trailer
+ *     means the crew is building from paper that is already superseded."
+ *     True of any job built from drawings, whoever issues them.
+ *   - `/closeout` — the page is not only CloseoutSubmission (which does have
+ *     a `gcResponse` column). It also holds WarrantyPeriod and
+ *     WarrantyServiceRequest — callbacks — and a contractor working direct
+ *     for owners gets those calls STRAIGHT from the owner rather than
+ *     filtered through a GC. Hiding this would take away more than it saved.
+ *   - `/proposals` — the clause library's own copy ties exclusions to "a
+ *     GC's scope sheet", so if it leans anywhere it leans the other way, and
+ *     exclusions are the spine of a bid to an owner too.
+ *   - `/intake` — the tray files ten kinds. Four are subcontract paper
+ *     (SUBMITTAL, RFI_RESPONSE, EXECUTED_SUBCONTRACT, PAY_APP) but
+ *     DRAWING, COMPLIANCE_DOC, LIEN_WAIVER, CERTIFIED_PAYROLL and PHOTO are
+ *     not, so it stays a generic document tray for everybody.
+ *   - `/bids` — "Every bid invitation logged across every GC" reads
+ *     GC-shaped, but the record is `BidInvitation.contactId`: whoever asked
+ *     you to price it, owner or GC. It is a price-history table.
+ *
+ * `filesMonthlyPayApps` still hides NOTHING, and that is unchanged rather
+ * than unexamined. Retainage and pay applications have no top-level route —
+ * they are tabs inside `app/(app)/jobs/[id]/**`, Diego's lane. The answer is
+ * collected, drives the profile line below and the Ask context, and has
+ * nothing on this rail to key off.
  *
  * A route absent from this map is never hidden by any answer — the default
  * for everything this file does not name is "always show it."
@@ -87,11 +127,50 @@ const ROUTE_HIDDEN_WHEN: Record<string, (answers: BusinessScopeAnswers) => boole
   // navItems.tsx says so too. Hidden only when the company said it never
   // works under a GC at all; BOTH keeps it, since some of their jobs do.
   "/submittals": (a) => a.contractingRelationship === "DIRECT_FOR_OWNERS",
+  // A backcharge is a GC deducting from what it owes us under a subcontract,
+  // and the MODEL says so rather than only the page: `gcReference` is "the
+  // GC's own document number for it, which is what they will quote back at
+  // us", `claimedAmount` is "what the GC says we owe", and `respondByDate`
+  // is "the contractual deadline to object in writing… most subcontracts
+  // state one". The page's first line is "Money the GC is taking off what
+  // they owe us". An unhappy OWNER simply withholds: there is no notice
+  // with a number on it to log and no objection window to beat, so a
+  // direct-for-owners company reads this label and cannot tell what it is
+  // for. Same shape and same reasoning as /submittals above, so BOTH keeps
+  // it for the same reason — some of their jobs are under a GC.
+  "/backcharges": (a) => a.contractingRelationship === "DIRECT_FOR_OWNERS",
   // Prevailing-wage rules and the union/apprentice/fringe reporting that
   // rides with certified-payroll work only bite on public jobs.
   "/prevailing-wage": (a) => a.doesPublicWork === false,
   "/union-compliance": (a) => a.doesPublicWork === false,
 };
+
+/**
+ * Every route this file could ever hide, whatever the answers.
+ *
+ * Exported so the data guard's probe list (lib/businessScopeData.ts) can be
+ * checked against it from BOTH ends — a probe for a route that is not
+ * hideable is dead code, and a hideable route with no probe is a route the
+ * guard silently cannot protect. `businessScopeData.test.ts` fails the build
+ * on either. Per CLAUDE.md's census scars, that is a set asserted against a
+ * source that cannot drift with it rather than a count somebody maintains.
+ */
+export const HIDEABLE_ROUTES: readonly string[] = Object.keys(ROUTE_HIDDEN_WHEN);
+
+/**
+ * Which routes these answers WOULD hide, before the data guard has its say.
+ *
+ * Pure, and the reason it is exported is cost. The caller has to ask the
+ * database whether this company already has rows behind a route it is about
+ * to hide, and the cheapest version of that question is not asking it: a
+ * company with no answers, or with answers that happen to hide nothing,
+ * needs no query at all. `app/(app)/layout.tsx` calls this first and only
+ * reaches for `loadRoutesWithData` when the list is non-empty.
+ */
+export function routesHiddenByAnswers(answers: BusinessScopeAnswers): string[] {
+  if (hasNoScopeAnswers(answers)) return [];
+  return HIDEABLE_ROUTES.filter((href) => ROUTE_HIDDEN_WHEN[href]?.(answers) ?? false);
+}
 
 /**
  * Whether `href` should be hidden from the rail for this company's answers.
@@ -101,9 +180,34 @@ const ROUTE_HIDDEN_WHEN: Record<string, (answers: BusinessScopeAnswers) => boole
  * the regression this feature must never cause: it is checked directly in
  * businessScope.test.ts and again in navItems.test.ts against a company
  * with every field null.
+ *
+ * `routesWithData` IS THE SECOND THING THAT OVERRIDES AN ANSWER, and it
+ * matters more than it reads. An answer is a statement about the work a
+ * company intends to take; the rows in its database are a statement about
+ * the work it has already done, and when the two disagree the rows win.
+ * A company that has logged backcharges under a GC and later answers
+ * "direct for owners" must not lose the door to the dispute deadlines it
+ * is still inside of — the amounts keep feeding the job's money either
+ * way, so hiding the menu would leave a figure on screen with no way to
+ * reach what it is made of. Same for a union shop that answers "no public
+ * work": the fringe it owes the trust funds this month does not stop being
+ * owed because the next job is private.
+ *
+ * Deliberately a LIST OF ROUTES rather than a count, a flag or a company
+ * id: this module stays pure (no Prisma, no session, no I/O — see the file
+ * header), so the caller gathers the facts and hands them over as data.
+ * lib/businessScopeData.ts is the only half that knows any table names.
+ * Omitted, it means "nothing known to have data", which is the honest
+ * default for every caller that has not asked — the answers then decide
+ * alone, exactly as they did before this guard existed.
  */
-export function isHiddenByBusinessScope(href: string, answers: BusinessScopeAnswers): boolean {
+export function isHiddenByBusinessScope(
+  href: string,
+  answers: BusinessScopeAnswers,
+  routesWithData: readonly string[] = [],
+): boolean {
   if (hasNoScopeAnswers(answers)) return false;
+  if (routesWithData.includes(href)) return false;
   return ROUTE_HIDDEN_WHEN[href]?.(answers) ?? false;
 }
 

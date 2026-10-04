@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { AI_CLIENT_OPTIONS, modelFor } from "./models";
 import type { AskUsageTotals } from "./ask";
 
 /**
@@ -34,7 +35,16 @@ type AnthropicUsage = {
   cache_creation_input_tokens?: number | null;
 };
 
-async function reportUsage(
+/**
+ * EXPORTED so a model caller in another file can report the same way.
+ *
+ * It was private until `quotes.ts` needed it, and the alternative was a second
+ * copy of "report before checking the result, because a call that produced
+ * nothing usable still cost the money". Two copies of that rule is how one of
+ * them stops being true — the same argument that kept feature 5 off a second
+ * quote model. One helper, one place, whatever file the caller lives in.
+ */
+export async function reportUsage(
   onUsage: ModelUsageReporter | undefined,
   usage: AnthropicUsage | null | undefined,
 ): Promise<void> {
@@ -58,6 +68,32 @@ async function reportUsage(
 // interprets numbers it's handed. Financial figures on a WIP schedule have
 // to be exactly reproducible, which is why the math lives in plain
 // TypeScript and this module's only job is explaining what the math means.
+/**
+ * THE THREE PROMPT VERSIONS IN THIS FILE, AND WHY ALL THREE ARRIVED AT ONCE.
+ *
+ * `docs/ai/DECISIONS.md` wanted a version on every prompt so a later claim that a
+ * prompt change improved something can be attributed to one side of it or the
+ * other. `promptVersionCensus.test.ts` enforces it — and the shape of that census
+ * is why this is three constants rather than the one the work called for.
+ *
+ * It derives the versioned features from each file in this package: a file that
+ * declares a `*_PROMPT_VERSION` and resolves features with `modelFor(...)` has a
+ * versioned prompt for EVERY feature it resolves. That was exactly right while
+ * every versioned prompt lived in a single-feature file (`planSheets.ts`,
+ * `addenda.ts`, `quotes.ts`, `leads.ts`, `research.ts`, `ask.ts` are one apiece).
+ * This file is the only one holding three.
+ *
+ * So versioning the draft prompt alone turned the census red on the other two —
+ * proved by doing it, not predicted: it named `billing.ts` recording
+ * `wip-narrative` and `compliance.ts` recording `compliance-extract` without a
+ * version. The alternative was splitting a 150-line function into its own module
+ * to dodge a guard that was right. Versioning all three is additive, smaller, and
+ * closes the attribution gap on two features nobody had got to yet.
+ *
+ * Each starts at `.1`. BUMP THE ONE YOU CHANGE — a version that moves when its
+ * prompt did not is worse than no version, because it splits one prompt's rows
+ * into two populations that are actually the same.
+ */
 const SYSTEM_PROMPT = `You are a construction-industry financial analyst helping a general contractor read a job's WIP (work-in-progress) percentage-of-completion report.
 
 You will be given ALREADY-COMPUTED figures for one job: contract value, percent complete, earned revenue, billed-to-date, and over/under-billing, plus a per-line-item breakdown. Every number you receive is exact and final — do not recompute, restate as a different value, or "correct" any figure. Your job is interpretation only: explain what the numbers mean and flag anything a project manager or the company's surety/lender would want to know.
@@ -94,14 +130,20 @@ export interface WipNarrativeJobSummary {
  * The figures themselves come from the caller (lib/wip.ts) — this function
  * never touches the database or does any arithmetic of its own.
  */
+export const WIP_NARRATIVE_PROMPT_VERSION = "wip-narrative.1";
+
 export async function generateWipNarrative(
   summary: WipNarrativeJobSummary,
   onUsage?: ModelUsageReporter,
+  /** The model, already resolved by the caller's `aiGate` against this
+   *  company's override. Omitted falls back to the feature default, which is
+   *  what a test or a caller with no company context gets. */
+  model?: string,
 ): Promise<string> {
-  const client = new Anthropic();
+  const client = new Anthropic(AI_CLIENT_OPTIONS);
 
   const response = await client.messages.create({
-    model: "claude-opus-5",
+    model: model ?? modelFor("WIP_NARRATIVE").model,
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [
@@ -151,6 +193,8 @@ export interface ComplianceDocumentExtraction {
   notes: string | null;
 }
 
+export const COMPLIANCE_PROMPT_VERSION = "compliance-extract.1";
+
 const EXTRACTION_TOOL_NAME = "record_compliance_document";
 
 const EXTRACTION_SYSTEM_PROMPT = `You are reading a scanned construction compliance document (a lien waiver, certificate of insurance, certified payroll report, union fringe/benefit filing, or union agreement/CBA) for a general contractor. Extract the fields into the record_compliance_document tool exactly as they appear on the document — do not infer or guess a value that isn't actually printed on the page. Use null for any field the document doesn't state. Dates must be ISO format (YYYY-MM-DD). If you're unsure about a field, still make your best extraction but say so in "notes".`;
@@ -171,8 +215,11 @@ export async function extractComplianceDocument(params: {
    *  It base64-encodes a file of up to 15MB into a single request — an
    *  audit put it at $2.25-$4.50 per upload, 50-90x a warm Ask question. */
   onUsage?: ModelUsageReporter;
+  /** The model, already resolved by the caller's `aiGate` against this
+   *  company's override. Omitted falls back to the feature default. */
+  model?: string;
 }): Promise<ComplianceDocumentExtraction> {
-  const client = new Anthropic();
+  const client = new Anthropic(AI_CLIENT_OPTIONS);
 
   const fileBlock: Anthropic.ContentBlockParam =
     params.mediaType === "application/pdf"
@@ -186,7 +233,7 @@ export async function extractComplianceDocument(params: {
         };
 
   const response = await client.messages.create({
-    model: "claude-opus-5",
+    model: params.model ?? modelFor("COMPLIANCE_EXTRACT").model,
     max_tokens: 1024,
     system: EXTRACTION_SYSTEM_PROMPT,
     tools: [
@@ -293,6 +340,8 @@ export interface DraftLineItem {
 const MAX_REFERENCE_CATALOG_ENTRIES = 200;
 const MAX_REFERENCE_WON_BIDS = 40;
 
+export const DRAFT_LINES_PROMPT_VERSION = "draft-estimate-lines.1";
+
 const DRAFT_TOOL_NAME = "record_draft_line_items";
 
 const DRAFT_SYSTEM_PROMPT = `You are helping a specialty-trade construction SUBCONTRACTOR turn a plain-language scope of work into a first-draft list of estimate line items. This company self-performs a narrow family of trades (metal framing/drywall, lath & plaster, EIFS, acoustical ceilings, fireproofing) and bids to general contractors — it does not coordinate other subs. Draft only the work this company would perform itself.
@@ -323,8 +372,11 @@ export async function draftEstimateLineItems(
    *  time, so one AskUsage row could hide an entire second model call and
    *  the cap counted questions rather than calls. Reported separately. */
   onUsage?: ModelUsageReporter,
+  /** The model, already resolved by the caller's `aiGate` against this
+   *  company's override. Omitted falls back to the feature default. */
+  model?: string,
 ): Promise<DraftLineItem[]> {
-  const client = new Anthropic();
+  const client = new Anthropic(AI_CLIENT_OPTIONS);
 
   const catalogEntries = reference.catalogEntries.slice(0, MAX_REFERENCE_CATALOG_ENTRIES);
   const wonBids = reference.wonBids.slice(0, MAX_REFERENCE_WON_BIDS);
@@ -361,7 +413,7 @@ export async function draftEstimateLineItems(
   ].join("\n\n---\n\n");
 
   const response = await client.messages.create({
-    model: "claude-opus-5",
+    model: model ?? modelFor("DRAFT_ESTIMATE_LINES").model,
     max_tokens: 2048,
     system: DRAFT_SYSTEM_PROMPT,
     tools: [

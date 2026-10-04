@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createUnionLocalAndAgreement } from "@/lib/actions";
 import { inputClass, labelClass } from "@/components/RfiFields";
+import { Spinner } from "@/components/Spinner";
 
 /** Records a local and this company's agreement with it in one step.
  *
@@ -122,7 +123,14 @@ export function UnionLocalForm() {
           disabled={isPending}
           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Save local"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save local"
+          )}
         </button>
         <button
           type="button"

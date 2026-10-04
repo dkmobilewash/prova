@@ -72,6 +72,85 @@ model AskAllowancePeriod {
   failedQuestions Int @default(0)
   failedPages     Int @default(0)
 
+  /// PLAN SHEETS claimed this period, metered SEPARATELY from `pagesUsed`
+  /// above and by the same claim-before-the-call rule.
+  ///
+  /// WHY A THIRD UNIT RATHER THAN MORE PAGES. Ingesting one 300-sheet plan set
+  /// is 300 pages — the ENTIRE existing monthly page allowance — so a
+  /// contractor who uploaded a drawing set would have no document allowance
+  /// left for the compliance paperwork the same job needs, and the second set
+  /// that month would be refused outright. The two are not the same product
+  /// either: a page is a document somebody hands the assistant, and a sheet is
+  /// a unit of a bulk job that runs unattended.
+  ///
+  /// Diego set the included figure at 1,500 sheets a month; the per-company
+  /// value lives on `CompanyAiSettings.planSheetsPerMonth` so a plan can move
+  /// it without a migration.
+  ///
+  /// `allowanceForCompany` DOES NOT READ IT, and this line said it did. That
+  /// function returns `{questions, pages}` and ignores its `companyId` argument
+  /// entirely — deliberately, since widening it would reshape a type the Ask box
+  /// and the compliance upload share to carry a unit neither of them spends. The
+  /// ceiling reaches the claim another way: `aiGate` already returns the company's
+  /// `AiSettings`, which carries `planSheetsPerMonth`, so the gated caller hands it
+  /// to `claimPlanSheet` (`lib/ask/planSheetSpend.ts`) and no page pays for a
+  /// second query to learn it.
+  planSheetsUsed   Int @default(0)
+  /// Of those, sheets whose model call then failed — marked, never released,
+  /// for exactly the reasons the two fields above are.
+  failedPlanSheets Int @default(0)
+
+  /// PAGES OF BID ADDENDA READ THIS MONTH — a fourth unit, and the argument is
+  /// the third unit's argument arriving again rather than a new one.
+  ///
+  /// The obvious answer was to spend `pagesUsed`: an addendum is eight pages and
+  /// the single-document ceiling is a hundred, so one fits comfortably. That
+  /// checks the CEILING and never checks the MONTH. An estimator bidding twenty
+  /// jobs with three addenda each at eight pages is ~480 pages against a 300-page
+  /// month — one and a half times the whole allowance, spent on bids, leaving
+  /// nothing for the lien waivers and certificates the won job then needs. Which
+  /// is word for word why plan sheets are not pages, two fields up.
+  ///
+  /// The two are not the same product either. A document page is something
+  /// somebody hands the assistant once; an addendum arrives on every bid, several
+  /// times per bid, whether or not anybody wanted it that week.
+  ///
+  /// 600 a month is Diego's figure and A FIGURE IS NOT A MEASUREMENT — 480 is the
+  /// modelled heavy month and 600 leaves room to re-read. Per-company on
+  /// `CompanyAiSettings.addendumPagesPerMonth` so a plan can move it without a
+  /// migration, and reaching the claim the way `planSheetsPerMonth` does: out of
+  /// the `AiSettings` the gate already returned, never a second query.
+  addendumPagesUsed   Int @default(0)
+  /// Of those, pages whose model call then failed — marked, never released, for
+  /// the reasons every other failure field here gives.
+  failedAddendumPages Int @default(0)
+
+  /// PAGES OF SPEC SECTIONS READ THIS MONTH — a FIFTH unit, and the argument
+  /// above arriving a third time rather than a new one.
+  ///
+  /// Sharing `addendumPagesUsed` was the obvious saving and is the wrong call
+  /// for a reason the addendum entry above does not cover: the two units would
+  /// be spent by different features at wildly different rates. A spec section
+  /// runs thirty to sixty pages against an addendum's two to twenty, so three
+  /// sections on one bid is roughly a hundred pages — and twenty bids a month is
+  /// 1,800 against the addendum allowance of 600. Reading specs would silently
+  /// consume the allowance for reading addenda, three times over, with nothing on
+  /// screen able to tell a contractor which of the two spent their month.
+  ///
+  /// 1,800 a month is Diego's figure and A FIGURE IS NOT A MEASUREMENT. Worth
+  /// recording how it was arrived at, because the first number was wrong: it was
+  /// pitched as 600 on an estimate of "four ten-page sections per bid", and a
+  /// spec section is not ten pages. At thirty pages and three sections, 600 is
+  /// three bids a month rather than fifteen. 1,800 is twenty bids at three
+  /// thirty-page sections, and step 2's cost panel is what turns it into a
+  /// measurement.
+  ///
+  /// Per-company on `CompanyAiSettings.specPagesPerMonth`, reaching the claim out
+  /// of the `AiSettings` the gate already returned rather than a second query.
+  specPagesUsed   Int @default(0)
+  /// Of those, pages whose model call then failed — marked, never released.
+  failedSpecPages Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

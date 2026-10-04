@@ -6,6 +6,7 @@ import { deleteJobMediaTag, renameJobMediaTag } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { JOB_MEDIA_TAG_MAX_LENGTH } from "@/lib/job-media-tags";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 
 /** One tag in the company's vocabulary, with how many photos wear it.
  *
@@ -138,7 +139,14 @@ function JobMediaTagRow({ tag }: { tag: JobMediaTagSummary }) {
               disabled={isPending}
               className="min-h-11 inline-flex items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
-              {isPending ? "Saving…" : "Save"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
               Cancel

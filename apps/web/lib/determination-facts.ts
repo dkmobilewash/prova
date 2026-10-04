@@ -31,6 +31,10 @@ export type JobComplianceFactsInput = {
   publicWorks: boolean | null;
   bidAdvertisedOn: Date | null;
   awardingBody: string | null;
+  /** The awarding body's own contract or project number. Read by the WH-347
+   * header (`lib/wh347.ts`), which reported it as blocking with "A job does
+   * not record one" until this column existed. */
+  contractNumber: string | null;
 };
 
 const MARKERS: readonly DeterminationMarker[] = ["NONE", "SINGLE", "DOUBLE"];
@@ -119,6 +123,7 @@ export function jobComplianceFactsFromForm(formData: FormData): Parsed<JobCompli
       publicWorks,
       bidAdvertisedOn: advertised.value,
       awardingBody: text(formData, "awardingBody"),
+      contractNumber: text(formData, "contractNumber"),
     },
   };
 }

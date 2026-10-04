@@ -4,6 +4,7 @@ import {
   researchProject,
   RESEARCH_FIELD_LABELS,
   RESEARCH_MAX_SEARCHES,
+  RESEARCH_PROMPT_VERSION,
   type AskAttachmentBlock,
   streamToolConversation,
   type AskToolCallMeta,
@@ -12,6 +13,7 @@ import {
   type AskUsageTotals,
 } from "@prova/integrations";
 import type { Principal } from "@/lib/permissions";
+import { aiGate } from "@/lib/ai/settings";
 import { accessContext, refusalFor } from "./access";
 import { askAllowance, PROVENANCE_OUTCOME, recordAskUsage, type AskUsageOutcome } from "./usage";
 import { checkNumberProvenance, describeUnaccounted } from "./provenance";
@@ -697,6 +699,23 @@ export async function* streamAnswer(
     return;
   }
 
+  // THE PER-COMPANY AI SWITCH, and it gates the WHOLE box including the chip
+  // path below. `invalid()` above already refuses when the server has no key,
+  // in the same shape; this is the same refusal for a company that has
+  // switched the assistant off itself, and the sentence names who can turn it
+  // back on because nothing else on screen will.
+  //
+  // It is checked before the rolling limits and before the paid claim, so a
+  // switched-off company spends no allowance and no money finding out. Every
+  // other feature is gated at its own call site — a company may keep the
+  // assistant and refuse web research, which is why `disabledFeatures` is a
+  // list rather than one flag.
+  const askGate = await aiGate(ctx.companyId, "ASK");
+  if (!askGate.ok) {
+    yield { type: "error", error: askGate.error };
+    return;
+  }
+
   // A chip answer re-runs the command with what the model already gave
   // plus the person's pick. No model pass: the registry does the whole
   // thing, which is also why it cannot be steered by anything but the
@@ -789,16 +808,33 @@ export async function* streamAnswer(
   // Web research for a new bid, bound to this company for the usage row.
   // Only the Ask loop supplies it; the confirm tap never researches.
   const research: BidResearcher = async ({ projectName, location }) => {
-    const result = await researchProject({ projectName, location, maxSearches: RESEARCH_MAX_SEARCHES });
+    // Bid research is its own switch, separate from the Ask box's. A company
+    // may want the assistant and not want a project name leaving for a web
+    // search — which is the whole reason the features are switched
+    // individually rather than together.
+    const gate = await aiGate(ctx.companyId, "BID_RESEARCH");
+    if (!gate.ok) {
+      console.log("[ask] bid research", { companyId: ctx.companyId, ok: false, reason: "off" });
+      return { ok: false, sentence: gate.error };
+    }
+    const result = await researchProject({
+      projectName,
+      location,
+      maxSearches: RESEARCH_MAX_SEARCHES,
+      model: gate.model,
+    });
     console.log("[ask] bid research", { companyId: ctx.companyId, ok: result.ok, searches: result.searches });
     if (result.usage.passes > 0) {
       await recordAskUsage({
         companyId: ctx.companyId,
         userId: ctx.userId,
-        model: ASK_DEFAULT_MODEL,
+        // The model that actually ran, from the gate, rather than Ask's
+        // default — the two are the same today and need not stay so.
+        model: gate.model,
         usage: result.usage,
         outcome: result.ok ? "answered" : `error:${result.reason}`,
         feature: "bid-research",
+        promptVersion: RESEARCH_PROMPT_VERSION,
       });
     }
     if (!result.ok) return { ok: false };
@@ -889,6 +925,9 @@ export async function* streamAnswer(
     // that does not explicitly turn it on (ask.ts's own default), so this
     // is the one place production actually spends a search.
     webSearch: true,
+    // The model this company's gate resolved, so an override reaches the
+    // loop itself and not only the features around it.
+    model: askGate.model,
     // ctx is closed over here and is not a parameter of any tool schema,
     // so there is no way for the model to ask about anyone else.
     //
@@ -1006,7 +1045,10 @@ export async function* streamAnswer(
   let usage: AskUsageTotals | null = null;
   const record = async (outcome: AskUsageOutcome) => {
     if (!usage) return;
-    await recordAskUsage({ companyId: ctx.companyId, userId: ctx.userId, model: ASK_DEFAULT_MODEL, usage, outcome });
+    // The model the gate resolved for this company, not the process-wide
+    // default: with a company override in play those differ, and the row is
+    // what step 2's cost numbers will be computed from.
+    await recordAskUsage({ companyId: ctx.companyId, userId: ctx.userId, model: askGate.model, usage, outcome });
   };
 
   // What is on screen, tracked the way the panel tracks it, so the guard

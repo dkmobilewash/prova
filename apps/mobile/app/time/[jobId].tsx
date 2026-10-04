@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
+import { FooterActions } from "@/components/FooterActions";
 import { Card } from "@/components/Card";
 import { Chip } from "@/components/Chip";
 import { DateField } from "@/components/DateField";
@@ -781,19 +782,22 @@ export default function TimeScreen() {
         )}
       </ScrollView>
 
-      <View style={[styles.footer, styles.footerRow]}>
-        <Button variant="secondary" onPress={openSign}>
-          {t("time.signDay")}
+      {/* TWO secondaries — the case that squeezed "Log time" to 40pt with no
+          label on a real phone. FooterActions stacks at this capacity. */}
+      <FooterActions
+        secondary={[
+          <Button key="sign" variant="secondary" onPress={openSign}>
+            {t("time.signDay")}
+          </Button>,
+          <Button key="handover" variant="secondary" onPress={() => setShowHandover(true)}>
+            {t("time.handover.button")}
+          </Button>,
+        ]}
+      >
+        <Button fullWidth onPress={openForm}>
+          {t("time.log")}
         </Button>
-        <Button variant="secondary" onPress={() => setShowHandover(true)}>
-          {t("time.handover.button")}
-        </Button>
-        <View style={styles.footerMain}>
-          <Button fullWidth onPress={openForm}>
-            {t("time.log")}
-          </Button>
-        </View>
-      </View>
+      </FooterActions>
 
       {/* Handing the phone to a crew member so they put their OWN hours
           in and sign for them, rather than the foreman typing what he
@@ -1118,8 +1122,6 @@ function makeStyles(p: Palette) {
       borderTopWidth: 1,
       borderTopColor: p.colors.lineRow,
     },
-    footerRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-    footerMain: { flex: 1 },
     signed: { color: p.colors.link, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
   });
 }

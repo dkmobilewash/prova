@@ -98,6 +98,12 @@ vi.mock("@/lib/ask/usage", () => ({
 const created: unknown[] = [];
 vi.mock("@prova/db", () => ({
   prisma: {
+    // The per-company AI switch, read before the bytes are fetched back
+    // (lib/ai/settings.ts). `null` is "no row" — every default, AI on — which
+    // is the state every assertion here was written under. It matters that it
+    // is spelled out: `aiGate` fails CLOSED, so an unreadable row would turn
+    // this whole file into a test of one refusal.
+    companyAiSettings: { findUnique: async () => null },
     job: { findUnique: async () => null },
     complianceDocument: {
       create: async (args: unknown) => {

@@ -6,6 +6,7 @@ import type { ActionResult } from "@/lib/actions/shared";
 import { CertificationFields } from "@/components/CertificationFields";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 import {
   STANDING_LABELS,
   standingChipClass,
@@ -69,7 +70,14 @@ function CertificationRecordEditForm({
       {error && <p className="text-sm text-red-400">{error}</p>}
       <div className="flex gap-2">
         <button type="submit" disabled={isPending} className={primaryBtn}>
-          {isPending ? "Saving…" : "Save changes"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save changes"
+          )}
         </button>
         <button type="button" disabled={isPending} onClick={onCancel} className={btn}>
           Cancel

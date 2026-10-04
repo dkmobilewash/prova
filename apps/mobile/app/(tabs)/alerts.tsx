@@ -1,0 +1,205 @@
+import { useAuth } from "@clerk/expo";
+import { Redirect, useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { GroupedList } from "@/components/GroupedList";
+import { AppHeader } from "@/components/AppHeader";
+import { GroupedRow } from "@/components/GroupedRow";
+import { Skeleton } from "@/components/Skeleton";
+import { SyncStatus } from "@/components/SyncStatus";
+import * as api from "@/lib/api";
+import { cacheKeys } from "@/lib/cache-keys";
+import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
+import { emptyFor } from "@/lib/empty-state";
+import { useT, type StringKey } from "@/lib/i18n";
+import { leadingFor, type Palette, radius, space, typography } from "@/lib/theme";
+import type { AlertRow } from "@/lib/types";
+import { usePalette } from "@/lib/use-palette";
+import { useStableGetToken } from "@/lib/use-stable-get-token";
+
+/**
+ * The phone's alert list — what a notification tap lands on, and what the
+ * notification was a pointer to. Read-only, per-principal, and already
+ * money-stripped server-side: the phone renders no figures, and it must
+ * never be a second place deciding who may see them.
+ *
+ * The severity wording is the web's own (alertLabels.ts), so the bell,
+ * the list and this screen cannot tell different stories about the same
+ * alert.
+ *
+ * Deliberately NOT tappable. Every alert carries an `href` into the web
+ * app, and the phone has no browser of its own here: a row that looked
+ * pressable and did nothing would be worse than a row that plainly says
+ * what is wrong. The thing to do about an alert is on a laptop; the
+ * thing to KNOW about it is here.
+ */
+function severityStyles(palette: Palette) {
+  return {
+    OVERDUE: { label: "alerts.pastDue", bg: palette.colors.tagRose, ink: palette.colors.tagRoseInk },
+    DUE_SOON: { label: "alerts.comingUp", bg: palette.colors.tagAmber, ink: palette.colors.tagAmberInk },
+    STANDING: { label: "alerts.standing", bg: palette.colors.tagSlate, ink: palette.colors.tagSlateInk },
+  } satisfies Record<AlertRow["severity"], { label: StringKey; bg: string; ink: string }>;
+}
+
+export default function AlertsScreen() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const getToken = useStableGetToken();
+  const { t } = useT();
+  const palette = usePalette();
+  const styles = useMemo(() => makeStyles(palette), [palette]);
+  const severity = useMemo(() => severityStyles(palette), [palette]);
+  const [alerts, setAlerts] = useState<AlertRow[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [offline, setOffline] = useState<string | "nothing" | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    // The same cache contract every list screen keeps: the token goes
+    // INSIDE the read so no signal still shows the last-known list, and
+    // an empty cache reads as "couldn't load", never as "nothing is
+    // wrong" — the exact lie a punch list once told in a basement.
+    const result = await cachedRead(
+      cacheKeys.alerts(),
+      withToken(getToken, (t) => api.listAlerts(t)),
+    );
+    if (result.from === "nothing") {
+      setOffline("nothing");
+      setLoaded(true); // the read FINISHED — it just found nothing to read
+      return;
+    }
+    setAlerts(result.value);
+    setOffline(staleNote(result));
+    setLoaded(true);
+  }, [getToken]);
+
+  // ON FOCUS, not once on mount — and this screen is the one that most
+  // needed it. A tab stays MOUNTED when you switch away from it, so an
+  // effect keyed on mount runs exactly once per app launch: the list you
+  // saw at breakfast is the list you see at four, with no stale note,
+  // because `cachedRead` reached the server that one time and was right.
+  //
+  // Measured on a real iPhone 2026-10-03: a contact and its dates were
+  // deleted on the web, `/alerts` there went to "Nothing needs attention",
+  // and this screen still showed all three — through tab switches and an
+  // app resume. Pull-to-refresh fixed it, which is exactly the problem:
+  // the one list whose whole job is to be current only updated if you
+  // happened to distrust it.
+  //
+  // Home and Outbox already did this; Jobs and Alerts did not.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isSignedIn) return;
+      void load();
+    }, [isSignedIn, load]),
+  );
+
+  if (!isLoaded) return <Text style={styles.loading}>{t("common.loading")}</Text>;
+  if (!isSignedIn) return <Redirect href="/sign-in" />;
+
+  const empty = emptyFor(offline, "thing.alerts", {
+    title: "alerts.empty.title",
+    description: "alerts.empty.body",
+  });
+
+  return (
+    <SafeAreaView edges={["top"]} style={styles.screen}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            tintColor={palette.colors.inkMuted}
+            onRefresh={async () => {
+              setRefreshing(true);
+              await load();
+              setRefreshing(false);
+            }}
+          />
+        }
+      >
+        {/* The tab draws its own large title inside the safe area, the way
+            Home, Jobs and Settings do. It used to take the root stack's
+            header, which this screen no longer has — a tab with
+            `headerShown: false` and no title of its own is a page that
+            opens with no name on it. */}
+        <AppHeader title={t("nav.alerts")} />
+
+        {/* `<WayHome />` used to be the first thing here, and it is gone
+            because this screen is a TAB now. The dead end it existed for —
+            a cold notification tap landing with no back chevron and no tab
+            bar — cannot happen on a tab: the bar is always rendered, so the
+            way out is structural rather than something a screen has to
+            remember. Keeping it would have put a redundant Home button at
+            the top of this tab on every visit, since `canGoBack()` is false
+            at a tab root. It stays on /job/[jobId], which is still outside
+            the group. push-destination-exit.test.ts asserts that split. */}
+        <SyncStatus state={offline} />
+        {!loaded ? (
+          <View style={styles.skeletonGroup}>
+            <Skeleton height={64} />
+            <Skeleton height={64} />
+            <Skeleton height={64} />
+          </View>
+        ) : alerts.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>{empty.emptyTitle}</Text>
+            {empty.emptyDescription ? (
+              <Text style={styles.emptyBody}>{empty.emptyDescription}</Text>
+            ) : null}
+          </View>
+        ) : (
+          <GroupedList>
+            {alerts.map((item, i) => {
+              const tone = severity[item.severity];
+              return (
+                <GroupedRow
+                  key={item.key}
+                  title={item.title}
+                  subtitle={item.detail}
+                  trailing={
+                    <View style={[styles.tag, { backgroundColor: tone.bg }]}>
+                      <Text style={[styles.tagLabel, { color: tone.ink }]}>{t(tone.label)}</Text>
+                    </View>
+                  }
+                  divider={i > 0}
+                />
+              );
+            })}
+          </GroupedList>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function makeStyles(p: Palette) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: p.colors.canvas },
+    content: { paddingHorizontal: space.md, paddingBottom: space.xxl },
+    loading: { color: p.colors.ink, fontSize: typography.size.md, padding: space.md },
+    skeletonGroup: { gap: space.sm, marginTop: space.sm },
+    tag: {
+      borderRadius: radius.pill,
+      paddingHorizontal: space.sm,
+      paddingVertical: space.xxs,
+    },
+    tagLabel: {
+      fontSize: typography.size.xs,
+      fontWeight: typography.weight.semibold,
+    },
+    empty: { gap: space.xs, paddingTop: space.xl, alignItems: "center" },
+    emptyTitle: {
+      color: p.colors.ink,
+      fontSize: typography.size.lg,
+      fontWeight: typography.weight.semibold,
+      textAlign: "center",
+    },
+    emptyBody: {
+      color: p.colors.inkBody,
+      fontSize: typography.size.md,
+      lineHeight: leadingFor(typography.size.md),
+      textAlign: "center",
+    },
+  });
+}

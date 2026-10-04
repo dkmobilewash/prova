@@ -58,6 +58,7 @@ import {
   ownerRefusal,
   runAction,
   type ActionResult,
+  optionalLinkFromForm,
 } from "./shared";
 
 /** Said the same way everywhere, so a person who sees it twice knows it is
@@ -152,6 +153,15 @@ export async function createApprenticeshipCommittee(formData: FormData): Promise
     return fail("That committee is already recorded for this craft and area. Reload; it is on the list.");
   }
 
+  // A LINK THAT REACHES AN href, SO IT IS CHECKED HERE RATHER THAN BY THE
+  // INPUT'S `type="url"`. That attribute is a browser hint; this action
+  // receives whatever the POST body holds, and `sourceUrl` is rendered as
+  // `href={committee.sourceUrl}` in ApprenticeshipCommitteePanel.tsx — so a
+  // stored `javascript:` value would have been a script in a colleague's
+  // session. Returned, not thrown: this function is not inside `runAction`.
+  const sourceUrl = optionalLinkFromForm(formData, "sourceUrl", "Where you read this");
+  if (!sourceUrl.ok) return fail(sourceUrl.error);
+
   await prisma.apprenticeshipCommittee.create({
     data: {
       companyId: company.id,
@@ -169,7 +179,7 @@ export async function createApprenticeshipCommittee(formData: FormData): Promise
       fax: text(formData, "fax") || null,
       phone: text(formData, "phone") || null,
       approvedToTrainUs: tristate(formData, "approvedToTrainUs"),
-      sourceUrl: text(formData, "sourceUrl") || null,
+      sourceUrl: sourceUrl.value,
       note: text(formData, "note") || null,
     },
   });
@@ -220,6 +230,11 @@ export async function updateApprenticeshipCommittee(
   // editing it here would make the directory and the sent notices disagree
   // about what a craft is called with nothing on screen to say why. A
   // committee covering a second craft is a second row.
+  // Same check as the create path, for the same reason. An edit is the
+  // other way a value reaches that href.
+  const sourceUrl = optionalLinkFromForm(formData, "sourceUrl", "Where you read this");
+  if (!sourceUrl.ok) return fail(sourceUrl.error);
+
   await prisma.apprenticeshipCommittee.update({
     where: { id: committeeId },
     data: {
@@ -236,7 +251,7 @@ export async function updateApprenticeshipCommittee(
       fax: text(formData, "fax") || null,
       phone: text(formData, "phone") || null,
       approvedToTrainUs: tristate(formData, "approvedToTrainUs"),
-      sourceUrl: text(formData, "sourceUrl") || null,
+      sourceUrl: sourceUrl.value,
       note: text(formData, "note") || null,
     },
   });

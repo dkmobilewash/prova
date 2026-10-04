@@ -22,6 +22,7 @@ import {
 import { localToday } from "@/components/localToday";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 
 export type DrawingSetRowData = DrawingSetDefaults & {
   id: string;
@@ -131,7 +132,14 @@ function RevisionEditForm({
       {error && <p className="text-sm text-red-400">{error}</p>}
       <div className="flex gap-2">
         <button type="submit" disabled={isPending} className={primaryBtn}>
-          {isPending ? "Saving…" : "Save"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save"
+          )}
         </button>
         <button type="button" disabled={isPending} onClick={onCancel} className={btn}>
           Cancel
@@ -200,7 +208,14 @@ export function DrawingSetRow({
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
-              {isPending ? "Saving…" : "Save changes"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save changes"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
               Cancel
@@ -268,7 +283,14 @@ export function DrawingSetRow({
 
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
-              {isPending ? "Saving…" : "Record issue"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Record issue"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
               Cancel

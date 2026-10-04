@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { deleteDocument } from "@/lib/blob";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
+import { asCostCategory } from "@/lib/cost-category";
 import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
 import {
   PRODUCTION_RATE_MAX,
@@ -151,6 +153,20 @@ export async function createLineItemCatalogEntry(formData: FormData): Promise<Ac
       min: PRODUCTION_RATE_MIN,
       max: PRODUCTION_RATE_MAX,
     });
+    // #513. Optional, and an unrecognised value is REFUSED rather than
+    // silently nulled — the defect #525 fixed in `setLineCostCategory`, not
+    // reintroduced here. An empty string is the form's own "no cost type".
+    //
+    // Membership comes from `asCostCategory` rather than a local
+    // `includes` — #526 landed the same day to end EIGHT hand-written copies of
+    // this enum (a ninth is what produced a NaN bid total), and adding a tenth
+    // here on the same afternoon would be the joke writing itself. The one thing
+    // it cannot do is tell "cleared" from "garbage", so the empty check stays.
+    const rawCostCategory = String(formData.get("costCategory") ?? "").trim();
+    const costCategory = rawCostCategory === "" ? null : asCostCategory(rawCostCategory);
+    if (rawCostCategory !== "" && costCategory === null) {
+      throw new InputError(`"${rawCostCategory}" is not a cost type.`);
+    }
     const craftClassificationId = await craftClassificationIdFromForm(formData, company.id);
 
     // InputError, not Error: both of these are things a person can fix, and
@@ -176,6 +192,7 @@ export async function createLineItemCatalogEntry(formData: FormData): Promise<Ac
         defaultBudgetedUnitCost,
         defaultLaborHours,
         productionRate,
+        costCategory,
         craftClassificationId,
       },
     });
@@ -258,6 +275,11 @@ export async function saveLineItemAsCatalogEntry(lineItemId: string) {
       // keeps `estimatedHours()`'s precedence on the entry exactly as it had
       // it on the line, rather than this writer picking one.
       productionRate: lineItem.productionRate,
+      // #513, and this is the direction that makes the catalog learn: a line
+      // somebody coded by hand on one bid promotes that coding, so the next bid
+      // inherits it and nobody re-codes the same item on the fourth job this
+      // month. That retyping is exactly what a price book exists to end.
+      costCategory: lineItem.costCategory,
       craftClassificationId: lineItem.craftClassificationId,
     },
   });
@@ -1110,8 +1132,28 @@ export async function deleteBidAddendum(addendumId: string): Promise<ActionResul
   }
   const { company } = context;
 
+  // THE FILE GOES WITH THE ROW, and this read exists only to make that possible.
+  //
+  // An addendum can carry the GC's PDF since `attachAddendumDocument` shipped,
+  // and a blob is `access: "public"` — unguessable but permanent and
+  // unauthenticated. Deleting the row without deleting the file leaves a
+  // customer's bid document readable forever by anyone who ever had the URL,
+  // with nothing in the app pointing at it and nothing that would ever collect
+  // it. That is #106's third finding, which `lib/blob.ts` describes, and it
+  // would have been introduced by the PR that added the column rather than
+  // inherited.
+  const addendum = await prisma.bidAddendum.findFirst({
+    where: { id: addendumId, companyId: company.id },
+    select: { fileUrl: true },
+  });
+
   const deleted = await prisma.bidAddendum.deleteMany({ where: { id: addendumId, companyId: company.id } });
   if (deleted.count === 0) return actionFail("That addendum is already gone. Reload the page.");
+
+  // AFTER the row is gone, and failures are swallowed by `deleteDocument`. The
+  // row is the record; a stranded blob is a tidiness problem, and refusing the
+  // delete because a storage call failed would be the worse of the two.
+  if (addendum?.fileUrl) await deleteDocument(addendum.fileUrl);
 
   revalidatePath("/bids");
   return actionOk;

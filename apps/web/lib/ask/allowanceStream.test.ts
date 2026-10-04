@@ -54,6 +54,16 @@ let loopEvents: () => AsyncGenerator<Record<string, unknown>> = async function* 
   yield { type: "done", toolsCalled: [] };
 };
 
+// The per-company AI switch reads one row before any model call
+// (lib/ai/settings.ts). `null` is "no row", which stands for every default —
+// AI on, every feature enabled — the state every assertion in this file was
+// written under. Spelled out rather than left to a real client, because
+// `aiGate` fails CLOSED: an unreadable row refuses, so without this mock the
+// suite would be testing the refusal path and nothing else.
+vi.mock("@prova/db", () => ({
+  prisma: { companyAiSettings: { findUnique: async () => null } },
+}));
+
 vi.mock("@prova/integrations", () => ({
   anthropicIsConfigured: () => true,
   ASK_DEFAULT_MODEL: "test-model",

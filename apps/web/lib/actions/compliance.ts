@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import {
-  DOCUMENT_UPLOAD_MAX_BYTES,
+  formatDocumentSize,
+  uploadMaxBytesFor,
   DOCUMENT_UPLOAD_TARGETS,
   documentDisplayFileName,
   documentUrlProblem,
@@ -10,10 +11,11 @@ import {
   type DocumentUploadContentType,
 } from "@/lib/document-uploads";
 import { requireCompanyContext } from "@/lib/auth";
+import { deleteDocument } from "@/lib/blob";
+import { aiGate } from "@/lib/ai/settings";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
-import { extractComplianceDocument } from "@prova/integrations";
-import { ASK_DEFAULT_MODEL } from "@prova/integrations";
+import { extractComplianceDocument, COMPLIANCE_PROMPT_VERSION } from "@prova/integrations";
 import { recordAskUsage } from "@/lib/ask/usage";
 import { markAskAllowanceFailure } from "@/lib/ask/allowance";
 import { claimDocumentPages } from "@/lib/ask/documentSpend";
@@ -246,90 +248,156 @@ export async function uploadComplianceDocument(
     jobId = job.id;
   }
 
-  const read = await readStoredDocument(fileUrl);
-  if (!read.ok) {
-    return uploadFail(read.error);
-  }
-
-  // THE PAGES, COUNTED FROM THE BYTES AND CLAIMED BEFORE THE CALL.
+  // THE PER-COMPANY AI SWITCH, before the bytes are fetched back out of the
+  // store, let alone sent anywhere. A company that has switched document
+  // reading off has said its paperwork must not reach a model, and this is
+  // the check that makes that true rather than promised.
   //
-  // It sits here and not one line earlier on purpose: the count comes out
-  // of the fetched bytes, never out of anything the browser said, so how
-  // much this upload costs is not known until `read` has it. Reading our
-  // own blob spends no model money, so nothing is at risk in doing it
-  // first — and a file refused above never touches the allowance at all.
+  // ─────────────────────────────────────────────────────────────────────
+  // THE SAME STRANDED-BLOB DEFECT AS #559's QUOTE PATH, FOUND BY ASKING
+  // WHETHER THERE WAS A SECOND ONE.
   //
-  // Anything other than `ok` here is the hard stop: the sentence says what
-  // ran out or why the document is too big, nothing is charged, and
-  // `extractComplianceDocument` is never reached.
-  const spend = await claimDocumentPages(company.id, read.mediaType, read.buffer);
-  if (!spend.ok) {
-    return uploadFail(spend.error);
-  }
-
-  // #277 moved the upload to the browser, so there is no putDocument here
-  // any more — the blob already exists and `read` is it, fetched back by
-  // readStoredDocument above. The metering below is the half of this call
-  // that has to survive that restructure.
-  let extraction: Awaited<ReturnType<typeof extractComplianceDocument>>;
+  // #559 was filed against `readBidQuoteDocument`, which recorded its blob
+  // URL nowhere. This path DOES record it — `fileUrl` on the row below —
+  // so it looked collectable, and on the success path it is. The four
+  // FAILURE paths are not: since #277 the browser uploads before this
+  // action runs, so the file already exists when the switch refuses, when
+  // the store will not serve the bytes back, when the month's allowance
+  // refuses, and when the extractor throws. Only the success path writes
+  // the row that points at it.
+  //
+  // That matters more here than for a quote. These are COIs, lien waivers
+  // and certified payroll — a subcontractor's and their workers' records —
+  // and blobs are uploaded `access: "public"`, so a stranded one is that
+  // document at a permanent unauthenticated address with nothing in the
+  // database that would let anybody find it again to remove it.
+  //
+  // A FLAG RATHER THAN #559's BLANKET `finally`, because the shapes differ:
+  // there the file has no purpose once its bytes are read, so every exit
+  // deletes it. Here a SUCCESSFUL upload keeps the file — the row renders a
+  // link to it — so the rule is "delete unless a row now points at it".
+  // `filed` is set immediately after the create and nowhere else.
+  //
+  // Safe to delete because `documentUrlProblem` above has already proved
+  // this URL is in our own store and under this company's own
+  // `compliance-document` folder, so it cannot be another tenant's file or
+  // another feature's — the same reason the quote path is safe, and the
+  // reason neither deletes before that check.
+  let filed = false;
   try {
-    extraction = await extractComplianceDocument({
-      fileBase64: read.buffer.toString("base64"),
-      mediaType: read.mediaType,
-      fileName: fileName ?? "document",
-      // Metered since 2026-09-14. The most expensive single call in this
-      // app — a 15MB file base64'd into one request, put at $2.25-$4.50 an
-      // upload by audit, against a warm Ask question at $0.05 — and until
-      // now it reported nothing at all.
-      onUsage: (usage) =>
-        recordAskUsage({
-          companyId: company.id,
-          userId: user.id,
-          model: ASK_DEFAULT_MODEL,
-          usage,
-          outcome: "answered",
-          feature: "compliance-extract",
-        }),
+    // AND IT REFUSES THE WHOLE UPLOAD, which is a consequence worth stating
+    // rather than burying: this action is the ONLY way a compliance document
+    // gets created, and the required `type` and `partyName` come out of the
+    // extraction — so with the reader off there is nothing to write. A
+    // manual-entry path is the real answer and is not in this change, so the
+    // sentence says what the trade is instead of pretending the switch is free.
+    const aiRead = await aiGate(company.id, "COMPLIANCE_EXTRACT");
+    if (!aiRead.ok) {
+      return uploadFail(
+        `${aiRead.error} Reading the document is how its type, party and dates get filled in, so filing one is off until it is back on.`,
+      );
+    }
+
+    const read = await readStoredDocument(fileUrl);
+    if (!read.ok) {
+      return uploadFail(read.error);
+    }
+
+    // THE PAGES, COUNTED FROM THE BYTES AND CLAIMED BEFORE THE CALL.
+    //
+    // It sits here and not one line earlier on purpose: the count comes out
+    // of the fetched bytes, never out of anything the browser said, so how
+    // much this upload costs is not known until `read` has it. Reading our
+    // own blob spends no model money, so nothing is at risk in doing it
+    // first — and a file refused above never touches the allowance at all.
+    //
+    // Anything other than `ok` here is the hard stop: the sentence says what
+    // ran out or why the document is too big, nothing is charged, and
+    // `extractComplianceDocument` is never reached.
+    const spend = await claimDocumentPages(company.id, read.mediaType, read.buffer);
+    if (!spend.ok) {
+      return uploadFail(spend.error);
+    }
+
+    // #277 moved the upload to the browser, so there is no putDocument here
+    // any more — the blob already exists and `read` is it, fetched back by
+    // readStoredDocument above. The metering below is the half of this call
+    // that has to survive that restructure.
+    let extraction: Awaited<ReturnType<typeof extractComplianceDocument>>;
+    try {
+      extraction = await extractComplianceDocument({
+        fileBase64: read.buffer.toString("base64"),
+        mediaType: read.mediaType,
+        fileName: fileName ?? "document",
+        // The model this company's gate resolved.
+        model: aiRead.model,
+        // Metered since 2026-09-14. The most expensive single call in this
+        // app — a 15MB file base64'd into one request, put at $2.25-$4.50 an
+        // upload by audit, against a warm Ask question at $0.05 — and until
+        // now it reported nothing at all.
+        onUsage: (usage) =>
+          recordAskUsage({
+            companyId: company.id,
+            userId: user.id,
+            // The model that actually ran. This column is what step 2's cost
+            // numbers get computed from, and the features no longer share one
+            // model.
+            model: aiRead.model,
+            // Null for a company-level document — a COI or a union agreement is
+            // filed against the company, not a job — which is exactly why this
+            // column is nullable.
+            jobId,
+            usage,
+            outcome: "answered",
+            feature: "compliance-extract",
+            promptVersion: COMPLIANCE_PROMPT_VERSION,
+          }),
+      });
+    } catch (err) {
+      // MARKED, NOT RELEASED — the same rule `streamAnswer` follows. A unit
+      // you can get back by making calls fail is not a cap, the provider
+      // bills a request that died halfway anyway, and the mark is what lets
+      // an owner see failed reads on /settings/assistant and ask a human for
+      // a credit. Nothing here adjusts an allowance by itself.
+      await markAskAllowanceFailure(spend.claim);
+      console.error("[compliance] the extractor failed after its allowance was claimed", err);
+      return uploadFail(
+        "The assistant couldn't read that document. Its pages are recorded as a failed read on this " +
+          "month's allowance — the account owner can see them on Settings → Assistant and ask C Stream " +
+          "about a credit. Nothing else was saved.",
+      );
+    }
+
+    await prisma.complianceDocument.create({
+      data: {
+        companyId: company.id,
+        jobId,
+        type: extraction.type,
+        partyName: extraction.partyName,
+        amount: extraction.amount != null ? extraction.amount.toString() : null,
+        periodStart: extraction.periodStart ? new Date(extraction.periodStart) : null,
+        periodEnd: extraction.periodEnd ? new Date(extraction.periodEnd) : null,
+        effectiveDate: extraction.effectiveDate ? new Date(extraction.effectiveDate) : null,
+        expiresAt: extraction.expiresAt ? new Date(extraction.expiresAt) : null,
+        notes: extraction.notes,
+        fileUrl,
+        fileName,
+        aiExtracted: true,
+        uploadedByUserId: user.id,
+      },
     });
-  } catch (err) {
-    // MARKED, NOT RELEASED — the same rule `streamAnswer` follows. A unit
-    // you can get back by making calls fail is not a cap, the provider
-    // bills a request that died halfway anyway, and the mark is what lets
-    // an owner see failed reads on /settings/assistant and ask a human for
-    // a credit. Nothing here adjusts an allowance by itself.
-    await markAskAllowanceFailure(spend.claim);
-    console.error("[compliance] the extractor failed after its allowance was claimed", err);
-    return uploadFail(
-      "The assistant couldn't read that document. Its pages are recorded as a failed read on this " +
-        "month's allowance — the account owner can see them on Settings → Assistant and ask C Stream " +
-        "about a credit. Nothing else was saved.",
-    );
+    filed = true;
+
+    revalidatePath("/compliance");
+    // The allowance figures on the owner's own page moved, so the page that
+    // prints them is stale the moment this returns.
+    revalidatePath("/settings/assistant");
+    return { ok: true, value: { note: spend.note, pagesLeft: spend.pagesLeft } };
+  } finally {
+    // Swallows its own failures by design (`lib/blob.ts`), so a store that
+    // will not delete cannot turn a refusal into a second, worse error.
+    if (!filed) await deleteDocument(fileUrl);
   }
-
-  await prisma.complianceDocument.create({
-    data: {
-      companyId: company.id,
-      jobId,
-      type: extraction.type,
-      partyName: extraction.partyName,
-      amount: extraction.amount != null ? extraction.amount.toString() : null,
-      periodStart: extraction.periodStart ? new Date(extraction.periodStart) : null,
-      periodEnd: extraction.periodEnd ? new Date(extraction.periodEnd) : null,
-      effectiveDate: extraction.effectiveDate ? new Date(extraction.effectiveDate) : null,
-      expiresAt: extraction.expiresAt ? new Date(extraction.expiresAt) : null,
-      notes: extraction.notes,
-      fileUrl,
-      fileName,
-      aiExtracted: true,
-      uploadedByUserId: user.id,
-    },
-  });
-
-  revalidatePath("/compliance");
-  // The allowance figures on the owner's own page moved, so the page that
-  // prints them is stale the moment this returns.
-  revalidatePath("/settings/assistant");
-  return { ok: true, value: { note: spend.note, pagesLeft: spend.pagesLeft } };
 }
 
 /** What an upload gives back: the refusal to render, or what the document
@@ -383,8 +451,12 @@ async function readStoredDocument(
   const buffer = Buffer.from(await response.arrayBuffer());
   // The signed token already bound the TRANSFER to this ceiling. This is
   // the second look, taken before the bytes are base64'd and sent on.
-  if (buffer.byteLength === 0 || buffer.byteLength > DOCUMENT_UPLOAD_MAX_BYTES) {
-    return { ok: false, error: "That file is over the 15MB limit." };
+  const max = uploadMaxBytesFor("compliance-document");
+  if (buffer.byteLength === 0 || buffer.byteLength > max) {
+    // The number comes from the target rather than the sentence, so raising a
+    // ceiling cannot leave a refusal quoting the old one — which is what "over the
+    // 15MB limit" would have done the moment any purpose moved.
+    return { ok: false, error: `That file is over the ${formatDocumentSize(max)} limit.` };
   }
 
   return { ok: true, buffer, mediaType: served };
@@ -460,6 +532,17 @@ export async function deleteComplianceDocument(documentId: string) {
   }
 
   await prisma.complianceDocument.delete({ where: { id: documentId } });
+
+  // AFTER THE ROW IS GONE, and in that order on purpose — the shape
+  // `deleteBidAddendum` and `deleteContractDocument` already use. If the file
+  // went first and the row delete then failed, the row would survive pointing
+  // at a file that no longer exists, which is a dead link on a filed document.
+  // This way round the worst case is a stranded file, which is what the rest of
+  // this change is about and is the lesser of the two.
+  //
+  // `deleteDocument` swallows its own failures (`lib/blob.ts`), so a store that
+  // will not delete cannot turn a completed delete into an error.
+  if (document.fileUrl) await deleteDocument(document.fileUrl);
 
   revalidatePath("/compliance");
 }

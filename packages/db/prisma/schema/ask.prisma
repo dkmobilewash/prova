@@ -146,9 +146,57 @@ model AskUsage {
   outputTokens     Int
   cacheReadTokens  Int
   cacheWriteTokens Int
+
+  /// Server-side web searches these passes ran, read off
+  /// `usage.server_tool_use.web_search_requests`.
+  ///
+  /// ITS OWN COLUMN BECAUSE IT IS ITS OWN CHARGE. Web search bills PER SEARCH
+  /// on top of tokens, so a row's cost cannot be computed from the four token
+  /// counts alone — and `lead-search` and `bid-research` are the two features
+  /// that use it, which are exactly the two whose cost nobody could work out.
+  ///
+  /// IT WAS COUNTED AND THEN THROWN AWAY. `AskUsageTotals.webSearches` has
+  /// existed since lead search shipped, with a comment saying "each one bills
+  /// on top of tokens, which is why it is counted apart from them" — and
+  /// `recordAskUsage` never put it in the insert. Every searched pass since has
+  /// a row that understates what it cost, by an amount nothing can recover:
+  /// the API told us once and we did not write it down.
+  ///
+  /// Defaults to 0 so existing rows are additive rather than null. That is a
+  /// LIE ABOUT HISTORY and a deliberate one — a null would have to be rendered
+  /// as "unknown" on every row ever written, when only the two web-search
+  /// features could have had any. `lib/ask/cost.ts` records which rows predate
+  /// this column so a historical figure can say it is a floor.
+  webSearches      Int     @default(0)
   /// "answered", "proposal" (a card was shown), "clarify" (chips were
   /// shown), or "error:<reason>" with the loop's own reason.
   outcome          String
+
+  /// WHICH JOB THIS SPEND BELONGS TO, so cost is attributable per project.
+  ///
+  /// Nullable and a plain String rather than a relation, deliberately on both
+  /// counts. Nullable because most spend has no job: an Ask question about the
+  /// whole company, a lead search, a compliance upload filed against a
+  /// contact. A plain id rather than an FK because this table is an
+  /// append-only spend ledger — a job deleted in cleanup must not take its
+  /// billing history with it, and `onDelete: SetNull` would erase the
+  /// attribution instead of keeping it. Same posture as the tokens beside it:
+  /// what was spent is a fact about the past.
+  ///
+  /// Added with step 0 of the AI plan. Before it, "what has this plan set cost
+  /// us" could not be answered at all — the table knew the company and the
+  /// feature and nothing about which piece of work the money went on.
+  jobId String?
+
+  /// The prompt version this call ran, e.g. "plan-classify.2".
+  ///
+  /// Nullable because every existing row predates versioned prompts, and
+  /// because the version lives in the prompt file rather than being derivable
+  /// from anything here. Paired with `model` above: those two together are
+  /// what make a change in output attributable to a change we made rather
+  /// than to the weather. Prompts were inline template strings until step 0,
+  /// so before this a prompt change was visible only in git.
+  promptVersion String?
 
   createdAt DateTime @default(now())
 
@@ -157,4 +205,6 @@ model AskUsage {
   /// "What has this company spent on <feature> lately" — the read the usage
   /// page needs once it stops showing only Ask.
   @@index([companyId, feature, createdAt])
+  /// "What has this job cost us" — the read the per-project cost figure needs.
+  @@index([jobId, createdAt])
 }

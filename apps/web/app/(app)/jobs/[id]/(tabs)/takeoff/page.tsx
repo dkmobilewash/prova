@@ -5,6 +5,10 @@ import { NoAccess } from "@/components/NoAccess";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { TakeoffMeasurementList } from "@/components/TakeoffMeasurementList";
 import { TakeoffPlanUploader } from "@/components/TakeoffPlanUploader";
+import { PlanIngestPanel } from "@/components/PlanIngestPanel";
+import { PlanSheetReview } from "@/components/PlanSheetReview";
+import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
+import { latestIngestFor } from "@/lib/plan-ingest/claim";
 import { TakeoffCurrencyBanner } from "@/components/TakeoffCurrencyBanner";
 import { TakeoffPlanRevisionForm } from "@/components/TakeoffPlanRevisionForm";
 import { loadTakeoffCurrency } from "@/lib/takeoff-currency-query";
@@ -46,6 +50,17 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   // a second round-trip to decide whether to show a banner is a round-trip
   // spent deciding.
   const currency = await loadTakeoffCurrency(company.id, job.id);
+
+  // #515. What a measured wall run can be posted AGAINST, so it arrives priced
+  // instead of as a bare quantity. Only types that HAVE layers: one without
+  // produces no schedule lines, so posting against it would record a run and
+  // add nothing to the estimate — worse than the quantities it replaced. The
+  // action refuses a layerless type as well, because a form can send anything.
+  const postableWallTypes = await prisma.wallType.findMany({
+    where: { companyId: company.id, components: { some: {} } },
+    orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+    select: { id: true, code: true, name: true, defaultHeightFt: true, sides: true },
+  });
 
   const plan = await prisma.takeoffPlan.findFirst({
     where: { jobId: job.id, companyId: company.id },
@@ -166,6 +181,27 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
 
       {!isEstimateStage && <NotEstimating />}
 
+      {/* READING THE SHEETS, above the viewer because it is about the whole set
+          rather than one sheet.
+
+          NO PAGE COUNT IS PASSED, and this comment used to explain at length why
+          one had to be: "the server has no PDF library to read one with", so the
+          panel was handed the number of sheets already CALIBRATED and the real
+          count "arrives with rasterisation". Both halves were wrong.
+          `lib/ask/pageCount.ts` has counted PDF pages server-side for billing
+          since it was written, and reading a PDF was never the same capability as
+          rasterising one. `startPlanIngest` counts the file's own sheets now. */}
+      {isEstimateStage && (
+        <PlanIngestPanel planId={plan.id} existing={await latestIngestFor(plan.id)} />
+      )}
+
+      {/* WHAT WAS READ, AND WHAT SOMEBODY SAYS IT IS — below the panel that reads
+          it, because it only has anything to show once that has run. Rendered at
+          all times rather than behind a condition: an empty index says so in one
+          sentence, which is more useful than a section that appears from nowhere
+          the first time a run finishes. */}
+      {isEstimateStage && <PlanSheetReview rows={await sheetIndexFor(plan.id, company.id)} />}
+
       <TakeoffPlanViewer jobId={job.id} planId={plan.id} sheets={sheets} />
 
       {sheets.map((sheet) => (
@@ -174,7 +210,15 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
             Measured on sheet {sheet.pageNumber}
             {sheet.label ? ` — ${sheet.label}` : ""}
           </h3>
-          <TakeoffMeasurementList jobId={job.id} sheet={sheet} />
+          <TakeoffMeasurementList
+            jobId={job.id}
+            sheet={sheet}
+            // Decimal does not cross into a client component.
+            wallTypes={postableWallTypes.map((type) => ({
+              ...type,
+              defaultHeightFt: type.defaultHeightFt != null ? type.defaultHeightFt.toNumber() : null,
+            }))}
+          />
         </div>
       ))}
     </section>

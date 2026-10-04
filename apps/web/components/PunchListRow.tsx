@@ -15,6 +15,7 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { jobPickerLabel } from "@/components/jobLabels";
 import { PunchItemFields, type PunchItemFieldValues, type PunchListPeople } from "@/components/PunchItemFields";
+import { Spinner } from "@/components/Spinner";
 import { assigneeLabel, isOverdue, punchStatusLabel, wantsFixPhoto } from "@/lib/punch-items";
 import type { PunchItemStatus } from "@prova/db";
 
@@ -146,7 +147,14 @@ export function PunchListRow({ canDelete, canVerify, jobs, people, item, showJob
 
           <div className="flex flex-wrap gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
-              {isPending ? "Saving…" : "Save changes"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save changes"
+              )}
             </button>
             <button
               type="button"

@@ -1,0 +1,466 @@
+// Plan-set ingestion, the job runner half: one job per uploaded plan set, one
+// task per page per stage, and a claim column that makes a three-hundred-page
+// run resumable. Diego's lane (AI, from 2026-09-26).
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// WHY A RUNNER AT ALL, AND WHY IT SHIPS BEFORE ANY INGESTION. A 300-sheet
+// drawing set is 300 model calls. A Vercel function has 60 seconds. So the work
+// cannot be one request, and the moment it is more than one request the only
+// questions that matter are what happens when an invocation dies halfway and
+// how a person sees where it got to. Those are answered here, with a stage that
+// does no model work at all, so that the answers are proved on something cheap
+// before three hundred paid calls depend on them.
+//
+// WHY HAND-ROLLED RATHER THAN A QUEUE. Both properties it needs already exist
+// in this repo, proven, and neither needs a service: `notification-run.ts` has
+// the bounded-run loop (45s of work under a 60s `maxDuration`, an injected
+// `now()` so the budget is testable without waiting for it, and a TOTAL
+// ordering so a truncated run cuts in the same place every time), and
+// `allowance.ts` has claim-before-work. A queue would add a credential and a
+// second failure mode to get the same two things.
+
+/// Which pass over the pages a task belongs to.
+///
+/// AN ENUM RATHER THAN FREE TEXT, for the reason #526 paid for: a typo'd
+/// stage string would create tasks nothing ever claims, and a job stuck at
+/// "99%" with one invisible task left is indistinguishable from a job that
+/// finished. A member here cannot be misspelled.
+///
+/// DO NOT ASK THIS FILE WHICH STAGES ARE BUILT. Ask `STAGE_WORK` in
+/// `apps/web/lib/plan-ingest/stages.ts`: it is a total `Record` over this enum,
+/// so a member with no entry fails to compile, and `RUNNABLE_STAGES` is DERIVED
+/// from it by filtering the nulls. A status written here is a copy that nothing
+/// checks, and it has already been wrong.
+///
+/// It said, until 2026-09-28: `PAGE_INVENTORY` "is the whole of this PR", the
+/// rest "declared now and unreachable until the pass that implements them
+/// lands", and `CLASSIFY`/`TITLE_BLOCK`/`SHEET_INDEX` each "Not built". Every
+/// word of that was true for #538 and the phrase "this PR" is what rotted it:
+/// the pass it was waiting for is the one that added these lines' replacement.
+/// A comment that says a capability is MISSING is the expensive direction,
+/// because it is the one that stops the next person looking — `stages.ts:34`
+/// had meanwhile been saying these nulls are "neither 'not got round to yet'",
+/// and this file disagreed with it and lost, exactly as CLAUDE.md's
+/// `Sidebar.tsx` entry describes.
+///
+/// WHY THE ENUM STILL CARRIES A MEMBER NOTHING RUNS. Unchanged from #538 and
+/// still the reason: a stage added later is a migration plus a retrofit onto
+/// every call site, where a declared-but-unused member costs nothing. What
+/// changed is that two of them are now unused ON PURPOSE and permanently, which
+/// is a different fact from unfinished. The argument for each is on `STAGE_WORK`
+/// and, for the index, at the top of `lib/plan-ingest/sheetIndex.ts`.
+enum PlanIngestStage {
+  /// Per page: does it exist, does it carry selectable text, and — since the
+  /// title-block pass — the rotation-corrected text of the title-block region,
+  /// stored as `PlanSheetText`. Opens the PDF. Still NO model call, which is
+  /// what lets it read ~100 pages in a cron tick.
+  PAGE_INVENTORY
+  /// Folded into `TITLE_BLOCK` and deliberately never built: reading the title
+  /// block yields the sheet number, the title AND the discipline, so a separate
+  /// classify stage would be a second paid model call per page for an answer the
+  /// first one already returned.
+  CLASSIFY
+  /// Per page: read the stored title-block text and propose a sheet number,
+  /// title, discipline, scale, revision and issue date. The only stage that
+  /// calls a model, and it never opens the PDF — so a retry costs one model call
+  /// and no parse.
+  TITLE_BLOCK
+  /// Computed at READ TIME and deliberately never a stage — ordering, duplicate
+  /// numbers and what still needs a person are pure computation over rows that
+  /// already exist. As a per-page job it would run once per sheet over the whole
+  /// set, or need a one-task job whose `pageCount` disagreed with its task count
+  /// by design. See `lib/plan-ingest/sheetIndex.ts`.
+  SHEET_INDEX
+}
+
+/// One ingestion run over one uploaded plan set.
+///
+/// A SEPARATE MODEL FROM `TakeoffPlan` rather than columns on it, because a
+/// plan set can be ingested more than once — a re-run after a failure, or a
+/// later stage arriving after the first pass is long finished — and a run has
+/// its own beginning, end and outcome. Columns on the plan would make the
+/// second run overwrite the first one's history.
+///
+/// PROGRESS IS NOT STORED, and that is not an optimisation. This repo's rule is
+/// that derived state is never stored, because a stored flag can disagree with
+/// what it was derived from — and here the disagreement has a specific shape: a
+/// `percentComplete` column written by a worker that then dies is wrong
+/// forever, and it is wrong in the direction that makes a stuck job look
+/// finished. `count(finishedAt != null) / count(*)` over the tasks cannot lie,
+/// because the tasks are the work.
+model PlanIngestJob {
+  id     String      @id @default(cuid())
+  planId String
+  plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  /// Denormalised from the plan so a worker can scope a claim without a join,
+  /// and so usage attribution has the company without reading two tables.
+  /// Safe to duplicate: a plan never changes company.
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Which pass this run is performing. One job per stage per plan, so a
+  /// later stage is a new job rather than a mutation of the finished one.
+  stage PlanIngestStage
+
+  /// How many pages this run was created for, recorded at creation.
+  ///
+  /// THE ONE COUNT THAT IS STORED, and the exception is deliberate: it is not
+  /// derived from the tasks, it is the claim the CREATOR made about how many
+  /// there should be. Keeping it lets `pageCount` be compared against
+  /// `count(tasks)` — a job whose task rows went missing is otherwise a job
+  /// that reports 100% having done part of the work, which is exactly the
+  /// failure the no-stored-progress rule above is about. The two numbers
+  /// disagreeing is a fact worth being able to see.
+  pageCount Int
+
+  /// Entered by the runner, not defaulted: a job row exists before any worker
+  /// has picked it up, and `startedAt` must mean "a worker began" rather than
+  /// "a row was written".
+  startedAt  DateTime?
+  /// Set when every task is finished or has exhausted its attempts. A job with
+  /// failed tasks still FINISHES — it does not hang — and the failures are
+  /// visible per page. A run that stopped short is a run nobody can retry.
+  finishedAt DateTime?
+
+  /// Who uploaded the set this run is for. Nullable because a run started by a
+  /// scheduler or a backfill has no person behind it.
+  startedByUserId String?
+  startedByUser   User?   @relation(fields: [startedByUserId], references: [id], onDelete: SetNull)
+
+  tasks PlanIngestTask[]
+
+  /// What a `TITLE_BLOCK` run proposed, one row per page. Empty for every other
+  /// stage — `PAGE_INVENTORY` writes `PlanSheetText`, which is keyed on the PLAN
+  /// rather than on a run because the text of a page of an immutable file does not
+  /// depend on which run read it.
+  sheetProposals PlanSheetProposal[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One run per stage per plan at a time. A second `PAGE_INVENTORY` job on the
+  /// same plan while the first is unfinished would have two workers claiming
+  /// two task sets over the same pages, and the progress figure would be over
+  /// whichever set was queried.
+  ///
+  /// It is NOT unique on (planId, stage) outright, because re-running a stage
+  /// after it finished is legitimate. `finishedAt` being part of the key is not
+  /// expressible here, so the constraint the database can hold is the index,
+  /// and `startPlanIngest` enforces the rest in a transaction.
+  @@index([planId, stage])
+  @@index([companyId, createdAt])
+  @@index([startedByUserId])
+}
+
+/// One unit of claimable work: one page, one stage.
+///
+/// THE CLAIM COLUMN IS THE DESIGN. A worker takes work with `updateMany` on
+/// `claimedAt: null`, which is atomic in Postgres — two workers racing for the
+/// same row produce one winner and one zero-count update, so the loser simply
+/// takes the next row. Nothing needs a lock, and no work is done twice.
+///
+/// WHAT MAKES IT RESUMABLE is that claiming and finishing are separate. An
+/// invocation that dies mid-page leaves a row claimed and unfinished, which is
+/// a state the next run can SEE — as opposed to a queue message that was acked
+/// on receipt, where a dead worker's page is simply gone.
+///
+/// AND WHAT MAKES THAT SAFE RATHER THAN A NEW BUG is `claimExpiresAt` below.
+/// Diego asked for stuck-lease reclaim specifically, and it is the correction
+/// that turns this from a clever column into a correct one: without it a task
+/// claimed by an invocation that then died is claimed FOREVER, and a job hangs
+/// at one page short with no error and nothing to retry. A claim column with no
+/// expiry converts a resumable job into a permanently stuck one, which is worse
+/// than not being resumable at all — a stuck job looks like a slow job.
+model PlanIngestTask {
+  id    String        @id @default(cuid())
+  jobId String
+  job   PlanIngestJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  /// 1-based, the way the viewer and the title block both count — the same
+  /// convention `TakeoffPlanPage.pageNumber` uses.
+  ///
+  /// A PAGE NUMBER, NOT A FOREIGN KEY to `TakeoffPlanPage`. Those rows are
+  /// created by a PERSON naming a sheet in the viewer, so most pages of a
+  /// freshly uploaded set have none — and ingestion's whole job is to run over
+  /// pages nobody has named yet. A foreign key would make the work depend on
+  /// the thing the work produces.
+  pageNumber Int
+
+  /// Repeated from the job so a claim can be scoped to one stage without a
+  /// join, and so a task row means something on its own.
+  stage PlanIngestStage
+
+  /// When a worker took this row. Null means available.
+  claimedAt DateTime?
+
+  /// When the claim lapses, so another worker may take it.
+  ///
+  /// SET BY THE CLAIMER, not computed on read, so the value is what the worker
+  /// that holds it actually promised — a deadline derived at read time from a
+  /// constant would change meaning the moment somebody tuned the constant, and
+  /// would apply retroactively to claims made under the old one.
+  claimExpiresAt DateTime?
+
+  /// Set when the work for this page succeeded. A finished task is never
+  /// reclaimed, whatever its claim says.
+  finishedAt DateTime?
+
+  /// How many times this page has been attempted, incremented on CLAIM rather
+  /// than on failure.
+  ///
+  /// ON CLAIM IS THE LOAD-BEARING CHOICE. Incrementing on failure cannot count
+  /// the attempt that died before it could write anything — which is the exact
+  /// failure mode a page that reliably kills its worker produces, and it would
+  /// be retried forever at the ceiling's expense. Counting the claim means a
+  /// page that crashes the process still exhausts its attempts and reports.
+  attempts Int @default(0)
+
+  /// Why the last attempt failed, for the per-page retry in the UI. A SENTENCE
+  /// for a person, never a stack: this is rendered on a screen beside a Retry
+  /// button.
+  error String?
+
+  /// The earliest a failed task may be claimed again. Null means now.
+  ///
+  /// ITS OWN COLUMN RATHER THAN DERIVED FROM `updatedAt`, which was the first
+  /// design and is wrong: `updatedAt` moves for reasons that are not attempts,
+  /// so backoff computed from it would lengthen every time anything touched the
+  /// row, and a column that means two things cannot be reasoned about.
+  ///
+  /// WHY BACKOFF NEEDS A COLUMN AT ALL when the cron only ticks every few
+  /// minutes — which is the objection worth answering, because the schedule
+  /// does supply most of the delay for free. Two places it does not: a single
+  /// invocation's loop can re-claim a task it just failed, within the same 45
+  /// seconds, and burn the attempt ceiling on one page in one run; and the
+  /// per-page Retry button is a person who can click faster than any sensible
+  /// interval. Without this, "three attempts" can be spent in three seconds
+  /// against a transient fault that would have cleared.
+  nextAttemptAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One task per page per stage per job. The guard against a double-create
+  /// producing two claimable rows for one page, which would spend twice.
+  @@unique([jobId, pageNumber, stage])
+  /// The claim query's own index: available work for a job, oldest page first.
+  @@index([jobId, finishedAt, claimedAt])
+  /// Backoff's own index — the claim skips tasks whose retry is still ahead.
+  @@index([nextAttemptAt])
+  /// The reclaim query's index: expired claims across all jobs.
+  @@index([claimExpiresAt])
+}
+
+/// WHAT PAGE N OF THIS PLAN SET SAYS — the evidence a proposal is made from.
+///
+/// TWO MODELS RATHER THAN ONE, AND THE ARCHITECTURE FORCES IT. `PlanIngestJob`
+/// is one job per STAGE per plan, so `PAGE_INVENTORY` and `TITLE_BLOCK` are two
+/// different job rows. A single model keyed on the ingest job would therefore put
+/// the extracted text and the proposal made from it on different rows, which is
+/// not a design, it is a bug. So the split follows what each one IS.
+///
+/// THIS ONE IS KEYED ON THE PLAN, and that is correct rather than convenient:
+/// the text of page N of a PDF is a property of an IMMUTABLE FILE. Re-running
+/// `PAGE_INVENTORY` reads the same bytes and writes the same words, so an upsert
+/// here is idempotent and overwriting costs nothing. The proposal below cannot say
+/// that about itself, which is why it is keyed differently.
+///
+/// AND IT IS STORED DERIVED STATE, DELIBERATELY. This schema's rule is that
+/// derived state is never stored, and `TakeoffPlan` refuses a `pageCount` column
+/// on exactly that ground. The distinction: a `pageCount` from the browser could
+/// only ever hold a CLIENT'S CLAIM the server had no way to check, whereas this is
+/// the server's own read of a file that cannot change. It is kept because it is
+/// the EVIDENCE THE PROPOSAL WAS MADE FROM — without it `proposedReason` is a
+/// sentence nobody can check, and `intake.prisma`'s standard for a reason is that
+/// it must be checkable. It also means `TITLE_BLOCK` never re-opens the PDF: the
+/// expensive stage reads rows, so a retry costs one model call and no parse.
+model PlanSheetText {
+  id String @id @default(cuid())
+
+  /// CASCADEs from the plan, which is what keeps this model out of
+  /// `HANDLED_MODELS` and both cleanup `del()` orders — the trick `TakeoffPlan`'s
+  /// own `jobId` comment documents. One `takeoffPlan.deleteMany({ jobId })`
+  /// reaches it.
+  planId String
+  plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  /// 1-based, the way the viewer, the runner and the title block all count.
+  pageNumber Int
+
+  /// Whether there is a text layer to read at all.
+  ///
+  /// FALSE IS A FACT, NOT A FAILURE, and the difference is money. A scanned sheet
+  /// has no vector text and never will, so a stage reporting it as `{ok: false}`
+  /// would fail three times with backoff, spend three sheet claims, and leave a
+  /// row whose Retry button can never succeed. A wholly scanned 300-page set
+  /// would produce 900 claims and a 300-row retry list. So it is recorded here,
+  /// the page is never sent to a model, and the review screen says this sheet
+  /// needs its number typed in.
+  hasTextLayer Boolean
+
+  /// The title block's words, in reading order, or null when there is no text
+  /// layer. What the model is given — never the file, never an image.
+  titleBlockText String?
+
+  /// Whether those words came from the title-block REGION or from the whole page.
+  ///
+  /// A sheet whose block sits somewhere the region filter does not expect would
+  /// otherwise hand the model an almost-empty region, which is indistinguishable
+  /// from a scan. Falling back to the whole page costs tokens and answers
+  /// correctly. Recorded so a reader can see which happened, because a proposal
+  /// made from a whole page deserves more scepticism than one made from the block.
+  wholePageFallback Boolean @default(false)
+
+  /// The sheet AS DISPLAYED, in points, and its own `/Rotate`. 72 points to the
+  /// inch, so 2592 is a 36" sheet. Taken from the viewport rather than the
+  /// MediaBox, so a rotated landscape sheet reports landscape — the distinction
+  /// `planPdf.ts` exists to get right and the one a raw x/y filter got wrong.
+  widthPt  Float
+  heightPt Float
+  rotation Int   @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  proposals PlanSheetProposal[]
+
+  /// One row per page of a plan. Safe to upsert — see the header.
+  @@unique([planId, pageNumber])
+  @@index([planId, hasTextLayer])
+}
+
+/// WHAT THE MODEL READ OFF ONE TITLE BLOCK, and what a person said about it.
+///
+/// THE ROW IS THE PROPOSAL, NOT THE FILING — `intake.prisma`'s rule, copied
+/// rather than re-argued. Accepting one records the acceptance HERE and writes no
+/// `TakeoffPlanPage`, builds no sheet index elsewhere, and changes nothing a
+/// quantity depends on. `lib/intake/review.ts` states why: "a label promising it
+/// before it exists is how a demo becomes a lie."
+///
+/// KEYED ON THE RUN, NOT THE PAGE — the opposite of `PlanSheetText` above, and
+/// the reason is re-running. A job may legitimately run `TITLE_BLOCK` again: a
+/// better prompt, a newer model. Keyed on `(planId, pageNumber)` the second run
+/// would OVERWRITE the first proposal, including one an estimator had already
+/// accepted beside, and the pair of columns exists precisely so "how often did a
+/// person change the answer" stays answerable. So this is APPEND-ONLY per run,
+/// the shape `TakeoffScaleCalibration` already uses in `takeoff.prisma`:
+/// "Recalibrating a sheet INSERTS a row; the newest row is the active one (derived
+/// from `createdAt`, not stored)". The index reads the newest proposal per page.
+model PlanSheetProposal {
+  id String @id @default(cuid())
+
+  /// The run that produced it. CASCADEs, so deleting a run takes its proposals.
+  ingestJobId String
+  ingestJob   PlanIngestJob @relation(fields: [ingestJobId], references: [id], onDelete: Cascade)
+
+  /// Denormalised for the read — "the newest proposal for each page of this plan"
+  /// is the query the index is built from, and it must not have to walk every run
+  /// to answer it. Also the Cascade that keeps this out of the cleanup scripts.
+  planId String
+  plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  pageNumber Int
+
+  /// The evidence this was read from, so a reviewer can see the words the
+  /// proposal came out of rather than taking `proposedReason` on trust.
+  sheetTextId String?
+  sheetText   PlanSheetText? @relation(fields: [sheetTextId], references: [id], onDelete: SetNull)
+
+  /// THE PROPOSAL, exactly as the model made it, at the moment it made it.
+  ///
+  /// STORED RATHER THAN RE-DERIVED, the same deliberate exception `intake.prisma`
+  /// takes and for its reason: "a newer classifier would then quietly rewrite the
+  /// reason a person was shown when they made their decision. A proposal is a
+  /// thing that happened, like a `capturedAt`." Never updated after insert.
+  ///
+  /// Null means THE TITLE BLOCK DID NOT SAY, which is a real answer and distinct
+  /// from an empty string. The prompt's first rule is never to invent a sheet
+  /// number.
+  proposedSheetNumber String?
+  proposedTitle       String?
+  proposedDiscipline  String?
+  proposedScale       String?
+
+  /// THE REVISION AND DATE PRINTED ON THIS SHEET, named so they cannot be
+  /// mistaken for `TakeoffPlan.revisionLabel` and `sheetIssuedOn` — which are
+  /// per-PLAN, ENTERED by a person, and what `lib/takeoff-currency.ts` runs on.
+  /// NOTHING IN `takeoff-currency.ts` READS THESE, and nothing should: a
+  /// model-proposed per-page date becoming a second source of "is this takeoff
+  /// current" is how two surfaces start disagreeing about whether somebody may
+  /// build from a drawing. Text, not a date, because a date on a drawing is
+  /// characters until a person confirms them.
+  titleBlockRevisionText  String?
+  titleBlockIssueDateText String?
+
+  /// The sentence shown in the review table, in words a person can check against
+  /// the title block beside it — "Sheet number read from the lower right of the
+  /// title block". Never "AI determined": a reason nobody can check is a reason
+  /// nobody can overrule.
+  proposedReason String
+
+  proposedConfidence PlanSheetConfidence
+
+  /// Which model and which prompt produced this. `AskUsage.promptVersion` has had
+  /// no writer since it was added, and `docs/ai/DECISIONS.md` says the guard ships
+  /// WITH the first prompt file rather than after it — this is that first prompt
+  /// file. Together these two are what make a change in output attributable to a
+  /// change we made rather than to the weather.
+  model         String
+  promptVersion String
+
+  /// WHAT THE PERSON SAID IT WAS. Null until they accept.
+  ///
+  /// ONLY THE TWO FIELDS SOMETHING DOWNSTREAM CONSUMES ARE PAIRED, which is what
+  /// `intake.prisma` actually does rather than what a first reading of it
+  /// suggests: it pairs `proposedKind`/`acceptedKind`, the one value that drives
+  /// an action, and leaves `revisionHint` and `jobHint` unpaired. Discipline,
+  /// scale, revision and date are shown and correctable but unpaired for the same
+  /// reason — six pairs would be twelve columns holding nulls forever, and the
+  /// eval measures calibration against the title block, not against what somebody
+  /// edited.
+  acceptedSheetNumber String?
+  acceptedTitle       String?
+
+  status PlanSheetProposalStatus @default(PROPOSED)
+
+  /// WHO accepted it and WHEN. `DocumentIntake` records neither and its own notes
+  /// flag that as worth deciding consciously; decided the other way here, because
+  /// a sheet number is a thing a GC may later dispute and "who said this sheet was
+  /// A-101" is then worth being able to answer.
+  acceptedByUserId String?
+  acceptedBy       User?     @relation("PlanSheetProposalAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  acceptedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One proposal per page per run.
+  @@unique([ingestJobId, pageNumber])
+  /// The index's own query: the proposals for a plan, newest run first.
+  @@index([planId, pageNumber, createdAt])
+  @@index([planId, status])
+}
+
+/// How sure the reading was.
+///
+/// LOW SORTS TO THE TOP of the review list and HIGH to the bottom, which is
+/// `DocumentIntakeConfidence`'s choice and its reasoning: it "is what makes
+/// over-claiming it the expensive mistake". An honest "I am not sure" is the
+/// correct answer, and the eval grades calibration as well as correctness because
+/// a sheet number that is 85% right and reads as certain is a wrong bid.
+enum PlanSheetConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+/// A rejected proposal STAYS, so the same set ingested again is not proposed
+/// afresh as though nobody had looked at it — `intake.prisma`'s reason for keeping
+/// a DISMISSED row.
+enum PlanSheetProposalStatus {
+  PROPOSED
+  ACCEPTED
+  REJECTED
+}

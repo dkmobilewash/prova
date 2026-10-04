@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { loadEnvFiles } from "./load-env.mjs";
 import { describe } from "./connection-target.mjs";
+import { companyTargetRequest, resolveCompanyTarget } from "./company-target.mjs";
 
 /**
  * Builds a demonstrable company: a few jobs at genuinely different stages,
@@ -50,9 +51,20 @@ import { describe } from "./connection-target.mjs";
  *
  *   SEED_EXPECT_HOST=ep-icy-hat-afqau56u node scripts/seed-demo.mjs
  *
- * It is scoped to ONE company — the first one, or SEED_COMPANY_ID — and
- * every row it writes is tagged in a way `--undo` can find again, so a demo
- * dataset can be removed without touching anything a person entered.
+ * It is scoped to ONE company and every row it writes is tagged in a way
+ * `--undo` can find again, so a demo dataset can be removed without touching
+ * anything a person entered.
+ *
+ * WHICH company: SEED_COMPANY_ID, or SEED_COMPANY_NAME, or — with neither
+ * given — the oldest, which is what it has always done. The name exists
+ * because the id does not appear anywhere in the app, so it is the one input
+ * this script needs that nobody can look up; and because the company a person
+ * most often wants to seed is the empty one their first sign-in just created,
+ * which is the NEWEST rather than the oldest. A name that matches no company,
+ * or more than one, REFUSES and prints the candidates with their ids rather
+ * than picking; giving BOTH variables refuses too. See company-target.mjs for
+ * why each of those boundaries sits where it does. `--list-companies` prints
+ * what is there when a lookup refuses.
  *
  * IT REFUSES TO SEED A COMPANY THAT ALREADY HAS DEMO DATA. Run twice, it
  * used to duplicate the equipment and then die half-finished on the
@@ -65,15 +77,58 @@ import { describe } from "./connection-target.mjs";
 loadEnvFiles();
 
 const MARK = "[demo]";
+
+/*
+ * THE NAMES THAT GO ON CAMERA, and the reason they are a constant rather
+ * than four literals at their create sites.
+ *
+ * Every demo row carries `[demo]` in a visible field so `--undo` can find it
+ * again without touching anything a person typed. That tag is also the one
+ * thing nobody wants in a screen recording, so `--camera-names` takes it off
+ * the jobs and the GC contacts — the rows that appear in almost every frame.
+ *
+ * Which breaks undo, unless undo can recognise them WITHOUT the tag. It
+ * finds jobs by `name contains MARK` and then scopes ~40 child models by the
+ * resulting `jobIds`, so an untagged job does not merely survive: its entire
+ * tree survives with it, and the run reports a clean removal. Same for
+ * contacts. So undo matches the tag OR one of these exact names.
+ *
+ * The trade, stated rather than hidden: a job a PERSON creates with exactly
+ * one of these names, in the same company, would be removed by `--undo`.
+ * These are distinctive enough that the collision is remote, this only ever
+ * runs against the demo project, and undo prints every untagged row it
+ * matched before deleting anything. The alternative — leaving a renamed job
+ * unremovable forever — is worse and silent.
+ *
+ * `--camera-names` therefore strips the tag and nothing else. It does not
+ * take a new name, because a name this list does not know is a row undo can
+ * never find again.
+ */
+const DEMO_JOB_NAMES = {
+  riverside: "Riverside Medical Office Building",
+  northgate: "Northgate Apartments Phase 2",
+  lakeshore: "Lakeshore Retail Fit-Out",
+  cedar: "Cedar Park Elementary",
+};
+const DEMO_CONTACT_NAMES = {
+  brackett: "Brackett Construction",
+  halvorsen: "Halvorsen Builders",
+  pell: "Pell Development Group",
+};
+const CAMERA_NAMES = process.argv.includes("--camera-names");
 const UNDO = process.argv.includes("--undo");
 const FORCE = process.argv.includes("--force");
+const LIST_COMPANIES = process.argv.includes("--list-companies");
 
 const target = describe(process.env.DATABASE_URL);
 if (!target) {
   console.error("seed: DATABASE_URL is missing or unreadable. Nothing done.");
   process.exit(1);
 }
-console.log(`seed: writing to      ${target.label}`);
+// `--list-companies` writes nothing, so it must not announce that it is
+// about to. Same column, different verb — this log is the record of what
+// happened, and a read-only run saying "writing to" is the record lying.
+console.log(`seed: ${LIST_COMPANIES ? "reading from" : "writing to  "}    ${target.label}`);
 
 const expect = process.env.SEED_EXPECT_HOST?.trim();
 if (!expect) {
@@ -155,18 +210,167 @@ const dirIssueInForceOn = (date) => {
   return answer;
 };
 
-async function main() {
-  const company = process.env.SEED_COMPANY_ID
-    ? await prisma.company.findUnique({ where: { id: process.env.SEED_COMPANY_ID } })
-    : await prisma.company.findFirst({ orderBy: { createdAt: "asc" } });
-  if (!company) {
-    console.error("seed: no company found. Sign in to the app once first.");
+/**
+ * WHICH COMPANY, and why that one.
+ *
+ * The decision itself is pure and lives in company-target.mjs, where it is
+ * tested without a database. This does only the fetching, and what it fetches
+ * depends on the question:
+ *
+ *   - an id is a `findUnique`, exactly as before;
+ *   - no input at all is the oldest company, exactly as before — the same
+ *     query and the same refusal message, byte for byte;
+ *   - a NAME reads every company's id and name (never more), because the
+ *     interesting answers are "none of them" and "two of them", and both need
+ *     the whole list to be printed. Matching in JS rather than in a
+ *     `mode: "insensitive"` filter keeps the rule in one readable place a test
+ *     can reach, instead of split between here and Postgres collation.
+ */
+async function resolveCompany() {
+  const request = companyTargetRequest(process.env);
+  const candidates =
+    request.by === "id"
+      ? [await prisma.company.findUnique({ where: { id: request.id } })]
+      : request.by === "name"
+        ? await prisma.company.findMany({
+            select: { id: true, name: true },
+            orderBy: { createdAt: "asc" },
+          })
+        : request.by === "oldest"
+          ? [await prisma.company.findFirst({ orderBy: { createdAt: "asc" } })]
+          : [];
+
+  const outcome = resolveCompanyTarget(request, candidates);
+  if (outcome.error) {
+    console.error(`\n${outcome.error.map((line) => `seed: ${line}`).join("\n")}`);
     process.exit(1);
   }
+  for (const line of outcome.lines) console.log(`seed: ${line}`);
+  return outcome.company;
+}
+
+async function main() {
+  // ------------------------------------------------- name the companies
+  //
+  // THIS LOG IS THE ONLY WINDOW INTO THIS DATABASE, and until this flag
+  // existed it could only ever name one company. Both this script and
+  // clean-scratch-data.mjs resolve the OLDEST company, and `SEED_COMPANY_ID`
+  // takes an id that NOTHING IN THE APP RENDERS — `company.id` appears in
+  // `apps/web` only inside `where` clauses, never in markup. So an operator
+  // who needed a company other than the oldest had no way to learn its id,
+  // from the app or from here.
+  //
+  // That is not hypothetical. On ep-patient-lake the demo set sits under
+  // "My Company" (the `requireCompanyContext` fallback name for a Clerk
+  // identity with no name on it), while a person signing in on a preview
+  // falls through to the create branch and gets `${name}'s Company` of their
+  // own, empty. Every list page then shows its empty state, which reads
+  // exactly like a broken app — CLAUDE.md's preview-company trap. The fix
+  // for it is to seed THEIR company, and that needs its id.
+  //
+  // Read-only by construction: `findMany` and `count`, no write of any kind,
+  // and it returns before `--undo` or the reseed guard is reached. It prints
+  // both a total job count and the [demo]-tagged subset, because "which
+  // company holds the demo data" and "which company has a person's own rows
+  // in it" are different questions and the answer to the second decides
+  // whether seeding is safe.
+  if (LIST_COMPANIES) {
+    const companies = await prisma.company.findMany({
+      orderBy: { createdAt: "asc" },
+      select: { id: true, name: true, createdAt: true },
+    });
+    if (!companies.length) {
+      console.log("\nseed: no company on this database at all. Sign in to the app once first.");
+      return;
+    }
+    console.log(`\nseed: ${companies.length} compan${companies.length === 1 ? "y" : "ies"}, oldest first —\n`);
+    for (const c of companies) {
+      const [jobs, demoJobs, users] = await Promise.all([
+        prisma.job.count({ where: { companyId: c.id } }),
+        prisma.job.count({ where: { companyId: c.id, name: { contains: MARK } } }),
+        prisma.user.count({ where: { companyId: c.id } }),
+      ]);
+      console.log(
+        `  ${c.id}  ${c.createdAt.toISOString().slice(0, 10)}  ` +
+          `job ${String(jobs).padStart(3)} (${demoJobs} demo)  user ${String(users).padStart(2)}  ` +
+          `"${c.name}"`,
+      );
+    }
+    console.log(
+      "\nseed: to seed or undo one of these, pass its name as company_name — or its\n" +
+        "seed: id as company_id, but never both. Nothing has been written.",
+    );
+    return;
+  }
+
+  const company = await resolveCompany();
   const user = await prisma.user.findFirst({ where: { companyId: company.id } });
   console.log(`seed: company         ${company.name} (${company.id})`);
 
   if (UNDO) return undo(company.id);
+
+  // ------------------------------------------------ take the tag off camera
+  //
+  // Every demo row carries `[demo]` so undo can find it again. That tag is
+  // also the thing nobody wants in a screen recording, and doing it by hand
+  // is twelve trips through Job details and Contact details with a note
+  // beside the keyboard of what was renamed.
+  //
+  // STRIPS THE TAG AND NOTHING ELSE. It deliberately takes no new name: undo
+  // recognises these rows by the tag or by one of the exact names in
+  // DEMO_JOB_NAMES / DEMO_CONTACT_NAMES, so a name neither knows is a row
+  // nothing can ever remove — and because jobs scope ~40 child models by id,
+  // one stranded job strands its whole tree while undo still reports success.
+  //
+  // Idempotent, and reversible by `--camera-names --restore`.
+  if (CAMERA_NAMES) {
+    const restore = process.argv.includes("--restore");
+    const suffix = ` ${MARK}`;
+    let changed = 0;
+    for (const [model, known] of [
+      ["job", DEMO_JOB_NAMES],
+      ["contact", DEMO_CONTACT_NAMES],
+    ]) {
+      const rows = await prisma[model].findMany({
+        where: {
+          companyId: company.id,
+          OR: [{ name: { contains: MARK } }, { name: { in: Object.values(known) } }],
+        },
+        select: { id: true, name: true },
+      });
+      for (const r of rows) {
+        const to = restore
+          ? r.name.includes(MARK)
+            ? r.name
+            : `${r.name}${suffix}`
+          : r.name.replace(suffix, "");
+        if (to === r.name) continue;
+        // Never invent a name undo cannot find again. A tagged row whose
+        // stripped form is not in the known list would become unremovable,
+        // so it is refused rather than renamed.
+        if (!restore && !Object.values(known).includes(to)) {
+          console.error(
+            `\nseed: REFUSING — stripping the tag from ${model} "${r.name}" would leave\n` +
+              `seed: "${to}", which is not in the known list, so --undo could never find it\n` +
+              "seed: again. Add it to the constant at the top of this file first.\n" +
+              "seed: nothing has been renamed.",
+          );
+          process.exit(1);
+        }
+        await prisma[model].update({ where: { id: r.id }, data: { name: to } });
+        console.log(`seed: ${model.padEnd(8)} "${r.name}"  ->  "${to}"`);
+        changed += 1;
+      }
+    }
+    console.log(
+      changed
+        ? `\nseed: ${changed} name(s) ${restore ? "restored" : "cleaned for camera"}. ` +
+            "--undo still finds every one of them.\n" +
+            "seed: nothing else was touched — vendors, equipment, catalog and crew keep their tag."
+        : "\nseed: nothing to change; the names are already how you asked for them.",
+    );
+    return;
+  }
 
   // ------------------------------------------------- refuse a second seed
   //
@@ -230,7 +434,7 @@ async function main() {
   const gc = await prisma.contact.create({
     data: {
       companyId: company.id,
-      name: `Brackett Construction ${MARK}`,
+      name: `${DEMO_CONTACT_NAMES.brackett} ${MARK}`,
       email: "pm@brackettconstruction.example",
       phone: "(503) 555-0142",
       defaultRetainagePercent: "5",
@@ -246,7 +450,7 @@ async function main() {
   const gc2 = await prisma.contact.create({
     data: {
       companyId: company.id,
-      name: `Halvorsen Builders ${MARK}`,
+      name: `${DEMO_CONTACT_NAMES.halvorsen} ${MARK}`,
       email: "office@halvorsenbuilders.example",
       phone: "(503) 555-0188",
       defaultRetainagePercent: "10",
@@ -265,13 +469,49 @@ async function main() {
   const gc3 = await prisma.contact.create({
     data: {
       companyId: company.id,
-      name: `Pell Development Group ${MARK}`,
+      name: `${DEMO_CONTACT_NAMES.pell} ${MARK}`,
       email: "preconstruction@pelldevelopment.example",
       phone: "(503) 555-0119",
       status: "PROSPECT",
       accountType: "DEVELOPER",
     },
   });
+
+  // ------------------------------------------------------- people at the GC
+  //
+  // Contact is the GC as an account; ContactPerson is who to actually call
+  // there (crm.prisma). Until 2026-09-27 this script wrote none, so
+  // Brackett's People section read "No one added at Brackett Construction
+  // yet" — on a dataset whose message log names two people there, whose
+  // interaction log records a call to "Dana" and a site walk "with the
+  // super", and whose toolbox talks list Dana as a presenter. These are
+  // those two people, given the row the product already has for them.
+  // Nothing here is new to the dataset except the titles and the phones.
+  //
+  // The superintendent is the one the launch video's third beat needs.
+  // Nothing in this app records who was on site — the Ask box refuses to
+  // name anyone, and that refusal is the point of the beat — so the honest
+  // next move is to ask somebody who would know. On the sub's own side that
+  // is the foreman, and Hector Ramirez below is a CrewMember: the model has
+  // no email column and the SMS channel is modelled but not wired
+  // (messaging.prisma), so the product cannot message him and has to say
+  // so rather than pretend. On the GC's side it is the superintendent, who
+  // keeps the gate log and the daily manpower count by trade, and who has
+  // an address the product CAN send to — the one the message log below was
+  // already using for him.
+  //
+  // undo() finds these through the contact, not through a tag — the same
+  // rule as interactions and bid invitations — and the name is left clean
+  // because it prints on the "To" line of every message drafted to them.
+  const gcPeople = {};
+  for (const [key, name, title, email, phone] of [
+    ["super", "Marco Silva", "Superintendent", "super@brackettconstruction.example", "(503) 555-0161"],
+    ["pm", "Dana Whitfield", "Project Manager", "dana@brackettconstruction.example", "(503) 555-0157"],
+  ]) {
+    gcPeople[key] = await prisma.contactPerson.create({
+      data: { companyId: company.id, contactId: gc.id, name, title, email, phone },
+    });
+  }
 
   // ------------------------------------------------------------------- jobs
   // Deliberately at four different stages, because a demo that shows four
@@ -280,7 +520,7 @@ async function main() {
     data: {
       companyId: company.id,
       contactId: gc.id,
-      name: `Riverside Medical Office Building ${MARK}`,
+      name: `${DEMO_JOB_NAMES.riverside} ${MARK}`,
       scope: "Metal framing, drywall and ACT ceilings, levels 1–3.",
       status: "IN_PROGRESS",
       startDate: day(-52),
@@ -303,7 +543,7 @@ async function main() {
     data: {
       companyId: company.id,
       contactId: gc2.id,
-      name: `Northgate Apartments Phase 2 ${MARK}`,
+      name: `${DEMO_JOB_NAMES.northgate} ${MARK}`,
       scope: "Load-bearing metal stud framing and drywall, 48 units.",
       status: "CONTRACTED",
       startDate: day(21),
@@ -315,7 +555,7 @@ async function main() {
     data: {
       companyId: company.id,
       contactId: gc.id,
-      name: `Lakeshore Retail Fit-Out ${MARK}`,
+      name: `${DEMO_JOB_NAMES.lakeshore} ${MARK}`,
       scope: "Tenant improvement — partitions, soffits, level 5 finish.",
       status: "ESTIMATE",
       retainagePercent: "5",
@@ -389,7 +629,7 @@ async function main() {
     data: {
       companyId: company.id,
       contactId: gc2.id,
-      name: `Cedar Park Elementary ${MARK}`,
+      name: `${DEMO_JOB_NAMES.cedar} ${MARK}`,
       scope: "Classroom wing — framing, drywall, ceilings. Substantially complete.",
       status: "COMPLETE",
       startDate: day(-240),
@@ -650,7 +890,7 @@ async function main() {
       appliedAt: day(-27),
     },
   });
-  await prisma.changeOrderProposal.create({
+  const co1Proposal = await prisma.changeOrderProposal.create({
     data: {
       changeOrderId: co1.id,
       changeType: "ADD",
@@ -660,6 +900,52 @@ async function main() {
       unitPrice: "24.5",
       budgetedUnitCost: "16.8",
       currentEstimatedUnitCost: "16.8",
+    },
+  });
+
+  // ------------------------------------------- what APPROVING actually does
+  //
+  // THIS LINE ITEM IS THE WHOLE POINT OF CO #1 AND IT WAS MISSING. The block
+  // above says CO #1's "scope IS in the contract value above". It was not,
+  // for as long as this seed has existed: contract value is quantity ×
+  // unitPrice summed over a job's non-deleted JobLineItems, and no line item
+  // was ever written for these soffits. So Riverside showed $267,870.00 — the
+  // four base lines and nothing else — while an EXECUTED change order sat on
+  // the same screen for $7,595.00, under a paragraph that tells the reader in
+  // the app's own words that an executed change order "has already moved it".
+  //
+  // The cause is the shape to learn from rather than the number. This script
+  // writes the ChangeOrder row DIRECTLY with status APPROVED and an
+  // `appliedAt`, which is a state the app can only reach through
+  // `approveChangeOrder` — and that action does two things: it flips the
+  // status AND, for every ADD proposal, creates the JobLineItem. Setting the
+  // status by hand performed half of an operation and recorded it as whole.
+  //
+  // So this mirrors the ADD branch of `lib/actions/changeOrders.ts` field for
+  // field, `originChangeOrderId` included: that column is what makes the
+  // contract table draw its amber "CO #1" chip, so without it the line would
+  // have appeared as if it had been bid that way.
+  //
+  // `tradeScope` is set here and is NOT in the action's ADD branch, which
+  // copies `proposal.tradeScope` — null on this proposal. It is set because
+  // every other framing line on this job carries it and a demo line with no
+  // trade reads as an oversight on screen. That is a deliberate difference
+  // between this fixture and the code path, named so nobody "corrects" it
+  // into a mismatch later.
+  //
+  // Found 2026-09-28 by adding the numbers up before filming, which is the
+  // only instrument that has ever caught anything in this file.
+  await prisma.jobLineItem.create({
+    data: {
+      jobId: riverside.id,
+      description: co1Proposal.description,
+      unit: co1Proposal.unit,
+      quantity: co1Proposal.quantity,
+      unitPrice: co1Proposal.unitPrice,
+      budgetedUnitCost: co1Proposal.budgetedUnitCost,
+      currentEstimatedUnitCost: co1Proposal.currentEstimatedUnitCost,
+      tradeScope: "METAL_FRAMING_DRYWALL",
+      originChangeOrderId: co1.id,
     },
   });
 
@@ -1755,19 +2041,26 @@ async function main() {
   // are worked out from followUpOn, so one of these is deliberately in the
   // past and one in the future. followUpAssignedToUserId is a separate
   // field from loggedByUserId on purpose, and both are exercised here.
+  //
+  // The two Brackett entries name a person, and the row links to that
+  // person: "last contact" on the People section is derived from this log
+  // per person (contacts/[id]/page.tsx), so a log that only names them in
+  // prose leaves every person reading as never contacted.
   const interactions = [
-    [gc, "CALL", -12, "Called Dana about the level 3 ceiling grid RFI. She will chase the architect.", 2],
-    [gc, "SITE_VISIT", -5, "Walked levels 1-2 with the super. Punch walk pencilled for the 20th.", null],
-    [gc2, "EMAIL", -21, "Sent the updated MSA for signature. No reply yet.", -4],
-    [gc2, "NOTE", -9, "Their AP has moved to net 30 in practice regardless of what the contract says.", null],
-    [gc3, "CALL", -16, "Intro call on the Riverfront Tower package. Bid due in three weeks.", 5],
-    [gc3, "EMAIL", -2, "Sent prequal packet and bonding letter.", null],
+    // [contact, type, daysAgo, summary, followUpDaysFromNow, person key]
+    [gc, "CALL", -12, "Called Dana about the level 3 ceiling grid RFI. She will chase the architect.", 2, "pm"],
+    [gc, "SITE_VISIT", -5, "Walked levels 1-2 with the super. Punch walk pencilled for the 20th.", null, "super"],
+    [gc2, "EMAIL", -21, "Sent the updated MSA for signature. No reply yet.", -4, null],
+    [gc2, "NOTE", -9, "Their AP has moved to net 30 in practice regardless of what the contract says.", null, null],
+    [gc3, "CALL", -16, "Intro call on the Riverfront Tower package. Bid due in three weeks.", 5, null],
+    [gc3, "EMAIL", -2, "Sent prequal packet and bonding letter.", null, null],
   ];
-  for (const [contact, type, at, summary, followUp] of interactions) {
+  for (const [contact, type, at, summary, followUp, person] of interactions) {
     await prisma.contactInteraction.create({
       data: {
         companyId: company.id,
         contactId: contact.id,
+        contactPersonId: person === null ? null : gcPeople[person].id,
         type,
         occurredOn: day(at),
         summary: `${summary} ${MARK}`,
@@ -2154,15 +2447,18 @@ async function main() {
   const messages = [
     // [job, to, toName, subject, body, sentDaysAgo, relatedType, events]
     // events: [type, daysAgo, minutesPastMidnight, detail]
-    [riverside, "dana@brackettconstruction.example", "Dana Whitfield", "RFI 3 — rated assembly at mechanical rooms 2A/2B", "Dana, following up on RFI 3. We need the UL assembly before we can close those walls. Framing is holding.", -9, "RFI", [["QUEUED", -9, 494, null], ["SENT", -9, 495, null], ["DELIVERED", -9, 498, null]]],
-    [riverside, "dana@brackettconstruction.example", "Dana Whitfield", "Submittal 2 — ceiling grid, revision B", "Revision B attached, incorporating the seismic bracing comments.", -20, "SUBMITTAL", [["QUEUED", -20, 601, null], ["SENT", -20, 602, null], ["DELIVERED", -20, 604, null]]],
+    // The Brackett recipients are read off their ContactPerson rows above,
+    // so the message log and the People section cannot name the same person
+    // at two different addresses.
+    [riverside, gcPeople.pm.email, gcPeople.pm.name, "RFI 3 — rated assembly at mechanical rooms 2A/2B", "Dana, following up on RFI 3. We need the UL assembly before we can close those walls. Framing is holding.", -9, "RFI", [["QUEUED", -9, 494, null], ["SENT", -9, 495, null], ["DELIVERED", -9, 498, null]]],
+    [riverside, gcPeople.pm.email, gcPeople.pm.name, "Submittal 2 — ceiling grid, revision B", "Revision B attached, incorporating the seismic bracing comments.", -20, "SUBMITTAL", [["QUEUED", -20, 601, null], ["SENT", -20, 602, null], ["DELIVERED", -20, 604, null]]],
     [cedar, "ap@brackettconstruction.example", null, "Closeout package — Cedar, second submission", "Full package attached with the corrected as-builts and the executed unconditional waiver.", -14, "CLOSEOUT", [["QUEUED", -14, 933, null], ["SENT", -14, 934, null], ["DELIVERED", -14, 941, null]]],
     // Bounced: a real, fixable problem, and the detail is what makes it fixable.
     [northgate, "j.reyes@halvorsenbuilders.example", "Joel Reyes", "Northgate Phase 2 — schedule of values for review", "Attached the SOV for the 48 units, broken out by building.", -6, null, [["QUEUED", -6, 545, null], ["SENT", -6, 546, null], ["BOUNCED", -6, 549, "550 5.1.1 recipient address rejected: user unknown"]]],
     // Handed to the provider six days ago and never confirmed. The state
     // /messages calls "unconfirmed", which needs a message at least a day
     // old — hence the explicit createdAt below.
-    [riverside, "super@brackettconstruction.example", "Marco Silva", "Level 3 ceiling grid — start date", "Confirming we start the level 3 grid Monday, assuming the mechanical rough-in is signed off.", -6, null, [["QUEUED", -6, 1012, null], ["SENT", -6, 1013, null]]],
+    [riverside, gcPeople.super.email, gcPeople.super.name, "Level 3 ceiling grid — start date", "Confirming we start the level 3 grid Monday, assuming the mechanical rough-in is signed off.", -6, null, [["QUEUED", -6, 1012, null], ["SENT", -6, 1013, null]]],
     // Never reached the provider at all: no events, no providerMessageId.
     // Reads as "Never sent" rather than as an empty log.
     [cedar, "ap@brackettconstruction.example", null, "Retainage release — Cedar", "The closeout package went in on the 14th. Confirming the retainage release schedule.", -3, null, []],
@@ -2183,7 +2479,25 @@ async function main() {
         createdAt: day(sentAt),
         // Null means it never reached the provider, which is a different
         // failure from bouncing and reads differently on the page.
-        providerMessageId: wentOut ? `demo-${MARK}-${toAddress}-${sentAt}` : null,
+        //
+        // COMPANY-SCOPED, and that is not tidiness. `providerMessageId` is
+        // `@unique` in messaging.prisma with NO company in the key — it is a
+        // provider's own id, and two providers never issue the same one — so
+        // an id built from address and day alone is unique per COMPANY and
+        // collides across them. Every other tag in this file is scoped by a
+        // `where: { companyId }`, which hid it: this is the only value the
+        // DATABASE requires to be globally unique.
+        //
+        // It cost a half-finished seed on 2026-09-27, the #180 shape exactly.
+        // Seeding a SECOND company on a database that already had one wrote
+        // the jobs, the crew, 49 time entries and the equipment and then died
+        // here on `Unique constraint failed on the fields:
+        // (providerMessageId)` — leaving a company with a partial demo set
+        // and a reseed guard that then refuses to try again. Nobody had ever
+        // run this against two companies on one database; the demo project
+        // grew a second and a third the moment people started signing in to
+        // previews, so it stopped being hypothetical.
+        providerMessageId: wentOut ? `demo-${MARK}-${company.id}-${toAddress}-${sentAt}` : null,
         relatedType,
         relatedId: relatedType === null ? null : job.id,
         sentByUserId: user?.id ?? null,
@@ -2196,17 +2510,47 @@ async function main() {
     }
   }
 
-  console.log("seed: change orders, submittals, punch list, closeout, talks, orders, drawings, union local, crafts, fringe rates, crew, craft-tagged hours, payroll register, WH-347 numbers, catalog, pricing, RFIs, safety, bids, interactions, equipment, prevailing wage, backcharges, closeout submissions and messages written");
+  console.log("seed: GC people, change orders, submittals, punch list, closeout, talks, orders, drawings, union local, crafts, fringe rates, crew, craft-tagged hours, payroll register, WH-347 numbers, catalog, pricing, RFIs, safety, bids, interactions, equipment, prevailing wage, backcharges, closeout submissions and messages written");
   return { company, user, gc, gc2, gc3, riverside, northgate, lakeshore, riversideLines, oregonPrior, oregonCurrent };
+}
+
+/*
+ * Say out loud which rows were matched by NAME rather than by the tag.
+ *
+ * A row without the tag is the one case where undo is acting on something it
+ * cannot prove this script wrote — a person could have typed that name. It is
+ * still the right thing to delete (see DEMO_JOB_NAMES), but it must never
+ * happen quietly: the log is the only record of what a run touched, and
+ * "removed 4 jobs" reads identically whether or not one of them was a
+ * person's own.
+ */
+function announceUntagged(label, rows) {
+  const untagged = rows.filter((r) => !r.name.includes(MARK));
+  if (!untagged.length) return;
+  console.log(
+    `seed: ${untagged.length} ${label}(s) matched by NAME, not by the ${MARK} tag ` +
+      `— presumed renamed by --camera-names:`,
+  );
+  for (const r of untagged) console.log(`seed:   "${r.name}"`);
 }
 
 async function undo(companyId) {
   // Ordered children-first. Only rows this script tagged.
+  //
+  // TAGGED **OR** KNOWN-BY-NAME. `--camera-names` takes the tag off these
+  // for a screen recording, and a job matched by neither would not merely
+  // survive — every one of the ~40 child models below is scoped by the
+  // `jobIds` this query returns, so its whole tree would survive too and the
+  // run would still report a clean removal. See DEMO_JOB_NAMES at the top.
   const jobs = await prisma.job.findMany({
-    where: { companyId, name: { contains: MARK } },
-    select: { id: true },
+    where: {
+      companyId,
+      OR: [{ name: { contains: MARK } }, { name: { in: Object.values(DEMO_JOB_NAMES) } }],
+    },
+    select: { id: true, name: true },
   });
   const jobIds = jobs.map((j) => j.id);
+  announceUntagged("job", jobs);
 
   // Children of a demo CONTACT are scoped by the contact, not by their own
   // tag — the same way children of a demo JOB are scoped by jobIds above.
@@ -2214,11 +2558,16 @@ async function undo(companyId) {
   // through a preview hangs off a demo contact and is untagged; scoped by
   // tag it would survive, and then contact.deleteMany would fail on the
   // foreign key and leave the whole demo dataset half-removed.
+  // Tagged OR known by name, for the same reason as the jobs above.
   const contacts = await prisma.contact.findMany({
-    where: { companyId, name: { contains: MARK } },
-    select: { id: true },
+    where: {
+      companyId,
+      OR: [{ name: { contains: MARK } }, { name: { in: Object.values(DEMO_CONTACT_NAMES) } }],
+    },
+    select: { id: true, name: true },
   });
   const contactIds = contacts.map((c) => c.id);
+  announceUntagged("contact", contacts);
 
   // Same rule again for the union-compliance set: the LOCAL carries the tag
   // and everything under it is scoped by its id, so a craft classification
@@ -2487,6 +2836,9 @@ async function undo(companyId) {
     );
     await del("wh347PayrollCounter", () =>
       prisma.wh347PayrollCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
+    await del("wh347Statement", () =>
+      prisma.wh347Statement.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
     await del("dispatchSlip", () =>
       prisma.dispatchSlip.deleteMany({ where: { jobId: { in: jobIds } } }),

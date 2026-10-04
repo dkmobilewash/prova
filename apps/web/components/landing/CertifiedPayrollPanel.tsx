@@ -21,13 +21,25 @@ import { DEMO_JOB, PanelFrame, calendarDate, hoursCell, utcDay } from "./panelCh
  * which is the distinction the product is deliberate about and this
  * rendering therefore cannot get wrong.
  *
- * WHAT IS DELIBERATELY NOT HERE, because the product does not source it:
- *   - "Project and Location" and "Project or Contract No." — neither is on
- *     the Job model yet; the real sheet prints "not recorded" in red where
- *     they go. They are omitted rather than invented.
- *   - Page 2, the Statement of Compliance. It is not built, and lib/wh347.ts
- *     marks every form not fileable until it is. Nothing here says or implies
- *     "ready to file".
+ * WHAT IS DELIBERATELY NOT HERE. This list has been CORRECTED: all three of
+ * its entries described things the product did not hold, and two of the three
+ * stopped being true while the sentence stayed.
+ *   - "Project and Location" and "Project or Contract No." — this said
+ *     "neither is on the Job model yet". BOTH ARE NOW: `Job.siteAddress` /
+ *     `Job.projectLocation` (read through `jobFormLocation`) and
+ *     `Job.contractNumber`. Still omitted from THIS PANEL, which is a
+ *     marketing rendering off hardcoded inputs and has no job behind it — a
+ *     different reason from the one that used to be written here.
+ *   - Page 2, the Statement of Compliance — this said "It is not built, and
+ *     lib/wh347.ts marks every form not fileable until it is." IT IS BUILT.
+ *     `blocking.add("statementOfCompliance")` is conditional now, so
+ *     `fileable` can be true. This panel still shows page 1 only, because one
+ *     sheet is the marketing beat; it just no longer implies page 2 is
+ *     missing from the product.
+ *
+ * Nothing here says or implies "ready to file", which is the part of the
+ * original note that was about this component rather than about the app, and
+ * the only part that needed no correction.
  * Column (2), withholding exemptions, is blank on the real sheet and blank
  * here.
  *

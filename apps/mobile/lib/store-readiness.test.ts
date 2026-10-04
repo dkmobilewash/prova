@@ -42,6 +42,7 @@ const app = JSON.parse(readFileSync(join(mobile, "app.json"), "utf8")).expo as {
   extra?: { eas?: { projectId?: string } };
 };
 const eas = JSON.parse(readFileSync(join(mobile, "eas.json"), "utf8")) as {
+  cli?: { appVersionSource?: string };
   build: Record<string, { autoIncrement?: boolean; environment?: string }>;
   submit?: Record<string, unknown>;
 };
@@ -139,6 +140,25 @@ describe("the build profiles a release goes through", () => {
     // hand is how a submission fails at the last step.
     expect(eas.build.production?.autoIncrement).toBe(true);
     expect(eas.build.production?.environment).toBe("production");
+  });
+
+  it("says WHERE that number lives, because autoIncrement alone is half a setting", () => {
+    // FOUND BY RUNNING THE FIRST PRODUCTION BUILD, 2026-09-26, with the
+    // assertion directly above green the whole time. `autoIncrement` tells
+    // EAS to bump a number and `cli.appVersionSource` tells it which number
+    // — and without the second the CLI will not guess. It stops and asks.
+    // Interactively that is a prompt nobody documented; non-interactively
+    // (CI, `--non-interactive`) it is a build that never starts.
+    //
+    // The pair is the point: this file pinned one half of a two-part
+    // requirement, so it could not tell the difference between "the build
+    // number is handled" and "the build number is handled as far as a
+    // question we have not answered".
+    //
+    // "remote" rather than "local" is a decision, not a default. `local`
+    // makes autoIncrement REWRITE app.json on every build — a tracked file,
+    // in a worktree two lanes share, dirtied by the act of building.
+    expect(eas.cli?.appVersionSource).toBe("remote");
   });
 
   it("keeps a submit profile, even empty — its absence is what breaks", () => {

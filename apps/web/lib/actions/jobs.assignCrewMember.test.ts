@@ -41,6 +41,21 @@ vi.mock("next/cache", () => ({
   revalidatePath: () => {},
 }));
 
+/**
+ * `after` needs a real request scope and throws outside one, so a unit
+ * test has to supply it. The mock RUNS the callback rather than dropping
+ * it, which is what production does — the whole point of the change from
+ * `void` is that the work is guaranteed to run, and a mock that swallowed
+ * it would test the opposite.
+ */
+const afterCalls: (() => unknown)[] = [];
+vi.mock("next/server", () => ({
+  after: (fn: () => unknown) => {
+    afterCalls.push(fn);
+    void fn();
+  },
+}));
+
 vi.mock("@prova/db", () => ({
   Prisma: {},
   get prisma() {
@@ -98,10 +113,19 @@ describe("assignCrewMember", () => {
     seedJob();
     seedMember();
 
+    afterCalls.length = 0;
     await assignCrewMember("job_1", form("user_2"));
 
     expect(assignments()).toHaveLength(1);
     expect(assignments()[0]).toMatchObject({ jobId: "job_1", userId: "user_2" });
+
+    // The push is SCHEDULED, not dropped. It used to be `void
+    // pushToUser(...)`, which in a server action means "until the response
+    // is sent" — Vercel may tear the function down the moment this returns.
+    // That is how the alert digest's push, which does five database
+    // round-trips first, never arrived at all. This one survived on a
+    // millisecond-wide window, which is luck rather than design.
+    expect(afterCalls, "the assignment push is back on a floating promise").toHaveLength(1);
   });
 
   it("re-assigning a teammate already on the job is a no-op: no throw, no duplicate row", async () => {

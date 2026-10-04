@@ -480,50 +480,66 @@ export default async function IntegrationsPage({
         )}
 
         {impl.kind === "builtin" && connection && isConnected && (
-          <>
-            <dl className="mt-4 grid gap-4 border-t border-line-card pt-4 sm:grid-cols-3">
-              <DetailRow label="Account" value={connection.externalAccountLabel ?? "—"} />
-              <DetailRow
-                label="Last synced"
-                value={connection.lastSyncedAt ? relativeTime(connection.lastSyncedAt, now) : "Never"}
-              />
-              <DetailRow
-                label="Scopes"
-                value={connection.scopes.length ? connection.scopes.join(", ") : "—"}
-              />
-            </dl>
+          <dl className="mt-4 grid gap-4 border-t border-line-card pt-4 sm:grid-cols-3">
+            <DetailRow label="Account" value={connection.externalAccountLabel ?? "—"} />
+            <DetailRow
+              label="Last synced"
+              value={connection.lastSyncedAt ? relativeTime(connection.lastSyncedAt, now) : "Never"}
+            />
+            <DetailRow
+              label="Scopes"
+              value={connection.scopes.length ? connection.scopes.join(", ") : "—"}
+            />
+          </dl>
+        )}
 
-            {connection.syncLogs.length > 0 && (
-              <details className="mt-4 border-t border-line-card pt-4">
-                <summary className="cursor-pointer text-sm font-medium text-ink-label">
-                  Recent activity ({connection.syncLogs.length})
-                </summary>
-                <ul className="mt-3 flex flex-col gap-2">
-                  {connection.syncLogs.map((log) => (
-                    <li
-                      key={log.id}
-                      className="flex flex-col gap-1 rounded-md border border-line-card px-3 py-2 sm:flex-row sm:items-baseline sm:gap-3"
-                    >
-                      <span className="shrink-0 text-xs tabular-nums text-ink-muted">
-                        {log.occurredAt.toISOString().replace("T", " ").slice(0, 16)} UTC
-                      </span>
-                      <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-ink-muted">
-                        {log.direction.replace("_", " ")}
-                      </span>
-                      <span
-                        className={`shrink-0 text-xs font-medium ${
-                          log.status === "SUCCESS" ? "text-tag-green-ink" : "text-tag-rose-ink"
-                        }`}
-                      >
-                        {log.status === "SUCCESS" ? "Success" : "Failure"}
-                      </span>
-                      <span className="text-sm text-ink-body">{log.message}</span>
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            )}
-          </>
+        {/* RECENT ACTIVITY, FOR EVERY PROVIDER — NOT JUST THE SANDBOX.
+
+            Nine providers write to `IntegrationSyncLog` from twenty call sites, and
+            until now the only thing rendering it sat inside the `builtin` branch above —
+            the Sandbox card. So every "Connected to DocuSign", every "Sent for
+            signature", and the one that actually matters — the FAILURE row written when
+            a credential dies — was stored and shown to nobody.
+
+            The query has always loaded these for every connection (see the select at the
+            top of this file, which has no provider filter). Only the render was gated, so
+            this is a move rather than new plumbing. It is the shape CLAUDE.md names, one
+            layer out from where it usually sits: not a function nothing calls, but a
+            table nothing renders.
+
+            NOT gated on `isConnected`, deliberately. The moment an owner most wants this
+            list is the moment a connection has just gone NEEDS_REAUTH or been
+            disconnected; hiding the history exactly then is backwards. The status pill
+            says whether it is live, this says what happened to it. */}
+        {connection && connection.syncLogs.length > 0 && (
+          <details className="mt-4 border-t border-line-card pt-4">
+            <summary className="cursor-pointer text-sm font-medium text-ink-label">
+              Recent activity ({connection.syncLogs.length})
+            </summary>
+            <ul className="mt-3 flex flex-col gap-2">
+              {connection.syncLogs.map((log) => (
+                <li
+                  key={log.id}
+                  className="flex flex-col gap-1 rounded-md border border-line-card px-3 py-2 sm:flex-row sm:items-baseline sm:gap-3"
+                >
+                  <span className="shrink-0 text-xs tabular-nums text-ink-muted">
+                    {log.occurredAt.toISOString().replace("T", " ").slice(0, 16)} UTC
+                  </span>
+                  <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-ink-muted">
+                    {log.direction.replace("_", " ")}
+                  </span>
+                  <span
+                    className={`shrink-0 text-xs font-medium ${
+                      log.status === "SUCCESS" ? "text-tag-green-ink" : "text-tag-rose-ink"
+                    }`}
+                  >
+                    {log.status === "SUCCESS" ? "Success" : "Failure"}
+                  </span>
+                  <span className="text-sm text-ink-body">{log.message}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
       </Card>
     );

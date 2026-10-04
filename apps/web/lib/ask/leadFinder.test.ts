@@ -1,6 +1,23 @@
-import { describe, expect, it, vi } from "vitest";
-import { ASK_DEFAULT_MODEL, type LeadSearch } from "@prova/integrations";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { LEAD_PROMPT_VERSION, type LeadSearch } from "@prova/integrations";
+import { HAIKU_4_5, modelFor } from "@prova/integrations/src/models";
 import { boundLeadFinder } from "./leadFinder";
+
+/** The model THIS feature resolves to, not Ask's. They are the same id today
+ *  and the distinction is the point: writing `ASK_DEFAULT_MODEL` here would
+ *  keep passing after somebody moved lead search to a cheaper model, which is
+ *  exactly the change `models.ts` exists to make possible. */
+const LEAD_SEARCH_MODEL = modelFor("LEAD_SEARCH").model;
+
+// The per-company AI switch reads one row before the search runs
+// (lib/ai/settings.ts). This one is settable per test rather than fixed at
+// `null`, because the switch's own refusal is asserted below: `aiGate` fails
+// CLOSED, so a finder that could not read the row must refuse rather than
+// search, and that is a behaviour worth pinning where the search lives.
+let aiSettingsRow: { aiEnabled: boolean; disabledFeatures: string[]; planSheetsPerMonth: number; modelOverride: string | null } | null = null;
+vi.mock("@prova/db", () => ({
+  prisma: { companyAiSettings: { findUnique: async () => aiSettingsRow } },
+}));
 
 /**
  * Metering for a lead pass. Pinned because it is where money leaks:
@@ -30,15 +47,28 @@ describe("boundLeadFinder", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const d = deps({ ok: true, leads: [], searches: 3, usage });
     const result = await boundLeadFinder(actor, d)(input);
-    expect(result).toEqual({ ok: true, leads: [] });
+    // `searches` is CARRIED OUT, not just recorded in the ledger, so a caller
+    // can show what the pass cost. It is the billed unit: web search is charged
+    // per search on top of tokens. The /pipeline control shipped without
+    // showing it while the project look-up showed it, and a browser tester
+    // caught that before any test here could — this is the assertion that keeps
+    // it reaching a caller at all.
+    expect(result).toEqual({ ok: true, leads: [], searches: 3 });
     expect(d.recordAskUsage).toHaveBeenCalledTimes(1);
     expect(d.recordAskUsage).toHaveBeenCalledWith({
       companyId: "co-1",
       userId: "u-1",
-      model: ASK_DEFAULT_MODEL,
+      model: LEAD_SEARCH_MODEL,
       usage,
       outcome: "answered",
       feature: "lead-search",
+      // The prompt's version, so a later claim that a prompt change improved
+      // lead quality can be attributed to one side of it. Both callers — the
+      // Ask command and the /pipeline control — come through this one
+      // recording site, which is why the version cannot be on one path and
+      // missing from the other. `promptVersionCensus` fails the build if it
+      // is dropped; this pins it to the exact value rather than its presence.
+      promptVersion: LEAD_PROMPT_VERSION,
     });
     for (const call of d.recordAskUsage.mock.calls) expect(call[0].feature).not.toBe("ask");
     expect(d.recordAskUsage.mock.calls[0][0].usage.webSearches).toBe(3);
@@ -51,8 +81,13 @@ describe("boundLeadFinder", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const d = deps({ ok: true, leads: [], searches: 0, usage: { ...usage, passes: 1 } });
     await boundLeadFinder(actor, d)({ ...input, companyName: "Acme Drywall", medianJobValue: 415000 } as never);
-    expect(d.findLeads).toHaveBeenCalledWith({ ...input, maxSearches: 3 });
-    expect(Object.keys(d.findLeads.mock.calls[0][0]).sort()).toEqual(["bidsAfter", "maxSearches", "publicWorkOnly", "region", "sizeBand", "trades"]);
+    expect(d.findLeads).toHaveBeenCalledWith({ ...input, maxSearches: 3, model: LEAD_SEARCH_MODEL });
+    // `model` joined the list in step 0 and is NOT a loosening of this test.
+    // What the test is for is that nothing ABOUT THE COMPANY leaves — the two
+    // fields stapled on above, `companyName` and `medianJobValue`, are still
+    // absent, which is the assertion that matters. A model id is our own
+    // routing decision and says nothing about the contractor.
+    expect(Object.keys(d.findLeads.mock.calls[0][0]).sort()).toEqual(["bidsAfter", "maxSearches", "model", "publicWorkOnly", "region", "sizeBand", "trades"]);
     vi.restoreAllMocks();
   });
 
@@ -66,5 +101,74 @@ describe("boundLeadFinder", () => {
     expect(await boundLeadFinder(actor, invalid)(input)).toEqual({ ok: false, reason: "invalid" });
     expect(invalid.recordAskUsage).not.toHaveBeenCalled();
     vi.restoreAllMocks();
+  });
+
+  /**
+   * THE PER-COMPANY AI SWITCH, asserted where the money would be spent.
+   *
+   * Both cases check the same thing twice over, because a switch that refuses
+   * on screen and searches anyway is worse than no switch: `findLeads` must
+   * not be called AT ALL, and no usage row may be written. The sentence is
+   * carried on `off` rather than mapped from a code, so the wording stays in
+   * `lib/ai/settings.ts` — see the `LeadFinder` type in commands.ts.
+   */
+  describe("the per-company AI switch", () => {
+    afterEach(() => {
+      aiSettingsRow = null;
+      vi.restoreAllMocks();
+    });
+
+    it("refuses without searching when the company has AI off altogether", async () => {
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      aiSettingsRow = { aiEnabled: false, disabledFeatures: [], planSheetsPerMonth: 1500, modelOverride: null };
+      const d = deps({ ok: true, leads: [], searches: 3, usage });
+      const result = await boundLeadFinder(actor, d)(input);
+      expect(result).toEqual({
+        ok: false,
+        reason: "off",
+        sentence: expect.stringContaining("AI is switched off for your company"),
+      });
+      expect(d.findLeads).not.toHaveBeenCalled();
+      expect(d.recordAskUsage).not.toHaveBeenCalled();
+      // `off` in the log line, never `unavailable` — a company that switched
+      // this off itself must not read as an outage in our own logs.
+      expect(log).toHaveBeenCalledWith("[ask] lead search", { companyId: "co-1", ok: false, reason: "off" });
+    });
+
+    it("refuses without searching when only lead search is off", async () => {
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      aiSettingsRow = { aiEnabled: true, disabledFeatures: ["LEAD_SEARCH"], planSheetsPerMonth: 1500, modelOverride: null };
+      const d = deps({ ok: true, leads: [], searches: 3, usage });
+      const result = await boundLeadFinder(actor, d)(input);
+      // The feature's own label, not the raw enum key: `DRAFT_ESTIMATE_LINES`
+      // in a sentence reads to a person like a bug.
+      expect(result).toEqual({
+        ok: false,
+        reason: "off",
+        sentence: expect.stringContaining("Lead search is switched off"),
+      });
+      expect(d.findLeads).not.toHaveBeenCalled();
+      expect(d.recordAskUsage).not.toHaveBeenCalled();
+    });
+
+    it("searches when a DIFFERENT feature is the one switched off", async () => {
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      aiSettingsRow = { aiEnabled: true, disabledFeatures: ["COMPLIANCE_EXTRACT"], planSheetsPerMonth: 1500, modelOverride: null };
+      const d = deps({ ok: true, leads: [], searches: 1, usage });
+      expect(await boundLeadFinder(actor, d)(input)).toEqual({ ok: true, leads: [], searches: 1 });
+      expect(d.findLeads).toHaveBeenCalledTimes(1);
+    });
+
+    it("routes through a company's model override", async () => {
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      aiSettingsRow = { aiEnabled: true, disabledFeatures: [], planSheetsPerMonth: 1500, modelOverride: HAIKU_4_5 };
+      const d = deps({ ok: true, leads: [], searches: 1, usage });
+      await boundLeadFinder(actor, d)(input);
+      expect(d.findLeads).toHaveBeenCalledWith(expect.objectContaining({ model: HAIKU_4_5 }));
+      // And the row records what actually ran, not the feature default —
+      // otherwise a company on a cheap model is billed at the dear one's rate
+      // the moment anybody prices this column.
+      expect(d.recordAskUsage).toHaveBeenCalledWith(expect.objectContaining({ model: HAIKU_4_5 }));
+    });
   });
 });

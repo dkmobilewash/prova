@@ -83,7 +83,23 @@ model JobBidRecap {
   /// `contractValue` is one number doing two jobs in this app (what we bid and
   /// what the contract is worth), and after award it must be the number the GC
   /// agreed to. These two columns are what let the screen say "applied on the
-  /// 4th at $184,320" and refuse to apply the same recap twice.
+  /// 4th at $184,320".
+  ///
+  /// CORRECTED 2026-10-02: this sentence used to end "and refuse to apply the
+  /// same recap twice", and nothing refuses anything. `applyBidRecap` has never
+  /// read `appliedAt` — the header of this very file says so, eighty lines up,
+  /// so the file contradicted itself. What makes a second press safe is
+  /// IDEMPOTENCE, not a guard: the recap computes from cost and writes price, so
+  /// the input is not the output of the last run. Worth keeping the distinction,
+  /// because the takeoff path next door really does guard
+  /// (`TakeoffMeasurement.postedAt`, a hard refusal before any write), and
+  /// reading this as the same kind of protection would be wrong about both.
+  ///
+  /// `appliedTotal` grew a SECOND reader on 2026-10-02 and it is the better
+  /// argument for keeping the column: `lib/estimating/proposal-recap-currency.ts`
+  /// compares it against the live line sum, because a recap applied and THEN
+  /// edited leaves a proposal part marked-up with `appliedAt` still set — which
+  /// a check asking only "has it ever been applied" would call current.
   appliedAt    DateTime?
   appliedTotal Decimal?  @db.Decimal(12, 2)
 

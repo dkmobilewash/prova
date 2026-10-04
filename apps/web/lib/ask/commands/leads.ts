@@ -302,7 +302,16 @@ export function placeAgainstKnown(lead: { projectName: string; sourceUrl: string
   return { hidden: false, like: best?.record ?? null };
 }
 
-async function knownRecords(companyId: string): Promise<KnownRecord[]> {
+/**
+ * What this company already has, for `placeAgainstKnown`.
+ *
+ * EXPORTED so the /pipeline control uses the same set this command does. It was
+ * private, and the browser test that found out why is worth recording: the panel
+ * shipped without this, so a lead already on the chase list looked new, offered
+ * "Track this as a pursuit", and `createBidPursuit` has no duplicate-name guard
+ * behind it. The Ask path had been hiding those all along.
+ */
+export async function knownRecords(companyId: string): Promise<KnownRecord[]> {
   const [pursuits, jobs, invitations] = await Promise.all([
     prisma.bidPursuit.findMany({
       where: { companyId, stage: { not: "DROPPED" } },
@@ -494,6 +503,12 @@ async function resolveFindBidLeads(ctx: CommandContext, input: CommandInput): Pr
     return { kind: "refuse", reason: "The web lookup failed part-way, so nothing was searched to the end. Try again in a minute." };
   }
   if (!result.ok) {
+    // The switch speaks for itself. `sentence` is set only for `off`, and it
+    // is the wording `lib/ai/settings.ts` owns — reproducing it here would
+    // give the same refusal two spellings that drift apart.
+    if (result.reason === "off" && result.sentence) {
+      return { kind: "refuse", reason: result.sentence };
+    }
     return {
       kind: "refuse",
       reason:

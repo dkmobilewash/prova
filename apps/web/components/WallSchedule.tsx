@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition, type FormEvent } from "react";
 import { addWallRun, deleteWallRun, refreshWallSchedule, updateWallRun } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 import { scheduleLines, type WallTypeInput } from "@/lib/wall-assemblies";
 import { formatHours } from "@/lib/render-hours";
 
@@ -196,7 +197,14 @@ function WallRunRow({
           </span>
         )}
         <button type="submit" disabled={save.isPending} className={small} title={`Saves this ${typeCode} run and updates the estimate`}>
-          {save.isPending ? "Saving…" : "Save"}
+          {save.isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save"
+          )}
         </button>
         {save.error && <p className="w-full text-sm text-tag-amber-ink">{save.error}</p>}
       </form>

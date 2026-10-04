@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createApprenticeshipEnrollment } from "@/lib/actions";
+import { Spinner } from "@/components/Spinner";
 
 const field =
   "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -150,7 +151,14 @@ export function ApprenticeshipForm({
           disabled={isPending}
           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isPending ? "Saving…" : "Register"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Register"
+          )}
         </button>
         <button
           type="button"

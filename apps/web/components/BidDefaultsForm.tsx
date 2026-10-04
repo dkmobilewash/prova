@@ -3,6 +3,7 @@
 import { useState, useTransition, type FormEvent } from "react";
 import { saveCompanyBidDefaults } from "@/lib/actions";
 import { RECAP_RATE_FIELDS, RECAP_RATE_KEYS } from "@/lib/bid-recap";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * The company's standing markup rates, on Settings.
@@ -71,7 +72,14 @@ export function BidDefaultsForm({ defaults }: { defaults: BidDefaultsView | null
           disabled={isPending}
           className="rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Save default markup"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save default markup"
+          )}
         </button>
         {error && <p className="text-sm text-tag-amber-ink">{error}</p>}
         {saved && !error && <p className="text-sm text-ink-body">Saved. New jobs start from these.</p>}

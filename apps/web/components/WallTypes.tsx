@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, type FormEvent } from "react";
+import { COST_CATEGORY_LABEL, COST_CATEGORY_ORDER } from "@/components/costCategoryLabels";
 import {
   addStarterWallTypes,
   addWallTypeComponent,
@@ -11,6 +12,7 @@ import {
   updateWallTypeComponent,
 } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 import { WALL_BASIS_LABELS, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
 
 /**
@@ -48,6 +50,7 @@ export type WallComponentView = {
   wastePercent: string;
   roundUp: boolean;
   productionRate: string | null;
+  costCategory: string | null;
   catalogEntryId: string | null;
   craftClassificationId: string | null;
 };
@@ -165,7 +168,14 @@ export function WallTypeCard({
         <form onSubmit={save.onSubmit} className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
           <WallTypeFields type={type} />
           <button type="submit" disabled={save.isPending} className={small}>
-            {save.isPending ? "Saving…" : "Save"}
+            {save.isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Saving…
+              </span>
+            ) : (
+              "Save"
+            )}
           </button>
           <ErrorLine error={save.error} />
         </form>
@@ -258,6 +268,23 @@ function ComponentFields({
         Crew rate (units/hr)
         <input name="productionRate" defaultValue={component?.productionRate ?? ""} placeholder="none" inputMode="decimal" className={`${field} w-24`} />
       </label>
+      {/* #513. Board and studs are material, hang-and-finish is labor, and a
+          wall type is the one place that is knowable up front — so it is set
+          once here and every run of this type on every job inherits it. Without
+          it the derived line lands uncoded, and an uncoded line is marked up at
+          nothing. "From the price book" falls back to the linked catalog
+          entry's own type; the component wins when both are set. */}
+      <label className={labelClass}>
+        Cost type
+        <select name="costCategory" defaultValue={component?.costCategory ?? ""} className={`${field} w-32`}>
+          <option value="">From the price book</option>
+          {COST_CATEGORY_ORDER.map((value) => (
+            <option key={value} value={value}>
+              {COST_CATEGORY_LABEL[value]}
+            </option>
+          ))}
+        </select>
+      </label>
       <label className={labelClass}>
         Price from
         <select name="catalogEntryId" defaultValue={component?.catalogEntryId ?? ""} className={`${field} max-w-[14rem]`}>
@@ -303,7 +330,14 @@ function WallComponentRow({
       <form onSubmit={save.onSubmit} className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
         <ComponentFields component={component} catalog={catalog} crafts={crafts} />
         <button type="submit" disabled={save.isPending} className={small}>
-          {save.isPending ? "Saving…" : "Save"}
+          {save.isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save"
+          )}
         </button>
         <ErrorLine error={save.error} />
       </form>

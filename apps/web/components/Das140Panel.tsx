@@ -10,6 +10,7 @@ import {
   updateDas140Notice,
 } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 import { DAS140_ELECTIONS, das140ElectionLabel } from "@/lib/das-print";
 import {
   DAS140_STATUS_LABEL,
@@ -395,7 +396,14 @@ function NoticeCard({
               disabled={isPending}
               className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
-              {isPending ? "Saving…" : "Record it sent"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Record it sent"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
               Cancel
@@ -451,7 +459,14 @@ function NoticeCard({
               disabled={isPending}
               className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
-              {isPending ? "Saving…" : "Save notice"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save notice"
+              )}
             </button>
             <button type="button" disabled={isPending} onClick={() => setMode("view")} className={btn}>
               Cancel
@@ -560,7 +575,14 @@ export function Das140Panel({
               disabled={isPending}
               className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isPending ? "Saving…" : "Start the notice"}
+              {isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Start the notice"
+              )}
             </button>
             <button
               type="button"

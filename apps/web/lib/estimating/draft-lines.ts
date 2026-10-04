@@ -1,7 +1,7 @@
 import { prisma } from "@prova/db";
-import { draftEstimateLineItems } from "@prova/integrations";
+import { draftEstimateLineItems, DRAFT_LINES_PROMPT_VERSION } from "@prova/integrations";
 import type { ActionResultWith } from "@/lib/actions/shared";
-import { ASK_DEFAULT_MODEL } from "@prova/integrations";
+import { aiGate } from "@/lib/ai/settings";
 import { recordAskUsage } from "@/lib/ask/usage";
 
 /**
@@ -46,6 +46,16 @@ export async function draftLinesFromScope(
     return { ok: false, error: "Paste or type a scope of work to draft from" };
   }
 
+  // THE PER-COMPANY AI SWITCH, checked before the catalog is even read: a
+  // company with this feature off gets the sentence and no model call, no
+  // query and no spend. A refusal, never a throw — this function's whole
+  // shape is that its guards return their sentence, because the Ask command
+  // renders it on a card and production redacts a throw.
+  const gate = await aiGate(companyId, "DRAFT_ESTIMATE_LINES");
+  if (!gate.ok) {
+    return { ok: false, error: gate.error };
+  }
+
   // Ground the draft in what this company actually charges, rather than what
   // the market roughly charges: the catalog is its own priced work, and won
   // bids are the prices that have actually cleared with a GC.
@@ -87,11 +97,23 @@ export async function draftLinesFromScope(
       recordAskUsage({
         companyId,
         userId,
-        model: ASK_DEFAULT_MODEL,
+        // The model that ACTUALLY ran, from the gate, rather than Ask's
+        // default. Nothing prices this column today; step 2's cost numbers
+        // will, and a Haiku call recorded as Opus is a 5x overstatement
+        // waiting for the first person to multiply it out.
+        model: gate.model,
+        // The job whose estimate these lines land on, so an AI bill can be
+        // read per job rather than only per company.
+        jobId: input.jobId,
         usage,
         outcome: "answered",
         feature: "draft-estimate-lines",
+        // So a later claim that a prompt change improved the draft can be
+        // attributed to one version or the other. `promptVersionCensus` fails
+        // the build if this is dropped.
+        promptVersion: DRAFT_LINES_PROMPT_VERSION,
       }),
+    gate.model,
     );
   } catch (err) {
     // The drafter throws when the model returns nothing usable. That is a
@@ -137,6 +159,11 @@ export async function draftLinesFromScope(
         // should originate, and there is no field on a drafted line for one.
         // It arrives only from a matched catalog entry or not at all.
         productionRate: entry?.productionRate ?? null,
+        // #513. From the matched catalog entry only, with NO fallback to
+        // anything the model supplied — the same rule as the rate above. A cost
+        // type decides which markup rate the recap applies, so an assistant
+        // guessing it would be choosing a number on the bid.
+        costCategory: entry?.costCategory ?? null,
         craftClassificationId: entry?.craftClassificationId ?? null,
         tradeScope: entry?.tradeScope ?? item.tradeScope,
         sourceCatalogEntryId: entry?.id ?? null,

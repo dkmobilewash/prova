@@ -55,6 +55,7 @@ export default async function WallTypesPage() {
       wastePercent: c.wastePercent.toString(),
       roundUp: c.roundUp,
       productionRate: c.productionRate?.toString() ?? null,
+      costCategory: c.costCategory,
       catalogEntryId: c.catalogEntryId,
       craftClassificationId: c.craftClassificationId,
     })),

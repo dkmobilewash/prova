@@ -28,6 +28,16 @@ import type { AskToolCallMeta, AskToolOutcome } from "@prova/integrations";
 const recordProposal = vi.fn(async () => ({ id: "proposal_1", expiresAt: new Date("2026-09-15T12:30:00.000Z") }));
 let captured: ((name: string, input: unknown, meta: AskToolCallMeta) => Promise<AskToolOutcome<unknown>>) | null = null;
 
+// The per-company AI switch reads one row before any model call
+// (lib/ai/settings.ts). `null` is "no row", which stands for every default —
+// AI on, every feature enabled — the state every assertion in this file was
+// written under. Spelled out rather than left to a real client, because
+// `aiGate` fails CLOSED: an unreadable row refuses, so without this mock the
+// suite would be testing the refusal path and nothing else.
+vi.mock("@prova/db", () => ({
+  prisma: { companyAiSettings: { findUnique: async () => null } },
+}));
+
 vi.mock("@prova/integrations", () => ({
   anthropicIsConfigured: () => true,
   ASK_DEFAULT_MODEL: "test-model",

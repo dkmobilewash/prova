@@ -147,7 +147,21 @@ vi.mock("./allowance", () => ({
 
 vi.mock("@prova/db", async (importOriginal) => ({
   ...((await importOriginal()) as object),
-  prisma: new Proxy({}, { get() { throw new Error("this test must not touch the database"); } }),
+  prisma: new Proxy(
+    {},
+    {
+      get(_target, property) {
+        // The AI switch is a real read now — see the same exception in
+        // business-scope-stream.test.ts. `null` means no row, i.e. AI on,
+        // which is what these assertions were written under. Every other
+        // table still throws.
+        if (property === "companyAiSettings") {
+          return { findUnique: async () => null };
+        }
+        throw new Error("this test must not touch the database");
+      },
+    },
+  ),
 }));
 
 import type { CommandContext } from "./commands";

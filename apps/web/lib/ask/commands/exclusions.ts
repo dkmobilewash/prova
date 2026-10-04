@@ -54,6 +54,41 @@ export const notYetRegistered: Exclusion[] = [
   { action: "proposals.*", reason: "Bid proposals are a scope + price + exclusions document built from a job's estimate; clauses are edited where the document is shown. Never a command." },
   { action: "wallTypes.*", reason: "Wall types are the company's partition schedule and a job's wall runs are measurements off the drawings; both are entered where the schedule and the runs are shown, and every run write regenerates estimate lines. Never a command." },
   { action: "bidRecap.*", reason: "Markup, overhead and profit are the estimator's own margin call, read off the recap they are looking at; applying one rewrites every line price on the job. Never a command." },
+  {
+    action: "planIngest.*",
+    reason:
+      "The plan-ingestion runner. Starting a run spends the company's plan-sheet allowance a page at a time, and retrying resets an attempt ceiling that exists to bound that spend — so a model must be able to do neither. The person uploads a plan set and the panel on the job drives the run; the model is never the thing that decides three hundred pages are worth reading.",
+  },
+  {
+    action: "planSheets.*",
+    reason:
+      "Accepting or rejecting what a title-block reading proposed. The whole point of the proposal row is that a PERSON decides whether 'A-101' is really sheet 12 — a model accepting its own reading closes the only loop that makes the reading checkable, and it would do it three hundred rows at a time. The accepted number is also what an estimator will later label their measured quantities by, so a wrong one that nobody confirmed is exactly the failure `TakeoffPlanPage.label` refuses to allow. Reviewed where the sheets are shown. Never a command.",
+  },
+  {
+    action: "projectLookup.*",
+    reason:
+      "Looking a project up on the public web, from /pipeline. Already reachable from the Ask box and deliberately not a SECOND way in: `researchProject` runs inside the start-a-bid command, where it is attached to the one write it informs. On its own it writes nothing at all, so there is no proposal for a person to confirm and nothing for the propose-then-confirm shape to do — an Ask command whose whole effect is to print what it found is a question, and Ask already answers questions. It also bills a per-search web charge, so a command would spend money on a prompt's say-so with no row to show for it. The person types the two things that leave the app, which is the privacy boundary of the feature and is worth keeping visible on a form rather than assembled from a sentence. Never a command.",
+  },
+  {
+    action: "leadSearch.*",
+    reason:
+      "Searching public bid boards for work out to bid, from /pipeline. Already reachable from the Ask box as `find_bid_leads` and deliberately not a SECOND command for the same pass. It writes nothing, so there is no proposal to confirm and nothing for propose-then-confirm to do. And the form is the point rather than a wrapper around one: every field is a CHOICE over an enum — five trades, a two-letter state, a size band — because `leadQueryTurn` renders the entire outgoing query from a fixed template and refuses anything that does not fit, which is what makes it provable that no company data leaves. A command would reach that boundary through a sentence a model composed, which is the one input shape the boundary exists to exclude. It also bills a per-search web charge. Never a command.",
+  },
+  {
+    action: "quoteRead.*",
+    reason:
+      "Reading a sub's quote. It spends the company's paid document allowance on a file, and what it returns is a SUGGESTION a person corrects in the form before saving — so a command would either spend money on a prompt's say-so or hand the model's own reading straight to `saveBidQuote`, which is the one thing this feature is built not to do. The estimator uploads the quote where they log it. Never a command.",
+  },
+  {
+    action: "specRead.*",
+    reason:
+      "Reading a spec section for what it demands that costs money. Excluded for `quoteRead.*`'s reason above and one of its own. It spends the company's paid spec allowance on a thirty-to-sixty-page file, so a command would spend real money on a prompt's say-so — and a section is the biggest single charge of any document this app reads, which makes it the worst candidate for a path where the decision to spend is a sentence a model composed. The attach and the read are also deliberately two actions, so that uploading the wrong section costs nothing; a command collapsing them is exactly the shape that mistake needs to stay cheap. And what it returns is a list to CHECK AGAINST A NUMBER THE MODEL HAS NEVER SEEN: an Ask card saying 'this section demands Level 5' beside a bid the assistant cannot read would invite the one conclusion the whole feature refuses to draw. The estimator attaches the section where they log it, on /bids. Never a command.",
+  },
+  {
+    action: "aiSettings.*",
+    reason:
+      "The switch that decides whether AI runs for this company at all. Reachable from a prompt it would let the assistant be asked to re-enable itself, or to turn off the audit trail of its own proposals — a model must never hold the control over whether a model is used. Owner-only on /settings/assistant, and permanently never a command.",
+  },
   { action: "quickbooks.*", reason: ADMIN },
   { action: "integrations.*", reason: ADMIN },
   // company.* was here. createContact became `add_contact`
@@ -99,6 +134,15 @@ export const notYetRegistered: Exclusion[] = [
   // penalty of perjury. Issuing a payroll number is a button on the page
   // whose sequence it advances; nothing to resolve by name.
   { action: "payrollRegister.*", reason: "A pasted payroll register and a preview a person reads before confirming; the deductions and net wages it writes land on a WH-347 signed under penalty of perjury, so it is page only." },
+  // Page 2 of the same form, and the strongest page-only case in this file.
+  // The Statement of Compliance is CERTIFIED by a named person under penalty
+  // of perjury, and the two facts it needs are the ones C Stream is least
+  // entitled to supply: who signs it, and whether fringe benefits went to
+  // approved plans or were paid in cash. A model proposing either — even for
+  // a person to tap — is the app drafting somebody's sworn statement about
+  // their own payroll practice. It is read off a form, on the page, by the
+  // person whose name goes on it.
+  { action: "wh347Statement.*", reason: "The WH-347 Statement of Compliance is certified by a named person under penalty of perjury, and the facts it needs are who signs it and how fringes were paid — neither is a fact C Stream holds or should draft. Page only, always." },
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },

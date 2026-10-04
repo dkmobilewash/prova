@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createPrevailingWageRuleSet } from "@/lib/actions";
 import { RuleSetFields } from "@/components/RuleSetFields";
+import { Spinner } from "@/components/Spinner";
 
 export function RuleSetForm() {
   const [isOpen, setIsOpen] = useState(false);
@@ -85,7 +86,14 @@ export function RuleSetForm() {
           disabled={isPending}
           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Save rule set"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save rule set"
+          )}
         </button>
         <button
           type="button"

@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { AI_CLIENT_OPTIONS, modelFor } from "./models";
 import type { AskUsageTotals } from "./ask";
 
 /**
@@ -76,6 +77,14 @@ export type ProjectResearchInput = {
   model?: string;
   client?: Pick<Anthropic, "messages">;
 };
+
+/**
+ * So a later claim that this prompt got better can be attributed to one side of
+ * the change. `promptVersionCensus.test.ts` fails the build if a usage row for
+ * this feature omits it — and this file resolves `BID_RESEARCH` and nothing else,
+ * so it means this prompt alone, unlike the three in `anthropic.ts`.
+ */
+export const RESEARCH_PROMPT_VERSION = "bid-research.1";
 
 export const RESEARCH_MAX_SEARCHES = 3;
 const MAX_VALUE_CHARS = 300;
@@ -227,7 +236,7 @@ export async function researchProject(input: ProjectResearchInput): Promise<Proj
   const location = input.location.trim().slice(0, 200);
   if (!projectName || !location) return { ok: false, reason: "unavailable", searches, usage };
 
-  const client = input.client ?? new Anthropic();
+  const client = input.client ?? new Anthropic(AI_CLIENT_OPTIONS);
   const webSearch: Anthropic.WebSearchTool20250305 = {
     type: "web_search_20250305",
     name: "web_search",
@@ -241,7 +250,7 @@ export async function researchProject(input: ProjectResearchInput): Promise<Proj
   try {
     for (let round = 0; round <= MAX_CONTINUATIONS; round += 1) {
       const response = await client.messages.create({
-        model: input.model ?? "claude-opus-5",
+        model: input.model ?? modelFor("BID_RESEARCH").model,
         max_tokens: 8000,
         system: RESEARCH_SYSTEM,
         tools: [webSearch, RECORD_TOOL_DEFINITION],

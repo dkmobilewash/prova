@@ -2,7 +2,7 @@ import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { prisma } from "@prova/db";
 import { recordLastSeen } from "@/lib/last-seen-stamp";
-import { isUniqueConstraintError } from "@/lib/actions/shared";
+import { isMissingRecordError, isUniqueConstraintError } from "@/lib/actions/shared";
 
 /**
  * Loads the signed-in user's Prova User + Company, creating both on first
@@ -229,11 +229,26 @@ export async function adoptCompanyContext(identity: ClerkIdentity) {
     //
     // Narrower than what it replaces, deliberately. The original admitted
     // ANY known request error; the race this describes is a
-    // unique-constraint collision on clerkId or email, which is P2002 and
-    // nothing else. Any other Prisma failure re-reading the user is a
-    // genuine bug and should keep escaping rather than being silently
-    // retried.
-    if (isUniqueConstraintError(error)) {
+    // unique-constraint collision on clerkId or email, which is P2002 —
+    // plus P2025, added 2026-09-29, for the arm this catch's own comment
+    // named in words and could not actually reach.
+    //
+    // THE INVITE RACE WAS DESCRIBED HERE AND NOT HANDLED. The transaction
+    // above runs `invite.delete` FIRST, and `Invite.email` is unique — so a
+    // concurrent consumption is the SAME person in two tabs, and the loser
+    // fails on a row the winner already deleted. That is P2025, not P2002,
+    // so `isUniqueConstraintError` returned false and a recoverable double
+    // click left as a 500. The sentence "or someone else consuming the same
+    // invite first" has been sitting three lines above a guard that could
+    // not see it.
+    //
+    // Widening the entry condition is safe because the recovery is
+    // EVIDENCE-BASED rather than blanket: it returns only if a re-read
+    // actually finds a row, and rethrows the original error untouched
+    // otherwise. A P2025 with nothing behind it still escapes — which is
+    // what `auth.raceRecovery.test.ts`'s third case pins, and it still
+    // passes unchanged.
+    if (isUniqueConstraintError(error) || isMissingRecordError(error)) {
       const byClerkId = await prisma.user.findUnique({
         where: { clerkId: identity.id },
         include: { company: true },

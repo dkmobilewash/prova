@@ -136,6 +136,15 @@ export async function syncWallScheduleLines(tx: Tx, companyId: string, jobId: st
         // from the component, so writing one and not the other is how a line
         // ends up priced at this month's productivity and back-checked against
         // last month's.
+        //
+        // AND THE PRICE IS DELIBERATELY NOT HERE — stated because #515 read the
+        // omission and could not tell whether it was a choice. `unitPrice` and
+        // `budgetedUnitCost` are written when the line is CREATED and never
+        // again: a re-sync happens whenever a run's length or a type's layers
+        // change, and an estimator who has adjusted a price on this bid must not
+        // lose it to a recalibration. The quantity and the labour are geometry
+        // and are the schedule's to own; the price, once it exists, is the
+        // estimator's. A line that should be repriced is one somebody deletes.
         data: { quantity: line.quantity.toString(), laborHours, productionRate },
       });
       updated += 1;
@@ -154,6 +163,13 @@ export async function syncWallScheduleLines(tx: Tx, companyId: string, jobId: st
         budgetedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
         currentEstimatedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
         tradeScope: entry?.tradeScope ?? null,
+        // #513, and the precedence is the same as the craft's directly below:
+        // the COMPONENT first, its catalog entry second. A wall type is the one
+        // place a cost type is knowable up front — board and studs are material,
+        // hang-and-finish is labor — and the component is the more specific
+        // statement of it. Neither set means uncoded, and `bid-recap.ts` reports
+        // that and marks it up at nothing rather than picking a default.
+        costCategory: component?.costCategory ?? entry?.costCategory ?? null,
         craftClassificationId: component?.craftClassificationId ?? entry?.craftClassificationId ?? null,
         sourceCatalogEntryId: entry?.id ?? null,
         priceBasis: entry ? "COMPANY_CATALOG" : null,

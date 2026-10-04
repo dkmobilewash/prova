@@ -309,9 +309,60 @@ export async function settleOutcome(
  *
  * What it does NOT promise: that React has finished re-rendering. It promises
  * the server answered, which is the only thing a reload needs.
+ *
+ * **IT DID NOT KEEP THAT PROMISE UNTIL 2026-09-29, AND THE COST WAS FOUR
+ * SPECS ROLLING DICE.** The predicate was `method() === "POST"` and nothing
+ * else — so it resolved on the FIRST post of any kind, and a signed-in page
+ * is never quiet: Clerk posts to its own host throughout. The wait returned
+ * before the Server Action had answered, `page.reload()` navigated out from
+ * under the write, and the reloaded page truthfully still showed the old
+ * value. The failure it produced looked exactly like a product bug.
+ *
+ * It bit `journey`, `estimating-spine`, `shoot-rehearsal` and `bid-desk`, and
+ * the tightest evidence was a RE-RUN: `estimating-spine:361` went red then
+ * green on an unchanged SHA, same commit, same job, nothing between the two
+ * runs but time.
+ *
+ * The discriminator is `next-action`, the request header Next attaches to
+ * every Server Action POST (`ACTION_HEADER` in
+ * `next/dist/client/components/app-router-headers.js:84`, read out of the
+ * installed 15.5.23 rather than remembered). Clerk does not send it, and
+ * neither does any route handler — so this now waits for OUR action and
+ * nothing else.
+ *
+ * **If a caller ever passes something that is not a Server Action, this will
+ * time out rather than resolve early, and that is the trade on purpose:** a
+ * loud failure naming the wait beats a silent one that reads as a broken
+ * feature. The helper's own name says "action"; anything else was always the
+ * wrong tool.
  */
 export async function settleAction(page: Page, act: () => Promise<unknown>): Promise<void> {
-  const posted = page.waitForResponse((response) => response.request().method() === "POST");
+  const posted = page.waitForResponse((response) => isServerActionPost(response.request()));
   await act();
   await posted;
+}
+
+/** The header Next attaches to every Server Action POST — `ACTION_HEADER`,
+ * `next/dist/client/components/app-router-headers.js:84` (next 15.5.23). */
+const ACTION_HEADER = "next-action";
+
+/**
+ * Is this request the Server Action post we are waiting for?
+ *
+ * Extracted and exported ONLY so it can be tested without a browser. The
+ * defect it replaces was invisible for weeks precisely because the decision
+ * lived inside a Playwright callback, where nothing in this repo could reach
+ * it — the same shape as the cold-start header bug of the same week. A
+ * predicate that decides something this load-bearing should be answerable in
+ * node.
+ *
+ * Playwright lowercases header names, and `next-action` is already lowercase,
+ * so no normalising is needed — but the lookup is written against a lowercase
+ * key deliberately rather than by luck.
+ */
+export function isServerActionPost(request: {
+  method(): string;
+  headers(): Record<string, string>;
+}): boolean {
+  return request.method() === "POST" && ACTION_HEADER in request.headers();
 }

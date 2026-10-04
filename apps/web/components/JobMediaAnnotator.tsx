@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveJobMediaAnnotations } from "@/lib/actions";
 import { JobMediaMarks, type JobMediaMark } from "@/components/JobMediaMarks";
+import { Spinner } from "@/components/Spinner";
 import {
   JOB_MEDIA_ANNOTATIONS_MAX,
   JOB_MEDIA_ANNOTATION_LABEL_MAX,
@@ -340,7 +341,14 @@ export function JobMediaAnnotator({
           }}
           className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? "Saving…" : "Save marks"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save marks"
+          )}
         </button>
         <button
           type="button"

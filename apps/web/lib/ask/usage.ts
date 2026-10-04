@@ -176,6 +176,12 @@ export type AskUsageFeature =
   | "ask"
   | "wip-narrative"
   | "compliance-extract"
+  /** Reading a sub's quote document (lib/actions/quoteRead.ts). Its own row
+   *  rather than folded into `compliance-extract`, even though both are one
+   *  whole file into one request and both claim the SAME page ledger: they are
+   *  switched separately, so a bill that could not tell them apart could not
+   *  answer "what did the thing we turned off actually cost us". */
+  | "quote-extract"
   | "draft-estimate-lines"
   /** The public-web lookup behind "start a bid" (lib/ask/commands/
    *  estimating.ts). Its own row, because web search is billed per search
@@ -188,7 +194,33 @@ export type AskUsageFeature =
    *  it replaces its cost ESTIMATE with what these rows and the log line
    *  below measure, before any scheduling decision is made. Not "ask", so
    *  a pass never costs a person one of their hourly questions. */
-  | "lead-search";
+  | "lead-search"
+  /** One sheet's title block, read during plan-set ingestion
+   *  (lib/plan-ingest/titleBlock.ts). Its own row rather than folded into
+   *  `compliance-extract` or `quote-extract`, because it spends a DIFFERENT
+   *  LEDGER: plan sheets are metered on `AskAllowancePeriod.planSheetsUsed`
+   *  against a 1,500-a-month ceiling, not on the 300 document pages the other
+   *  two share. A bill that could not tell them apart could not answer the
+   *  question this feature exists to make answerable — what a plan set costs to
+   *  ingest — which `docs/ai/DECISIONS.md` records as unmeasured. And the rows
+   *  are the measurement: hundreds per set, so they are the first place in this
+   *  app where per-feature spend is a volume question rather than a unit price. */
+  | "plan-ingestion"
+  /** Reading a bid addendum (lib/actions/addendumRead.ts). Its own row rather
+   *  than folded into `quote-extract`, though both are one whole file into one
+   *  request: they are switched separately and they spend DIFFERENT ledgers — a
+   *  quote costs document pages, an addendum costs addendum pages — so a bill
+   *  that could not tell them apart could not answer either "what did the thing
+   *  we turned off cost us" or "which allowance did this month go on". */
+  | "addendum-read"
+  /** Reading ONE spec section for what it demands that costs money
+   *  (`lib/actions/specRead.ts`). Its own row rather than folded into
+   *  `addendum-read`, though both are bid documents arriving on a bid nobody
+   *  has won: a section is thirty pages against a letter's eight, they are
+   *  switched separately, and they spend DIFFERENT ledgers — so a bill that
+   *  could not tell them apart could not answer either "what did the thing we
+   *  turned off cost us" or "which allowance did this month go on". */
+  | "spec-read";
 
 export type AskUsageRecord = {
   companyId: string;
@@ -200,6 +232,37 @@ export type AskUsageRecord = {
   outcome: AskUsageOutcome;
   /** Defaults to "ask" so every existing call site is unchanged. */
   feature?: AskUsageFeature;
+  /**
+   * The job this spend belongs to, when there is one.
+   *
+   * WHY IT IS WORTH HAVING, and it is not book-keeping: the first question
+   * anybody asks about an AI bill is "which jobs is this going on", and until
+   * now nothing could answer it — every row was company-wide, so a job whose
+   * drawings were read three times looked exactly like one nobody touched.
+   * Step 0 of the AI plan, at Diego's request.
+   *
+   * A PLAIN COLUMN, DELIBERATELY NOT A FOREIGN KEY (ask.prisma says so too).
+   * This table is an append-only spend ledger; a job deleted by the scratch
+   * cleanup must not take its billing history with it, and `ON DELETE SET
+   * NULL` would erase the attribution rather than keep it. What was spent is a
+   * fact about the past.
+   *
+   * Absent for the calls that genuinely have no job — a lead search, a bid
+   * research pass on a project that is not a job yet, a question about the
+   * whole company — which is why it is nullable rather than required.
+   */
+  jobId?: string | null;
+  /**
+   * Which version of the prompt produced this, once prompts are versioned.
+   *
+   * NOTHING SETS THIS YET, and that is recorded rather than hidden: the column
+   * is here so that when a prompt changes, the rows written before and after
+   * are TELLABLE APART — which is the whole basis of saying a change made
+   * anything better. Retrofitting it would mean a migration and a month of
+   * rows that cannot be attributed to either version. The prompts themselves
+   * are versioned in the step that first changes one.
+   */
+  promptVersion?: string | null;
 };
 
 /**
@@ -217,6 +280,9 @@ export async function recordAskUsage(record: AskUsageRecord): Promise<void> {
     companyId: record.companyId,
     userId: record.userId,
     model: record.model,
+    // An id, like every other field here. Never a job NAME — the rule this
+    // log line has followed since it was written is ids and counts only.
+    jobId: record.jobId ?? null,
     outcome: record.outcome,
     passes: usage.passes,
     inputTokens: usage.inputTokens,
@@ -245,7 +311,17 @@ export async function recordAskUsage(record: AskUsageRecord): Promise<void> {
         outputTokens: usage.outputTokens,
         cacheReadTokens: usage.cacheReadTokens,
         cacheWriteTokens: usage.cacheWriteTokens,
+        // THE FIFTH BILLED UNIT, and it was being dropped here. Web search
+        // charges per search on top of tokens; the totals object has carried
+        // the count since lead search shipped and this insert never took it,
+        // so every searched pass has a row that understates what it cost.
+        // `?? 0` because the field is optional on the totals type — a caller
+        // that never enables web search has none, which is not the same as
+        // zero searches on a caller that does, but both cost nothing.
+        webSearches: usage.webSearches ?? 0,
         outcome: record.outcome,
+        jobId: record.jobId ?? null,
+        promptVersion: record.promptVersion ?? null,
       },
     });
   } catch (err) {
@@ -311,9 +387,13 @@ const FEATURE_LABELS: Record<string, string> = {
   ask: "Ask",
   "wip-narrative": "WIP narrative",
   "compliance-extract": "Document extraction",
+  "quote-extract": "Quote reading",
   "draft-estimate-lines": "Estimate drafting",
   "bid-research": "Bid research (web)",
   "lead-search": "Lead search (web)",
+  "plan-ingestion": "Plan sheet reading",
+  "addendum-read": "Addendum reading",
+  "spec-read": "Spec section reading",
 };
 
 /** The last thirty days for the settings page, grouped by who asked.

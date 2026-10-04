@@ -16,6 +16,7 @@ import {
   type RecapLine,
   type RecapRates,
 } from "@/lib/bid-recap";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * The bid recap on the Estimate tab: what the work costs, what it is sold for,
@@ -120,7 +121,14 @@ export function BidRecapPanel({
             disabled={isSaving}
             className="rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50"
           >
-            {isSaving ? "Saving…" : "Save rates"}
+            {isSaving ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Saving…
+              </span>
+            ) : (
+              "Save rates"
+            )}
           </button>
           {saveError && <p className="text-sm text-tag-amber-ink">{saveError}</p>}
         </div>

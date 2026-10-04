@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { createVendor } from "@/lib/actions";
 import { VendorFields } from "@/components/VendorFields";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { Spinner } from "@/components/Spinner";
 
 /** Collapsed by default. Looking a vendor up is the common case; adding
  * one is occasional, and an always-open six-field form pushes the whole
@@ -66,7 +67,14 @@ export function VendorForm() {
             disabled={isPending}
             className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
           >
-            {isPending ? "Saving…" : "Add vendor"}
+            {isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Saving…
+              </span>
+            ) : (
+              "Add vendor"
+            )}
           </button>
           <button
             type="button"

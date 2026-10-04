@@ -13,18 +13,30 @@ page. Also anything touching billing/AIA pay applications and retainage
 next, since those extend the existing `Invoice`/`Payment` models Diego's
 been building on.
 
-**AI is Cyrus's lane, as of 2026-09-21.** This heading used to read
-"estimating/costing/AI engine" and listed
-`packages/integrations/src/anthropic.ts` under Diego. That's no longer
-true. The move was announced in `#prova-build` the same night. Cyrus
-owns the Ask assistant (`apps/web/lib/ask/**`, the `Ask*` components,
-its tools and write commands, research and web search), the model
-integration (`packages/integrations/src/anthropic.ts`, `ask.ts`), AI
-document extraction, and AI usage metering and billing (`AskUsage`).
-Where an AI feature reads Diego's numbers — Ask's `draft_invoice`, the
-WIP narrative — the logic underneath stays Diego's and the AI layer on
-top is Cyrus's, so a change that reaches into both still gets a Slack
-heads-up first.
+**AI is Diego's lane, as of 2026-09-26.** It came back. Diego owns the Ask
+assistant (`apps/web/lib/ask/**`, the `Ask*` components, its tools and
+write commands, research and web search), the model integration
+(`packages/integrations/src/{anthropic,ask,research,leads,models}.ts`), the
+per-company AI switch (`apps/web/lib/ai/**`,
+`apps/web/lib/actions/aiSettings.ts`), AI document extraction, AI usage
+metering and billing (`AskUsage`), and the takeoff/estimating AI work now
+in progress. Announced in `#prova-build` on 2026-09-26.
+
+**This paragraph has now been wrong in both directions, which is the part
+worth reading.** It first said AI was Diego's, then — from 2026-09-21 —
+said in bold that it was Cyrus's and that the older version was "no longer
+true". Both were true when written and each was later quoted as authority
+against the other. An ownership line records an agreement between two
+people, not a property of the code, so it expires whenever they agree
+something else; the only durable thing about it is the date. Don't write
+"any older line saying otherwise is stale" here again — it aged into
+telling readers to distrust the current truth.
+
+Where an AI feature reads the estimating numbers — Ask's `draft_invoice`,
+the WIP narrative — the arithmetic underneath stays deterministic code and
+the model only narrates figures it was handed. That was never a lane
+boundary, it is the product rule in ARCHITECTURE.md, and it is unchanged by
+who owns which lane.
 
 **Cyrus's lane — new, self-contained feature verticals.** Greenfield
 areas: nothing existing depends on them, so there's very little to

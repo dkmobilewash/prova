@@ -100,16 +100,39 @@ Vercel deployment and repo settings). Each drives their own agent.
   billing/AIA, retainage, WIP, and `apps/web/app/(app)/jobs/[id]/page.tsx`
   (fixed section slots: Retainage → Field Reports → Pay Apps — insert at
   your slot, never at the end). Cyrus: self-contained verticals (safety,
-  vendors, equipment, punch lists, RFIs, submittals) and **AI** — the Ask
-  assistant (`lib/ask/**`, `Ask*` components), the model integration
-  (`packages/integrations/src/anthropic.ts`, `ask.ts`), AI extraction and
-  AI usage metering. **AI moved from Diego to Cyrus on 2026-09-21**,
-  announced in `#prova-build`; any older line in this repo or its PR
-  history calling AI "Diego's lane" is stale. Where an AI feature sits on
-  Diego's numbers (Ask's `draft_invoice`, the WIP narrative), the logic
-  underneath is Diego's and the AI layer on top is Cyrus's. Shared, edit
+  vendors, equipment, punch lists, RFIs, submittals). Shared, edit
   surgically: schema files, `middleware.ts`, `navItems.tsx`,
   `lib/actions/shared.ts`, the actions barrel.
+
+  **AI IS DIEGO'S LANE AGAIN, FROM 2026-09-26.** That covers the whole of
+  it: the Ask assistant (`lib/ask/**`, `Ask*` components), the model
+  integration (`packages/integrations/src/{anthropic,ask,research,leads,
+  models}.ts`), the per-company AI switch (`lib/ai/**`,
+  `lib/actions/aiSettings.ts`), AI extraction, AI usage metering, and the
+  takeoff/estimating AI work now in progress.
+
+  **READ THE SHAPE OF THIS ENTRY BEFORE ITS CONTENT, because it has now been
+  wrong in both directions and each version was true when written.** This
+  paragraph said AI was Diego's until 2026-09-21, then said in bold that it
+  had "moved from Diego to Cyrus" and that "any older line in this repo or
+  its PR history calling AI 'Diego's lane' is stale" — which was correct for
+  five days and is now itself the stale line it warned about. An ownership
+  claim is not a fact about the code; it is a fact about an agreement between
+  two people, and it perishes the moment they agree something else. The
+  older-lines warning is the part that aged worst: it told a reader to
+  distrust exactly the sentence that is true today. So this version names the
+  date and does not tell anybody which other lines to disbelieve.
+
+  Diego announced it in `#prova-build` on 2026-09-26 and said he would tell
+  Cyrus directly. If you are Cyrus's agent and this is the first you are
+  hearing of it, that is the thing to check rather than the code.
+
+  The split for a feature that sits on both is unchanged and still the right
+  rule, now with both halves on the same side: where an AI feature reads
+  Diego's numbers (Ask's `draft_invoice`, the WIP narrative), the arithmetic
+  underneath stays deterministic code and the model only narrates what it is
+  handed — see ARCHITECTURE.md. That was never a lane boundary; it is the
+  product rule, and it survives the ownership change intact.
 
   Corrected 2026-09-02: this line said `Sidebar.tsx` for weeks and it is
   the wrong file. `Sidebar.tsx` renders whatever `navGroupsFor()` hands
@@ -317,6 +340,22 @@ scrollback gets broken by whoever didn't scroll far enough.
   whole time this file's author was watching a status field.
 
 ## Hard-won technical rules
+
+- **ALL UI MUST FOLLOW `DESIGN.md`. Don't use default shadcn styling.**
+  `DESIGN.md` is the prose authority; `apps/mobile/lib/theme.ts` is its
+  executable copy and wins where they disagree. It governs the PHONE —
+  `apps/web` is dark-only and keeps its own tokens in
+  `apps/web/tailwind.config.ts`, which `DESIGN.md` deliberately does not
+  touch. Two things that make the shadcn clause concrete rather than
+  decorative: shadcn is **not installed here** (no `components.json`, no
+  `@/components/ui` imports), and the reference design this system was
+  extracted from shipped an untouched default shadcn `button.tsx` that its
+  own pages never imported. So if v0, a generator or a copied snippet
+  brings `bg-primary`/`text-primary-foreground` in, retoken it to
+  `DESIGN.md` before it lands — those semantic names resolve to nothing in
+  this repo and render unstyled. `DESIGN.md`'s deviations table records
+  where we deliberately diverge from the reference and why; read it before
+  "fixing" one back.
 
 - **Sequence numbers** come from a counter row that only increments,
   bumped inside the same transaction as the insert. Never `max(n)+1`,
@@ -899,15 +938,53 @@ anything about SIZE.
   two stores rather than less: each environment's own token names its own
   store, so the check follows the environment automatically.
 
-  Two things no agent in this repo can do, so do not spend the afternoon
-  looking: **the Vercel MCP has no environment-variable tool** — projects,
-  deployments, build and runtime logs, deployment protection, domains and
-  analytics, and nothing that reads or writes an env var (checked three
-  times now, most recently 2026-09-09) — and a read-write blob token is a
-  credential, so it never travels through an agent channel regardless.
+  **THE VERCEL MCP DOES HAVE ENVIRONMENT-VARIABLE TOOLS, AS OF 2026-09-28,
+  AND THIS BULLET SAID THE OPPOSITE THREE TIMES OVER.** It read: *"the
+  Vercel MCP has no environment-variable tool — projects, deployments,
+  build and runtime logs, deployment protection, domains and analytics,
+  and nothing that reads or writes an env var (checked three times now,
+  most recently 2026-09-09)"*. Nobody checked carelessly; the tool surface
+  moved under a sentence that had been verified three times, which is
+  exactly why it was believed.
+
+  Six of them, read out of the tool schemas rather than from a memory of
+  them:
+
+  | tool | what it does |
+  | --- | --- |
+  | `filter_project_envs` | lists a project's variables; has a `decrypt` parameter |
+  | `get_project_env` | its own `id` parameter says "to get the **decrypted value**" |
+  | `create_project_env` / `edit_project_env` | write |
+  | `get_shared_env_var` | "Retrieve the **decrypted value** of a Shared Environment Variable" |
+  | `update_shared_env_variable` | writes team-level shared variables |
+
+  **Established by use, not by reading a list.** On 2026-09-28
+  `filter_project_envs` returned every variable on `prova-web` — keys,
+  types, targets, ids — and `edit_project_env` WROTE a new `CRON_SECRET`,
+  confirmed by `updatedAt` moving. That write is also how the two-hour
+  production deploy freeze that day was cleared, so this is not a
+  capability somebody went looking for.
+
+  One thing that behaviour settles and one it does not. A `sensitive`-type
+  variable comes back from the LISTING as `value: ""` — production
+  `DATABASE_URL` is `sensitive`, and its value was not returned. Whether
+  `get_project_env` reaches it is **UNTESTED AND DELIBERATELY SO**: testing
+  it means decrypting a live database credential to satisfy curiosity, and
+  the rule below has not changed. Do not run that experiment to close this
+  paragraph.
+
+  **The other half of the original bullet still stands and is the part to
+  keep:** a read-write blob token is a credential, so it never travels
+  through an agent channel regardless of which tool could fetch it.
   Connecting the store to an environment in the dashboard mints the
   variable itself, which is better than pasting one: nothing is copied, so
   nothing can be pasted into the wrong project.
+
+  A useful thing learned while writing that `CRON_SECRET`: a
+  `sensitive`-type variable **cannot be edited in the dashboard** — Vercel
+  makes it write-once and never shows the value, so the Edit button
+  refuses. `edit_project_env` patches it anyway. Delete-and-recreate is not
+  required.
 - **A successful write can show up as an empty list — cause NOT
   established, and now with TWO dead explanations instead of one.**
   Observed: the action returned ok, the row was in the database, the page
@@ -1209,21 +1286,136 @@ anything about SIZE.
       session on it shares one `environment_id`, and one of them has no
       `DATABASE_URL` and no `.env` at all, so the environment injects
       nothing;
-    - **The Vercel MCP cannot leak the string.** It has no env-var tool;
-      checked twice rather than asserted from a partial search.
+    - ~~**The Vercel MCP cannot leak the string.** It has no env-var tool;
+      checked twice rather than asserted from a partial search.~~
+      **WITHDRAWN 2026-09-28 — THIS ELIMINATION RESTED ON A PREMISE THAT IS
+      NOW FALSE.** The MCP has six env-var tools (see the Vercel-MCP
+      paragraph under the blob-store entry above, which carries the
+      evidence), and two of them describe themselves as returning a
+      DECRYPTED value. So "it cannot reach a secret" is no longer something
+      this list gets to assert.
+      **This is a withdrawal, not a reversal, and the difference matters.**
+      What is still true: production `DATABASE_URL` is a `sensitive`-type
+      variable, and `filter_project_envs` returns `value: ""` for those —
+      observed, not assumed, on 2026-09-28. What is NOT established:
+      whether `get_project_env` returns it, which is untested on purpose
+      because testing it means decrypting a live database credential.
+      So the Vercel MCP is back to UNKNOWN on this question rather than
+      cleared — and an unknown must not sit in a list of eliminations,
+      which is the whole reason this entry is being rewritten rather than
+      quietly deleted. Anyone reading this list to decide where to look
+      next should treat the MCP as a live candidate again.
 
-  What survives is a CHECKOUT holding the connection string. Two sessions
-  were live on this repo at the time on Diego's account — "CRM Buildout"
-  and "Prova contractor operating system", the Phase C sales lane, which
-  matches the symptom since the rows were leads and opportunities.
+  **THE LEADING HYPOTHESIS HAS NOW BEEN CHECKED AND IS UNSUPPORTED, AND
+  THE ROUTE IT WAS HIDING IS DEMONSTRATED.** 2026-09-30. This paragraph has
+  said "what survives is a CHECKOUT holding the connection string" in one
+  form or another since 2026-09-05 — first as the last of four survivors,
+  then as the better-evidenced of two. It was never wrong on its own terms;
+  it was never RUN.
 
-  **A cloud session cannot be questioned from another container.**
+  It has been run now, on every checkout on Diego's machine, by the method
+  this entry itself prescribes — inside each live session, by whoever had
+  it open:
+
+  | ran it | scope | result |
+  | --- | --- | --- |
+  | this session | `/Users/diego/prova` + 18 worktrees | 185 files name the host; **no `.env` among them** |
+  | `Clerk production API keys` | same checkout, 4 `.env` files it had touched | all four name `ep-patient-lake` (demo) |
+  | `read-bid-addendum-changes` | `diego-bid-compliance` worktree | its one `.env` holds an API key, no `DATABASE_URL` |
+  | `skills-62` | `~/.claude/skills` | no matches, no `.env`, no database |
+
+  Every one of the 185 hits is repo-tracked source: this file and the other
+  docs, `migrate.yml`'s deliberately-hardcoded `MIGRATE_EXPECT_HOST`, and
+  `db-target.test.ts`/`crew-member.dbtest.ts`, which name the host as a
+  literal precisely to assert the scratch guard REFUSES it. None is a
+  credential. **No env file on the machine points at production.**
+
+  **What this does NOT do is clear the hypothesis retroactively, and the
+  distinction is the whole reason this is written as an audit rather than a
+  closure.** It is a snapshot of 2026-09-30; the sightings were 4-5
+  September. A checkout that held the string then could have been deleted,
+  or its `.env` rewritten, in the twenty-five days between. "Unsupported
+  now" is a weaker claim than "it was not that", and this file has an entry
+  of its own about the cost of promoting one to the other.
+
+  **THE BETTER-FITTING MECHANISM NEEDED NO `.env` AT ALL, WHICH IS WHY
+  TWENTY-FIVE DAYS OF LOOKING FOR ONE FOUND NOTHING.** The three stray rows
+  were a `SalesActivity`, a `SalesLead` and a `CompanyLicense` — APP-LEVEL
+  records. `migrate.yml` cannot have written them; a migration workflow
+  writes schema. What can is an authenticated session against
+  **`app.cstream.ai`**, which runs on production's own Vercel variables and
+  needs no local connection string.
+
+  That is no longer a hypothesis. `Clerk production API keys` disclosed,
+  unprompted, that on 2026-09-20 it created real production rows through
+  exactly that route: one drawing set with two revisions and three crew
+  schedule days on job ZZQB-TEST, by BROWSER AUTOMATION against the web UI
+  signed in as the user, with no psql and no Prisma at any point. It also
+  did it correctly — announced in `#prova-build` BEFORE the writes, all six
+  rows deleted afterwards and verified on screen, the last schedule day
+  only once #401 shipped the control that could remove it. It is NOT the
+  culprit: that session postdates the sightings by two weeks and never
+  touched the sales models. What it establishes is that the route is real,
+  reachable and in routine use on this machine.
+
+  And it fits the evidence the `.env` hunt never did: it explains why no
+  env file names production, why the rows are app-level records rather than
+  schema, and why they carry hand-written test labels — "logged by Claude on
+  2026-09-04 to verify SalesActivity persistence" is the language of
+  clicking a feature, not of writing SQL.
+
+  **THE ELIMINATION THAT HID IT WAS TRUE ABOUT CONTAINERS AND WAS READ AS
+  TRUE ABOUT EVERYTHING.** The preview/production bullet above eliminated
+  the browser route because an agent container's `curl` "fails at CONNECT
+  and the proxy's own status endpoint names it, `connect_rejected`". That
+  measurement stands and covers containers. **It does not cover a session on
+  Diego's laptop, where there is no egress proxy at all** — measured
+  2026-09-30, a plain `fetch` from a local Node process to Clerk's API
+  returned `HTTP 200`. So "an agent cannot reach production" was never a
+  property of agents; it was a property of one deployment of them, and the
+  sentence outlived the qualifier.
+
+  The Vercel MCP stays on the board too, unchanged from the withdrawal
+  above: still UNKNOWN rather than cleared, still the weakest of the
+  candidates, still listed only because "unknown" and "eliminated" are
+  different states.
+
+  **TWO MECHANISMS THAT ARE NOT THE CAUSE AND BELONG ON THE RECORD ANYWAY**,
+  both volunteered by the sessions above rather than found by grepping:
+
+    - **An agent copied `.env` files BETWEEN worktrees.** 2026-09-26,
+      `apps/web/.env` and `packages/db/.env` from `diego+api-auth-seam` into
+      `diego-ui-tokens`, so a web build could run. Those name the demo
+      endpoint, so nothing leaked — and it is precisely how a production
+      string would propagate if one ever sat in one. A credential file
+      arriving somewhere it has never been is worth a Slack line.
+    - **Every `pnpm build` and every `./scripts/preflight.sh` OPENS A
+      CONNECTION** to whatever that checkout resolves to. Not the section
+      you would suspect: preflight's "migrations that will hit PRODUCTION"
+      report is pure `git diff`/`git status`/`grep` over `migration.sql`
+      files and touches no database. It is `pnpm build` one step earlier
+      (`preflight.sh:104`) → `check:schema` → `check-schema.mjs:74`, which
+      shells out to `prisma migrate status`. That is a READ and cannot have
+      written a `SalesLead`, so it is not a candidate — but it means "nobody
+      wrote to it" and "nobody connected to it" are different questions, and
+      only the first one has been asked.
+
+  **LOCAL PEER SESSIONS ARE REACHABLE, AND THIS ENTRY SAID THEY WERE NOT.**
+  It read: *"A cloud session cannot be questioned from another container.
   `ListAgents` sees only this machine, and `SendMessage` to either title
-  returns `No agent named '…' is reachable` — tried, not assumed. There is
-  no `list_events` tool here either, so their transcripts are unreadable
-  from a peer. The check has to be run INSIDE each session, by whoever has
-  it open: `grep -rl "ep-little-sea" . --exclude-dir=node_modules
-  --exclude-dir=.git`, reporting the HOST only and never the string.
+  returns `No agent named '…' is reachable` — tried, not assumed."* Every
+  word true, and about CLOUD sessions. Read as a general fact it says the
+  one thing that stops anyone trying, and the check above took three
+  messages and a few minutes: `ListAgents` listed three peers on this
+  machine and all three answered, two of them with disclosures nobody had
+  asked for.
+
+  So the prescription is unchanged and is now known to work from outside:
+  the check runs INSIDE each session, `grep -rl "ep-little-sea" .
+  --exclude-dir=node_modules --exclude-dir=.git`, **reporting the HOST only
+  and never the string** — but a peer can ask for it rather than waiting for
+  whoever has the window open. Cloud sessions remain unreachable; that half
+  needs no correction.
 - **`--shadow-database-url` IS A RESET COMMAND WEARING A DIAGNOSTIC'S
   NAME, and it was handed a real database.** 2026-09-18, and the most
   expensive minute of the day: an agent generating migration SQL ran
@@ -1844,6 +2036,92 @@ anything about SIZE.
   development build, so a mismatch that survives into `next dev` is NOT that
   mechanism, and one that vanishes there probably is.
 
+  **IT HAS NOW BEEN POINTED AT IT, ON A LAPTOP, AND THE MISMATCH VANISHED —
+  96 LOADS, ZERO.** 2026-09-30, on `1ff6510d`, against `next dev` with the
+  `striking-jaybird` development keys and a throwaway loopback Postgres.
+
+  | batch | pages | loads | #418 |
+  | --- | --- | --- | --- |
+  | A | `/dashboard` `/safety` `/settings` `/backcharges` | 24 | **0** |
+  | B | `/pipeline` `/material-orders` `/messages` `/proposals` | 24 | **0** |
+  | C | `/submittals` `/alerts` `/drawings` `/closeout` | 24 | **0** |
+  | D | `/wall-types` `/jobs` `/contacts` `/equipment` | 24 | **0** |
+
+  Sixteen routes — the union of all four page lists this entry records, so
+  the obvious objection ("you tested the quiet pages") is answered — plus
+  three the lists never named. Against production's own measured rate of 12
+  in 40 loads, P(0 in 96) is about 10^-15; at a deliberately conservative 5%
+  per load it is still 0.007.
+
+  **THE ZERO IS ONLY WORTH READING BECAUSE THE INSTRUMENT WAS PROVED ABLE
+  TO RETURN NON-ZERO, and the first version of the probe could not have
+  been.** Every batch ended with a POSITIVE CONTROL: the served HTML for
+  `/dashboard` was rewritten through `page.route` to carry one extra `<div>`
+  inside `<body>` — inside React's own tree, since the App Router renders
+  `body` — which is the ColorZilla mechanism from the #61 entry above. All
+  four controls fired 3/3 and named the injected node in the diff, and no
+  `pageerror` was ever captured outside a control phase. Every load was
+  separately proved HYDRATED by looking for a `__reactFiber$` key, because
+  React cannot mismatch on a page it never hydrated and an un-hydrated load
+  is a silent zero.
+
+  Two harness lessons from it, in the family of this file's other control
+  failures. **A control's own success criterion has to come from what React
+  documents it will do**: the probe first asserted the injected node was
+  PRESENT after hydration and went red on a working control, because the
+  error says in as many words that the tree "will be regenerated on the
+  client" — the regeneration deletes the node, so 0/3 present is what
+  success looks like. And the control must match on the HYDRATION SENTENCE
+  rather than count errors, or a broken rewrite (a 500, a parse failure)
+  passes as a working control.
+
+  **WHAT IT ESTABLISHES, AND THE CONFOUND THAT STOPS IT BEING A VERDICT.**
+  Per the rule in the paragraph above, a mismatch that vanishes under `next
+  dev` is probably the Flight deferral — this is the first POSITIVE signal
+  in an investigation that had produced nine eliminations and no mechanism.
+  But two variables moved at once: build mode AND machine. The defect is a
+  RACE, and a laptop dev server is not a GitHub runner, so "vanishes in dev"
+  and "vanishes locally" are not yet separated. Dev mode is also not a
+  one-variable change from production — no minification, different chunking,
+  an HMR client, different outlining thresholds — so the result implicates
+  that whole set, not one member of it.
+
+  The one cheap experiment that separates them: **run the probe in CI with
+  `E2E_DEV_SERVER=1`**, on the same runner class that reports 3-7 mismatched
+  pages in production mode. Until that runs, this is strong evidence about
+  the build and weak evidence about the mechanism.
+
+  And the counter-example that keeps it honest, from this file's own record:
+  the accidental dev-mode CI run (`36097089609`) DID name an element, the
+  `data-clerk-component="UserButton"` div that `AfterMount` then fixed. So
+  dev mode is not blind to #418 in general. What is shown is that the
+  RESIDUAL mismatch behaves differently from the one already fixed — which
+  is itself a fact about the residual, and the most specific one anybody has.
+
+  **A DEV RUN ALSO REPORTS DEFECTS A PRODUCTION RUN STRUCTURALLY CANNOT,
+  and the sweep found one on the way past.** `/closeout` logs React's "Each
+  child in a list should have a unique `key` prop" on every render — 6 of 6
+  loads, and the only page of the sixteen that produced it. Production React
+  strips that warning, so no production run, however green or however red,
+  can ever surface it. It is not a hydration mismatch and not related to
+  #418. Filed for Cyrus's lane (WORK-SPLIT.md:44, Closeout & Warranty)
+  rather than fixed here, per the working agreement's rule 3. The
+  transferable part is the reason to point a dev run at this app
+  occasionally even when nothing is wrong: there is a class of real defect
+  that only a development build will tell you about.
+
+  **RUNNING IT AGAIN: `next dev` DIES AFTER ABOUT TEN COMPILED ROUTES**, and
+  the two memory failures need different fixes. `⚠ Server is approaching the
+  used memory threshold, restarting...` is cured by
+  `NODE_OPTIONS=--max-old-space-size=8192` and takes the tests in flight
+  with it when it is not. `FATAL ERROR: Zone Allocation failed - process out
+  of memory` is NOT — zone allocation is a separate allocator that the heap
+  flag does not govern — and the next symptom is `page.goto:
+  net::ERR_CONNECTION_REFUSED`, which reads exactly like a broken app. Four
+  routes per dev server, one worker, a fresh server per batch. Three of the
+  four attempts at this measurement died in harness failures before the
+  fourth produced a number, which is the honest cost of the table above.
+
   **WHAT NOW GUARDS THE SECOND FIX.** `components/afterMount.test.ts` proves
   the gate works and says nothing about anybody using it — delete the two
   lines in `Topbar.tsx` that wrap `<UserButton>` and every test still passed.
@@ -1883,6 +2161,76 @@ anything about SIZE.
   on the COUNT: "the sources contain 4 files and this census parsed 0"), a
   new Clerk widget added, a `content` glob pointed at a directory that does
   not exist, and `<UserButton>` reached through a namespace import.
+
+- **A HEADER OPTION IN expo-router CAN BE DISCARDED IN SILENCE, AND THREE
+  FIXES SHIPPED GREEN BECAUSE OF IT.** 2026-09-28/29, on the phone. The
+  fourth member of the family directly above, and the one that finally says
+  what the other three were circling.
+
+  A notification tap that launches the app from a killed state lands on a
+  screen with nothing behind it — no back chevron, and outside `(tabs)` no
+  tab bar either. `/alerts` and `/job/<id>` are the only two such
+  destinations (`push-target.ts`). Three PRs gave them a way out and **not
+  one of them rendered**:
+
+  | | approach | result |
+  | --- | --- | --- |
+  | #548 | `<Stack.Screen options={{ headerLeft }} />` inside `/alerts` | nothing rendered |
+  | #553 | the same, copied to `/job/<id>` | nothing rendered |
+  | #554 | moved to the LAYOUT as an options FUNCTION | nothing rendered |
+  | #555 | a `<WayHome />` view in the screen BODY | **works, confirmed on a phone** |
+
+  **Why, read out of the installed expo-router 57.0.21 rather than guessed.**
+  `Stack.Screen` is two components wearing one name. In a layout its props
+  are read by the navigator — that is how `title` reaches these screens, and
+  `title` was visibly rendering throughout. Inside a PAGE it delegates to
+  `views/Screen.js`, which calls `navigation.setOptions` from a layout effect
+  behind `const isFocused = navigation.isFocused()` — read at render and
+  never subscribed — plus an `isPreloaded` check. A cold deep-link launch is
+  exactly where those are unsettled. And a FUNCTION passed as layout
+  `options` is spread with `{ ...props.options }` (`StackScreen.js:78`);
+  a function has no enumerable own properties, so it becomes `{}`.
+  `StackScreen.js` warns about the first in its own source and its docstring
+  points at `Stack.Title`/`Stack.Header` for page-level header config —
+  all three fixes did the thing the library documents against.
+
+  **THE EXPENSIVE PART WAS NOT THE FRAMEWORK, IT WAS THAT NO CHECK HERE
+  COULD SEE IT.** `push-destination-exit.test.ts` asserted the screens
+  CONTAINED `canGoBack` and `HeaderHomeButton`. They did. It passed with its
+  **size and scope assertions both holding**, on a broken app. Rewritten to
+  assert the LAYOUT wired those options: it did, it passed again, nothing
+  rendered again. So:
+
+      A census can tell you the code is THERE.
+      It can never tell you a framework HONOURS it.
+
+  That is the fourth member of the set, and it is not a failure of rigour —
+  it is the limit of the instrument. Beside "nothing is missing from a
+  directory you do not walk" and "nothing is missing from a list nobody
+  imports", put **"nothing is ever missing from a question nobody is
+  asking."**
+
+  **So the rule is about where a fix LIVES, not how hard it is asserted.**
+  Anything that must be visible on a cold-start screen goes in the screen
+  BODY, where React renders it like every other pixel: a navigator cannot
+  drop it, it cannot depend on focus or preload timing, and a test can
+  assert it. Prefer a fix that is checkable over one that is conventional —
+  three plausible unverifiable fixes are worth less than one verifiable one.
+
+  **The mutation that distinguishes them is `make it render nothing`.**
+  Every test written for #548, #553 and #554 stayed green under it, because
+  each was asserting that a screen RECORDED an option, in a mock, while the
+  framework threw the real one away. Under #555 the same mutation reds the
+  census and all three screen tests. If that mutation leaves a suite green,
+  the suite is measuring a mock.
+
+  One smaller thing fell out and is worth keeping: `HeaderHomeButton`
+  coloured its label `brand` — #facc15 on a near-white rail — which
+  `tailwind`-side and `theme.ts` both forbid in as many words ("As TEXT,
+  `link` is the readable amber — never `brand`"). `theme-contrast.test.ts`
+  never caught it and neither did anyone else, **because the button it sat
+  on never appeared.** A defect inside dead code is invisible to every
+  instrument, including the ones written for that exact defect.
 
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.

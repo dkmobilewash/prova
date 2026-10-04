@@ -1,0 +1,244 @@
+/// READING A BID ADDENDUM — what the GC's letter says it changed, and what the
+/// estimator decided about each scope it names.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// NOTHING IN THIS FILE IS AN ASSERTION ABOUT THE BID.
+/// ─────────────────────────────────────────────────────────────────────────
+///
+/// `bid-compliance.prisma` holds what a person has attested: the addendum was
+/// issued on this date, acknowledged on that one, and it changed work we had
+/// already priced. Those three are read by `lib/bid-responsiveness.ts` and
+/// `lib/takeoff-currency.ts`, and between them they decide whether a bid looks
+/// responsive and whether a crew may build from a drawing.
+///
+/// This file writes NONE of them. It records what a model read off a document so
+/// a person has something to read instead of twelve pages, and what that person
+/// then decided. `lib/ask/commands/estimating.ts` had already settled why, when
+/// it refused `saveBidAddendum` to the assistant: "whether it changed work you
+/// already priced is an estimator's judgement about drawings the assistant has
+/// not seen." Reading the addendum gives the model the addendum. It does not give
+/// it the drawings or the estimate, so the judgement is unchanged and stays
+/// where it was.
+///
+/// THE FIRST DESIGN DID PAIR IT, proposed-beside-accepted like `DocumentIntake`,
+/// and a review killed it by looking at what the write would DO:
+///
+///   accepting FALSE overwrote a person's own tick, and the reprice warning and
+///   the job's supersession banner both vanished — a model clearing a warning on
+///   a job somebody is building, with nothing recording that it happened;
+///
+///   accepting TRUE did nothing at all, because `takeoff-currency.ts` supersedes
+///   only when `issuedOn` is set, and a model-proposed date is deliberately kept
+///   as inert text (see `proposedIssueDateText` below).
+///
+/// One direction destructive, the other a no-op. The lesson is narrower than
+/// "don't let models write": every decision the design quoted was quoted
+/// correctly, and none of them said what the write would do once made.
+
+/// ONE RUN OF THE READER OVER ONE ADDENDUM.
+///
+/// APPEND-ONLY AND IMMUTABLE. A second read INSERTS; the newest row by
+/// `createdAt` is the one shown. Never updated after insert, so the reason an
+/// estimator was given is the reason they were actually given —
+/// `intake.prisma`'s rule that a proposal is a thing that happened, like a
+/// `capturedAt`.
+///
+/// THE DECISIONS ARE NOT KEYED TO THIS ROW, and that is the whole reason
+/// `BidAddendumItemDecision` exists as a separate model. See its comment: items
+/// have no stable identity across runs, so hanging a decision off a reading
+/// would lose every one of them on the next read.
+model BidAddendumReading {
+  id             String       @id @default(cuid())
+  bidAddendumId  String
+  bidAddendum    BidAddendum  @relation(fields: [bidAddendumId], references: [id], onDelete: Cascade)
+
+  /// DENORMALISED, and the query that needs it is named rather than implied:
+  /// `lib/addenda-overlap.ts` asks "which scopes does more than one addendum on
+  /// this bid touch", which is per INVITATION. Without this column that read
+  /// joins through every addendum on the bid to get back to the invitation it
+  /// already knew.
+  ///
+  /// THERE IS DELIBERATELY NO `companyId`. It would be a third copy of the same
+  /// id — invitation, addendum, reading — and `packages/db/scripts/union-tenancy-audit.mjs`
+  /// exists because of exactly that shape: "there is no CHECK, no trigger and no
+  /// composite foreign key tying the two together. So a write path that sets one
+  /// and forgets the other creates a row filed under company A hanging off
+  /// company B's local, silently, with every constraint satisfied." Six such
+  /// pairs exist and this is not the seventh. Tenancy comes through the join,
+  /// which is what `PlanSheetProposal` does too.
+  bidInvitationId String
+  bidInvitation   BidInvitation @relation(fields: [bidInvitationId], references: [id], onDelete: Cascade)
+
+  /// WHAT THE MODEL RETURNED, exactly as it returned it.
+  ///
+  /// JSON RATHER THAN A CHILD TABLE, which is the opposite call to
+  /// `PlanSheetProposal` and the right one here. A table earns its keep when
+  /// something queries or mutates one row of it; nothing does. No screen filters
+  /// items, no action updates one, and a decision is keyed on the SCOPE rather
+  /// than on the model's sentence about it. `quoteRead.ts` argues the general
+  /// case — "the proposal never lands in the database un-reviewed" — and
+  /// `Job.bidResearch` is the existing shape for model-produced, source-carrying
+  /// facts a person ticks.
+  ///
+  /// It is also immutable by construction, which a column-per-field row is not.
+  ///
+  /// Each element: `ordinal`, `label` (the addendum's own item number as text —
+  /// "Item 4", "4.", "A.3"), `reference`, `referenceKind`, `summary`, `reason`,
+  /// `confidence`, `sourcePageLabel`. The per-item `reason` and `sourcePageLabel`
+  /// are what make `intake.prisma`'s standard reachable here — "a reason nobody
+  /// can check is a reason nobody can overrule" — because a person confirming
+  /// item 14 of 20 needs to know which page to look at.
+  items Json
+
+  /// Why the reader reached the whole-document conclusions below, in words a
+  /// person can check against the addendum. Never "AI determined".
+  readingReason String
+
+  /// THE DATES THE DOCUMENT PRINTS, AS TEXT, AND NOTHING READS THEM.
+  ///
+  /// Named so they cannot be mistaken for `BidAddendum.issuedOn` or
+  /// `BidInvitation.dueDate`, which are entered by a person and which
+  /// `takeoff-currency.ts` and the bid desk run on. `plan-ingest.prisma` states
+  /// the rule for its own pair and it applies with more force here, because
+  /// `issuedOn` is the field that decides supersession: "a model-proposed date
+  /// becoming a second source of 'is this takeoff current' is how two surfaces
+  /// start disagreeing about whether somebody may build from a drawing. Text,
+  /// not a date, because a date on a drawing is characters until a person
+  /// confirms them."
+  ///
+  /// So these are shown beside the form's date fields as something to copy, and
+  /// the person types. Null means the document did not say, which is a real
+  /// answer and distinct from an empty string.
+  proposedIssueDateText String?
+  proposedBidDateText   String?
+
+  /// What it cost. `AskUsage.jobId` is null for a bid — there is no job — so this
+  /// is the only per-addendum record of what reading it spent.
+  pagesCharged Int
+
+  /// Which model and which prompt produced this, so rows written before and
+  /// after a prompt change are tellable apart. `promptVersionCensus` fails the
+  /// build if a usage row for this feature omits the version.
+  model         String
+  promptVersion String
+
+  /// Null on nothing today — every read is started by a person — but nullable
+  /// for the reason `PlanIngestTask` is: the first caller that is a cron has no
+  /// person behind it, and a column that has to learn that later is a migration.
+  startedByUserId String?
+  startedBy       User?   @relation(fields: [startedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  /// Newest-first per addendum is the only read this model has.
+  @@index([bidAddendumId, createdAt])
+  @@index([bidInvitationId])
+}
+
+/// WHAT THE ESTIMATOR DECIDED ABOUT ONE SCOPE THE ADDENDUM TOUCHES.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// KEYED ON THE ADDENDUM AND THE SCOPE — NEVER ON THE READING.
+/// ─────────────────────────────────────────────────────────────────────────
+///
+/// This is the model that exists because the obvious design was wrong, and the
+/// reasoning is worth keeping because it is not obvious in the other direction
+/// either.
+///
+/// `PlanSheetProposal` is keyed `[ingestJobId, pageNumber]` and survives a
+/// re-run: page 12 is page 12 in every run, so run 2 lines up with run 1 and a
+/// sheet somebody rejected stays rejected. That works because `pageNumber` is a
+/// STABLE NATURAL KEY.
+///
+/// An addendum's items have no such key. `ordinal` is the model's ordering
+/// within one run, and `label`, `reference` and `summary` are free text a second
+/// run will word differently. So a decision hung off a reading is lost the next
+/// time anybody reads the document — every confirm and dismiss gone, every item
+/// proposed afresh as though nobody had looked. That is the exact failure
+/// `plan-ingest.prisma` refuses ("A rejected proposal STAYS, so the same set
+/// ingested again is not proposed afresh as though nobody had looked at it") and
+/// `intake.prisma` refuses ("The row stays so the same file dropped twice is not
+/// proposed twice as if it were new").
+///
+/// Keying on the NORMALISED REFERENCE fixes it by construction, and is better on
+/// the merits rather than merely safer: what an estimator decides is that
+/// 09 21 16 is or is not their scope. That stays true when the model rewords the
+/// summary, and it stays true across two addenda that both touch it.
+///
+/// The cost, stated: two items in one addendum sharing a reference share one
+/// decision. That is the same judgement twice, which is why it is a cost and not
+/// a defect.
+model BidAddendumItemDecision {
+  id            String      @id @default(cuid())
+  bidAddendumId String
+  bidAddendum   BidAddendum @relation(fields: [bidAddendumId], references: [id], onDelete: Cascade)
+
+  /// The grouping key, produced by `normaliseReference` in
+  /// `lib/addenda-overlap.ts`. Whitespace, case, punctuation and a leading
+  /// "Sheet"/"Section"/"Spec" removed — and NOT validated against MasterFormat,
+  /// which four separate comments in this repo refuse. Grouping is not
+  /// validating: nothing here rejects a reference for being unfamiliar.
+  normalisedReference String
+
+  /// What it was called when the decision was made, kept so the screen can show
+  /// the estimator their own words rather than the normalised form, and so a
+  /// later reading wording it differently can say what it matched.
+  displayReference String
+
+  decision BidAddendumItemDecisionKind
+
+  decidedByUserId String?
+  decidedBy       User?   @relation(fields: [decidedByUserId], references: [id], onDelete: SetNull)
+  decidedAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  /// One decision per scope per addendum. Changing your mind UPDATES this row —
+  /// unlike a reading, which is a record of something that happened, a decision
+  /// is a current position and the estimator is entitled to revise it.
+  @@unique([bidAddendumId, normalisedReference])
+  @@index([bidAddendumId])
+}
+
+/// What an estimator says about a scope an addendum touches.
+///
+/// TWO MEMBERS AND NEITHER IS "UNDECIDED": no row IS undecided, which is the
+/// state every item starts in and the one nothing needs to store. A third member
+/// would be a stored value that the absence of a row already expresses, and they
+/// could then disagree.
+enum BidAddendumItemDecisionKind {
+  /// This touches work I am pricing. Note what this does NOT do: it sets no
+  /// flag on the bid, raises no warning on a job, and changes no verdict
+  /// anywhere. It marks the estimator's own reading of their own document.
+  MINE
+  /// Not my scope — another trade's, or administrative. The item stays on
+  /// screen, struck through, so a re-read does not present it as new.
+  NOT_MINE
+}
+
+/// What kind of thing an addendum item points at, for grouping on screen.
+///
+/// `GENERAL` IS THE DELIBERATE ESCAPE, the role `UNKNOWN` plays in
+/// `DocumentIntakeKind` and `OTHER` in `BidRequirementKind`: "an enum would
+/// force a wrong choice on the first job that doesn't fit". And `reference`
+/// itself is free text, so this enum only decides how findings are grouped and
+/// can never refuse one.
+///
+/// `GENERAL` and `BID_PROCESS` are EXCLUDED FROM OVERLAP DETECTION. Every bid
+/// with two addenda has a "General" item in both, so grouping on them would fire
+/// the warning on essentially every bid — the cry-wolf failure
+/// `takeoff-currency.ts` already guards against when it refuses to call a
+/// same-day issue superseding.
+enum BidAddendumReferenceKind {
+  /// A specification section — "09 21 16", "Section 09 22 16".
+  SPEC_SECTION
+  /// A drawing sheet — "Sheet A-201", "A-201", "Detail 4/A-501".
+  DRAWING
+  /// A schedule: partition types, door schedule, finish schedule.
+  SCHEDULE
+  /// Something the bid form now demands — a form, a bond, a certificate.
+  REQUIREMENT
+  /// The bid itself: a due date moved, a pre-bid meeting, a question deadline.
+  BID_PROCESS
+  /// Anything the list above does not cover.
+  GENERAL
+}

@@ -63,6 +63,18 @@ model BidInvitation {
   addenda      BidAddendum[]
   requirements BidRequirement[]
 
+  /// Readings of the addenda on this bid — see bid-addenda.prisma. Reached from
+  /// here rather than only through each addendum because the overlap report asks
+  /// a per-BID question: which scopes has more than one addendum touched.
+  addendumReadings BidAddendumReading[]
+
+  /// The spec sections in this bid's book, and the readings of them — see
+  /// bid-specs.prisma. Both reached from here for the same reason the addendum
+  /// readings are: the per-bid questions ("which sections have been read", "what
+  /// did reading them cost") are per invitation.
+  specSections BidSpecSection[]
+  specReadings BidSpecReading[]
+
   /// THE JOB THIS BID BECAME, when it was won and somebody linked it.
   ///
   /// Nullable and SET NULL, never required: most invitations never become a
@@ -250,6 +262,26 @@ model LineItemCatalogEntry {
   /// columns from the answer, never both. Which convention a file uses is a
   /// fact about the file, not something any code can derive. Issue #514.
   productionRate          Decimal?             @db.Decimal(10, 4)
+
+  /// The kind of cost this item IS, carried onto every line created from it.
+  ///
+  /// WHY THE TEMPLATE CARRIES IT (#513). `JobLineItem.costCategory` is what the
+  /// bid recap marks up by, and an uncategorised line is deliberately marked up
+  /// at NOTHING — the alternative is a bid growing a number nobody chose. But
+  /// not one of the four automated line-creating paths set it, and none of the
+  /// three templates carried one to pass through, so every line the product
+  /// generated landed uncoded: the more of the automation you used, the less of
+  /// your bid got marked up.
+  ///
+  /// A catalog entry is the right place for it. "5/8\" Type X board" is material
+  /// every time it is used, and saying so once is the whole argument for a price
+  /// book.
+  ///
+  /// Nullable with NO BACKFILL, for the same reason `craftClassificationId`
+  /// beside it has none: inferring "material" from a description string is
+  /// exactly the guess this column replaces. An entry nobody has coded reads as
+  /// uncoded, and the recap says so.
+  costCategory            CostCategory?
 
   craftClassificationId   String?
   craftClassification     CraftClassification? @relation(fields: [craftClassificationId], references: [id])

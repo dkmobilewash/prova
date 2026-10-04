@@ -53,6 +53,15 @@ import {
 // alert all read lienDeadlineState, so "overdue" and "due soon" cannot mean
 // one thing on /lien-deadlines and another in the bell.
 import { DUE_SOON_DAYS as LIEN_DUE_SOON_DAYS, lienDeadlineState, lienKindLabel } from "@/lib/lien-deadlines";
+import { formatHours } from "@/lib/render-hours";
+// Same rule as the four imports above: the DAS deadlines already have
+// exactly one definition each, in the module written to be the only place
+// that decides them. das140Standing weighs the ten-day bound against the
+// first day a worker logged hours; das142Standing counts back three
+// non-weekend days and says in its own field name what that count ignores.
+// Re-deriving either here would put a second opinion about a statutory date
+// in a red badge, which is the one place a wrong one gets acted on.
+import { das140Standing, das142Standing } from "@/lib/das-forms";
 
 export type AlertKind =
   | "RENEWAL"
@@ -68,7 +77,18 @@ export type AlertKind =
   | "RFI_UNANSWERED"
   | "SUBMITTAL_OVERDUE"
   | "DRAWING_REVISION_UNRECEIVED"
-  | "LIEN_DEADLINE";
+  | "LIEN_DEADLINE"
+  // The field four, added together because they are one capability: the
+  // rows a crew produces get chased the way the office rows always have.
+  | "MATERIAL_DELIVERY_LATE"
+  | "PUNCH_ITEM_AGING"
+  | "EQUIPMENT_OUT_LONG"
+  | "DELAY_GC_NOT_TOLD"
+  // The two apprenticeship forms. Both deadlines were computed and shown
+  // correctly on one screen each and reached nobody who was not already
+  // looking at that job's compliance tab -- see das140Alerts.
+  | "DAS140_NOTICE"
+  | "DAS142_DISPATCH";
 
 /** Three levels, not five. OVERDUE is "a date has passed"; DUE_SOON is "a
  * date is coming"; STANDING is a condition with no deadline attached to
@@ -127,6 +147,13 @@ export const ALERT_CAPABILITY: Record<AlertKind, Capability> = {
   // Same gate as the interactions/bid-invitations section it comes from on
   // /contacts/[id] -- relationship work, not billing or compliance.
   CONTACT_FOLLOW_UP: "MANAGE_ESTIMATING",
+  // All four field kinds take the capability ROUTE_CAPABILITY already
+  // gives the pages they point at — /material-orders, /punch-lists,
+  // /equipment and the job's field-reports tab are all MANAGE_FIELD.
+  MATERIAL_DELIVERY_LATE: "MANAGE_FIELD",
+  PUNCH_ITEM_AGING: "MANAGE_FIELD",
+  EQUIPMENT_OUT_LONG: "MANAGE_FIELD",
+  DELAY_GC_NOT_TOLD: "MANAGE_FIELD",
   // The same capability /intake itself requires (lib/permissions.ts). An
   // alert is a summary of the thing it points at, so a person who cannot
   // open the tray is not told what is in it.
@@ -154,6 +181,14 @@ export const ALERT_CAPABILITY: Record<AlertKind, Capability> = {
   // about getting paid, so it goes to the people who chase money — and not
   // to a foreman, who could not open the page the alert points at.
   LIEN_DEADLINE: "MANAGE_BILLING",
+  // The capability the two pages these point at already require: both
+  // `jobs/[id]/das-140/[noticeId]` and `jobs/[id]/das-142/[requestId]` open
+  // with `requireCapability("MANAGE_COMPLIANCE")`, so this is read off the
+  // guard rather than decided a second time. PAYROLL_COMPLIANCE holds it,
+  // which is the point -- the person who files the certified payroll is the
+  // person who sends these forms.
+  DAS140_NOTICE: "MANAGE_COMPLIANCE",
+  DAS142_DISPATCH: "MANAGE_COMPLIANCE",
 };
 
 /**
@@ -226,6 +261,34 @@ export const ALERT_HORIZON_DAYS: Partial<Record<AlertKind, number>> = {
   // bell and the page cannot disagree about which deadlines are close. A
   // REMINDER horizon — it says nothing about how long any statute allows.
   LIEN_DEADLINE: LIEN_DUE_SOON_DAYS,
+  // SEVEN, and this started as THREE on the reasoning that a delivery is a
+  // near-term thing and a week of warning on one is noise. That argument is
+  // about the bell and it ignored the digest: `week` fires at days<=7 and
+  // `approaching` fires off severity, so a horizon under the rung makes
+  // `week` cross FIRST and the approaching mail silently never sends. A
+  // 3-day horizon would have shipped a notification that no code path can
+  // reach — this repo's "written, documented, and never called" shape
+  // wearing a number. The floor test in alerts.test.ts caught it, which is
+  // exactly what it is for.
+  MATERIAL_DELIVERY_LATE: 7,
+  PUNCH_ITEM_AGING: 7,
+  // TEN, which is the WHOLE statutory window rather than a runway in front
+  // of it, and that is deliberate. Every other horizon here answers "how
+  // long before this date is it worth mentioning"; for a DAS 140 the honest
+  // answer is "from the moment the contract is executed", because the
+  // window is ten days and the other bound -- the first day a worker logs
+  // hours -- can arrive on day one and close it early. A 7 would leave the
+  // first three days of a ten-day deadline silent for no reason anyone
+  // could defend.
+  DAS140_NOTICE: 10,
+  // SEVEN. The latest send day is already three non-weekend days before
+  // the apprentice is needed, so seven days of warning in front of it is
+  // ten days' notice that a dispatch request has to go out -- enough to
+  // decide whether the apprentice is still needed at all.
+  DAS142_DISPATCH: 7,
+  // EQUIPMENT_OUT_LONG and DELAY_GC_NOT_TOLD get no horizon ON PURPOSE —
+  // neither has a date to be early against, so both are STANDING and a
+  // horizon here would imply a deadline this app has never been told.
 };
 
 /**
@@ -897,7 +960,23 @@ export function certifiedPayrollAlerts(
         days < 0
           ? `Hours were logged in that period and nothing covering it has been filed. ${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} past ${window}.`
           : "Hours were logged in that period and nothing covering it has been filed yet.",
-      href: "/compliance",
+      /* STRAIGHT AT THE WEEK THIS IS ABOUT, not at /compliance.
+         That page has no certified-payroll sheet on it and no link to one,
+         so the alert about the most time-critical weekly filing in the
+         product landed on a dead end and cost six clicks to act on:
+         /compliance, back to the dashboard, the job, Crew & time, certified
+         payroll, the week. Every id it needed was already in scope here.
+
+         `periodEnd` rather than a computed week start, because
+         `openingCertifiedPayrollWeek` SNAPS whatever it is given to the
+         containing week (`certifiedPayrollWeekStart`) and falls back to its
+         default on a date it cannot parse. So a weekly filer lands on
+         exactly the week that is late, a monthly filer lands on the last
+         week of the period that is late, and a malformed value degrades to
+         the page's own default rather than to a wrong week. Computing the
+         start here would be a second implementation of a rule that module
+         already owns. */
+      href: `/jobs/${period.jobId}/certified-payroll?weekStart=${period.periodEnd}`,
       dueOn,
       daysUntil: days,
       amount: null,
@@ -1753,6 +1832,543 @@ export function lienDeadlineAlerts(sources: LienDeadlineAlertSource[], todayIso:
       daysUntil: days,
       amount: null,
     });
+  }
+
+  return alerts;
+}
+
+/* ------------------------------------------- the field, chased at last */
+
+/**
+ * FOUR THINGS THE FIELD PRODUCES THAT NOTHING EVER CHASED.
+ *
+ * WHY THESE FOUR AND WHY NOW. Every alert above this line is about paper
+ * or money — a COI expiring, a backcharge unanswered, retainage sitting,
+ * a submittal with the GC. The office side of this app has been chased
+ * since the bell was built. The field side produced rows that nobody was
+ * ever told about: a delivery that never came, a punch item nobody came
+ * back for, equipment still out on a job that finished, and a delay the
+ * GC was never told about. All four are deadlines a sub eats money on,
+ * and all four were derivable from rows that already existed.
+ *
+ * NONE OF THIS IS AI, and that is the point. The instinct was to reach
+ * for a model to "notice" these. Every one is a date compared against
+ * today, which is a `severityForDate` call — the same call the eleven
+ * kinds above make. A model here would cost money to be worse.
+ *
+ * THE RULE ALL FOUR OBEY, and it is the one that decides what they do NOT
+ * say. `lib/notification-digest.ts` states it for the digest and it holds
+ * here: nothing invents a sentence about urgency. Where a date exists the
+ * alert is DATED and says how late. Where no date exists it is STANDING
+ * and says what it does not know, because "overdue" against a date nobody
+ * recorded is a claim about a contract this app has never read. That is
+ * why the late-delivery alert is silent on an order with no promised date
+ * rather than guessing one — `operations.prisma` says it outright: "a
+ * guessed date is worse than no date, because 'late' would then be
+ * measured against a guess".
+ *
+ * ALL FOUR TAKE `MANAGE_FIELD`, matching `ROUTE_CAPABILITY`'s gate on the
+ * pages they point at. An alert is a summary of the thing it points at, so
+ * somebody who cannot open `/punch-lists` is not told what is on it.
+ */
+
+/** An order with no delivery after this long is worth a look even where
+ * the vendor never promised a date. Deliberately short: a delivery is a
+ * near-term thing, and three weeks of silence on materials is a job about
+ * to stop. */
+export const DELIVERY_CHASE_DAYS = 21;
+/** An OPEN punch item with no due date, this long after it was raised.
+ * The same fortnight `RFI_CHASE_DAYS` uses, for the same reason: it is
+ * long enough that nobody can call it nagging. */
+export const PUNCH_CHASE_DAYS = 14;
+/** Equipment still out this long after it went to a job. A scissor lift
+ * on rent is money leaving every day it sits somewhere nobody needs it. */
+export const EQUIPMENT_OUT_DAYS = 30;
+/** A delay the GC was never told about, this long after the day it
+ * happened. Two days rather than zero: a delay logged this morning has
+ * not failed anything yet, and an alert that fires the moment a foreman
+ * files his report teaches people to ignore the bell. */
+export const DELAY_NOTICE_GRACE_DAYS = 2;
+
+export type MaterialDeliveryAlertSource = {
+  id: string;
+  number: number;
+  description: string;
+  jobName: string;
+  vendorName: string;
+  /** The date the VENDOR promised, or null. Never inferred. */
+  promisedFor: string | null;
+  orderedOn: string;
+  /** True once any delivery on this order is marked as completing it.
+   * Partial deliveries deliberately do NOT clear the alert: an order that
+   * is half here is an order the crew cannot finish with. */
+  isComplete: boolean;
+};
+
+export function materialDeliveryAlerts(
+  sources: MaterialDeliveryAlertSource[],
+  todayIso: string,
+): Alert[] {
+  const horizon = ALERT_HORIZON_DAYS.MATERIAL_DELIVERY_LATE ?? 7;
+  const alerts: Alert[] = [];
+
+  for (const order of sources) {
+    if (order.isComplete) continue;
+    const where = `Order ${order.number} on ${order.jobName}`;
+
+    if (order.promisedFor) {
+      const severity = severityForDate(order.promisedFor, todayIso, horizon);
+      if (!severity) continue;
+      const days = daysUntilIso(order.promisedFor, todayIso);
+      alerts.push({
+        key: alertKey("MATERIAL_DELIVERY_LATE", order.id, order.promisedFor),
+        kind: "MATERIAL_DELIVERY_LATE",
+        severity,
+        title: days < 0 ? `${where} has not arrived` : `${where} is due in`,
+        detail:
+          days < 0
+            ? `${order.description} from ${order.vendorName} — promised ${agoPhrase(days)} and nothing is recorded as delivered.`
+            : `${order.description} from ${order.vendorName} — promised ${aheadPhrase(days)}.`,
+        href: "/material-orders",
+        dueOn: order.promisedFor,
+        daysUntil: days,
+        amount: null,
+      });
+      continue;
+    }
+
+    // NO PROMISED DATE. The order date is the only thing left to measure
+    // from, and this alert will not call an order late against a date
+    // nobody gave us. It says how long it has been silent instead.
+    const out = -daysUntilIso(order.orderedOn, todayIso);
+    if (out < DELIVERY_CHASE_DAYS) continue;
+
+    alerts.push({
+      key: alertKey("MATERIAL_DELIVERY_LATE", order.id, order.orderedOn),
+      kind: "MATERIAL_DELIVERY_LATE",
+      severity: "STANDING",
+      title: `${where} has nothing recorded as delivered`,
+      detail: `${order.description} from ${order.vendorName} — ordered ${agoPhrase(-out)} with no promised date recorded, and no delivery logged.`,
+      href: "/material-orders",
+      dueOn: order.orderedOn,
+      daysUntil: -out,
+      amount: null,
+    });
+  }
+
+  return alerts;
+}
+
+export type PunchItemAlertSource = {
+  id: string;
+  description: string;
+  jobName: string;
+  area: string | null;
+  /** OPEN only reaches here — see the builder. */
+  dueOn: string | null;
+  raisedOn: string;
+};
+
+/**
+ * An OPEN punch item nobody has come back for.
+ *
+ * OPEN only, and that is a decision rather than a filter. READY_FOR_REVIEW
+ * is somebody else's move — the crew has done it and it is waiting on a
+ * signature, which `/punch-lists` already shows — and VERIFIED is finished.
+ * Chasing either would be chasing ourselves, and it would bury the items
+ * nobody has touched, which are the ones that cost a sub his retainage.
+ */
+export function punchItemAlerts(sources: PunchItemAlertSource[], todayIso: string): Alert[] {
+  const horizon = ALERT_HORIZON_DAYS.PUNCH_ITEM_AGING ?? 7;
+  const alerts: Alert[] = [];
+
+  for (const item of sources) {
+    const where = item.area ? `${item.jobName} — ${item.area}` : item.jobName;
+
+    if (item.dueOn) {
+      const severity = severityForDate(item.dueOn, todayIso, horizon);
+      if (!severity) continue;
+      const days = daysUntilIso(item.dueOn, todayIso);
+      alerts.push({
+        key: alertKey("PUNCH_ITEM_AGING", item.id, item.dueOn),
+        kind: "PUNCH_ITEM_AGING",
+        severity,
+        title: days < 0 ? `Punch item overdue on ${where}` : `Punch item due on ${where}`,
+        detail:
+          days < 0
+            ? `"${item.description}" — due ${agoPhrase(days)} and still open.`
+            : `"${item.description}" — due ${aheadPhrase(days)}.`,
+        href: "/punch-lists",
+        dueOn: item.dueOn,
+        daysUntil: days,
+        amount: null,
+      });
+      continue;
+    }
+
+    const open = -daysUntilIso(item.raisedOn, todayIso);
+    if (open < PUNCH_CHASE_DAYS) continue;
+
+    alerts.push({
+      key: alertKey("PUNCH_ITEM_AGING", item.id, item.raisedOn),
+      kind: "PUNCH_ITEM_AGING",
+      severity: "STANDING",
+      title: `Punch item still open on ${where}`,
+      detail: `"${item.description}" — raised ${agoPhrase(-open)} with no due date recorded, and nobody has marked it ready.`,
+      href: "/punch-lists",
+      dueOn: item.raisedOn,
+      daysUntil: -open,
+      amount: null,
+    });
+  }
+
+  return alerts;
+}
+
+export type EquipmentOutAlertSource = {
+  id: string;
+  equipmentName: string;
+  jobName: string;
+  jobIsFinished: boolean;
+  sentOutOn: string;
+};
+
+/**
+ * Equipment still out, long after it went to a job.
+ *
+ * STANDING always, never dated, because NOTHING IN THE SCHEMA RECORDS A
+ * PROMISED RETURN. `EquipmentAssignment` has `sentOutOn` and a nullable
+ * `returnedOn` and no expectation between them, so there is no date to be
+ * late against and this alert does not invent one.
+ *
+ * A job that has FINISHED is the one case worth saying differently: the
+ * lift is not merely out a long time, it is out on a job nobody is working
+ * any more, which is a different sentence and a worse fact.
+ */
+export function equipmentOutAlerts(sources: EquipmentOutAlertSource[], todayIso: string): Alert[] {
+  const alerts: Alert[] = [];
+
+  for (const row of sources) {
+    const out = -daysUntilIso(row.sentOutOn, todayIso);
+    if (!row.jobIsFinished && out < EQUIPMENT_OUT_DAYS) continue;
+
+    alerts.push({
+      key: alertKey("EQUIPMENT_OUT_LONG", row.id, row.sentOutOn),
+      kind: "EQUIPMENT_OUT_LONG",
+      severity: "STANDING",
+      title: row.jobIsFinished
+        ? `${row.equipmentName} is still out on a finished job`
+        : `${row.equipmentName} has been out a long time`,
+      detail: row.jobIsFinished
+        ? `Sent to ${row.jobName} ${agoPhrase(-out)} and never recorded as back, on a job that is no longer running.`
+        : `Sent to ${row.jobName} ${agoPhrase(-out)} and nothing records it coming back.`,
+      href: "/equipment",
+      dueOn: row.sentOutOn,
+      daysUntil: -out,
+      amount: null,
+    });
+  }
+
+  return alerts;
+}
+
+export type DelayNoticeAlertSource = {
+  id: string;
+  jobId: string;
+  jobName: string;
+  /** The day the delay happened, entered by a person. */
+  date: string;
+  description: string;
+  hoursLost: number | null;
+};
+
+/**
+ * A logged delay the GC was never told about.
+ *
+ * WHY THIS IS THE MOST VALUABLE OF THE FOUR. A delay is what a claim or a
+ * change order is argued from, and what makes one collectible is that the
+ * GC was told AT THE TIME. A delay sitting in this app with `gcNotifiedAt`
+ * null is evidence the sub has already paid for and cannot use. The read
+ * tool `daily_field_reports` has counted `delaysTheGcWasNotTold` all
+ * along — the derivation existed and nothing surfaced it.
+ *
+ * STANDING, NEVER OVERDUE, and this is the line not to cross. Subcontracts
+ * carry notice periods and this app has never read one, so there is no
+ * date to be late against. The same rule that keeps `createLienDeadline`
+ * out of the Ask commands applies here: the deadline is legal advice and
+ * the app refuses to generate it. What it CAN say is how long ago the day
+ * was, which is a fact about a row.
+ */
+export function delayNoticeAlerts(sources: DelayNoticeAlertSource[], todayIso: string): Alert[] {
+  const alerts: Alert[] = [];
+
+  for (const delay of sources) {
+    const since = -daysUntilIso(delay.date, todayIso);
+    if (since < DELAY_NOTICE_GRACE_DAYS) continue;
+
+    // Through `formatHours` like every other hours figure in the app, not
+    // interpolated raw. `hoursLost` is Decimal(7,2) and `parseDelay`
+    // COMPUTES it from workers x minutes / 60, so it is exactly the
+    // floating-point sum `render-hours.ts` exists for: 4 men x 200 minutes
+    // is 13.333333333333334 without it. `hoursRenderCensus.test.ts` caught
+    // this as a bare render, which is what it is for.
+    const lost =
+      delay.hoursLost != null && delay.hoursLost > 0
+        ? `${formatHours(delay.hoursLost)} crew hours lost. `
+        : "";
+
+    alerts.push({
+      key: alertKey("DELAY_GC_NOT_TOLD", delay.id, delay.date),
+      kind: "DELAY_GC_NOT_TOLD",
+      severity: "STANDING",
+      title: `A delay on ${delay.jobName} has no notice to the GC recorded`,
+      detail: `${delay.date}, ${agoPhrase(-since)}: "${delay.description}" ${lost}Nothing records the GC being told. Whether notice is still worth giving is a question about your subcontract, not one this app can answer.`,
+      href: `/jobs/${delay.jobId}/field-reports`,
+      dueOn: delay.date,
+      daysUntil: -since,
+      amount: null,
+    });
+  }
+
+  return alerts;
+}
+
+/* --------------------------------------- the two apprenticeship forms */
+
+/**
+ * TWO STATUTORY DEADLINES THAT WERE ALREADY COMPUTED AND TOLD NOBODY.
+ *
+ * `lib/das-forms.ts` has decided both of these since it was written, and it
+ * is careful, tested arithmetic: the DAS 140 due day is the EARLIER of ten
+ * days after execution and the first day a worker logged hours; the DAS 142
+ * latest send day counts back three non-weekend days from the day the
+ * apprentice is needed. Both were rendered correctly. Both were rendered in
+ * exactly one place — `jobs/[id]/compliance` and the two detail pages — so
+ * the only way to find out a notice was overdue was to open the job it was
+ * overdue on and look.
+ *
+ * That is this app's recurring failure and not a small one: the work was
+ * done, the answer was right, and nothing carried it to anybody. The four
+ * field kinds above closed the same hole for a delivery and a punch item.
+ * These two close it for the one deadline on the list that carries a
+ * statutory penalty.
+ *
+ * NO AI, for the same reason the field four say so: this is a date compared
+ * against today. A model here would cost money to be worse.
+ *
+ * SEVERITY IS READ OFF THE STANDING, NOT RECOMPUTED. `severityForDate`
+ * would give the same answer today and is one refactor of `das140Standing`
+ * away from disagreeing with the page about whether a notice is late. The
+ * horizon is used for one thing only — deciding whether a deadline that is
+ * still ahead is close enough to mention yet.
+ *
+ * WHAT NEITHER OF THESE SAYS. Nothing here asserts a consequence. The
+ * citations in `das-forms.ts` are all `verified: false` — located by search,
+ * never read off a primary DIR page from this container — and
+ * `DAS_UNVERIFIED_FOR_COUNSEL` exists so a human takes them to an attorney.
+ * An alert that said "this is your defence at a penalty hearing" would be
+ * inventing the one thing that file refuses to claim. So these say what the
+ * rows hold and what has not been recorded, and stop there.
+ */
+
+export type Das140AlertSource = {
+  id: string;
+  jobId: string;
+  jobName: string;
+  committeeName: string;
+  craftName: string;
+  /** ENTERED from the executed contract. */
+  contractExecutedOn: string;
+  sentOn: string | null;
+  /** DERIVED from the timesheets, never entered — `loadFirstWorkerDay`'s
+   * rule, and the reason it is passed in rather than looked up here: a
+   * typed copy would be free to disagree with the payroll the same
+   * deadline would then be defended with. Null means no hours are logged
+   * on the job yet, which is not the same as unknown. */
+  firstWorkerOnSiteOn: string | null;
+};
+
+/**
+ * A DAS 140 that has not been marked sent, and is late or nearly.
+ *
+ * A notice already SENT raises nothing at all, including one sent late.
+ * `SENT_LATE` is a record of what happened and cannot be improved by
+ * sending it again — the same rule `lienDeadlineAlerts` follows for a
+ * deadline served after its date, and for the same reason: a red badge
+ * telling somebody to re-send a notice that went out is how a list of real
+ * problems becomes furniture.
+ *
+ * Keyed on the due day, so a timesheet backdated onto this job — which can
+ * pull the deadline earlier by moving the first-worker bound — lapses an
+ * old dismissal rather than inheriting it.
+ */
+export function das140Alerts(sources: Das140AlertSource[], todayIso: string): Alert[] {
+  const horizon = ALERT_HORIZON_DAYS.DAS140_NOTICE ?? 10;
+  const alerts: Alert[] = [];
+
+  for (const notice of sources) {
+    const standing = das140Standing(
+      { contractExecutedOn: notice.contractExecutedOn, sentOn: notice.sentOn },
+      notice.firstWorkerOnSiteOn,
+      todayIso,
+    );
+
+    let severity: AlertSeverity;
+    if (standing.status === "OVERDUE") severity = "OVERDUE";
+    else if (
+      standing.status === "DUE" &&
+      standing.daysRemaining !== null &&
+      standing.daysRemaining <= horizon
+    ) {
+      severity = "DUE_SOON";
+    } else continue;
+
+    // Which bound set the day, in words. "Due the 14th" is unarguable;
+    // "due ten days after execution" is checkable — the detail page says
+    // the same thing for the same reason.
+    const because =
+      standing.bound === "TEN_DAYS"
+        ? "ten days after the contract was executed"
+        : "the first day your crew logged hours on this job";
+
+    alerts.push({
+      key: alertKey("DAS140_NOTICE", notice.id, standing.dueOn),
+      kind: "DAS140_NOTICE",
+      severity,
+      title: `DAS 140 for ${notice.craftName} on ${notice.jobName} is not marked sent`,
+      detail:
+        severity === "OVERDUE"
+          ? `The notice to ${notice.committeeName} was due ${standing.dueOn} — ${because} — ${agoPhrase(standing.daysRemaining ?? 0)}, and nothing records it going out. Sending it now is still worth doing; mark it sent with the date it actually went, which is what the record will show.`
+          : `The notice to ${notice.committeeName} is due ${aheadPhrase(standing.daysRemaining ?? 0)} (${standing.dueOn}) — ${because}. Nothing records it going out yet.`,
+      href: `/jobs/${notice.jobId}/das-140/${notice.id}`,
+      dueOn: standing.dueOn,
+      daysUntil: standing.daysRemaining,
+      amount: null,
+    });
+  }
+
+  return alerts;
+}
+
+export type Das142AlertSource = {
+  id: string;
+  jobId: string;
+  jobName: string;
+  committeeName: string;
+  craftName: string;
+  apprenticesRequested: number;
+  /** The day the apprentice is needed. ENTERED. */
+  neededFrom: string;
+  requestedOn: string | null;
+  outcome: "DISPATCHED" | "UNABLE_TO_DISPATCH" | "NO_RESPONSE" | null;
+};
+
+/**
+ * A DAS 142 dispatch request that has not gone out in time, or went out and
+ * has no answer recorded against it.
+ *
+ * TWO THINGS, ONE KIND, and they cannot both fire on one request: the first
+ * three branches are about a request that was never sent, the fourth is
+ * about one that was. Their keys carry different facts so a dismissal of one
+ * cannot silence the other.
+ *
+ * "LATEST SEND DAY", NEVER "DEADLINE", in every sentence below. The real
+ * rule is 72 hours excluding holidays; this app stores a date and holds no
+ * California holiday calendar, so the day it computes can only be LATER
+ * than the true one, never earlier. That asymmetry is safe in one direction
+ * and the wording has to carry it, which is why every sentence below says
+ * "by" and none says "you have until".
+ */
+export function das142Alerts(sources: Das142AlertSource[], todayIso: string): Alert[] {
+  const horizon = ALERT_HORIZON_DAYS.DAS142_DISPATCH ?? 7;
+  const alerts: Alert[] = [];
+
+  for (const request of sources) {
+    const standing = das142Standing(
+      {
+        neededFrom: request.neededFrom,
+        requestedOn: request.requestedOn,
+        outcome: request.outcome,
+      },
+      todayIso,
+    );
+
+    const who = `${request.apprenticesRequested === 1 ? "an apprentice" : `${request.apprenticesRequested} apprentices`} for ${request.craftName}`;
+    // The holiday half of the caveat, said in one clause because an alert
+    // is not a screen and the full two-sentence version belongs on the
+    // page. It survives only because the error runs ONE WAY: a holiday
+    // between the send day and the day somebody is needed makes the real
+    // cut-off earlier than this one, never later. `dasCaveatDirection.test
+    // .ts` pins that direction to DAS142_LEAD_TIME_CAVEATS, so if the
+    // caveat is ever rewritten to point the other way this sentence fails
+    // the build instead of quietly telling somebody they have longer than
+    // they do.
+    const earlier = " A holiday in between makes the real cut-off earlier than this, never later.";
+
+    if (standing.status === "NEEDED_DAY_PASSED_UNSENT") {
+      alerts.push({
+        key: alertKey("DAS142_DISPATCH", request.id, `unsent:${request.neededFrom}`),
+        kind: "DAS142_DISPATCH",
+        severity: "OVERDUE",
+        title: `No DAS 142 was sent for ${request.craftName} on ${request.jobName}`,
+        detail: `You recorded needing ${who} from ${request.neededFrom}, ${agoPhrase(daysUntilIso(request.neededFrom, todayIso))}, and nothing records a request going to ${request.committeeName}. That day has gone, so this is a record to correct rather than a request to hurry: if one was sent, put the date on it; if none was, the row is saying so.`,
+        // Written out at each push rather than hoisted into a `const href`.
+        // `itemLinksCensus.test.ts` reads the destination off the LINE BELOW
+        // the kind, so a shorthand `href,` is invisible to it — it reported
+        // this kind as building no href at all. A census that cannot see the
+        // destination cannot check the person receiving the alert can open
+        // it, which is the only thing that census does.
+        href: `/jobs/${request.jobId}/das-142/${request.id}`,
+        dueOn: standing.latestSendDay,
+        daysUntil: daysUntilIso(standing.latestSendDay, todayIso),
+        amount: null,
+      });
+      continue;
+    }
+
+    if (standing.status === "TOO_LATE_TO_SEND" || standing.status === "DUE") {
+      const days = standing.daysRemaining ?? 0;
+      const late = standing.status === "TOO_LATE_TO_SEND";
+      if (!late && days > horizon) continue;
+      alerts.push({
+        key: alertKey("DAS142_DISPATCH", request.id, `send-by:${standing.latestSendDay}`),
+        kind: "DAS142_DISPATCH",
+        severity: late ? "OVERDUE" : "DUE_SOON",
+        title: `DAS 142 for ${request.craftName} on ${request.jobName} is not marked sent`,
+        detail: late
+          ? `${who} is wanted from ${request.neededFrom}. Counting whole days, the latest a request to ${request.committeeName} could have gone out was ${standing.latestSendDay}, ${agoPhrase(days)} — so a request sent now is already short notice.${earlier} Send it anyway and record the day it went.`
+          : `${who} is wanted from ${request.neededFrom}. The request to ${request.committeeName} needs to go out by ${standing.latestSendDay}, ${aheadPhrase(days)}, counting whole days.${earlier}`,
+        href: `/jobs/${request.jobId}/das-142/${request.id}`,
+        dueOn: standing.latestSendDay,
+        daysUntil: days,
+        amount: null,
+      });
+      continue;
+    }
+
+    // Sent, the day it was needed has passed, and nothing records what came
+    // back. STANDING, not overdue: the committee's answer has no date this
+    // app was ever told, so there is nothing to be late against. What it
+    // says is only what the row does and does not hold. `NO_RESPONSE` is
+    // itself a recorded answer and clears this — the gap being named is an
+    // EMPTY outcome, not a disappointing one.
+    if (
+      request.requestedOn !== null &&
+      request.outcome === null &&
+      daysUntilIso(request.neededFrom, todayIso) < 0
+    ) {
+      alerts.push({
+        key: alertKey("DAS142_DISPATCH", request.id, `no-answer:${request.neededFrom}`),
+        kind: "DAS142_DISPATCH",
+        severity: "STANDING",
+        title: `No answer recorded from ${request.committeeName} on ${request.jobName}`,
+        detail: `You requested ${who} on ${request.requestedOn}, needed from ${request.neededFrom}, and nothing records what came back — dispatched, unable to dispatch, or no response at all. All three are answers worth having on the row; an empty one only says nobody filled it in.`,
+        href: `/jobs/${request.jobId}/das-142/${request.id}`,
+        dueOn: null,
+        daysUntil: null,
+        amount: null,
+      });
+    }
   }
 
   return alerts;

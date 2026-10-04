@@ -64,6 +64,34 @@
  *                 compliance, and a won bid linked to its job. One company,
  *                 one GC, one bid, because every one of those panels hangs
  *                 off a bid invitation row.
+ *   PLAN_INGEST — its own empty company, for specs/plan-ingest.spec.ts: the
+ *                 ingestion job runner. Kept off TAKEOFF even though it needs
+ *                 the same setup — a plan set with a calibrated sheet — because
+ *                 starting a run WRITES task rows against that plan, and
+ *                 takeoff-plan.spec.ts counts what is on its job. Sharing would
+ *                 make either file's failure depend on the other's ordering.
+ *   SHOOT      — its own empty company, for specs/shoot-rehearsal.spec.ts: the
+ *                 launch-video run sheet, walked beat by beat the night
+ *                 before the shoot. It MUST be its own, and for the hardest
+ *                 reason on this list: the run sheet's beat 5 submits a pay
+ *                 application, which creates an invoice, and this product has
+ *                 no way to delete one — evidence records close, they never
+ *                 delete. So this persona's company is the only one in the
+ *                 suite that accumulates an irreversible money document every
+ *                 run. Pointed at any other company it would move a figure
+ *                 somebody else counts, permanently.
+ *   AI_SWITCH  — its own empty company, for specs/ai-switch.spec.ts: the
+ *                 per-company AI switch (#533). It needs its own for a
+ *                 stronger reason than any other row here — every other
+ *                 spec's company differs in its DATA, and this one differs
+ *                 in what the application is WILLING TO DO. A spec that
+ *                 turns AI off is not adding a row somebody else might
+ *                 count; it is changing how the assistant, the compliance
+ *                 upload and the estimate drafter behave for every viewer
+ *                 of that company at once. Run against MAIN it could make
+ *                 an unrelated spec fail with a refusal sentence, which
+ *                 reads as a broken feature rather than as a neighbour's
+ *                 write.
  *   BAD_INPUTS — its own empty company, for specs/known-bad-inputs.spec.ts:
  *                 the inputs that took the product down on 2026-09-21
  *                 (`2,800`, `12,500`, `0.10`), each driven as its own
@@ -188,6 +216,28 @@ export const PERSONAS = {
     label: "BID_DESK",
     username: "e2e_biddesk",
     phone: "+15555550118",
+  },
+  aiSwitch: {
+    email: "e2e-aiswitch+clerk_test@example.com",
+    label: "AI_SWITCH",
+    username: "e2e_aiswitch",
+    phone: "+15555550119",
+  },
+  shoot: {
+    email: "e2e-shoot+clerk_test@example.com",
+    label: "SHOOT",
+    username: "e2e_shoot",
+    phone: "+15555550120",
+  },
+  planIngest: {
+    email: "e2e-planingest+clerk_test@example.com",
+    label: "PLAN_INGEST",
+    username: "e2e_planingest",
+    // 0121, not 0120. Both this persona and SHOOT were written against a table
+    // whose last number was 0119, on two branches, and both picked 0120 — the
+    // collision `personas.test.ts` exists for, because Clerk refuses a duplicate
+    // phone with a bare 422 in global setup that names nothing.
+    phone: "+15555550121",
   },
 } as const;
 

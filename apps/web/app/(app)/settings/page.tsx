@@ -151,7 +151,28 @@ export default async function SettingsPage({
     return (
       <PageShell width="reading">
         <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
-        <p className="text-sm text-ink-body" data-tour="settings-owner-only">Only the account owner can manage integrations.</p>
+        {/* NAMES WHAT IS BEHIND THE DOOR. It said "Only the account owner
+            can manage integrations", which describes ONE of this page's ten
+            sections — the rest are the company profile that prints on the
+            WH-347, contractor licences, insurance policies, bonds, company
+            locations, employer burden rates, phase codes and default markup.
+
+            That mattered to one role in particular: `RENEWAL` alerts are
+            gated on MANAGE_COMPLIANCE, and `lib/renewals.ts` sends licence,
+            policy and bond expiries here. So a compliance member is shown
+            "Licence 8821 — expires in 9 days" and lands on a sentence about
+            integrations, which reads as the wrong page rather than the right
+            page they lack access to.
+
+            The page still refuses, and widening it is a permissions decision
+            nobody has made. This only stops the refusal being misleading
+            while that decision is pending. */}
+        <p className="text-sm text-ink-body" data-tour="settings-owner-only">
+          Only the account owner can open Settings. Licences, insurance,
+          bonds, the company profile, burden rates and the QuickBooks
+          connection all live here — ask them to make the change, or to give
+          you owner access.
+        </p>
       </PageShell>
     );
   }
@@ -352,13 +373,26 @@ export default async function SettingsPage({
           questions, answered once at signup (or skipped) and changeable
           here at any time. See lib/businessScope.ts: this only changes
           what the rail shows, never what a direct link, a search or Ask
-          can reach. */}
+          can reach.
+
+          THE COPY BELOW NAMES NO MENUS, ON PURPOSE. It used to open
+          "Retainage, prevailing wage, certified payroll and a few other
+          menus", and two of those three were never affected by any answer:
+          `ROUTE_HIDDEN_WHEN` hides `/submittals`, `/prevailing-wage` and
+          `/union-compliance`, while retainage and certified payroll have no
+          top-level route at all — they are job tabs, and
+          `app/(app)/jobs/[id]/(tabs)/layout.tsx` does not consult business
+          scope at all. businessScope.ts's own comment says so; this screen
+          did not. A sentence that enumerates routes is false the day the map
+          changes, so this one describes what the answers DO instead. Keep it
+          that way: if you find yourself adding a menu name here, the map is
+          the thing that moved. */}
       <section id="setup" className="mb-10">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Set up for your work</h2>
         <p className="mb-4 text-sm text-ink-body">
-          Retainage, prevailing wage, certified payroll and a few other menus only apply to some
-          businesses. Answer these and the menu only shows what yours needs — nothing is removed for
-          good: search and Ask can still reach anything, and you can change these any time.
+          Not every menu applies to every business. Your answers here tailor which ones the sidebar
+          shows you — nothing is removed for good: every page stays reachable by search, by Ask and
+          by its own link, and you can change your answers any time.
         </p>
         <BusinessScopeSettingsForm scope={businessScope} isOwner={currentUser.role === "OWNER"} />
       </section>
@@ -605,7 +639,7 @@ export default async function SettingsPage({
         </details>
       </section>
 
-      <section className="mb-10" data-tour="settings-licences">
+      <section id="licences" className="mb-10" data-tour="settings-licences">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Contractor licences</h2>
         <p className="mb-4 text-sm text-ink-body">
           One row per licence you hold, not per state — some jurisdictions have no state licence at
@@ -689,7 +723,7 @@ export default async function SettingsPage({
         />
       </section>
 
-      <section className="mb-10" data-tour="settings-insurance">
+      <section id="insurance" className="mb-10" data-tour="settings-insurance">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Insurance policies</h2>
         <p className="mb-4 text-sm text-ink-body">
           This company&apos;s own coverage — the source data per-job certificates of insurance would
@@ -782,7 +816,7 @@ export default async function SettingsPage({
         </details>
       </section>
 
-      <section data-tour="settings-bonding">
+      <section id="bonding" data-tour="settings-bonding">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Bonding</h2>
         <p className="mb-4 text-sm text-ink-body">
           Licence bonds and overall performance/payment bonding capacity, and who to contact to

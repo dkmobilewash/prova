@@ -6,7 +6,7 @@ import { isBlank, labelFromKey, parseNumericInput } from "@/lib/numeric-input";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import type { Opening, TakeoffLine } from "@/lib/takeoff";
-import { recipeLines, type RecipeArgs, type RecipeInput } from "@/lib/takeoff-recipes";
+import { recipeCostCategory, recipeLines, type RecipeArgs, type RecipeInput } from "@/lib/takeoff-recipes";
 import { documentUrlProblem } from "@/lib/document-uploads";
 import { parseFeetInches } from "@/lib/feet-inches";
 import {
@@ -18,6 +18,8 @@ import {
   type StoredMeasurement,
   type WallBridge,
 } from "@/lib/takeoff-plan";
+import { syncWallScheduleLines } from "@/lib/estimating/wall-schedule";
+import { planMeasuredWallRun, WALL_TYPE_GONE } from "@/lib/estimating/measured-wall-run";
 import {
   InputError,
   actionFail,
@@ -30,6 +32,7 @@ import {
   type ActionResult,
 } from "./shared";
 import { optionalDateFromString } from "@/lib/bid-pursuits";
+import { deleteDocument } from "@/lib/blob";
 
 /**
  * The Estimate tab's refusal, in the house voice. The estimate tab and the
@@ -82,7 +85,7 @@ export async function addTakeoffLines(jobId: string, formData: FormData): Promis
     return actionFail("Those measurements produce no quantities — check the numbers.");
   }
 
-  await prisma.$transaction(createLineItemRows(jobId, label, lines));
+  await prisma.$transaction(createLineItemRows(jobId, label, lines, recipeCostCategory(recipeId)));
 
   revalidatePath(`/jobs/${jobId}`);
   return actionOk;
@@ -94,11 +97,26 @@ export async function addTakeoffLines(jobId: string, formData: FormData): Promis
  *
  * SHARED SO THEY CANNOT DRIFT. The two differ in where the measurements came
  * from and in nothing else: what reaches a `JobLineItem` is a description, a
- * unit and a quantity, and no price, cost, hours, trade or catalog link. A
- * second copy of this is how one of them quietly starts writing a
- * `budgetedUnitCost` nobody entered.
+ * unit, a quantity and the recipe's cost type, and no price, cost, hours, trade
+ * or catalog link. A second copy of this is how one of them quietly starts
+ * writing a `budgetedUnitCost` nobody entered.
+ *
+ * THE COST TYPE JOINED THAT LIST IN #513, and it is the one field here that is
+ * not a measurement. It is included because it is not a GUESS: every recipe
+ * declares its own (`takeoff-recipes.ts`), a recipe turns a measurement into
+ * quantities of stuff, and labor on this app lives in hours on the line rather
+ * than in a line of its own. Without it takeoff was the one automated path
+ * still producing uncoded lines — and an uncoded line is marked up at nothing,
+ * so a bid taken off a plan carried no markup at all.
+ *
+ * Still no price and no cost: that is #515's question, not this one.
  */
-function createLineItemRows(jobId: string, label: string, lines: TakeoffLine[]) {
+function createLineItemRows(
+  jobId: string,
+  label: string,
+  lines: TakeoffLine[],
+  costCategory: ReturnType<typeof recipeCostCategory>,
+) {
   return lines.map((line) =>
     prisma.jobLineItem.create({
       data: {
@@ -109,6 +127,7 @@ function createLineItemRows(jobId: string, label: string, lines: TakeoffLine[]) 
         description: label ? `${label} — ${line.label}` : line.label,
         unit: line.unit,
         quantity: line.quantity,
+        costCategory,
       },
     }),
   );
@@ -317,16 +336,50 @@ export async function recordTakeoffPlan(jobId: string, formData: FormData): Prom
   return actionOk;
 }
 
-/** Removes a plan and everything traced on it. The blob itself is left alone:
- * a dangling file costs storage, and a delete that half-succeeded costs a
- * drawing somebody was working from. */
+/**
+ * Removes a plan and everything traced on it, INCLUDING the uploaded file.
+ *
+ * ── THIS COMMENT ARGUED THE OPPOSITE, AND THE ARGUMENT WAS HALF RIGHT ──
+ *
+ * It read: "The blob itself is left alone: a dangling file costs storage, and a
+ * delete that half-succeeded costs a drawing somebody was working from."
+ *
+ * The second half is a real hazard and it is why the order below matters. The
+ * first half understates it by a lot. A plan set is uploaded `access: "public"`
+ * like every other document here, so what was left behind is not storage — it
+ * is a GC's drawings at a permanent unauthenticated address, with no row left in
+ * the database that would let anybody find it again to remove it. That is the
+ * same defect #559 reported against the quote reader, and `TakeoffPlan.fileUrl`
+ * is a REQUIRED column, so it happened on every plan delete rather than on a
+ * failure path.
+ *
+ * ── THE ORDER IS WHAT ANSWERS THE OLD COMMENT'S WORRY ──
+ *
+ * The URL is read first, the ROW goes second, the file goes last. A
+ * half-succeeded delete can now only strand a file, never leave a row pointing
+ * at a file that is gone — which is the "drawing somebody was working from"
+ * case, and the one worth protecting. `deleteBidAddendum` and
+ * `deleteContractDocument` already do it in exactly this order.
+ */
 export async function deleteTakeoffPlan(jobId: string, planId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company } = context;
 
+  // Read BEFORE the delete: `deleteMany` returns a count, not the row, so after
+  // it runs there is nothing left to learn the URL from.
+  const plan = await prisma.takeoffPlan.findFirst({
+    where: planScope(planId, jobId, company.id),
+    select: { fileUrl: true },
+  });
+
   const deleted = await prisma.takeoffPlan.deleteMany({ where: planScope(planId, jobId, company.id) });
   if (deleted.count === 0) return actionFail("That plan is no longer on this job. Reload the page.");
+
+  // Only once the row is confirmed gone. Failures are swallowed by
+  // `deleteDocument`, so a store that will not delete cannot turn a completed
+  // delete into an error for somebody who just removed a plan.
+  if (plan?.fileUrl) await deleteDocument(plan.fileUrl);
 
   revalidatePath(`/jobs/${jobId}/takeoff`);
   return actionOk;
@@ -577,6 +630,26 @@ export async function postTakeoffMeasurements(jobId: string, formData: FormData)
       },
     }));
 
+    // ISSUE #515. A wall measurement can be posted two ways now, and the
+    // difference is the whole point of that issue: as a WALL RUN against a wall
+    // type, which arrives priced, attributed and traceable — or as recipe
+    // output, which arrives as bare quantities somebody then prices by hand.
+    // The wall-type path is preferred and is what the form offers first; the
+    // typed-height path stays because a company with no wall types defined
+    // still has to be able to post what it measured.
+    const wallTypeId = recipeId === "wall" ? String(formData.get("wallTypeId") ?? "").trim() : "";
+    if (wallTypeId) {
+      return postMeasuredWallRun({
+        companyId: company.id,
+        jobId,
+        label,
+        wallTypeId,
+        stored,
+        measurementIds: ids,
+        formData,
+      });
+    }
+
     const wall = recipeId === "wall" ? wallBridgeFromForm(formData) : null;
     const inputs = recipeInputsFromMeasurements(recipeId, stored, wall);
     if (!inputs.ok) return actionFail(inputs.error);
@@ -589,7 +662,7 @@ export async function postTakeoffMeasurements(jobId: string, formData: FormData)
     }
 
     await prisma.$transaction([
-      ...createLineItemRows(jobId, label, lines),
+      ...createLineItemRows(jobId, label, lines, recipeCostCategory(recipeId)),
       prisma.takeoffMeasurement.updateMany({ where: { id: { in: ids } }, data: { postedAt: new Date() } }),
     ]);
 
@@ -599,13 +672,110 @@ export async function postTakeoffMeasurements(jobId: string, formData: FormData)
   });
 }
 
-/** The two things a wall needs that a drawing does not carry. Openings reuse
- * the parallel-array rule the typed form already uses: a half-filled pair is
- * dropped rather than counted as a zero-sized hole. */
-function wallBridgeFromForm(formData: FormData): WallBridge {
-  const heightFt = numberFromForm(formData, "heightFt", { min: 0.01 }).n;
-  const sides = String(formData.get("sides") ?? "2") === "1" ? 1 : 2;
+/**
+ * A measured run posted as a `WallRun` against a wall type, rather than as
+ * recipe output (issue #515).
+ *
+ * WHAT THIS BUYS, and why the seam was worth closing. A wall run created from
+ * the Wall types page arrives complete: `syncWallScheduleLines` gives every
+ * component line its description, quantity, labour hours, unit price, budgeted
+ * unit cost, craft classification, catalog link, production rate and — since
+ * #513 — its cost category. A plan takeoff posted as recipe output arrived
+ * carrying description, unit and quantity and nothing else. So the newest and
+ * most impressive way to get quantities into a bid was also the one that
+ * dropped you back into hand-pricing every row, while the path that needs no
+ * PDF at all arrived priced.
+ *
+ * NOTHING IS ADDED TO THE CAPTURE LAYER, which is what `takeoff.prisma` argues
+ * for at length: a wall is a LINEAR measurement somebody elected to treat as a
+ * wall at posting time, so the decision belongs here and not in the geometry.
+ * The length comes from the traced runs; the height, sides and spacing come
+ * from the wall type.
+ *
+ * AND THE TAKEOFF INHERITS `refreshWallSchedule` FOR FREE. Because this creates
+ * a real `WallRun`, a recalibration or a corrected height re-derives the lines
+ * through the same reconcile every other wall run uses, rather than stranding a
+ * second set beside the first.
+ */
+async function postMeasuredWallRun(args: {
+  companyId: string;
+  jobId: string;
+  label: string;
+  wallTypeId: string;
+  stored: StoredMeasurement[];
+  measurementIds: string[];
+  formData: FormData;
+}): Promise<ActionResult> {
+  const { companyId, jobId, label, wallTypeId, stored, measurementIds, formData } = args;
 
+  // The two rows the decision needs. Read here; DECIDED in
+  // `planMeasuredWallRun`, which is pure and carries every refusal — the
+  // pattern `bid-recap.ts` and `takeoff.ts` already follow, and the reason the
+  // refusals are testable without a database.
+  const wallType = await prisma.wallType.findFirst({
+    where: { id: wallTypeId, companyId },
+    select: { id: true, code: true, defaultHeightFt: true, sides: true },
+  });
+  if (!wallType) return actionFail(WALL_TYPE_GONE);
+
+  const plan = planMeasuredWallRun({
+    wallType: {
+      code: wallType.code,
+      defaultHeightFt: wallType.defaultHeightFt != null ? wallType.defaultHeightFt.toNumber() : null,
+      sides: wallType.sides,
+    },
+    layerCount: await prisma.wallTypeComponent.count({ where: { wallTypeId: wallType.id } }),
+    typedHeightFt: optionalNumberFromForm(formData, "heightFt", { min: 0.01 })?.n ?? null,
+    label,
+  });
+  if (!plan.ok) return actionFail(plan.error);
+
+  const bridge: WallBridge = {
+    heightFt: plan.heightFt,
+    sides: plan.sides,
+    openings: wallOpeningsFromForm(formData),
+  };
+  const inputs = recipeInputsFromMeasurements("wall", stored, bridge);
+  if (!inputs.ok) return actionFail(inputs.error);
+  const first = inputs.inputs[0];
+  if (!first || first.kind !== "wall") {
+    return actionFail("Those measurements do not make a wall — pick at least one traced run.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.wallRun.create({
+      data: {
+        companyId,
+        jobId,
+        wallTypeId: wallType.id,
+        // Named after what the estimator called the selection, falling back to
+        // the type's own code so a run is never nameless on the schedule.
+        label: plan.label,
+        lengthFt: first.wall.lengthFt.toFixed(2),
+        heightFt: plan.heightFt.toFixed(2),
+        openings: bridge.openings,
+      },
+    });
+    // The same whole-job reconcile every other wall run goes through, so these
+    // lines are indistinguishable from ones typed on the Wall types page.
+    await syncWallScheduleLines(tx, companyId, jobId);
+    await tx.takeoffMeasurement.updateMany({
+      where: { id: { in: measurementIds } },
+      data: { postedAt: new Date() },
+    });
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/jobs/${jobId}/estimate`);
+  return actionOk;
+}
+
+/** Openings reuse the parallel-array rule the typed form already uses: a
+ * half-filled pair is dropped rather than counted as a zero-sized hole. Shared,
+ * because a wall posted against a wall type deducts the same openings as one
+ * posted with a typed height — the height is the only thing that differs. */
+function wallOpeningsFromForm(formData: FormData): Opening[] {
   const widths = formData.getAll("openingWidth");
   const heights = formData.getAll("openingHeight");
   const openings: Opening[] = [];
@@ -617,7 +787,15 @@ function wallBridgeFromForm(formData: FormData): WallBridge {
     if (!height.ok) throw new InputError(height.error);
     openings.push({ widthFt: width.n, heightFt: height.n });
   }
-  return { heightFt, sides, openings };
+  return openings;
+}
+
+/** The two things a wall needs that a drawing does not carry, typed by hand.
+ * The wall-type path below supplies both from the type instead. */
+function wallBridgeFromForm(formData: FormData): WallBridge {
+  const heightFt = numberFromForm(formData, "heightFt", { min: 0.01 }).n;
+  const sides = String(formData.get("sides") ?? "2") === "1" ? 1 : 2;
+  return { heightFt, sides, openings: wallOpeningsFromForm(formData) };
 }
 
 /** The shop-varying numbers a recipe takes, read the way the typed form reads

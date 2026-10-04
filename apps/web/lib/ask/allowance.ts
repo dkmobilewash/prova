@@ -1,5 +1,8 @@
 import { prisma } from "@prova/db";
 import { MIGRATE_COMMAND } from "./usage";
+// The prisma-FREE half of the AI settings module, so this stays importable
+// without pulling the gate and its dependencies in behind it.
+import { AI_SETTINGS_DEFAULTS } from "@/lib/ai/features";
 
 /**
  * THE PAID MONTHLY AI ALLOWANCE, AND THE HARD STOP AT THE END OF IT.
@@ -373,6 +376,34 @@ export type AllowanceSummary = {
   failedPages: number;
   questionsLeft: number;
   pagesLeft: number;
+  /**
+   * THE OTHER TWO UNITS, and they are here because they were metered and never
+   * shown — which made a promise the product did not keep.
+   *
+   * `planSheetSpend.ts` and `addendumSpend.ts` both tell a person, in a sentence
+   * on screen, that "the account owner can see the month on Settings →
+   * Assistant" and that a failed read is recorded there so they can ask for a
+   * credit. That page rendered questions and document pages only, so for plan
+   * sheets (#551) and addendum pages both sentences were false. A browser
+   * click-through found it by looking for a figure the prompt said would be
+   * there and reporting that it was not.
+   *
+   * The ceilings come from `CompanyAiSettings` rather than from
+   * `allowanceForCompany`, which returns `{questions, pages}` and ignores its
+   * `companyId` — the split every metered caller already lives with.
+   */
+  planSheetsUsed: number;
+  failedPlanSheets: number;
+  planSheetsLeft: number;
+  planSheetCeiling: number;
+  addendumPagesUsed: number;
+  failedAddendumPages: number;
+  addendumPagesLeft: number;
+  addendumPageCeiling: number;
+  specPagesUsed: number;
+  failedSpecPages: number;
+  specPagesLeft: number;
+  specPageCeiling: number;
   /** "1 October" — when this month's figures go back to zero. */
   resetsOn: string;
   /** Either ceiling is down to a fifth or less. The warning threshold, kept
@@ -391,14 +422,54 @@ export async function allowanceSummary(
   now: Date = new Date(),
 ): Promise<AllowanceSummary> {
   const allowance = await allowanceForCompany(companyId);
+
+  // The two per-company ceilings, read straight rather than through
+  // `aiSettingsFor`, to keep this module from importing the AI settings module
+  // and back. Absent means the defaults, which is what an unconfigured company
+  // gets everywhere else.
+  let ceilings = {
+    planSheetCeiling: AI_SETTINGS_DEFAULTS.planSheetsPerMonth,
+    addendumPageCeiling: AI_SETTINGS_DEFAULTS.addendumPagesPerMonth,
+    specPageCeiling: AI_SETTINGS_DEFAULTS.specPagesPerMonth,
+  };
+  try {
+    const settings = await prisma.companyAiSettings.findUnique({
+      where: { companyId },
+      select: { planSheetsPerMonth: true, addendumPagesPerMonth: true, specPagesPerMonth: true },
+    });
+    if (settings) {
+      ceilings = {
+        planSheetCeiling: settings.planSheetsPerMonth,
+        addendumPageCeiling: settings.addendumPagesPerMonth,
+        specPageCeiling: settings.specPagesPerMonth,
+      };
+    }
+  } catch (err) {
+    // The DEFAULTS rather than a refusal, and the difference from the ledger read
+    // below is deliberate: an unreadable CEILING makes one figure on a page wrong,
+    // while an unreadable LEDGER makes every number on it a lie. Only the second
+    // sets `readable: false`.
+    unreadable("the per-company AI ceilings could not be read for the settings page", err);
+  }
+
   const empty = {
     allowance,
+    ...ceilings,
     questionsUsed: 0,
     pagesUsed: 0,
     failedQuestions: 0,
     failedPages: 0,
     questionsLeft: allowance.questions,
     pagesLeft: allowance.pages,
+    planSheetsUsed: 0,
+    failedPlanSheets: 0,
+    planSheetsLeft: ceilings.planSheetCeiling,
+    addendumPagesUsed: 0,
+    failedAddendumPages: 0,
+    addendumPagesLeft: ceilings.addendumPageCeiling,
+    specPagesUsed: 0,
+    failedSpecPages: 0,
+    specPagesLeft: ceilings.specPageCeiling,
     resetsOn: resetSentence(now),
   };
   let row: {
@@ -406,11 +477,28 @@ export async function allowanceSummary(
     pagesUsed: number;
     failedQuestions: number;
     failedPages: number;
+    planSheetsUsed: number;
+    failedPlanSheets: number;
+    addendumPagesUsed: number;
+    failedAddendumPages: number;
+    specPagesUsed: number;
+    failedSpecPages: number;
   } | null;
   try {
     row = await prisma.askAllowancePeriod.findUnique({
       where: { companyId_periodStart: { companyId, periodStart: periodStartFor(now) } },
-      select: { questionsUsed: true, pagesUsed: true, failedQuestions: true, failedPages: true },
+      select: {
+        questionsUsed: true,
+        pagesUsed: true,
+        failedQuestions: true,
+        failedPages: true,
+        planSheetsUsed: true,
+        failedPlanSheets: true,
+        addendumPagesUsed: true,
+        failedAddendumPages: true,
+        specPagesUsed: true,
+        failedSpecPages: true,
+      },
     });
   } catch (err) {
     unreadable("the allowance figures could not be read for the settings page", err);
@@ -421,16 +509,34 @@ export async function allowanceSummary(
 
   const questionsLeft = Math.max(0, allowance.questions - row.questionsUsed);
   const pagesLeft = Math.max(0, allowance.pages - row.pagesUsed);
+  const planSheetsLeft = Math.max(0, ceilings.planSheetCeiling - row.planSheetsUsed);
+  const addendumPagesLeft = Math.max(0, ceilings.addendumPageCeiling - row.addendumPagesUsed);
+  const specPagesLeft = Math.max(0, ceilings.specPageCeiling - row.specPagesUsed);
   return {
     readable: true,
     allowance,
+    ...ceilings,
     questionsUsed: row.questionsUsed,
     pagesUsed: row.pagesUsed,
     failedQuestions: row.failedQuestions,
     failedPages: row.failedPages,
     questionsLeft,
     pagesLeft,
+    planSheetsUsed: row.planSheetsUsed,
+    failedPlanSheets: row.failedPlanSheets,
+    planSheetsLeft,
+    addendumPagesUsed: row.addendumPagesUsed,
+    failedAddendumPages: row.failedAddendumPages,
+    addendumPagesLeft,
+    specPagesUsed: row.specPagesUsed,
+    failedSpecPages: row.failedSpecPages,
+    specPagesLeft,
     resetsOn: resetSentence(now),
+    // LOW STILL MEANS THE TWO SHARED UNITS ONLY, on purpose. Questions and
+    // document pages are what every surface spends, and what runs out on somebody
+    // who has uploaded nothing unusual. A company four fifths through its plan
+    // sheets is mid-ingestion, which is the ledger working rather than a warning
+    // worth colouring the whole panel amber for.
     low:
       questionsLeft <= allowance.questions * LOW_FRACTION ||
       pagesLeft <= allowance.pages * LOW_FRACTION,

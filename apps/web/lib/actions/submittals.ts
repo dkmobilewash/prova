@@ -10,6 +10,7 @@ import {
   assertOwner,
   runAction,
   type ActionResult,
+  optionalLinkOrThrow,
 } from "./shared";
 import { can } from "@/lib/permissions";
 
@@ -267,6 +268,13 @@ export async function recordSubmittalResponse(submittalId: string, formData: For
         returnedOn,
         outcome: outcomeRaw as (typeof outcomes)[number],
         responseNotes: text(formData, "responseNotes") || null,
+        // Where the stamp lives, as a link. Through the one shared validator
+        // because this value is rendered as an `href` — see shared.ts, and the
+        // two compliance fields that reached one unchecked. Throwing is correct
+        // here: this action is inside `runAction`, which turns an InputError
+        // into the same ActionResult every other refusal above returns.
+        responseUrl: optionalLinkOrThrow(formData, "responseUrl", "The link to the stamped submittal"),
+        responseFileName: text(formData, "responseFileName") || null,
       },
     });
 

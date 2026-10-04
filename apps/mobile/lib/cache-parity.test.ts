@@ -19,7 +19,7 @@ const ROOT = join(__dirname, "..");
 const APP = join(ROOT, "app");
 const LIB = join(__dirname);
 
-/** A path as this file talks about it: "app/outbox.tsx", "lib/use-sync.ts".
+/** A path as this file talks about it: "app/(tabs)/outbox.tsx", "lib/use-sync.ts".
  * One spelling, so an exception key and an offender message cannot drift
  * apart — they did, and an exception silently matched nothing. */
 function rel(file: string): string {
@@ -64,7 +64,7 @@ function sources(): string[] {
  * the two places where flushing is the job rather than something a list is
  * waiting behind. Each is checked below for still being that. */
 const FLUSH_WITHOUT_LIST: Record<string, string> = {
-  "app/outbox.tsx": "the screen about the queue itself: it reads the QUEUE, not a cached list, and reloads after Send now",
+  "app/(tabs)/outbox.tsx": "the screen about the queue itself: it reads the QUEUE, not a cached list, and reloads after Send now",
   "lib/use-queue-drain.ts": "the background timer; flushing is its whole purpose and it draws nothing",
 };
 
