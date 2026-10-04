@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseSubListing } from "./parse";
-import { signalsForSub, importSummaryFor } from "./signals";
+import { shouldInclude, signalsForSub, importSummaryFor } from "./signals";
 import { SUB_LISTING_CASES } from "./subListingCases";
 
 /**
@@ -168,5 +168,58 @@ describe("the summary a reviewer reads", () => {
     expect(importSummaryFor(onlyTrade, { project: null, agency: null, prime: null, bidDate: null })).toBe(
       "1 signal to check",
     );
+  });
+});
+
+describe("whether a row is imported", () => {
+  /**
+   * The rule that shipped as an inert checkbox. An explicit choice must always
+   * win, or the control does nothing for exactly the rows a person most needs to
+   * correct — the ones whose trade did not match.
+   */
+  it("defaults to the trade match when nobody has chosen", () => {
+    expect(shouldInclude({ tradeScope: "METAL_FRAMING_DRYWALL" }, undefined)).toBe(true);
+    expect(shouldInclude({ tradeScope: null }, undefined)).toBe(false);
+  });
+
+  it("lets an explicit choice override the default, in BOTH directions", () => {
+    // This is the half that was broken: a row the trade match excluded could
+    // never be included, because `false` and "unset" were the same value.
+    expect(shouldInclude({ tradeScope: null }, true)).toBe(true);
+    expect(shouldInclude({ tradeScope: "METAL_FRAMING_DRYWALL" }, false)).toBe(false);
+  });
+});
+
+describe("a scope that ran off the end of the line", () => {
+  /**
+   * CAUGHT BY MUTATION, and it is the second time on this feature that the fix
+   * was written and the assertion was not. The row already carried an amber
+   * concern about the wrap — but the concern is read on screen and the CLAIM is
+   * what gets read down a telephone, so for a while the warning reached
+   * everywhere except the one place it mattered.
+   */
+  const wrapped = parseSubListing(
+    [
+      "Project: Fresno Courthouse Interior Buildout",
+      "Prime Contractor: Harris Construction",
+      "Sierra Wall Systems\tFresno, CA\tC-9 448120\tMetal stud framing, drywall and\t$968,000",
+      "\tinterior finish carpentry",
+    ].join("\n"),
+  );
+
+  it("marks the fragment in the claim, not only in the concern", () => {
+    const sierra = wrapped.rows[0];
+    expect(sierra.concerns.join(" ")).toMatch(/cut off/);
+
+    const trade = signalsForSub(sierra, wrapped.header).find((s) => s.kind === "TRADE")!;
+    expect(trade.claim).toContain("…");
+    expect(trade.claim).toMatch(/runs on past the end of the line/);
+    // And it must not present the severed phrase as a whole scope.
+    expect(trade.claim).not.toMatch(/Listed for "Metal stud framing, drywall and"(?!…)/);
+  });
+
+  it("still names the trade, because the keyword match survives a wrap", () => {
+    const trade = signalsForSub(wrapped.rows[0], wrapped.header).find((s) => s.kind === "TRADE")!;
+    expect(trade.claim).toContain("Metal framing / drywall");
   });
 });

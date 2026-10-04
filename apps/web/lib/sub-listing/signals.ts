@@ -1,7 +1,7 @@
 import { SALES_SIGNAL_KINDS, type SalesSignalKind } from "@/lib/sales-qualification";
 import { tradeScopeLabel } from "@/lib/trade-scopes";
 import { money } from "@/lib/money";
-import type { ListedSub, SubListingParse } from "./parse";
+import { looksCutOff, type ListedSub, type SubListingParse } from "./parse";
 
 /**
  * TURNING ONE LISTED SUBCONTRACTOR INTO SIGNALS A PERSON CAN CHECK.
@@ -119,7 +119,16 @@ const CLAIM_FOR: Record<SalesSignalKind, (context: ClaimContext) => string | nul
   TRADE: ({ sub }) => {
     if (!sub.portionOfWork) return null;
     const scope = tradeScopeLabel(sub.tradeScope);
-    const quoted = `Listed for "${sub.portionOfWork}"`;
+
+    // A scope that wrapped onto the next line parses as a whole phrase ending
+    // in "and", and the first version quoted it verbatim. The row carried a
+    // concern about it and the claim went out unchanged — so the one thing that
+    // reaches a telephone was the one thing the warning did not reach. It is
+    // marked as a fragment now, in the claim itself.
+    const quoted = looksCutOff(sub.portionOfWork)
+      ? `Listed for "${sub.portionOfWork}…", which runs on past the end of the line`
+      : `Listed for "${sub.portionOfWork}"`;
+
     return scope
       ? `${quoted} — that is ${scope}${atLine(sub.line)}`
       : `${quoted}${atLine(sub.line)}`;
@@ -217,6 +226,26 @@ export function signalsForSub(
     if (claim) proposed.push({ kind, claim, line: sub.line });
   }
   return proposed;
+}
+
+/**
+ * Should this row be imported?
+ *
+ * A pure function with a test, for a rule small enough that nobody would think
+ * to write one — which is exactly why it shipped broken. The screen held a
+ * `skipped` set and derived `checked` as `!skipped[line] && tradeScope !== null`,
+ * so for a row whose trade did not match, `checked` was ALREADY false: ticking
+ * it deleted a key that had never been set, the value recomputed to false, and
+ * the box snapped back. An inert control, with nothing on screen saying so.
+ *
+ * The fix is that an explicit choice always wins and the trade match is only the
+ * DEFAULT. Stated as a function so the two cases cannot drift apart again.
+ */
+export function shouldInclude(
+  row: { tradeScope: string | null },
+  explicit: boolean | undefined,
+): boolean {
+  return explicit ?? row.tradeScope !== null;
 }
 
 /**

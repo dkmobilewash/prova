@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 import { importSubListing } from "@/lib/actions";
 import { Spinner } from "@/components/Spinner";
 import { parseSubListing } from "@/lib/sub-listing/parse";
-import { importSummaryFor, signalsForSub, type PrimeOutcome } from "@/lib/sub-listing/signals";
+import {
+  importSummaryFor,
+  shouldInclude,
+  signalsForSub,
+  type PrimeOutcome,
+} from "@/lib/sub-listing/signals";
 import { leadCandidatesFor } from "@/lib/sub-listing/leadMatch";
 import { tradeScopeLabel } from "@/lib/trade-scopes";
 
@@ -58,7 +63,19 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceTitle, setSourceTitle] = useState("");
   const [primeOutcome, setPrimeOutcome] = useState<PrimeOutcome>("UNKNOWN");
-  const [skipped, setSkipped] = useState<Record<number, true>>({});
+  /**
+   * Explicit include/exclude, per line. `undefined` means "whatever the trade
+   * match suggests".
+   *
+   * It was a `skipped` set and `checked` was derived as
+   * `!skipped[line] && tradeScope !== null`. For a row whose trade did not
+   * match, `checked` was already false, so clicking it deleted a key that had
+   * never been set, the value recomputed to false, and THE BOX SNAPPED BACK —
+   * an inert control with nothing on screen saying so. Since a scope reading
+   * "Drywall and ceilings" used to match nothing, the commonest row on the page
+   * was the one that could not be imported.
+   */
+  const [chosen, setChosen] = useState<Record<number, boolean>>({});
   const [attach, setAttach] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -66,12 +83,12 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
 
   const parsed = useMemo(() => parseSubListing(listingText), [listingText]);
 
-  // Rows of one of our five trades are checked by default; the rest are not.
-  // An electrical sub on the same form is not a prospect, and making a person
-  // untick twelve of them is how they stop reading the list.
-  const included = parsed.rows.filter(
-    (row) => !skipped[row.line] && (row.tradeScope !== null || attach[row.line]),
-  );
+  // One of our five trades, or already chosen by hand. An electrical sub on the
+  // same form is not a prospect, and making a person untick twelve of them is
+  // how they stop reading the list — but every row stays tickable.
+  const includes = (row: { line: number; tradeScope: string | null }) =>
+    shouldInclude(row, chosen[row.line]);
+  const included = parsed.rows.filter(includes);
 
   function reset() {
     setOpen(false);
@@ -79,7 +96,7 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
     setSourceUrl("");
     setSourceTitle("");
     setPrimeOutcome("UNKNOWN");
-    setSkipped({});
+    setChosen({});
     setAttach({});
     setError(null);
   }
@@ -222,17 +239,26 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
         <div className="mt-4 border-t border-line-row pt-4">
           {/* The reconciliation leads, above the rows. A reading that lost a
               subcontractor is the only failure here nobody would notice. */}
-          {parsed.reconciliation.agreed ? (
+          {parsed.problems.map((problem) => (
+            <p key={problem} className="text-xs text-tag-rose-ink">
+              {problem}
+            </p>
+          ))}
+
+          {parsed.unread.length === 0 ? (
             <p className="text-xs text-tag-green-ink">
-              Every line carrying an amount, a licence or a registration number was read
-              &mdash; {parsed.reconciliation.rowsParsed} of {parsed.reconciliation.candidateLines}.
+              All {parsed.reconciliation.nonBlankLines} lines accounted for &mdash;{" "}
+              {parsed.reconciliation.rowsParsed} subcontractor
+              {parsed.reconciliation.rowsParsed === 1 ? "" : "s"},{" "}
+              {parsed.reconciliation.headerLines} header, {parsed.reconciliation.ignoredLines} set
+              aside.
             </p>
           ) : (
             <p className="text-xs text-tag-rose-ink">
-              {parsed.unread.length} line{parsed.unread.length === 1 ? "" : "s"} carried data and
-              could not be read. Check {parsed.unread.length === 1 ? "it" : "them"} against the
-              document before trusting this list &mdash; a sub who was never read is a sub nobody
-              notices is missing.
+              {parsed.unread.length} line{parsed.unread.length === 1 ? "" : "s"} could not be read.
+              Check {parsed.unread.length === 1 ? "it" : "them"} against the document before
+              trusting this list &mdash; a sub who was never read is a sub nobody notices is
+              missing.
             </p>
           )}
 
@@ -245,6 +271,23 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
                 </li>
               ))}
             </ul>
+          )}
+
+          {parsed.ignored.length > 0 && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs text-ink-label">
+                {parsed.ignored.length} line{parsed.ignored.length === 1 ? "" : "s"} set aside
+                &mdash; see why
+              </summary>
+              <ul className="mt-1 flex flex-col gap-1">
+                {parsed.ignored.map((line) => (
+                  <li key={line.line} className="text-xs text-ink-muted">
+                    <span className="font-mono">line {line.line}</span>: {line.why}
+                    <span className="block font-mono text-ink-label">{line.text.trim()}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
 
           <dl className="mt-3 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
@@ -275,7 +318,7 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
               {parsed.rows.map((row) => {
                 const candidates = leadCandidatesFor(row.name, leads);
                 const proposals = signalsForSub(row, parsed.header, primeOutcome);
-                const checked = !skipped[row.line] && (row.tradeScope !== null || !!attach[row.line]);
+                const checked = includes(row);
                 return (
                   <li key={row.line} className="rounded-md border border-line-card p-3">
                     <div className="flex items-start gap-2">
@@ -283,12 +326,7 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
                         type="checkbox"
                         checked={checked}
                         onChange={(event) =>
-                          setSkipped((current) => {
-                            const next = { ...current };
-                            if (event.target.checked) delete next[row.line];
-                            else next[row.line] = true;
-                            return next;
-                          })
+                          setChosen((current) => ({ ...current, [row.line]: event.target.checked }))
                         }
                         className="mt-0.5"
                         aria-label={`Add ${row.name}`}
@@ -297,7 +335,9 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
                         <p className="text-sm text-ink-body">{row.name}</p>
                         <p className="text-xs text-ink-label">
                           {row.tradeScope ? (
-                            <span className="text-tag-blue-ink">{tradeScopeLabel(row.tradeScope)}</span>
+                            <span className="font-medium text-ink-body">
+                              {tradeScopeLabel(row.tradeScope)}
+                            </span>
                           ) : (
                             <span className="text-ink-muted">not one of our five trades</span>
                           )}

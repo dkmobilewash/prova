@@ -15,6 +15,7 @@ import {
 } from "@/lib/sales-qualification";
 import { parseSubListing } from "@/lib/sub-listing/parse";
 import { PRIME_OUTCOMES, signalsForSub } from "@/lib/sub-listing/signals";
+import { normaliseCompanyName } from "@/lib/sub-listing/leadMatch";
 import { prisma } from "@prova/db";
 import {
   InputError,
@@ -843,18 +844,11 @@ export async function importSubListing(
 
     const listingText = required(formData, "listingText", "The listing you pasted");
 
-    // Same refusal as a hand-typed signal, for the same reason: a claim with no
-    // page behind it is a rumour that gets read as a fact on a call.
-    const link = optionalLinkFromForm(formData, "sourceUrl", "The source link");
-    if (!link.ok) return { ok: false, error: link.error };
-    if (!link.value) {
-      return {
-        ok: false,
-        error:
-          "This needs the page you read the listing on. Without a source every signal from it is a rumour, and it will be read as a fact on a call.",
-      };
-    }
-    const sourceUrl = link.value;
+    // `requiredSourceUrl` rather than a second copy of it: it is 200 lines above
+    // in this same file, it is what the hand-typed path uses, and the two had
+    // already drifted to different wordings for the same refusal — #526 in
+    // miniature. It throws `InputError`, which the catch below converts.
+    const sourceUrl = requiredSourceUrl(formData);
     const sourceTitle = text(formData, "sourceTitle") || null;
     const primeOutcome = requiredEnum(
       formData,
@@ -888,11 +882,27 @@ export async function importSubListing(
       };
     }
 
+    const touched = new Set<string>();
+
     const summary = await prisma.$transaction(async (tx) => {
       let leadsCreated = 0;
       let leadsAttached = 0;
       let signalsProposed = 0;
       let rowsSkipped = 0;
+
+      /**
+       * Leads created inside THIS import, by normalised name.
+       *
+       * `leadCandidatesFor` only ever sees the leads that existed before the
+       * import, so it cannot match a row against one created two rows ago. A
+       * §4104 listing names a subcontractor once per PORTION OF WORK, so a sub
+       * doing both framing and plaster appears twice on one page — and that
+       * produced two `SalesLead` rows with the same name in a single
+       * transaction, which is the exact thing `leadMatch.ts` says the whole
+       * matching exercise is for. Both were then undeletable, because a lead
+       * with signals on it cannot be removed.
+       */
+      const createdHere = new Map<string, string>();
 
       for (const row of chosen) {
         const proposals = signalsForSub(row, parsed.header, primeOutcome);
@@ -918,15 +928,22 @@ export async function importSubListing(
           leadId = existing.id;
           leadsAttached += 1;
         } else {
-          const created = await tx.salesLead.create({
-            data: {
-              companyId: company.id,
-              companyName: row.name,
-              source: "OUTBOUND",
-            },
-          });
-          leadId = created.id;
-          leadsCreated += 1;
+          const key = normaliseCompanyName(row.name);
+          const already = key ? createdHere.get(key) : undefined;
+          if (already) {
+            leadId = already;
+          } else {
+            const created = await tx.salesLead.create({
+              data: {
+                companyId: company.id,
+                companyName: row.name,
+                source: "OUTBOUND",
+              },
+            });
+            leadId = created.id;
+            leadsCreated += 1;
+            if (key) createdHere.set(key, created.id);
+          }
         }
 
         await tx.salesLeadSignal.createMany({
@@ -942,11 +959,17 @@ export async function importSubListing(
           })),
         });
         signalsProposed += proposals.length;
+        touched.add(leadId);
       }
 
       return { leadsCreated, leadsAttached, signalsProposed, rowsSkipped };
     });
 
+    // BOTH pages, because the band is derived from these rows and renders on
+    // each. `createSalesLeadSignal` revalidates both and says why; this had the
+    // mirror-image omission, so a lead already open in another tab would have
+    // shown its old band.
+    for (const leadId of touched) revalidatePath(`/sales/${leadId}`);
     revalidatePath("/sales");
     return { ok: true, value: summary };
   } catch (err) {
