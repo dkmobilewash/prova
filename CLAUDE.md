@@ -1516,6 +1516,52 @@ anything about SIZE.
   main checkout, and a build failing ONLY on `Missing publishableKey` or
   `[db] DATABASE_URL is not set` is environmental, not your diff.
 
+  **AND IN A CLOUD AGENT CONTAINER THAT COMMAND DOES NOT COMPLETE AT ALL,
+  WHICH IS WORSE THAN IT SOUNDS.** Verified 2026-10-04: `pnpm install
+  --frozen-lockfile` dies on `ERR_PNPM_FETCH_403` fetching
+  `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz` — the `xlsx`
+  dependency, which is pinned to a tarball URL rather than to the npm
+  registry, and that host is not on the egress allowlist. It aborts after
+  about 931 of 1242 packages with **nothing linked into
+  `apps/web/node_modules`**, so 258 of 555 test files fail to load on
+  missing packages and `tsc` reports ~22,000 errors that are all
+  resolution noise.
+  
+  The sentence above — "takes seconds and nothing works without it" — is
+  still right about the consequence and wrong about the cause, and an agent
+  that reads it will run the command, watch it print progress, and carry on
+  believing it has dependencies. **Piping it to `tail` or `head` reports
+  exit 0**, because the pipe's exit status is `tail`'s; that is the
+  `set -o pipefail` scar in the Git rules arriving in a new place, and it
+  is how this was nearly missed twice in one session.
+
+  **What DOES work, and it is enough for the db suite.** The blocked
+  dependency belongs to `apps/web`, so the db package is untouched by it:
+
+      pnpm install --frozen-lockfile --filter @prova/db     # completes, ~28s
+
+  That generates the Prisma client and fetches the query engine. Postgres 16
+  is already installed at `/usr/lib/postgresql/16/bin` (not on `PATH`); it
+  refuses to run as root, and the scratchpad's parents are not traversable
+  by the `postgres` user, so the data directory has to go somewhere that
+  user owns. `prisma migrate deploy` then applies every migration, so the
+  scratch database is real and current. The two resolutions that are still
+  missing — `@prova/db` (the workspace link never got made) and `next/*` —
+  are aliases in a LOCAL vitest config: the package source for the first,
+  small stubs for `next/headers` and `next/navigation`. Nothing in the repo
+  changes and CI resolves the real modules.
+
+  `lib/actions/subListing.dbtest.ts` was written and run that way, and it
+  found a defect on its first run — in the harness, not the code:
+  `assertSalesAccess` reads `isProvaOperator` off the CONTEXT, so a mocked
+  `requireCompanyContext` without it fails six cases with "Not found" while
+  the company row in the database has the flag set.
+
+  **The limit is as important as the recipe:** this reaches the DB suite. It
+  does not reach the signed-in e2e suite, which still needs a browser the
+  egress proxy will not let near Clerk's FAPI host — the paragraph near the
+  top of this file about `pnpm test:e2e` stands unchanged.
+
 - **"Written, documented, and never called" is a recurring shape here,
   not a one-off.** Three live instances found in a single day: 161
   `.dbtest.ts` tests no runner referenced; an `acknowledgedSeverity`
