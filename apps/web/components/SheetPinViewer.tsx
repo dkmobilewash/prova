@@ -38,7 +38,7 @@ type Pin = {
 
 type Props = {
   fileUrl: string;
-  page: { id: string; pageNumber: number; widthPt: number; heightPt: number };
+  page: { id: string; pageNumber: number; widthPt: number; heightPt: number; imageUrl: string | null };
   pins: Pin[];
 };
 
@@ -63,6 +63,38 @@ export function SheetPinViewer({ fileUrl, page, pins }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+
+    // THE PREPARED PICTURE IS THE FAST PATH, AND ON A REAL SET IT IS THE ONLY
+    // USABLE ONE.
+    //
+    // Rendering the PDF here downloads the WHOLE PDF. Measured on production
+    // on 2026-10-05 against a real 113-sheet set: 46,337,022 bytes, one
+    // request, 138 SECONDS, to display one sheet.
+    //
+    // AND IT CANNOT BE FIXED WITH RANGE REQUESTS, which is the obvious answer
+    // and was measured before being believed. Vercel Blob honours a range
+    // (`Range: bytes=0-1023` -> 206, exactly 1024 bytes returned). But
+    // `Accept-Ranges` and `Content-Range` are not CORS-safelisted response
+    // headers and the store sends no `Access-Control-Expose-Headers`, so
+    // cross-origin JavaScript cannot read them. The headers visible to JS are
+    // exactly: cache-control, content-length, content-type, last-modified.
+    //
+    // pdf.js decides whether to range-fetch by reading `Accept-Ranges` off the
+    // response (`validateRangeRequestCapabilities`). It sees nothing, concludes
+    // ranges are unsupported, and streams the entire file -- and
+    // `disableAutoFetch` does nothing in that state. Do not add it here
+    // expecting a fix.
+    //
+    // So the viewer shows the PNG that "Prepare for the phone" already makes
+    // for the phone: one artefact, both surfaces. The PDF path below stays for
+    // a revision nobody has prepared yet, and that is the only time those 46MB
+    // are pulled.
+    if (page.imageUrl) {
+      const box = boxRef.current;
+      if (box) setWidth(box.clientWidth);
+      return;
+    }
+
     (async () => {
       try {
         const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -117,7 +149,7 @@ export function SheetPinViewer({ fileUrl, page, pins }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [fileUrl, page.pageNumber]);
+  }, [fileUrl, page.pageNumber, page.imageUrl]);
 
   const onSheetClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -199,7 +231,24 @@ export function SheetPinViewer({ fileUrl, page, pins }: Props) {
         }`}
         style={{ aspectRatio: `${page.widthPt} / ${page.heightPt}` }}
       >
-        <canvas ref={canvasRef} className="block w-full" />
+        {page.imageUrl ? (
+          /* eslint-disable-next-line @next/next/no-img-element --
+             the sheet is a blob URL of unknown pixel dimensions sitting in an
+             aspect-ratio box that already comes from the PDF's own page size.
+             next/image would want width/height it cannot know and would add an
+             optimiser round-trip to a file we already sized ourselves. */
+          <img
+            src={page.imageUrl}
+            alt={`Sheet ${page.pageNumber}`}
+            className="block w-full"
+            onLoad={() => {
+              const box = boxRef.current;
+              if (box) setWidth(box.clientWidth);
+            }}
+          />
+        ) : (
+          <canvas ref={canvasRef} className="block w-full" />
+        )}
         {width > 0 && (
           <svg
             className="pointer-events-none absolute inset-0"
