@@ -165,3 +165,120 @@ export function registrySummaryLine(lead: LeadRegistry): string | null {
   if (gc) parts.push(`listed by ${gc}`);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
+
+/**
+ * ── THE LINK THAT CLOSES THE GAP, AND WHY IT GOES TO A SEARCH BOX ──
+ *
+ * The card above tells a reader the licence "is the key a CSLB lookup joins on"
+ * and then gives them no way to perform one, which leaves the last step as
+ * retyping a licence into a search engine. This closes it.
+ *
+ * **IT LINKS THE SEARCH PAGE, NOT A LICENCE DETAIL PAGE, AND THAT IS A MEASURED
+ * DECISION RATHER THAN A CAUTIOUS ONE.** CSLB's licence detail page has a URL
+ * that looks exactly like a deep link —
+ * `…/CheckLicenseII/LicenseDetail.aspx?LicNum=<n>` — and it is the URL a browser
+ * shows you after you search, so it is the obvious thing to build. It does not
+ * work. Driven in a real Chromium on 2026-10-05:
+ *
+ *   - the SAME licence number through the search form reaches
+ *     `LicenseDetail.aspx?LicNum=<n>` and renders the detail page;
+ *   - that same URL requested COLD, in a fresh browser context with no CSLB
+ *     session, answers **HTTP 302 to `CheckLicense.aspx`** — the search page —
+ *     and the page that arrives has innerText BYTE-IDENTICAL (sha256 prefix
+ *     `145157bb836b22ae`) to simply visiting `CheckLicense.aspx`.
+ *
+ * Same number, two paths, different outcome: what differs is the session, not
+ * the licence. A link from this app is always the cold case, so a
+ * `LicenseDetail.aspx?LicNum=` href would promise a detail page and silently
+ * deliver an empty search box — a false claim that degrades quietly, which is
+ * the worst shape a link can have. Linking the search page lands in the same
+ * place and says so.
+ *
+ * **AND THE DETAIL PAGE ECHOES ANY NUMBER YOU HAND IT.** Requested through the
+ * form for a licence with no record, it returns 200 and renders
+ * `<h1>Contractor's License Detail for License # <the number you asked for></h1>`
+ * with NO business name, no status and no phone — the data panel is simply
+ * absent. So "it returned 200 and showed my licence number" is not evidence the
+ * licence exists, and a deep link could not have been self-validating even if it
+ * had been reachable.
+ *
+ * What is NOT established, said plainly rather than left to be assumed: nobody
+ * here has seen a POPULATED detail page. CSLB sits behind an F5 WAF that 403s
+ * this container's address after a handful of requests and blocks the
+ * business-name search outright, so no licence number CSLB itself vouches for
+ * could be obtained to render one. That bounds the claim "the detail page shows
+ * a phone number" — which is why no sentence here makes it. It does not touch
+ * the conclusion above, which rests on one number behaving two ways.
+ *
+ * ── WHAT THIS DELIBERATELY DOES NOT CLAIM ──
+ *
+ * Not that a phone number will be found; the measurement is a rate, and a rate
+ * is not a promise about one company. Not that an email can be found — CSLB
+ * publishes none, and nothing here may grow a sentence implying otherwise. And
+ * `telHref` is a link a PERSON taps, never a dialler: no line-type field exists
+ * anywhere in this data, roughly a third of these registrants are sole owners,
+ * and automatically dialling what might be a man's mobile is not a thing this
+ * product does.
+ */
+
+/**
+ * CSLB's licence-number search box. Verified to answer 200 in a real browser
+ * with the licence field (`#MainContent_LicNo`) on it.
+ *
+ * Deliberately NOT `LicenseDetail.aspx?LicNum=…`: that 302s to this very URL for
+ * anybody arriving without a CSLB session, which every visitor from this app is.
+ */
+export const CSLB_LICENCE_SEARCH_URL =
+  "https://www.cslb.ca.gov/OnlineServices/CheckLicenseII/CheckLicense.aspx";
+
+export type RegisterLookup = {
+  /** Where to send them. A search page, because a deep link does not exist. */
+  url: string;
+  /** The number they paste into it — shown on screen, never only in the href. */
+  licenceNumber: string;
+  /** The link's own words. Says "look up", never "call" or "phone number". */
+  linkLabel: string;
+  /**
+   * What happens when they get there, said BEFORE they click. A link that lands
+   * on a search box when you expected a record is a link people stop trusting.
+   */
+  instruction: string;
+};
+
+/**
+ * The lookup a lead's licence makes possible, or null when there is no licence.
+ *
+ * Null rather than a disabled link: there is nothing to look up with, the
+ * standing sentence already says so, and a dead control is worse than no
+ * control.
+ */
+export function registerLookup(lead: LeadRegistry): RegisterLookup | null {
+  const licence = present(lead.licenceNumber);
+  if (!licence) return null;
+  return {
+    url: CSLB_LICENCE_SEARCH_URL,
+    licenceNumber: licence,
+    linkLabel: "Look this licence up on CSLB",
+    instruction: `Opens CSLB's licence search. Paste ${licence} into the licence-number box — CSLB has no link that opens a licence directly.`,
+  };
+}
+
+/**
+ * A `tel:` href for a number that is on file, or null.
+ *
+ * Digits and a leading `+` only, because that is all `tel:` means: a stored
+ * number is whatever somebody typed, and "(909) 555-0134 ext 2" must not become
+ * an href that dials the extension as part of the number. The number is rendered
+ * AS TYPED beside this; only the href is stripped.
+ *
+ * Null when nothing survives stripping, so a phone column holding "call the
+ * office" does not become a link that dials nothing.
+ */
+export function telHref(lead: LeadRegistry): string | null {
+  const phone = present(lead.phone);
+  if (!phone) return null;
+  const plus = phone.trimStart().startsWith("+");
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 7) return null;
+  return `tel:${plus ? "+" : ""}${digits}`;
+}
