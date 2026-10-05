@@ -28,9 +28,15 @@ return identified && !!row.normalised && row.normalised === known.normalised;
 
 **Both halves are load-bearing, and the mutation says which failure each one prevents.**
 Dropping the name corroboration (`return identified;`) reds two named tests, one of them
-*"will not merge on a licence the name does not corroborate"* — because two unrelated
-fixture companies share `884201`, so an identifier-only match welds `Acme Lath Systems`
-onto `Valley Interior Systems` and the caller phones one company about another's job.
+*"will not merge on a licence the name does not corroborate"* — two unrelated fixture
+companies share licence `884501` there, so an identifier-only match welds
+`Rivergate Interior Systems` onto `Crossimport Drywall, Inc.` and the caller phones one
+company about another's job. (**Corrected after review:** the first version of this
+paragraph named `884201` / `Acme Lath Systems` / `Valley Interior Systems`. Those are real
+and they are the OTHER test the mutation reds — the in-pass one, *"will not merge rows the
+document gives different licence numbers"*. Two tests go red and the explanation was
+attached to the wrong one, which matters because it is the only evidence this paragraph
+offers.)
 `identifiersContradict` is the other direction: two rows that each carry a licence and
 carry *different* ones are never the same company however alike the names read.
 
@@ -41,12 +47,24 @@ change a single outcome, because `normalised` already decides every one of them.
 that cannot alter a result is not a weak guard, it is a claim nobody can check — so it is
 gone instead of reinforced.
 
+**Corrected after review: the sentence below about two licences was FALSE when it was
+written**, and is true now only because of the follow-up fix recorded in
+`601-the-bridge-between-two-registrants.md`. A blank-licence row of the same name sitting
+ABOVE two differently-licensed rows was a bridge between them, so all three welded into one
+lead — and reversing the row order gave two. The rule was order-dependent. Read that entry
+before relying on any "never" in this one.
+
 Pre-existing duplicates are **not** cleaned up and the merge target among them is picked
 deterministically — `orderBy: [{ createdAt: "asc" }, { id: "asc" }]`, with the `id` tie-break
 there because Postgres `CURRENT_TIMESTAMP` is transaction-start, so every row written by
 one `$transaction` ties on `createdAt` and `createdAt` alone would leave the choice to
 whatever order the planner felt like. Merged leads are pushed onto `importedHere`, so a
-second paste in the same session dedupes against them too rather than re-merging.
+second ROW OF THE SAME PASTE dedupes against them too rather than creating a duplicate.
+(**Corrected after review:** this said "a second paste in the same session", which is
+false. `importedHere` is declared inside the `$transaction` callback of one
+`importSubListing` call and does not survive it. A second paste dedupes through
+`leadHoldingThisLicence`'s database query — a different mechanism — and a reader would
+have gone looking for an in-memory cache across pastes that does not exist.)
 
 `listedByGc` is now written from `listedByGcFor(row, header)` — the row's own
 `Listed by:` where it has one, the page header's prime otherwise — read out of the

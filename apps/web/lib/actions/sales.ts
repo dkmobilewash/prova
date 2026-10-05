@@ -1018,7 +1018,7 @@ function sameCompany(
 function alreadyImported(
   row: Omit<ImportedCompany, "leadId">,
   imported: readonly ImportedCompany[],
-): string | null {
+): ImportedCompany | null {
   for (const seen of imported) {
     if (identifiersContradict(row, seen)) continue;
 
@@ -1029,11 +1029,41 @@ function alreadyImported(
        agencies' clerks agreeing by coincidence, which is exactly what
        `leadMatch.ts` refuses to act on — so this rung is not reachable from
        `leadHoldingThisLicence`, by construction rather than by a flag. */
-    if (row.spelling && row.spelling === seen.spelling) return seen.leadId;
+    if (row.spelling && row.spelling === seen.spelling) return seen;
 
-    if (sameCompany(row, seen)) return seen.leadId;
+    if (sameCompany(row, seen)) return seen;
   }
   return null;
+}
+
+/**
+ * EVERYTHING THIS PASTE NOW KNOWS ABOUT ONE FIRM, GATHERED ONTO THE ONE ENTRY
+ * THAT STANDS FOR IT.
+ *
+ * Found by review on 2026-10-05, and it is the defect the entry below was most
+ * likely to grow. `importedHere` held what a SINGLE row printed, and a row that
+ * merged into an existing entry taught it nothing — so the entry stayed as weak
+ * as the first row that made it, forever. Two consequences, both measured:
+ *
+ *   - a row merging onto a lead from an EARLIER import pushed its own
+ *     identifiers rather than that lead's, so a later row of the same paste
+ *     carrying a CONTRADICTING registration saw `registration: null`, found no
+ *     contradiction, matched on spelling and wrote another registrant's DIR
+ *     number onto a lead with real history;
+ *   - a blank-licence row above two rows carrying DIFFERENT licences was a
+ *     bridge between them: each compared against the blank entry, neither
+ *     contradicted it, and all three welded into one lead. Reversing the rows
+ *     gave two leads. The rule was order-dependent, and this file's own header
+ *     says a same-kind disagreement "outranks every resemblance".
+ *
+ * `identifiersContradict` was never the problem — `alreadyImported` has called
+ * it first since it was written. It was being asked about an entry that had not
+ * been told. So this fills the blanks and never overwrites, which is the same
+ * rule the lead columns themselves follow further down.
+ */
+function absorb(entry: ImportedCompany, row: Omit<ImportedCompany, "leadId">): void {
+  entry.licence ??= row.licence;
+  entry.registration ??= row.registration;
 }
 
 /**
@@ -1094,7 +1124,7 @@ async function leadHoldingThisLicence(
   tx: Pick<typeof prisma, "salesLead">,
   companyId: string,
   row: Omit<ImportedCompany, "leadId">,
-): Promise<string | null> {
+): Promise<{ leadId: string; licence: string | null; registration: string | null } | null> {
   // A row whose licence cell was blank, unreadable or ambiguous has no key, and
   // this path has nothing to offer it. `licenceKey` can say WHICH of those it
   // was; on an import there is nobody to tell.
@@ -1114,7 +1144,14 @@ async function leadHoldingThisLicence(
       licence: held.licenceNumber,
       registration: held.registrationNumber,
     });
-    if (sameCompany(row, known)) return held.id;
+    /* The lead's OWN identifiers travel back, not just its id. The row matched
+       on the licence, so that one is equal by construction — the registration is
+       the one that matters: the lead may hold one this document never printed,
+       and `absorb` needs it or the next row of this paste can contradict it
+       unseen. */
+    if (sameCompany(row, known)) {
+      return { leadId: held.id, licence: known.licence, registration: known.registration };
+    }
   }
 
   return null;
@@ -1261,7 +1298,13 @@ export async function importSubListing(
 
     const summary = await prisma.$transaction(async (tx) => {
       let leadsCreated = 0;
-      let leadsAttached = 0;
+      /* DISTINCT LEADS, not rows. The screen renders this as "…and N you
+         already had", and N is a count of records. It was two counters' worth of
+         `+= 1` — one per row on the hand-attach path, one per lead on the
+         licence path — so two rows landing on one lead said "2 you already had"
+         when there was one. Found by review; a Set makes the sentence true
+         however the two paths are mixed. */
+      const attachedLeads = new Set<string>();
       let signalsProposed = 0;
       let rowsSkipped = 0;
 
@@ -1319,7 +1362,7 @@ export async function importSubListing(
             );
           }
           leadId = existing.id;
-          leadsAttached += 1;
+          attachedLeads.add(existing.id);
         } else {
           const identity = identify(row);
           const already = alreadyImported(identity, importedHere);
@@ -1340,11 +1383,23 @@ export async function importSubListing(
              that introduces the bug it is fixing, one row further down. */
           const held = already ? null : await leadHoldingThisLicence(tx, company.id, identity);
           if (already) {
-            leadId = already;
+            leadId = already.leadId;
+            /* The entry learns what this row printed. Without it the entry stays
+               as weak as the row that made it and becomes a bridge between two
+               rows the documents say are different registrants — see `absorb`. */
+            absorb(already, identity);
           } else if (held) {
-            leadId = held;
-            leadsAttached += 1;
-            importedHere.push({ ...identity, leadId: held });
+            leadId = held.leadId;
+            attachedLeads.add(held.leadId);
+            /* The UNION of what the row printed and what the lead already holds,
+               never the row alone. The lead's registration is the half this
+               document may not carry. */
+            importedHere.push({
+              ...identity,
+              licence: identity.licence ?? held.licence,
+              registration: identity.registration ?? held.registration,
+              leadId: held.leadId,
+            });
           } else {
             const created = await tx.salesLead.create({
               data: {
@@ -1419,7 +1474,7 @@ export async function importSubListing(
         touched.add(leadId);
       }
 
-      return { leadsCreated, leadsAttached, signalsProposed, rowsSkipped };
+      return { leadsCreated, leadsAttached: attachedLeads.size, signalsProposed, rowsSkipped };
     });
 
     // BOTH pages, because the band is derived from these rows and renders on

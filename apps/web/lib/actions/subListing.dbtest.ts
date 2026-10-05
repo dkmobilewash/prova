@@ -433,6 +433,52 @@ describe("two rows are one company only when the document says so twice over", (
     expect(await leadsNamed("Acme Lath")).toHaveLength(2);
   });
 
+  /**
+   * THE RULE HAD TO BE THE SAME RULE WHICHEVER WAY UP THE PAGE IS, AND IT WAS
+   * NOT. Found by review 2026-10-05, measured in both orders.
+   *
+   * A blank-licence row was a BRIDGE between two rows the document says are
+   * different registrants. `importedHere` recorded what the row that MADE the
+   * entry printed, and a row merging into that entry taught it nothing — so a
+   * blank entry stayed blank, every later row compared against a blank, nobody
+   * contradicted anybody, and three rows welded into one lead. Put the blank row
+   * second and you got two leads from the same three rows.
+   *
+   * Both orders are asserted, which is the only form of this test that can fail
+   * for the right reason: with the arms separate, the one that was already
+   * passing would have looked like coverage.
+   */
+  it.each([
+    ["licence first", ["C-9 886001", "", "C-35 886002"], "Bridgefirst Drywall"],
+    ["blank first", ["", "C-9 886011", "C-35 886012"], "Bridgeblank Drywall"],
+  ])("gives the same answer with the blank-licence row %s", async (_order, licences, name) => {
+    const scopes = [
+      "Metal stud framing and drywall",
+      "Lath and cement plaster",
+      "Acoustical ceilings",
+    ];
+    const result = await importListing(
+      [
+        `Project: Beaumont Corporation Yard (${name})`,
+        "Agency: City of Beaumont",
+        "Prime Contractor: Erickson-Hall Construction",
+        "",
+        ...licences.map((licence, index) =>
+          [name, "Fontana, CA", licence, scopes[index]].filter(Boolean).join("\t"),
+        ),
+      ],
+      `https://example.test/bridge/${name.replace(/\s+/g, "-").toLowerCase()}.pdf`,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    /* Two leads, not three and not one. The two LICENSED rows contradict each
+       other, so they are two registrants; the blank row belongs with whichever
+       it shares a page position with and must not drag the other in. */
+    expect(result.value.leadsCreated).toBe(2);
+    expect(await leadsNamed(name)).toHaveLength(2);
+  });
+
   it("still lands everything these imports wrote PROPOSED, with no reviewer", async () => {
     // The promise above is about WHICH lead a row joins. It must not have bought
     // that by writing anything the band can read.
@@ -832,31 +878,60 @@ describe("the same subcontractor arriving in a second import", () => {
     ]);
   });
 
-  it("never merges two documents on the name alone", async () => {
-    // `leadMatch.ts`'s rule, unchanged by any of this: an Inc. and an LLC with
-    // one trading name normalise identically and are two legal companies. Here
-    // they also print different licences, which is the document SAYING so.
+  /**
+   * TWO ARMS, BECAUSE ONE ARM PROVED NOTHING. This case used to be a single pair
+   * of documents printing different licences under one trading name, asserting
+   * two leads — and review showed it was insensitive to the thing its title
+   * names. With the licences different, `leadHoldingThisLicence`'s own
+   * `where: { licenceNumber: row.licence }` returns NO candidate, so
+   * `sameCompany` is never called once: the name-corroboration leg and
+   * `identifiersContradict` could both be deleted and it stayed green. Measured,
+   * not argued — the same fixture with names sharing nothing gave a
+   * byte-identical summary.
+   *
+   * Holding the NAMES identical across both arms and varying only the licence
+   * means the name cannot be what decides either arm. An Inc. and an LLC with one
+   * trading name normalise the same.
+   *
+   * WHICH ARM BITES, STATED RATHER THAN IMPLIED, because the first draft of this
+   * docstring claimed both did. Arm 1 is the live one: it fails if the
+   * cross-import merge stops happening. Arm 2 cannot be made to fail by any
+   * single mutation, and that is a fact about the CODE rather than a weakness
+   * here — two independent guards enforce it. The `where: { licenceNumber:
+   * row.licence }` filter means a lead holding a different licence is never a
+   * candidate, and `identifiersContradict` would refuse it even if it were. Drop
+   * either one and arm 2 stays green. It is kept because it documents the
+   * behaviour and will catch the day somebody removes BOTH; it is not evidence
+   * about the name rule, which is `"will not merge on a licence the name does not
+   * corroborate"` below.
+   */
+  it.each([
+    ["one licence printed twice is one firm", "886401", "886401", 1],
+    ["two licences under one trading name are two firms", "886501", "886502", 2],
+  ])("%s", async (label, firstLicence, secondLicence, expected) => {
+    const name = expected === 1 ? "Twinsame Plastering" : "Twinsplit Plastering";
     const first = await importOneFirm(
-      "Beaumont Civic Center",
+      `Beaumont Civic Center (${label})`,
       "Erickson-Hall Construction",
-      "Twinname Plastering, Inc.\tBeaumont, CA\tC-35 884601\tLath and cement plaster",
-      "https://example.test/crossimport/twinname-inc.pdf",
+      `${name}, Inc.\tBeaumont, CA\tC-35 ${firstLicence}\tLath and cement plaster`,
+      `https://example.test/crossimport/${name.replace(/\s+/g, "-").toLowerCase()}-inc.pdf`,
     );
     expect(first.ok).toBe(true);
+    if (first.ok) expect(first.value.leadsCreated).toBe(1);
+
     const second = await importOneFirm(
-      "Banning Public Library",
+      `Banning Public Library (${label})`,
       "Erickson-Hall Construction",
-      "Twinname Plastering, LLC\tBeaumont, CA\tC-35 884602\tLath and cement plaster",
-      "https://example.test/crossimport/twinname-llc.pdf",
+      `${name}, LLC\tBeaumont, CA\tC-35 ${secondLicence}\tLath and cement plaster`,
+      `https://example.test/crossimport/${name.replace(/\s+/g, "-").toLowerCase()}-llc.pdf`,
     );
     expect(second.ok).toBe(true);
     if (!second.ok) return;
-    expect(second.value.leadsCreated).toBe(1);
-    expect(second.value.leadsAttached).toBe(0);
-    expect((await leadsNamed("Twinname Plastering")).map((lead) => lead.companyName)).toEqual([
-      "Twinname Plastering, Inc.",
-      "Twinname Plastering, LLC",
-    ]);
+
+    // The whole differential: same names both arms, and only the licence moved.
+    expect(second.value.leadsCreated).toBe(expected - 1);
+    expect(second.value.leadsAttached).toBe(expected === 1 ? 1 : 0);
+    expect(await leadsNamed(name)).toHaveLength(expected);
   });
 
   /**
@@ -1171,6 +1246,157 @@ describe("the same subcontractor arriving in a second import", () => {
 
     // Clean up the extra foreign lead here; `afterAll` only knows about one.
     await prisma.salesLead.delete({ where: { id: foreign.id } });
+  });
+
+  /**
+   * THE DEFECT THE CROSS-IMPORT MERGE WAS MOST LIKELY TO GROW, found by review
+   * 2026-10-05 and measured before it was fixed: a row merging onto a lead from
+   * an earlier import pushed ITS OWN identifiers onto `importedHere`, not the
+   * lead's. The lead held a DIR registration this document never printed, so the
+   * entry recorded `registration: null` — and the next row of the same paste,
+   * carrying a DIFFERENT registration, found no contradiction, matched on
+   * spelling, and wrote another registrant's DIR number onto a lead with real
+   * history. PROPOSED, well-formed, and about somebody else.
+   */
+  it("does not let a sibling row ride a weaker entry onto a lead it contradicts", async () => {
+    const holder = await prisma.salesLead.create({
+      data: {
+        companyId: context.company.id,
+        companyName: "Bridgecontra Drywall, Inc.",
+        licenceNumber: "886101",
+        registrationNumber: "1000061111",
+      },
+    });
+
+    const result = await importListing(
+      [
+        "Project: Rialto Transit Center",
+        "Agency: City of Rialto",
+        "Prime Contractor: Swinerton Builders",
+        "",
+        // Same licence as the stored lead, and no DIR cell — this one merges.
+        "Bridgecontra Drywall\tFontana, CA\tC-9 886101\tMetal stud framing and drywall",
+        // Same licence, same spelling, a DIR number that is NOT the lead's.
+        "Bridgecontra Drywall\tFontana, CA\tC-35 886101\t1000069999\tLath and cement plaster",
+      ],
+      "https://example.test/crossimport/bridgecontra.pdf",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // One row joined the lead; the contradicting one became its own.
+    expect(result.value.leadsAttached).toBe(1);
+    expect(result.value.leadsCreated).toBe(1);
+
+    /* The assertion that bites: the stored lead must carry no claim quoting the
+       other registrant's number. This is the harm, not the lead count. */
+    const onHolder = await prisma.salesLeadSignal.findMany({ where: { leadId: holder.id } });
+    expect(onHolder.length).toBeGreaterThan(0);
+    expect(onHolder.filter((signal) => signal.claim.includes("1000069999"))).toEqual([]);
+  });
+
+  /**
+   * "…and N you already had" IS A COUNT OF RECORDS, and it was two counters'
+   * worth of `+= 1`: one per ROW on the hand-attach path, one per LEAD on the
+   * licence path. Two rows landing on one lead reported two. Found by review;
+   * the fixture mixes both paths on purpose, because neither path alone can
+   * double-count.
+   */
+  it("counts one lead the reviewer already had, however many rows land on it", async () => {
+    const holder = await prisma.salesLead.create({
+      data: {
+        companyId: context.company.id,
+        companyName: "Doubletally Drywall, Inc.",
+        licenceNumber: "886201",
+      },
+    });
+
+    const listingText = [
+      "Project: Perris Community Center",
+      "Prime Contractor: Bernards Bros Inc",
+      "",
+      // Found by licence, with no help from the reviewer.
+      "Doubletally Drywall\tPerris, CA\tC-9 886201\tMetal stud framing and drywall",
+      // A different firm entirely, which the reviewer sends to the same lead.
+      "Unrelated Ceilings\tPerris, CA\tC-2 886299\tAcoustical ceilings",
+    ].join("\n");
+    const parsed = parseSubListing(listingText);
+    expect(parsed.rows, "the fixture parsed to the wrong number of rows").toHaveLength(2);
+    expect(parsed.unread).toHaveLength(0);
+
+    const result = await importSubListing(
+      form({
+        listingText,
+        sourceUrl: "https://example.test/crossimport/doubletally.pdf",
+        primeOutcome: "UNKNOWN",
+        lines: parsed.rows.map((row) => row.line).join(","),
+        [`attach:${parsed.rows[1].line}`]: holder.id,
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Both rows reached ONE pre-existing lead, so the sentence says one.
+    expect(result.value.leadsAttached).toBe(1);
+    expect(result.value.leadsCreated).toBe(0);
+    expect(await prisma.salesLeadSignal.count({ where: { leadId: holder.id } })).toBeGreaterThan(1);
+  });
+
+  /**
+   * THE `{ id: "asc" }` TIE-BREAK, WHICH NOTHING EXERCISED. The case above it
+   * gives its two leads explicitly different `createdAt` values, so the tie never
+   * fired and the tie-break could be deleted with the suite green — review found
+   * that, and it is the one thing the changelog had called "required, not tidy".
+   *
+   * The tie is reachable because Postgres `CURRENT_TIMESTAMP` is TRANSACTION
+   * start, so every row written by one `$transaction` shares it. That premise is
+   * asserted rather than assumed: without the equality check below, this test
+   * would quietly become another `createdAt` case.
+   */
+  it("breaks a createdAt tie on the id, so two runs cannot pick different leads", async () => {
+    /* THE IDS ARE EXPLICIT AND INSERTED IN THE WRONG ORDER ON PURPOSE. The first
+       version of this let both ids default, and the mutation that deletes the
+       tie-break SURVIVED it: `cuid()` is time-ordered, so the lower id is also
+       the row inserted first, which is roughly what Postgres hands back from a
+       two-row heap anyway. The test passed for a reason that had nothing to do
+       with the clause it was written for. Inserting the HIGHER id first makes
+       insertion order and id order disagree, so only the `orderBy` can produce
+       the right answer. */
+    const [a, b] = await prisma.$transaction([
+      prisma.salesLead.create({
+        data: {
+          id: "dbtesttiebreakzzzzzzzzzzz",
+          companyId: context.company.id,
+          companyName: "Tiebreak Drywall",
+          licenceNumber: "886301",
+        },
+      }),
+      prisma.salesLead.create({
+        data: {
+          id: "dbtesttiebreakaaaaaaaaaaa",
+          companyId: context.company.id,
+          companyName: "Tiebreak Drywall",
+          licenceNumber: "886301",
+        },
+      }),
+    ]);
+    // Both premises, asserted rather than assumed: one transaction means one
+    // CURRENT_TIMESTAMP, and the row inserted FIRST is the one with the HIGHER id.
+    expect(a.createdAt.getTime()).toBe(b.createdAt.getTime());
+    expect(a.id > b.id).toBe(true);
+
+    const [lower, higher] = [b, a];
+    const result = await importOneFirm(
+      "Eastvale Library",
+      "Swinerton Builders",
+      "Tiebreak Drywall\tEastvale, CA\tC-9 886301\tMetal stud framing and drywall",
+      "https://example.test/crossimport/tiebreak.pdf",
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.leadsCreated).toBe(0);
+
+    expect(await prisma.salesLeadSignal.count({ where: { leadId: lower.id } })).toBeGreaterThan(0);
+    expect(await prisma.salesLeadSignal.count({ where: { leadId: higher.id } })).toBe(0);
   });
 
   it("still lands every one of these PROPOSED, with no reviewer", async () => {
