@@ -3,7 +3,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { SalesLeadForm } from "@/components/SalesLeadForm";
 import { SubListingImport } from "@/components/SubListingImport";
-import { SalesLeadRow } from "@/components/SalesLeadRow";
+import { SalesLeadList } from "@/components/SalesLeadRow";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { viewerToday } from "@/lib/viewerToday";
 import {
@@ -62,7 +62,15 @@ export default async function SalesPage() {
 
   const leads = await prisma.salesLead.findMany({
     where: { companyId: company.id },
-    orderBy: { createdAt: "desc" },
+    /* The band is derived per read and stored nowhere, so the ORDER somebody
+       works down is decided after `qualify` runs — see `compareForCalling` in
+       components/SalesLeadRow.tsx. This stays the newest-first order the list
+       has always had, because it is also the comparator's tiebreak; `id`
+       settles the ties, which an import produces 60 of at a time (every lead
+       in one transaction shares `CURRENT_TIMESTAMP`). Without it Postgres may
+       return tied rows in any order, so the page would be deterministic only
+       by luck. */
+    orderBy: [{ createdAt: "desc" }, { id: "asc" }],
     include: {
       _count: { select: { opportunities: true } },
       /* Four fields, not three. `claim` is here because on a STRONG lead the
@@ -169,6 +177,42 @@ export default async function SalesPage() {
     ]),
   );
 
+  /**
+   * One object per lead, with the band DERIVED here and stored nowhere — a
+   * stored band would disagree with its own signals the moment one was
+   * dismissed. The ordering lives in `SalesLeadList`, over these objects,
+   * because the band cannot be an `ORDER BY`: there is no column.
+   *
+   * Hoisted out of the JSX rather than built inside the map, so that what the
+   * list is sorted on and what the row renders are one object.
+   */
+  const rows = leads.map((lead) => {
+    const q = qualify(lead.signals);
+    const summary = summaries.get(lead.id);
+    return {
+      id: lead.id,
+      companyName: lead.companyName,
+      contactName: lead.contactName,
+      email: lead.email,
+      phone: lead.phone,
+      source: lead.source,
+      licenceNumber: lead.licenceNumber,
+      city: lead.city,
+      listedByGc: lead.listedByGc,
+      opportunityCount: lead._count.opportunities,
+      band: q.band,
+      bandReason: q.reason,
+      awaitingReview: q.awaitingReview,
+      // Read only by the order, never rendered. ISO-8601 UTC, fixed width, so
+      // the comparator's string compare is a chronological one.
+      createdAt: lead.createdAt.toISOString(),
+      lastContactOn: summary?.lastContactOn ?? null,
+      daysSinceContact: summary?.daysSinceContact ?? null,
+      followUpOn: summary?.followUpOn ?? null,
+      followUpStanding: summary?.followUpStanding ?? null,
+    };
+  });
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <h1 className="mb-1 text-lg font-semibold text-ink">Sales CRM</h1>
@@ -230,45 +274,14 @@ export default async function SalesPage() {
         </section>
       )}
 
-      {leads.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="mb-4 text-sm text-ink-body">No leads recorded yet.</p>
       ) : (
-        <ul className="mb-4 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
-          {leads.map((lead) => (
-            <SalesLeadRow
-              key={lead.id}
-              lead={{
-                id: lead.id,
-                companyName: lead.companyName,
-                contactName: lead.contactName,
-                email: lead.email,
-                phone: lead.phone,
-                source: lead.source,
-                licenceNumber: lead.licenceNumber,
-                city: lead.city,
-                listedByGc: lead.listedByGc,
-                opportunityCount: lead._count.opportunities,
-                ...(() => {
-                  /* Derived per lead at read time, never stored — a stored
-                     band would disagree with its own signals the moment one
-                     was dismissed. */
-                  const q = qualify(lead.signals);
-                  return {
-                    band: q.band,
-                    bandReason: q.reason,
-                    awaitingReview: q.awaitingReview,
-                  };
-                })(),
-                lastContactOn: summaries.get(lead.id)?.lastContactOn ?? null,
-                daysSinceContact:
-                  summaries.get(lead.id)?.daysSinceContact ?? null,
-                followUpOn: summaries.get(lead.id)?.followUpOn ?? null,
-                followUpStanding:
-                  summaries.get(lead.id)?.followUpStanding ?? null,
-              }}
-            />
-          ))}
-        </ul>
+        /* Ordered strongest band first, inside the component that renders the
+           headings, so the order a person reads and the order the headings
+           claim cannot disagree. `BAND_RANK` had no caller but its own test
+           until this; see the header of components/SalesLeadRow.tsx. */
+        <SalesLeadList leads={rows} />
       )}
 
       <div className="flex flex-col gap-3">
