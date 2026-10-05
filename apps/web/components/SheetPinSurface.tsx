@@ -1,24 +1,32 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ensureSheetPages, rasteriseNextSheet } from "@/lib/actions";
+import { useRef, useState } from "react";
+import { storeSheetImage, uploadDrawingPdf } from "@/lib/actions";
 import { SheetPinViewer } from "./SheetPinViewer";
 import { Spinner } from "./Spinner";
 import type { SheetPinKind } from "@/lib/sheet-pins";
 
 /**
- * THE STEP BETWEEN "A PDF EXISTS" AND "A SHEET CAN BE PINNED ON".
+ * THE STEP BETWEEN "A REVISION EXISTS" AND "A SHEET CAN BE PINNED ON".
  *
- * A `DrawingRevision` is a file; a pin needs a `SheetPage` to sit on. Rather
- * than a server-side PDF parse — which would mean carrying `@napi-rs/canvas`
- * (see `lib/plan-ingest/planPdf.ts`) — this reads the page count and each
- * page's size from the pdfjs the browser is already using to DISPLAY the
- * drawing, and records them once.
+ * A drawing is UPLOADED here, into our own blob store, the way photos already
+ * are. The alternative — a link to wherever it lives — is what the form has
+ * always offered and it cannot support pinning, for two separate reasons both
+ * measured on production on 2026-10-05: a browser cannot read a cross-origin
+ * PDF without `Access-Control-Allow-Origin`, and a server cannot fetch one
+ * that is behind a login.
  *
- * It runs only when there are no pages yet, and `createMany({skipDuplicates})`
- * behind a unique key means two people opening the same revision at the same
- * moment cannot double-write. The router refresh is what turns the recorded
- * pages into a rendered sheet without the person pressing anything.
+ * **EVERYTHING IS DRAWN HERE, AND THAT IS THE POINT.** The browser doing the
+ * upload has the file in its hand, so it reads the page sizes and renders each
+ * page with the canvas it has natively — no fetch, no CORS, and no
+ * `@napi-rs/canvas` on the server. The server-side rasteriser this replaced
+ * needed that package, which needed `serverExternalPackages`, which stopped
+ * Vercel tracing the binary into the function: a runtime failure with
+ * typecheck, 8,900 tests and a full build all green.
+ *
+ * The phone is why the pictures exist at all: `apps/mobile` has no PDF
+ * renderer and no WebView, so a sheet reaches the field as an `<Image>` with
+ * an SVG overlay.
  */
 
 type Page = {
@@ -39,115 +47,186 @@ type Page = {
   }[];
 };
 
+/** How wide each sheet picture is drawn, in pixels.
+ *
+ * A compromise, and it should be read as one. A D-size sheet is 42 inches
+ * wide, so 2000px is about 48 dpi — enough to find a wall and drop a pin on
+ * it, not enough to read a dimension string. The phone shows it at ~390pt, so
+ * this is roughly 5x what the screen has. Raising it is one number and it is
+ * paid for on a tower crane with one bar of signal. */
+const SHEET_WIDTH_PX = 2000;
+
+async function loadPdfjs() {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+    "pdfjs-dist/legacy/build/pdf.worker.mjs",
+    import.meta.url,
+  ).toString();
+  return pdfjs;
+}
+
 export function SheetPinSurface({
   revisionId,
   fileUrl,
   pages,
 }: {
   revisionId: string;
-  fileUrl: string;
+  fileUrl: string | null;
   pages: Page[];
 }) {
   const [index, setIndex] = useState(0);
-  const [rendering, setRendering] = useState(false);
-  const [renderError, setRenderError] = useState<string | null>(null);
-  const [preparing, setPreparing] = useState(pages.length === 0);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const attempted = useRef(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    if (pages.length > 0 || attempted.current) return;
-    attempted.current = true;
-    let cancelled = false;
-    (async () => {
-      // THE BROWSER NO LONGER READS THE PDF. It used to, on the reasoning that
-      // pdf.js was already open to display it — and that cannot work for the
-      // files this app holds, because `fileUrl` points at Procore or a GC
-      // portal and a cross-origin PDF is unreadable in a browser without
-      // `Access-Control-Allow-Origin`. The server has no such restriction, so
-      // it reads the geometry; this just asks it to.
-      const result = await ensureSheetPages(revisionId);
-      if (cancelled) return;
-      if (!result.ok) {
-        setError(result.error);
-        setPreparing(false);
+  async function upload(file: File) {
+    setError(null);
+    try {
+      setBusy("Reading the drawing…");
+      const pdfjs = await loadPdfjs();
+      // From the FILE, not from a URL. No request leaves the browser, so
+      // nothing here depends on where the drawing came from.
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const doc = await pdfjs.getDocument({ data: bytes, isEvalSupported: false }).promise;
+
+      const read: { pageNumber: number; widthPt: number; heightPt: number }[] = [];
+      for (let n = 1; n <= doc.numPages; n += 1) {
+        const page = await doc.getPage(n);
+        const unit = page.getViewport({ scale: 1 });
+        read.push({ pageNumber: n, widthPt: unit.width, heightPt: unit.height });
+      }
+
+      setBusy(`Uploading the drawing (${doc.numPages} ${doc.numPages === 1 ? "sheet" : "sheets"})…`);
+      const form = new FormData();
+      form.set("file", file);
+      form.set("pages", JSON.stringify(read));
+      const saved = await uploadDrawingPdf(revisionId, form);
+      if (!saved.ok) {
+        setError(saved.error);
+        setBusy(null);
         return;
       }
-      // The server has the pages now; re-render from it rather than guessing
-      // their ids here.
+
+      // The sheets exist now but have no pictures. Reload so their ids are the
+      // server's rather than guessed here, and the drawing step picks up from
+      // the rows that come back.
       window.location.reload();
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [pages.length, revisionId]);
-
-  if (error) {
-    return <p className="rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</p>;
-  }
-  if (preparing) {
-    return <p className="text-sm text-slate-400">Reading the sheets in this drawing…</p>;
-  }
-  if (pages.length === 0) {
-    return <p className="text-sm text-slate-400">No sheets were found in this drawing.</p>;
-  }
-
-  const page = pages[Math.min(index, pages.length - 1)];
-  const unrendered = pages.filter((p) => p.imageUrl === null).length;
-
-  async function renderForThePhone() {
-    setRendering(true);
-    setRenderError(null);
-    // One sheet per call — see `rasteriseNextSheet`. Walk until it stops
-    // finding work, so a set of thirty sheets does not need thirty clicks.
-    for (let i = 0; i < pages.length; i += 1) {
-      const result = await rasteriseNextSheet(revisionId);
-      if (!result.ok) {
-        setRenderError(result.error);
-        setRendering(false);
-        return;
-      }
+    } catch {
+      setError("That file could not be read as a PDF.");
+      setBusy(null);
     }
-    setRendering(false);
-    window.location.reload();
   }
+
+  async function drawSheets() {
+    if (!fileUrl) return;
+    setError(null);
+    const todo = pages.filter((page) => page.imageUrl === null);
+    try {
+      setBusy("Opening the drawing…");
+      const pdfjs = await loadPdfjs();
+      // Our own blob URL, so this one request is same-store and public — the
+      // case the old design could never rely on.
+      const doc = await pdfjs.getDocument({ url: fileUrl, withCredentials: true }).promise;
+
+      for (const [done, sheet] of todo.entries()) {
+        setBusy(`Preparing sheet ${done + 1} of ${todo.length}…`);
+        const page = await doc.getPage(sheet.pageNumber);
+        const unit = page.getViewport({ scale: 1 });
+        const viewport = page.getViewport({ scale: SHEET_WIDTH_PX / unit.width });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(viewport.width);
+        canvas.height = Math.round(viewport.height);
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("no 2d context");
+        await page.render({ canvasContext: context, viewport }).promise;
+
+        const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+        if (!png) throw new Error("no image");
+
+        const form = new FormData();
+        form.set("image", new File([png], `${sheet.pageNumber}.png`, { type: "image/png" }));
+        form.set("widthPx", String(canvas.width));
+        const saved = await storeSheetImage(sheet.id, form);
+        if (!saved.ok) {
+          setError(saved.error);
+          setBusy(null);
+          return;
+        }
+      }
+      window.location.reload();
+    } catch {
+      setError("Those sheets could not be prepared.");
+      setBusy(null);
+    }
+  }
+
+  const unprepared = pages.filter((page) => page.imageUrl === null).length;
+  const page = pages.length > 0 ? pages[Math.min(index, pages.length - 1)] : null;
 
   return (
     <div className="space-y-3">
-      {unrendered > 0 && (
+      {error && (
+        <p className="rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</p>
+      )}
+
+      {pages.length === 0 ? (
+        <div className="space-y-2 rounded-md border border-slate-700 bg-slate-900/60 p-4">
+          <p className="text-sm text-slate-200">
+            {/* Said as the thing it is. A link to Procore is fine for reading
+                the drawing and cannot be pinned on, and a person has no way to
+                know that unless it is written here. */}
+            Upload the drawing to pin on it. A link to Procore or a GC portal can be opened and read, but
+            this app cannot see inside it — pinning needs the file itself.
+          </p>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/pdf,.pdf"
+            disabled={busy !== null}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void upload(file);
+            }}
+            className="block w-full text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-sky-500 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-950"
+          />
+        </div>
+      ) : unprepared > 0 ? (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-slate-700 bg-slate-900/60 p-3 text-sm">
           <span className="text-slate-300">
-            {/* The phone cannot open a PDF, so a sheet is only usable in the
-                field once it has been rendered to an image. Said in those
-                words rather than "not processed", which tells a foreman
-                nothing about what they can and cannot do on site. */}
-            {unrendered} of {pages.length} {pages.length === 1 ? "sheet is" : "sheets are"} not ready for the
+            {unprepared} of {pages.length} {pages.length === 1 ? "sheet is" : "sheets are"} not ready for the
             phone yet.
           </span>
           <button
             type="button"
-            onClick={renderForThePhone}
-            disabled={rendering}
+            onClick={drawSheets}
+            disabled={busy !== null}
             className="rounded-md bg-sky-500 px-3 py-2 text-sm font-medium text-slate-950 disabled:opacity-50"
           >
-            {rendering ? (
+            {busy ? (
               <>
                 <Spinner />
-                Preparing…
+                {busy}
               </>
             ) : (
               "Prepare for the phone"
             )}
           </button>
-          {renderError && <span className="text-rose-300">{renderError}</span>}
         </div>
+      ) : null}
+
+      {busy && pages.length === 0 && (
+        <p className="text-sm text-slate-400">
+          <Spinner />
+          {busy}
+        </p>
       )}
+
       {pages.length > 1 && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-slate-400">Sheet</span>
-          {pages.map((p, i) => (
+          {pages.map((row, i) => (
             <button
-              key={p.id}
+              key={row.id}
               type="button"
               onClick={() => setIndex(i)}
               aria-current={i === index}
@@ -157,13 +236,14 @@ export function SheetPinSurface({
                   : "border-slate-700 text-slate-300 hover:border-slate-500"
               }`}
             >
-              {p.pageNumber}
-              {p.pins.length > 0 && <span className="ml-1 text-xs text-slate-400">({p.pins.length})</span>}
+              {row.pageNumber}
+              {row.pins.length > 0 && <span className="ml-1 text-xs text-slate-400">({row.pins.length})</span>}
             </button>
           ))}
         </div>
       )}
-      <SheetPinViewer fileUrl={fileUrl} page={page} pins={page.pins} />
+
+      {page && fileUrl && <SheetPinViewer fileUrl={fileUrl} page={page} pins={page.pins} />}
     </div>
   );
 }
