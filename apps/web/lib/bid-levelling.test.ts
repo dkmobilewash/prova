@@ -399,3 +399,71 @@ describe("a lapsed price that is the one we carried", () => {
     expect(warning).toContain("Beta");
   });
 });
+
+/**
+ * TWO BEHAVIOURS A CLICK-THROUGH REPORTED AS SURPRISES, PINNED BECAUSE THEY
+ * ARE CORRECT.
+ *
+ * A browser test of #624 flagged both as things that looked wrong: a lapsed
+ * price replacing the "priced N days ago" note instead of showing both, and a
+ * price held "until today" still counting as live at 19:50 Denver when UTC had
+ * already rolled to the next day. Neither is a defect. Both are the kind of
+ * non-obvious correct behaviour somebody later "fixes", which is what these
+ * tests exist to stop — the posture `WalkthroughTour`'s `useMedia` note takes
+ * in CLAUDE.md: recorded because it reads like a finding and is not one.
+ */
+describe("expired and stale are mutually exclusive, on purpose", () => {
+  const TODAY = "2026-10-04";
+
+  it("reports EXPIRED only on a price that is both old and lapsed", () => {
+    // Four months old AND past the date the sub gave. Both could fire; only
+    // one does, because they are two answers to one question and showing both
+    // would flag the same quote twice for the same reason. Expiry wins: it is
+    // the sub's own statement, where staleness is our 90-day rule of thumb.
+    const oldAndLapsed = quote({
+      id: "a",
+      vendorName: "Acme",
+      amount: 82_000,
+      quotedOn: "2026-06-01",
+      validUntil: "2026-09-01",
+    });
+    const freshness = quoteFreshness(oldAndLapsed, TODAY);
+    expect(freshness?.level).toBe("expired");
+    expect(freshness?.note).toContain("lapsed");
+    // And NOT the day count — the tester saw this replace the "125 days ago"
+    // note and read the disappearance as a bug.
+    expect(freshness?.note).not.toContain("days ago");
+  });
+});
+
+describe("the expiry boundary follows the VIEWER'S calendar date", () => {
+  /**
+   * `quoteFreshness` compares two `YYYY-MM-DD` strings and reads no clock, so
+   * whoever supplies `today` decides the timezone. `/bids` supplies
+   * `viewerToday()` — the viewer's own date — which is the rule
+   * `components/localToday.ts` states for every date a person acts on.
+   *
+   * This is the scenario the click-through hit: 19:50 in Denver on the 4th is
+   * already the 5th in UTC. A price held "until the 4th" must still be live,
+   * because the person holding it has not reached the 5th. Using the UTC date
+   * would mark every such price dead for the last six hours of every day.
+   */
+  const HELD_UNTIL_THE_4TH = quote({
+    id: "a",
+    vendorName: "Acme",
+    amount: 82_000,
+    quotedOn: "2026-10-01",
+    validUntil: "2026-10-04",
+  });
+
+  it("is LIVE on the viewer's date, which is what the app passes", () => {
+    expect(quoteFreshness(HELD_UNTIL_THE_4TH, "2026-10-04")).toBeNull();
+  });
+
+  it("would be LAPSED on the UTC date, which is why the app must not pass it", () => {
+    // Same quote, same instant, one timezone later. The function is right
+    // either way; the page's choice of `today` is the decision, and this is
+    // the test that says which choice is the correct one.
+    expect(quoteFreshness(HELD_UNTIL_THE_4TH, "2026-10-05")?.level).toBe("expired");
+  });
+});
