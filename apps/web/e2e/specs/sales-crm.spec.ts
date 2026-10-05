@@ -8,6 +8,12 @@ import {
   IMPORT_LISTING_TEXT,
   IMPORT_NOT_OUR_TRADE,
   IMPORT_OUR_TRADES,
+  IMPORT_SLOT_DROPPED,
+  IMPORT_SLOT_EXPECTED,
+  IMPORT_SLOT_KEPT,
+  IMPORT_SLOT_LISTING,
+  IMPORT_SLOT_SOURCE_TITLE,
+  IMPORT_SLOT_SOURCE_URL,
   IMPORT_SOURCE_TITLE,
   IMPORT_SOURCE_URL,
   PIPELINE_LEAD_NAME,
@@ -480,6 +486,96 @@ test.describe("Prova's own sales CRM, behind the operator flag", () => {
         IMPORT_EXPECTED.awaitingReviewAfterImport,
       );
     }
+  });
+
+  /**
+   * TWO FIRMS ON ONE LINE, AND THE THING THE ALIASING MADE IMPOSSIBLE.
+   *
+   * `readLabelledColumnsForm` emits one row per BIDDER COLUMN, all stamped with the
+   * slot's own line — honestly, since the document prints them side by side. Until today
+   * the selection travelled as LINE NUMBERS, and two consequences followed: the server
+   * found more rows than keys and refused the whole paste, and on the screen
+   * `chosen[row.line]` was ONE boolean for both firms, so unticking either unticked both
+   * and one "Already a lead?" applied to both.
+   *
+   * The server half has five db cases against a real Postgres. **The screen half has
+   * none and can have none** — the per-row state lives in the component and nothing in
+   * this repo renders it. So this step does the thing that was impossible: it unticks ONE
+   * firm of a slot and requires the other to keep its own state.
+   *
+   * What makes each assertion here non-vacuous:
+   *
+   *   - both names asserted ABSENT from `/sales` first;
+   *   - the button says **2** before the untick and **1** after — a number the product
+   *     composes from its own per-row state, and the singular/plural is part of it;
+   *   - the kept row's checkbox asserted still CHECKED after the other is unticked. That
+   *     is the regression, directly: with one boolean for both, it would be unchecked;
+   *   - and the dropped firm asserted absent from the leads afterwards, so the untick
+   *     reached the server rather than only the screen.
+   *
+   * The form's second slot is present and empty because the dispatcher needs two "Name of
+   * Business" and two "License No." lines; a one-slot form takes the ordinary table path.
+   * `salesFixture.test.ts` pins that premise, and that the two rows really share a line,
+   * in the unit suite.
+   */
+  test("10. a form printing two firms on one line imports the one that stays ticked", async () => {
+    await page.goto("/sales");
+    await expectHealthy(page, "/sales before the slot-form import", { monitor });
+    for (const name of [IMPORT_SLOT_KEPT, IMPORT_SLOT_DROPPED]) {
+      await expect(page.getByText(name, { exact: false })).toHaveCount(0);
+    }
+
+    await page.getByRole("button", { name: "Read a subcontractor listing" }).click();
+    const form = page
+      .locator("form")
+      .filter({ has: page.locator('textarea[name="listingText"]') });
+
+    await form.locator('textarea[name="listingText"]').fill(IMPORT_SLOT_LISTING);
+    await form.locator('input[name="sourceUrl"]').fill(IMPORT_SLOT_SOURCE_URL);
+    await form.locator('input[name="sourceTitle"]').fill(IMPORT_SLOT_SOURCE_TITLE);
+    await form.getByText("Yes — I am reading an award, and this prime got it").click();
+
+    // BOTH READ, from one line. The reader hides neither.
+    for (const name of [IMPORT_SLOT_KEPT, IMPORT_SLOT_DROPPED]) {
+      await expect(form.getByText(name, { exact: false }).first()).toBeVisible();
+    }
+    await expect(
+      form.getByRole("button", { name: IMPORT_SLOT_EXPECTED.submitBoth, exact: true }),
+    ).toBeVisible();
+
+    // THE REGRESSION, DIRECTLY. Untick one firm of the slot; the other must keep its own
+    // state. Keyed by line, this single click unticked both and the button went to zero.
+    const keptBox = form.getByLabel(`Add ${IMPORT_SLOT_KEPT}`, { exact: true });
+    const droppedBox = form.getByLabel(`Add ${IMPORT_SLOT_DROPPED}`, { exact: true });
+    await expect(keptBox).toBeChecked();
+    await expect(droppedBox).toBeChecked();
+    await droppedBox.uncheck();
+    await expect(droppedBox).not.toBeChecked();
+    await expect(keptBox, "unticking one firm of a slot unticked the other").toBeChecked();
+
+    const submit = form.getByRole("button", { name: IMPORT_SLOT_EXPECTED.submitOne, exact: true });
+    await expect(submit).toBeVisible();
+    await expect(submit).toBeEnabled();
+
+    await settleAction(page, () => submit.click());
+
+    // Composed from the action's return value: one lead, five signals, nothing skipped.
+    await expect(page.getByText(IMPORT_SLOT_EXPECTED.done, { exact: true })).toBeVisible();
+    await expectHealthy(page, "/sales after importing one column of a slot", { monitor });
+
+    const kept = page.locator("li").filter({ hasText: IMPORT_SLOT_KEPT });
+    await expect(kept).toHaveCount(1);
+    await expect(kept).toContainText(IMPORT_EXPECTED.bandAfterImport);
+    // AND THE UNTICK REACHED THE SERVER. Without this the step is satisfied by a screen
+    // that drew the right number and sent both rows anyway.
+    await expect(page.getByText(IMPORT_SLOT_DROPPED, { exact: false })).toHaveCount(0);
+
+    // The claim on the kept lead quotes the line the two firms SHARE, which is the
+    // provenance being honest rather than inventing a line per column.
+    await kept.locator('a[href^="/sales/"]').first().click();
+    await page.waitForURL(/\/sales\/[A-Za-z0-9]+$/);
+    await expectHealthy(page, "the slot-form lead's own page", { monitor });
+    await expect(page.getByText(IMPORT_SLOT_EXPECTED.keptClaim, { exact: true })).toBeVisible();
   });
 });
 

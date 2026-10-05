@@ -399,3 +399,73 @@ export const IMPORT_EXPECTED = {
   /** `SalesLeadRow`'s unreviewed badge for five unchecked signals. */
   awaitingReviewAfterImport: "5 to check",
 } as const;
+
+/**
+ * TWO FIRMS PRINTED ACROSS ONE LINE — THE SHAPE THAT COULD BE READ AND NEVER
+ * IMPORTED, AND THE ONE THING ONLY A BROWSER CAN PROVE ABOUT THE FIX.
+ *
+ * `readLabelledColumnsForm` emits one row per BIDDER COLUMN and stamps every one with
+ * the slot's own line, honestly: the document prints them side by side. Until
+ * 2026-10-05 the selection travelled as LINE NUMBERS, so this shape was refused
+ * outright — and, on the screen, `chosen[row.line]` was ONE boolean for both firms.
+ * Unticking either unticked both, and one "Already a lead?" choice applied to both.
+ *
+ * The server half is proved against a real Postgres. The SCREEN half is not: the per-row
+ * checkbox state lives in the component and nothing in this repo renders it. So the step
+ * built on this fixture does the thing the aliasing made impossible — ticks one firm of a
+ * slot and leaves the other — and asserts the second checkbox keeps its own state.
+ *
+ * The second slot is present and empty on purpose. `buildingConnectedListing` dispatches
+ * only on **two** "Name of Business" lines and **two** "License No." lines, so a one-slot
+ * form takes the ordinary table path and this fixture would be about a different reader.
+ * That is also what the real documents look like: a form with six slots printed, two
+ * used.
+ *
+ * Column offsets are the document's structure rather than its formatting — this reader
+ * matches values by the column they start at, across the label lines — so the first value
+ * on each line is padded to a fixed width.
+ */
+const slotCell = (value: string) => value.padEnd(30, " ");
+export const IMPORT_SLOT_LISTING = [
+  "Project: Harbor Transit Centre, Package 2",
+  `Agency: ${E2E_TAG} Harbor Transit Authority`,
+  `Prime Contractor: ${E2E_TAG} Northgate Builders`,
+  "Bid Date: May 6, 2026",
+  "LIST OF SUBCONTRACTORS:",
+  "      Subcontractor 1 - Portion of the Work Activity",
+  `      (e.g. electrical, mechanical, concrete)       ${slotCell("Metal Stud Framing & Drywall")}Lath and Plaster`,
+  `      Subcontractor 1 - Name of Business            ${slotCell(`${E2E_TAG} Slotline Interiors`)}${E2E_TAG} Slotline Lathing`,
+  `      Subcontractor 1 - Location of Business (city) ${slotCell("Fontana")}COLTON`,
+  `      Subcontractor 1 - License No.                 ${slotCell("990871")}990872`,
+  `      Subcontractor 1 - DIR Registration No.        ${slotCell("1000030071")}1000030072`,
+  "      Subcontractor 2 - Portion of the Work Activity",
+  "      (e.g. electrical, mechanical, concrete)",
+  "      Subcontractor 2 - Name of Business",
+  "      Subcontractor 2 - Location of Business (city)",
+  "      Subcontractor 2 - License No.",
+  "      Subcontractor 2 - DIR Registration No.",
+].join("\n");
+
+export const IMPORT_SLOT_SOURCE_URL =
+  "https://example.com/zz-e2e/harbor-transit/list-of-subcontractors";
+export const IMPORT_SLOT_SOURCE_TITLE = `${E2E_TAG} Harbor Transit — package 2 sub list`;
+
+/** The firm the step KEEPS ticked, and the one it unticks. Both are in Prova's trades,
+ *  so both start ticked and the untick is the only thing that separates them. */
+export const IMPORT_SLOT_KEPT = `${E2E_TAG} Slotline Interiors`;
+export const IMPORT_SLOT_DROPPED = `${E2E_TAG} Slotline Lathing`;
+
+export const IMPORT_SLOT_EXPECTED = {
+  /** Two rows, and they are on the SAME line — the premise of the whole step. */
+  rowsParsed: 2,
+  /** Both ticked by default, both being trades Prova sells to. */
+  submitBoth: "Add 2 subcontractors",
+  /** After unticking one. Singular, which is itself a thing the product composes. */
+  submitOne: "Add 1 subcontractor",
+  /** One lead, five signals, nothing attached and nothing skipped. */
+  done: "5 signals to check across 1 new lead.",
+  /** Read off the kept firm's lead page. Line 7 is the slot's own line, which both
+   *  rows share — so this sentence is also the provenance being honest about a
+   *  document that prints two firms on one line. */
+  keptClaim: "Listed out of Fontana (line 7 of the listing)",
+} as const;

@@ -18,6 +18,10 @@ import { shouldInclude, signalsForSub } from "@/lib/sub-listing/signals";
 import {
   IMPORT_EXPECTED,
   IMPORT_LISTING_TEXT,
+  IMPORT_SLOT_DROPPED,
+  IMPORT_SLOT_EXPECTED,
+  IMPORT_SLOT_KEPT,
+  IMPORT_SLOT_LISTING,
   IMPORT_NOT_OUR_TRADE,
   IMPORT_OUR_TRADES,
   PIPELINE_OPPORTUNITIES,
@@ -331,5 +335,46 @@ describe("the listing specs/sales-crm.spec.ts pastes", () => {
     expect(proposed).toHaveLength(5);
     expect(BAND_LABELS[qualify(proposed).band]).toBe(IMPORT_EXPECTED.bandAfterImport);
     expect(IMPORT_EXPECTED.awaitingReviewAfterImport).toBe(`${proposed.length} to check`);
+  });
+});
+
+/**
+ * AND THE LABELLED-COLUMN FORM THE SAME SPEC PASTES, re-derived the same way.
+ *
+ * Its premise is the one thing that must hold or the step tests nothing: the two firms
+ * come off ONE line, so the screen's per-row state has to distinguish them by something
+ * other than the line. Asserted here, cheaply, instead of discovering it from a
+ * twenty-minute red run.
+ */
+describe("the labelled-column form specs/sales-crm.spec.ts pastes", () => {
+  const parsed = parseSubListing(IMPORT_SLOT_LISTING);
+  const included = parsed.rows.filter((row) => shouldInclude(row, undefined));
+
+  it("reads two firms off one line, both in our trades", () => {
+    expect(parsed.rows.map((row) => row.name)).toEqual([IMPORT_SLOT_KEPT, IMPORT_SLOT_DROPPED]);
+    expect(parsed.reconciliation.rowsParsed).toBe(IMPORT_SLOT_EXPECTED.rowsParsed);
+    // THE PREMISE. One line, two rows — without this the untick in the spec proves
+    // nothing, because distinguishing them would need no ordinal.
+    expect(new Set(parsed.rows.map((row) => row.line)).size).toBe(1);
+    // Both ticked by default, so the untick is the only thing separating them.
+    expect(included.map((row) => row.name)).toEqual([IMPORT_SLOT_KEPT, IMPORT_SLOT_DROPPED]);
+  });
+
+  it("promises the two button labels, plural then singular", () => {
+    expect(`Add ${included.length} subcontractor${included.length === 1 ? "" : "s"}`).toBe(
+      IMPORT_SLOT_EXPECTED.submitBoth,
+    );
+    expect("Add 1 subcontractor").toBe(IMPORT_SLOT_EXPECTED.submitOne);
+  });
+
+  it("carries the counts its summary sentence reports, and the claim it quotes", () => {
+    const kept = included[0]!;
+    const claims = signalsForSub(kept, parsed.header, "AWARDED");
+    // Five signals across one new lead, nothing attached, nothing skipped.
+    expect((IMPORT_SLOT_EXPECTED.done.match(/\d+/g) ?? []).map(Number)).toEqual([claims.length, 1]);
+    expect(claims.map((signal) => signal.claim)).toContain(IMPORT_SLOT_EXPECTED.keptClaim);
+    // And the line it quotes is the SHARED one, which is the provenance being honest
+    // about a document that prints two firms on one line.
+    expect(IMPORT_SLOT_EXPECTED.keptClaim).toContain(`(line ${kept.line} of the listing)`);
   });
 });
