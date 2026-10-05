@@ -22,7 +22,7 @@ import { looksCutOff, parseSubListing } from "@/lib/sub-listing/parse";
 import { licenceNumberFrom, readTypedLicence } from "@/lib/sales-licence";
 import { PRIME_OUTCOMES, listedByGcFor, signalsForSub } from "@/lib/sub-listing/signals";
 import type { ListedSub as ListedSubRow, SubListingParse } from "@/lib/sub-listing/parse";
-import { normaliseCompanyName } from "@/lib/sub-listing/leadMatch";
+import { identifiersContradict, normaliseCompanyName } from "@/lib/sub-listing/leadMatch";
 import { prisma } from "@prova/db";
 import {
   InputError,
@@ -937,21 +937,14 @@ function identify(row: {
   };
 }
 
-/**
- * BOTH SIDES PRINTED AN IDENTIFIER OF THE SAME KIND AND THEY DISAGREE — which
- * outranks every resemblance below, because the documents have already said
- * these are two registrants and no amount of name agreement un-says it.
+/*
+ * `identifiersContradict` MOVED to `lib/sub-listing/leadMatch.ts` and is
+ * imported above. It was private to this file until the review screen needed
+ * the same answer — and two copies of "are these the same registrant" in one
+ * app is the second-list failure CLAUDE.md records, free to drift in whichever
+ * direction nothing tested. `ImportedCompany` satisfies its parameter type
+ * structurally, so every call site below is unchanged.
  */
-function identifiersContradict(
-  row: Omit<ImportedCompany, "leadId">,
-  known: Omit<ImportedCompany, "leadId">,
-): boolean {
-  const contradicts = (a: string | null, b: string | null) => a !== null && b !== null && a !== b;
-  return (
-    contradicts(row.licence, known.licence) ||
-    contradicts(row.registration, known.registration)
-  );
-}
 
 /**
  * THE RULE THAT TRAVELS BETWEEN DOCUMENTS: an identifier neither party typed,

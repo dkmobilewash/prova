@@ -11,7 +11,7 @@ import {
   signalsForSub,
   type PrimeOutcome,
 } from "@/lib/sub-listing/signals";
-import { leadCandidatesFor } from "@/lib/sub-listing/leadMatch";
+import { leadCandidatesFor, type MatchEvidence } from "@/lib/sub-listing/leadMatch";
 import { tradeScopeLabel } from "@/lib/trade-scopes";
 
 /**
@@ -54,7 +54,34 @@ import { tradeScopeLabel } from "@/lib/trade-scopes";
  * conversation and a claim that congratulates a man on a job he lost.
  */
 
-type ExistingLead = { id: string; companyName: string };
+/**
+ * The leads already on file, as this screen needs them. The two identifier
+ * columns are here because `leadCandidatesFor` matches on them — without them
+ * it falls back to comparing names, and a licence collision with a differently
+ * spelled name shows the reviewer nothing at all. `/sales` selects every scalar
+ * on the lead, so widening this costs no extra query.
+ */
+type ExistingLead = {
+  id: string;
+  companyName: string;
+  licenceNumber: string | null;
+  registrationNumber: string | null;
+};
+
+/**
+ * One true sentence per kind of evidence, as a TOTAL record rather than the
+ * ternary this used to be. `leadMatch.ts`'s own header explains why: a ternary
+ * over a two-value union printed "(similar name)" for everything that was not
+ * an exact name match, so adding a licence match to it would have labelled a
+ * row whose name is nothing like the lead's as a similar name. A record keyed
+ * on `MatchEvidence` fails to compile when a value is added without a label.
+ */
+const EVIDENCE_LABEL: Record<MatchEvidence, string> = {
+  SAME_LICENCE: " (same licence number)",
+  SAME_REGISTRATION: " (same DIR registration)",
+  SAME_NAME: " (same name)",
+  SIMILAR_NAME: " (similar name)",
+};
 
 export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
   const router = useRouter();
@@ -106,8 +133,8 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
    * "Already a lead? → Acme Drywall, Inc." on line 9, setting
    * `attach[9] = acmeLeadId`. They then re-paste a corrected block with one
    * extra line at the top. Line 9 is now Baker Plastering. The `<select>`
-   * renders only when `candidates.length > 0`, so if Baker has no name
-   * candidate THERE IS NO DROPDOWN ON SCREEN AT ALL — and the submit loop
+   * renders only when `matches.attachable.length > 0`, so if Baker has no
+   * attachable candidate THERE IS NO DROPDOWN ON SCREEN AT ALL — and the submit loop
    * still reads `attach[row.line]` unconditionally and sends
    * `attach:9 = acmeLeadId`. Server-side the only checks are that the lead
    * exists and belongs to the company; nothing compares the lead's name to the
@@ -397,7 +424,10 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
           ) : (
             <ul className="mt-4 flex flex-col gap-3">
               {parsed.rows.map((row) => {
-                const candidates = leadCandidatesFor(row.name, leads);
+                const matches = leadCandidatesFor(
+                  { name: row.name, licence: row.licence, registration: row.registration },
+                  leads,
+                );
                 const proposals = signalsForSub(row, parsed.header, primeOutcome);
                 const checked = includes(row);
                 return (
@@ -460,7 +490,7 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
                           </ul>
                         )}
 
-                        {candidates.length > 0 && (
+                        {matches.attachable.length > 0 && (
                           <label className="mt-2 flex flex-col gap-1 text-xs text-ink-label">
                             Already a lead?
                             <select
@@ -472,15 +502,30 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
                               className="rounded-md border border-line-card bg-surface px-2 py-1 text-sm text-ink-body"
                             >
                               <option value="">No — add a new lead</option>
-                              {candidates.map((candidate) => (
+                              {matches.attachable.map((candidate) => (
                                 <option key={candidate.lead.id} value={candidate.lead.id}>
                                   {candidate.lead.companyName}
-                                  {candidate.confidence === "SAME" ? " (same name)" : " (similar name)"}
+                                  {EVIDENCE_LABEL[candidate.evidence]}
                                 </option>
                               ))}
                             </select>
                           </label>
                         )}
+
+                        {/* A lead the DOCUMENTS say is not this row: both printed an
+                            identifier of the same kind and they disagree. It is
+                            deliberately not in the dropdown — attaching would weld two
+                            firms together — and equally deliberately not hidden, because
+                            one of the two numbers may be a transposed digit somebody
+                            needs to go and fix. Both are printed so they can check. */}
+                        {matches.differentRegistrant.map((other) => (
+                          <p key={other.lead.id} className="mt-2 text-xs text-tag-amber-ink">
+                            {other.lead.companyName} is already a lead with {other.kind}{" "}
+                            {other.existing}; this row prints {other.listed}. Different
+                            registrants, so it is not offered above &mdash; if one of the two
+                            is a typo, fix it on the lead first.
+                          </p>
+                        ))}
                       </div>
                     </div>
                   </li>

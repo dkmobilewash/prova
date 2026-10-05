@@ -290,7 +290,17 @@ export default async function SalesPage() {
             it is the same decision made at a different scale: one company you
             heard about, or every sub a prime named on one job. */}
         <SubListingImport
-          leads={leads.map((lead) => ({ id: lead.id, companyName: lead.companyName }))}
+          /* The two identifier columns travel with the name. They are what
+             `leadCandidatesFor` matches a listed subcontractor on, and a lead
+             whose licence collides with a pasted row is invisible to the
+             reviewer without them. `findMany` above has no field `select`, so
+             every scalar is already in hand and this adds no query. */
+          leads={leads.map((lead) => ({
+            id: lead.id,
+            companyName: lead.companyName,
+            licenceNumber: lead.licenceNumber,
+            registrationNumber: lead.registrationNumber,
+          }))}
         />
       </div>
     </div>
