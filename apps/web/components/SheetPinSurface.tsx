@@ -175,7 +175,31 @@ export function SheetPinSurface({
         canvas.height = Math.round(viewport.height);
         const context = canvas.getContext("2d");
         if (!context) throw new Error("no 2d context");
-        await page.render({ canvasContext: context, viewport }).promise;
+        // `intent: "print"` IS NOT ABOUT PRINTING. IT IS THE ONLY WAY THIS
+        // FINISHES IF YOU LOOK AT ANOTHER TAB.
+        //
+        // pdf.js schedules each chunk of a render with
+        // `requestAnimationFrame` — and a hidden tab never fires one, so the
+        // render stops dead and never resumes. Read out of the installed
+        // pdfjs-dist 4.10.38 rather than guessed:
+        //
+        //   useRequestAnimationFrame: !intentPrint            (pdf.mjs:16971)
+        //   _scheduleNext() { this._useRequestAnimationFrame
+        //       ? window.requestAnimationFrame(...)           (frozen)
+        //       : Promise.resolve().then(this._nextBound) }   (a microtask)
+        //
+        // Measured in the live page on 2026-10-05 while preparing a real
+        // 113-sheet set: the job froze on sheet 17, `document.visibilityState`
+        // was "hidden", and a probe rAF did not fire within 4 seconds. The
+        // button still read "Preparing sheet 17 of 113…", so it looked like it
+        // was working. This job takes half an hour on a real set — nobody is
+        // going to sit and watch the tab, which makes the rAF path unusable
+        // rather than merely slow.
+        //
+        // The print intent also happens to be the right APPEARANCE here: this
+        // PNG is a stand-in for the paper sheet, so printed annotations are
+        // what a foreman should see.
+        await page.render({ canvasContext: context, viewport, intent: "print" }).promise;
 
         const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
         if (!png) throw new Error("no image");
