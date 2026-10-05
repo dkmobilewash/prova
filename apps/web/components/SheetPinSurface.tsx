@@ -158,7 +158,12 @@ export function SheetPinSurface({
       const pdfjs = await loadPdfjs();
       // Our own blob URL, so this one request is same-store and public — the
       // case the old design could never rely on.
-      const doc = await pdfjs.getDocument({ url: fileUrl, withCredentials: true }).promise;
+      // Our own blob URL, and deliberately WITHOUT `withCredentials` -- that
+      // flag makes it a credentialed cross-origin request, which Vercel Blob
+      // refuses because it answers with `Access-Control-Allow-Origin: *`.
+      // Measured: omit -> 206, include -> TypeError. The file is public by
+      // construction, so there is nothing to send.
+      const doc = await pdfjs.getDocument({ url: fileUrl }).promise;
 
       for (const [done, sheet] of todo.entries()) {
         setBusy(`Preparing sheet ${done + 1} of ${todo.length}…`);
