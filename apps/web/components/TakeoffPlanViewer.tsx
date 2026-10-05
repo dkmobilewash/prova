@@ -18,7 +18,7 @@ import {
   type StoredCalibration,
 } from "@/lib/takeoff-plan";
 import { saveTakeoffCalibration, saveTakeoffMeasurement } from "@/lib/actions";
-import type { PlanSheet } from "@/lib/takeoff-plan-view";
+import type { PlanSheet, PrintedScaleByPage } from "@/lib/takeoff-plan-view";
 import { TOOLS, type ToolId } from "@/lib/takeoff-plan-view";
 
 /**
@@ -60,10 +60,20 @@ export function TakeoffPlanViewer({
   jobId,
   planId,
   sheets,
+  printedScaleByPage,
 }: {
   jobId: string;
   planId: string;
   sheets: PlanSheet[];
+  /**
+   * The title-block scale per PAGE NUMBER, deliberately not per sheet.
+   *
+   * A `PlanSheet` only exists once somebody has saved a calibration on that
+   * page, so reading this off `sheet` made it null on every FIRST calibration
+   * — the only time it has anything to say. See the note in
+   * `takeoff-plan-view.ts`.
+   */
+  printedScaleByPage: PrintedScaleByPage;
 }) {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState<number | null>(null);
@@ -415,7 +425,7 @@ export function TakeoffPlanViewer({
               planId={planId}
               pageNumber={pageNumber}
               pageWidthPt={pageSize?.widthPt ?? null}
-              printedScale={sheet?.printedScale ?? null}
+              printedScale={printedScaleByPage[pageNumber] ?? null}
               existingLabel={sheet?.label ?? ""}
               draft={calibrationDraft}
               onSaved={() => {

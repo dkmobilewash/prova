@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TOOLS, type ToolId } from "./takeoff-plan-view";
+import { printedScalesFromProposals, TOOLS, type ToolId } from "./takeoff-plan-view";
 import { RECIPES } from "./takeoff-recipes";
 
 /**
@@ -57,5 +57,68 @@ describe("the takeoff viewer's tool list", () => {
     // measurement, which is why `kindOf` in the viewer returns null for them.
     const measuring = ids.filter((id) => id !== "pan" && id !== "calibrate");
     expect(measuring).toEqual(["linear", "area", "count"]);
+  });
+});
+
+/**
+ * THE TITLE-BLOCK SCALE, KEYED BY PAGE NUMBER AND NOT BY SHEET.
+ *
+ * #623 shipped this on `PlanSheet` and a click-through found it dead. A
+ * `PlanSheet` is built from a `TakeoffPlanPage`, and the only thing that
+ * creates one is saving a calibration — so on the FIRST calibration of a
+ * sheet there was no row, no sheet, and no printed scale, which is precisely
+ * when the comparison has something to say. Every other notice in that dialog
+ * is computed from the draft line and the live page width, so the feature
+ * looked healthy while the one addition that needed stored data was null.
+ *
+ * The field is deleted rather than patched, so `sheet?.printedScale` is a type
+ * error now. These tests cover what is left that can still be got wrong: the
+ * mapping.
+ */
+describe("the printed scale per page", () => {
+  it("keeps the NEWEST reading for a page, which is the one the caller lists first", () => {
+    // Proposals are append-only — a re-read inserts rather than overwrites —
+    // so first-seen under a `createdAt desc` order is the current reading.
+    expect(
+      printedScalesFromProposals([
+        { pageNumber: 1, proposedScale: '1/4" = 1\'-0"' },
+        { pageNumber: 1, proposedScale: '1/8" = 1\'-0"' },
+      ]),
+    ).toEqual({ 1: '1/4" = 1\'-0"' });
+  });
+
+  it("keys by page number, so a page nobody has calibrated still has its scale", () => {
+    // The regression, stated as a property: nothing here involves a sheet, a
+    // calibration or a TakeoffPlanPage id.
+    expect(printedScalesFromProposals([{ pageNumber: 7, proposedScale: '1" = 20\'' }])).toEqual({
+      7: '1" = 20\'',
+    });
+  });
+
+  it("skips a proposal with no scale rather than storing an empty answer", () => {
+    // A key that exists with nothing behind it invites a caller to read
+    // presence as an answer.
+    expect(printedScalesFromProposals([{ pageNumber: 2, proposedScale: null }])).toEqual({});
+  });
+
+  it("lets a later page's real reading through when an earlier one had none", () => {
+    expect(
+      printedScalesFromProposals([
+        { pageNumber: 3, proposedScale: null },
+        { pageNumber: 3, proposedScale: '3/32" = 1\'-0"' },
+      ]),
+    ).toEqual({ 3: '3/32" = 1\'-0"' });
+  });
+
+  it("handles several pages at once and an empty set", () => {
+    expect(
+      printedScalesFromProposals([
+        { pageNumber: 1, proposedScale: '1/4" = 1\'-0"' },
+        { pageNumber: 2, proposedScale: "AS NOTED" },
+      ]),
+    ).toEqual({ 1: '1/4" = 1\'-0"', 2: "AS NOTED" });
+    // "AS NOTED" is carried verbatim on purpose: deciding it names no scale is
+    // `standardScaleFromText`'s job, and this map is not where judgement goes.
+    expect(printedScalesFromProposals([])).toEqual({});
   });
 });
