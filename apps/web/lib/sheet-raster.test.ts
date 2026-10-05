@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { RASTER_WIDTH_PX, countPages, rasterisePage } from "./sheet-raster";
+import { RASTER_WIDTH_PX, countPages, rasterisePage, readPageSizes } from "./sheet-raster";
 
 /**
  * THIS TEST RENDERS A REAL PDF, which is the only reason it is worth having.
@@ -96,5 +96,28 @@ describe("a plan page becomes a picture", () => {
     ctx.drawImage(img, 0, 0, 1, 1, 0, 0, 1, 1);
     const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
     expect({ r, g, b, a }).toEqual({ r: 255, g: 255, b: 255, a: 255 });
+  });
+});
+
+describe("every page's size, read without rendering", () => {
+  it("reports one entry per page, with the page's own dimensions", async () => {
+    const pages = await readPageSizes(wide());
+    expect(pages).toHaveLength(await countPages(wide()));
+    expect(pages[0]).toMatchObject({ pageNumber: 1, widthPt: 420, heightPt: 300 });
+  });
+
+  it("reads a NON-SQUARE page correctly, which is the only kind that can fail", async () => {
+    // A square fixture would pass whether or not width and height were swapped.
+    const [page] = await readPageSizes(wide());
+    expect(page.heightPt / page.widthPt).toBeCloseTo(0.714, 2);
+  });
+
+  it("agrees with what rasterisePage reports for the same page", async () => {
+    // Two paths to the same numbers. If they ever disagree, every pin on that
+    // sheet is in the wrong place, because `y` is a fraction of the width.
+    const [fromSizes] = await readPageSizes(wide());
+    const fromRaster = await rasterisePage(wide(), 1);
+    expect(fromSizes.widthPt).toBe(fromRaster.widthPt);
+    expect(fromSizes.heightPt).toBe(fromRaster.heightPt);
   });
 });

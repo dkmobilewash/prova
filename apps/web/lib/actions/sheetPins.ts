@@ -7,7 +7,7 @@ import { actionFail as fail, actionOk as ok, runAction, type ActionResult } from
 import { parseNumericInput } from "@/lib/numeric-input";
 import { can } from "@/lib/permissions";
 import { put } from "@vercel/blob";
-import { rasterisePage } from "@/lib/sheet-raster";
+import { rasterisePage, readPageSizes } from "@/lib/sheet-raster";
 import { pinContentProblem, pinPlacementProblem, type SheetPinKind } from "@/lib/sheet-pins";
 
 /**
@@ -32,8 +32,6 @@ import { pinContentProblem, pinPlacementProblem, type SheetPinKind } from "@/lib
  * Action message to a digest, so the sentence explaining why nothing happened
  * would never reach the person holding the phone.
  */
-
-export type SheetPageInput = { pageNumber: number; widthPt: number; heightPt: number };
 
 const JOBS_ONLY =
   "Job correspondence isn't part of your job function. The account owner sets who sees what, on the Team page.";
@@ -140,49 +138,62 @@ export async function deleteSheetPin(pinId: string): Promise<ActionResult> {
 
 
 /**
- * Record the pages of a revision's PDF, once, from what the browser read.
+ * Record the pages of a revision's PDF, once, by READING IT ON THE SERVER.
  *
- * THE DIMENSIONS COME FROM THE CLIENT AND THAT IS NOT A SHORTCUT. pdf.js has
- * already opened this document to display it, so the page count and each
- * page's post-/Rotate size at `scale: 1` are known there for free. Asking the
- * server for them would mean a second PDF parse — and server-side pdfjs needs
- * `@napi-rs/canvas`, which this app deliberately does not carry (see
- * `lib/plan-ingest/planPdf.ts`).
+ * **IT USED TO TAKE THE DIMENSIONS FROM THE BROWSER AND THAT COULD NOT WORK.**
+ * The reasoning was that pdf.js is already open to display the drawing, so the
+ * page count and sizes are free there and the server needs no PDF parse. It is
+ * also impossible for the files this app holds: `fileUrl` is a LINK to wherever
+ * the drawing lives — the field's own help text says "Procore, Box, the GC's
+ * portal" — and a browser can only read a cross-origin PDF when the host sends
+ * `Access-Control-Allow-Origin`. None of those do. Found on production
+ * 2026-10-05, where the server fetched the probe file fine (200, 13,264 bytes)
+ * and the browser could not read a byte of it.
  *
- * What stops a client lying: nothing here trusts the numbers for MONEY. A
- * wrong `widthPt` makes pins on that sheet sit wrong for the person who sent
- * it and nobody else, and `@@unique([revisionId, pageNumber])` plus
- * `skipDuplicates` means the FIRST reader's numbers win and later calls cannot
- * overwrite them. The bound is deliberate: this is a display geometry, not a
- * quantity, and `lib/takeoff-plan.ts` draws the same line for the same reason.
+ * Reading it here removes the CORS requirement AND the question the old version
+ * had to answer about trusting a client's numbers: nothing comes from the
+ * client now.
+ *
+ * `skipDuplicates` behind `@@unique([revisionId, pageNumber])` makes this safe
+ * to call repeatedly, so two people opening the same revision cannot double-
+ * write and a retry is free.
  */
-export async function ensureSheetPages(revisionId: string, pages: SheetPageInput[]): Promise<ActionResult> {
+export async function ensureSheetPages(revisionId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
     if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
     const revision = await prisma.drawingRevision.findFirst({
       where: { id: revisionId, set: { companyId: context.company.id } },
-      select: { id: true },
+      select: { id: true, fileUrl: true },
     });
     if (!revision) return fail("That drawing revision is not on this account.");
+    if (!revision.fileUrl) return fail("That revision has no drawing attached.");
 
-    const usable = pages.filter(
-      (p) =>
-        Number.isInteger(p.pageNumber) &&
-        p.pageNumber > 0 &&
-        Number.isFinite(p.widthPt) &&
-        Number.isFinite(p.heightPt) &&
-        p.widthPt > 0 &&
-        p.heightPt > 0,
-    );
-    if (usable.length === 0) return fail("That PDF reported no usable pages.");
+    const already = await prisma.sheetPage.count({ where: { revisionId: revision.id } });
+    if (already > 0) return ok; // already read; nothing to do is success
+
+    let pages: { pageNumber: number; widthPt: number; heightPt: number }[];
+    try {
+      const response = await fetch(revision.fileUrl);
+      if (!response.ok) {
+        // The common case by far, and worth saying as the thing it is: the
+        // link points somewhere this app cannot reach without a login.
+        return fail(
+          "That drawing could not be fetched. The link has to be one this app can open without signing in — a file behind Procore or a GC portal cannot be read from here.",
+        );
+      }
+      pages = await readPageSizes(Buffer.from(await response.arrayBuffer()));
+    } catch {
+      return fail("That drawing could not be fetched, so its sheets could not be read.");
+    }
+    if (pages.length === 0) return fail("That PDF reported no usable pages.");
 
     await prisma.sheetPage.createMany({
-      data: usable.map((p) => ({
+      data: pages.map((page) => ({
         revisionId: revision.id,
-        pageNumber: p.pageNumber,
-        widthPt: p.widthPt,
-        heightPt: p.heightPt,
+        pageNumber: page.pageNumber,
+        widthPt: page.widthPt,
+        heightPt: page.heightPt,
       })),
       skipDuplicates: true,
     });

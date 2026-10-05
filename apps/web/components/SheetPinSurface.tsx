@@ -60,45 +60,27 @@ export function SheetPinSurface({
     attempted.current = true;
     let cancelled = false;
     (async () => {
-      try {
-        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-        pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-          "pdfjs-dist/legacy/build/pdf.worker.mjs",
-          import.meta.url,
-        ).toString();
-        const doc = await pdfjs.getDocument({
-          url: fileUrl,
-          withCredentials: true,
-          standardFontDataUrl: "/pdfjs/standard_fonts/",
-        }).promise;
-        const read: { pageNumber: number; widthPt: number; heightPt: number }[] = [];
-        for (let n = 1; n <= doc.numPages; n += 1) {
-          const page = await doc.getPage(n);
-          const unit = page.getViewport({ scale: 1 });
-          read.push({ pageNumber: n, widthPt: unit.width, heightPt: unit.height });
-        }
-        if (cancelled) return;
-        const result = await ensureSheetPages(revisionId, read);
-        if (cancelled) return;
-        if (!result.ok) {
-          setError(result.error);
-          setPreparing(false);
-          return;
-        }
-        // The server now has the pages; re-render from it rather than guessing
-        // their ids here.
-        window.location.reload();
-      } catch {
-        if (!cancelled) {
-          setError("That drawing couldn't be opened, so its sheets couldn't be read.");
-          setPreparing(false);
-        }
+      // THE BROWSER NO LONGER READS THE PDF. It used to, on the reasoning that
+      // pdf.js was already open to display it — and that cannot work for the
+      // files this app holds, because `fileUrl` points at Procore or a GC
+      // portal and a cross-origin PDF is unreadable in a browser without
+      // `Access-Control-Allow-Origin`. The server has no such restriction, so
+      // it reads the geometry; this just asks it to.
+      const result = await ensureSheetPages(revisionId);
+      if (cancelled) return;
+      if (!result.ok) {
+        setError(result.error);
+        setPreparing(false);
+        return;
       }
+      // The server has the pages now; re-render from it rather than guessing
+      // their ids here.
+      window.location.reload();
     })();
     return () => {
       cancelled = true;
     };
-  }, [pages.length, fileUrl, revisionId]);
+  }, [pages.length, revisionId]);
 
   if (error) {
     return <p className="rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</p>;
