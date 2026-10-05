@@ -2140,6 +2140,62 @@ anything about SIZE.
   pages in production mode. Until that runs, this is strong evidence about
   the build and weak evidence about the mechanism.
 
+  **IT HAS RUN, 2026-10-05, AND THE CONFOUND IS SETTLED: THE DEFECT IS THE
+  BUILD, NOT THE MACHINE.** Run `37347729521`, `main` at `627465b8`, the
+  `Hydration probe (#510)` workflow — `workflow_dispatch` only, in
+  `e2e/probes/` where the gating suite's `testDir` cannot see it, so this
+  diagnostic can never turn CI red.
+
+  | | |
+  | --- | --- |
+  | loads | **24** (4 routes × 6), every one proved HYDRATED |
+  | hydration mismatches | **0** |
+  | positive control | **fired 3/3** |
+
+  **The control is why the zero is readable at all.** Phases one and two of
+  that probe would return a clean zero from a run that signed nobody in, or
+  loaded pages React never hydrated — the vacuous green this directory
+  exists to end. So every load carries a `__reactFiber$` proof, and the last
+  phase INJECTS a `<div>` inside `<body>` and fails the probe if it cannot
+  catch it. 24/24 hydrated and 3/3 control is the instrument saying it was
+  able to see what it did not find.
+
+  **And the comparison is contemporaneous rather than historical, which is
+  what makes it worth reading.** The same runner class, the same day, in
+  production mode: run `37344541638` (#631) printed NINE mismatched pages
+  and `37346674544` (#633) printed SIX, both with `verdicts: collected 94,
+  returned 94` and zero 429s. Against this entry's own measured production
+  rate of 12 in 40 loads, P(0 in 24) ≈ 0.0002; at a deliberately
+  conservative 10% per load it is still ≈ 0.08.
+
+  So the laptop's 96-load zero was NOT a laptop artefact, and the paragraph
+  above can stop hedging about which variable moved. Only the build differs
+  here. **Flight's 3,200-byte deferral remains the surviving mechanism**,
+  and it does not exist in a development build.
+
+  **THE EXPENSIVE CONSEQUENCE, AND THE REASON THIS IS WRITTEN UP RATHER THAN
+  LEFT AS A GREEN RUN: THE DEV-MODE INSTRUMENT IS NOW EXHAUSTED.** The
+  paragraph above calls it "the one instrument nobody has pointed at it yet"
+  and wants it for the one thing production cannot give — the ELEMENT and
+  its component stack. It has now been pointed, and it reports nothing,
+  because the defect does not reproduce there. **A development build can
+  only name an element it actually sees disagree.** So the element-naming
+  route is CLOSED, not pending, and the next person must not spend a run on
+  it: a dev-mode probe will keep returning 24/24, 3/3, zero, which looks
+  like progress and is the same measurement repeated.
+
+  That is the opposite of what this entry implied for ten days, and both
+  versions were true when written. What is needed next is a PRODUCTION-mode
+  instrument that can identify an element without React's help — and the
+  honest state of it is that nobody has designed one.
+
+  **Two bounds, stated because the number above is smaller than it looks.**
+  24 loads is a QUARTER of the laptop sweep's 96, over 4 routes rather than
+  16 — so this is the weaker sample of the two, and it is only decisive
+  about the MACHINE question because of what it is being compared against.
+  And it is ONE run of a RACE, which is this file's own rule: re-dispatch
+  the probe before treating a future zero as confirmation of anything.
+
   And the counter-example that keeps it honest, from this file's own record:
   the accidental dev-mode CI run (`36097089609`) DID name an element, the
   `data-clerk-component="UserButton"` div that `AfterMount` then fixed. So
