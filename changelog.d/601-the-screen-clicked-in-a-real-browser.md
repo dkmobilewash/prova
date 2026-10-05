@@ -44,6 +44,22 @@ click the submit button the 61-row check had just proved disabled. Then the glob
 assertion above. **Fifth, sixth and seventh time tonight that a failing control was an
 instruction to fix the harness rather than a result to read.**
 
+**RE-RUN AFTER THE NOTE WAS SCOPED, AND AFTER THE REGRESSION THAT SCOPING CAUSED:
+74 of 74.** The 66 above were measured before either change, so they said nothing about
+the screen as it stands. Two leads were added to the harness for the two halves of the
+rule, and all four new checks pass at 1280 and 375:
+
+| lead | expected on screen | result |
+| --- | --- | --- |
+| differing licence, name resembling nothing | **no option, no note** | neither, at both widths |
+| licence AGREES, registration contradicts, name unlike | **a note, not an option** | noted, not offered |
+
+The second row is the regression itself, rendered: *"Nothing Alike At All is already a lead
+with registration 1000099999; this row prints 1000012345"* — read out of the page's own text,
+which is a stronger statement than the unit case, because it proves the sentence reaches a
+reviewer rather than only that the function returns it. The first row is the forty-notes
+defect: before the scoping that lead painted an amber line onto every row on the page.
+
 Not committed as a test: `esbuild` is not a declared dependency of `apps/web` and
 `pnpm install` cannot add one here (the `xlsx` tarball 403), so this would be an instrument
 nobody can install. The durable version is Diego's call because it adds a route — mount the
