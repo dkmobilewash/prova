@@ -378,3 +378,53 @@ describe("reading a printed scale", () => {
     }
   });
 });
+
+/**
+ * EVERY SENTENCE THIS MODULE SHOWS NAMES AN ACTION THE TOOL ACTUALLY HAS.
+ *
+ * Three of them said "drag". The tool is click-once-per-end — `TakeoffPlanViewer`
+ * says so on screen, "Click once at each end of a dimension printed on the
+ * drawing" — and dragging places the first point and stops. A click-through on
+ * 2026-10-05 reported it after trying to drag and getting one point, which is
+ * the worst case of the three: the refusal a confused person reads FIRST was
+ * telling them to do the thing that had just failed them.
+ *
+ * Pinned rather than just fixed, because wording drifts back. There is nothing
+ * here a type can catch and nothing a reviewer would notice — "Drag along a
+ * longer dimension" reads perfectly well to anybody who has not tried it.
+ */
+describe("the calibration dialog describes an action the tool has", () => {
+  const everySentence = () => {
+    const sentences: string[] = [];
+    // Every branch of `calibrationNotices` that can speak, in one place, so a
+    // new message cannot be added outside this net.
+    sentences.push(...calibrationNotices({ ...ROUND, declaredDistanceFeet: 0 }, SHEET_42_IN_PT, 1200, null).map((n) => n.message));
+    sentences.push(...calibrationNotices({ ...ROUND, x2: ROUND.x1 }, SHEET_42_IN_PT, 1200, null).map((n) => n.message));
+    sentences.push(...calibrationNotices({ ...ROUND, x2: ROUND.x1 + 0.01 }, SHEET_42_IN_PT, 1200, null).map((n) => n.message));
+    sentences.push(...calibrationNotices({ ...ROUND, x2: ROUND.x1 + 0.08 }, SHEET_42_IN_PT, 1200, null).map((n) => n.message));
+    sentences.push(...calibrationNotices(QUARTER_INCH, SHEET_42_IN_PT, 1200, null).map((n) => n.message));
+    sentences.push(
+      ...calibrationNotices(QUARTER_INCH, SHEET_42_IN_PT, 1200, '1/8" = 1\'-0"').map((n) => n.message),
+    );
+    sentences.push(...calibrationNotices({ ...QUARTER_INCH, declaredDistanceFeet: 9000 }, SHEET_42_IN_PT, 1200, null).map((n) => n.message));
+    return sentences;
+  };
+
+  it("never tells anybody to DRAG, because dragging places one point and stops", () => {
+    const offenders = everySentence().filter((message) => /drag/i.test(message));
+    expect(offenders, "a notice told the estimator to drag").toEqual([]);
+  });
+
+  it("collected sentences from every branch, so the check is not vacuous", () => {
+    // Without this, a `calibrationNotices` that returned nothing at all would
+    // pass the assertion above — nothing is ever missing from an empty list.
+    const sentences = everySentence();
+    expect(sentences.length).toBeGreaterThan(8);
+    expect(sentences.some((m) => /click/i.test(m)), "no notice names the click").toBe(true);
+  });
+
+  it("says CLICK in the refusal a confused person reads first", () => {
+    const nothingDrawn = calibrationNotices({ ...ROUND, x2: ROUND.x1 }, SHEET_42_IN_PT, 1200, null);
+    expect(calibrationRefusal(nothingDrawn)).toBe("Click once at each end of a dimension on the drawing first.");
+  });
+});
