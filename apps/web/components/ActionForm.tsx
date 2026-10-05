@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import type { ActionResult } from "@/lib/actions/shared";
 
 /**
@@ -61,7 +61,43 @@ export function ActionForm({
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
+
+  /**
+   * THE SUCCESS HANDLER WAITS FOR THE TRANSITION, NOT FOR THE ACTION.
+   *
+   * It used to run the instant `await action(formData)` resolved, which is
+   * EARLIER than the moment the saved data reaches the screen. Measured in a
+   * real browser on production, editing a bid quote's expiry:
+   *
+   *     Save pressed                        t0
+   *     action resolved, form closed     1,251 ms
+   *     row repainted with the new value 3,502 ms
+   *
+   * So for ~2.25 seconds the form was gone — telling the estimator the save
+   * had finished — while the row behind it still showed the OLD value. That
+   * window is why this reads as a lost update: the thing you were editing
+   * disappears, confirming the action worked, and the screen contradicts you.
+   * A click-through reported it as a bug twice before anybody timed it.
+   *
+   * `isPending` is false only once the transition's own re-render has
+   * committed, so firing the callback from there closes the form onto fresh
+   * data instead of stale data. The reset moves with it for the same reason:
+   * blanking the fields at 1.25s while the form stays on screen until 3.5s
+   * would trade one wrong frame for another.
+   *
+   * THE COST, stated because it is real: a successful save now leaves the form
+   * open ~2s longer. The button is disabled and spinning for all of it —
+   * `useFormStatus` works here, which `actionForm.test.ts` measured and pins —
+   * so the delay reads as work in progress rather than as nothing happening.
+   */
+  const settle = useRef<null | (() => void)>(null);
+  useEffect(() => {
+    if (isPending || settle.current === null) return;
+    const run = settle.current;
+    settle.current = null;
+    run();
+  }, [isPending]);
 
   return (
     <form
@@ -82,8 +118,12 @@ export function ActionForm({
               setError(result.error);
               return;
             }
-            if (resetOnSuccess) formRef.current?.reset();
-            onSuccess?.();
+            // Queued rather than run: the data this save produced has not
+            // reached the screen yet. See `settle` above.
+            settle.current = () => {
+              if (resetOnSuccess) formRef.current?.reset();
+              onSuccess?.();
+            };
           } catch {
             setError("That didn't save. Reload the page and check before trying again.");
           }
