@@ -2289,3 +2289,570 @@ Metal  Stud Framing     Baldwin Paving Inc              Fort Hollow             
     }
   });
 });
+
+/* ------------------------------------------------------------------------- *
+ * THE THIRD FORM SHAPE: NUMBERED BOXES, ONE SUBCONTRACTOR PER BLOCK.
+ *
+ * SF Public Works publishes its Proposed Subcontractor List as SECTION 00 43 36.
+ * An overnight source survey recommended it as the FIRST source a scheduled
+ * fetcher should walk, and called its shape "already supported" because this file
+ * already refuses something called `numbered-blocks`.
+ *
+ * **BOTH HALVES OF THAT WERE WRONG, AND THE SECOND HALF IS THE DANGEROUS ONE.**
+ * The suspicion was that SF would trip the Caltrans refusal and yield nothing. It
+ * did not trip it: Caltrans writes `1)` and carries `DES-OE-0102`, SF writes `1.`
+ * and carries no revision id, and every SF label is prefixed with its own box
+ * number so none of them leads a `BC_FAMILIES` line either. The document fell
+ * through into `readRow` and produced **412 rows for 7 subcontractors, none of
+ * them a subcontractor** — the commonest names were "Lower Tier;",
+ * "12. IF LBE, CHECK" and "Proposed Subcontractors Form". Measured on the real
+ * 60-page file, not argued.
+ *
+ * So the risk was never zero rows. It was 412 undeletable leads from the source
+ * somebody was about to point a scheduler at.
+ *
+ * **WHY THE COUNT IS SEVEN, ON THREE SIGNALS THAT SHARE NO CODE WITH THE PARSER.**
+ * 43 of 60 pages are the blank template — the form says "Copy this page as needed"
+ * — so the document holds 167 complete sets of labels. Distinct email addresses: 7.
+ * Distinct telephone numbers: 7. Blocks with a filled box 2: 7. A block is
+ * therefore recognised by a FILLED FIELD and never by the presence of a label,
+ * which is the whole defence and is what every fixture below is built to break.
+ *
+ * **THE FIXTURE IS LAYOUT ONLY.** Every company name, licence, DIR registration,
+ * email, telephone number, address and dollar figure below is synthesised. The
+ * real packet names real subcontractors who did not agree to be test data; what is
+ * copied is the geometry — which box sits at which column, which values are inline
+ * beside their label and which are on the line beneath, and where the blank
+ * templates fall. Columns are faithful to the character: box one at 0, the second
+ * box of a row at 40, the third at 89, and the value of each inside its own span.
+ * ------------------------------------------------------------------------- */
+describe("the THIRD form: numbered boxes, one subcontractor per block", () => {
+  /**
+   * Five filled blocks and four blank templates, interleaved with the real page
+   * furniture. Each filled block carries one hazard measured in the real document:
+   *
+   *   | block | the hazard it reproduces |
+   *   | --- | --- |
+   *   | Vantage Wall Systems | licence printed INLINE on its own label line; a `PW-LR-` prefixed DIR; box 10 empty |
+   *   | Crestline Plastering & Lath | licence BENEATH box 8 with the tax registration beneath box 9; the amount split into a bare `$` and a figure four columns away |
+   *   | Harrow Trucking | **box 8 EMPTY and box 9 FILLED** — the only value under the licence row is not a licence |
+   *   | Meridian Ceiling Systems | a company name that came out of the PDF as TWO runs on one line |
+   *   | Penlow Firestopping | **box 5 EMPTY and box 6 FILLED** — the only value under the registration row is not a registration |
+   */
+  const SF = `Fairhaven Plaza Improvement Project (Rebid)                                   Sourcing Event ID: 00000099999
+
+
+   Copy this page as needed to provide a complete listing.                                           Page _____ of _____
+1. TYPE OF SUBCONTRACTOR:
+                                      X First Tier;          Lower Tier;   Supplier;    Service Contractor (e.g. Trucker)
+2. SUBCONTRACTOR NAME                                                                    EMAIL
+                              Vantage Wall Systems                                               bids@vantagewall.test
+3. ADDRESS                                                                               PHONE NO.
+                 140 Quarry Mill Road, Riverbend, CA, 90001                                       415-555-0100
+4. BID ITEMS/PORTION OF WORK
+                                  Metal Stud Framing and Drywall
+5. DIR REGISTRATION NO.                 6. SUPPLIER ID                                   7. FEDERAL ID NO.
+     PW-LR-1000000011                                    0000000071                                          00-0000001
+8. LICENSE NO. 900001                   9. SF BUSINESS TAX REG. NO.                      10. AMOUNT OF SUB-
+                                                                  0300001                   CONTRACT WORK:       $
+11. CERTIFIED                           12. IF LBE, CHECK
+                    Yes;      No                              Small LBE;    Micro LBE;        SBA-LBE
+    LBE?                                   APPLICABLE:
+
+1. TYPE OF SUBCONTRACTOR:
+                                      First Tier;            Lower Tier;   Supplier;    Service Contractor (e.g. Trucker)
+2. SUBCONTRACTOR NAME                                                                    EMAIL
+
+3. ADDRESS                                                                               PHONE NO.
+
+4. BID ITEMS/PORTION OF WORK
+
+5. DIR REGISTRATION NO.                 6. SUPPLIER ID                                   7. FEDERAL ID NO.
+
+8. LICENSE NO.                          9. SF BUSINESS TAX REG. NO.                      10. AMOUNT OF SUB-
+                                                                                            CONTRACT WORK:       $
+11. CERTIFIED                           12. IF LBE, CHECK
+                    Yes;      No                              Small LBE;    Micro LBE;        SBA-LBE
+    LBE?                                   APPLICABLE:
+
+  * MBE = Minority Business Enterprise, WBE = Women Business Enterprise, OBE = Other Business Enterprise.
+
+                                                        00 43 36 - 3                 Proposed Subcontractors Form
+Fairhaven Plaza Improvement Project (Rebid)                                   Sourcing Event ID: 00000099999
+
+   Copy this page as needed to provide a complete listing.                                           Page _____ of _____
+1. TYPE OF SUBCONTRACTOR:
+                                      First Tier;            Lower Tier;   Supplier;    Service Contractor (e.g. Trucker)
+2. SUBCONTRACTOR NAME                                                                    EMAIL
+                          Crestline Plastering & Lath                                            estimating@crestlinelath.test
+3. ADDRESS                                                                               PHONE NO.
+             22 Harbour Street, Suite 800, Fort Hollow, CA 90002                                  415-555-0101
+4. BID ITEMS/PORTION OF WORK
+                                                              Lath and Cement Plaster
+5. DIR REGISTRATION NO.                 6. SUPPLIER ID                                   7. FEDERAL ID NO.
+                 1000000022                          0000000072                                              00-0000002
+8. LICENSE NO.                          9. SF BUSINESS TAX REG. NO.                      10. AMOUNT OF SUB-
+                          900002                                  0300002                   CONTRACT WORK:
+                                                                                                                    $   2,481,350.00
+11. CERTIFIED                           12. IF LBE, CHECK
+                    Yes;      No                              Small LBE;    Micro LBE;        SBA-LBE
+    LBE?                                   APPLICABLE:
+
+1. TYPE OF SUBCONTRACTOR:
+                                      First Tier;            Lower Tier;   Supplier;    Service Contractor (e.g. Trucker)
+2. SUBCONTRACTOR NAME                                                                    EMAIL
+                          Harrow Trucking                                                        dispatch@harrowtrucking.test
+3. ADDRESS                                                                               PHONE NO.
+             7 Tanner Lane, Riverbend, CA 90001                                                   415-555-0102
+4. BID ITEMS/PORTION OF WORK
+                               Trucking
+5. DIR REGISTRATION NO.                 6. SUPPLIER ID                                   7. FEDERAL ID NO.
+                 1000000033                                                                                  00-0000003
+8. LICENSE NO.                          9. SF BUSINESS TAX REG. NO.                      10. AMOUNT OF SUB-
+                                                                          0300003           CONTRACT WORK:       $
+11. CERTIFIED                           12. IF LBE, CHECK
+                    Yes;      No                              Small LBE;    Micro LBE;        SBA-LBE
+    LBE?                                   APPLICABLE:
+
+1. TYPE OF SUBCONTRACTOR:
+                                      First Tier;            Lower Tier;   Supplier;    Service Contractor (e.g. Trucker)
+2. SUBCONTRACTOR NAME                                                                    EMAIL
+
+3. ADDRESS                                                                               PHONE NO.
+
+4. BID ITEMS/PORTION OF WORK
+
+5. DIR REGISTRATION NO.                 6. SUPPLIER ID                                   7. FEDERAL ID NO.
+
+8. LICENSE NO.                          9. SF BUSINESS TAX REG. NO.                      10. AMOUNT OF SUB-
+                                                                                            CONTRACT WORK:       $
+11. CERTIFIED                           12. IF LBE, CHECK
+                    Yes;      No                              Small LBE;    Micro LBE;        SBA-LBE
+    LBE?                                   APPLICABLE:
+
+1. TYPE OF SUBCONTRACTOR:
+                                      First Tier;            Lower Tier;   Supplier;    Service Contractor (e.g. Trucker)
+2. SUBCONTRACTOR NAME                                                                    EMAIL
+
+3. ADDRESS                                                                               PHONE NO.
+
+4. BID ITEMS/PORTION OF WORK
+
+5. DIR REGISTRATION NO.                 6. SUPPLIER ID                                   7. FEDERAL ID NO.
+
+8. LICENSE NO.                          9. SF BUSINESS TAX REG. NO.                      10. AMOUNT OF SUB-
+                                                                                            CONTRACT WORK:       $
+11. CERTIFIED                           12. IF LBE, CHECK
+                    Yes;      No                              Small LBE;    Micro LBE;        SBA-LBE
+    LBE?                                   APPLICABLE:
+
+1. TYPE OF SUBCONTRACTOR:
+                                      First Tier;            Lower Tier;   Supplier;    Service Contractor (e.g. Trucker)
+2. SUBCONTRACTOR NAME                                                                    EMAIL
+                             Meridian                Ceiling Systems                             office@meridianceilings.test
+3. ADDRESS                                                                               PHONE NO.
+                 305 Falls Avenue, Lakeview, CA 90003                                             415-555-0103
+4. BID ITEMS/PORTION OF WORK
+                                  Acoustical Ceilings
+5. DIR REGISTRATION NO.                 6. SUPPLIER ID                                   7. FEDERAL ID NO.
+                 1000000044                                                                                  00-0000004
+8. LICENSE NO.                          9. SF BUSINESS TAX REG. NO.                      10. AMOUNT OF SUB-
+                          900004                                  0300004                   CONTRACT WORK:       $ 37,500.00
+11. CERTIFIED                           12. IF LBE, CHECK
+                    Yes;      No                              Small LBE;    Micro LBE;        SBA-LBE
+    LBE?                                   APPLICABLE:
+
+1. TYPE OF SUBCONTRACTOR:
+                                      First Tier;            Lower Tier;   Supplier;    Service Contractor (e.g. Trucker)
+2. SUBCONTRACTOR NAME                                                                    EMAIL
+                          Penlow Firestopping                                                    bids@penlowfirestop.test
+3. ADDRESS                                                                               PHONE NO.
+                  88 Quarry Road, Fort Hollow, CA 90002                                           415-555-0104
+4. BID ITEMS/PORTION OF WORK
+                               Firestopping
+5. DIR REGISTRATION NO.                 6. SUPPLIER ID                                   7. FEDERAL ID NO.
+                                                     0000000075                                              00-0000005
+8. LICENSE NO.                          9. SF BUSINESS TAX REG. NO.                      10. AMOUNT OF SUB-
+                      900005                                                                CONTRACT WORK:       $
+11. CERTIFIED                           12. IF LBE, CHECK
+                    Yes;      No                              Small LBE;    Micro LBE;        SBA-LBE
+    LBE?                                   APPLICABLE:
+
+1. TYPE OF SUBCONTRACTOR:
+                                      First Tier;            Lower Tier;   Supplier;    Service Contractor (e.g. Trucker)
+2. SUBCONTRACTOR NAME                                                                    EMAIL
+
+3. ADDRESS                                                                               PHONE NO.
+
+4. BID ITEMS/PORTION OF WORK
+
+5. DIR REGISTRATION NO.                 6. SUPPLIER ID                                   7. FEDERAL ID NO.
+
+8. LICENSE NO.                          9. SF BUSINESS TAX REG. NO.                      10. AMOUNT OF SUB-
+                                                                                            CONTRACT WORK:       $
+11. CERTIFIED                           12. IF LBE, CHECK
+                    Yes;      No                              Small LBE;    Micro LBE;        SBA-LBE
+    LBE?                                   APPLICABLE:
+
+  * MBE = Minority Business Enterprise, WBE = Women Business Enterprise, OBE = Other Business Enterprise.
+
+                                                        00 43 36 - 3                 Proposed Subcontractors Form`;
+
+  /**
+   * THE SAME FORM WITH NOTHING FILLED IN — which is 43 of the real 60 pages, and
+   * the shape that turned into 160 of the 167 blocks a naive split returns.
+   *
+   * Written out in full rather than derived from `SF` by splitting it: a derived
+   * fixture is a set whose size nobody asserted, and the first version of this
+   * sliced two chunks off `SF` and silently kept half of a FILLED block, so the
+   * test it feeds went red naming a row that should not have been in the input.
+   * CLAUDE.md's rule about a check that derives its own input, arriving in the
+   * fixture rather than in the guard.
+   */
+  const SF_BLANK = `Fairhaven Plaza Improvement Project (Rebid)                                   Sourcing Event ID: 00000099999
+
+
+   Copy this page as needed to provide a complete listing.                                           Page _____ of _____
+1. TYPE OF SUBCONTRACTOR:
+                                      First Tier;            Lower Tier;   Supplier;    Service Contractor (e.g. Trucker)
+2. SUBCONTRACTOR NAME                                                                    EMAIL
+
+3. ADDRESS                                                                               PHONE NO.
+
+4. BID ITEMS/PORTION OF WORK
+
+5. DIR REGISTRATION NO.                 6. SUPPLIER ID                                   7. FEDERAL ID NO.
+
+8. LICENSE NO.                          9. SF BUSINESS TAX REG. NO.                      10. AMOUNT OF SUB-
+                                                                                            CONTRACT WORK:       $
+11. CERTIFIED                           12. IF LBE, CHECK
+                    Yes;      No                              Small LBE;    Micro LBE;        SBA-LBE
+    LBE?                                   APPLICABLE:
+
+1. TYPE OF SUBCONTRACTOR:
+                                      First Tier;            Lower Tier;   Supplier;    Service Contractor (e.g. Trucker)
+2. SUBCONTRACTOR NAME                                                                    EMAIL
+
+3. ADDRESS                                                                               PHONE NO.
+
+4. BID ITEMS/PORTION OF WORK
+
+5. DIR REGISTRATION NO.                 6. SUPPLIER ID                                   7. FEDERAL ID NO.
+
+8. LICENSE NO.                          9. SF BUSINESS TAX REG. NO.                      10. AMOUNT OF SUB-
+                                                                                            CONTRACT WORK:       $
+11. CERTIFIED                           12. IF LBE, CHECK
+                    Yes;      No                              Small LBE;    Micro LBE;        SBA-LBE
+    LBE?                                   APPLICABLE:
+
+  * MBE = Minority Business Enterprise, WBE = Women Business Enterprise, OBE = Other Business Enterprise.`;
+
+  const rowNamed = (name: string) => {
+    const parsed = parseSubListing(SF);
+    return parsed.rows.find((row) => row.name === name)!;
+  };
+
+  /**
+   * THE SIZE OF THE SET BEFORE ANYTHING IS READ OUT OF IT. Every test below looks
+   * up a row by name, so a reader that returned four rows instead of five would
+   * make four of them pass and throw a TypeError in the fifth, which reads as the
+   * parser breaking rather than as a row going missing.
+   */
+  it("reads exactly the five filled blocks, and names them", () => {
+    const parsed = parseSubListing(SF);
+    expect(parsed.rows.map((row) => row.name)).toEqual([
+      "Vantage Wall Systems",
+      "Crestline Plastering & Lath",
+      "Harrow Trucking",
+      "Meridian Ceiling Systems",
+      "Penlow Firestopping",
+    ]);
+  });
+
+  /**
+   * THE 24-FOLD INFLATION, AND THE ONLY CLAUSE THAT STOPS IT. Break the filled-box
+   * test — count a block wherever `2. SUBCONTRACTOR NAME` appears — and this goes
+   * from five to nine on a nine-block fixture, and from 7 to 167 on the real file.
+   */
+  it("counts a block by a FILLED name box, not by the label being present", () => {
+    const parsed = parseSubListing(SF);
+    const labels = SF.split("\n").filter((line) =>
+      line.startsWith("2. SUBCONTRACTOR NAME"),
+    ).length;
+    expect(labels).toBe(9);
+    expect(parsed.rows).toHaveLength(5);
+    expect(parsed.problems.join(" ")).toMatch(/4 blank copies of the form were skipped/);
+  });
+
+  it("says so, and invents nothing, when every block on the page is the blank template", () => {
+    const parsed = parseSubListing(SF_BLANK);
+    expect(parsed.rows).toEqual([]);
+    expect(parsed.problems.join(" ")).toMatch(/not one filled block was found/);
+    expect(parsed.reconciliation.agreed).toBe(false);
+  });
+
+  /**
+   * THE CLAUSE THAT KEEPS A TAX REGISTRATION OUT OF THE LICENCE FIELD, and the
+   * reason this reader assigns by COLUMN SPAN rather than by nearest value.
+   *
+   * One real block has box 8 empty and box 9 filled, so the single value on the
+   * line under `8. LICENSE NO.` is the SF business tax registration. A
+   * nearest-value or first-number-after-the-label reader claims it as a contractor
+   * licence — a wrong public identifier on a lead, which is worse than none
+   * because it joins to somebody else's CSLB record.
+   */
+  it("leaves the licence NULL when box 8 is empty and box 9 is not", () => {
+    expect(rowNamed("Harrow Trucking").licence).toBeNull();
+    expect(rowNamed("Harrow Trucking").registration).toBe("1000000033");
+  });
+
+  /** The same clause one row up: box 5 empty, box 6 filled, DIR must stay null. */
+  it("leaves the DIR registration NULL when box 5 is empty and box 6 is not", () => {
+    expect(rowNamed("Penlow Firestopping").registration).toBeNull();
+    expect(rowNamed("Penlow Firestopping").licence).toBe("900005");
+  });
+
+  /**
+   * One real block prints `8. LICENSE NO. 900001` — label and value run together on
+   * one field, because a single space separates them and a field only breaks on
+   * two. Reading the label without consuming it loses the licence; reading the
+   * field as a value loses every other box.
+   */
+  it("reads a licence printed INLINE on its own label line", () => {
+    expect(rowNamed("Vantage Wall Systems").licence).toBe("900001");
+  });
+
+  /** And the ordinary case, where it is on the line beneath its own label. */
+  it("reads a licence printed BENEATH its label, with the tax registration beside it", () => {
+    expect(rowNamed("Crestline Plastering & Lath").licence).toBe("900002");
+  });
+
+  /**
+   * A real company name arrived as two runs on one line — the form's box is wider
+   * than the text and the extractor broke it at the gap. Taking the first value
+   * ships half a company name; the values that landed in THIS span are joined, and
+   * the span is what keeps the email on the same line out of it.
+   */
+  it("reconstructs a company name that arrived as two runs on one line", () => {
+    expect(rowNamed("Meridian Ceiling Systems").name).toBe("Meridian Ceiling Systems");
+  });
+
+  /**
+   * THE EXTRA FIELDS ARE THE REASON THIS SOURCE WAS RECOMMENDED. The CSLB licence
+   * file carries no email at all and automated dialling is not an option, so an
+   * email printed on the award document is the only automatable contact channel
+   * found anywhere in the survey. `EMAIL` and `PHONE NO.` carry no box number, so
+   * they are recognised only on a line that already has one — without that, box 2's
+   * span runs to the end of the line and the email is read as part of the name.
+   */
+  it("keeps the email out of the company name and reads it as the email", () => {
+    for (const row of parseSubListing(SF).rows) {
+      expect(row.name).not.toMatch(/@/);
+      expect(row.email).toMatch(/^[^\s@]+@[^\s@]+$/);
+    }
+    expect(rowNamed("Meridian Ceiling Systems").email).toBe("office@meridianceilings.test");
+  });
+
+  it("reads the telephone number out of box 3 without taking the address with it", () => {
+    expect(rowNamed("Harrow Trucking").phone).toBe("415-555-0102");
+    expect(rowNamed("Harrow Trucking").city).toBe("Riverbend");
+  });
+
+  /**
+   * There is no city BOX on this form — box 3 is one free-text postal address — so
+   * the city is read out of it, and the two postcode spellings in the one real
+   * document are both here: `Riverbend, CA, 90001` and `Fort Hollow, CA 90002`.
+   * The suite number in Crestline's address is the control: a comma group holding
+   * digits must not be mistaken for the city.
+   */
+  it("reads the city out of the one-line address, in both postcode spellings", () => {
+    expect(rowNamed("Vantage Wall Systems").city).toBe("Riverbend");
+    expect(rowNamed("Crestline Plastering & Lath").city).toBe("Fort Hollow");
+    expect(rowNamed("Meridian Ceiling Systems").city).toBe("Lakeview");
+  });
+
+  /**
+   * THE OBJECTION THAT KEPT `Amount of Subcontract` UNREAD IN THE OTHER FORM, AND
+   * WHY IT DOES NOT APPLY HERE — ESTABLISHED BY MEASUREMENT, NOT BY THE ARGUMENT.
+   *
+   * `readLabelledColumnsForm` refuses the amount because in that shape the figures
+   * sit on their own offset grid beside up to six bidders' columns, so
+   * nearest-column attribution hangs bidder one's figure on bidder two's
+   * subcontractor. Here box 10 is inside the same block as box 2, bounded by the
+   * next block's own box 1.
+   *
+   * This asserts both directions, because only the second one can fail: that the
+   * two figures land on their own rows, AND that the three blocks whose box 10 is
+   * empty read null rather than inheriting a neighbour's. The second is what a
+   * leaking block boundary would break, and it is the one that would ship a wrong
+   * dollar figure on a GC-facing claim.
+   */
+  it("attributes each subcontract amount to its own block, and claims none where box 10 is empty", () => {
+    expect(parseSubListing(SF).rows.map((row) => row.amount)).toEqual([
+      null,
+      2481350,
+      null,
+      37500,
+      null,
+    ]);
+  });
+
+  /**
+   * Box 10's label wraps mid-word, so the string `CONTRACT WORK:` sits in its span
+   * on the value line of EVERY block, and a bare `$` sits there on every block
+   * whose amount was left out. Reading the span's first value makes the label the
+   * amount; reading its last makes a currency symbol one.
+   */
+  it("does not turn box 10's own wrapped label or a bare currency symbol into an amount", () => {
+    expect(SF).toMatch(/CONTRACT WORK:/);
+    expect(rowNamed("Vantage Wall Systems").amount).toBeNull();
+    expect(rowNamed("Harrow Trucking").amount).toBeNull();
+  });
+
+  /**
+   * The real form carries one DIR registration written `PW-LR-` plus ten digits.
+   * Claimed with the oddity named rather than dropped: a person confirms every
+   * signal this writes, and `null` tells them nothing while the printed string
+   * tells them what to look at. The same call the other reader makes.
+   */
+  it("claims a prefixed DIR registration and names the oddity instead of dropping it", () => {
+    const row = rowNamed("Vantage Wall Systems");
+    expect(row.registration).toBe("PW-LR-1000000011");
+    expect(row.concerns.join(" ")).toMatch(/not the ten bare digits/);
+  });
+
+  /**
+   * THE FIELD THIS SOURCE DOES NOT CARRY, which matters more than any it does: the
+   * GC relationship is the whole pitch, and the form's firm-name line is a
+   * signature block that is EMPTY in the text layer of all three bidders'
+   * submittals in the real packet.
+   */
+  it("never names a prime, because the form does not print one", () => {
+    const parsed = parseSubListing(SF);
+    expect(parsed.header.prime).toBeNull();
+    expect(parsed.rows.every((row) => row.listedBy === null)).toBe(true);
+    expect(parsed.problems.join(" ")).toMatch(/WITHOUT SAYING WHICH BIDDER LISTED WHOM/);
+  });
+
+  /**
+   * THE EVIDENCE A ROW QUOTES MUST BE THE ROW'S OWN BLOCK.
+   *
+   * `sourceText` is what a person reads back against the document before believing
+   * the row, so a quotation running on into the NEXT subcontractor's first two
+   * lines is worse than a short one: it shows them text that belongs to somebody
+   * else. Blocks open on box 2 and CLOSE on the next box 1 for this reason alone —
+   * nothing else in the read depends on the close, which is why it needs its own
+   * assertion.
+   */
+  it("quotes only its own block as the row's evidence", () => {
+    for (const row of parseSubListing(SF).rows) {
+      expect(row.sourceText).toMatch(/^2\. SUBCONTRACTOR NAME/);
+      expect(row.sourceText).not.toMatch(/1\. TYPE OF SUBCONTRACTOR/);
+      /**
+       * The EMAIL rather than the name, because one of these names is joined out of
+       * two runs and so appears in the row and not in the document. The first
+       * version of this assertion used the name and went red on exactly that row —
+       * a harness failure, not a defect, and it is left documented here because the
+       * next person to tighten this test will reach for the name too.
+       */
+      expect(row.sourceText).toContain(row.email);
+    }
+  });
+
+  /**
+   * The partition, which is this file's standing check that nothing was invented.
+   * Reported the same way the labelled-column reader reports it and for the same
+   * structural reason: one subcontractor is assembled from thirteen lines, so
+   * `rowsParsed` and `nonBlankLines` are not comparable and `agreed` is false
+   * rather than claiming a completeness it cannot compute.
+   */
+  it("accounts for every non-blank line, and refuses to call the counts a partition", () => {
+    const parsed = parseSubListing(SF);
+    expect(parsed.reconciliation.accountedFor).toBe(parsed.reconciliation.nonBlankLines);
+    expect(parsed.ignored.every((line) => line.why.length > 0)).toBe(true);
+    expect(parsed.unread).toEqual([]);
+    expect(parsed.reconciliation.agreed).toBe(false);
+  });
+
+  /**
+   * MANDATORY CONTROL: THE CALTRANS REFUSAL IS UNTOUCHED.
+   *
+   * That refusal exists because reading its form produced 228 rows for three
+   * subcontractors while reporting agreement. A reader added for a different
+   * publisher's numbered form must not be able to reach it — so this asserts the
+   * Caltrans shape still returns nothing and still names itself a form.
+   *
+   * Honest about what this control does and does not prove: the two shapes are
+   * DISJOINT, so it would pass whichever detector ran first. It is a regression pin
+   * on the refusal, not evidence that the ordering in `formShapedListing` is
+   * load-bearing — see the mutation note in that function.
+   */
+  it("still refuses the Caltrans numbered-block form", () => {
+    const caltrans = `STATE OF CALIFORNIA - DEPARTMENT OF TRANSPORTATION
+SUBCONTRACTOR LIST
+DES-OE-0102.2C(REV 04/2025)
+
+1) List this subcontractor?        YES      NO
+     Business Name VANTAGE WALL SYSTEMS    Location City RIVERBEND  State CA
+       California Contractor License Number          900001
+     Portion of Work Subcontracted
+   1      50.00%     METAL STUD FRAMING`;
+    const parsed = parseSubListing(caltrans);
+    expect(parsed.rows).toEqual([]);
+    expect(parsed.problems.join(" ")).toMatch(/looks like a filled subcontractor FORM/);
+    expect(parsed.reconciliation.accountedFor).toBe(parsed.reconciliation.nonBlankLines);
+  });
+
+  /**
+   * CONTROL: THE BOX NUMBER IS THE DISCRIMINATOR, NOT THE WORDS.
+   *
+   * A column table may perfectly well head its columns with these exact labels, and
+   * the two entries above this one in `parse.ts` both exist because keying a
+   * refusal on label WORDS would swallow tables this parser reads at 20 of 20. So
+   * this table uses SUBCONTRACTOR NAME, ADDRESS, LICENSE NO. and DIR REGISTRATION
+   * NO. as a heading row and must still be read as a table.
+   */
+  it("does NOT divert a column table whose headings use the same words without box numbers", () => {
+    const table = `SUBCONTRACTOR NAME         ADDRESS          LICENSE NO.   DIR REGISTRATION NO.
+Vantage Wall Systems       Riverbend        900001        1000000011
+Crestline Plastering       Fort Hollow      900002        1000000022`;
+    const parsed = parseSubListing(table);
+    expect(parsed.problems.join(" ")).not.toMatch(/blank copies of the form/);
+    expect(parsed.rows.map((row) => row.name)).toEqual([
+      "Vantage Wall Systems",
+      "Crestline Plastering",
+    ]);
+  });
+
+  /**
+   * CONTROL: THE FOUR-FAMILY THRESHOLD, AND THE DISTINGUISHING CASE TOOK THREE
+   * TRIES TO FIND.
+   *
+   * Lowering the threshold to one family survived every other test in this file,
+   * because across 64 documents — the 20 real bidder lists and every fixture in
+   * this directory — not one scores even a single numbered-box family, so no input
+   * in hand could tell four from one. The obvious candidates each proved nothing:
+   * `1. ADDRESS verification` does not match `^address$` and scores zero, and a
+   * numbered list with no name box fails the name clause whatever the threshold is.
+   *
+   * What distinguishes them is a table that MENTIONS a box label once, in prose, in
+   * a line's leading field — a footnote under a perfectly ordinary column table,
+   * which is a real thing for a bid package to print. That scores the name family
+   * exactly once and nothing else, so a one-family threshold diverts a table this
+   * parser reads at 20 of 20 and returns nothing from it.
+   */
+  it("does NOT divert a column table that merely MENTIONS a box label in a footnote", () => {
+    const table = `Portion of Work:          Name of Business:        City:          License #:
+Metal Stud Framing        Vantage Wall Systems     Riverbend      900001
+Lath and Cement Plaster   Crestline Plastering     Fort Hollow    900002
+Notes
+2. SUBCONTRACTOR NAME must match the licence record exactly.`;
+    const parsed = parseSubListing(table);
+    expect(parsed.problems.join(" ")).not.toMatch(/blank copies of the form/);
+    expect(parsed.problems.join(" ")).not.toMatch(/not one filled block was found/);
+    expect(parsed.rows.map((row) => row.name)).toEqual([
+      "Vantage Wall Systems",
+      "Crestline Plastering",
+    ]);
+  });
+});

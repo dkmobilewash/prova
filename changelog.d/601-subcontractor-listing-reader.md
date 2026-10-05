@@ -1055,3 +1055,87 @@ how the all-null fixture gap was found.
 but raises nothing for a cut-off row `listedBy`, so `Hutchinson Brothers and`
 reaches the stored column with no concern. The claim marks it; the column and the
 screen do not.
+
+### A third form, and the source somebody was about to automate produced 412 fabricated leads
+
+An overnight survey named **San Francisco Public Works** the first §4104 source worth
+automating: sequential ids at both levels so the back catalogue walks, honest status
+codes, text-layer PDFs, and the only source measured anywhere carrying an **email, a
+phone number and the subcontract amount**. It called SF's numbered-box form "already
+supported", and the obvious worry was that it would instead trip the Caltrans
+`numbered-blocks` refusal and yield nothing.
+
+**Measured on the real 60-page document: not zero. 412 rows for 7 subcontractors, none
+of them a subcontractor.** Commonest names `"Lower Tier;"`, `"12. IF LBE, CHECK"`,
+`"Proposed Subcontractors Form"` — a 59× inflation of pure fabrication, in front of
+nothing but a warning, into an importer whose every lead is undeletable.
+
+**Why both detectors missed, which is the transferable part.** Caltrans keys on `1)`
+and the `DES-OE-0102` revision id; SF writes `1.` and carries no revision id. And every
+SF label is prefixed with its own box number (`2. SUBCONTRACTOR NAME`), so none of them
+*leads* a `BC_FAMILIES` line either. `formShapedListing` returned null and the document
+fell straight through into `readRow`. Two refusals, each correct about its own
+publisher, and a third publisher between them.
+
+So `"numbered-boxes"` is detected and READ. On the real file: **7 rows, every field
+correct by hand-check, partition whole** (2,088 accounted for = 2,088 non-blank lines),
+160 blank templates skipped and reported — 7 + 160 = 167, reconciling with an
+independent block-marker count.
+
+Detection keys on the box NUMBER in front of a line-leading label, never on label
+words, and the scope was measured rather than assumed: over **64 documents** (the 20
+real lists, every `subListingCases.ts` fixture, every multi-line template literal in
+both test files) exactly one scores a single numbered-box family, and it scores all
+twelve, 167 times each.
+
+**The clause that matters most assigns every value by COLUMN SPAN**, `[label.start,
+nextLabel.start)`. One real block has box 8 empty and box 9 filled, so the only value
+under `8. LICENSE NO.` is the SF business tax registration — and a nearest-value reader
+claims it as a contractor licence, which joins the lead to **somebody else's CSLB
+record**. Verified independently by mutating the span assignment to nearest-label: 7
+tests red, total still 424.
+
+A block is recognised by a FILLED box 2, never by a label, because 43 of 60 real pages
+are the blank template — the trap the survey measured as 167 names where 7 exist.
+`EMAIL`/`PHONE NO.` carry no box number, so they count as column boundaries only on a
+line that already has one; without that the email is read as part of the company name.
+Blocks close on the next box 1, so `sourceText` quotes only the row's own block. **The
+Caltrans refusal is untouched and tested first.**
+
+**The amount objection does not apply here, established by measurement rather than
+argument.** `readLabelledColumnsForm` refuses the amount because there the figures sit
+on a grid shared by up to six bidders. Here box 10 is inside the same block, bounded by
+the next block's box 1. A fixture of five adjacent blocks asserts both that each figure
+lands on its own row and that the three EMPTY boxes read null rather than inheriting a
+neighbour's — the second being the only direction that can fail.
+
+**AND THE FIELD SF DOES NOT CARRY MATTERS MORE THAN ANY IT DOES: there is no prime.**
+The firm-name line is a signature block, empty in the text layer of all three bidders'
+submittals. `listedBy` is null on every row and a problem says so. The survey called the
+GC relationship the whole pitch — so anyone building a fetcher on SF needs to know it
+supplies the contact details and not the sentence.
+
+157 rows / 143 cities / 151 scopes / 20 of 20 headings on the real corpus, byte-identical
+to before — teaching a third form changed nothing about the twenty lists already read.
+388 → 424 tests.
+
+15 mutations, 11 killed. **Four survive and are documented in the code at the point
+somebody would delete them**, each because something else already handles the input:
+a 4-family document with no name box can only produce "not one filled block was found";
+no address in the corpus has two city-state-postcode runs, so first-vs-last match is the
+same string and the digit-excluding class is what rejects `Suite 800`; every value in
+every document read sits to the right of its own label, so the ±2 tolerance is
+unexercised and says so; and the two shapes are disjoint (`1)` vs `1.`), so detector
+order cannot matter. One kill was also killed for the WRONG reason — dropping `MONEY`'s
+`$` requirement reds the amount test only because `parseAmount` independently requires
+the symbol — and the comment was corrected rather than the code, so the next person
+simplifies the right function.
+
+**Every identifier in the fixtures is invented and that was checked twice, because the
+first draft leaked.** Real licences, DIRs, addresses and two contract figures were
+copied in from the document's geometry, and more were found in the agent's own comments
+where it had quoted the packet. Verified independently here: licences are sequential
+with leading zeros (a real CSLB number has none), DIRs are `10000000xx`, phones are the
+reserved `555` range, emails use the reserved `.test` TLD, firm names are invented, and
+the four real dollar figures return **zero** occurrences across both files. Only the
+layout is copied — box 1 at column 0, the second at 40, the third at 89.

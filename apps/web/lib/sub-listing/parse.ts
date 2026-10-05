@@ -270,6 +270,26 @@ export type ListedSub = {
   amount: number | null;
   percentOfBid: number | null;
   /**
+   * THE SUBCONTRACTOR'S OWN EMAIL AND TELEPHONE NUMBER, WHICH ONLY ONE SHAPE
+   * CARRIES — AND NOTHING DOWNSTREAM READS THEM YET.
+   *
+   * Optional rather than nullable, and the difference is deliberate: every other
+   * shape omits them entirely, which is not the same statement as "the document
+   * printed an empty box". `undefined` means this reader never had a box to look
+   * in; `null` means the box was there and empty.
+   *
+   * Written down as a capability this reader has, NOT as one the product has.
+   * `signals.ts` does not render them and `importSubListing` has no column for
+   * them, so nothing reaches a screen from here — that is the importer's half and
+   * it is Diego's lane. Recorded because the source survey's case for SF Public
+   * Works rests on this field: the CSLB licence file carries no email at all, and
+   * automated dialling is not an option, so an email on the document itself is
+   * the only automatable contact channel found anywhere. Reading it here is what
+   * makes wiring it up a column change rather than a parser change.
+   */
+  email?: string | null;
+  phone?: string | null;
+  /**
    * Things about this row a person must look at before believing it.
    *
    * Not errors — the row parsed. These are where what was read is probably
@@ -2162,13 +2182,256 @@ function buildingConnectedListing(text: string): boolean {
   );
 }
 
-/** Which form shape this is, or null when it is a table this parser can read. */
-type FormShape = "numbered-blocks" | "labelled-columns";
+/* ------------------------------------------------------------------------- *
+ * AND A THIRD FORM SHAPE: NUMBERED BOXES, ONE SUBCONTRACTOR PER BLOCK.
+ *
+ * SF Public Works publishes a "Proposed Subcontractor List" as SECTION 00 43 36,
+ * which cites California Public Contract Code sections 4100-4114 in its own body. An
+ * overnight source survey recommended it as the first source a scheduled fetcher
+ * should walk — sequential integer ids at both levels, honest 404s, real text
+ * layers — and called its shape "already supported" on the strength of this
+ * file already having a `numbered-blocks` entry.
+ *
+ * **IT WAS NOT SUPPORTED, AND NOT IN THE DIRECTION ANYBODY FEARED.** The worry
+ * was that it would trip the Caltrans refusal above and yield zero rows. It does
+ * not trip it: the Caltrans markers are `1)` and `DES-OE-0102`, this form writes
+ * `1.` and carries no revision id, and every one of its labels is prefixed with
+ * its own box number so none of them leads a `BC_FAMILIES` line either. Both
+ * detectors therefore returned null and the document fell straight through into
+ * `readRow`. Measured against the real 60-page file:
+ *
+ *   | | |
+ *   | --- | --- |
+ *   | rows returned | **412** |
+ *   | subcontractors on the document | **7** |
+ *   | rows that were a subcontractor | **0** |
+ *
+ * Fifty-nine times too many, and not one of them right: `"Lower Tier;"`,
+ * `"12. IF LBE, CHECK"` and `"Proposed Subcontractors Form"` are the three
+ * commonest names. `agreed` read false, which is the honesty signals doing their
+ * job and is not a refusal — a person looking at 412 rows and a warning can still
+ * press the button, and every lead this importer writes is undeletable.
+ *
+ * **THE SHAPE, AND WHY IT IS THE EASIEST OF THE THREE TO READ.** One block per
+ * subcontractor, twelve numbered boxes, several boxes to a line, and the values
+ * either inline after the label or on the line beneath it inside that box's own
+ * column span:
+ *
+ *     1. TYPE OF SUBCONTRACTOR:
+ *                                 X First Tier;    Lower Tier;   Supplier;
+ *     2. SUBCONTRACTOR NAME                              EMAIL
+ *                   VANTAGE WALL SYSTEMS                     bids@example.test
+ *     3. ADDRESS                                         PHONE NO.
+ *            140 Quarry Mill Road, Riverbend, CA 90001   415-555-0100
+ *     4. BID ITEMS/PORTION OF WORK
+ *                   Metal Stud Framing
+ *     5. DIR REGISTRATION NO.     6. SUPPLIER ID         7. FEDERAL ID NO.
+ *           1000000011                  0000000071            00-0000001
+ *     8. LICENSE NO.              9. SF BUSINESS TAX REG. NO.  10. AMOUNT OF SUB-
+ *               900001                      0300001            CONTRACT WORK:
+ *                                                                 $  482,350.00
+ *
+ * Crucially the whole of one subcontractor is inside ONE block. That is what
+ * makes the EXTRA fields readable here when they are not readable in the
+ * labelled-column form — see `readNumberedBoxesForm` for the measurement.
+ *
+ * **KEYED ON THE BOX NUMBER ON A LINE-LEADING LABEL, WHICH IS POSITIONAL.** The
+ * two entries above argue, correctly, that matching the label WORDS would refuse
+ * column tables this parser reads: a heading row may perfectly well read
+ * `Business Name   Location City   State`. The discriminator here is not the
+ * words but the `N.` in front of them, at the start of a FIELD. In a column table
+ * every label is on ONE line, so only the first of them leads and none of them
+ * carries a box number; in this form each box number starts a field, at column
+ * zero or at a column boundary further right.
+ *
+ * **WHICH CLAUSE CARRIES THE WEIGHT: NONE OF THEM, AND THAT IS THE HONEST
+ * ANSWER.** The labelled-column entry above answers this question by keeping one
+ * clause and dropping the others, because removing one at a time reds nothing
+ * there. Run over 64 documents — the 20 real UCLA bidder lists, every fixture in
+ * `subListingCases.ts`, and every multi-line template literal in both test files
+ * — exactly ONE scores a single numbered-box family, and it scores all twelve,
+ * 167 times each. So every clause is individually sufficient and the keep-one
+ * design cannot separate them either. The threshold below is therefore
+ * CONSERVATISM rather than a measured discriminator, and it is written that way
+ * on purpose: four distinct families and a name box, so a document that numbers
+ * an ordinary list cannot reach it on one coincidence. Anything added here later
+ * should be judged against the box-number prefix, which is doing all the work.
+ *
+ * **MUTATION-TESTED, AND TWO OF THE THREE CLAUSES SURVIVE. WHICH IS THE RESULT.**
+ * Fifteen mutations were run over this reader and the detector; ten are killed by a
+ * named test. These are the ones that are not, each with what else already handles
+ * the input rather than a plan to strengthen the code:
+ *
+ *   - **the box-number prefix is killed**, by a column table headed with these very
+ *     words. That is the clause carrying the whole detector, as predicted;
+ *   - **`seen.size >= 4` is killed only by a case built for it** — a footnote under
+ *     an ordinary table reading `2. SUBCONTRACTOR NAME must match the licence
+ *     record exactly.`, which scores the name family once and would be diverted by
+ *     a one-family threshold. Nothing in the 64 documents distinguished them;
+ *   - **`seen.has("name")` SURVIVES.** A document with four box families and no
+ *     name box can only produce "not one filled block was found" from this reader,
+ *     which is a worse message than `readRow`'s own, and that is the whole reason
+ *     the clause is here. No document in hand has that shape, and inventing one
+ *     means inventing its right answer too, so it is left as a survivor rather than
+ *     defended by a fixture nobody can check;
+ *   - **the ORDER of this check against the Caltrans markers SURVIVES**, because
+ *     the two shapes are disjoint: Caltrans writes `1)` and this form writes `1.`,
+ *     and neither publisher's labels match the other's patterns. The order is kept
+ *     anyway, and `parseShapes.test.ts` pins the Caltrans refusal as a regression
+ *     control while saying in its own comment that it is not evidence about order.
+ * ------------------------------------------------------------------------- */
+type NbFamily =
+  | "type"
+  | "name"
+  | "address"
+  | "portion"
+  | "dir"
+  | "supplier"
+  | "fedid"
+  | "licence"
+  | "taxreg"
+  | "amount"
+  | "certified"
+  | "lbe";
 
+/**
+ * Whole-string patterns against a NORMALISED label, the box number already
+ * stripped. `licen[cs]e` for the same reason `BC_FAMILIES` carries it. `amount of
+ * sub-` is not a typo: box 10's label wraps mid-word in the real document, and
+ * the half that survives on the label line is what has to be matched.
+ */
+const NB_BOX_LABELS: readonly (readonly [NbFamily, RegExp])[] = [
+  ["type", /^type of subcontractor:?$/],
+  ["name", /^subcontractor name$/],
+  ["address", /^address$/],
+  ["portion", /^(?:bid items\s*\/\s*portion of work|portion of work)$/],
+  ["dir", /^dir registration no\.?$/],
+  ["supplier", /^supplier id$/],
+  ["fedid", /^federal id no\.?$/],
+  ["licence", /^licen[cs]e no\.?$/],
+  ["taxreg", /^sf business tax reg\.? no\.?$/],
+  ["amount", /^amount of sub-?(?:contract work:?)?$/],
+  ["certified", /^certified$/],
+  ["lbe", /^if lbe, check$/],
+];
+
+/**
+ * The two labels in this form that carry NO box number — they share a line with
+ * the numbered box to their left, and each holds the field this product cannot
+ * get anywhere else.
+ *
+ * They are recognised ONLY on a line that already carries a numbered box, which
+ * is what keeps them from turning a stray `EMAIL` heading in some other document
+ * into a column boundary. Without them box 2's span runs to the end of the line
+ * and the email is read as part of the company name.
+ */
+type NbCompanion = "email" | "phone";
+
+const NB_COMPANION_LABELS: readonly (readonly [NbCompanion, RegExp])[] = [
+  ["email", /^e-?mail$/],
+  ["phone", /^phone(?: no\.?)?$/],
+];
+
+type NbSlot = NbFamily | NbCompanion;
+
+function normaliseNbLabel(label: string): string {
+  return label.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
+ * Match a whole-string label pattern against a PREFIX of `rest`, longest word
+ * prefix first, and hand back what is left over.
+ *
+ * The leftover is the whole point: the real document prints box 8 as
+ * `8. LICENSE NO. 900001`, with the value run together with its own label on one
+ * field. Reading the label without consuming it would lose that licence; reading
+ * the field as a value would lose every other box. Longest-first so
+ * `amount of sub-contract work:` is preferred over the `amount of sub-` wrap.
+ */
+function nbLabelPrefix(rest: string): { slot: NbSlot; value: string } | null {
+  const words = [...rest.matchAll(/\S+/g)];
+  for (let take = words.length; take >= 1; take -= 1) {
+    const last = words[take - 1];
+    if (last?.index === undefined) continue;
+    const consumed = last.index + last[0].length;
+    const head = normaliseNbLabel(rest.slice(0, consumed));
+    for (const [slot, pattern] of NB_BOX_LABELS) {
+      if (pattern.test(head)) return { slot, value: rest.slice(consumed).trim() };
+    }
+  }
+  return null;
+}
+
+/** A label found on a line, with the column it starts at and its inline value. */
+type NbLabel = { slot: NbSlot; start: number; value: string };
+
+/**
+ * The numbered boxes on one line. A box must begin a FIELD — `splitFields`'
+ * separator, a run of two or more spaces or the line start — which is what makes
+ * this positional rather than a substring search.
+ */
+function nbBoxesOn(raw: string): NbLabel[] {
+  const out: NbLabel[] = [];
+  for (const field of fieldSpans(raw)) {
+    const numbered = /^(\d{1,2})\.[ \t]*/.exec(field.text);
+    if (numbered === null) continue;
+    const hit = nbLabelPrefix(field.text.slice(numbered[0].length));
+    if (hit === null) continue;
+    out.push({ slot: hit.slot, start: field.start, value: hit.value });
+  }
+  return out;
+}
+
+/**
+ * The unnumbered companions, added only once a numbered box is already on the
+ * line. A companion carries no inline value in any document read: `EMAIL` sits
+ * alone on the label line and its value is underneath it.
+ */
+function nbCompanionsOn(raw: string): NbLabel[] {
+  const out: NbLabel[] = [];
+  for (const field of fieldSpans(raw)) {
+    const normalised = normaliseNbLabel(field.text);
+    for (const [slot, pattern] of NB_COMPANION_LABELS) {
+      if (pattern.test(normalised)) out.push({ slot, start: field.start, value: "" });
+    }
+  }
+  return out;
+}
+
+/** Every label on a line, left to right, or an empty list for a value line. */
+function nbLabelsOn(raw: string): NbLabel[] {
+  const boxes = nbBoxesOn(raw);
+  if (boxes.length === 0) return [];
+  return [...boxes, ...nbCompanionsOn(raw)].sort((a, b) => a.start - b.start);
+}
+
+function numberedBoxesListing(text: string): boolean {
+  const seen = new Set<NbSlot>();
+  for (const raw of text.split(/\r?\n/)) {
+    for (const label of nbBoxesOn(raw.replace(/\f/g, " "))) seen.add(label.slot);
+  }
+  return seen.size >= 4 && seen.has("name");
+}
+
+/** Which form shape this is, or null when it is a table this parser can read. */
+type FormShape = "numbered-blocks" | "labelled-columns" | "numbered-boxes";
+
+/**
+ * THE CALTRANS MARKERS ARE TESTED FIRST, AND THEIR REFUSAL IS UNTOUCHED.
+ *
+ * Order matters less than it looks — the two shapes are disjoint, since Caltrans
+ * writes `1)` where this form writes `1.` and neither publisher's labels match the
+ * other's patterns, so neither detector can reach the other's document whichever
+ * runs first. It is written in this order anyway, because a refusal that stopped
+ * 228 invented rows should not depend on a reader added afterwards being narrow,
+ * and `parseShapes.test.ts` keeps a control asserting the Caltrans form is still
+ * refused alongside every fixture asserting this one is read.
+ */
 function formShapedListing(text: string): FormShape | null {
   if (FORM_BLOCK_TOGGLE.test(text) || FORM_REVISION_ID.test(text)) {
     return "numbered-blocks";
   }
+  if (numberedBoxesListing(text)) return "numbered-boxes";
   if (buildingConnectedListing(text)) return "labelled-columns";
   return null;
 }
@@ -2180,7 +2443,7 @@ function formShapedListing(text: string): FormShape | null {
  * holding a BuildingConnected export, and a reader who cannot tell which
  * document they have cannot act on the advice.
  */
-const FORM_REFUSAL: Record<FormShape, string> = {
+const FORM_REFUSAL: Record<"numbered-blocks" | "labelled-columns", string> = {
   "numbered-blocks":
     "this looks like a filled subcontractor FORM — the kind with one numbered block per subcontractor and the labels printed beside the values — and this reader only understands a column TABLE. Nothing on this page has been read as a subcontractor, deliberately, because reading it wrongly would import leads that are not real. Paste the subcontractor table from a bid tabulation or an award packet instead, or send this document to Diego so the form reader can be built against it.",
   "labelled-columns":
@@ -2613,6 +2876,364 @@ function readLabelledColumnsForm(text: string): LabelledFormRead {
   return { rows, ignored, problems, nonBlankLines };
 }
 
+/* ------------------------------------------------------------------------- *
+ * READING THE NUMBERED-BOX FORM.
+ *
+ * **THE TRAP IS THE BLANK FORM, AND IT IS MEASURED RATHER THAN FEARED.** The real
+ * document is 60 pages and 43 of them are the empty template, which prints
+ * `Copy this page as needed to provide a complete listing.` above every copy. A
+ * naive block split returns 167 blocks; the document names SEVEN
+ * subcontractors. Three counts sharing no code with this reader agree on seven:
+ * distinct email addresses 7, distinct telephone numbers 7, and the index page
+ * of the packet. A 24-fold inflation, which is the same defect shape as the
+ * Caltrans 228-for-3 and the Berkeley 11-rows-from-a-document-naming-none.
+ *
+ * So **a block is recognised by a FILLED box 2, never by the presence of its
+ * label.** Every label in a blank template is present and correctly spelled;
+ * that is what a template IS. The count of templates skipped is reported, so a
+ * person reading seven rows off a sixty-page file can see where the other
+ * fifty-three pages went instead of wondering.
+ *
+ * **WHAT IS READ THAT NO OTHER SHAPE GIVES, AND THE OBJECTION THAT DOES NOT
+ * APPLY HERE.** `readLabelledColumnsForm` above deliberately does not read
+ * `Amount of Subcontract`: in that shape the amounts sit on their own offset
+ * grid beside up to six bidders' columns, so nearest-column attribution would
+ * hang bidder one's figure on bidder two's subcontractor, and a wrong dollar
+ * figure on a GC-facing claim is worse than none.
+ *
+ * That objection is about a grid shared between subcontractors, and this form has
+ * no such grid: box 10 is inside the same block as box 2, bounded by the next
+ * block's own name box. Established by measurement rather than by that argument —
+ * `parseShapes.test.ts` carries a fixture of four adjacent blocks whose amounts
+ * are 2,481,350.00 / absent / 37,500.00 / absent, and asserts each figure lands
+ * on its own block AND that both absences read null rather than inheriting a
+ * neighbour's. So the amount IS read here, the email and the telephone number
+ * with it, and the reason the other shape refuses them still stands where it was
+ * written.
+ *
+ * **WHAT IS DELIBERATELY NOT READ.** `listedBy` is null on every row and
+ * `header.prime` names nobody, because the document does not say. The form's own
+ * firm-name line (`Date / Name of Firm, Corporation, Partnership, or Joint
+ * Venture`) is a signature block, and in all three bidders' submittals inside the
+ * real packet it is EMPTY in the text layer. The source survey called the GC
+ * relationship "the whole pitch", and this is the one field this otherwise
+ * richest source does not carry — worth knowing before anybody builds a fetcher
+ * on it. Box 1's First Tier / Supplier / Service Contractor tick is also unread:
+ * its `X` is placed by whoever filled the form and lands in a different column in
+ * each of the two blocks that have one at all.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * A city inside a one-line postal address: `..., Lakeview, CA 90003` and
+ * `..., Riverbend, CA, 90001` — both spellings are in the same real document.
+ *
+ * The city is the group BEFORE the state code, and the state code plus a postcode
+ * is what anchors it. The character class excludes digits, which is the clause
+ * doing the work: `22 Harbour Street, Suite 800, Fort Hollow, CA 90002` offers the
+ * suite as an earlier candidate and it is rejected for holding a number, not for
+ * being in the wrong place.
+ *
+ * The LAST match is taken rather than the first, and that half is NOT load-bearing
+ * in any document read — no address in the corpus contains two city-state-postcode
+ * runs, so first and last are the same string every time. Mutation-tested and
+ * recorded as surviving rather than quietly kept: it is there because an address
+ * with a care-of line would distinguish them, not because anything has.
+ */
+const NB_CITY_IN_ADDRESS =
+  /,\s*([A-Za-z][A-Za-z.'\- ]*?)\s*,\s*([A-Z]{2})\b,?\s*\d{5}/g;
+
+/** Six to ten digits, which is the width a contractor licence is printed at. */
+const NB_PLAIN_LICENCE = /^\d{6,8}$/;
+/** A DIR registration: ten digits. The real form also prefixes one `PW-LR-`. */
+const NB_PLAIN_DIR = /^\d{10}$/;
+/** Something that is unmistakably an email address, and nothing else. */
+const NB_EMAIL = /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/;
+/** A North American telephone number as these forms print it. */
+const NB_PHONE = /^\(?\d{3}\)?[ .\-]?\d{3}[ .\-]?\d{4}$/;
+
+type NbBlock = {
+  firstLine: number;
+  sourceLines: Set<number>;
+  /** Every value seen in a slot's span, in the order the document printed it. */
+  bySlot: Map<NbSlot, string[]>;
+};
+
+function nbTake(block: NbBlock, slot: NbSlot): string | null {
+  const values = block.bySlot.get(slot) ?? [];
+  if (values.length === 0) return null;
+  /**
+   * JOINED, NOT FIRST-WINS, and one real block is the whole reason. A company
+   * name came out of the PDF as two runs on one line (`Meridian` at column 29
+   * and `Ceiling Systems` at column 53) because the form's own box is wider than the text.
+   * Taking the first value ships half a company name; joining the values that
+   * landed in THIS span — and only this span — reconstructs it. The span is what
+   * keeps the email on the same line out of it.
+   */
+  const joined = values.join(" ").replace(/\s+/g, " ").trim();
+  return joined.length === 0 ? null : joined;
+}
+
+function nbCityOf(address: string): string | null {
+  let city: string | null = null;
+  for (const match of address.matchAll(NB_CITY_IN_ADDRESS)) {
+    if (match[1] !== undefined) city = match[1].trim();
+  }
+  return city !== null && city.length > 0 ? city : null;
+}
+
+/**
+ * Box 10's figure, and it is read as MONEY ONLY rather than as whatever landed in
+ * the span.
+ *
+ * Not fastidiousness: the label itself wraps mid-word, so the string
+ * `CONTRACT WORK:` sits in box 10's span on the value line of every single block,
+ * filled or blank, and a `$` with nothing after it sits there on every block whose
+ * amount was left out. Reading the span's first value would make the label the
+ * amount; reading its last would make a bare `$` one.
+ *
+ * **BUT THE CURRENCY SYMBOL IS NOT ENFORCED HERE, AND SAYING SO IS THE POINT.**
+ * Dropping `MONEY` for a bare comma-grouped number was mutation-tested and the
+ * amount test went red — not because a non-money number got claimed, but because
+ * `parseAmount` requires the symbol itself and returned null for all five rows. So
+ * this expression is belt-and-braces over a check one function down, and the clause
+ * actually holding the line is `MONEY`'s own scar about a quantity column —
+ * `12,500 SF` becoming `$12,500` in a claim. Recorded rather than left to look
+ * load-bearing: the next person to simplify this should simplify THIS one and leave
+ * `parseAmount` alone.
+ */
+function nbAmountOf(values: readonly string[]): {
+  amount: number | null;
+  concern: string | null;
+} {
+  /**
+   * JOINED BEFORE MATCHING, because the currency symbol and its figure are two
+   * separate runs in two of the four filled blocks that carry an amount at all:
+   * `$` at column 116 and `2,481,350.00` at column 120, three spaces apart, so
+   * `valuesFrom` splits them. Matching each run on its own finds `$` with no
+   * digits and digits with no `$` — and `MONEY` requires the symbol, deliberately,
+   * so both miss. That read null on a figure the document prints in full, which is
+   * the quiet half of a wrong amount: it is not wrong, it is absent, and nobody
+   * notices an absence.
+   */
+  const joined = values.join(" ").replace(/\s+/g, " ").trim();
+  const found = [...joined.matchAll(new RegExp(MONEY.source, "gi"))];
+  const first = found[0];
+  if (first === undefined) return { amount: null, concern: null };
+  const amount = parseAmount(first[0]);
+  const others = new Set(found.map((match) => parseAmount(match[0])));
+  if (others.size > 1) {
+    /**
+     * CLAIMED WITH THE DOUBT ATTACHED RATHER THAN WITHHELD. No document in hand
+     * prints two figures in this box, so this is unmeasured — and the architecture
+     * already decides what to do with an uncertain value: every signal this writes
+     * lands PROPOSED and a person confirms it. Refusing would delete a figure that
+     * is probably right to guard against one that might not be.
+     */
+    return {
+      amount,
+      concern: `box 10 holds more than one figure (${[...others].map((value) => (value === null ? "unreadable" : value.toLocaleString("en-US"))).join(", ")}) and the first was taken — check which is the subcontract amount`,
+    };
+  }
+  return { amount, concern: null };
+}
+
+function readNumberedBoxesForm(text: string): LabelledFormRead {
+  const rows: ListedSub[] = [];
+  const ignored: IgnoredLine[] = [];
+  const problems: string[] = [];
+  let nonBlankLines = 0;
+  let blankTemplates = 0;
+
+  const lines = text.split(/\r?\n/);
+  /** The spans currently open, from the most recent label line. */
+  let spans: NbLabel[] = [];
+  let block: NbBlock | null = null;
+
+  const flush = (): void => {
+    if (block === null) return;
+    const current = block;
+    block = null;
+
+    /**
+     * THE FILLED-BOX-2 TEST, which is the whole defence against the 43 blank
+     * pages. A name is a value that landed in box 2's own span; a template has
+     * the label and nothing beneath it.
+     */
+    const name = nbTake(current, "name");
+    if (name === null) {
+      blankTemplates += 1;
+      return;
+    }
+
+    const concerns: string[] = [];
+    const address = nbTake(current, "address");
+    const city = address === null ? null : nbCityOf(address);
+    if (address !== null && city === null) {
+      concerns.push(
+        `the address reads "${address}" and no city could be read out of it — the city is unknown rather than missing from the document`,
+      );
+    }
+
+    const licence = nbTake(current, "licence");
+    if (licence !== null && !NB_PLAIN_LICENCE.test(licence)) {
+      concerns.push(
+        `the licence reads "${licence}", which is not the six to eight digits this form usually carries — check it against the document`,
+      );
+    }
+
+    const registration = nbTake(current, "dir");
+    if (registration !== null && !NB_PLAIN_DIR.test(registration)) {
+      concerns.push(
+        `the DIR registration reads "${registration}", which is not the ten bare digits a registration carries — check it against the document`,
+      );
+    }
+
+    const email = nbTake(current, "email");
+    const phone = nbTake(current, "phone");
+    if (email !== null && !NB_EMAIL.test(email)) {
+      concerns.push(
+        `the email box reads "${email}", which is not an email address — check it against the document before writing to it`,
+      );
+    }
+    if (phone !== null && !NB_PHONE.test(phone)) {
+      concerns.push(
+        `the telephone box reads "${phone}", which is not a telephone number — check it against the document before ringing it`,
+      );
+    }
+
+    const portionOfWork = nbTake(current, "portion");
+    const money = nbAmountOf(current.bySlot.get("amount") ?? []);
+    if (money.concern !== null) concerns.push(money.concern);
+
+    rows.push({
+      name,
+      sourceText: [...current.sourceLines]
+        .sort((a, b) => a - b)
+        .map((line) => lines[line - 1] ?? "")
+        .join("\n"),
+      line: current.firstLine,
+      portionOfWork,
+      tradeScope: tradeMatchFor(portionOfWork).scope,
+      licence,
+      registration,
+      city,
+      amount: money.amount,
+      percentOfBid: null,
+      /**
+       * Null because the document does not say, not because this refuses to
+       * attribute. See the header above: the form's firm-name line is a signature
+       * block and is empty in the text layer of every submittal read.
+       */
+      listedBy: null,
+      email,
+      phone,
+      concerns,
+    });
+  };
+
+  lines.forEach((source, index) => {
+    const line = index + 1;
+    /** A form feed is one character wide, so a space keeps every column. */
+    const raw = source.replace(/\f/g, " ");
+    if (!raw.trim()) return;
+    nonBlankLines += 1;
+
+    const labels = nbLabelsOn(raw);
+    if (labels.length > 0) {
+      /**
+       * BOX 2 OPENS THE BLOCK AND BOX 1 CLOSES THE ONE BEFORE IT.
+       *
+       * Opening on the NAME box rather than on box 1 makes the block boundary the
+       * same thing as the test for whether the block is filled, so a template
+       * cannot open a block that a later line then fills out of the page furniture
+       * between them. Closing on box 1 is what keeps `sourceText` honest: without
+       * it a row's evidence ran on to the end of the NEXT block's first two lines,
+       * which is a quotation nobody can check against the document.
+       *
+       * A form with no box 1 at all still reads: blocks then simply close where
+       * the next one opens, which is the behaviour this had before.
+       */
+      if (labels.some((label) => label.slot === "type")) flush();
+      if (labels.some((label) => label.slot === "name")) {
+        flush();
+        block = { firstLine: line, sourceLines: new Set(), bySlot: new Map() };
+      }
+      spans = labels;
+      if (block !== null) {
+        const current: NbBlock = block;
+        current.sourceLines.add(line);
+        for (const label of labels) {
+          if (label.value.length === 0) continue;
+          const values = current.bySlot.get(label.slot) ?? [];
+          values.push(label.value);
+          current.bySlot.set(label.slot, values);
+        }
+      }
+      ignored.push({ line, text: source, why: "a numbered box label" });
+      return;
+    }
+
+    if (block === null || spans.length === 0) {
+      ignored.push({ line, text: source, why: "not part of a subcontractor block" });
+      return;
+    }
+
+    /**
+     * A value belongs to the LAST label whose column it is at or to the right of.
+     * Two characters of slack for the same reason `gridOf` merges within two: a
+     * form feed shifts a line and a proportional font rendered onto a character
+     * grid drifts.
+     *
+     * This is the clause that keeps a tax registration out of the licence. One real
+     * block has box 8 empty and box 9 filled, so the only value on the line beneath
+     * `8. LICENSE NO.` is the SF business tax registration — which a nearest-value
+     * or first-number-after-the-label reader claims as a contractor licence, and a
+     * wrong public identifier is worse than none because it joins to somebody
+     * else's CSLB record.
+     *
+     * The two characters of slack SURVIVE mutation: every value in every document
+     * read sits to the RIGHT of its own label, so nothing in hand distinguishes a
+     * tolerance of two from a tolerance of zero. Kept because `gridOf` documents the
+     * same drift one shape over, and recorded as unexercised rather than left to
+     * look measured.
+     */
+    const current: NbBlock = block;
+    current.sourceLines.add(line);
+    for (const value of valuesFrom(raw, 0)) {
+      let owner: NbLabel | null = null;
+      for (const label of spans) {
+        if (value.offset + 2 >= label.start) owner = label;
+      }
+      if (owner === null) continue;
+      const values = current.bySlot.get(owner.slot) ?? [];
+      values.push(value.text);
+      current.bySlot.set(owner.slot, values);
+    }
+    ignored.push({ line, text: source, why: "a value inside a numbered box" });
+  });
+
+  flush();
+
+  if (blankTemplates > 0) {
+    problems.push(
+      `${blankTemplates} blank cop${blankTemplates === 1 ? "y" : "ies"} of the form were skipped — this form says "Copy this page as needed", so a packet carries one empty template per unused slot and most of its pages are empty. They are not missing subcontractors.`,
+    );
+  }
+
+  if (rows.length === 0) {
+    problems.push(
+      "this is the numbered-box form shape — one numbered block per subcontractor, labels beside the values — and not one filled block was found. Either every block on the page is the blank template, which is ordinary in this packet, or this page's text came out of the PDF in a shape this reader does not understand. Nothing has been invented either way. Look at the page itself before concluding there are no subcontractors on it.",
+    );
+    return { rows, ignored, problems, nonBlankLines };
+  }
+
+  problems.push(
+    "READ, BUT WITHOUT SAYING WHICH BIDDER LISTED WHOM. This form carries the subcontractor's email, telephone number and subcontract amount, which no other shape here does — and it does NOT carry the general contractor's name: the firm-name line is a signature block and is empty in the text layer. Each row below is a firm that WAS listed on this project. Treat the GC as unknown rather than as whoever the file is named after.",
+  );
+
+  return { rows, ignored, problems, nonBlankLines };
+}
+
 export function parseSubListing(text: string): SubListingParse {
   const lines = text.split(/\r?\n/);
   const { header, problems } = readHeader(lines);
@@ -2691,6 +3312,26 @@ export function parseSubListing(text: string): SubListingParse {
    * completeness it cannot compute. Reading these counts as a partition is the
    * mistake the whole `agreed` apparatus exists to prevent.
    */
+  if (formShape === "numbered-boxes") {
+    const form = readNumberedBoxesForm(text);
+    return {
+      header,
+      rows: form.rows,
+      unread: [],
+      ignored: form.ignored,
+      problems: [...problems, ...form.problems],
+      reconciliation: {
+        nonBlankLines: form.nonBlankLines,
+        rowsParsed: form.rows.length,
+        headerLines: 0,
+        ignoredLines: form.ignored.length,
+        unreadLines: 0,
+        accountedFor: form.ignored.length,
+        agreed: false,
+      },
+    };
+  }
+
   if (formShape === "labelled-columns") {
     const form = readLabelledColumnsForm(text);
     return {
