@@ -20,6 +20,7 @@ function row(over: Partial<SheetRow> & { pageNumber: number }): SheetRow {
             sheetNumber: `A-${100 + over.pageNumber}`,
             title: "PLAN",
             discipline: "ARCHITECTURAL",
+            pageType: "PLAN",
             scale: null,
             revision: null,
             issueDate: null,

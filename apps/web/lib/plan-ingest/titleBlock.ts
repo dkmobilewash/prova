@@ -187,6 +187,7 @@ const realDeps: TitleBlockDeps = {
       proposedSheetNumber: row.read.sheetNumber,
       proposedTitle: row.read.title,
       proposedDiscipline: row.read.discipline,
+      proposedPageType: row.read.pageType,
       proposedScale: row.read.scale,
       titleBlockRevisionText: row.read.revision,
       titleBlockIssueDateText: row.read.issueDate,
