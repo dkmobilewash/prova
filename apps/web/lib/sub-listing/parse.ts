@@ -430,11 +430,43 @@ const TOTALS_WORDS =
 const HEADING_WORDS =
   /\b(?:subcontractor|sub-contractor|name|firm|company|city|state|location|address|licence|license|lic\.?|dir|registration|reg\.?|portion|work|scope|description|category|amount|value|percent|%\s*of\s*bid|item)\b/gi;
 
+/**
+ * WHERE ONE CELL ENDS AND THE NEXT BEGINS — a tab, two spaces, or a pipe.
+ *
+ * Named and used once, because the wrapped-heading join below needs each field's
+ * CHARACTER SPAN and not merely its text, and a second copy of this expression is
+ * the "is there a second list" defect CLAUDE.md records three times over. So
+ * `splitFields` is derived from `fieldSpans` rather than written beside it: there
+ * is exactly one definition of a column boundary in this file, and the two
+ * callers cannot drift apart because only one of them does the splitting.
+ */
+const FIELD_SEPARATOR = /\t+|\s{2,}|\s*\|\s*/;
+
+type FieldSpan = { text: string; start: number; end: number };
+
+function fieldSpans(line: string): FieldSpan[] {
+  const spans: FieldSpan[] = [];
+  const scan = new RegExp(FIELD_SEPARATOR.source, "g");
+  const push = (chunk: string, at: number) => {
+    const text = chunk.trim();
+    if (text.length === 0) return;
+    const start = at + (chunk.length - chunk.trimStart().length);
+    spans.push({ text, start, end: start + text.length });
+  };
+  let from = 0;
+  let found: RegExpExecArray | null;
+  // No alternative above can match the empty string — `\t+` wants a tab, `\s{2,}`
+  // two spaces, `\s*\|\s*` a pipe — so this cannot spin on a zero-width match.
+  while ((found = scan.exec(line)) !== null) {
+    push(line.slice(from, found.index), from);
+    from = found.index + found[0].length;
+  }
+  push(line.slice(from), from);
+  return spans;
+}
+
 function splitFields(line: string): string[] {
-  return line
-    .split(/\t+|\s{2,}|\s*\|\s*/)
-    .map((field) => field.trim())
-    .filter((field) => field.length > 0);
+  return fieldSpans(line).map((span) => span.text);
 }
 
 /**
@@ -1309,6 +1341,189 @@ function columnPlanFrom(headingFields: string[]): (ColumnKind | null)[] | null {
   if (named.length < 2) return null;
   if (new Set(named).size !== named.length) return null;
   return trimmed;
+}
+
+/**
+ * A COLUMN LABEL SPLIT ACROSS TWO PHYSICAL LINES, PUT BACK TOGETHER BY COLUMN.
+ *
+ * ── THE DEFECT, MEASURED ──
+ *
+ * `planByLabels` above records the wrapped heading as known and unfixed: "the
+ * fifth label genuinely is not on that line". It is not on that line. It is on
+ * the line above it, and the rest of it is on the line below:
+ *
+ *        Sub Contractor Listing                              License
+ *             Portion of Work: Name of Business:   Location:            DIR #:
+ *                                                           #:
+ *
+ * Three real lists print it that way (`fasone`, `shawmut`, `best` in the UCLA
+ * corpus) and in all three the ROWS are ordinary five-column rows. The heading
+ * line alone names four columns, so neither plan matches a five-field row,
+ * `readRow` falls back to its predicate path — which has no city slot at all —
+ * and every row on those lists comes back `city: null` with nothing said. 26 of
+ * 157 real rows read no city before this existed; the wrapped shape is the
+ * largest single share of that.
+ *
+ * ── WHY THIS IS READING THE DOCUMENT RATHER THAN GUESSING AT IT ──
+ *
+ * The comment above refuses to invent a fifth column, and it is right to: a plan
+ * with a column nobody labelled is an order this parser made up. That is not what
+ * happens here. The label is PRINTED; it is printed at the same character offset
+ * as the column it belongs to, one line up. So a fragment's tokens are joined to
+ * the heading column whose horizontal span they OVERLAP, and a token overlapping
+ * no existing column becomes a column of its own at its own offset — which is
+ * exactly what `License`, sitting in the gap between `Location:` and `DIR #:`,
+ * is. Nothing is positioned by this function's opinion; every position comes off
+ * the page.
+ *
+ * Deliberately not keyed on the word "License". The same wrap happens to
+ * `DIR Reg. No` and to `Name of Business`, and a fix that only knows one label
+ * would have to be written again for each.
+ *
+ * ── THE GATE, BECAUSE AN ADJACENT LINE IS USUALLY A ROW ──
+ *
+ * The line after a heading is normally the table's first row, and merging one
+ * into the heading would destroy a plan that was working. Four conditions keep a
+ * row out, three of them borrowed from tests this file already trusts:
+ * `hasDataEvidence` (a licence or registration number, a "City, ST", an entity
+ * marker), the trade test `furnitureReason` uses to tell a heading from a row,
+ * FEWER fields than the heading — the same "an overflow must be narrower" rule
+ * the continuation branch rests on — and, last, that the join must name STRICTLY
+ * MORE columns than the heading line did on its own. That final one is the real
+ * guard and it is also the defect stated as a measurement: a wrapped heading is
+ * one that names fewer columns than its table has, so a join that teaches nothing
+ * is discarded and every list whose heading was already complete is untouched.
+ */
+type HeadingColumn = { text: string; start: number; end: number };
+
+/**
+ * The spans of a line that could be half of a wrapped label, or null if it reads
+ * as anything else — a data row above all.
+ */
+function wrapFragmentSpans(
+  lines: readonly string[],
+  at: number,
+  headingFieldCount: number,
+): FieldSpan[] | null {
+  const raw = lines[at];
+  if (raw === undefined) return null;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  const spans = fieldSpans(raw);
+  if (spans.length === 0 || spans.length >= headingFieldCount) return null;
+  const fields = spans.map((span) => span.text);
+  if (hasDataEvidence(trimmed, fields)) return null;
+  if (fields.some((field) => tradeMatchFor(field).scope !== null)) return null;
+  return spans;
+}
+
+/** A fragment's tokens joined onto the columns they sit over, in place. */
+function overlayFragment(
+  columns: HeadingColumn[],
+  spans: readonly FieldSpan[],
+  where: "above" | "below",
+): void {
+  for (const span of spans) {
+    let best = -1;
+    let bestOverlap = 0;
+    columns.forEach((column, index) => {
+      const overlap = Math.min(column.end, span.end) - Math.max(column.start, span.start);
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap;
+        best = index;
+      }
+    });
+    if (best === -1) {
+      // Over no existing column: a column of its own, at its own offset. This is
+      // the `License` case, and it is the one that makes the plan five wide.
+      const fresh: HeadingColumn = { text: span.text, start: span.start, end: span.end };
+      const insertAt = columns.findIndex((column) => column.start > span.start);
+      if (insertAt === -1) columns.push(fresh);
+      else columns.splice(insertAt, 0, fresh);
+      continue;
+    }
+    const column = columns[best];
+    column.text = where === "above" ? `${span.text} ${column.text}` : `${column.text} ${span.text}`;
+    column.start = Math.min(column.start, span.start);
+    column.end = Math.max(column.end, span.end);
+  }
+}
+
+/** How many of our five columns a heading names, read as text; see `planByLabels`. */
+function labelCount(heading: string): number {
+  return planByLabels(heading)?.length ?? 0;
+}
+
+/** How many of a plan's slots this parser can put a name to; see `planForRow`. */
+function namedColumns(plan: readonly (ColumnKind | null)[]): number {
+  return plan.filter((kind) => kind !== null).length;
+}
+
+/**
+ * THE JOINED HEADING AS ONE PLAN — AND WHY ITS FIELD SPLIT CANNOT ALWAYS HAVE IT.
+ *
+ * `planByLabels` above explains why the field-based plan is normally PREFERRED: it
+ * keeps a slot for a column this parser does not recognise, which a label scan must
+ * drop, and a real unrecognised column has a cell in every row. That still holds,
+ * and on `shawmut` and `best` the joined field split is five wide and correct.
+ *
+ * `fasone` is the exception and it is measured rather than imagined. That list
+ * prints `Portion of Work: Name of Business:` with ONE space between the two
+ * labels, so `splitFields` returns them as a single field and `columnPlanFrom`
+ * reads that one field as the name — a FOUR-wide plan for a five-column table. The
+ * order it describes is not wrong; its WIDTH is, and width is the only thing
+ * `readRow` checks before trusting a plan. Joining the wrapped `License` on made
+ * that four-wide plan start matching the list's genuine four-field rows — the rows
+ * whose city wrapped onto a line of its own — and it read the scope as the company,
+ * the company as the city and a licence number into the city slot, on three rows
+ * that had been read correctly before. A plan that fits by count and is one slot
+ * out, which is exactly the hazard `readRow`'s own comment names.
+ *
+ * The heading itself says so, which is what makes this a reading rather than a
+ * preference: scanning the SAME text for labels finds five where the field split
+ * found four. Two derivations of one thing disagreeing is the signal, and the one
+ * that counted correctly is the one to keep.
+ */
+function joinedPlanFrom(joined: { text: string; fields: string[] }): (ColumnKind | null)[] | null {
+  const byLabel = planByLabels(joined.text);
+  const byField = columnPlanFrom(joined.fields);
+  if (byField === null) return byLabel;
+  if (byLabel === null) return byField;
+  return namedColumns(byField) < byLabel.length ? byLabel : byField;
+}
+
+function headingJoinedWithWraps(
+  lines: readonly string[],
+  index: number,
+): { text: string; fields: string[] } | null {
+  const raw = lines[index] ?? "";
+  const headSpans = fieldSpans(raw);
+  if (headSpans.length === 0) return null;
+
+  const above = wrapFragmentSpans(lines, index - 1, headSpans.length);
+  const below = wrapFragmentSpans(lines, index + 1, headSpans.length);
+  if (above === null && below === null) return null;
+
+  const columns: HeadingColumn[] = headSpans.map((span) => ({ ...span }));
+  if (above !== null) overlayFragment(columns, above, "above");
+  if (below !== null) overlayFragment(columns, below, "below");
+  columns.sort((a, b) => a.start - b.start);
+
+  /**
+   * Rebuilt as a LINE, not merely as a list of fields, because `planByLabels`
+   * reads a heading as text and is the half that rescues a list whose labels
+   * also share a field. Each column is laid at its own offset, and never closer
+   * than two spaces to the one before it, so `splitFields` of this line returns
+   * exactly these columns — the invariant `parseShapes.test.ts` asserts.
+   */
+  let text = "";
+  for (const column of columns) {
+    const at = text.length === 0 ? column.start : Math.max(column.start, text.length + 2);
+    text = text.padEnd(at, " ") + column.text;
+  }
+
+  if (labelCount(text) <= labelCount(raw)) return null;
+  return { text, fields: columns.map((column) => column.text) };
 }
 
 function readRow(
@@ -2424,6 +2639,8 @@ export function parseSubListing(text: string): SubListingParse {
   let columnPlan: (ColumnKind | null)[] | null = null;
   /** The same heading read as text; see `planByLabels`. */
   let labelPlan: (ColumnKind | null)[] | null = null;
+  /** The same heading with a label wrapped onto an adjacent line joined back on. */
+  let joinedPlan: (ColumnKind | null)[] | null = null;
   /** Whether the document printed a heading at all, and whether one ever fitted. */
   let headingSeen = false;
   let planEverApplied = false;
@@ -2590,10 +2807,38 @@ export function parseSubListing(text: string): SubListingParse {
           listedBy = pendingBidder;
           pendingBidder = null;
         }
+        /**
+         * A label wrapped onto the line above or below is joined on first, so
+         * both derivations see the whole heading. Null when nothing adjacent
+         * reads as a fragment or when joining one teaches no new column, in
+         * which case this is exactly the line the document printed.
+         */
         const learned = columnPlanFrom(fields);
         if (learned) columnPlan = learned;
         const byLabel = planByLabels(raw);
         if (byLabel) labelPlan = byLabel;
+        const joined = headingJoinedWithWraps(lines, index);
+        /**
+         * AND THE SAME HEADING WITH A WRAPPED LABEL JOINED BACK ON — KEPT BESIDE
+         * THE OTHER TWO RATHER THAN REPLACING THEM.
+         *
+         * Replacing them was the first version and it cost more than it bought.
+         * A list with a wrapped label has rows of two widths: the complete ones,
+         * and the ones whose city wrapped onto a line of its own and so are a
+         * field narrower. The joined plan fits the first kind; the heading's own
+         * shorter plan fits the second. Overwriting one with the other traded
+         * `fasone`'s four-field rows for its five-field rows — it gained four
+         * cities and LOST a correct one, turned an honestly-unread line into a
+         * lead named "Metals", and wrote a city into a portion of work.
+         *
+         * So all three are kept and `readRow` takes whichever fits the row in
+         * front of it. Every row that matched a plan before matches the same plan
+         * still, and the rows that matched nothing now have one.
+         */
+        if (joined !== null) {
+          const byJoined = joinedPlanFrom(joined);
+          if (byJoined) joinedPlan = byJoined;
+        }
       }
       ignored.push({ line, text: raw, why: furniture });
       return;
@@ -2657,14 +2902,36 @@ export function parseSubListing(text: string): SubListingParse {
       return;
     }
 
-    // Whichever plan describes THIS row's shape; the field-based one wins a tie
-    // because it keeps a slot for a column this parser does not recognise.
+    /**
+     * WHICHEVER PLAN DESCRIBES THIS ROW'S SHAPE, AND OF THOSE, THE ONE THAT NAMES
+     * THE MOST OF ITS OWN COLUMNS.
+     *
+     * The order of the candidates is unchanged and still decides a tie: the
+     * field-based plan first, because it keeps a slot for a column this parser does
+     * NOT recognise and a real unrecognised column has a cell in every row; then
+     * the label scan; then the wrap-joined heading, last, so a row that already had
+     * a plan that fitted keeps the one it had.
+     *
+     * The count comes first, and that is what makes the join reach a row whose
+     * width the unjoined heading already matched. A heading printing `Place of` on
+     * its own line and `Business:` on the next yields FIVE fields either way — so
+     * the unjoined plan fits by width and simply does not know what its third
+     * column is, while the joined one reads `Place of Business` and does. Same
+     * width, strictly more of the document read; measured, the rows went from
+     * `city: null` to their cities with nothing else moving.
+     *
+     * Ties, not merely counts, because a plan with an unnamed slot is not worse
+     * than one without: it is the same reading with one column left honestly
+     * unexplained, and preferring the SHORTER-named plan at equal count is what the
+     * candidate order above already encodes.
+     */
     const planForRow =
-      columnPlan !== null && columnPlan.length === fields.length
-        ? columnPlan
-        : labelPlan !== null && labelPlan.length === fields.length
-          ? labelPlan
-          : columnPlan;
+      [columnPlan, labelPlan, joinedPlan]
+        .filter((plan): plan is (ColumnKind | null)[] => plan !== null && plan.length === fields.length)
+        .reduce<(ColumnKind | null)[] | null>(
+          (best, plan) => (best === null || namedColumns(plan) > namedColumns(best) ? plan : best),
+          null,
+        ) ?? columnPlan;
     if (planForRow !== null && planForRow.length === fields.length) planEverApplied = true;
     const result = readRow(raw, line, fields, planForRow);
     if (isUnread(result)) unread.push(result);

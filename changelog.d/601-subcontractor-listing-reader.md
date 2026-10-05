@@ -915,3 +915,82 @@ step.
 **Unchanged and still the headline: no real bid or award document has been read by
 anybody here.** The 84% is measured against pages assembled from public records, not
 against a form a customer sent.
+
+### The wrapped `License` heading, which cost 12 cities
+
+The entry above named this as the next gap rather than claiming it fixed, and
+corrected the false reason it had been given. This is the fix. **Cities on the
+real corpus: 131 → 143 of 157 rows.** Rows, names, scopes and problems are
+byte-identical either side of it — a row-level diff of all 20 lists shows only
+`city: null → <the correct city>` on twelve rows, plus one correctness fix the
+now-complete plan gives for free: a row that read `scope="Zeffery's Cabinets"
+name="Millwork"` — the exact "a lead called Millwork" defect `columnPlanFrom`
+was written to prevent — is now the right way round.
+
+Three of the twenty lists print it: the `License` label sits on one line and its
+own `#:` on the next, so the heading line names four columns while the rows carry
+five. The plan matched by count and the rows fell back to a positional read with
+no city slot.
+
+`headingJoinedWithWraps` joins a fragment on the physically adjacent line to the
+heading column whose horizontal span it OVERLAPS, and a token overlapping nothing
+becomes a column at its own offset — which is what `License` is, sitting in the
+gap between `Location:` and `DIR #:`. **It is not keyed on the word "License".**
+Every position comes off the page, so this reads the document rather than
+inventing the order that `planByLabels` rightly refuses to invent; the same wrap
+on `DIR Reg. No` or `Name of Business` is handled by the same code.
+
+Four conditions keep a DATA row out of the heading, and the measurement that
+matters is that **all four initially survived mutation** against the corpus and
+the capability fixtures. Rather than strengthen anything, each was asked what
+else already handles the input — and each turned out to be confined by a
+*different* neighbour, so each needed its own narrow case: a line as wide as the
+heading with `pending` where the identifiers go (only width gives it away); a
+narrower row whose company is literally "Pacific License Co"; the same with no
+identifier at all, caught only by its first cell naming one of our five trades;
+and a `Notes` fragment that names no column, which widens the plan with a phantom
+and makes a double-spaced scope cell read as the company name.
+
+The first version REPLACED the other plans and was rejected on measurement: +4
+cities, but it lost a correct one, turned an honestly-UNREAD line into a lead
+named "Metals", and wrote a city into a portion of work. The joined plan is a
+third candidate instead, and of those matching the row's width the one naming the
+most of its own columns wins.
+
+`splitFields` is now `fieldSpans(line).map(s => s.text)` — one definition of a
+column boundary rather than two, the `MONEY`/`moneyOnly` scar.
+
+**Also corrected in `parseShapes.test.ts`, and both were pointing readers away
+from the real defect:** an assertion that deliberately recorded the UNFIXED state
+(expecting `city` to be null, citing "12 cities on the real corpus"), and the
+claim that these headings "are not recognised as headings in the first place" —
+false, and false when written. And the fixtures for that block were never the
+shape they described: `License` sat *over* `Location:` and `#:` sat at the left
+margin. Realigned into the licence column's own gap.
+
+The `154` denominator used in several places was stale; the harness counts **157**.
+
+13 mutations, 10 killed. **Three survive and are reported rather than papered
+over**: dropping a column sort, an untrimmed span offset, and taking the first
+overlapping column instead of the largest-overlap one. All three need a fragment
+token spanning two heading columns or a one-character offset — inputs neither the
+corpus nor any non-absurd construction produces, since `fieldSpans` separates
+columns by at least two spaces and real fragments are short. They are kept
+because each is arithmetic that makes the span correct by construction rather
+than a condition, so removing them would be wrong-by-construction for that input
+rather than merely untested.
+
+**14 of 157 rows still read `city: null`** and the causes are now named rather
+than mysterious: `best-contracting` (0 of 4) wraps its CITY cells onto their own
+lines, so no row has five fields and the join has nothing to apply to; `caltec`
+(2 of 4) single-spaces `Monrovia 791060` into one field, so rows need the
+compact-reading treatment headings already have; and four rows across `suffolk`
+and `fasone` lost a cell to a wrap entirely, which would need knowing WHICH cell
+is absent — the invention this file refuses. One `fasone` line stays honestly
+UNREAD with its reason, which is the correct outcome and was preserved.
+
+One capability deliberately NOT shipped: joining the FIRST DATA ROW into the
+heading would infer an unlabelled column's meaning from its contents and read
+those cities correctly on two constructed fixtures. Left out because it makes row
+one's content define the plan for every row, on a third fixture it silenced a
+true page-level warning, and it is unmeasured on real data.

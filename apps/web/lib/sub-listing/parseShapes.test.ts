@@ -1133,14 +1133,14 @@ describe("which bidder listed each subcontractor", () => {
 });
 
 describe("a column plan that fits by count but is one slot out", () => {
-  const WRAPPED = `Sub Contractor Listing                                      License
+  const WRAPPED = `Sub Contractor Listing                                              License
 Portion of Work:        Name of Business:               Location:             DIR #:
-   #:
+                                                                    #:
 Metal Stud Framing      Example Wallworks Inc           Fairview              884201            1000447788
                         Crestline Lathing Co Inc.       Fort Hollow           448120            1000889922`;
-  const NO_COMPANY = `Sub Contractor Listing                                      License
+  const NO_COMPANY = `Sub Contractor Listing                                              License
 Portion of Work:        Name of Business:               Location:             DIR #:
-   #:
+                                                                    #:
 Metal Stud Framing      Example Wallworks Inc           Fairview              884201            1000447788
                                 Lath and Plaster        Fort Hollow           448120            1000889922`;
   const NAMED_AFTER_TOWN = `Portion of Work:        Name of Business:               Location:             License #:        DIR #:
@@ -1157,16 +1157,33 @@ Lath and Plaster        Crestline Lathing Co            Fairview              44
     // not a licence to invent a city.
     expect(shifted?.city).toBeNull();
     expect(shifted?.concerns.join(" ")).toMatch(/do not line up with this row/);
-    // The COMPLETE row above it keeps its name, trade and licence — and loses its
-    // city, to a different and still-open cause: the heading line carries four
-    // labels where the row has five fields, so no plan applies to it at all and
-    // "Fairview" has no state code for the fallback patterns to recognise. That is
-    // the wrapped-`License` heading, worth 12 cities on the real corpus and NOT
-    // fixed here. Asserted as it is rather than as it should be, so this test does
-    // not quietly start claiming a fix that has not happened.
+    /**
+     * The COMPLETE row above it keeps its name, trade and licence AND reads its
+     * city — which is a correction to this assertion's first version, in two
+     * places rather than one.
+     *
+     * It used to expect `city` to be null, and said so deliberately: the heading
+     * line carries four labels where the row has five fields, so no plan applied
+     * and "Fairview" has no state code for the fallback patterns. It called that
+     * the wrapped-`License` heading, "worth 12 cities on the real corpus and NOT
+     * fixed here". It is fixed now — the heading's wrapped label is joined back
+     * on from the line above and the line below, and the measured yield was
+     * exactly the 12 that sentence predicted (131 to 143 cities of 157 real rows).
+     * See the block at the end of this file.
+     *
+     * The second correction is to the FIXTURE, and it is the more useful one. Its
+     * `License` sat at column 60, over the top of `Location:` at 56-65, and its
+     * `#:` sat at column 3 at the left margin — neither of which is where the real
+     * documents print them. So this fixture was never the wrapped shape it was
+     * written to describe, and a join keyed on column position correctly declined
+     * to touch it. Both are now in the licence column's own gap, between
+     * `Location:` and `DIR #:`, which is what the corpus prints. The three other
+     * tests in this block were unaffected by the realignment: the plan-shift
+     * behaviour they pin does not depend on where the wrapped label sits.
+     */
     expect(parsed.rows[0]?.name).toBe("Example Wallworks Inc");
     expect(parsed.rows[0]?.portionOfWork).toBe("Metal Stud Framing");
-    expect(parsed.rows[0]?.city).toBeNull();
+    expect(parsed.rows[0]?.city).toBe("Fairview");
   });
 
   /**
@@ -1907,12 +1924,19 @@ describe("the parser says so when it did not fully read the page", () => {
    * A heading whose columns cannot be matched to the rows means the rows were read
    * by guessing. Three real lists wrap `License` onto the line above its `#:`.
    *
-   * **MEASURED LIMIT, recorded so nobody reads more into this than it does.** This
-   * fires on the shape above but on NONE of the four real wrapped or compact lists,
-   * because their heading lines are not recognised as headings in the first place —
-   * so neither the plan nor this warning reaches them, and 23 of 154 rows still
-   * read `city: null` without a word said. Fixing `furnitureReason`'s heading
-   * detection for those shapes is the next gap, not this one.
+   * **THE LIMIT THIS COMMENT RECORDED HAS BEEN MEASURED AGAIN AND BOTH HALVES OF
+   * IT WERE WRONG.** It said this warning reaches "NONE of the four real wrapped or
+   * compact lists, because their heading lines are not recognised as headings in the
+   * first place". `furnitureReason` detects a heading on 20 of 20 real lists and
+   * did when that was written; the heading was always found, and what failed was
+   * one step later, in matching its columns to the rows. And the figure moved with
+   * the fix: 26 of 157 real rows read `city: null`, not 23 of 154, and it is 14 now
+   * that a wrapped label is joined back on from the adjacent line.
+   *
+   * Recorded rather than quietly rewritten, because the wrong half is the half that
+   * stops anyone looking: a note saying the heading is never even recognised sends
+   * the next reader to `furnitureReason`, which is working, instead of to the
+   * column plan, which was not.
    */
   it("flags a recognised heading whose columns do not fit the rows", () => {
     const unusable = `                    Portion of Work:       Name of Business:                        Location:          DIR #:
@@ -1924,8 +1948,10 @@ describe("the parser says so when it did not fully read the page", () => {
   /**
    * The compact heading, where the last three labels share one field. Reading the
    * heading as TEXT rather than as whitespace-separated fields is what recovers it.
-   * Worth 3 cities on the real corpus — 128 to 131 of 154 — which is the honest
-   * figure and smaller than it looks, for the reason in the test above.
+   * Worth 3 cities on the real corpus — 128 to 131 of 157 — which is the honest
+   * figure and smaller than it looks, for the reason in the test above. (The
+   * denominator read 154 here and 157 is what the corpus harness counts; the three
+   * rows are not new, the earlier figure was.)
    */
   it("takes the plan from a COMPACT heading whose labels share a field", () => {
     const compact = `                    Portion of Work:       Name of Business:                        Location: License #: DIR #:
@@ -1933,5 +1959,333 @@ describe("the parser says so when it did not fully read the page", () => {
     const parsed = parseSubListing(compact);
     expect(parsed.rows[0]?.name).toBe("Marbury West");
     expect(parsed.rows[0]?.city).toBe("Temple City");
+  });
+});
+
+/**
+ * A COLUMN LABEL WRAPPED ONTO THE LINE ABOVE OR BELOW ITS OWN HEADING.
+ *
+ * ── THE DEFECT, AND WHY IT WAS NOT WHERE THE FILE SAID IT WAS ──
+ *
+ * Three of the 20 real bidder lists print the licence column's label across three
+ * physical lines — the word `License` on the line above, the `#:` on the line
+ * below, and nothing at all on the heading line between them:
+ *
+ *        Sub Contractor Listing                              License
+ *             Portion of Work: Name of Business:   Location:            DIR #:
+ *                                                           #:
+ *
+ * The heading line therefore names four columns while the rows beneath it are
+ * ordinary five-column rows, no plan matches, and `readRow` falls back to a
+ * positional read that has no city slot at all. Those rows came back `city: null`
+ * with nothing said about it.
+ *
+ * Earlier notes in this file and in `parse.ts` put the blame on heading DETECTION —
+ * that these lines "are not recognised as headings in the first place". They are,
+ * on 20 of 20 lists. The heading was always found; what could not be built from it
+ * was the plan.
+ *
+ * ── WHAT THE FIX READS, AND WHAT IT REFUSES TO INVENT ──
+ *
+ * `planByLabels` in `parse.ts` declined to insert a fifth column on the grounds
+ * that "inserting a column where a label is missing is inventing the order rather
+ * than reading it". That is right, and the label is not missing: it is PRINTED, at
+ * the same character offset as the column it belongs to, one line away. So a
+ * fragment's tokens are joined to the heading column whose horizontal span they
+ * overlap, and a token overlapping nothing becomes a column at its own offset —
+ * which is exactly what `License`, sitting in the gap between `Location:` and
+ * `DIR #:`, is. Every position comes off the page.
+ *
+ * ── MEASURED, ON THE REAL CORPUS, BEFORE AND AFTER ──
+ *
+ * | | rows | names | cities | scopes |
+ * | --- | --- | --- | --- | --- |
+ * | before | 157 | 157 | 131 | 151 |
+ * | after | 157 | 157 | **143** | 151 |
+ *
+ * The 12 cities are 5 on one list and 7 on another, and every one was checked
+ * against the document it came from. Nothing else moved: row for row, the parse is
+ * identical apart from those twelve and one name/scope swap that the now-complete
+ * plan also corrects. No row lost a field it had.
+ *
+ * ── NO REAL COMPANY, LICENCE OR REGISTRATION APPEARS BELOW ──
+ *
+ * Same rule as the rest of this directory. A real award packet names real
+ * subcontractors who did not agree to be test data, so every fixture here is
+ * synthesised: the LAYOUT is copied from the real documents to the character,
+ * which is the part under test, and the CONTENT is invented.
+ */
+describe("a column label wrapped onto the line above or below its own heading", () => {
+  /**
+   * The corpus shape, laid out at the offsets the real lists use: the scope at 0,
+   * the company at 24, the place at 56, the licence at 72 and the registration at
+   * 88. `License` and `#:` both sit at 72, in the gap the heading line leaves
+   * between `Location:` (ending at 65) and `DIR #:` (starting at 88).
+   */
+  const LICENCE_ABOVE = `Sub Contractor Listing                                                  License
+Portion of Work:        Name of Business:               Location:                       DIR #:
+                                                                        #:
+Metal Stud Framing      Example Wallworks Inc           Fairview        884201          1000447788
+Lath and Plaster        Crestline Lathing Co            Fort Hollow     448120          1000889922`;
+
+  /**
+   * A DIFFERENT LABEL, WRAPPED THE OTHER WAY UP, so that nothing here can pass by
+   * knowing the word "License".
+   *
+   * `Place of Business` is one of the place column's own labels, and split across
+   * two lines neither half reads as a place: `Place of` matches no column kind at
+   * all, and `Business:` on its own matches the NAME column. So the heading line
+   * names four columns and the one it cannot name is the city — the same shape as
+   * the licence case, reached through a completely different label, and with the
+   * fragment BELOW the heading rather than above it.
+   *
+   * This fixture also pins the part of the fix that is easiest to get wrong: the
+   * heading line here yields FIVE fields, so the unjoined plan already matched
+   * these rows by width and simply did not know what its third column was. A fix
+   * that only offered the joined plan to rows nothing else fitted would leave this
+   * one reading `city: null`. Measured: it did, until the plan that names more of
+   * its own columns was preferred at equal width.
+   */
+  const CITY_WRAPPED = `Portion of Work:        Name of Business:               Place of        License #:      DIR #:
+                                                        Business:
+Metal Stud Framing      Example Wallworks Inc           Fairview        884201          1000447788
+Lath and Plaster        Crestline Lathing Co            Fort Hollow     448120          1000889922`;
+
+  /** A heading that names all five columns on one line, with a row directly beneath it. */
+  const COMPLETE = `Portion of Work:        Name of Business:               Location:       License #:      DIR #:
+Metal Stud Framing      Example Wallworks Inc           Fairview        884201          1000447788
+Lath and Plaster        Crestline Lathing Co            Fort Hollow     448120          1000889922`;
+
+  /**
+   * BOTH DEFECTS AT ONCE, which is what one real list actually prints: the scope
+   * and company labels share a field (single-spaced) AND the licence label is
+   * wrapped. The second row has no place cell — its city wrapped onto a line of its
+   * own in the source — so it is a FOUR-field row under a five-column heading.
+   *
+   * This is the regression fixture for the whole block. Joining the wrapped label
+   * makes the heading's field split four wide, because `Portion of Work: Name of
+   * Business:` is one field — and a four-wide plan matches this second row by count
+   * while being one slot out. Measured, when the joined field plan was allowed to
+   * win that match, it read the scope as the company, the company as the city and a
+   * licence number into the city slot.
+   */
+  const COMPACT_AND_WRAPPED = `Sub Contractor Listing                                                  License
+Portion of Work: Name of Business:                      Location:                       DIR #:
+                                                                        #:
+Metal Stud Framing      Example Wallworks Inc           Fairview        884201          1000447788
+Lath and Plaster        Crestline Lathing Co                            448120          1000889922`;
+
+  it("reads the place column the heading only half prints on its own line", () => {
+    const parsed = parseSubListing(LICENCE_ABOVE);
+    expect(parsed.rows.map((row) => [row.portionOfWork, row.name, row.city])).toEqual([
+      ["Metal Stud Framing", "Example Wallworks Inc", "Fairview"],
+      ["Lath and Plaster", "Crestline Lathing Co", "Fort Hollow"],
+    ]);
+  });
+
+  /**
+   * And it stops SAYING the columns could not be matched, because they now can.
+   * Asserted separately from the reads above: the warning and the data are two
+   * different promises, and a fix that quietly keeps warning about a page it has
+   * read correctly teaches an owner to ignore the warning.
+   */
+  it("stops warning that the columns could not be matched to the rows", () => {
+    expect(parseSubListing(LICENCE_ABOVE).problems.join(" ")).not.toMatch(
+      /could not be matched to the rows/,
+    );
+    expect(parseSubListing(LICENCE_ABOVE).rows.every((row) => row.concerns.length === 0)).toBe(true);
+  });
+
+  it("joins a label wrapped DOWNWARD, and one that is not the licence", () => {
+    const parsed = parseSubListing(CITY_WRAPPED);
+    expect(parsed.rows.map((row) => row.city)).toEqual(["Fairview", "Fort Hollow"]);
+    expect(parsed.rows.map((row) => row.name)).toEqual([
+      "Example Wallworks Inc",
+      "Crestline Lathing Co",
+    ]);
+  });
+
+  /**
+   * THE CONTROL, and it is the gate the whole join rests on: the line next to a
+   * heading is normally the table's FIRST ROW. Joining one in would wreck a plan
+   * that was already working, so a join is kept only when it names strictly MORE
+   * columns than the heading line did alone — which a row's cells cannot do.
+   *
+   * Asserted as an equality against the same rows read from a heading with nothing
+   * adjacent to join, rather than as a list of expected values, so that it cannot
+   * drift into agreeing with whatever the parser happens to return.
+   */
+  it("does not join the first data row into the heading above it", () => {
+    const parsed = parseSubListing(COMPLETE);
+    const alone = parseSubListing(`${COMPLETE.split("\n")[0]}\n\n${COMPLETE.split("\n").slice(1).join("\n")}`);
+    const shape = (text: string) =>
+      parseSubListing(text).rows.map((row) => [
+        row.portionOfWork,
+        row.name,
+        row.city,
+        row.licence,
+        row.registration,
+      ]);
+    expect(shape(COMPLETE)).toEqual(shape(`${COMPLETE.split("\n")[0]}\n\n${COMPLETE.split("\n").slice(1).join("\n")}`));
+    expect(parsed.rows.map((row) => row.name)).toEqual(alone.rows.map((row) => row.name));
+    expect(parsed.rows[0]?.city).toBe("Fairview");
+  });
+
+  it("reads the complete rows of a heading that is BOTH compact and wrapped", () => {
+    const parsed = parseSubListing(COMPACT_AND_WRAPPED);
+    expect(parsed.rows[0]?.portionOfWork).toBe("Metal Stud Framing");
+    expect(parsed.rows[0]?.name).toBe("Example Wallworks Inc");
+    expect(parsed.rows[0]?.city).toBe("Fairview");
+  });
+
+  /**
+   * And the row a column short keeps the honest read it already had. Not an
+   * assertion that it is PERFECT — its city is genuinely not on the line, so null
+   * is the right answer — but that nothing was moved into the wrong slot and that
+   * the row says the heading did not line up.
+   */
+  it("does not shift the narrower row of the same list into the wrong columns", () => {
+    const parsed = parseSubListing(COMPACT_AND_WRAPPED);
+    const narrow = parsed.rows[1];
+    expect(narrow?.name).toBe("Crestline Lathing Co");
+    expect(narrow?.portionOfWork).toBe("Lath and Plaster");
+    expect(narrow?.city).toBeNull();
+    expect(narrow?.licence).toBe("448120");
+    expect(narrow?.concerns.join(" ")).toMatch(/do not line up with this row/);
+  });
+
+  /**
+   * ── THE FOUR CONDITIONS THAT KEEP A ROW OUT OF THE HEADING, ONE TEST EACH ──
+   *
+   * Every test below is a MUTATION DEFENCE and names the measured alternative, not
+   * because four conditions deserve four tests on principle but because all four
+   * were written first and then found to be live only by breaking them. The gate
+   * clauses survived every mutation against the real corpus and against the four
+   * fixtures above — the corpus simply has no adversarial list in it — so each case
+   * here is the narrowest input that distinguishes ONE condition from the three
+   * beside it. Without them this would be four conditions nothing defends, which is
+   * the shape CLAUDE.md names as written-documented-and-never-called.
+   *
+   * No fixture below is a shape anybody has seen on a real document. They are
+   * constructions, and that is what they are for: the question "what does the join
+   * do when handed something that is not a wrapped label" has a definite answer
+   * whether or not an agency ever prints one.
+   */
+
+  /**
+   * A LINE AS WIDE AS THE HEADING IS A ROW, WHATEVER IT CONTAINS — and this one
+   * contains nothing that says so. No licence number, no registration, no entity
+   * suffix, no "City, ST": a draft listing with `pending` where the identifiers go.
+   * So only its WIDTH gives it away, which is why the join requires a fragment to
+   * be narrower than the heading — the same "an overflow must be narrower" rule the
+   * wrapped-row continuation branch above rests on.
+   *
+   * Measured without that condition: the line is joined, the word `License` inside
+   * `Pacific License Works` names a licence column at the NAME column's offset, and
+   * the resulting five-wide plan reads the licence cell as the place —
+   * `city: "pending"`. An invented geography on a GC-facing claim, from a cell that
+   * is not a place and does not contain one.
+   */
+  const AS_WIDE_AS_THE_HEADING = `Portion of Work:        Name of Business:               Location:                       DIR #:
+Striping                Pacific License Works           San Marcos      pending         pending
+Paint Striping          Baldwin Paving Inc              Fort Hollow     448120          1000889922`;
+
+  it("refuses a line as wide as the heading, even with no identifier on it", () => {
+    const parsed = parseSubListing(AS_WIDE_AS_THE_HEADING);
+    // Both null is the honest answer here: this heading has no licence column, so
+    // its five-field rows match no plan and a bare city has no pattern to rescue it.
+    // The point is the value that must NOT appear.
+    expect(parsed.rows.map((row) => row.city)).toEqual([null, null]);
+    expect(parsed.rows.map((row) => row.city)).not.toContain("pending");
+  });
+
+  /**
+   * A ROW NARROWER THAN THE HEADING IS STILL A ROW, and width can no longer tell.
+   * This one lost its `Area` cell to a wrap, so it is four fields under a five-field
+   * heading — and it carries a registration number, which is what gives it away.
+   *
+   * Measured without the data-evidence test: `Pacific License Co` is joined into the
+   * name column, so the heading is read as naming a licence column THERE, the plan
+   * comes out `scope, name, licence, city, registration` — licence and place
+   * swapped — and the complete row beneath loses its correct city and gains a
+   * concern saying the columns did not line up. A row's own contents are not a
+   * column label.
+   */
+  const NARROWER_ROW_WITH_A_LABEL_WORD = `Portion of Work:        Name of Business:               Location:       Area:           DIR #:
+Striping                Pacific License Co              San Marcos                      1000447788
+Paint Striping          Baldwin Paving Inc              Fort Hollow     448120          1000889922`;
+
+  it("refuses a narrower row that carries an identifier", () => {
+    const parsed = parseSubListing(NARROWER_ROW_WITH_A_LABEL_WORD);
+    expect(parsed.rows[1]?.city).toBe("Fort Hollow");
+    expect(parsed.rows[1]?.name).toBe("Baldwin Paving Inc");
+    expect(parsed.rows[1]?.concerns).toEqual([]);
+  });
+
+  /**
+   * AND THE SAME ROW WITH NO IDENTIFIER AT ALL — the sole-proprietor row this
+   * directory keeps losing, with no licence, no registration and no entity suffix.
+   * The data-evidence test cannot see it. What gives it away is that its first cell
+   * NAMES ONE OF OUR FIVE TRADES, which is the same evidence `furnitureReason` uses
+   * to tell a heading from a row: a heading says what a column IS, a cell says what
+   * the work is, and no column was ever headed "Acoustical Ceiling".
+   *
+   * Measured without the trade test: the identical damage as above — the complete
+   * row below loses "Fort Hollow" and gains a concern.
+   */
+  const NARROWER_ROW_NAMING_A_TRADE = `Portion of Work:        Name of Business:               Location:       Area:           DIR #:
+Acoustical Ceiling      Finest License Works            San Marcos
+Paint Striping          Baldwin Paving Inc              Fort Hollow     448120          1000889922`;
+
+  it("refuses a narrower row with no identifier, because it names a trade", () => {
+    const parsed = parseSubListing(NARROWER_ROW_NAMING_A_TRADE);
+    expect(parsed.rows[1]?.city).toBe("Fort Hollow");
+    expect(parsed.rows[1]?.name).toBe("Baldwin Paving Inc");
+    expect(parsed.rows[1]?.concerns).toEqual([]);
+  });
+
+  /**
+   * AND THE CONDITION THAT IS NOT ABOUT ROWS AT ALL: a fragment can be a perfectly
+   * innocent piece of furniture and still ruin the plan by being joined.
+   *
+   * `Notes` above the table names no column this parser knows. Joined, it lands in
+   * the gap between the place and the licence as a column of its OWN — so the plan
+   * grows to six while still naming only five, and a six-field row now matches it.
+   * The row here is six fields for a reason that has nothing to do with any Notes
+   * column: `Metal  Stud Framing` is double-spaced, so the scope cell splits in two.
+   *
+   * Measured without the improvement gate: the row reads `name: "Stud Framing"` —
+   * half a trade, as a company, written into `SalesLead.companyName` — instead of
+   * falling back to the predicate, which prefers the entity marker and gets
+   * `Baldwin Paving Inc` right. The gate is the defect stated as a measurement: a
+   * wrapped heading names FEWER columns than its table has, so a join that names no
+   * more than the line did alone has taught nothing and is discarded.
+   */
+  const PHANTOM_COLUMN = `                                                                    Notes
+Portion of Work:        Name of Business:               Location:               License #:      DIR #:
+Metal  Stud Framing     Baldwin Paving Inc              Fort Hollow             884201          1000447788`;
+
+  it("discards a join that names no more columns than the heading line did", () => {
+    const parsed = parseSubListing(PHANTOM_COLUMN);
+    expect(parsed.rows[0]?.name).toBe("Baldwin Paving Inc");
+    expect(parsed.rows[0]?.name).not.toBe("Stud Framing");
+  });
+
+  /**
+   * THE PARTITION STILL HOLDS ON EVERY SHAPE ABOVE, which is this file's standing
+   * check that nothing was invented: every non-blank line is either a row, a header
+   * line, ignored under a named reason, or unread. A join that swallowed a line
+   * without accounting for it would show up here and nowhere else — the join reads
+   * adjacent lines but must not consume them, and each of these fragments is still
+   * filed under its own reason.
+   */
+  it("accounts for every line of every shape above, fragments included", () => {
+    for (const text of [LICENCE_ABOVE, CITY_WRAPPED, COMPLETE, COMPACT_AND_WRAPPED]) {
+      const parsed = parseSubListing(text);
+      const { nonBlankLines, rowsParsed, headerLines, ignoredLines, unreadLines } =
+        parsed.reconciliation;
+      expect(rowsParsed + headerLines + ignoredLines + unreadLines).toBe(nonBlankLines);
+      expect(parsed.ignored.every((line) => line.why.length > 0)).toBe(true);
+    }
   });
 });
