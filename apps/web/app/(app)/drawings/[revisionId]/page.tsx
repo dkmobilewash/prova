@@ -70,21 +70,11 @@ export default async function RevisionPage({ params }: { params: Promise<{ revis
         </p>
       </header>
 
-      {!revision.fileUrl ? (
-        <p className="rounded-md border border-slate-700 bg-slate-900/60 p-4 text-sm text-slate-300">
-          This revision has no drawing attached, so there is nothing to pin on. Add the file on the{" "}
-          <Link href="/drawings" className="text-sky-300 underline">
-            Drawings page
-          </Link>
-          .
-        </p>
-      ) : (
         <SheetPinSurface
           revisionId={revision.id}
           fileUrl={revision.fileUrl}
           pages={revision.sheetPages}
         />
-      )}
       </div>
     </PageShell>
   );

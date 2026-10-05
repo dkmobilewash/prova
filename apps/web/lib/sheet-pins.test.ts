@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { MAX_NOTE_LENGTH, describePin, pinContentProblem, pinPlacementProblem } from "./sheet-pins";
+import {
+  MAX_NOTE_LENGTH,
+  describePin,
+  parseSheetPages,
+  pinContentProblem,
+  pinPlacementProblem,
+} from "./sheet-pins";
 
 /**
  * The page-width box in one fixture: a D-size sheet, 42" x 30". `y` therefore
@@ -75,5 +81,68 @@ describe("a pin whose target was deleted", () => {
 
   it("falls back to a word rather than an empty label", () => {
     expect(describePin({ kind: "NOTE", note: "   " })).toBe("Note");
+  });
+});
+
+describe("the pages of an uploaded drawing", () => {
+  const ok = JSON.stringify([
+    { pageNumber: 1, widthPt: 3024, heightPt: 2160 },
+    { pageNumber: 2, widthPt: 3024, heightPt: 2160 },
+  ]);
+
+  it("takes a well-formed list", () => {
+    expect(parseSheetPages(ok)).toEqual([
+      { pageNumber: 1, widthPt: 3024, heightPt: 2160 },
+      { pageNumber: 2, widthPt: 3024, heightPt: 2160 },
+    ]);
+  });
+
+  it("REFUSES THE WHOLE LIST when one page is malformed, rather than skipping it", () => {
+    // A skipped page is a sheet that silently does not exist. A refusal is
+    // noticed; a drawing that half-uploaded is not.
+    const oneBad = JSON.stringify([
+      { pageNumber: 1, widthPt: 3024, heightPt: 2160 },
+      { pageNumber: 2, widthPt: 0, heightPt: 2160 },
+    ]);
+    expect(parseSheetPages(oneBad)).toBeNull();
+  });
+
+  it("refuses a page with no size, because a pin needs the width to mean anything", () => {
+    // `y` is a fraction of the WIDTH. A page with widthPt 0 puts every pin on
+    // it at infinity.
+    expect(parseSheetPages(JSON.stringify([{ pageNumber: 1, widthPt: 0, heightPt: 10 }]))).toBeNull();
+    expect(parseSheetPages(JSON.stringify([{ pageNumber: 1, heightPt: 10 }]))).toBeNull();
+  });
+
+  it("refuses two entries for the same page", () => {
+    // `skipDuplicates` would drop one silently, which is a half-upload
+    // reporting success.
+    const dupe = JSON.stringify([
+      { pageNumber: 1, widthPt: 10, heightPt: 10 },
+      { pageNumber: 1, widthPt: 10, heightPt: 10 },
+    ]);
+    expect(parseSheetPages(dupe)).toBeNull();
+  });
+
+  it("refuses a page number that is not a positive whole number", () => {
+    for (const bad of [0, -1, 1.5]) {
+      expect(parseSheetPages(JSON.stringify([{ pageNumber: bad, widthPt: 10, heightPt: 10 }]))).toBeNull();
+    }
+  });
+
+  it("refuses Infinity and NaN, which JSON can carry as a string and Number() accepts", () => {
+    expect(parseSheetPages('[{"pageNumber":1,"widthPt":1e999,"heightPt":10}]')).toBeNull();
+  });
+
+  it("refuses anything that is not a list of objects, without throwing", () => {
+    for (const bad of ["", "{}", "null", "[1,2]", "not json", 7, null, undefined]) {
+      expect(parseSheetPages(bad)).toBeNull();
+    }
+  });
+
+  it("accepts an empty list, leaving 'a PDF with no pages' for the caller to refuse", () => {
+    // Deliberately not conflated: an empty list is well-formed, and the reason
+    // it is useless is the caller's sentence to write.
+    expect(parseSheetPages("[]")).toEqual([]);
   });
 });

@@ -96,3 +96,57 @@ export function describePin(pin: {
   }
   return pin.mediaId ? "Photo" : "Photo (removed)";
 }
+
+/** The largest drawing set we will take. A full architectural set runs to tens
+ * of megabytes; past this it is not an upload problem, it is somebody sending
+ * the whole project.
+ *
+ * IT LIVES HERE RATHER THAN BESIDE THE ACTION THAT USES IT, and not by
+ * preference: a `"use server"` file may export ONLY async functions, so a
+ * `const` in `lib/actions/sheetPins.ts` fails the BUILD — and nothing before
+ * the build sees it. Typecheck and 8,926 tests were green when this was in
+ * the wrong file. Same family as the `export *` trap CLAUDE.md records for the
+ * actions barrel. */
+export const MAX_DRAWING_BYTES = 100_000_000;
+
+/** One page of an uploaded drawing, as the browser measured it. */
+export type SheetPageInput = { pageNumber: number; widthPt: number; heightPt: number };
+
+/**
+ * The page list the browser read out of the PDF it is uploading, as JSON.
+ *
+ * **IT REFUSES THE WHOLE LIST RATHER THAN SKIPPING A BAD ENTRY**, and that is
+ * the decision worth stating: a skipped page becomes a sheet that silently
+ * does not exist, or worse a `SheetPage` with no size — and a pin needs
+ * `widthPt`/`heightPt` to mean anything at all, because `y` is a fraction of
+ * the WIDTH. A drawing that half-uploaded is harder to notice than one that
+ * refused.
+ *
+ * Returns null rather than throwing: the caller is a Server Action, and
+ * production redacts a thrown message to a digest.
+ */
+export function parseSheetPages(raw: unknown): SheetPageInput[] | null {
+  if (typeof raw !== "string") return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) return null;
+  const pages: SheetPageInput[] = [];
+  const seen = new Set<number>();
+  for (const entry of parsed) {
+    if (typeof entry !== "object" || entry === null) return null;
+    const { pageNumber, widthPt, heightPt } = entry as Record<string, unknown>;
+    if (typeof pageNumber !== "number" || !Number.isInteger(pageNumber) || pageNumber < 1) return null;
+    if (typeof widthPt !== "number" || !Number.isFinite(widthPt) || widthPt <= 0) return null;
+    if (typeof heightPt !== "number" || !Number.isFinite(heightPt) || heightPt <= 0) return null;
+    // Two entries for one page would make `skipDuplicates` silently drop one,
+    // which is the same half-upload wearing a success.
+    if (seen.has(pageNumber)) return null;
+    seen.add(pageNumber);
+    pages.push({ pageNumber, widthPt, heightPt });
+  }
+  return pages;
+}

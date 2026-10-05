@@ -7,8 +7,13 @@ import { actionFail as fail, actionOk as ok, runAction, type ActionResult } from
 import { parseNumericInput } from "@/lib/numeric-input";
 import { can } from "@/lib/permissions";
 import { put } from "@vercel/blob";
-import { rasterisePage, readPageSizes } from "@/lib/sheet-raster";
-import { pinContentProblem, pinPlacementProblem, type SheetPinKind } from "@/lib/sheet-pins";
+import {
+  MAX_DRAWING_BYTES,
+  parseSheetPages,
+  pinContentProblem,
+  pinPlacementProblem,
+  type SheetPinKind,
+} from "@/lib/sheet-pins";
 
 /**
  * MARKS ON A DRAWING SHEET.
@@ -138,122 +143,117 @@ export async function deleteSheetPin(pinId: string): Promise<ActionResult> {
 
 
 /**
- * Record the pages of a revision's PDF, once, by READING IT ON THE SERVER.
+ * THE DRAWING ITSELF, UPLOADED INTO OUR OWN STORE.
  *
- * **IT USED TO TAKE THE DIMENSIONS FROM THE BROWSER AND THAT COULD NOT WORK.**
- * The reasoning was that pdf.js is already open to display the drawing, so the
- * page count and sizes are free there and the server needs no PDF parse. It is
- * also impossible for the files this app holds: `fileUrl` is a LINK to wherever
- * the drawing lives — the field's own help text says "Procore, Box, the GC's
- * portal" — and a browser can only read a cross-origin PDF when the host sends
- * `Access-Control-Allow-Origin`. None of those do. Found on production
- * 2026-10-05, where the server fetched the probe file fine (200, 13,264 bytes)
- * and the browser could not read a byte of it.
+ * **WHY A FILE AND NOT A LINK, which is the decision this whole function is.**
+ * `DrawingRevision.fileUrl` began as a link to wherever the drawing actually
+ * lived — Procore, Box, a GC portal — and the form still says so. That is fine
+ * for a human clicking through to read it, and it cannot support pinning:
  *
- * Reading it here removes the CORS requirement AND the question the old version
- * had to answer about trusting a client's numbers: nothing comes from the
- * client now.
+ *   - the BROWSER cannot read a cross-origin PDF without
+ *     `Access-Control-Allow-Origin`, which none of those send;
+ *   - and the SERVER cannot fetch one that is behind a login either.
  *
- * `skipDuplicates` behind `@@unique([revisionId, pageNumber])` makes this safe
- * to call repeatedly, so two people opening the same revision cannot double-
- * write and a retry is free.
+ * Both of those were measured on production on 2026-10-05, in that order, each
+ * after a fix for the previous one. The answer is the one photos have used all
+ * along: the file goes into OUR store, and then everything that needs to read
+ * it can.
+ *
+ * **NOTHING IS RENDERED ON THE SERVER.** The page images arrive already drawn,
+ * because the browser doing the uploading HAS THE BYTES IN ITS HAND and has a
+ * canvas natively. The server-side rasteriser this replaced needed
+ * `@napi-rs/canvas`, which needed `serverExternalPackages`, which stopped
+ * Vercel tracing the binary into the function — a runtime failure with every
+ * check green. That whole chain is deleted rather than fixed.
  */
-export async function ensureSheetPages(revisionId: string): Promise<ActionResult> {
+export async function uploadDrawingPdf(revisionId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
     if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+
     const revision = await prisma.drawingRevision.findFirst({
       where: { id: revisionId, set: { companyId: context.company.id } },
       select: { id: true, fileUrl: true },
     });
     if (!revision) return fail("That drawing revision is not on this account.");
-    if (!revision.fileUrl) return fail("That revision has no drawing attached.");
 
-    const already = await prisma.sheetPage.count({ where: { revisionId: revision.id } });
-    if (already > 0) return ok; // already read; nothing to do is success
-
-    let pages: { pageNumber: number; widthPt: number; heightPt: number }[];
-    try {
-      const response = await fetch(revision.fileUrl);
-      if (!response.ok) {
-        // The common case by far, and worth saying as the thing it is: the
-        // link points somewhere this app cannot reach without a login.
-        return fail(
-          "That drawing could not be fetched. The link has to be one this app can open without signing in — a file behind Procore or a GC portal cannot be read from here.",
-        );
-      }
-      pages = await readPageSizes(Buffer.from(await response.arrayBuffer()));
-    } catch {
-      return fail("That drawing could not be fetched, so its sheets could not be read.");
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) return fail("Pick a PDF to upload.");
+    if (file.type && file.type !== "application/pdf") {
+      return fail("That file is not a PDF. A drawing set has to be a PDF to pin on.");
     }
-    if (pages.length === 0) return fail("That PDF reported no usable pages.");
+    if (file.size > MAX_DRAWING_BYTES) {
+      return fail(
+        `That file is ${Math.round(file.size / 1_000_000)}MB, and ${Math.round(MAX_DRAWING_BYTES / 1_000_000)}MB is the most we can take.`,
+      );
+    }
 
-    await prisma.sheetPage.createMany({
-      data: pages.map((page) => ({
-        revisionId: revision.id,
-        pageNumber: page.pageNumber,
-        widthPt: page.widthPt,
-        heightPt: page.heightPt,
-      })),
-      skipDuplicates: true,
+    // The pages the browser read out of the same file it is uploading. Taken
+    // on trust deliberately: it is a display geometry, never a quantity, and
+    // the person supplying it is the person who chose the file. The unique
+    // key below is what stops a second upload duplicating them.
+    const pages = parseSheetPages(formData.get("pages"));
+    if (pages === null) return fail("That PDF's pages could not be read.");
+    if (pages.length === 0) return fail("That PDF has no pages.");
+
+    const stored = await put(`drawings/${revision.id}/${file.name || "drawing.pdf"}`, Buffer.from(await file.arrayBuffer()), {
+      access: "public",
+      addRandomSuffix: true,
+      contentType: "application/pdf",
     });
+
+    await prisma.$transaction([
+      prisma.drawingRevision.update({
+        where: { id: revision.id },
+        data: { fileUrl: stored.url, fileName: file.name || "drawing.pdf" },
+      }),
+      prisma.sheetPage.createMany({
+        data: pages.map((page) => ({
+          revisionId: revision.id,
+          pageNumber: page.pageNumber,
+          widthPt: page.widthPt,
+          heightPt: page.heightPt,
+        })),
+        skipDuplicates: true,
+      }),
+    ]);
     revalidatePath("/drawings");
     return ok;
   });
 }
 
-/**
- * Render a revision's sheets to images, so the PHONE has something to draw on.
- *
- * `apps/mobile` has no PDF renderer and no WebView — `react-native-svg` is its
- * only graphics dependency — so the field half of pinning is an `<Image>` of
- * this raster with an SVG overlay. That choice is what keeps the phone free of
- * a new native module, and it is why this runs on the server at all.
- *
- * ONE PAGE PER CALL, ON PURPOSE. A plan set is tens of sheets at a couple of
- * megabytes each; rendering them in one request is a function timeout waiting
- * to happen, and a partial failure would leave no way to tell which sheets had
- * been done. A page that already has an `imageUrl` is skipped, so calling this
- * repeatedly walks the set forwards and is safe to retry.
- *
- * It returns ok with nothing left to do rather than failing, because "every
- * sheet is already rendered" is success, not an error.
- */
-export async function rasteriseNextSheet(revisionId: string): Promise<ActionResult> {
+/** One sheet's picture, drawn by the browser from the PDF it just uploaded. */
+export async function storeSheetImage(pageId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
     if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
 
-    const revision = await prisma.drawingRevision.findFirst({
-      where: { id: revisionId, set: { companyId: context.company.id } },
-      select: { id: true, fileUrl: true },
+    const page = await prisma.sheetPage.findFirst({
+      where: { id: pageId, revision: { set: { companyId: context.company.id } } },
+      select: { id: true, revisionId: true, pageNumber: true, imageUrl: true },
     });
-    if (!revision) return fail("That drawing revision is not on this account.");
-    if (!revision.fileUrl) return fail("That revision has no drawing attached.");
+    if (!page) return fail("That sheet is not on this account.");
+    if (page.imageUrl) return ok; // already drawn; doing nothing is success
 
-    const next = await prisma.sheetPage.findFirst({
-      where: { revisionId: revision.id, imageUrl: null },
-      orderBy: { pageNumber: "asc" },
-      select: { id: true, pageNumber: true },
-    });
-    if (!next) return ok; // every sheet is rendered; nothing to do is success
+    const file = formData.get("image");
+    if (!(file instanceof File) || file.size === 0) return fail("That sheet produced no picture.");
+    // `parseNumericInput` and not a bare `Number()`, for the reason
+    // `numericInputCensus.test.ts` states: a Server Action answers whoever
+    // posts to it, and `Number()` accepts `0x10` and `Infinity`. This value
+    // comes from a canvas rather than a keyboard, which is exactly why the lax
+    // parser would never be noticed here.
+    const width = parseNumericInput(formData.get("widthPx"), { label: "The sheet width", integer: true, min: 1 });
+    if (!width.ok) return fail(width.error);
+    const widthPx = width.n;
 
-    const response = await fetch(revision.fileUrl);
-    if (!response.ok) {
-      return fail("That drawing could not be fetched, so its sheets could not be rendered.");
-    }
-    const bytes = Buffer.from(await response.arrayBuffer());
-
-    const raster = await rasterisePage(bytes, next.pageNumber);
-    const stored = await put(`sheets/${revision.id}/${next.pageNumber}.png`, raster.png, {
-      access: "public",
-      addRandomSuffix: true,
-      contentType: "image/png",
-    });
-
+    const stored = await put(
+      `sheets/${page.revisionId}/${page.pageNumber}.png`,
+      Buffer.from(await file.arrayBuffer()),
+      { access: "public", addRandomSuffix: true, contentType: "image/png" },
+    );
     await prisma.sheetPage.update({
-      where: { id: next.id },
-      data: { imageUrl: stored.url, imageWidthPx: raster.widthPx },
+      where: { id: page.id },
+      data: { imageUrl: stored.url, imageWidthPx: Math.round(widthPx) },
     });
     revalidatePath("/drawings");
     return ok;
