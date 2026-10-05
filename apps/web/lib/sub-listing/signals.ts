@@ -386,3 +386,53 @@ export function importSummaryFor(
   if (count === 0) return "Nothing here to propose — the row carries no checkable fact";
   return `${count} signal${count === 1 ? "" : "s"} to check`;
 }
+
+/**
+ * A ROW'S IDENTITY WITHIN ONE READING — WHICH IS NOT ITS LINE NUMBER.
+ *
+ * `SubListingImport.tsx` used to key the selection on `row.line`, and
+ * `importSubListing` used to resolve it the same way, on the stated grounds that
+ * a line number is "the only thing two parses of the same document are
+ * guaranteed to agree about". The first half of that is still true and this
+ * function keeps it. The second half was an assumption nobody had measured, and
+ * it is FALSE: `readLabelledColumnsForm` emits ONE ROW PER BIDDER COLUMN and
+ * stamps every one of them with the slot's own `firstLine` (`parse.ts`, the
+ * labelled-column reader), because that is honestly where they are — the
+ * document really does print four firms across one line.
+ *
+ * What that cost, measured against this repo's own fixtures rather than argued:
+ * `ALIGNED` parses to two rows both on line 3 and `RAGGED` to five rows on lines
+ * `[3,3,3,8,8]`. The screen posted `"3,3"`, the server deduplicated it to one
+ * line, filtered `parsed.rows` back to two, and refused on
+ * `chosen.length !== unique.length` with "the listing does not read the same way
+ * now as it did on screen — paste it again". Re-pasting reproduces it exactly,
+ * because the reader is deterministic. **So a multi-bidder labelled-column
+ * listing could be read on screen and never imported, with the refusal telling
+ * the reviewer to do the one thing that cannot help.** That is the shape the
+ * labelled reader was written FOR — the real documents it was built from print
+ * four columns across one slot.
+ *
+ * Three quieter faults of the same cause, all gone with it: `chosen[row.line]`
+ * and `attach[row.line]` ALIASED across every bidder column of a slot, so one
+ * tick ticked several firms and one "Already a lead?" choice applied to all of
+ * them; and `<li key={row.line}>` repeated a React key.
+ *
+ * The key is `line.ordinal`, the ordinal counting rows that share a line in
+ * reading order. It is derived from the reading alone, so two parses of the same
+ * text agree on it exactly as much as they agreed on the line — the property the
+ * old scheme was chosen for, kept, with uniqueness added. It is deliberately NOT
+ * a field on `ListedSub`: identity belongs to a READING, provenance belongs to
+ * the row, and `line` is still what every claim quotes.
+ *
+ * Asked by the screen and by the server, like `tooManyRows` and for the same
+ * reason — two implementations of an identity scheme is the second-list failure
+ * this repo keeps paying for.
+ */
+export function rowKeysFor(rows: readonly { line: number }[]): string[] {
+  const seen = new Map<number, number>();
+  return rows.map((row) => {
+    const ordinal = seen.get(row.line) ?? 0;
+    seen.set(row.line, ordinal + 1);
+    return `${row.line}.${ordinal}`;
+  });
+}

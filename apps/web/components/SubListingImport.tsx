@@ -7,6 +7,7 @@ import { Spinner } from "@/components/Spinner";
 import { parseSubListing } from "@/lib/sub-listing/parse";
 import {
   importSummaryFor,
+  rowKeysFor,
   shouldInclude,
   signalsForSub,
   tooManyRows,
@@ -103,20 +104,35 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
    * "Drywall and ceilings" used to match nothing, the commonest row on the page
    * was the one that could not be imported.
    */
-  const [chosen, setChosen] = useState<Record<number, boolean>>({});
-  const [attach, setAttach] = useState<Record<number, string>>({});
+  const [chosen, setChosen] = useState<Record<string, boolean>>({});
+  const [attach, setAttach] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const parsed = useMemo(() => parseSubListing(listingText), [listingText]);
 
+  /**
+   * EVERY ROW PAIRED WITH ITS IDENTITY, WHICH IS NOT ITS LINE NUMBER.
+   *
+   * `rowKeysFor` has the measurement; the short version is that a
+   * labelled-column form prints several firms across ONE line and the reader
+   * honestly stamps them all with it, so `row.line` is not unique and could not
+   * carry a selection. Keyed by line, one tick ticked every bidder column of a
+   * slot, one "Already a lead?" choice applied to all of them, and the server
+   * refused the whole paste as unreadable.
+   *
+   * Derived once and threaded through, so nothing below has to know the rule.
+   */
+  const keys = rowKeysFor(parsed.rows);
+  const keyed = parsed.rows.map((row, index) => ({ row, key: keys[index]! }));
+
   // One of our five trades, or already chosen by hand. An electrical sub on the
   // same form is not a prospect, and making a person untick twelve of them is
   // how they stop reading the list — but every row stays tickable.
-  const includes = (row: { line: number; tradeScope: string | null }) =>
-    shouldInclude(row, chosen[row.line]);
-  const included = parsed.rows.filter(includes);
+  const includes = ({ row, key }: { row: { tradeScope: string | null }; key: string }) =>
+    shouldInclude(row, chosen[key]);
+  const included = keyed.filter(includes);
   /* Asked BEFORE the round trip, from the same function the server asks. The
      button used to offer "Add 94 subcontractors" and the server refused all 94,
      so the reviewer learned the cap from an error after waiting for it. Null
@@ -195,10 +211,15 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
         formData.set("sourceUrl", sourceUrl);
         formData.set("sourceTitle", sourceTitle);
         formData.set("primeOutcome", primeOutcome);
-        formData.set("lines", included.map((row) => row.line).join(","));
-        for (const row of included) {
-          const chosen = attach[row.line];
-          if (chosen) formData.set(`attach:${row.line}`, chosen);
+        /* `rows`, not `lines`, and the rename is load-bearing rather than tidy:
+           a page left open across a deploy posts the field the OLD screen knew,
+           and a server reading the other name answers "Pick at least one
+           subcontractor to add" — a clear, recoverable refusal — instead of
+           resolving a stale line number onto whichever row now sits there. */
+        formData.set("rows", included.map(({ key }) => key).join(","));
+        for (const { key } of included) {
+          const chosen = attach[key];
+          if (chosen) formData.set(`attach:${key}`, chosen);
         }
         setError(null);
         startTransition(async () => {
@@ -430,21 +451,21 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
             </p>
           ) : (
             <ul className="mt-4 flex flex-col gap-3">
-              {parsed.rows.map((row) => {
+              {keyed.map(({ row, key }) => {
                 const matches = leadCandidatesFor(
                   { name: row.name, licence: row.licence, registration: row.registration },
                   leads,
                 );
                 const proposals = signalsForSub(row, parsed.header, primeOutcome);
-                const checked = includes(row);
+                const checked = includes({ row, key });
                 return (
-                  <li key={row.line} className="rounded-md border border-line-card p-3">
+                  <li key={key} className="rounded-md border border-line-card p-3">
                     <div className="flex items-start gap-2">
                       <input
                         type="checkbox"
                         checked={checked}
                         onChange={(event) =>
-                          setChosen((current) => ({ ...current, [row.line]: event.target.checked }))
+                          setChosen((current) => ({ ...current, [key]: event.target.checked }))
                         }
                         // `h-4 w-4` is the codebase's row-checkbox size (AskProposalCard,
                         // BidCompliance, LeadSearch). Without it this box renders at the
@@ -501,10 +522,10 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
                           <label className="mt-2 flex flex-col gap-1 text-xs text-ink-label">
                             Already a lead?
                             <select
-                              name={`attach:${row.line}`}
-                              value={attach[row.line] ?? ""}
+                              name={`attach:${key}`}
+                              value={attach[key] ?? ""}
                               onChange={(event) =>
-                                setAttach((current) => ({ ...current, [row.line]: event.target.value }))
+                                setAttach((current) => ({ ...current, [key]: event.target.value }))
                               }
                               className="rounded-md border border-line-card bg-surface px-2 py-1 text-sm text-ink-body"
                             >

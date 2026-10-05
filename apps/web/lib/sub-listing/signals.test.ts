@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { parseSubListing } from "./parse";
 import {
   MAX_LISTING_ROWS,
+  PRIME_OUTCOMES,
   importSummaryFor,
   shouldInclude,
   signalsForSub,
@@ -726,24 +728,139 @@ describe("the cap is defined once, and both callers ask for it", () => {
    * of a constant (`tooManyRows(0)`) all passed, while disabling the submit button
    * for every normal paste. `toContain` was satisfied by the import line alone.
    *
-   * So the sense of the comparison and the ARGUMENT are both pinned now, which
-   * kills all three of those. What a text census still cannot do is prove the
-   * rendered button is disabled: nothing in this repo renders
+   * So the sense of the comparison and the ARGUMENT were both pinned, as
+   * `/tooManyRows\(\s*included\.length\s*\)/` and
+   * `/disabled=\{[^}]*tooMany !== null/`. **A second review broke that pair in
+   * five ways and it is an AST census now.** The regexes were wrong in both
+   * directions, which is the part worth reading:
+   *
+   *   - a screen with both needles only in a COMMENT passed, with `tooManyRows(0)`
+   *     and an ungated button — and the commit that tightened them ADDED a ten-line
+   *     comment to that file. CLAUDE.md's #185, and the `clerkMountGate` lesson,
+   *     arriving in the census written to avoid them;
+   *   - the correct gate moved onto the CANCEL button passed, because the file has
+   *     two `disabled={…}` sites and `toMatch` does not care which one it found;
+   *   - `tooMany !== null === false` passed, being a superstring of the needle;
+   *   - and two CORRECT refactors FAILED: hoisting the gate to
+   *     `const overCap = tooMany !== null`, and renaming `included`. A census that
+   *     reds a correct screen is a census people delete.
+   *
+   * Comments are not AST nodes, so the first one dies for free; the rest die by
+   * asking the structural question instead of a textual one — WHICH button, what
+   * its `disabled` expression resolves to, and whether the cap is asked of the same
+   * expression the button's own label counts. That last one makes a rename pass
+   * automatically, because both sites rename together.
+   *
+   * ── WHAT IT STILL CANNOT SEE ──
+   *
+   * That the RENDERED button is disabled. Nothing in this repo renders
    * `SubListingImport`, and the screen suite runs in happy-dom. That behaviour was
    * verified in real Chromium instead — 61 rows print the refusal and disable
    * submit, which re-enables under the cap — and the durable CI version is the
    * dev-only public route recorded in `601-the-screen-clicked-in-a-real-browser.md`.
+   * A census can tell you the code is there and can never tell you a framework
+   * honours it.
    *
    * Worth keeping in proportion: the SERVER enforces the cap independently, and
    * `subListing.dbtest.ts` pins that it refuses 61 before reconciling a row. A
    * backwards gate here is a usability outage, not a data defect.
    */
-  it("has the review screen import the function and gate its submit button on it", () => {
-    const screen = sources.find((source) => source.path.endsWith("SubListingImport.tsx"))!.text;
-    // Asked of the real count, not of a constant.
-    expect(screen).toMatch(/tooManyRows\(\s*included\.length\s*\)/);
-    // And the gate's SENSE, which is what an inverted screen gets wrong.
-    expect(screen).toMatch(/disabled=\{[^}]*tooMany !== null/);
+  it("has the review screen gate its SUBMIT button on the cap, asked of the real count", () => {
+    const file = sources.find((source) => source.path.endsWith("SubListingImport.tsx"))!;
+    const ast = ts.createSourceFile(
+      "SubListingImport.tsx",
+      file.text,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+
+    const attributesOf = (node: ts.Node): ts.JsxAttributes | null =>
+      ts.isJsxSelfClosingElement(node)
+        ? node.attributes
+        : ts.isJsxOpeningElement(node)
+          ? node.attributes
+          : null;
+    const attribute = (attributes: ts.JsxAttributes, name: string): ts.JsxAttribute | null =>
+      attributes.properties.find(
+        (property): property is ts.JsxAttribute =>
+          ts.isJsxAttribute(property) && property.name.getText(ast) === name,
+      ) ?? null;
+
+    /** Every `const <id> = <init>` in the file, so a gate hoisted out of the JSX
+     *  resolves rather than failing a correct screen. */
+    const bindings = new Map<string, string>();
+    const capCalls: ts.CallExpression[] = [];
+    const submits: ts.Node[] = [];
+    const walk = (node: ts.Node) => {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+        bindings.set(node.name.text, node.initializer.getText(ast));
+      }
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "tooManyRows"
+      ) {
+        capCalls.push(node);
+      }
+      const attributes = attributesOf(node);
+      const type = attributes && attribute(attributes, "type");
+      if (
+        type?.initializer &&
+        ts.isStringLiteral(type.initializer) &&
+        type.initializer.text === "submit"
+      ) {
+        submits.push(node);
+      }
+      ts.forEachChild(node, walk);
+    };
+    walk(ast);
+
+    /* THE SIZE ASSERTIONS, because a parse that found nothing would satisfy
+       everything downstream. A census that derives its input has two failure
+       modes and only one of them looks like a failure. */
+    expect(submits, "no <button type=\"submit\"> in the review screen").toHaveLength(1);
+    expect(capCalls, "the screen does not call tooManyRows").toHaveLength(1);
+
+    // ASKED OF A REAL COUNT, not of a constant — `tooManyRows(0)` dies here.
+    const [capCall] = capCalls;
+    expect(capCall.arguments).toHaveLength(1);
+    const capArgument = capCall.arguments[0];
+    expect(
+      ts.isNumericLiteral(capArgument) || ts.isStringLiteral(capArgument),
+      "the cap is asked of a literal, so it can never refuse anything",
+    ).toBe(false);
+    const counted = capArgument.getText(ast);
+
+    // THE GATE IS ON THE SUBMIT BUTTON — not on Cancel, which is the other
+    // `disabled={…}` in this file.
+    const submitAttributes = attributesOf(submits[0])!;
+    const disabled = attribute(submitAttributes, "disabled");
+    expect(disabled?.initializer, "the submit button has no disabled expression").toBeDefined();
+    const gate = disabled!.initializer!.getText(ast);
+
+    /* AND ITS SENSE. `tooMany !== null` either in the expression or behind one
+       `const`, so hoisting it passes; `=== null` and `&& false` do not, and nor
+       does `tooMany !== null === false`, because the resolved text has to END with
+       the comparison rather than merely contain it. */
+    const asksTheCap = (text: string) =>
+      /\btooMany\s*!==\s*null/.test(text) &&
+      // `tooMany !== null === false` is a superstring of the needle and defuses it.
+      !/\btooMany\s*!==\s*null\s*(?:===|!==)/.test(text) &&
+      !/\btooMany\s*===\s*null/.test(text);
+    const hoisted = [...bindings].some(([id, init]) => gate.includes(id) && asksTheCap(init));
+    expect(
+      asksTheCap(gate) || hoisted,
+      `the submit button is not gated on "tooMany !== null": ${gate}`,
+    ).toBe(true);
+
+    /* THE SAME EXPRESSION THE BUTTON'S LABEL COUNTS. This is what makes a rename
+       pass: `included` → `toImport` moves both sites together, and a cap asked of
+       something the button does not count fails. */
+    expect(
+      submits[0].parent.getText(ast),
+      `the submit button's label does not count ${counted}`,
+    ).toContain(counted);
   });
 });
 
@@ -782,22 +899,106 @@ describe("the cap is defined once, and both callers ask for it", () => {
  * So the premise is a test now. This is the cheapest possible insurance on a
  * deletion, and the deletion was right: a guard that cannot fire should go, but
  * the reason it cannot fire should be checked rather than remembered.
+ *
+ * ── AND THE PREMISE TURNED OUT TO BE FALSE, SO THE DELETION IS REVERSED ──
+ *
+ * Both halves of the sentence "two rows of one paste always have different line
+ * numbers" were wrong, and the first version of this describe could not see
+ * either. An independent review found both; the fixes are here.
+ *
+ * ONE — IT ONLY ASKED ABOUT `"UNKNOWN"`. `GC_RELATIONSHIP` has a branch per prime
+ * outcome, `PRIME_OUTCOMES` has two, and `importSubListing` passes whichever the
+ * reviewer picked. Dropping `atLine` from either `AWARDED` branch left the ENTIRE
+ * repo green — 482 tests, this describe among them. So it walks both outcomes now,
+ * and the control asserts both are reached rather than counting kinds: a kind count
+ * cannot see branch coverage WITHIN a kind, which is the hole those two fell
+ * through. CLAUDE.md's "nothing is ever missing from a question nobody is asking",
+ * in a control written to prevent exactly that.
+ *
+ * TWO — LINE NUMBERS ARE NOT DISTINCT, and the collision case EXCLUDED the only
+ * shape that collides. `readLabelledColumnsForm` emits one row per bidder column
+ * and stamps every one with the slot's own `firstLine`, honestly, because the
+ * document prints them across one line. The case guarded with
+ * `first !== row.line`, which skips exactly that pair. Measured on a two-column
+ * slot: 5 claims each and 2 byte-identical — the PROJECT and GC_RELATIONSHIP
+ * claims, which draw on nothing that differs per column. Gone, and `SLOT_FORM`
+ * below puts such a document in this corpus, since `SUB_LISTING_CASES` is 18
+ * column tables and none of them has the shape.
+ *
+ * So the add-back is restored in `importSubListing` and the case below fails
+ * without it. "A guard that cannot fire should go" still stands as a rule; what it
+ * needs is that the reason it cannot fire be something somebody MEASURED.
  */
 describe("every claim names the line it came from", () => {
-  const rowsWithClaims = SUB_LISTING_CASES.flatMap((listing) => {
-    const parsed = parseSubListing(listing.text);
-    return parsed.rows.map((row) => ({
-      id: listing.id,
-      row,
-      claims: signalsForSub(row, parsed.header, "UNKNOWN"),
-    }));
-  });
+  /**
+   * A LABELLED-COLUMN FORM, WHICH THIS CORPUS DOES NOT OTHERWISE CONTAIN.
+   *
+   * Two firms printed across the `Subcontractor 1` slot, so both rows carry that
+   * slot's line — the only shape in which two rows of one document can produce a
+   * byte-identical claim. Every identifier invented.
+   *
+   * Local rather than added to `SUB_LISTING_CASES` on purpose: that corpus's cases
+   * all declare `expectUnread` and are asserted against the four-bucket partition,
+   * and the form readers deliberately report `accountedFor` differently (see the
+   * early returns in `parse.ts`). Putting this there would red those assertions for
+   * a shape they are not about.
+   */
+  const SLOT_FORM = [
+    "Project: Mesa Verde Science Building",
+    "Agency: Example Community College District",
+    "Prime Contractor: Northgate Builders",
+    "Bid Date: May 6, 2026",
+    "LIST OF SUBCONTRACTORS:",
+    "      Subcontractor 1 - Portion of the Work Activity",
+    "      (e.g. electrical, mechanical, concrete)       Metal Stud Framing & Drywall  Lath and Plaster",
+    "      Subcontractor 1 - Name of Business            Ridge Interiors Co            Crest Lathing Co",
+    "      Subcontractor 1 - Location of Business (city) Fontana                       COLTON",
+    "      Subcontractor 1 - License No.                 990881                        990882",
+    "      Subcontractor 1 - DIR Registration No.        1000030001                    1000030002",
+    "      Subcontractor 2 - Portion of the Work Activity",
+    "      (e.g. electrical, mechanical, concrete)",
+    "      Subcontractor 2 - Name of Business",
+    "      Subcontractor 2 - Location of Business (city)",
+    "      Subcontractor 2 - License No.",
+    "      Subcontractor 2 - DIR Registration No.",
+  ].join("\n");
+
+  const CORPUS = [...SUB_LISTING_CASES, { id: "labelled-two-columns", text: SLOT_FORM }];
+
+  /** Every row of every document, under BOTH prime outcomes — `GC_RELATIONSHIP`
+   *  branches on it and `importSubListing` passes whichever the reviewer picked. */
+  const rowsWithClaims = CORPUS.flatMap((listing) =>
+    PRIME_OUTCOMES.flatMap((primeOutcome) => {
+      const parsed = parseSubListing(listing.text);
+      return parsed.rows.map((row) => ({
+        id: `${listing.id}/${primeOutcome}`,
+        row,
+        claims: signalsForSub(row, parsed.header, primeOutcome),
+      }));
+    }),
+  );
 
   /** Without this the loop below is a pass over an empty list. */
   it("found rows that produce claims at all", () => {
     expect(rowsWithClaims.length).toBeGreaterThan(20);
     const total = rowsWithClaims.reduce((n, r) => n + r.claims.length, 0);
     expect(total).toBeGreaterThan(50);
+    /* BOTH OUTCOMES REACHED, asserted rather than assumed. A kind count cannot
+       see this: `GC_RELATIONSHIP` appears under either outcome, so `kinds.size`
+       below is 5 whether or not the AWARDED branch was ever called — which is how
+       two unguarded branches shipped. The claims differ in wording, so each
+       outcome's own sentence is what is looked for. */
+    const claims = rowsWithClaims.flatMap((r) => r.claims.map((c) => c.claim));
+    expect(claims.filter((claim) => claim.includes("Works under")).length).toBeGreaterThan(0);
+    expect(
+      claims.filter((claim) => claim.includes("listed them as their subcontractor when bidding"))
+        .length,
+    ).toBeGreaterThan(0);
+    /* And the corpus contains a document whose rows SHARE a line — without one,
+       the collision case below is a pass over a shape nobody pasted. */
+    const slot = parseSubListing(SLOT_FORM);
+    expect(slot.rows).toHaveLength(2);
+    expect(new Set(slot.rows.map((row) => row.line)).size).toBe(1);
     // And it reaches every kind the claim table can produce, so no branch is
     // exempt from the assertion below by simply never being exercised.
     const kinds = new Set(rowsWithClaims.flatMap((r) => r.claims.map((c) => c.kind)));
@@ -821,22 +1022,60 @@ describe("every claim names the line it came from", () => {
    * `importSubListing` relies on rather than a restatement of the one above: no
    * two rows of one document can produce the same `(kind, claim)` pair.
    */
-  it("so no two rows of one document can produce an identical kind-and-claim", () => {
-    const collisions: string[] = [];
-    for (const listing of SUB_LISTING_CASES) {
-      const parsed = parseSubListing(listing.text);
-      const seen = new Map<string, number>();
-      for (const row of parsed.rows) {
-        for (const claim of signalsForSub(row, parsed.header, "UNKNOWN")) {
-          const key = `${claim.kind}\u0000${claim.claim}`;
-          const first = seen.get(key);
-          if (first !== undefined && first !== row.line) {
-            collisions.push(`[${listing.id}] lines ${first} and ${row.line} both produced ${key}`);
+  /**
+   * AND IT IS FALSE, WHICH IS WHY `importSubListing` ADDS EACH WRITTEN CLAIM BACK
+   * INTO ITS PER-LEAD SET.
+   *
+   * This case used to skip the pair it exists to find: it guarded with
+   * `first !== row.line`, and the only rows that can collide are the ones SHARING
+   * a line. It counts them now, so the number is the thing recorded rather than an
+   * assertion of zero that was true by exclusion.
+   *
+   * Two rows of a labelled slot are two different firms, so their TRADE, GEOGRAPHY
+   * and LICENCE claims differ. What does not differ is PROJECT and
+   * GC_RELATIONSHIP: both are composed from the header and the line, and that
+   * reader sets `listedBy`, `amount` and `percentOfBid` null on every row. There is
+   * nothing left to tell them apart, and that is honest — the document really does
+   * say both firms are on that project under that prime.
+   *
+   * The consequence, which belongs to the importer rather than here: two such rows
+   * on ONE lead (a reviewer pointing both at the same "Already a lead?") would
+   * write those two sentences twice, on a lead nothing in this product can delete.
+   * `subListing.dbtest.ts`'s "writes a claim once when two rows of one slot land on
+   * one lead" is that case, and removing the add-back reds it.
+   */
+  it("collides only where two rows share a line, and only on the header claims", () => {
+    const collisions: { id: string; line: number; kind: string }[] = [];
+    for (const listing of CORPUS) {
+      for (const primeOutcome of PRIME_OUTCOMES) {
+        const parsed = parseSubListing(listing.text);
+        const seen = new Map<string, number>();
+        for (const row of parsed.rows) {
+          for (const claim of signalsForSub(row, parsed.header, primeOutcome)) {
+            const key = `${claim.kind}\u0000${claim.claim}`;
+            const first = seen.get(key);
+            if (first !== undefined) {
+              collisions.push({ id: `${listing.id}/${primeOutcome}`, line: row.line, kind: claim.kind });
+              // Two rows on DIFFERENT lines must never collide: `atLine` is what
+              // separates them, and losing it from any branch shows up here.
+              expect(
+                first,
+                `[${listing.id}/${primeOutcome}] lines ${first} and ${row.line} produced ${key}`,
+              ).toBe(row.line);
+            }
+            seen.set(key, row.line);
           }
-          seen.set(key, row.line);
         }
       }
     }
-    expect(collisions.slice(0, 3)).toEqual([]);
+    // Only the two header-derived kinds, only on the two-column form, once per
+    // outcome. Pinned as an exact set so a THIRD colliding kind — a claim that
+    // stopped quoting something per-row — fails here rather than being absorbed.
+    expect(collisions).toEqual([
+      { id: "labelled-two-columns/AWARDED", line: 7, kind: "GC_RELATIONSHIP" },
+      { id: "labelled-two-columns/AWARDED", line: 7, kind: "PROJECT" },
+      { id: "labelled-two-columns/UNKNOWN", line: 7, kind: "GC_RELATIONSHIP" },
+      { id: "labelled-two-columns/UNKNOWN", line: 7, kind: "PROJECT" },
+    ]);
   });
 });

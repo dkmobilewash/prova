@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { prisma } from "@prova/db";
 import { parseSubListing } from "@/lib/sub-listing/parse";
 import { qualify } from "@/lib/sales-qualification";
-import { MAX_LISTING_ROWS, tooManyRows } from "@/lib/sub-listing/signals";
+import { MAX_LISTING_ROWS, rowKeysFor, signalsForSub, tooManyRows } from "@/lib/sub-listing/signals";
 
 /**
  * THE IMPORTER, EXECUTED RATHER THAN READ.
@@ -75,6 +75,20 @@ const LISTING = [
 const parsedListing = parseSubListing(LISTING);
 const lineOf = (name: string) => parsedListing.rows.find((row) => row.name.startsWith(name))!.line;
 
+/**
+ * THE SELECTION TRAVELS AS ROW KEYS, NOT LINE NUMBERS, so these tests post what
+ * the review screen posts — asked of `rowKeysFor`, the one function the screen
+ * and the server both ask.
+ *
+ * Every document in this file is a column table with one firm per line, so each
+ * key happens to be `line.0`. These helpers DERIVE it rather than spelling that
+ * out: a test that hard-coded `.0` would be a second copy of the identity scheme,
+ * and it would keep passing if the scheme changed under it.
+ */
+const keysOf = (parsed: { rows: readonly { line: number }[] }) => rowKeysFor(parsed.rows).join(",");
+const keyAt = (parsed: { rows: readonly { line: number }[] }, line: number) =>
+  rowKeysFor(parsed.rows)[parsed.rows.findIndex((row) => row.line === line)]!;
+
 function form(values: Record<string, string>) {
   const fd = new FormData();
   for (const [key, value] of Object.entries(values)) fd.set(key, value);
@@ -87,7 +101,7 @@ const base = (over: Record<string, string> = {}) =>
     sourceUrl: "https://example.test/riverside/lincoln-award-packet.pdf",
     sourceTitle: "Riverside USD — Lincoln Elementary award packet",
     primeOutcome: "UNKNOWN",
-    lines: parsedListing.rows.map((row) => row.line).join(","),
+    rows: keysOf(parsedListing),
     ...over,
   });
 
@@ -150,7 +164,10 @@ describe("importing a pasted subcontractor listing", () => {
   });
 
   it("refuses a selection its own parse does not contain, rather than reconciling", async () => {
-    const result = await importSubListing(base({ lines: "1,2,999" }));
+    /* Three well-formed keys for rows this parse does not have — its rows sit on
+       lines 5, 6 and 7. Well-formed on purpose: a garbage string would be refused
+       by the parse of the field rather than by the guard under test. */
+    const result = await importSubListing(base({ rows: "1.0,2.0,999.0" }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/does not read the same way/);
     expect(await prisma.salesLeadSignal.count({ where: { companyId: context.company.id } })).toBe(0);
@@ -172,8 +189,8 @@ describe("importing a pasted subcontractor listing", () => {
    */
   it("refuses more than the cap, before it reconciles a single row", async () => {
     const over = MAX_LISTING_ROWS + 1;
-    const lines = Array.from({ length: over }, (_, index) => index + 1).join(",");
-    const result = await importSubListing(base({ lines }));
+    const rows = Array.from({ length: over }, (_, index) => `${index + 1}.0`).join(",");
+    const result = await importSubListing(base({ rows }));
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBe(tooManyRows(over));
@@ -188,8 +205,8 @@ describe("importing a pasted subcontractor listing", () => {
        succeeding: this selection is still wrong for a different reason, so the
        assertion is that the error is the RECONCILIATION one rather than the cap.
        A cap written `>=` reds here; a cap written `>` reds the case above. */
-    const lines = Array.from({ length: MAX_LISTING_ROWS }, (_, index) => index + 1).join(",");
-    const result = await importSubListing(base({ lines }));
+    const rows = Array.from({ length: MAX_LISTING_ROWS }, (_, index) => `${index + 1}.0`).join(",");
+    const result = await importSubListing(base({ rows }));
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toMatch(/does not read the same way/);
@@ -200,8 +217,8 @@ describe("importing a pasted subcontractor listing", () => {
   it("refuses to attach to another company's lead, re-read inside the transaction", async () => {
     const result = await importSubListing(
       base({
-        lines: String(lineOf("Valley Interior Systems")),
-        [`attach:${lineOf("Valley Interior Systems")}`]: otherCompanyLeadId,
+        rows: keyAt(parsedListing, lineOf("Valley Interior Systems")),
+        [`attach:${keyAt(parsedListing, lineOf("Valley Interior Systems"))}`]: otherCompanyLeadId,
       }),
     );
     expect(result.ok).toBe(false);
@@ -214,7 +231,9 @@ describe("importing a pasted subcontractor listing", () => {
 
   it("imports the listing: one lead per company, attached where asked", async () => {
     const summitLine = lineOf("Summit Acoustics");
-    const result = await importSubListing(base({ [`attach:${summitLine}`]: existingLeadId }));
+    const result = await importSubListing(
+      base({ [`attach:${keyAt(parsedListing, summitLine)}`]: existingLeadId }),
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -289,7 +308,7 @@ describe("importing a pasted subcontractor listing", () => {
         listingText: multi,
         sourceUrl: "https://example.test/two-bidders.pdf",
         primeOutcome: "AWARDED",
-        lines: parsedMulti.rows.map((row) => row.line).join(","),
+        rows: keysOf(parsedMulti),
       }),
     );
     expect(result.ok).toBe(true);
@@ -321,7 +340,7 @@ describe("importing a pasted subcontractor listing", () => {
         listingText: bare,
         sourceUrl: "https://example.test/bare.pdf",
         primeOutcome: "UNKNOWN",
-        lines: parsedBare.rows.map((row) => row.line).join(","),
+        rows: keysOf(parsedBare),
       }),
     );
     expect(result.ok).toBe(true);
@@ -357,7 +376,7 @@ function importListing(lines: string[], sourceUrl: string) {
       listingText,
       sourceUrl,
       primeOutcome: "UNKNOWN",
-      lines: parsed.rows.map((row) => row.line).join(","),
+      rows: keysOf(parsed),
     }),
   );
 }
@@ -653,7 +672,7 @@ describe("the public-register columns a listing fills", () => {
         listingText: PAGE,
         sourceUrl: "https://example.test/example-university/bid-summary.pdf",
         primeOutcome: "UNKNOWN",
-        lines: parsed.rows.map((row) => row.line).join(","),
+        rows: keysOf(parsed),
       }),
     );
     expect(result.ok).toBe(true);
@@ -730,8 +749,8 @@ describe("the public-register columns a listing fills", () => {
         listingText,
         sourceUrl: "https://example.test/moreno-valley/attach.pdf",
         primeOutcome: "UNKNOWN",
-        lines: String(line),
-        [`attach:${line}`]: existing.id,
+        rows: keyAt(parseSubListing(listingText), line),
+        [`attach:${keyAt(parseSubListing(listingText), line)}`]: existing.id,
       }),
     );
     expect(result.ok).toBe(true);
@@ -816,7 +835,12 @@ describe("the same subcontractor arriving in a second import", () => {
   function importOneFirm(project: string, prime: string, row: string, sourceUrl: string) {
     const { listingText, line } = oneFirm(project, prime, row);
     return importSubListing(
-      form({ listingText, sourceUrl, primeOutcome: "UNKNOWN", lines: String(line) }),
+      form({
+        listingText,
+        sourceUrl,
+        primeOutcome: "UNKNOWN",
+        rows: keyAt(parseSubListing(listingText), line),
+      }),
     );
   }
 
@@ -1146,7 +1170,7 @@ describe("the same subcontractor arriving in a second import", () => {
         listingText,
         sourceUrl: "https://example.test/crossimport/chandler-second.pdf",
         primeOutcome: "UNKNOWN",
-        lines: parsed.rows.map((row) => row.line).join(","),
+        rows: keysOf(parsed),
       }),
     );
     expect(second.ok).toBe(true);
@@ -1197,8 +1221,8 @@ describe("the same subcontractor arriving in a second import", () => {
         listingText,
         sourceUrl: "https://example.test/crossimport/handpicked.pdf",
         primeOutcome: "UNKNOWN",
-        lines: String(line),
-        [`attach:${line}`]: chosen.id,
+        rows: keyAt(parseSubListing(listingText), line),
+        [`attach:${keyAt(parseSubListing(listingText), line)}`]: chosen.id,
       }),
     );
     expect(result.ok).toBe(true);
@@ -1371,8 +1395,8 @@ describe("the same subcontractor arriving in a second import", () => {
         listingText,
         sourceUrl: "https://example.test/crossimport/doubletally.pdf",
         primeOutcome: "UNKNOWN",
-        lines: parsed.rows.map((row) => row.line).join(","),
-        [`attach:${parsed.rows[1].line}`]: holder.id,
+        rows: keysOf(parsed),
+        [`attach:${keyAt(parsed, parsed.rows[1].line)}`]: holder.id,
       }),
     );
     expect(result.ok).toBe(true);
@@ -1494,7 +1518,12 @@ describe("re-reading one document does not write its evidence twice", () => {
   function importAt(project: string, sourceUrl: string, city?: string) {
     const { listingText, line } = listingFor(project, city);
     return importSubListing(
-      form({ listingText, sourceUrl, primeOutcome: "UNKNOWN", lines: String(line) }),
+      form({
+        listingText,
+        sourceUrl,
+        primeOutcome: "UNKNOWN",
+        rows: keyAt(parseSubListing(listingText), line),
+      }),
     );
   }
 
@@ -1679,13 +1708,13 @@ describe("a full-size listing, at the cap", () => {
     // The premise. Without it every count below could be about a shorter paste.
     expect(parsed.rows, "the 60-row fixture did not parse to 60 rows").toHaveLength(ROWS);
     expect(parsed.unread, "the 60-row fixture has unreadable lines").toHaveLength(0);
-    return { listingText, lines: parsed.rows.map((row) => row.line).join(",") };
+    return { listingText, rows: keysOf(parsed) };
   }
 
   it("imports all 60, and the counts add up", async () => {
-    const { listingText, lines } = sixtyRows();
+    const { listingText, rows } = sixtyRows();
     const result = await importSubListing(
-      form({ listingText, sourceUrl: SOURCE, primeOutcome: "UNKNOWN", lines }),
+      form({ listingText, sourceUrl: SOURCE, primeOutcome: "UNKNOWN", rows }),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -1715,14 +1744,14 @@ describe("a full-size listing, at the cap", () => {
    * it is where 60 duplicate leads and 300 duplicate claims would have appeared.
    */
   it("re-importing the whole packet adds no lead and no claim", async () => {
-    const { listingText, lines } = sixtyRows();
+    const { listingText, rows } = sixtyRows();
     const before = await prisma.salesLeadSignal.count({
       where: { companyId: context.company.id, sourceUrl: SOURCE },
     });
     expect(before).toBeGreaterThan(0);
 
     const again = await importSubListing(
-      form({ listingText, sourceUrl: SOURCE, primeOutcome: "UNKNOWN", lines }),
+      form({ listingText, sourceUrl: SOURCE, primeOutcome: "UNKNOWN", rows }),
     );
     expect(again.ok).toBe(true);
     if (!again.ok) return;
@@ -1738,5 +1767,254 @@ describe("a full-size listing, at the cap", () => {
         where: { companyId: context.company.id, sourceUrl: SOURCE },
       }),
     ).toBe(before);
+  });
+});
+
+/**
+ * TWO FIRMS ON ONE LINE — THE SHAPE THAT COULD BE READ AND COULD NEVER BE
+ * IMPORTED.
+ *
+ * `readLabelledColumnsForm` emits one row per BIDDER COLUMN and stamps every one
+ * with the slot's own `firstLine`, honestly: the document really does print two
+ * firms across one line. Every other reader in `parse.ts` gives each row a line
+ * of its own, so nothing had ever exercised `importSubListing` with
+ * `parsed.rows` holding a repeated line number — and every fixture in this file
+ * is a column table.
+ *
+ * What that cost, measured rather than reasoned about. The screen posted the
+ * selection as LINE NUMBERS, the server deduplicated them and filtered
+ * `parsed.rows` back, and got MORE rows than keys — so
+ * `chosen.length !== unique.length` fired and the whole paste was refused with
+ * "the listing does not read the same way now as it did on screen. Paste it
+ * again." The reader is deterministic, so re-pasting reproduces it exactly: **a
+ * multi-bidder labelled-column listing was unimportable, and the refusal named
+ * the one remedy that cannot work.** That is the shape the labelled reader was
+ * written FOR; its own header says the real documents print four columns.
+ *
+ * Three quieter faults had the same cause and are gone with it: `chosen[line]`
+ * and `attach[line]` ALIASED across the columns of a slot, so one tick ticked
+ * two firms and one "Already a lead?" applied to both; and `<li key={row.line}>`
+ * repeated a React key.
+ *
+ * The selection travels as `rowKeysFor` keys now — `line.ordinal`, derived from
+ * the reading, so two parses of one text still agree on it.
+ *
+ * ── AND THE SECOND HALF, WHICH IS A DEDUPE THIS BRANCH HAD DELETED ──
+ *
+ * Both rows of a slot share a line, so `atLine` does not separate them, and the
+ * PROJECT and GC_RELATIONSHIP claims draw on nothing else that differs per
+ * column — that reader sets `listedBy`, `amount` and `percentOfBid` null on every
+ * row. So two such rows produce byte-identical `(kind, claim)` pairs: measured at
+ * 5 claims each, 2 identical, 8 distinct, under BOTH prime outcomes.
+ *
+ * Earlier on this branch the per-lead claim set stopped adding written claims
+ * back, justified by "`chosen` is a filter over `parsed.rows`, whose line numbers
+ * are distinct". They are not. The deletion was checked against the db suite and
+ * the db suite had no document of this shape — the right method, the wrong
+ * corpus. The third case below is the one that would have caught it.
+ */
+describe("a labelled-column form with two bidder columns on one line", () => {
+  /**
+   * The repo's own labelled-column shape, with invented identifiers. Two firms
+   * printed across the `Subcontractor 1` slot; the `Subcontractor 2` block is
+   * present and empty, as the real forms print it.
+   *
+   * ONE FORM PER CASE, with its own firm names and licences, because this file's
+   * cases share a company: a second case asserting `leadsCreated` on the same two
+   * names reads 0 and is RIGHT to — the importer correctly attached to the lead
+   * the first case made. Found by writing it the other way first, which is how the
+   * two-column names below came to be parameters rather than literals.
+   *
+   * The column offsets are load-bearing: this reader matches values by the column
+   * they START at, across the labelled lines. The names are padded to a fixed
+   * width here so a longer firm name cannot silently shift the licence column.
+   */
+  const slotForm = (tag: string, licenceA: string, licenceB: string) => {
+    const nameA = `${tag} Ridge Interiors`;
+    const nameB = `${tag} Crest Lathing`;
+    const pad = (value: string) => value.padEnd(30, " ");
+    return {
+      nameA,
+      nameB,
+      text: [
+        "Project: Mesa Verde Science Building",
+        "Agency: Example Community College District",
+        "Prime Contractor: Northgate Builders",
+        "Bid Date: May 6, 2026",
+        "LIST OF SUBCONTRACTORS:",
+        "      Subcontractor 1 - Portion of the Work Activity",
+        `      (e.g. electrical, mechanical, concrete)       ${pad("Metal Stud Framing & Drywall")}${"Lath and Plaster"}`,
+        `      Subcontractor 1 - Name of Business            ${pad(nameA)}${nameB}`,
+        `      Subcontractor 1 - Location of Business (city) ${pad("Fontana")}${"COLTON"}`,
+        `      Subcontractor 1 - License No.                 ${pad(licenceA)}${licenceB}`,
+        `      Subcontractor 1 - DIR Registration No.        ${pad("1000030001")}${"1000030002"}`,
+        "      Subcontractor 2 - Portion of the Work Activity",
+        "      (e.g. electrical, mechanical, concrete)",
+        "      Subcontractor 2 - Name of Business",
+        "      Subcontractor 2 - Location of Business (city)",
+        "      Subcontractor 2 - License No.",
+        "      Subcontractor 2 - DIR Registration No.",
+      ].join("\n"),
+    };
+  };
+
+  /**
+   * THE PREMISE, AND IT IS THE WHOLE REASON THE TWO CASES BELOW MEAN ANYTHING.
+   *
+   * If the reader ever stops putting both firms on one line — reasonably; it
+   * could number them — every assertion below passes for a different reason and
+   * this describe quietly stops testing what it is named after. So the shape is
+   * asserted first, and the keys are asserted to distinguish rows the line
+   * cannot.
+   */
+  it("really does read two firms off one line, and the keys tell them apart", () => {
+    const form = slotForm("Shape", "990801", "990802");
+    const parsed = parseSubListing(form.text);
+    expect(parsed.rows.map((row) => row.name)).toEqual([form.nameA, form.nameB]);
+    expect(new Set(parsed.rows.map((row) => row.line)).size).toBe(1);
+    const keys = rowKeysFor(parsed.rows);
+    expect(new Set(keys).size).toBe(2);
+    // And both carry their own identifiers, so the two leads below are two
+    // firms rather than one row read twice.
+    expect(parsed.rows.map((row) => row.licence)).toEqual(["990801", "990802"]);
+  });
+
+  it("imports both columns instead of refusing the paste", async () => {
+    const listing = slotForm("Both", "990811", "990812");
+    const SOURCE = "https://example.test/mesa-verde/both-columns.pdf";
+    const parsed = parseSubListing(listing.text);
+    const result = await importSubListing(
+      form({ listingText: listing.text, sourceUrl: SOURCE, primeOutcome: "AWARDED", rows: keysOf(parsed) }),
+    );
+    // Asserted as the ERROR being absent rather than only as ok, because this is
+    // the sentence the whole shape used to get.
+    if (!result.ok) expect(result.error).not.toMatch(/does not read the same way/);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.leadsCreated).toBe(2);
+    expect(result.value.rowsSkipped).toBe(0);
+
+    /* Selected by NAME rather than by the import's source, because a lead does
+       not record which document made it — `listedByGc` and `listedOnProject` are
+       what it keeps, and the per-claim `sourceUrl` is on the signal. */
+    const made = await prisma.salesLead.findMany({
+      where: {
+        companyId: context.company.id,
+        companyName: { in: [listing.nameA, listing.nameB] },
+      },
+      select: { companyName: true, licenceNumber: true, registrationNumber: true },
+      orderBy: { companyName: "asc" },
+    });
+    expect(made).toEqual([
+      { companyName: listing.nameB, licenceNumber: "990812", registrationNumber: "1000030002" },
+      { companyName: listing.nameA, licenceNumber: "990811", registrationNumber: "1000030001" },
+    ]);
+  });
+
+  /**
+   * ONE COLUMN OF THE SLOT, WHICH IS THE CASE THE ALIASING MADE IMPOSSIBLE.
+   *
+   * Keyed by line, `chosen[7]` was one boolean for both firms: unticking either
+   * unticked both, so a reviewer could not take Ridgeline and leave Crestline.
+   * This is also the case that DISCRIMINATES the fix from a near-miss — resolving
+   * the selection by line PREFIX rather than by key gives the right answer when
+   * both columns are ticked and the wrong one here, because it finds two rows for
+   * one key and refuses the paste as unreadable. Found by mutation: that version
+   * survived every other case in this describe.
+   */
+  it("imports one column of a slot and leaves the other alone", async () => {
+    const listing = slotForm("Single", "990821", "990822");
+    const parsed = parseSubListing(listing.text);
+    const keys = rowKeysFor(parsed.rows);
+    const sourceUrl = "https://example.test/mesa-verde/one-column.pdf";
+
+    const result = await importSubListing(
+      form({ listingText: listing.text, sourceUrl, primeOutcome: "AWARDED", rows: keys[1] }),
+    );
+    if (!result.ok) expect(result.error).not.toMatch(/does not read the same way/);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.leadsCreated).toBe(1);
+    // The SECOND column, so this cannot pass by a reader that only ever reaches
+    // the first row of a slot.
+    const names = await prisma.salesLead.findMany({
+      where: {
+        companyId: context.company.id,
+        companyName: { in: [listing.nameA, listing.nameB] },
+      },
+      select: { companyName: true },
+    });
+    expect(names.map((lead) => lead.companyName)).toEqual([listing.nameB]);
+    expect(
+      await prisma.salesLeadSignal.count({ where: { companyId: context.company.id, sourceUrl } }),
+    ).toBe(signalsForSub(parsed.rows[1], parsed.header, "AWARDED").length);
+  });
+
+  /**
+   * THE DEDUPE, FROM THE ONLY SHAPE THAT CAN REACH IT.
+   *
+   * A reviewer points BOTH columns at one lead they already had — a normal thing
+   * to do when a form prints a firm's two divisions side by side. Each row
+   * proposes five claims and two of them are byte-identical, so the lead must
+   * end with EIGHT signals. Without the per-lead set being updated as it writes,
+   * it ends with ten: two pairs of duplicate rows on a lead nothing in this
+   * product can delete.
+   *
+   * Eight is asserted as an identity against the database, and the 2 shared
+   * claims are counted from `signalsForSub` rather than hard-coded, so a claim
+   * table that changes shape fails here saying so instead of silently agreeing.
+   */
+  it("writes a claim once when two rows of one slot land on one lead", async () => {
+    const existing = await prisma.salesLead.create({
+      data: { companyId: context.company.id, companyName: "Mesa Verde Holding Lead" },
+    });
+    const listing = slotForm("Onelead", "990831", "990832");
+    const parsed = parseSubListing(listing.text);
+    const keys = rowKeysFor(parsed.rows);
+
+    const perRow = parsed.rows.map((row) => signalsForSub(row, parsed.header, "AWARDED"));
+    const distinct = new Set(perRow.flat().map((signal) => `${signal.kind}\u0000${signal.claim}`));
+    // The premise of this case: the two rows really do overlap, and not entirely.
+    expect(perRow[0].length + perRow[1].length).toBeGreaterThan(distinct.size);
+    expect(distinct.size).toBeGreaterThan(perRow[0].length);
+
+    const result = await importSubListing(
+      form({
+        listingText: listing.text,
+        sourceUrl: "https://example.test/mesa-verde/both-on-one-lead.pdf",
+        primeOutcome: "AWARDED",
+        rows: keys.join(","),
+        [`attach:${keys[0]}`]: existing.id,
+        [`attach:${keys[1]}`]: existing.id,
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.leadsCreated).toBe(0);
+    expect(result.value.leadsAttached).toBe(1);
+    expect(result.value.signalsProposed).toBe(distinct.size);
+
+    const written = await prisma.salesLeadSignal.count({
+      where: {
+        companyId: context.company.id,
+        leadId: existing.id,
+        sourceUrl: "https://example.test/mesa-verde/both-on-one-lead.pdf",
+      },
+    });
+    expect(written).toBe(distinct.size);
+
+    // And no two of them are the same sentence, which is the property rather
+    // than the count: a miscount that wrote 8 duplicates of 4 claims would pass
+    // the assertion above.
+    const rowsWritten = await prisma.salesLeadSignal.findMany({
+      where: { companyId: context.company.id, leadId: existing.id },
+      select: { kind: true, claim: true },
+    });
+    expect(new Set(rowsWritten.map((signal) => `${signal.kind}\u0000${signal.claim}`)).size).toBe(
+      rowsWritten.length,
+    );
   });
 });

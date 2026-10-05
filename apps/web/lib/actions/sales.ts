@@ -23,6 +23,7 @@ import { licenceNumberFrom, readTypedLicence } from "@/lib/sales-licence";
 import {
   PRIME_OUTCOMES,
   listedByGcFor,
+  rowKeysFor,
   signalsForSub,
   tooManyRows,
 } from "@/lib/sub-listing/signals";
@@ -1276,11 +1277,19 @@ export async function importSubListing(
 
     const parsed = parseSubListing(listingText);
 
-    const wanted = text(formData, "lines")
-      .split(",")
-      .map((entry) => Number.parseInt(entry.trim(), 10))
-      .filter((line) => Number.isInteger(line));
-    const unique = [...new Set(wanted)];
+    /* THE SELECTION ARRIVES AS ROW KEYS, NOT LINE NUMBERS, and `rowKeysFor` has
+       the whole reason. It used to be lines, on the assumption that a line
+       identifies a row; a labelled-column form prints several firms across one
+       line and the reader stamps them all with it, so this filter returned MORE
+       rows than the screen had sent keys for and the guard below refused every
+       such paste outright. Measured against this repo's own `ALIGNED` and
+       `RAGGED` fixtures: lines `[3,3]` and `[3,3,3,8,8]`.
+       The guard itself is unchanged and is now EXACT rather than a count that
+       happened to match: a key the reading no longer produces is a reading that
+       has changed under the reviewer. */
+    const keys = rowKeysFor(parsed.rows);
+    const byKey = new Map(keys.map((key, index) => [key, parsed.rows[index]!] as const));
+    const unique = [...new Set(text(formData, "rows").split(",").map((entry) => entry.trim()).filter(Boolean))];
 
     if (unique.length === 0) return { ok: false, error: "Pick at least one subcontractor to add." };
     /* The same function the review screen asks, so the sentence a reviewer reads
@@ -1288,7 +1297,7 @@ export async function importSubListing(
     const tooMany = tooManyRows(unique.length);
     if (tooMany !== null) return { ok: false, error: tooMany };
 
-    const chosen = parsed.rows.filter((row) => unique.includes(row.line));
+    const chosen = unique.map((key) => byKey.get(key)).filter((row) => row !== undefined);
     if (chosen.length !== unique.length) {
       return {
         ok: false,
@@ -1356,7 +1365,8 @@ export async function importSubListing(
        */
       const importedHere: ImportedCompany[] = [];
 
-      for (const row of chosen) {
+      for (const [index, row] of chosen.entries()) {
+        const rowKey = unique[index]!;
         const proposals = signalsForSub(row, parsed.header, primeOutcome);
         if (proposals.length === 0) {
           // A row with no checkable fact would produce a lead with nothing on
@@ -1366,7 +1376,7 @@ export async function importSubListing(
         }
 
         const provenance = listingProvenance(row, parsed.header);
-        const attachTo = text(formData, `attach:${row.line}`);
+        const attachTo = text(formData, `attach:${rowKey}`);
         let leadId: string;
         /* Whether this row MADE the lead. A lead created here is created WITH
            this row's columns, so there is nothing to fill in; every other path
@@ -1480,20 +1490,26 @@ export async function importSubListing(
         }
 
         /* Read ONCE PER LEAD and kept, because several rows of one paste can land
-           on one lead and the query is the same every time.
-           It used to also add each written claim back into the set, justified by
-           "two rows of a listing can produce the same sentence for a lead when the
-           claim does not quote their line". That sentence is FALSE: every one of
-           the five claim-producing branches in `signals.ts` appends `atLine`, and
-           `chosen` is a filter over `parsed.rows`, whose line numbers are distinct
-           — so two rows of one paste cannot produce a byte-identical
-           `(kind, claim)`, and one row produces at most one claim per kind, which
-           is in the key. Review proved the line dead by deleting it and watching
-           the whole db suite stay green.
-           Gone rather than reinforced, which is the same call as the licence
-           re-canonicalisation in `leadMatch.ts`: a guard that cannot change an
-           outcome is a claim nobody can check. The cache stays; only its false
-           reason and its unreachable half are gone. */
+           on one lead and the query is the same every time — and each written
+           claim is added back, because that is the only thing stopping two such
+           rows writing the same sentence twice.
+           THAT ADD-BACK WAS DELETED EARLIER ON THIS BRANCH AND THE REASON GIVEN
+           WAS FALSE. It read: every claim quotes its line, and `chosen` is a
+           filter over `parsed.rows`, "whose line numbers are distinct — so two
+           rows of one paste cannot produce a byte-identical (kind, claim)". The
+           first clause is true. The second is not: a labelled-column form puts
+           every bidder column of a slot on ONE line (see `rowKeysFor`), so
+           `atLine` does not separate them, and the PROJECT and GC_RELATIONSHIP
+           claims draw on nothing else that differs per column — that reader sets
+           `listedBy`, `amount` and `percentOfBid` to null on every row. Two such
+           rows reach one lead whenever a reviewer points both at the same
+           "Already a lead?", and `SalesLeadSignal` carries no unique constraint,
+           so the duplicates land and stay on a lead nothing can delete.
+           The deletion was checked the right way and against the wrong corpus:
+           the db suite stayed green because no fixture in it is a labelled-column
+           form. "A guard that cannot change an outcome should go" still stands as
+           a rule; what it needs is that the reason it cannot fire be a property
+           somebody MEASURED rather than remembered. */
         let onRecord = claimsOnRecord.get(leadId);
         if (!onRecord) {
           const held = await tx.salesLeadSignal.findMany({
@@ -1509,6 +1525,11 @@ export async function importSubListing(
         );
 
         if (fresh.length > 0) {
+          /* Into the per-lead set before the write, so a SECOND row of this same
+             paste landing on this same lead sees them. See the note above: two
+             bidder columns of one labelled slot share a line, so their PROJECT
+             and GC_RELATIONSHIP claims are byte-identical. */
+          for (const proposal of fresh) onRecord.add(claimKey(proposal.kind, proposal.claim));
           await tx.salesLeadSignal.createMany({
             data: fresh.map((proposal) => ({
               companyId: company.id,
