@@ -15,7 +15,7 @@ import { looksCutOff, type ListedSub, type SubListingParse } from "./parse";
  * and one of `PROJECT` or `GC_RELATIONSHIP` on top of that to reach *Call this
  * one*. A single row of a subcontractor listing can carry **all four**: the
  * portion of work is the trade, the city is the geography, the project is the
- * project, and the prime named at the top of the same document is the GC.
+ * project, and the bidding contractor the row sat under is the GC.
  *
  * So one pasted award packet takes a company nobody here had heard of to a
  * briefed, sourced, call-ready lead — and the opening line on the call is a
@@ -89,6 +89,77 @@ export type ProposedSignal = {
 export const PRIME_OUTCOMES = ["AWARDED", "UNKNOWN"] as const;
 export type PrimeOutcome = (typeof PRIME_OUTCOMES)[number];
 
+/** A trimmed value, or null for a blank one — what `blank` means in `sales.ts`. */
+function blank(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+/**
+ * WHICH GENERAL CONTRACTOR LISTED THIS SUBCONTRACTOR — the row's own bidder
+ * first, the page-level prime only as a fallback.
+ *
+ * **This file read `header.prime` ALONE until 2026-10-05, and that is the only
+ * fact in the whole feature the sales call is made of.** The opening line is
+ * "I saw <GC> listed you on <job>", and it is what moves a lead from *Worth a
+ * call — nothing specific to open with yet* to *Call this one*. `parse.ts` reads
+ * the bidding contractor PER ROW, because the common published shape is a bid
+ * summary naming every prime who bid — and `readHeader` deliberately NULLS
+ * `header.prime` when a page names more than one, since nothing in a flat paste
+ * says which prime a given row sits under. The two facts together meant that on
+ * exactly the documents per-row attribution was built for, this file either:
+ *
+ *   - named no GC at all (`header.prime` nulled by the conflict, so
+ *     `GC_RELATIONSHIP` returned null and `PROJECT` read "Named on a bid for
+ *     Riverbend Transit Center" — the row knowing the bidder and the sentence
+ *     not saying it), or
+ *   - named the WRONG one: a packet labelling `Prime: <first bidder>` at the top
+ *     and then printing further bidders' own tables raises no conflict, so every
+ *     row in every later block was attributed to the first prime. That is a
+ *     specific, checkable, false sentence about the reader's own work, which is
+ *     the one thing the GTM study calls disqualifying — the exact failure the
+ *     `readHeader` and `PRIME_OUTCOMES` comments were written about, arriving
+ *     through the row instead of through the header or the outcome.
+ *
+ * The stored column has been right the whole time: `sales.ts` writes
+ * `listedByGc: blank(row.listedBy) ?? blank(header.prime)`. **The sentence is the
+ * product and the column is only its storage**, so the claim had to learn the
+ * same precedence — and per #526, a second COPY of that precedence is the defect
+ * this repo keeps paying for, so this is exported for `sales.ts` to call rather
+ * than restated there. Until it does, the two agree by assertion:
+ * `signals.test.ts` reads the precedence out of `sales.ts`'s own source and fails
+ * if it drifts from this function.
+ *
+ * Falling back to `header.prime` can never attribute the wrong GC on a
+ * multi-prime page, for the reason `listingProvenance` gives: there is nothing to
+ * fall back TO in exactly the case where guessing would be wrong.
+ */
+export function listedByGcFor(
+  sub: Pick<ListedSub, "listedBy">,
+  header: Pick<SubListingParse["header"], "prime">,
+): string | null {
+  return blank(sub.listedBy) ?? blank(header.prime);
+}
+
+/**
+ * The GC as a claim may print it: marked when the name visibly does not finish.
+ *
+ * The same treatment `projectPhrase` gives a wrapped project and the TRADE claim
+ * gives a wrapped scope, for the same reason and on the half of the sentence that
+ * names a man by name. `parse.ts` joins a bidder's name across two lines only
+ * when the first ends in a comma, so "Hutchinson and" / "Sons Builders" leaves
+ * the fragment behind — and "I saw Hutchinson and listed you" is worse than
+ * saying nothing, because it is read aloud.
+ */
+function gcPhrase(
+  sub: Pick<ListedSub, "listedBy">,
+  header: Pick<SubListingParse["header"], "prime">,
+): string | null {
+  const gc = listedByGcFor(sub, header);
+  if (!gc) return null;
+  return looksCutOff(gc) ? `${gc}\u2026` : gc;
+}
+
 /** Everything a claim sentence is allowed to draw on. */
 type ClaimContext = {
   sub: ListedSub;
@@ -154,7 +225,7 @@ const CLAIM_FOR: Record<SalesSignalKind, (context: ClaimContext) => string | nul
   PROJECT: ({ sub, header, primeOutcome }) => {
     const where = projectPhrase(header);
     if (!where) return null;
-    const prime = header.prime?.trim();
+    const prime = gcPhrase(sub, header);
 
     // Awarded: the job is theirs. Unknown: they are on a BID for it, which is
     // all the listing proves and all this sentence may say.
@@ -176,16 +247,35 @@ const CLAIM_FOR: Record<SalesSignalKind, (context: ClaimContext) => string | nul
     else if (sub.percentOfBid !== null) clauses.push(`listed at ${sub.percentOfBid}% of the bid`);
     if (header.bidDate?.trim()) clauses.push(`bid opened ${header.bidDate.trim()}`);
 
-    const tail =
-      primeOutcome === "AWARDED"
-        ? ""
-        : " — the listing does not say whether that bid won";
+    /**
+     * WHAT IS KNOWN, PLUS WHAT IS DOUBTFUL — not silence, and not a guess.
+     *
+     * With no GC resolvable the project is still a real, sourced, checkable fact
+     * and worth proposing. What must not happen is a reviewer reading "Named on a
+     * bid for Riverbend Transit Center" and supplying the page's own prime from
+     * memory, which is how an unattributed row becomes a wrong name on a call. So
+     * the uncertainty is named in the sentence that carries it. This is the
+     * architecture's own rule — every signal lands PROPOSED for a person to
+     * confirm, so claim it and say what is doubtful beats refusing it.
+     *
+     * `GC_RELATIONSHIP` stays silent in the same case, and that is not an
+     * inconsistency: a confirmed GC_RELATIONSHIP carrying no GC's name would move
+     * the band to *Call this one* on nothing anybody can ring.
+     */
+    const doubts: string[] = [];
+    if (!prime) doubts.push("the paste does not say which prime bidder listed them");
+    if (primeOutcome !== "AWARDED") doubts.push("the listing does not say whether that bid won");
+    const tail = doubts.length === 0 ? "" : ` — ${doubts.join(", and ")}`;
 
     return `${clauses.join(", ")}${tail}${atLine(sub.line)}`;
   },
 
   GC_RELATIONSHIP: ({ sub, header, primeOutcome }) => {
-    const prime = header.prime?.trim();
+    /* The row's own bidder first. Nothing is invented when neither is known: the
+       labelled-column form refuses attribution outright and a page naming several
+       primes has its header nulled, and in both cases this kind has nothing to
+       say — a relationship claim that names no contractor is a rumour. */
+    const prime = gcPhrase(sub, header);
     if (!prime) return null;
     const where = projectPhrase(header);
 

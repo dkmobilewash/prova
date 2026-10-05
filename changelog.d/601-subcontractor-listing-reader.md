@@ -994,3 +994,64 @@ heading would infer an unlabelled column's meaning from its contents and read
 those cities correctly on two constructed fixtures. Left out because it makes row
 one's content define the plan for every row, on a third fixture it silenced a
 true page-level warning, and it is unmeasured on real data.
+
+### The column knew which GC, and the sentence named the wrong one
+
+The whole cold-outbound channel rests on one sentence — *"I saw <GC> listed you on
+<job>"* — and the previous commits taught the READER to attribute each row to the
+prime bidder it sat under, then stored it as `SalesLead.listedByGc`. The claim a
+person reads down the telephone was still built from `header.prime` alone.
+
+**The defect was real in both directions, and the second is worse.** Measured on
+synthetic multi-bidder inputs before anything changed:
+
+- **No `Prime:` label, two bidders each with their own table.** `header.prime` is
+  null, so every `PROJECT` claim named no GC at all and **`GC_RELATIONSHIP` was
+  dropped entirely** — one of the two kinds that lifts a lead to *Call this one*,
+  absent on exactly the documents per-row attribution was built for.
+- **One `Prime:` label at the top, a later bidder's own table below.** The claim
+  named the FIRST prime, by name, for a row listed by the second — and
+  `parsed.problems` was **empty**, because `readHeader` saw a single prime and had
+  no conflict to report. Specific and wrong, silently, on a sentence meant to be
+  read aloud.
+
+**Why 388 tests never saw it: every row of all 16 `SUB_LISTING_CASES` fixtures has
+`listedBy === null`.** The shared corpus exercises no per-row attribution anywhere,
+which is recorded here because it is still true — closing that gap belongs with
+whoever owns `subListingCases.ts`.
+
+`listedByGcFor(sub, header)` is `blank(sub.listedBy) ?? blank(header.prime)`, read
+out of `lib/actions/sales.ts` rather than invented, and exported so that file can
+call it instead of keeping the second copy #526 warns about. Until it does, a
+cross-file census reads the write site out of `sales.ts`'s source and fails if the
+precedence drifts — tolerant of renames, with a vacuity guard on the match count,
+and its failure message names the one-line fix.
+
+`gcPhrase` also marks a GC name that visibly does not finish, the treatment
+`projectPhrase` already gave a wrapped project: "I saw Hutchinson Brothers and
+listed you" is a sentence somebody says out loud.
+
+`PROJECT` gained an unknown-GC doubt clause — claim it and say what is doubtful,
+per the architecture. **`GC_RELATIONSHIP` still returns null when no GC resolves**,
+and that is deliberate: a confirmed relationship naming nobody would move the band
+to *Call this one* on nothing anybody can ring. The labelled-columns refusal to
+guess which of several bidders listed a sub survives untouched.
+
+388 → 404 tests. 13 mutations, 13 red. **One survived first and is the honest
+find:** removing the `if (!prime)` guard, so a `PROJECT` claim appends "the paste
+does not say which prime bidder listed them" even when it has just named one, left
+all 403 green. Nothing else was doing that work — every existing assertion checked
+what a claim SAYS, none checked that it does not then take it back, and the hedge
+is the half a listener believes. Closed with a test that reds on that mutation
+alone, verified independently.
+
+Two harness mistakes caught by their own controls rather than by inspection: the
+cross-file census first matched the TYPE DECLARATION of `listedByGc`, 500 lines
+above the write, and reported the rule broken while it was intact (that is now its
+own mutation); and the first probe asserted nothing about its premises, which is
+how the all-null fixture gap was found.
+
+**Flagged, not fixed:** `parse.ts` raises a problem for a cut-off `header.prime`
+but raises nothing for a cut-off row `listedBy`, so `Hutchinson Brothers and`
+reaches the stored column with no concern. The claim marks it; the column and the
+screen do not.

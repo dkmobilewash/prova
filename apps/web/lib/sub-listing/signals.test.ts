@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseSubListing } from "./parse";
 import { shouldInclude, signalsForSub, importSummaryFor } from "./signals";
@@ -289,5 +291,350 @@ describe("a project name that visibly does not finish is marked, not quoted whol
     expect(parsed.problems).toHaveLength(1);
     expect(parsed.problems[0]).toContain("agency");
     expect(parsed.problems[0]).toContain("visibly does not finish");
+  });
+});
+
+/**
+ * WHICH GENERAL CONTRACTOR LISTED THIS SUB — the sentence the whole feature is
+ * for, and the one thing this file read from the wrong place.
+ *
+ * The opening line of the call is "I saw <GC> listed you on <job>". `parse.ts`
+ * reads the bidding contractor PER ROW because the common published shape is a
+ * bid summary naming every prime who bid, and `readHeader` NULLS `header.prime`
+ * when a page names more than one. This file built both GC-naming claims from
+ * `header.prime` alone, so on exactly those documents the stored column knew the
+ * right GC and the sentence a person reads down a telephone did not.
+ *
+ * Both fixtures below are synthetic. No real company, project, licence or
+ * registration appears in this file.
+ */
+describe("the GC a claim names is the one that listed THIS row", () => {
+  /** A bid summary: two primes, each with its own table. No `Prime:` label at all. */
+  const TWO_BIDDERS = [
+    "Project: Riverbend Transit Center",
+    "Agency: Riverbend Transit Authority",
+    "Bid Date: March 11, 2026",
+    "",
+    "Northgate Builders, Inc.",
+    "      Total Bid  $12,400,000.00",
+    "      Subcontractor          City            License        Portion of Work",
+    "      Valley Interior Partners   Fontana, CA    C-9 701455    Metal stud framing & drywall",
+    "",
+    "Pinecrest Construction Group",
+    "      Total Bid  $12,910,000.00",
+    "      Subcontractor          City            License        Portion of Work",
+    "      Summit Wall Systems        Rialto, CA     C-9 712338    Drywall and acoustical ceilings",
+  ].join("\n");
+
+  /**
+   * THE DANGEROUS SHAPE, AND THE REASON IT RAISES NO PROBLEM.
+   *
+   * One `Prime:` label at the top and further bidders printing their own tables
+   * below. `readHeader` sees a single prime, so there is no conflict to null and
+   * no problem to warn anybody — and before the fix every row in every later
+   * block was attributed to the first prime. A false sentence, silently.
+   */
+  const LABEL_THEN_ANOTHER_BIDDER = [
+    "Project: Riverbend Transit Center",
+    "Prime Contractor: Northgate Builders, Inc.",
+    "",
+    "      Subcontractor          City            License        Portion of Work",
+    "      Valley Interior Partners   Fontana, CA    C-9 701455    Metal stud framing & drywall",
+    "",
+    "Pinecrest Construction Group",
+    "      Total Bid  $12,910,000.00",
+    "      Subcontractor          City            License        Portion of Work",
+    "      Summit Wall Systems        Rialto, CA     C-9 712338    Drywall and acoustical ceilings",
+  ].join("\n");
+
+  function claimsFor(text: string, index: number, outcome?: "AWARDED") {
+    const parsed = parseSubListing(text);
+    const row = parsed.rows[index];
+    const found = signalsForSub(row, parsed.header, outcome);
+    return {
+      row,
+      project: found.find((signal) => signal.kind === "PROJECT")?.claim ?? null,
+      gc: found.find((signal) => signal.kind === "GC_RELATIONSHIP")?.claim ?? null,
+    };
+  }
+
+  it("reads the bidder off the row on a page with several, where the header has none", () => {
+    const parsed = parseSubListing(TWO_BIDDERS);
+    // The premise: the page labels no prime, and each row carries its own bidder.
+    // Without this the assertions below could pass on a document that never
+    // exercised per-row attribution at all.
+    expect(parsed.header.prime).toBeNull();
+    expect(parsed.rows.map((row) => row.listedBy)).toEqual([
+      "Northgate Builders, Inc.",
+      "Pinecrest Construction Group",
+    ]);
+
+    const first = claimsFor(TWO_BIDDERS, 0);
+    expect(first.gc).toMatch(/^Northgate Builders, Inc\. listed them as their subcontractor/);
+    expect(first.project).toMatch(/Named on Northgate Builders, Inc\.'s bid for Riverbend Transit Center/);
+    expect(first.gc).not.toMatch(/Pinecrest/);
+    expect(first.project).not.toMatch(/Pinecrest/);
+
+    const second = claimsFor(TWO_BIDDERS, 1);
+    expect(second.gc).toMatch(/^Pinecrest Construction Group listed them as their subcontractor/);
+    expect(second.project).toMatch(/Named on Pinecrest Construction Group's bid for Riverbend Transit Center/);
+    expect(second.gc).not.toMatch(/Northgate/);
+    expect(second.project).not.toMatch(/Northgate/);
+  });
+
+  it("names GC_RELATIONSHIP at all on a multi-prime page, which it could not before", () => {
+    // The band needs PROJECT or GC_RELATIONSHIP on top of the baseline to reach
+    // "Call this one". With the GC read from the header alone this kind was
+    // dropped entirely here, so the lead that is most worth ringing — one on a
+    // document naming its GC per row — was the one with no opener.
+    for (const index of [0, 1]) {
+      const kinds = (() => {
+        const parsed = parseSubListing(TWO_BIDDERS);
+        return signalsForSub(parsed.rows[index], parsed.header).map((signal) => signal.kind);
+      })();
+      expect(kinds).toContain("GC_RELATIONSHIP");
+    }
+  });
+
+  it("does not attribute a later bidder's sub to the prime the page labelled", () => {
+    const parsed = parseSubListing(LABEL_THEN_ANOTHER_BIDDER);
+    // The premise again, and the reason this shape is the dangerous one: nothing
+    // is wrong enough for the reader to complain about.
+    expect(parsed.header.prime).toBe("Northgate Builders, Inc.");
+    expect(parsed.rows[1].listedBy).toBe("Pinecrest Construction Group");
+    expect(parsed.problems).toEqual([]);
+
+    const second = claimsFor(LABEL_THEN_ANOTHER_BIDDER, 1);
+    expect(second.gc).toMatch(/^Pinecrest Construction Group listed them/);
+    expect(second.project).toMatch(/Named on Pinecrest Construction Group's bid/);
+    // The specific false sentence the fix exists to stop.
+    expect(second.gc).not.toMatch(/Northgate/);
+    expect(second.project).not.toMatch(/Northgate/);
+  });
+
+  it("says 'works under' the ROW's bidder once an award is declared, not the page's", () => {
+    const second = claimsFor(LABEL_THEN_ANOTHER_BIDDER, 1, "AWARDED");
+    expect(second.gc).toMatch(/^Works under Pinecrest Construction Group/);
+    expect(second.project).toMatch(/under Pinecrest Construction Group/);
+    expect(second.gc).not.toMatch(/Northgate/);
+    expect(second.project).not.toMatch(/Northgate/);
+  });
+
+  it("falls back to the page's prime for a row the document did not attribute", () => {
+    // The other half of the precedence, and the half every existing fixture
+    // exercises: a §4104 listing filed by one prime labels it in the header and
+    // attributes no row, so dropping the fallback would silently un-name the GC
+    // on the ordinary document.
+    const parsed = parseSubListing(LABEL_THEN_ANOTHER_BIDDER);
+    expect(parsed.rows[0].listedBy).toBeNull();
+
+    const first = claimsFor(LABEL_THEN_ANOTHER_BIDDER, 0);
+    expect(first.gc).toMatch(/^Northgate Builders, Inc\. listed them as their subcontractor/);
+    expect(first.project).toMatch(/Named on Northgate Builders, Inc\.'s bid/);
+  });
+});
+
+describe("a GC nobody can name", () => {
+  /**
+   * Two labelled primes and no table heading: `readHeader` nulls the prime
+   * because nothing in a flat paste says which prime a row sits under, and with
+   * no heading there is no table edge, so no row can be attributed either.
+   * Genuinely unknown — the one case where guessing would be the wrong answer.
+   */
+  const NOBODY = [
+    "Project: Riverbend Transit Center",
+    "Prime Contractor: Northgate Builders, Inc.",
+    "Prime Contractor: Pinecrest Construction Group",
+    "Valley Interior Partners\tFontana, CA\tC-9 701455\tMetal stud framing & drywall",
+  ].join("\n");
+
+  const parsed = parseSubListing(NOBODY);
+
+  it("is genuinely unknown in this fixture, from both sources", () => {
+    expect(parsed.header.prime).toBeNull();
+    expect(parsed.rows[0].listedBy).toBeNull();
+  });
+
+  it("proposes no GC_RELATIONSHIP, because a relationship with nobody is a rumour", () => {
+    const kinds = signalsForSub(parsed.rows[0], parsed.header).map((signal) => signal.kind);
+    expect(kinds).not.toContain("GC_RELATIONSHIP");
+    // And it invents nothing from the two names the page did print.
+    for (const signal of signalsForSub(parsed.rows[0], parsed.header)) {
+      expect(signal.claim, signal.kind).not.toMatch(/Northgate|Pinecrest/);
+    }
+  });
+
+  it("still claims the project, and says in the claim that the GC is not known", () => {
+    // Claim it and say what is doubtful, rather than refuse it: the project is a
+    // real sourced fact, and the danger is a reviewer supplying one of the two
+    // primes from memory because the sentence left a hole where a GC goes.
+    const project = signalsForSub(parsed.rows[0], parsed.header).find(
+      (signal) => signal.kind === "PROJECT",
+    )!.claim;
+    expect(project).toMatch(/^Named on a bid for Riverbend Transit Center/);
+    expect(project).toMatch(/the paste does not say which prime bidder listed them/);
+    // Both doubts, in one sentence, and the older one not displaced by the new.
+    expect(project).toMatch(/does not say whether that bid won/);
+  });
+
+  it("keeps the unknown-GC doubt once an award is declared, where the bid doubt goes", () => {
+    const project = signalsForSub(parsed.rows[0], parsed.header, "AWARDED").find(
+      (signal) => signal.kind === "PROJECT",
+    )!.claim;
+    expect(project).toMatch(/^On Riverbend Transit Center/);
+    expect(project).toMatch(/the paste does not say which prime bidder listed them/);
+    expect(project).not.toMatch(/whether that bid won/);
+  });
+
+  /**
+   * CAUGHT BY MUTATION, AND NOTHING ELSE WAS DOING THIS WORK.
+   *
+   * Removing the `if (!prime)` guard — so the doubt is appended to every PROJECT
+   * claim — left all 403 tests green. Every assertion about a named GC checks what
+   * the sentence SAYS; none checked that it does not then take it back. A claim
+   * reading "Named on Northgate Builders, Inc.'s bid … — the paste does not say
+   * which prime bidder listed them" contradicts itself in the one sentence that is
+   * read aloud, and the hedge is the half a listener believes.
+   */
+  it("does not hedge a GC it has just named", () => {
+    const named = [
+      ...signalsForSub(valley, california.header),
+      ...signalsForSub(valley, california.header, "AWARDED"),
+      ...signalsForSub(cascade, oregon.header),
+    ];
+    expect(named.length).toBeGreaterThan(6);
+    for (const signal of named) {
+      expect(signal.claim, signal.kind).not.toMatch(/which prime bidder/);
+    }
+  });
+
+  it("says nothing about a GC when there is no project either", () => {
+    // Nothing to attach a doubt to, so no claim at all rather than a sentence
+    // whose only content is what it does not know.
+    const bare = parseSubListing(
+      "Valley Interior Partners\tFontana, CA\tC-9 701455\tMetal stud framing & drywall",
+    );
+    const kinds = signalsForSub(bare.rows[0], bare.header).map((signal) => signal.kind);
+    expect(kinds).not.toContain("PROJECT");
+    expect(kinds).not.toContain("GC_RELATIONSHIP");
+  });
+});
+
+describe("a GC name that visibly does not finish", () => {
+  /**
+   * The same defect as a wrapped scope and a wrapped project, on the half of the
+   * sentence that names a man by name. "I saw Hutchinson Brothers and listed
+   * you" is worse than saying nothing, because it is read aloud.
+   */
+  const HEADER_WRAP = [
+    "Project: Riverbend Transit Center",
+    "Prime Contractor: Beaumont Construction and",
+    "Sons, Inc.",
+    "Valley Interior Partners\tFontana, CA\tC-9 701455\tMetal stud framing & drywall",
+  ].join("\n");
+
+  /** The same wrap on a bidder line, which `parse.ts` joins only after a comma. */
+  const BIDDER_WRAP = [
+    "Project: Riverbend Transit Center",
+    "",
+    "Hutchinson Brothers and",
+    "      Total Bid  $9,100,000.00",
+    "      Subcontractor          City            License        Portion of Work",
+    "      Valley Interior Partners   Fontana, CA    C-9 701455    Metal stud framing & drywall",
+  ].join("\n");
+
+  it("marks a wrapped prime from the header in both claims", () => {
+    const parsed = parseSubListing(HEADER_WRAP);
+    expect(parsed.header.prime).toBe("Beaumont Construction and");
+    const claims = signalsForSub(parsed.rows[0], parsed.header);
+    for (const kind of ["PROJECT", "GC_RELATIONSHIP"] as const) {
+      const claim = claims.find((signal) => signal.kind === kind)!.claim;
+      expect(claim, kind).toContain("Beaumont Construction and…");
+    }
+  });
+
+  it("marks a wrapped bidder read off the row, which raises no problem of its own", () => {
+    const parsed = parseSubListing(BIDDER_WRAP);
+    expect(parsed.rows[0].listedBy).toBe("Hutchinson Brothers and");
+    const claims = signalsForSub(parsed.rows[0], parsed.header);
+    for (const kind of ["PROJECT", "GC_RELATIONSHIP"] as const) {
+      const claim = claims.find((signal) => signal.kind === kind)!.claim;
+      expect(claim, kind).toContain("Hutchinson Brothers and…");
+    }
+  });
+
+  it("leaves a GC name that does finish completely alone", () => {
+    const parsed = parseSubListing(
+      [
+        "Project: Riverbend Transit Center",
+        "Prime Contractor: Beaumont Construction",
+        "Valley Interior Partners\tFontana, CA\tC-9 701455\tMetal stud framing & drywall",
+      ].join("\n"),
+    );
+    const gc = signalsForSub(parsed.rows[0], parsed.header).find(
+      (signal) => signal.kind === "GC_RELATIONSHIP",
+    )!.claim;
+    expect(gc).toContain("Beaumont Construction listed them");
+    expect(gc).not.toContain("…");
+  });
+});
+
+/**
+ * ONE HOME FOR THE PRECEDENCE, ASSERTED ACROSS THE TWO FILES THAT NEED IT.
+ *
+ * `sales.ts` writes the stored `listedByGc` column and this file writes the
+ * sentence; both must read the row's own bidder first and fall back to the page
+ * prime. #526's lesson is that a completeness guard cannot see a second copy of a
+ * list, so the guard that works asks whether there IS a second one. Here the copy
+ * is unavoidable for now — `signals.ts` exports `listedByGcFor` and the action is
+ * another agent's file tonight — so this asserts the two agree, and names the
+ * one-line change that would remove the copy altogether.
+ */
+describe("the stored column and the spoken sentence agree about the GC", () => {
+  const salesSource = readFileSync(
+    fileURLToPath(new URL("../actions/sales.ts", import.meta.url)),
+    "utf8",
+  );
+
+  /**
+   * Every `listedByGc:` in that file EXCEPT the ones that are not writes: the
+   * field's own type, and the `true` of a Prisma `select`. Those two exclusions
+   * are named rather than pattern-dodged, because the first version of this
+   * census matched the TYPE DECLARATION — 500 lines above the write — and
+   * reported the rule broken while it was perfectly intact. A census that reads
+   * the wrong line is the shape this repo keeps paying for; the count below is
+   * what turns it into a loud failure instead of a confident wrong answer.
+   */
+  const writeSites = [...salesSource.matchAll(/listedByGc\s*:\s*([^\n]+)/g)]
+    .map((match) => match[1].trim())
+    .filter((rhs) => !/^(?:string|number|boolean)\b/.test(rhs))
+    .filter((rhs) => !/^(?:true|false)\s*,?$/.test(rhs));
+
+  it("can still see the write site, or nothing below means anything", () => {
+    // The vacuity guard: without it a renamed field makes the assertion below
+    // pass over an empty list. Nothing is ever missing from a list of none.
+    expect(salesSource.length).toBeGreaterThan(1000);
+    expect(
+      writeSites.length,
+      "no listedByGc write site found in sales.ts — either the field was renamed or " +
+        "this census can no longer see it, and until that is settled the agreement " +
+        "below is unverified rather than true",
+    ).toBeGreaterThanOrEqual(1);
+  });
+
+  it("reads the row's own bidder first and the page prime only as a fallback", () => {
+    for (const rhs of writeSites) {
+      const callsTheHelper = /listedByGcFor\s*\(/.test(rhs);
+      // Tolerant of renames, strict about the ORDER: row first, prime second.
+      const spellsItOut = /listedBy[\s\S]{0,40}\?\?[\s\S]{0,40}prime/i.test(rhs);
+      expect(
+        callsTheHelper || spellsItOut,
+        `sales.ts stores listedByGc as \`${rhs}\`, which no longer reads the ` +
+          "row's own bidder before the page prime. The claim in signals.ts does, so the " +
+          "column a person reads on screen and the sentence they read down a telephone " +
+          "would name different general contractors. Either fix the order or — better — " +
+          "call listedByGcFor from signals.ts, which is the single home for this rule.",
+      ).toBe(true);
+    }
   });
 });
