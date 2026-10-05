@@ -1070,6 +1070,55 @@ anything about SIZE.
   a report of this shape now needs a timestamp before it counts as
   evidence.
 
+  **SOMEBODY FINALLY RECORDED ONE, 2026-10-04, AND IT IS NOT A LOST UPDATE.**
+  The timestamp this entry has been asking for since 5 Sep. A bid quote's
+  expiry edited on production, signed in, nothing clicked afterwards and no
+  reload, polled from the page every 250ms with the clock started on the Save
+  click itself:
+
+  | | |
+  | --- | --- |
+  | Save pressed | t0 |
+  | action resolved, edit form CLOSED | **1,251 ms** |
+  | row repainted with the saved value | **3,502 ms** |
+  | still correct at | 15,000 ms |
+
+  Reload afterwards agreed: the change was stored and the screen was right.
+  So the write lands, the revalidation fires, and **the DOM corrects itself
+  without a reload** — at three and a half seconds, which is the post-action
+  server render this entry already measured at 1.5-4.4s.
+
+  **THE DEFECT IS THE GAP BETWEEN THOSE TWO ROWS, AND IT IS A UI BUG RATHER
+  THAN A DATA ONE.** `ActionForm` ran its `onSuccess` the instant
+  `await action(formData)` resolved, so for **2.25 seconds** the form was gone
+  — telling the estimator the save had finished — while the row behind it
+  still showed the OLD value. That is why this reads as a lost update: the
+  thing you were editing disappears, confirming the action worked, and the
+  screen contradicts you. Two separate click-throughs reported it as a bug;
+  neither timed it, and the untimed report is indistinguishable from a real
+  lost update, which is exactly what this entry warned.
+
+  Fixed by firing `onSuccess` (and the reset) from a settle effect gated on
+  `useTransition`'s `isPending`, which is false only once the transition's own
+  re-render has committed — so a form closes onto fresh data. The cost is that
+  a successful save leaves the form open ~2s longer, with its button disabled
+  and spinning for all of it.
+
+  **AND THE WRONG DIAGNOSIS IS WORTH MORE THAN THE FIX, because this file is
+  where it would have been believed.** Before timing it I concluded that
+  `SubmitButton`'s spinner was dead in every `ActionForm` — `useFormStatus` is
+  documented as reporting a form submitted through the `action` prop, and this
+  form uses `onSubmit`, so it followed. It is FALSE.
+  `components/actionForm.test.ts` had already measured exactly that inference,
+  says in its header that it "looked like it must break `SubmitButton`" and
+  does not because React 19 tracks a transition started in the form's own
+  submit handler, and asserts `disabled` and `aria-busy` mid-flight. Its last
+  line reads *"This test exists so that stays true rather than being
+  rediscovered."* It was rediscovered anyway, from the React docs, by somebody
+  who had not read the test sitting beside the component — and a Slack message
+  claiming 16 files were broken went out before the test was run. **Read the
+  test next to the code before believing a doc-derived inference about it.**
+
   What IS established, and was from the start: a page that fails after a
   commit invites a second click, and no create action is idempotent. #19
   disabled 57 create buttons while their form is in flight and added an
