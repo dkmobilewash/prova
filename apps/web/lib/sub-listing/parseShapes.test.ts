@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSubListing } from "./parse";
+import { looksCutOff, parseSubListing } from "./parse";
 import { SUB_LISTING_CASES } from "./subListingCases";
 
 /**
@@ -58,6 +58,8 @@ const SHAPES_ASSERTED_HERE = [
   "add-alternate-two-fields",
   "add-alternate-three-fields",
   "bare-number-as-licence",
+  "two-bidders-one-page",
+  "bidder-name-wrapped",
 ] as const;
 
 describe("the fixtures this file reasons about exist", () => {
@@ -66,7 +68,7 @@ describe("the fixtures this file reasons about exist", () => {
     for (const required of SHAPES_ASSERTED_HERE) {
       expect(ids, `${required} is asserted against in parseShapes.test.ts`).toContain(required);
     }
-    expect(SHAPES_ASSERTED_HERE).toHaveLength(7);
+    expect(SHAPES_ASSERTED_HERE).toHaveLength(9);
   });
 });
 
@@ -1069,22 +1071,15 @@ Crestline Plastering       Fort Hollow        CA      448120`;
  * contains no bidder line and null is the honest answer there.
  */
 describe("which bidder listed each subcontractor", () => {
-  const PAGE = `   Example University Capital Programs
-   BID SUMMARY SHEET WITH SUBCONTRACTORS
-   Contract: Example Hall Mailroom Conversion
-
-   Alpha Example Builders Inc
-                                        No.1 - $ 1,149,540.00 **
-   Total Bid                            $1,149,540.00
-   Sub Contractor Listing               Portion of Work:        Name of Business:           Location:     DIR #:
-                                        Metal Stud Framing      Example Wallworks Inc       Fairview      1000447788
-                                        Acoustical Ceilings     Mock Acoustics Inc          Oakmere       1000889922
-
-   Bravo Example Construction Co.,
-   Inc.                                 No.2 - $ 1,292,276.00 **
-   Total Bid                            $1,292,276.00
-                                        Portion of Work:        Name of Business:           Location:     DIR #:
-                                        Lath and Plaster        Crestline Lathing Co        Fort Hollow   1000330044`;
+  /**
+   * The fixture lives in `subListingCases.ts` so the shared corpus can see per-row
+   * attribution at all — see `two-bidders-one-page` there. It was inline here, and
+   * inline it was invisible to every `it.each(SUB_LISTING_CASES)` block in this
+   * directory, which is how a claim naming the wrong contractor survived 388 green
+   * tests. Read from the corpus rather than copied into it: one definition, so the
+   * mechanism's own tests and the corpus-wide ones cannot drift apart.
+   */
+  const PAGE = caseNamed("two-bidders-one-page");
   it("attributes every row to the bidder whose listing it sat under", () => {
     const parsed = parseSubListing(PAGE);
     expect(parsed.rows.map((r) => [r.name, r.listedBy])).toEqual([
@@ -1129,6 +1124,132 @@ describe("which bidder listed each subcontractor", () => {
     const parsed = parseSubListing(table);
     expect(parsed.rows).toHaveLength(1);
     expect(parsed.rows[0]?.listedBy).toBeNull();
+  });
+});
+
+/**
+ * ── THE CORPUS CAN NOW SEE WHO LISTED WHOM, WHICH IT COULD NOT ──
+ *
+ * Every `it.each(SUB_LISTING_CASES)` block in this directory asserts COUNTS: how
+ * many rows, how many unread, that the four buckets sum. None of them has ever
+ * looked at a row's CONTENT, and `listedBy` is the field that makes a lead worth
+ * a telephone call rather than a name off a licence database.
+ *
+ * It was not an oversight anybody could have spotted from the cases: all sixteen
+ * that predate `two-bidders-one-page` parse to `listedBy: null` on every row,
+ * because each is one bidder's table pasted alone and a table does not contain its
+ * own bidder's name. Null was right in all sixteen. The consequence was that
+ * nothing in the corpus could tell `row.listedBy` from `header.prime`, so
+ * `signals.ts` building its PROJECT and GC_RELATIONSHIP claims from the page-level
+ * prime — which a multi-bidder page REFUSES to name — put the wrong contractor's
+ * name in a claim with `problems` empty, and 388 tests stayed green.
+ */
+describe("across every fixture, each row is attributed to the bidder the case declares", () => {
+  const declaring = SUB_LISTING_CASES.filter((subject) => subject.expectListedBy !== undefined);
+
+  it.each(declaring.map((subject) => [subject.id, subject] as const))(
+    "%s attributes every row to the bidder its listing sat under",
+    (_id, declared) => {
+      const parsed = parseSubListing(declared.text);
+      expect(parsed.rows.map((row) => row.listedBy)).toEqual(declared.expectListedBy);
+    },
+  );
+
+  /**
+   * AND THE CHECK IS NOT ABOUT AN EMPTY QUESTION — the half CLAUDE.md says every
+   * deriving guard here has to assert separately, because nothing is ever missing
+   * from a list nobody declares.
+   *
+   * Two things, not one. That SOME case declares an expectation at all, so deleting
+   * `expectListedBy` from the corpus fails here rather than turning the block above
+   * into zero tests; and that some case declares two DIFFERENT bidders, because a
+   * corpus whose every declared value is the same string cannot tell per-row
+   * attribution from a single page-level prime copied onto each row — which is the
+   * exact defect this block exists for.
+   */
+  it("is not vacuous — some case declares attribution, and some case declares two different bidders", () => {
+    expect(
+      declaring.map((subject) => subject.id),
+      "no case declares `expectListedBy`, so the block above asserts nothing",
+    ).not.toEqual([]);
+    const distinct = declaring.flatMap((subject) =>
+      [...new Set(subject.expectListedBy!.filter((name) => name !== null))],
+    );
+    const perCase = declaring.map(
+      (subject) => new Set(subject.expectListedBy!.filter((name) => name !== null)).size,
+    );
+    expect(distinct.length).toBeGreaterThan(1);
+    expect(
+      Math.max(...perCase),
+      "every case names at most one bidder, so a page-level prime copied onto each row would pass",
+    ).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * ── A BIDDER WHOSE OWN NAME VISIBLY DOES NOT FINISH ──
+ *
+ * `looksCutOff` guarded three fields and not the fourth. The header's prime raised
+ * a page-level `problem`; the company name and the portion of work each raised a
+ * row `concern`; the row's `listedBy` raised nothing, and `listedBy` is what
+ * `importSubListing` writes into `SalesLead.listedByGc` and what the GC column
+ * prints.
+ *
+ * `signals.ts` hedges the SENTENCE — `gcPhrase` appends an ellipsis — and that made
+ * it worse rather than better: the sentence a person reads said "Charlie Example
+ * Brothers and…" while the field beside it said "Charlie Example Brothers and", and
+ * the hedge was the only evidence anything was wrong. The hedge is not what gets
+ * stored.
+ */
+describe("a bidder name read off a row that looks cut off", () => {
+  const parsed = parseSubListing(caseNamed("bidder-name-wrapped"));
+
+  /** The wrap is joined only after a COMMA, so this half commits alone. */
+  it("still attributes the row, because half a name is better evidence than none", () => {
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0].listedBy).toBe("Charlie Example Brothers and");
+  });
+
+  it("says on the row itself that the bidding contractor looks cut off", () => {
+    expect(parsed.rows[0].concerns.join(" ")).toMatch(/bidding contractor reads/);
+    expect(parsed.rows[0].concerns.join(" ")).toContain("Charlie Example Brothers and");
+  });
+
+  /**
+   * A CONCERN, NOT A PAGE `problem`, AND NOT BOTH.
+   *
+   * `listedBy` is per row on purpose: a page with six bidders is read correctly
+   * instead of refused. Raising a page-level problem would flip `agreed` for the
+   * whole page over one bidder, and the five rows that read correctly are not the
+   * rows anybody needs warning about.
+   */
+  it("does not refuse the page over it", () => {
+    expect(parsed.problems).toEqual([]);
+  });
+
+  /**
+   * The control, and it is not optional: a concern that fires on every row is
+   * indistinguishable from one that fires on the right row. `two-bidders-one-page`
+   * names three bidders, none of which dangles.
+   */
+  it("is silent about a bidder name that does finish", () => {
+    const clean = parseSubListing(caseNamed("two-bidders-one-page"));
+    expect(clean.rows).toHaveLength(3);
+    for (const row of clean.rows) {
+      expect(row.concerns.join(" "), row.name).not.toMatch(/bidding contractor reads/);
+    }
+  });
+
+  /**
+   * The same predicate, not a second rule. `looksCutOff` is the one definition of
+   * "visibly does not finish" in `parse.ts` — it already answers for the header's
+   * prime, the company name and the portion of work — so a second spelling of the
+   * dangling set here would be the "is there a second list" defect. Asserted by
+   * showing this concern agrees with the exported predicate on the value it quotes.
+   */
+  it("agrees with the exported predicate rather than spelling the rule a second time", () => {
+    expect(looksCutOff(parsed.rows[0].listedBy)).toBe(true);
+    expect(looksCutOff("Charlie Example Brothers")).toBe(false);
   });
 });
 

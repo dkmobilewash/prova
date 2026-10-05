@@ -2437,17 +2437,33 @@ function formShapedListing(text: string): FormShape | null {
 }
 
 /**
- * Both messages say the same three things — this is a form, nothing was read,
- * here is what to do — because that is what a person needs. They differ in what
- * they NAME, since "one numbered block per subcontractor" would not help anyone
- * holding a BuildingConnected export, and a reader who cannot tell which
- * document they have cannot act on the advice.
+ * THE REFUSAL, AND IT IS NOW FOR ONE SHAPE BECAUSE ONLY ONE SHAPE IS REFUSED.
+ *
+ * This held two messages and said they "differ in what they NAME, since 'one
+ * numbered block per subcontractor' would not help anyone holding a
+ * BuildingConnected export". That was true when both shapes were refused. The
+ * labelled-column form is READ now — `readLabelledColumnsForm`, dispatched above —
+ * and its branch RETURNS, so by the time execution reaches the one site that
+ * indexes this table, `formShape` can only be `"numbered-blocks"`.
+ *
+ * **DELETED RATHER THAN KEPT FOR A SHAPE THAT MIGHT COME BACK**, and the deletion
+ * is what the key type now PROVES: narrowing the key to the one reachable shape
+ * makes the compiler check the claim on every build, where a wider type would
+ * silently admit a second unreachable entry again. It was CLAUDE.md's "written,
+ * documented, and never called" shape wearing a message — and a refusal nobody can
+ * be shown is worse than no refusal, because it reads in review as a path that
+ * exists.
+ *
+ * Two things that are NOT the reason it went, because each would have been the
+ * wrong reason: the dispatch was not reordered to make it reachable (that is
+ * changing behaviour to justify a string), and the message itself was not wrong.
+ * If the labelled-column reader is ever withdrawn, the branch comes back and so
+ * does its message — written against the document it is refusing, not restored
+ * from here.
  */
-const FORM_REFUSAL: Record<"numbered-blocks" | "labelled-columns", string> = {
+const FORM_REFUSAL: Record<"numbered-blocks", string> = {
   "numbered-blocks":
     "this looks like a filled subcontractor FORM — the kind with one numbered block per subcontractor and the labels printed beside the values — and this reader only understands a column TABLE. Nothing on this page has been read as a subcontractor, deliberately, because reading it wrongly would import leads that are not real. Paste the subcontractor table from a bid tabulation or an award packet instead, or send this document to Diego so the form reader can be built against it.",
-  "labelled-columns":
-    "this looks like a filled subcontractor FORM — the kind that prints a label on the left (“Name of Business”, “License No.”) with each bidder's answers in columns to the right of it — and this reader only understands a column TABLE, one subcontractor per line. Nothing on this page has been read as a subcontractor, deliberately: read as a table this shape produces dozens of rows that are not subcontractors at all, including on documents that list none. Paste the subcontractor table from a bid tabulation or an award packet instead, or send this document to Diego so the form reader can be built against it.",
 };
 
 /* ------------------------------------------------------------------------- *
@@ -3576,7 +3592,41 @@ export function parseSubListing(text: string): SubListingParse {
     if (planForRow !== null && planForRow.length === fields.length) planEverApplied = true;
     const result = readRow(raw, line, fields, planForRow);
     if (isUnread(result)) unread.push(result);
-    else rows.push({ ...result, listedBy });
+    else {
+      const row = { ...result, listedBy };
+      /**
+       * THE BIDDER'S OWN NAME CAN WRAP TOO, AND THIS WAS THE ONE CUT-OFF FIELD
+       * NOTHING SAID ANYTHING ABOUT.
+       *
+       * `looksCutOff` already guards the header's prime (a page-level problem),
+       * the company name and the portion of work (row-level concerns). The row's
+       * `listedBy` had neither. A bidder line that wraps is joined only after a
+       * COMMA — "Williamson Construction Co.," / "Inc." — so a name ending in a
+       * conjunction ("Charlie Example Brothers and" / "Sons, Inc.") commits the
+       * first half alone, and that half is what `importSubListing` writes into
+       * `SalesLead.listedByGc` and what the screen prints in the GC column.
+       *
+       * `signals.ts` hedges the CLAIM — `gcPhrase` appends an ellipsis, so the
+       * sentence a person reads says "Charlie Example Brothers and…" — and that
+       * made the asymmetry worse rather than better: the sentence was honest
+       * while the field beside it was not, and only the sentence is evidence
+       * that anything is wrong. Nothing in `problems` and nothing in `concerns` meant
+       * `agreed: true` over a GC named by half its name.
+       *
+       * The same predicate, not a second rule: `looksCutOff` is exported for
+       * exactly this and is the only definition of "visibly does not finish" in
+       * this file. A ROW concern rather than a page `problem`, because `listedBy`
+       * is per row on purpose — see the field's own comment. One wrapped bidder
+       * on a six-bidder page must not refuse the five that read correctly, and
+       * the five rows under the wrapped one are the rows that need the sentence.
+       */
+      if (looksCutOff(row.listedBy)) {
+        row.concerns.push(
+          `the bidding contractor reads "${row.listedBy}" and looks cut off — check whether it continues on the next line before any claim naming them goes out`,
+        );
+      }
+      rows.push(row);
+    }
   });
 
   /**

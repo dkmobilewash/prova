@@ -1139,3 +1139,82 @@ with leading zeros (a real CSLB number has none), DIRs are `10000000xx`, phones 
 reserved `555` range, emails use the reserved `.test` TLD, firm names are invented, and
 the four real dollar figures return **zero** occurrences across both files. Only the
 layout is copied — box 1 at column 0, the second at 40, the third at 89.
+
+### A cut-off GC name reached the stored column in silence, and the corpus could not see attribution at all
+
+Three gaps the surrounding work found and deliberately left, each now closed with its
+proof.
+
+**One: the row said half a contractor's name and admitted nothing.** A bidder line that
+wraps WITHOUT a trailing comma is not joined (the continuation is invited only by
+`/,$/`), so `listedBy: "Charlie Example Brothers and"` was committed with
+`concerns: []`, `problems: []` and `agreed: true`. The page-level `header.prime` has
+warned about exactly this for weeks; the row did not. So the spoken claim marked it —
+`signals.ts` appends `…` — while the stored column and the screen did not, and the
+field beside an honest sentence was the dishonest one.
+
+The existing rule needed no adaptation and was REUSED rather than re-derived:
+`looksCutOff(field: string | null)` is a thin wrapper over the single `DANGLING`
+expression, it already returns false for null, and `signals.ts` already imports it for
+the same purpose. **The mutation that proves reuse mattered rather than being tidy:
+replacing it with a punctuation-only `/[,&/+]$/` — which drops `DANGLING`'s word list —
+reds the named test.**
+
+**It is a row CONCERN, not a page PROBLEM, and the asymmetry is deliberate.** A problem
+would flip `agreed` for a whole page over one bidder among six, and `listedBy` is
+per-row precisely so a six-bidder page is read instead of refused. The row's two other
+cut-off fields are already concerns. Asserted directly, and the concern fires 0 times
+across the 157 real corpus rows.
+
+**Two: every row of all 16 `SUB_LISTING_CASES` parsed to `listedBy: null`, so the shared
+corpus exercised no per-row attribution whatsoever** — which is why last night's
+wrong-GC defect survived 388 green tests. Two cases added: `two-bidders-one-page` (three
+rows, two bidders, the second's name wrapping after a comma) and `bidder-name-wrapped`
+(the task-one shape). The first was **MOVED, not copied**, out of an inline literal in
+`parseShapes.test.ts` where every `it.each(SUB_LISTING_CASES)` block was blind to it,
+with the script asserting byte-identity before the swap — a second copy would have been
+the "is there a second list" defect.
+
+`expectListedBy` is OPTIONAL on purpose: declaring all-nulls on the 16 single-bidder
+cases would assert nothing. Its vacuity guard has two halves — that some case declares
+it at all, AND that some case declares **two different** bidders, because a corpus whose
+declared values were all one string cannot tell per-row attribution from a page prime
+copied onto every row.
+
+**And the mutation that makes that guard worth having is one a colour-only read would
+have misreported.** Deleting both declarations leaves `1 failed` — but the TOTAL drops
+**438 → 436**, because the new `it.each` becomes ZERO TESTS. Two assertions ceased to
+exist and only the guard noticed. Verified independently here, and the first attempt at
+that mutation was a harness failure of the reader's own making: a regex that removed the
+first line of a multi-line array orphaned its elements, three files failed to LOAD, and
+the total collapsed to 127 — which is a broken instrument, not a result, and was caught
+only by reading the total first.
+
+**Three: `FORM_REFUSAL["labelled-columns"]` was unreachable and is deleted**, proved
+three ways without reordering the dispatch to make it reachable. Grep finds one reader.
+The compiler agrees: narrowing the key type to `Record<"numbered-blocks", string>` still
+typechecks with zero errors on `parse.ts`, so TypeScript's own narrowing proves the index
+can only be that one key — and the narrowed type re-checks it on every build. And the
+mutation has a POSITIVE CONTROL, which is what makes a survivor readable rather than
+merely absent: sentinelling the `"labelled-columns"` message survives all 438 tests,
+while the identical mutation on its `"numbered-blocks"` sibling reds three. A mutation
+that survives where its sibling kills is deadness, not a coverage gap.
+
+Corpus byte-identical at 157 rows / 143 cities / 151 scopes / 20 of 20 headings.
+388 → 438 tests. `parse.ts` and `subListingCases.ts` typecheck with zero errors, each
+proved non-vacuous by an injected error returning TS2322.
+
+**Two warnings for whoever reads a local typecheck next.** `parseShapes.test.ts` carries
+a pre-existing `TS2307` for `vitest`, so everything through `describe`/`it`/`expect` is
+`any` here and a wrong `it.each` tuple would not be reported — CI's Typecheck is that
+file's only checker. And a **syntax** error in another lane's `lib/actions/sales.ts`
+during this work made the whole `tsc` run print **3 lines** and nothing about any other
+file: one broken file under `lib/actions/` makes everybody's local typecheck silently
+vacuous. Both runs behind this entry were confirmed at 22,778 lines before their content
+was read.
+
+Not fixed and flagged: a bidder name wrapping across two lines still cannot be joined,
+because only a trailing comma invites the continuation. Extending the join to a trailing
+conjunction would put guessed-at text into a stored GC name, which is the opposite of
+this file's attributed-never-appended rule. Flagging it is right; joining it is a product
+decision.

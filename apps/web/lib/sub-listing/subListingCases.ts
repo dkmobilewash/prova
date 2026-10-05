@@ -165,6 +165,26 @@ export type SubListingCase = {
    * 2026-10-04 to reproduce a loss.
    */
   expectUnread: number;
+  /**
+   * THE BIDDING CONTRACTOR EACH ROW IS ATTRIBUTED TO, IN ROW ORDER — and the only
+   * expectation here that is about a row's CONTENT rather than a count.
+   *
+   * Optional, and the optionality is the point rather than convenience: most of
+   * these fixtures are one bidder's table pasted on its own, which does not
+   * contain its own bidder's name, so `null` on every row is the honest answer and
+   * declaring it would assert nothing. Omitted means "this shape says nothing
+   * about attribution"; present means the shape is one where attribution is
+   * decidable and this is what it must decide.
+   *
+   * It exists because `listedBy` was an output no shared case ever looked at —
+   * every one of the sixteen cases that predate it parses to nulls — so a defect
+   * in the one field that makes a lead worth calling could cross the whole suite
+   * untouched, and did. `parseShapes.test.ts` asserts this wherever it is
+   * declared, and asserts separately that at least one case declares two
+   * DIFFERENT bidders: a corpus-wide check over a corpus of all-nulls is the
+   * vacuous green this directory exists to end.
+   */
+  expectListedBy?: (string | null)[];
 };
 
 /**
@@ -461,6 +481,81 @@ const BARE_NUMBER_AS_LICENCE = `
 Acme Drywall, Inc.\tFontana, CA\t148000 SF of gypsum board\t$450,000
 `;
 
+/**
+ * ── TWO BIDDERS ON ONE PAGE, AND IT IS HERE BECAUSE THE CORPUS COULD NOT SEE
+ *    PER-ROW ATTRIBUTION AT ALL ──
+ *
+ * Every case above parses to rows whose `listedBy` is NULL — all sixteen of them,
+ * measured rather than assumed. A single bidder's table carries no bidder line,
+ * so null is the honest answer there and no fixture was wrong. What follows from
+ * it is that `listedBy` was an output no shared case ever looked at, and a defect
+ * in it could cross the whole suite untouched.
+ *
+ * One did. `signals.ts` built its `PROJECT` and `GC_RELATIONSHIP` claims from
+ * `header.prime` alone — the page-level prime, which a multi-bidder page REFUSES
+ * to name — so on a page like this one the claim named the wrong contractor, by
+ * name, with `problems` empty. 388 green tests, and the reason none of them went
+ * red is this file: there was no row anywhere in the corpus that knew its own
+ * bidder, so the precedence between `row.listedBy` and `header.prime` was never
+ * exercised by a case that could tell them apart.
+ *
+ * **This text is NOT new.** It was an inline fixture in `parseShapes.test.ts`,
+ * where the attribution mechanism's own tests live. Moved here rather than copied,
+ * because a second copy is the "is there a second list" defect CLAUDE.md records
+ * three times over — the mechanism's tests now read it from the corpus, so the two
+ * cannot drift apart.
+ *
+ * Shape notes, since the indentation is load-bearing and a reformat breaks it: the
+ * bidder's name sits to the LEFT of where the table's columns begin, because it is
+ * not in the table; a bidder is followed by its own figure before its listing, which
+ * is what tells a bidder from the page's own title; and the second bidder's name
+ * wraps after a comma, which the next line joins back on.
+ */
+const TWO_BIDDERS_ONE_PAGE = `   Example University Capital Programs
+   BID SUMMARY SHEET WITH SUBCONTRACTORS
+   Contract: Example Hall Mailroom Conversion
+
+   Alpha Example Builders Inc
+                                        No.1 - $ 1,149,540.00 **
+   Total Bid                            $1,149,540.00
+   Sub Contractor Listing               Portion of Work:        Name of Business:           Location:     DIR #:
+                                        Metal Stud Framing      Example Wallworks Inc       Fairview      1000447788
+                                        Acoustical Ceilings     Mock Acoustics Inc          Oakmere       1000889922
+
+   Bravo Example Construction Co.,
+   Inc.                                 No.2 - $ 1,292,276.00 **
+   Total Bid                            $1,292,276.00
+                                        Portion of Work:        Name of Business:           Location:     DIR #:
+                                        Lath and Plaster        Crestline Lathing Co        Fort Hollow   1000330044`;
+
+/**
+ * A BIDDER WHOSE OWN NAME VISIBLY DOES NOT FINISH.
+ *
+ * The same wrap as the case above, on a name that does NOT end in a comma — and
+ * the comma is the whole of what `parse.ts` joins on. "Charlie Example Brothers and"
+ * therefore commits alone, and that half-name is what the row stores, what
+ * `importSubListing` writes into `SalesLead.listedByGc`, and what the GC column
+ * prints.
+ *
+ * Until 2026-10-05 it reached all three with NO problem and NO concern, while
+ * `signals.ts` hedged the sentence to "Charlie Example Brothers and…" — so the
+ * sentence a person reads was honest and the field beside it was not, which is
+ * the worse of the two directions: the hedge is the only sign anything is wrong,
+ * and the hedge is not what gets stored.
+ *
+ * Kept as its own case rather than folded into the one above, because its failure
+ * means something different: that one is about WHICH bidder a row belongs to,
+ * this one is about whether the parser admits it only has half of the name.
+ */
+const BIDDER_NAME_WRAPPED = `   Example University Capital Programs
+   BID SUMMARY SHEET WITH SUBCONTRACTORS
+
+   Charlie Example Brothers and
+                                        No.1 - $ 2,400,000.00 **
+   Total Bid                            $2,400,000.00
+   Sub Contractor Listing               Portion of Work:        Name of Business:           Location:     DIR #:
+                                        Metal Stud Framing      Example Wallworks Inc       Fairview      1000447788`;
+
 export const SUB_LISTING_CASES: SubListingCase[] = [
   {
     id: "clean-five",
@@ -573,6 +668,26 @@ export const SUB_LISTING_CASES: SubListingCase[] = [
     text: BARE_NUMBER_AS_LICENCE,
     expectRows: 1,
     expectUnread: 0,
+  },
+  {
+    id: "two-bidders-one-page",
+    why: "the only case where a row knows its own bidder — a whole page, two bidders, and the second one's name wrapped after a comma. Every other case parses to `listedBy: null`, which is how a claim naming the WRONG contractor by name survived the whole suite",
+    text: TWO_BIDDERS_ONE_PAGE,
+    expectRows: 3,
+    expectUnread: 0,
+    expectListedBy: [
+      "Alpha Example Builders Inc",
+      "Alpha Example Builders Inc",
+      "Bravo Example Construction Co., Inc.",
+    ],
+  },
+  {
+    id: "bidder-name-wrapped",
+    why: "a bidder whose name wraps WITHOUT a comma commits half of itself, and that half is what the GC column stores. Until 2026-10-05 it reached the screen with no problem and no concern while the claim beside it was hedged to \"… and…\" — the field less honest than the sentence about it",
+    text: BIDDER_NAME_WRAPPED,
+    expectRows: 1,
+    expectUnread: 0,
+    expectListedBy: ["Charlie Example Brothers and"],
   },
 ];
 
