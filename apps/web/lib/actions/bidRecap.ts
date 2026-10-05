@@ -443,10 +443,19 @@ export async function saveCompanyBidDefaults(formData: FormData): Promise<Action
 
   return runAction(async () => {
     const rates = ratesFromForm(formData);
+    // WRITTEN EXPLICITLY, NOT THROUGH `ratesFromForm`. That helper walks
+    // `RECAP_RATE_KEYS` and waste is deliberately outside that list — see the
+    // column's own comment. Parsed with the same nullable-percent reader so an
+    // empty box clears it rather than storing 0, which would mean "this
+    // company cuts with no waste at all".
+    const defaultWastePercent = nullablePercentFromForm(formData, "defaultWastePercent", {
+      label: "Material waste",
+    });
+    const fields = { ...rates, defaultWastePercent };
     await prisma.companyBidDefaults.upsert({
       where: { companyId },
-      create: { companyId, ...rates },
-      update: rates,
+      create: { companyId, ...fields },
+      update: fields,
     });
     revalidatePath("/settings");
     return actionOk;

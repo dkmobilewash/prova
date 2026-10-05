@@ -783,9 +783,14 @@ export async function saveBidQuote(bidInvitationId: string, formData: FormData):
     // because the row looks complete afterwards. `formData.has` distinguishes
     // "the form left this blank" from "this form does not own this field";
     // an omitted key is left alone by Prisma.
-    const requestFields: { requestedOn?: Date | null; dueBy?: Date | null } = {};
+    const requestFields: { requestedOn?: Date | null; dueBy?: Date | null; validUntil?: Date | null } = {};
     if (formData.has("requestedOn")) requestFields.requestedOn = optionalDateFromString(formData.get("requestedOn"));
     if (formData.has("dueBy")) requestFields.dueBy = optionalDateFromString(formData.get("dueBy"));
+    // `validUntil` lives on the ANSWER form only, so it takes the same
+    // treatment and for the same reason: the request form does not own it,
+    // and spreading it in as null would wipe an expiry the sub gave the moment
+    // somebody edited the request half of the row.
+    if (formData.has("validUntil")) requestFields.validUntil = optionalDateFromString(formData.get("validUntil"));
 
     const data = {
       packageLabel,

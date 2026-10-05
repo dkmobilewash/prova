@@ -735,7 +735,10 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
           <section className="mb-10" data-tour="job-line-items">
             <h2 className="mb-3 text-lg font-semibold text-ink">Line items (estimate)</h2>
             <DraftLineItemsForm jobId={job.id} initialScope={job.scope ?? ""} />
-            <TakeoffForm jobId={job.id} />
+            <TakeoffForm
+              jobId={job.id}
+              defaultWastePercent={bidDefaults?.defaultWastePercent?.toString() ?? null}
+            />
             {/* The other way in. This form does the arithmetic from
                 dimensions somebody already has; the Takeoff tab is where you
                 get those dimensions off a drawing. */}

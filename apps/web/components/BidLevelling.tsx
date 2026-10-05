@@ -15,9 +15,11 @@ import {
 } from "@/lib/actions";
 import { QuoteReader, QuoteReadingNotes } from "@/components/QuoteReader";
 import {
+  carriedQuoteLapsed,
   exclusionLines,
   levelBid,
   outstandingNote,
+  quoteFreshness,
   requestState,
   type LevelQuote,
 } from "@/lib/bid-levelling";
@@ -44,6 +46,8 @@ export type BidQuoteRow = LevelQuote & {
   /** When somebody said this is the price we are carrying. Null on every
    *  quote nobody has decided about, which is most of them. */
   carriedAt: string | null;
+  /** What the sub said about how long the price holds. Null when unsaid. */
+  validUntil: string | null;
 };
 
 const money = (value: number) =>
@@ -111,6 +115,19 @@ export function BidLevelling({
 
   return (
     <div className="mt-2 rounded-md border border-line-row bg-surface-card p-3">
+      {/* ABOVE THE PACKAGES, BECAUSE IT IS ABOUT THE BID AND NOT A ROW. A
+          carried price is the number inside what the GC was sent, so a lapsed
+          one is a fact about the whole bid — the position `underCostWarning`
+          takes by reading the estimate rather than each line. It names the
+          vendor and the date and does not say the bid is wrong. */}
+      {(() => {
+        const lapsed = carriedQuoteLapsed(quotes, today);
+        return lapsed ? (
+          <p role="alert" className="mb-3 rounded-md border border-tag-amber bg-tag-amber p-2 text-xs text-tag-amber-ink">
+            {lapsed}
+          </p>
+        ) : null;
+      })()}
       {packages.map((group) => {
         const waiting = outstandingNote(group, today);
         return (
@@ -169,6 +186,17 @@ export function BidLevelling({
                         {quote.quotedOn && (
                           <span className="ml-2 text-xs text-ink-muted">quoted {quote.quotedOn}</span>
                         )}
+                        {/* WHETHER THE PRICE IS STILL GOOD, which none of the
+                            dates beside it answers. Amber rather than rose:
+                            subs honour lapsed numbers all the time, so this
+                            is something to check, not something that is
+                            wrong. */}
+                        {(() => {
+                          const freshness = quoteFreshness(quote, today);
+                          return freshness ? (
+                            <span className="ml-2 text-xs text-tag-amber-ink">{freshness.note}</span>
+                          ) : null;
+                        })()}
                       </p>
                       {exclusionLines(quote.exclusions).length > 0 ? (
                         <ul className="mt-1 list-inside list-disc text-xs text-tag-amber-ink">
@@ -611,6 +639,27 @@ export function QuoteForm({
               defaultValue={filled.quotedOn}
               className="rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
             />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs text-ink-label">
+            Price holds until
+            <input
+              type="date"
+              name="validUntil"
+              defaultValue={quote?.validUntil ?? ""}
+              // `bg-canvas`, NOT the `bg-surface-input` its siblings use: that
+              // token is undefined (issue #573 — 39 form fields asking for a
+              // ground that does not exist on a near-black canvas) and
+              // `colorTokenCensus` fails when the family grows, which it did
+              // the moment this field copied its neighbour. A defined token is
+              // the only honest option, and it is what `BidDefaultsForm`'s own
+              // inputs already use.
+              className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink-body"
+            />
+            {/* Empty is the ordinary answer and must stay cheap to leave —
+                most subs name no expiry, and a date invented here would be
+                this app's guess wearing the sub's voice. */}
+            <span className="text-ink-muted">Only if they said. Blank is fine.</span>
           </label>
 
           <label className="flex flex-col gap-1 text-xs text-ink-label">
