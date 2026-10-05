@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
 import { storeSheetImage, uploadDrawingPdf } from "@/lib/actions";
 import { SheetPinViewer } from "./SheetPinViewer";
 import { Spinner } from "./Spinner";
@@ -15,6 +16,14 @@ import type { SheetPinKind } from "@/lib/sheet-pins";
  * measured on production on 2026-10-05: a browser cannot read a cross-origin
  * PDF without `Access-Control-Allow-Origin`, and a server cannot fetch one
  * that is behind a login.
+ *
+ * **AND THE FILE GOES STRAIGHT TO THE STORE, NOT THROUGH A FUNCTION.** The
+ * first version posted it to a Server Action as FormData. That cannot work at
+ * any size worth having: a Server Action body defaults to 1MB and Vercel caps
+ * a serverless request body at 4.5MB regardless, while a single sheet is
+ * bigger than that and a set is 10-100MB. `upload()` asks
+ * `/api/drawings/upload` for a short-lived token and sends the bytes directly;
+ * the action afterwards carries only a URL.
  *
  * **EVERYTHING IS DRAWN HERE, AND THAT IS THE POINT.** The browser doing the
  * upload has the file in its hand, so it reads the page sizes and renders each
@@ -79,8 +88,17 @@ export function SheetPinSurface({
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  async function upload(file: File) {
+  async function uploadDrawing(file: File) {
     setError(null);
+
+    // THREE OPERATIONS, THREE MESSAGES. These were one try/catch, and when
+    // Diego's first real drawing failed on the upload it reported "that file
+    // could not be read as a PDF" -- sending the investigation at the file
+    // instead of at the 1MB body limit that actually refused it. This repo had
+    // already paid for that exact mistake once today, in `sheetPins.ts`, and
+    // it was repeated here within the hour. A catch around two operations
+    // tells you which one failed only by accident.
+    let read: { pageNumber: number; widthPt: number; heightPt: number }[];
     try {
       setBusy("Reading the drawing…");
       const pdfjs = await loadPdfjs();
@@ -88,33 +106,47 @@ export function SheetPinSurface({
       // nothing here depends on where the drawing came from.
       const bytes = new Uint8Array(await file.arrayBuffer());
       const doc = await pdfjs.getDocument({ data: bytes, isEvalSupported: false }).promise;
-
-      const read: { pageNumber: number; widthPt: number; heightPt: number }[] = [];
+      read = [];
       for (let n = 1; n <= doc.numPages; n += 1) {
         const page = await doc.getPage(n);
         const unit = page.getViewport({ scale: 1 });
         read.push({ pageNumber: n, widthPt: unit.width, heightPt: unit.height });
       }
-
-      setBusy(`Uploading the drawing (${doc.numPages} ${doc.numPages === 1 ? "sheet" : "sheets"})…`);
-      const form = new FormData();
-      form.set("file", file);
-      form.set("pages", JSON.stringify(read));
-      const saved = await uploadDrawingPdf(revisionId, form);
-      if (!saved.ok) {
-        setError(saved.error);
-        setBusy(null);
-        return;
-      }
-
-      // The sheets exist now but have no pictures. Reload so their ids are the
-      // server's rather than guessed here, and the drawing step picks up from
-      // the rows that come back.
-      window.location.reload();
     } catch {
       setError("That file could not be read as a PDF.");
       setBusy(null);
+      return;
     }
+
+    let uploaded: { url: string };
+    try {
+      setBusy(`Uploading the drawing (${read.length} ${read.length === 1 ? "sheet" : "sheets"})…`);
+      uploaded = await upload(`drawings/${revisionId}/${file.name || "drawing.pdf"}`, file, {
+        access: "public",
+        handleUploadUrl: "/api/drawings/upload",
+        clientPayload: revisionId,
+      });
+    } catch (cause) {
+      // The route's own sentence when it has one -- a permission or session
+      // problem should say so rather than being flattened into "upload
+      // failed".
+      setError(cause instanceof Error ? cause.message : "That drawing could not be uploaded.");
+      setBusy(null);
+      return;
+    }
+
+    setBusy("Recording the sheets…");
+    const saved = await uploadDrawingPdf(revisionId, uploaded.url, file.name || "drawing.pdf", JSON.stringify(read));
+    if (!saved.ok) {
+      setError(saved.error);
+      setBusy(null);
+      return;
+    }
+
+    // The sheets exist now but have no pictures. Reload so their ids are the
+    // server's rather than guessed here, and the drawing step picks up from
+    // the rows that come back.
+    window.location.reload();
   }
 
   async function drawSheets() {
@@ -143,10 +175,14 @@ export function SheetPinSurface({
         const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
         if (!png) throw new Error("no image");
 
-        const form = new FormData();
-        form.set("image", new File([png], `${sheet.pageNumber}.png`, { type: "image/png" }));
-        form.set("widthPx", String(canvas.width));
-        const saved = await storeSheetImage(sheet.id, form);
+        // Straight to the store, like the PDF. A 2000px sheet PNG is commonly
+        // several megabytes, so this one would hit the same wall.
+        const stored = await upload(`sheets/${revisionId}/${sheet.pageNumber}.png`, png, {
+          access: "public",
+          handleUploadUrl: "/api/drawings/upload",
+          clientPayload: revisionId,
+        });
+        const saved = await storeSheetImage(sheet.id, stored.url, String(canvas.width));
         if (!saved.ok) {
           setError(saved.error);
           setBusy(null);
@@ -185,7 +221,7 @@ export function SheetPinSurface({
             disabled={busy !== null}
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) void upload(file);
+              if (file) void uploadDrawing(file);
             }}
             className="block w-full text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-sky-500 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-950"
           />
