@@ -17,6 +17,9 @@ import * as api from "@/lib/api";
 import { cacheKeys } from "@/lib/cache-keys";
 import { cachedRead, staleNote, withToken } from "@/lib/cached-read";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
+import { saveQueued } from "@/lib/save-queued";
+import { uuid } from "@/lib/id";
+import { type HeldPin, isHeld as heldHas, pinCount, pinsOn, stillHeld } from "@/lib/sheet-pin-display";
 import type { SheetRow } from "@/lib/types";
 
 /**
@@ -64,6 +67,11 @@ export default function SheetsScreen() {
   const [draft, setDraft] = useState<{ x: number; y: number } | null>(null);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  /** Pins this phone is holding. Drawn exactly like the real ones and listed
+   * with a word saying they have not reached the office yet. Each carries the
+   * page it belongs to, because the screen can be moved between sheets while
+   * the queue is still full. */
+  const [pending, setPending] = useState<HeldPin[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -78,6 +86,10 @@ export default function SheetsScreen() {
     }
     setSheets(result.value);
     setOffline(staleNote(result));
+    // Anything the office now has is no longer this phone's to hold. Matching
+    // on the words rather than an id, because a queued pin has no server id
+    // until it lands — and a pin left in both lists draws twice.
+    setPending((held) => stillHeld(result.value, held));
   }, [getToken, jobId]);
 
   useEffect(() => {
@@ -93,6 +105,12 @@ export default function SheetsScreen() {
 
   const sheet = sheets && sheets.length > 0 ? sheets[Math.min(index, sheets.length - 1)] : null;
   const aspect = sheet ? sheet.heightPt / sheet.widthPt : 1;
+  /** What this sheet shows: what the office has, plus what this phone is still
+   * holding. One list, so the overlay and the words below it cannot disagree
+   * about how many pins are on the drawing. */
+  const shown = sheet ? pinsOn(sheet, pending) : [];
+  const isHeld = (id: string) => heldHas(id, pending);
+  const countOn = (row: SheetRow) => pinCount(row, pending);
 
   async function placeNote() {
     if (!sheet || !draft) return;
@@ -102,31 +120,56 @@ export default function SheetsScreen() {
       return;
     }
     setSaving(true);
-    setProblem(null);
-    try {
-      await withToken(getToken, (token) =>
-        api.createSheetPin(
-          {
-            pageId: sheet.id,
-            x: draft.x,
-            y: draft.y,
-            kind: "NOTE",
-            note: words,
-            // The server dedupes on this, so a retry replays rather than
-            // placing a second pin in the same spot.
-            clientOperationId: `pin-${sheet.id}-${Date.now()}`,
-          },
-          token,
-        ),
-      );
-      setDraft(null);
-      setNote("");
-      await load();
-    } catch {
-      setProblem(t("sheets.saveFailed"));
-    } finally {
-      setSaving(false);
+
+    // QUEUED, NOT SENT. A drawing is what somebody walks the building with,
+    // and that walk happens in a basement or the middle of a slab. Calling the
+    // API here would make a pin something you can only place where there is
+    // signal, which is never where you are standing when you need one.
+    //
+    // Queued BEFORE the draft is cleared, for the reason lib/save-queued.ts
+    // gives at length: nine submit functions cleared their form first and lost
+    // the typed words when the write to disk threw.
+    const saved = await saveQueued({
+      type: "sheet-pin:create",
+      jobId: String(jobId),
+      pageId: sheet.id,
+      clientOperationId: uuid(),
+      x: draft.x,
+      y: draft.y,
+      kind: "NOTE",
+      note: words,
+    });
+    setSaving(false);
+    if (!saved.ok) {
+      setProblem(saved.error);
+      return;
     }
+    // Cleared only now, with everything else, because it is on the far side of
+    // the await -- write-ordering.test.ts counts a cleared error exactly as it
+    // counts a cleared form, and it is right to: both are state a failed write
+    // would have silently dropped.
+    setProblem(null);
+
+    // Shown straight away, because the queue may not drain for hours. A pin
+    // that appeared only after a sync would mean tapping, typing, saving, and
+    // watching the drawing not change — which reads as the app ignoring you.
+    // `pending` marks it so the row can say it has not reached the office.
+    setPending((existing) => [
+      ...existing,
+      {
+        id: `pending-${Date.now()}`,
+        pageId: sheet.id,
+        x: draft.x,
+        y: draft.y,
+        kind: "NOTE",
+        note: words,
+        mediaId: null,
+        punchItemId: null,
+        punchItemDescription: null,
+      },
+    ]);
+    setDraft(null);
+    setNote("");
   }
 
   return (
@@ -162,7 +205,7 @@ export default function SheetsScreen() {
                 >
                   <Text style={[s.tabText, i === index && s.tabTextOn]}>
                     {row.label ?? `${t("sheets.sheet")} ${row.pageNumber}`}
-                    {row.pins.length > 0 ? ` (${row.pins.length})` : ""}
+                    {countOn(row) > 0 ? ` (${countOn(row)})` : ""}
                   </Text>
                 </Pressable>
               ))}
@@ -204,13 +247,16 @@ export default function SheetsScreen() {
                     height={boxWidth * aspect}
                     pointerEvents="none"
                   >
-                    {sheet.pins.map((pin) => (
+                    {shown.map((pin) => (
                       <Circle
                         key={pin.id}
                         cx={pin.x * boxWidth}
                         cy={pin.y * boxWidth}
                         r={space.sm}
-                        fill={p.colors.brand}
+                        // A held pin is hollow: it is on the drawing, and it
+                        // is not at the office yet. The row below says so in
+                        // words — the ring alone is not the message.
+                        fill={isHeld(pin.id) ? "none" : p.colors.brand}
                         stroke={p.colors.ink}
                         strokeWidth={space.two}
                       />
@@ -243,14 +289,15 @@ export default function SheetsScreen() {
                   nothing else; this is where it says which kind it is and what
                   it points at, which is the half a colour cannot carry. */}
               <Card>
-                {sheet.pins.length === 0 ? (
+                {shown.length === 0 ? (
                   <Text style={s.body}>{t("sheets.noPins")}</Text>
                 ) : (
-                  sheet.pins.map((pin) => (
+                  shown.map((pin) => (
                     <View key={pin.id} style={s.pinRow}>
                       <Text style={s.pinKind}>{KIND_WORD[pin.kind] ?? pin.kind}</Text>
                       <Text style={s.body}>
                         {pin.note ?? pin.punchItemDescription ?? t("sheets.pinGone")}
+                        {isHeld(pin.id) ? ` · ${t("sheets.waiting")}` : ""}
                       </Text>
                     </View>
                   ))

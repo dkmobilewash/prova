@@ -263,3 +263,66 @@ app launch at all) but the local build carries no
 reaching this screen. **This screen has not been seen running.**
 
 Mobile 40 files / 334 tests, screens 16 / 78, typecheck and lint clean.
+
+---
+
+### A pin placed in a basement (Diego)
+
+Fifth commit on this branch, and the last piece of the field surface:
+`sheet-pin:create` on the outbox, so a pin survives having nowhere to send
+itself.
+
+**THE SCREEN WAS CALLING THE API DIRECTLY, WHICH IS THE WHOLE BUG.** Every
+other write on this phone queues and lets the drain send it; this one posted.
+A drawing is what somebody walks the building with, and that walk happens in a
+basement, a stairwell or the middle of a slab — so a pin that needed a
+connection would be a pin nobody could place where they were standing, which
+is the only place worth placing one.
+
+`jobId` rides on the op and is NOT sent to the server: the page already
+determines its revision, set and job. It is carried so the OUTBOX can say which
+job a waiting note belongs to, because "a mark on a drawing" with no job is a
+line a foreman cannot act on. A `{ ...op }` spread would typecheck, flush
+green, and post a field the route ignores — so there is a test whose only job
+is that `jobId` is absent from the request.
+
+| mutation | result |
+| --- | --- |
+| control | green |
+| the whole op spread into the request (sends `jobId`) | **RED** |
+| the op silently does nothing | **RED** |
+| the outbox drops what the person wrote | **RED** |
+| a failed send is swallowed | **RED** |
+
+**A VACUOUS ASSERTION, CAUGHT BY A MUTATION THAT SURVIVED.** "KEEPS the pin
+when the send fails" passed on a run where the send was never attempted —
+nothing is dropped from a flush that did not happen, so the count was 1 for the
+opposite reason. It now asserts the route was reached FIRST, and the swallowed-
+failure mutation reds it.
+
+**AND A REAL BUG IN MY OWN CODE, FOUND BY WRITING THE TEST HONESTLY.**
+Reconciling held pins against the server matched a `Set` of `page:words`. Two
+notes with the SAME words on the SAME sheet — "Patch here" twice in one
+morning is not contrived — were BOTH released when ONE came back, silently
+dropping a pin the office had never seen. That is the exact failure the queue
+exists to prevent, written by the person writing the queue. It counts now: each
+landed pin releases exactly one held pin, and the leftover stays. The failure
+left is cosmetic (a pin drawn twice until the next refresh), which is the
+direction to fail in.
+
+**The held-pin rules live in `lib/sheet-pin-display.ts` rather than the screen,
+because the screen harness can read text and cannot tap** — so none of this was
+reachable from a screen test, and "it looked right when I tried it" is not a
+check. A held pin is drawn hollow, counted on its sheet's tab (a number that
+does not move is how somebody decides the tap did nothing and taps again), and
+labelled "Waiting to send" in words.
+
+`write-ordering.test.ts` also caught `setProblem(null)` sitting before the
+await. It counts a cleared error exactly as it counts a cleared form, and it is
+right to: both are state a failed write would have dropped.
+
+Mobile 42 files / 352 tests, screens 16 / 78, `expo lint` and typecheck clean.
+
+**NOT SEEN RUNNING.** The simulator build's native shell predates this work and
+the phone's TestFlight build is older still, so no installed build contains it.
+Everything above is unit- and mutation-tested; none of it has been tapped.
