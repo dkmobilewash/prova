@@ -20,7 +20,7 @@ import { looksCutOff, parseSubListing } from "@/lib/sub-listing/parse";
 // duplicate beside it, where a completeness test on the first cannot see the
 // second.
 import { licenceNumberFrom, readTypedLicence } from "@/lib/sales-licence";
-import { PRIME_OUTCOMES, signalsForSub } from "@/lib/sub-listing/signals";
+import { PRIME_OUTCOMES, listedByGcFor, signalsForSub } from "@/lib/sub-listing/signals";
 import type { ListedSub as ListedSubRow, SubListingParse } from "@/lib/sub-listing/parse";
 import { normaliseCompanyName } from "@/lib/sub-listing/leadMatch";
 import { prisma } from "@prova/db";
@@ -938,6 +938,54 @@ function identify(row: {
 }
 
 /**
+ * BOTH SIDES PRINTED AN IDENTIFIER OF THE SAME KIND AND THEY DISAGREE — which
+ * outranks every resemblance below, because the documents have already said
+ * these are two registrants and no amount of name agreement un-says it.
+ */
+function identifiersContradict(
+  row: Omit<ImportedCompany, "leadId">,
+  known: Omit<ImportedCompany, "leadId">,
+): boolean {
+  const contradicts = (a: string | null, b: string | null) => a !== null && b !== null && a !== b;
+  return (
+    contradicts(row.licence, known.licence) ||
+    contradicts(row.registration, known.registration)
+  );
+}
+
+/**
+ * THE RULE THAT TRAVELS BETWEEN DOCUMENTS: an identifier neither party typed,
+ * corroborated by the name.
+ *
+ * One implementation, read by the in-pass dedupe and by the cross-import lookup
+ * alike, so the question "are these the same firm" has one answer in this file
+ * rather than two that have to be kept in step.
+ *
+ * The identical-SPELLING rung deliberately lives in `alreadyImported` instead of
+ * here, and that placement is the point rather than an oversight. It was briefly
+ * a `spellingIsEnough` flag on this function, and a mutation flipping that flag
+ * at the cross-import call site SURVIVED every test — correctly, because it
+ * cannot matter there: that caller's query has already filtered on the licence,
+ * so the identifier leg below is satisfied for every candidate it sees, and
+ * spelling equality implies normalised equality (522 spelling-equal name pairs
+ * checked, no counterexample, since both reduce the same lowercased string and
+ * removing punctuation before collapsing whitespace is blind to run length). A
+ * parameter that cannot change an outcome is a knob a reader will believe in, so
+ * it is gone. The rung now sits where it is true and nowhere else.
+ */
+function sameCompany(
+  row: Omit<ImportedCompany, "leadId">,
+  known: Omit<ImportedCompany, "leadId">,
+): boolean {
+  if (identifiersContradict(row, known)) return false;
+
+  const identified =
+    (row.licence !== null && row.licence === known.licence) ||
+    (row.registration !== null && row.registration === known.registration);
+  return identified && !!row.normalised && row.normalised === known.normalised;
+}
+
+/**
  * Has this row already been imported, in this same pass?
  *
  * Two rungs, and a CONTRADICTION beats both of them:
@@ -962,8 +1010,14 @@ function identify(row: {
  * identical spelling to add — the document has already said these are two
  * registrants.
  *
- * Nothing here merges a row into a lead that existed BEFORE this import. That
- * stays a human choice on the review screen, unchanged.
+ * This function sees only rows of the CURRENT paste. A lead that existed BEFORE
+ * this import is reached by `leadHoldingThisLicence` below, on the licence alone
+ * and with the name corroborating it — a deliberately narrower rule than this
+ * one, for the reason that function gives. (This sentence used to read "nothing
+ * here merges a row into a lead that existed BEFORE this import — that stays a
+ * human choice on the review screen", which was true when written and had
+ * stopped being the whole story: the human choice is still there and is still
+ * the only way a row joins a lead the licence cannot identify.)
  *
  * A linear scan: `MAX_LISTING_ROWS` is 60, and a map keyed on one of two
  * possible keys would have to be read twice and written twice anyway.
@@ -972,18 +1026,102 @@ function alreadyImported(
   row: Omit<ImportedCompany, "leadId">,
   imported: readonly ImportedCompany[],
 ): string | null {
-  const contradicts = (a: string | null, b: string | null) => a !== null && b !== null && a !== b;
-
   for (const seen of imported) {
-    if (contradicts(row.licence, seen.licence)) continue;
-    if (contradicts(row.registration, seen.registration)) continue;
+    if (identifiersContradict(row, seen)) continue;
 
+    /* WITHIN ONE DOCUMENT, and only within one, an identical spelling is enough
+       by itself. A §4104 listing names a subcontractor once per PORTION OF WORK,
+       so two identical spellings on one page are one table entry written out
+       twice by one clerk. Two documents spelling a name the same way is two
+       agencies' clerks agreeing by coincidence, which is exactly what
+       `leadMatch.ts` refuses to act on — so this rung is not reachable from
+       `leadHoldingThisLicence`, by construction rather than by a flag. */
     if (row.spelling && row.spelling === seen.spelling) return seen.leadId;
 
-    const identified =
-      (row.licence !== null && row.licence === seen.licence) ||
-      (row.registration !== null && row.registration === seen.registration);
-    if (identified && row.normalised && row.normalised === seen.normalised) return seen.leadId;
+    if (sameCompany(row, seen)) return seen.leadId;
+  }
+  return null;
+}
+
+/**
+ * THE SAME FIRM ARRIVING IN A SECOND IMPORT — THE CASE THE WHOLE CHANNEL IS
+ * MADE OF, AND THE ONE NOTHING WAS HANDLING.
+ *
+ * Measured before it was built, which is why this exists: three imports naming
+ * one licence — "Probe Drywall, Inc.", "PROBE DRYWALL INC" and a third spelling
+ * — produced THREE `SalesLead` rows, each stamped `licenceNumber: "884201"`, each
+ * carrying five PROPOSED signals and each therefore PERMANENTLY UNDELETABLE
+ * (`deleteSalesLead` refuses a lead holding signals, and that refusal is right).
+ * The column and its `(companyId, licenceNumber)` index already existed and
+ * nothing read them for identity.
+ *
+ * That is the failure `leadMatch.ts` says the whole matching exercise is for,
+ * one level out: it fixed the five-leads-one-signal-each case WITHIN a page and
+ * left it untouched between pages, where the premise of an automated channel
+ * lives. A drywall firm bids repeatedly, for different GCs, on different jobs;
+ * five `PROJECT` signals on one lead is a prospect you know something about,
+ * five leads with one each is a CRM that has learned nothing.
+ *
+ * ── WHY THIS MERGES ON A LICENCE AND NOT ON ANYTHING ELSE ──
+ *
+ * The asymmetry is the design. A duplicate is visible, embarrassing and
+ * permanent; a WRONG merge is invisible, puts one company's evidence on another
+ * company's record, and is permanent in exactly the same way. CLAUDE.md's rule
+ * that a claim plus a concern beats a refusal does not reach this decision,
+ * because that rule turns on there being a human downstream who can resolve the
+ * doubt — and there is no screen anywhere that un-merges a lead. So this is the
+ * one place in the feature where the conservative reading wins outright.
+ *
+ * Hence the single key: the CSLB licence number. `leadMatch.ts` names the reason
+ * in its own header — "a contractor licence is the one identifier in this trade
+ * that is unique, printed on the document, and typed by neither party" — and
+ * `lib/sales-licence.ts` is the one thing that turns a printed cell into it, so
+ * the number used to decide identity here is byte-identical to the number
+ * stored. Not the name: "Acme Drywall", "Acme Drywall, Inc." and "ACME DRYWALL
+ * INC" are one firm and "Valley Interiors, Inc." and "Valley Interiors, LLC" are
+ * two, and no amount of string work tells those cases apart.
+ *
+ * And the licence is still not enough ON ITS OWN, which is the conservative
+ * choice this function is most likely to be argued with about. A stored licence
+ * is not always document-sourced — `readTypedLicence` lets a person type one,
+ * and a transposed digit there is undetectable — so the name has to corroborate
+ * it. The cost of that is a dba or a renamed firm landing as a duplicate; the
+ * cost of dropping it is one mistyped digit silently welding two companies
+ * together for good. See the report note: making the licence VISIBLE to
+ * `leadCandidatesFor`, so a reviewer is offered the merge the machine declined,
+ * is the right next slice and it is in another file.
+ *
+ * The query is the one the `(companyId, licenceNumber)` index was added for, and
+ * it is deliberately a `findMany`: leads written before this existed may already
+ * share a licence. Oldest first, tie-broken on `id`, so two runs of the same
+ * import cannot pick different leads — and so a pile of pre-existing duplicates
+ * converges on the one with the most history rather than growing.
+ */
+async function leadHoldingThisLicence(
+  tx: Pick<typeof prisma, "salesLead">,
+  companyId: string,
+  row: Omit<ImportedCompany, "leadId">,
+): Promise<string | null> {
+  // A row whose licence cell was blank, unreadable or ambiguous has no key, and
+  // this path has nothing to offer it. `licenceKey` can say WHICH of those it
+  // was; on an import there is nobody to tell.
+  if (row.licence === null) return null;
+
+  const holders = await tx.salesLead.findMany({
+    where: { companyId, licenceNumber: row.licence },
+    select: { id: true, companyName: true, licenceNumber: true, registrationNumber: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+
+  for (const held of holders) {
+    // Through `identify` rather than rebuilt here, so the stored lead and the
+    // incoming row are reduced to a comparable shape by one function.
+    const known = identify({
+      name: held.companyName,
+      licence: held.licenceNumber,
+      registration: held.registrationNumber,
+    });
+    if (sameCompany(row, known)) return held.id;
   }
 
   return null;
@@ -1048,12 +1186,19 @@ function listingProvenance(
     licenceNumber: licenceNumberFrom(row.licence),
     registrationNumber: blank(row.registration),
     city: blank(row.city),
-    /* The ROW's own attribution first. `header.prime` is null by design when a
-       packet names more than one prime bidder — five primes on one project name
-       five drywall subs, and only one of them is about to get the work — so
-       falling back to it can never attribute the wrong GC: there is nothing to
-       fall back to in exactly the case where guessing would be wrong. */
-    listedByGc: blank(row.listedBy) ?? blank(header.prime),
+    /* The ROW's own attribution first, the page prime only as a fallback —
+       `signals.ts`'s function rather than a second copy of the precedence here.
+       The sentence a person reads down a telephone and the column they read on
+       screen have to name the same general contractor, and until this call
+       existed the two files agreed only by assertion: `signals.test.ts` reads
+       this very line out of this file's source and fails if it drifts. That
+       census now has nothing to catch, which is the point of #526's lesson —
+       the guard that works is the one that makes the second copy impossible
+       rather than detectable. `listedByGcFor` carries the reasoning, including
+       why falling back to `header.prime` can never attribute the wrong GC: it
+       is nulled by design on exactly the multi-prime packets where guessing
+       would be wrong, so there is nothing to fall back TO in that case. */
+    listedByGc: listedByGcFor(row, header),
     listedOnProject: project && looksCutOff(project) ? `${project}\u2026` : project,
   };
 }
@@ -1128,8 +1273,15 @@ export async function importSubListing(
       let rowsSkipped = 0;
 
       /**
-       * Leads created inside THIS import, with what the document printed about
-       * each — see `alreadyImported` above for the rule and why it is that rule.
+       * The leads THIS import has already landed a row on, with what the
+       * document printed about each — see `alreadyImported` above for the rule
+       * and why it is that rule.
+       *
+       * "Landed a row on" rather than "created": a lead an earlier row of this
+       * same paste was MERGED into by licence is in here too, so the
+       * identical-spelling rung can still reach it. Only the human `attach:`
+       * path stays out, because that is a per-row decision somebody made about
+       * that row and nothing here should spread it to another.
        *
        * `leadCandidatesFor` only ever sees the leads that existed before the
        * import, so it cannot match a row against one created two rows ago. A
@@ -1178,8 +1330,28 @@ export async function importSubListing(
         } else {
           const identity = identify(row);
           const already = alreadyImported(identity, importedHere);
+          /* The lead this same firm was given by an EARLIER import, found on the
+             one key that survives a second document — see
+             `leadHoldingThisLicence`. Asked only after the in-pass rule has had
+             its go, so a row that belongs to a lead this very listing just made
+             never reaches the database at all.
+
+             It counts as `leadsAttached`, which is what the screen already says
+             it is ("…and 1 you already had"): the lead DID already exist, and
+             counting it as created would tell the reviewer a new record was
+             written when none was. It is also pushed onto `importedHere`, and
+             that is not tidiness — without it a second row of this same listing
+             naming this same firm with a BLANK licence cell would stop seeing the
+             identical-spelling rung and create a duplicate that the old code did
+             not, because the old code had the first row CREATE the lead. A fix
+             that introduces the bug it is fixing, one row further down. */
+          const held = already ? null : await leadHoldingThisLicence(tx, company.id, identity);
           if (already) {
             leadId = already;
+          } else if (held) {
+            leadId = held;
+            leadsAttached += 1;
+            importedHere.push({ ...identity, leadId: held });
           } else {
             const created = await tx.salesLead.create({
               data: {
