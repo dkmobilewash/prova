@@ -30,4 +30,22 @@ real documents look like: six slots printed, two used.
 Three unit cases pin the premise so a red e2e run never has to teach it — that the two rows
 really come off ONE line, that both are in our trades so the untick is the only thing
 separating them, and that the summary's counts and the quoted claim are what the app's own
-reader produces. 490 unit tests, from 487.
+reader produces.
+
+**And a correction to this entry's own first draft, which said "490 unit tests, from
+487".** That conflated two configs. The three new cases are in
+`e2e/lib/salesFixture.test.ts`, which is not in the scoped sub-listing-plus-censuses run
+that reports 487 — so 487 is UNCHANGED and the fixture gate goes 21 → 24. The figures this
+branch should be read with, each measured rather than remembered:
+
+| suite | tests |
+| --- | --- |
+| `lib/sub-listing/**` | 406 |
+| that plus the repo-wide censuses this branch rests on | 487 |
+| `e2e/lib/salesFixture.test.ts` — the fixture gate | 24 |
+| `e2e/lib/salesCoverage.test.ts` | 8 |
+| the db suite | 61 |
+
+None of those is "the unit suite" as CI counts it: `apps/web/vitest.config.mts` includes
+`**/*.test.ts` across the whole app, which is thousands. A figure quoted without its config
+is the shape of claim this file keeps correcting, so from here they are quoted with one.
