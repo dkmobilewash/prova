@@ -18,6 +18,7 @@ import {
   type StoredMeasurement,
   type WallBridge,
 } from "@/lib/takeoff-plan";
+import { zoneNotices, zoneScales } from "@/lib/takeoff-zones";
 import { syncWallScheduleLines } from "@/lib/estimating/wall-schedule";
 import { planMeasuredWallRun, WALL_TYPE_GONE } from "@/lib/estimating/measured-wall-run";
 import {
@@ -419,7 +420,13 @@ export async function saveTakeoffCalibration(jobId: string, formData: FormData):
 
     const points = pointsFromForm(formData);
     if (!points || points.xs.length !== 2 || points.ys.length !== 2) {
-      return actionFail("Drag along a dimension on the drawing to set the scale.");
+      // "Click once at each end", not "Drag" — #631 corrected three of these
+      // in `takeoff-plan.ts` and MISSED this one, because the census it added
+      // reads `calibrationNotices`'s output and this refusal is the action's
+      // own. The census's SCOPE was wrong while its pattern was fine, which is
+      // the failure mode CLAUDE.md says no size assertion can see: nothing is
+      // ever missing from a directory you do not walk.
+      return actionFail("Click once at each end of a dimension on the drawing to set the scale.");
     }
     const line = {
       x1: points.xs[0],
@@ -562,11 +569,39 @@ export async function rescaleTakeoffMeasurements(jobId: string, formData: FormDa
   const pageId = String(formData.get("pageId") ?? "");
   const page = await prisma.takeoffPlanPage.findFirst({
     where: { id: pageId, plan: { jobId, companyId: company.id } },
-    include: { calibrations: { orderBy: { createdAt: "desc" }, take: 1 } },
+    // EVERY calibration, not `take: 1`. The refusal below cannot be decided
+    // from the newest one alone, and this is the same posture the save action
+    // takes: "the screen may be minutes old, and a calibration it refused
+    // must not become savable by posting the form again."
+    include: { calibrations: { orderBy: { createdAt: "desc" } } },
   });
   if (!page) return actionFail("That sheet is no longer on this job. Reload the page.");
   const newest = page.calibrations[0];
   if (!newest) return actionFail("This sheet has no scale set yet.");
+
+  // A SHEET WITH TWO REAL SCALES MUST NOT BE RESCALED, because this action
+  // repoints geometry without changing it: a detail traced at 1-1/2" moved
+  // onto a 1/8" calibration reads twelve times too big, silently, on figures
+  // headed for a bid. The UI withdraws the button for this case; this is the
+  // half that survives a stale form, and production redacts a thrown message
+  // so it must be a returned refusal rather than an exception.
+  const zones = zoneScales(
+    page.calibrations.map((c) => ({
+      id: c.id,
+      x1: c.x1,
+      y1: c.y1,
+      x2: c.x2,
+      y2: c.y2,
+      declaredDistanceFeet: c.declaredDistanceFeet.toNumber(),
+    })),
+    page.pageWidthPt,
+  );
+  if (zoneNotices(zones).length > 0) {
+    return actionFail(
+      "This sheet is calibrated at more than one scale, so there is no single current scale to move these to. " +
+        "Each measurement already reads at the scale it was traced against.",
+    );
+  }
 
   const moved = await prisma.takeoffMeasurement.updateMany({
     where: { pageId: page.id, calibrationId: { not: newest.id }, postedAt: null },
