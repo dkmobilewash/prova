@@ -126,3 +126,35 @@ export async function countPages(bytes: Buffer): Promise<number> {
   const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false }).promise;
   return doc.numPages;
 }
+
+/**
+ * Every page's own size, in one pass, WITHOUT rendering anything.
+ *
+ * **THIS EXISTS BECAUSE READING THEM IN THE BROWSER DOES NOT WORK, and that
+ * was found on production rather than in a test.** The first version had the
+ * page geometry read by the pdf.js already open to DISPLAY the drawing, which
+ * is free and needs no server-side PDF parse. It is also impossible for the
+ * files this app actually holds: `DrawingRevision.fileUrl` is a LINK to
+ * wherever the drawing lives, and the field's own help text says so —
+ * "Procore, Box, the GC's portal". A cross-origin PDF can only be read in a
+ * browser when the host sends `Access-Control-Allow-Origin`, and none of those
+ * do. Measured against the probe file on 2026-10-05: the SERVER fetched it
+ * (200, 13,264 bytes) and the browser could not read it at all.
+ *
+ * So the geometry is read here, where there is no CORS. That also removes the
+ * "what stops a client lying" question the old version had to answer: nothing
+ * is taken from the client any more.
+ */
+export async function readPageSizes(
+  bytes: Buffer,
+): Promise<{ pageNumber: number; widthPt: number; heightPt: number }[]> {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false }).promise;
+  const pages: { pageNumber: number; widthPt: number; heightPt: number }[] = [];
+  for (let n = 1; n <= doc.numPages; n += 1) {
+    const page = await doc.getPage(n);
+    const unit = page.getViewport({ scale: 1 });
+    pages.push({ pageNumber: n, widthPt: unit.width, heightPt: unit.height });
+  }
+  return pages;
+}
