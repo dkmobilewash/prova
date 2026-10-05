@@ -1295,6 +1295,24 @@ export async function importSubListing(
     }
 
     const touched = new Set<string>();
+    /* THE CLAIMS A LEAD ALREADY HOLDS FROM THIS SOURCE, so re-reading one
+       document does not write its sentences again.
+       `(leadId, sourceUrl, kind, claim)` is the natural key of a piece of
+       evidence and nothing was honouring it: three imports of one listing left
+       five distinct claims tripled, so a reviewer confirmed the same sentence
+       three times and the lead stayed undeletable.
+       The duplication is the visible half. The half that matters is that the
+       query filters on NO state — so a claim somebody DISMISSED is not written
+       back as PROPOSED by the next import. A rejected sentence returning as
+       un-reviewed is the review step being undone by a re-read, and it would
+       look exactly like fresh evidence.
+       Keyed on the source as well as the claim on purpose: two documents
+       reporting the same fact are two pieces of evidence, and their claims
+       differ anyway because each names its own project and line. A document
+       RE-POSTED at one URL with different wording therefore still lands, which
+       is the behaviour a correction needs. */
+    const claimsOnRecord = new Map<string, Set<string>>();
+    const claimKey = (kind: string, claim: string) => `${kind}\u0000${claim}`;
 
     const summary = await prisma.$transaction(async (tx) => {
       let leadsCreated = 0;
@@ -1458,19 +1476,45 @@ export async function importSubListing(
           }
         }
 
-        await tx.salesLeadSignal.createMany({
-          data: proposals.map((proposal) => ({
-            companyId: company.id,
-            leadId,
-            kind: proposal.kind,
-            claim: proposal.claim,
-            sourceUrl,
-            sourceTitle,
-            // PROPOSED, with no reviewer. Nothing here was reviewed by anybody.
-            state: "PROPOSED" as const,
-          })),
+        /* Read once per lead and then kept, because several rows of one paste
+           land on one lead and the set has to include what THIS paste has
+           already written — two rows of a listing can produce the same sentence
+           for a lead when the claim does not quote their line. */
+        let onRecord = claimsOnRecord.get(leadId);
+        if (!onRecord) {
+          const held = await tx.salesLeadSignal.findMany({
+            where: { companyId: company.id, leadId, sourceUrl },
+            select: { kind: true, claim: true },
+          });
+          onRecord = new Set(held.map((signal) => claimKey(signal.kind, signal.claim)));
+          claimsOnRecord.set(leadId, onRecord);
+        }
+
+        const fresh = proposals.filter((proposal) => {
+          const key = claimKey(proposal.kind, proposal.claim);
+          if (onRecord.has(key)) return false;
+          onRecord.add(key);
+          return true;
         });
-        signalsProposed += proposals.length;
+
+        if (fresh.length > 0) {
+          await tx.salesLeadSignal.createMany({
+            data: fresh.map((proposal) => ({
+              companyId: company.id,
+              leadId,
+              kind: proposal.kind,
+              claim: proposal.claim,
+              sourceUrl,
+              sourceTitle,
+              // PROPOSED, with no reviewer. Nothing here was reviewed by anybody.
+              state: "PROPOSED" as const,
+            })),
+          });
+          signalsProposed += fresh.length;
+        }
+        /* Revalidated whether or not anything was written: the row still reached
+           this lead, and a caller watching the page should see the same thing a
+           reload would show. */
         touched.add(leadId);
       }
 

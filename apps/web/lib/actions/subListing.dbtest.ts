@@ -1415,3 +1415,127 @@ describe("the same subcontractor arriving in a second import", () => {
     }
   });
 });
+
+/**
+ * RE-READING ONE DOCUMENT IS NOT NEW EVIDENCE.
+ *
+ * Found by review 2026-10-05, after the cross-import merge fixed the lead count
+ * and left the claims alone: three imports of one listing produced ONE lead,
+ * correctly, carrying fifteen PROPOSED signals over five distinct claims. The
+ * reviewer confirms the same sentence three times and the lead stays
+ * undeletable, which is the cost the merge was written to remove.
+ *
+ * `(leadId, sourceUrl, kind, claim)` is the natural key of a piece of evidence.
+ * There is no unique constraint for it and these tests deliberately do not add
+ * one — a migration would have to be announced before the push, and the rule can
+ * be honoured by the one function that writes these rows.
+ *
+ * Their own source prefix, because one of them DISMISSES a signal and the sweep
+ * in the block above asserts every `crossimport/` signal is PROPOSED.
+ */
+describe("re-reading one document does not write its evidence twice", () => {
+  const SOURCE = "https://example.test/idempotent/award-packet.pdf";
+
+  function listingFor(project: string) {
+    const listingText = [
+      `Project: ${project}`,
+      "Prime Contractor: Swinerton Builders",
+      "",
+      "Repeatread Drywall, Inc.\tFontana, CA\tC-9 886601\t1000066601\tMetal stud framing and drywall",
+    ].join("\n");
+    const parsed = parseSubListing(listingText);
+    expect(parsed.rows, "the fixture parsed to no single row").toHaveLength(1);
+    expect(parsed.unread).toHaveLength(0);
+    return { listingText, line: parsed.rows[0].line };
+  }
+
+  function importAt(project: string, sourceUrl: string) {
+    const { listingText, line } = listingFor(project);
+    return importSubListing(
+      form({ listingText, sourceUrl, primeOutcome: "UNKNOWN", lines: String(line) }),
+    );
+  }
+
+  async function theLead() {
+    const [lead] = await leadsNamed("Repeatread Drywall");
+    expect(lead, "the first import made no lead").toBeTruthy();
+    return lead;
+  }
+
+  it("adds nothing at all on a second import of the same document", async () => {
+    const first = await importAt("Fontana Senior Center", SOURCE);
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    // The premise: there is evidence for the second import to duplicate.
+    expect(first.value.signalsProposed).toBeGreaterThan(1);
+
+    const lead = await theLead();
+    const before = await prisma.salesLeadSignal.count({ where: { leadId: lead.id } });
+    expect(before).toBe(first.value.signalsProposed);
+
+    const second = await importAt("Fontana Senior Center", SOURCE);
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+
+    // It FOUND the lead — this is not a pass bought by the import failing.
+    expect(second.value.leadsCreated).toBe(0);
+    expect(second.value.leadsAttached).toBe(1);
+    // And wrote nothing, which the summary says as well as the database.
+    expect(second.value.signalsProposed).toBe(0);
+    expect(await prisma.salesLeadSignal.count({ where: { leadId: lead.id } })).toBe(before);
+  });
+
+  /**
+   * THE HALF THAT MATTERS, AND IT IS NOT THE DUPLICATION. The query behind the
+   * filter reads signals in EVERY state, so a claim somebody dismissed is not
+   * written back as PROPOSED by the next import. A rejected sentence returning
+   * un-reviewed is the review step being undone by a re-read, and on screen it
+   * is indistinguishable from fresh evidence.
+   */
+  it("does not resurrect a claim the reviewer dismissed", async () => {
+    const lead = await theLead();
+    const victim = await prisma.salesLeadSignal.findFirst({
+      where: { leadId: lead.id, sourceUrl: SOURCE, state: "PROPOSED" },
+    });
+    expect(victim, "no PROPOSED signal to dismiss").toBeTruthy();
+    if (!victim) return;
+    await prisma.salesLeadSignal.update({
+      where: { id: victim.id },
+      data: { state: "DISMISSED", reviewedAt: new Date() },
+    });
+
+    const again = await importAt("Fontana Senior Center", SOURCE);
+    expect(again.ok).toBe(true);
+    if (again.ok) expect(again.value.signalsProposed).toBe(0);
+
+    // Still one row carrying that sentence, still dismissed.
+    const carrying = await prisma.salesLeadSignal.findMany({
+      where: { leadId: lead.id, claim: victim.claim },
+    });
+    expect(carrying).toHaveLength(1);
+    expect(carrying[0].state).toBe("DISMISSED");
+  });
+
+  /**
+   * AND THE FILTER MUST NOT SWALLOW A CORRECTION. An agency re-posting a fixed
+   * listing at the SAME URL is the case a claim-level key exists to allow: the
+   * wording changes, so the sentences are new evidence and land. Without this
+   * the test above would be satisfied by a filter that simply refused any second
+   * import of a URL, which is a different and much worse rule.
+   */
+  it("still records a document re-posted at the same URL with different wording", async () => {
+    const lead = await theLead();
+    const before = await prisma.salesLeadSignal.count({ where: { leadId: lead.id } });
+
+    const corrected = await importAt("Fontana Senior Center PHASE TWO", SOURCE);
+    expect(corrected.ok).toBe(true);
+    if (!corrected.ok) return;
+
+    expect(corrected.value.signalsProposed).toBeGreaterThan(0);
+    expect(await prisma.salesLeadSignal.count({ where: { leadId: lead.id } })).toBeGreaterThan(
+      before,
+    );
+    // Still one lead: the licence is the same contractor.
+    expect(await leadsNamed("Repeatread Drywall")).toHaveLength(1);
+  });
+});
