@@ -6,6 +6,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@prova/ui", "@prova/db"],
+  // `@napi-rs/canvas` ships a NATIVE `.node` binary. webpack follows the
+  // import -- a dynamic `import()` does not stop it -- tries to PARSE the
+  // binary, and the build dies with "Module parse failed: Unexpected
+  // character". Nothing can bundle a compiled Skia; it has to be left to Node
+  // at runtime, which is exactly what this option is for.
+  //
+  // READ THIS BEFORE ADDING pdfjs-dist TO THE LIST, because this repo has
+  // already paid for that once: `lib/plan-ingest/planPdf.ts` records that
+  // `serverExternalPackages: ["pdfjs-dist"]` was both unnecessary AND actively
+  // breaking. The two cases are not the same. pdfjs is pure JavaScript and
+  // bundles fine; the entry below is here because a native binary cannot be
+  // bundled at all. One name, not two.
+  serverExternalPackages: ["@napi-rs/canvas"],
   // The floating N badge is dev-only chrome, and this branch gets filmed for
   // the demo video — nothing that says "dev server" can be in frame.
   devIndicators: false,

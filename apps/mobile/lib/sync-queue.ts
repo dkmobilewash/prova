@@ -129,6 +129,32 @@ export type CreateOp =
       date: string;
       signerName: string;
       signaturePath: string;
+    }
+  | {
+      /** A mark put on a plan sheet, standing in front of the thing it marks.
+       *
+       * QUEUED RATHER THAN SENT, like every other write on this phone, and the
+       * reason is sharper here than most: a drawing is what somebody walks the
+       * building with, and that walk happens in a basement, a stairwell, or
+       * the middle of a slab with no signal at all. A pin that needed a
+       * connection would be a pin nobody could place where they were standing
+       * — which is the only place worth placing one.
+       *
+       * `jobId` is NOT sent to the server: the page already determines its
+       * revision, set and job. It is carried so the OUTBOX can say which job a
+       * waiting note belongs to, because "a note on a sheet" with no job is a
+       * line a foreman cannot act on.
+       */
+      type: "sheet-pin:create";
+      jobId: string;
+      pageId: string;
+      clientOperationId: string;
+      x: number;
+      y: number;
+      kind: "PHOTO" | "PUNCH" | "NOTE";
+      note?: string;
+      mediaId?: string;
+      punchItemId?: string;
     };
 
 export type UpdateOp = {
@@ -619,6 +645,23 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
           date: op.date,
           signerName: op.signerName,
           signaturePath: op.signaturePath,
+          clientOperationId: op.clientOperationId,
+        },
+        token,
+      );
+      return;
+    case "sheet-pin:create":
+      // `jobId` is deliberately not passed: it is outbox wording, not input.
+      // The page a pin sits on already determines the job on the server.
+      await api.createSheetPin(
+        {
+          pageId: op.pageId,
+          x: op.x,
+          y: op.y,
+          kind: op.kind,
+          note: op.note,
+          mediaId: op.mediaId,
+          punchItemId: op.punchItemId,
           clientOperationId: op.clientOperationId,
         },
         token,

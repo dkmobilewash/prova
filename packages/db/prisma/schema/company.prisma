@@ -168,6 +168,7 @@ model Company {
   workerCertifications      WorkerCertification[]
   requiredCertifications    CertificationRequirement[]
   bidPursuits               BidPursuit[]
+  sheetPins SheetPin[]
 }
 
 enum UserRole {
@@ -317,6 +318,7 @@ model User {
   /// AI settings rows this person last changed — an audit line on an
   /// owner-only switch, not a thing they own.
   aiSettingsChanged         CompanyAiSettings[]
+  sheetPins SheetPin[] @relation("SheetPinCreatedBy")
 
   @@index([companyId])
 }

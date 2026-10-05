@@ -39,6 +39,7 @@ export * from "./submittals";
 export * from "./dasForms";
 export * from "./materialOrders";
 export * from "./drawings";
+export * from "./sheetPins";
 export * from "./closeout";
 export * from "./vendorPricing";
 export * from "./integrations";

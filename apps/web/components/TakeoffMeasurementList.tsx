@@ -290,10 +290,23 @@ function WallBridgeFields({ wallTypes }: { wallTypes: PostableWallType[] }) {
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-xs text-ink-label">
           {picked ? `Wall height (ft) — ${picked.defaultHeightFt ?? "type has none"}` : "Wall height (ft)"}
+          {/* "e.g. 9", NOT "9". A bare number in an empty required field reads
+              as a value that is already there — a click-through on 2026-10-05
+              posted a run, got "Height ft needs a number", and had to go back
+              and type the 9 it could already see. Worse when a wall type IS
+              picked: the label then shows that type's own default (10, say)
+              while the placeholder said 9, so one control carried two numbers
+              and neither was the value.
+
+              It stays a HINT rather than becoming a prefilled default on
+              purpose: `planMeasuredWallRun` refuses a run with no height
+              instead of assuming one, and prefilling a real figure here would
+              be the guess that module declines to make — the estimator would
+              be agreeing to a height nobody chose. */}
           <input
             name="heightFt"
             inputMode="decimal"
-            placeholder="9"
+            placeholder={picked?.defaultHeightFt ? `e.g. ${picked.defaultHeightFt}` : "e.g. 9"}
             className="w-24 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
           />
         </label>
