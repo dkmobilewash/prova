@@ -637,6 +637,17 @@ export const EXPORT_WITHHELD: ExportWithheld[] = [
  */
 export const EXPORT_OMISSIONS: ExportOmission[] = [
   {
+    key: "sheet-marks",
+    title: "Pins on drawing sheets",
+    detail:
+      "Photo, punch and note pins dropped on a plan sheet, and the arrows, clouds and text drawn " +
+      "on it. These are POSITIONS — a pair of numbers whose whole meaning is the sheet they sit on " +
+      "and the image behind them. In a spreadsheet they would be two columns of decimals nobody " +
+      "can act on, and the thing they point at (the photo, the punch item) is already exported in " +
+      "its own dataset. The drawing itself is the export.",
+    models: ["SheetPage", "SheetPin"],
+  },
+  {
     key: "compliance",
     title: "Licences, bonds, insurance and compliance documents",
     detail:

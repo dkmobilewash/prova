@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useState, useTransition } from "react";
 import {
   deleteDrawingRevision,
@@ -391,6 +393,15 @@ export function DrawingSetRow({
                             {rev.fileName || "open"}
                           </a>
                         )}
+                          {rev.fileUrl && (
+                            // Inside RowActions with the others, so it is
+                            // hidden while a delete is armed -- issue #152's
+                            // rule 1 is about EVERY ordinary action, not just
+                            // the one somebody remembered.
+                            <Link href={`/drawings/${rev.id}`} className="ml-2 text-link underline">
+                              pins
+                            </Link>
+                          )}
                         <button
                           type="button"
                           disabled={isPending}

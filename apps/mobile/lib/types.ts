@@ -345,3 +345,40 @@ export type AlertRow = {
   daysUntil: number | null;
   amount: number | null;
 };
+
+/** One sheet of a drawing revision, as the phone receives it.
+ *
+ * `imageUrl` is a RASTERISED PNG, not the PDF: this app has no PDF renderer
+ * and no WebView, so a sheet is drawn as an `<Image>` with an SVG overlay. A
+ * null means nobody has prepared that sheet yet — it is a state to SAY, not a
+ * row to hide.
+ *
+ * `widthPt`/`heightPt` are the page's own size, and they are here because the
+ * coordinates need them: `x` runs 0..1 of the WIDTH and `y` runs 0..H/W —
+ * also divided by the width. There is one definition of that box, in
+ * `apps/web/lib/sheet-geometry.ts`, and this app must not grow a second. */
+export type SheetRow = {
+  id: string;
+  pageNumber: number;
+  label: string | null;
+  widthPt: number;
+  heightPt: number;
+  imageUrl: string | null;
+  imageWidthPx: number | null;
+  setName: string;
+  revisionLabel: string;
+  pins: SheetPinRow[];
+};
+
+export type SheetPinRow = {
+  id: string;
+  x: number;
+  y: number;
+  kind: "PHOTO" | "PUNCH" | "NOTE";
+  note: string | null;
+  mediaId: string | null;
+  punchItemId: string | null;
+  /** Flattened by the server so a pin whose punch item was deleted still has
+   * words, with no second request for something that is gone. */
+  punchItemDescription: string | null;
+};

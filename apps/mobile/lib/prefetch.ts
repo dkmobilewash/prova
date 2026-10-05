@@ -46,12 +46,13 @@ export async function prefetchJob(jobId: string, token: string, me: Me | null = 
     // phone is opened for once signal has gone: which revision governs,
     // and who is on site tomorrow.
     [cacheKeys.drawings(jobId), () => api.listDrawings(jobId, token)],
+    [cacheKeys.sheets(jobId), () => api.listSheets(jobId, token)],
     [cacheKeys.schedule(jobId), () => api.listSchedule(jobId, token)],
   ];
 
   let filled = 0;
   for (const [key, read] of sections) {
-    if (!may(key.startsWith("drawings") ? "MANAGE_JOBS" : "MANAGE_FIELD")) continue;
+    if (!may(key.startsWith("drawings") || key.startsWith("sheets") ? "MANAGE_JOBS" : "MANAGE_FIELD")) continue;
     try {
       await cacheSet(key, await read());
       filled += 1;
@@ -76,5 +77,6 @@ export const PREFETCHED_KEYS = [
   cacheKeys.safety,
   cacheKeys.tickets,
   cacheKeys.drawings,
+  cacheKeys.sheets,
   cacheKeys.schedule,
 ] as const;

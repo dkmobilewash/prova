@@ -303,6 +303,11 @@ export const EXCLUSIONS: Exclusion[] = [
   ...laborExclusions,
   ...messageExclusions,
   ...contactExclusions,
+  {
+    action: "sheetPins.*",
+    reason:
+      "Marks on a drawing sheet are placed by TAPPING THE DRAWING — the whole value is the x/y, and there is no sentence a person could say that puts a pin in the right spot. Ask can describe what is pinned; it cannot pin.",
+  },
   ...notYetRegistered,
 ];
 
