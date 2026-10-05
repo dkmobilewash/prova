@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState, useTransition } from "react";
 import { addTakeoffLines } from "@/lib/actions";
 import { recipeLines, RECIPES, type RecipeInput, type RecipeArgs } from "@/lib/takeoff-recipes";
+import { DEFAULT_WASTE_PERCENT } from "@/lib/takeoff";
 
 /**
  * Measured dimensions in, priced-later line items out — for every recipe.
@@ -30,7 +31,21 @@ import { recipeLines, RECIPES, type RecipeInput, type RecipeArgs } from "@/lib/t
  * path to the `ceiling` recipe, which needs a length and a width that a traced
  * outline does not have.
  */
-export function TakeoffForm({ jobId }: { jobId: string }) {
+export function TakeoffForm({
+  jobId,
+  defaultWastePercent,
+}: {
+  jobId: string;
+  /**
+   * The company's waste figure, or null when nobody has set one.
+   *
+   * This used to be the literal `"10"` here, while `WallTypes.tsx` used `"0"`
+   * for the same question on the same job. The number had no home a company
+   * could change, so a shop that cuts tighter than 10 retyped it on every
+   * takeoff or silently accepted ours.
+   */
+  defaultWastePercent: string | null;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +58,7 @@ export function TakeoffForm({ jobId }: { jobId: string }) {
   const [widthFt, setWidthFt] = useState("");
   const [sides, setSides] = useState<"1" | "2">("2");
   const [spacingIn, setSpacingIn] = useState("16");
-  const [wastePercent, setWastePercent] = useState("10");
+  const [wastePercent, setWastePercent] = useState(defaultWastePercent ?? String(DEFAULT_WASTE_PERCENT));
   const [openings, setOpenings] = useState<{ w: string; h: string }[]>([]);
   const [areaSqFt, setAreaSqFt] = useState("");
   const [coats, setCoats] = useState("2");

@@ -149,7 +149,13 @@ describe("a document charges its real page count to the company's month", () => 
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected the upload to succeed");
-    expect(result.value).toEqual({ note: "23 pages", pagesLeft: 277 });
+    // The receipt, against a real database rather than a stub: what it cost,
+    // which meter, and what is left AFTER the claim. It read "23 pages" until
+    // 2026-10-04, which rendered on screen as a floating fragment.
+    expect(result.value).toEqual({
+      note: "23 pages charged · 277 of 300 document pages left this month",
+      pagesLeft: 277,
+    });
 
     const rows = await ledgerRows();
     // ONE row. A document ledger of its own would pass every other

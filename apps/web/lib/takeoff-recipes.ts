@@ -18,7 +18,7 @@
  * deterministic part that can never drift.
  */
 
-import { takeoffCeiling, takeoffWall, type TakeoffLine, type WallInput } from "./takeoff";
+import { DEFAULT_WASTE_PERCENT, takeoffCeiling, takeoffWall, type TakeoffLine, type WallInput } from "./takeoff";
 
 /** Feet. Everything dimensional in this file is feet / square feet — mixing
  * units is how a takeoff produces a number that is exactly twelve times wrong
@@ -150,7 +150,7 @@ export const RECIPES: Recipe[] = [
     lines: (inputs, args) => {
       const area = sumArea(inputs);
       const perimeter = sumLinear(inputs);
-      const waste = args.wastePercent ?? 10;
+      const waste = args.wastePercent ?? DEFAULT_WASTE_PERCENT;
       if (area <= 0) return [];
       const lines: TakeoffLine[] = [
         { label: "Flooring", quantity: round2(area), unit: "sq ft" },

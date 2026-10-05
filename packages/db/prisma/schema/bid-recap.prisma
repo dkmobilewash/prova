@@ -132,6 +132,30 @@ model CompanyBidDefaults {
   bondPercent        Decimal? @db.Decimal(5, 2)
   contingencyPercent Decimal? @db.Decimal(5, 2)
 
+  /// THE COMPANY'S WASTE FIGURE, and it is NOT A RECAP RATE.
+  ///
+  /// It sits in this model because this is where a company's estimating
+  /// defaults already live and a second one-row-per-company table would be
+  /// the same thing with a longer join. But it is deliberately outside
+  /// `RecapRates`: `ratesFromForm` spreads only `RECAP_RATE_KEYS`, so the
+  /// rate list cannot absorb this by accident, and `bid-recap.ts` never
+  /// multiplies anything by it. Waste changes how much MATERIAL a takeoff
+  /// asks for; a markup changes what the GC is charged for it.
+  ///
+  /// WHY IT EXISTS: one concept had four hard-coded answers. The wall-type
+  /// component form prefilled `0`, the takeoff form prefilled `10`, and
+  /// `takeoff.ts` and `takeoff-recipes.ts` each fell back to `?? 10`. A
+  /// company that cuts its drywall tighter than that had nowhere to say so,
+  /// and the two forms disagreed about the same question on the same job.
+  ///
+  /// NULL MEANS NOBODY HAS SAID, and the fallback is then
+  /// `DEFAULT_WASTE_PERCENT` — 10, the figure the takeoff form already used,
+  /// so no existing estimate changes. It is not defaulted to 10 in the column
+  /// because "this company has not decided" and "this company chose 10" are
+  /// different facts and only one of them should survive a later change to
+  /// what we think the sensible default is.
+  defaultWastePercent Decimal? @db.Decimal(5, 2)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

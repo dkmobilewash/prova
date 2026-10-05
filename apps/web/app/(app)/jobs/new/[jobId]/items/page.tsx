@@ -52,6 +52,13 @@ export default async function NewJobItemsPage({ params }: { params: Promise<{ jo
       })
     : [];
 
+  // Just the waste figure, so the wizard's takeoff form starts from the
+  // company's number rather than a literal baked into the component.
+  const bidDefaults = await prisma.companyBidDefaults.findUnique({
+    where: { companyId: job.companyId },
+    select: { defaultWastePercent: true },
+  });
+
   const lineItems = job.lineItems.map((item) => ({
     id: item.id,
     description: item.description,
@@ -83,7 +90,12 @@ export default async function NewJobItemsPage({ params }: { params: Promise<{ jo
           </Link>
         </p>
       ) : (
-        <BidWizardLineItems jobId={job.id} lineItems={lineItems} catalogEntries={catalogEntries} />
+        <BidWizardLineItems
+          jobId={job.id}
+          lineItems={lineItems}
+          catalogEntries={catalogEntries}
+          defaultWastePercent={bidDefaults?.defaultWastePercent?.toString() ?? null}
+        />
       )}
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-line-card pt-6">

@@ -30,6 +30,49 @@ export interface FringeRateScheduleInput {
   effectiveTo: Date | null;
 }
 
+/** The Prisma row this is built from — Decimals, which never reach the math. */
+type FringeRateScheduleRow = {
+  baseWage: unknown;
+  pensionRate: unknown;
+  vacationRate: unknown;
+  healthWelfareRate: unknown;
+  trainingRate: unknown;
+  effectiveFrom: Date;
+  effectiveTo: Date | null;
+};
+
+/**
+ * One `FringeRateSchedule` row, as the wage math wants it.
+ *
+ * ADDED 2026-10-04 BECAUSE THERE WERE ALREADY SIX COPIES of these seven lines —
+ * in the estimate tab, the crew tab, the WH-347 page, the certified-payroll
+ * summary, Ask's handlers and two dbtests — and the labor-cost apply action was
+ * about to be the seventh. Six hand-written copies of a Decimal→number mapping
+ * is six places for a fringe to be dropped and one figure to quietly disagree
+ * with another, which is the shape CLAUDE.md records under "a guard that a list
+ * is complete cannot notice a second list".
+ *
+ * `null` is preserved rather than coerced to 0: `calculateTimeEntryLaborCost`
+ * reads an absent fringe as nothing, and a 0 typed here would be indistinguishable
+ * from a rate somebody recorded as zero.
+ *
+ * Only the two files this PR already touched were migrated onto it; the other
+ * five still carry their own copy and are a follow-up, not a silent rewrite of
+ * code this change has no reason to be in.
+ */
+export function fringeScheduleInput(row: FringeRateScheduleRow): FringeRateScheduleInput {
+  const num = (value: unknown): number | null => (value != null ? Number(value) : null);
+  return {
+    baseWage: Number(row.baseWage),
+    pensionRate: num(row.pensionRate),
+    vacationRate: num(row.vacationRate),
+    healthWelfareRate: num(row.healthWelfareRate),
+    trainingRate: num(row.trainingRate),
+    effectiveFrom: row.effectiveFrom,
+    effectiveTo: row.effectiveTo,
+  };
+}
+
 export interface TimeEntryLaborCostInput {
   hours: number;
   payType: TimeEntryPayType;

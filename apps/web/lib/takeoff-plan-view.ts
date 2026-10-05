@@ -40,6 +40,17 @@ export type PlanSheet = {
   pageWidthPt: number | null;
   /** The newest calibration on this sheet, or null when nobody has set one. */
   calibration: PlanViewerCalibration | null;
+  /**
+   * What the title block says the scale is, verbatim, from the newest
+   * plan-ingestion proposal for this page — or null when no run has read one.
+   *
+   * It is NEVER a scale this app acts on: it cannot calibrate a sheet, because
+   * a calibration is the line somebody dragged, and `TakeoffScaleCalibration`
+   * deliberately stores that line rather than a factor. It exists so a
+   * calibration can be contradicted by evidence that did not come from the
+   * same two clicks — see `calibrationNotices`.
+   */
+  printedScale: string | null;
   measurements: PlanMeasurementRow[];
 };
 

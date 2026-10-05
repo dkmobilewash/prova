@@ -79,6 +79,27 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
     },
   });
 
+  // THE PRINTED SCALE PER PAGE, newest proposal first. One query for the plan
+  // rather than one per page, and the newest row wins because there is no
+  // `acceptedScale` to prefer — accepting a sheet writes only its number and
+  // title, by design, so the proposal is the only record of what was printed.
+  //
+  // Scoped through `plan.id`, which the query above already scoped to this
+  // company; a proposal carries no companyId of its own.
+  const printedScaleByPage = new Map<number, string>();
+  if (plan) {
+    const proposals = await prisma.planSheetProposal.findMany({
+      where: { planId: plan.id },
+      orderBy: { createdAt: "desc" },
+      select: { pageNumber: true, proposedScale: true },
+    });
+    for (const proposal of proposals) {
+      if (proposal.proposedScale !== null && !printedScaleByPage.has(proposal.pageNumber)) {
+        printedScaleByPage.set(proposal.pageNumber, proposal.proposedScale);
+      }
+    }
+  }
+
   const isEstimateStage = job.status === "ESTIMATE";
 
   if (!plan) {
@@ -124,6 +145,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
       pageNumber: page.pageNumber,
       label: page.label,
       pageWidthPt: page.pageWidthPt,
+      printedScale: printedScaleByPage.get(page.pageNumber) ?? null,
       calibration: current
         ? {
             id: current.id,

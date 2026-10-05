@@ -23,6 +23,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Call = { args: Record<string, unknown> };
 const calls = {
+  timeEntryCreateMany: [] as { args: Record<string, unknown> }[],
   userUpsert: [] as Call[],
   companyUpdateMany: [] as Call[],
   companyCreate: [] as Call[],
@@ -44,6 +45,8 @@ vi.mock("@prova/db", () => ({
           companyId: clerkId === "clerk-sales" ? "company-sales" : "company-main",
         };
       }),
+      // The payroll seed looks the FIELD user up to hang its hours on.
+      findFirst: vi.fn(async () => ({ id: "user-field" })),
     },
     company: {
       updateMany: vi.fn(async (args: Record<string, unknown>) => {
@@ -79,6 +82,21 @@ vi.mock("@prova/db", () => ({
       create: vi.fn(async () => ({ id: "opportunity-1" })),
     },
     salesStageChange: { create: vi.fn() },
+    // The certified-payroll week the seed now writes. This file is about
+    // the ONBOARDING-GATE shape of the seeded users, so the payroll models
+    // are stubbed rather than asserted — but they have to EXIST, or the
+    // seed throws on `undefined.findFirst` and every test above fails for a
+    // reason that has nothing to do with what it is testing.
+    timeEntry: {
+      findFirst: vi.fn(async () => null),
+      createMany: vi.fn(async (args: Record<string, unknown>) => {
+        calls.timeEntryCreateMany.push({ args });
+        return { count: 2 };
+      }),
+    },
+    unionLocal: { create: vi.fn(async () => ({ id: "local-1" })) },
+    craftClassification: { create: vi.fn(async () => ({ id: "craft-1" })) },
+    fringeRateSchedule: { create: vi.fn(async () => ({ id: "fringe-1" })) },
   },
 }));
 

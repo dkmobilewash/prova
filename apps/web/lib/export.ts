@@ -107,7 +107,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       // record. `priceBasis` says whether a price was a catalog match, a
       // past-bid inference or a guess, which is exactly the provenance a
       // person re-reading their own estimate needs.
-      "tradeScope", "costCategory", "productionRate", "priceBasis",
+      "tradeScope", "costCategory", "indirectKind", "productionRate", "priceBasis",
       "phaseCodeId", "wallTypeComponentId",
       "createdAt", "updatedAt",
     ],
@@ -255,7 +255,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     note: "Your own catalog of standard line items and their default rates.",
     columns: [
       "id", "description", "unit", "tradeScope", "defaultUnitPrice",
-      "defaultBudgetedUnitCost", "defaultLaborHours", "productionRate", "costCategory", "craftClassificationId",
+      "defaultBudgetedUnitCost", "defaultLaborHours", "productionRate", "costCategory", "indirectKind", "craftClassificationId",
       "createdAt", "updatedAt",
     ],
     scope: byCompany,
@@ -343,7 +343,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "the same bid.",
     columns: [
       "id", "bidInvitationId", "packageLabel", "vendorId", "vendorName", "amount", "quotedOn",
-      "requestedOn", "dueBy", "declinedAt", "exclusions", "notes", "createdAt", "updatedAt",
+      "requestedOn", "dueBy", "declinedAt", "carriedAt", "validUntil", "exclusions", "notes", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -408,9 +408,13 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     key: "bidDefaults",
     model: "companyBidDefaults",
     label: "Default markup rates",
-    note: "Your standing markup, overhead and profit rates, which pre-fill a new job's recap.",
+    note: "Your standing markup, overhead and profit rates, plus the waste a takeoff adds — these pre-fill a new job.",
     columns: [
-      "id", ...RECAP_RATE_KEYS, "createdAt", "updatedAt",
+      // `defaultWastePercent` is named separately rather than folded into
+      // RECAP_RATE_KEYS, because it is not a rate: see the column's comment in
+      // bid-recap.prisma. The note above says so too, since a customer reading
+      // a CSV headed "Default markup rates" would otherwise read it as one.
+      "id", ...RECAP_RATE_KEYS, "defaultWastePercent", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
