@@ -65,6 +65,17 @@ each other, rather than trusting the new code's own `nameEvidence` to say so.
 
 ### Three other things the same review found, all fixed here
 
+> **SUPERSEDED 2026-10-05, later the same day — see
+> `601-two-firms-on-one-line.md`.** The paragraph below deletes a dedupe on the grounds
+> that "two rows of one paste cannot produce a byte-identical `(kind, claim)`" because
+> `parsed.rows` have distinct line numbers. **They do not.** A labelled-column form
+> prints every bidder column of a slot on ONE line and the reader honestly stamps them
+> all with it, so two such rows produce byte-identical PROJECT and GC_RELATIONSHIP
+> claims — measured at 5 claims each, 2 identical, under both prime outcomes. The
+> add-back is restored and a db case covers it. Left standing rather than rewritten
+> because the sentence was checked the right way against the wrong corpus (the db suite
+> had no document of that shape), and that is the part worth reading.
+
 **A dedupe line nothing could reach, justified by a false sentence.** `importSubListing` added
 each written claim back into its per-lead set, because "two rows of a listing can produce the
 same sentence for a lead when the claim does not quote their line". Every claim quotes its

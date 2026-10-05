@@ -1,5 +1,17 @@
 ### The deletion was right; its premise was enforced by one row of one fixture (Cyrus)
+
 `cyrus/sales-signals`
+
+> **AND THE PREMISE TURNED OUT TO BE FALSE, hours later — see
+> `601-two-firms-on-one-line.md`.** This entry tests the premise that two rows of one
+> paste always have different line numbers, and concludes the deletion it protects was
+> right. The premise does not hold: a labelled-column form puts every bidder column of a
+> slot on one line. Worse, the case this entry ADDS guarded with `first !== row.line`,
+> which excludes exactly the pair that collides — so it could not have found it either.
+> Both are fixed there: the exclusion is gone, a labelled form is in that corpus, and the
+> dedupe is back. Kept as written because the lesson survives its own conclusion: a guard
+> that cannot fire should still go, and the reason it cannot fire has to be something
+> somebody MEASURED rather than remembered. This entry remembered.
 
 `601-the-silence-that-swallowed-a-shared-licence.md` deleted a line from
 `importSubListing`: each written claim used to be added back into the per-lead dedupe set so
