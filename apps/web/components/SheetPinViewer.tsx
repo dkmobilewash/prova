@@ -72,7 +72,19 @@ export function SheetPinViewer({ fileUrl, page, pins }: Props) {
         ).toString();
         const doc = await pdfjs.getDocument({
           url: fileUrl,
-          withCredentials: true,
+          // NO `withCredentials`, AND THAT IS THE FIX RATHER THAN AN OMISSION.
+          // Setting it makes this a CREDENTIALED cross-origin request, and a
+          // server answering one must name a specific origin -- `*` is refused
+          // by the browser. Vercel Blob serves public files with `*`, so the
+          // flag turns a readable file into an unreadable one. Measured in the
+          // live page against a real uploaded drawing on 2026-10-05:
+          //
+          //   credentials: "omit"     -> 206 Partial Content, reads fine
+          //   credentials: "include"  -> TypeError: Failed to fetch
+          //
+          // The file is public by construction (`access: "public"`), so there
+          // are no credentials to send and nothing is lost by not sending
+          // them. See `blobPdfCredentials.test.ts`.
           standardFontDataUrl: "/pdfjs/standard_fonts/",
         }).promise;
         if (cancelled) return;
