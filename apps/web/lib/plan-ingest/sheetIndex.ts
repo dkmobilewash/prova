@@ -36,6 +36,10 @@ export type SheetRow = {
     sheetNumber: string | null;
     title: string | null;
     discipline: string | null;
+    /** One of `SHEET_PAGE_TYPES`, normalised, so the index can be filtered
+     *  to the schedule sheets. Null when nothing could be read, or when the
+     *  proposal predates prompt `plan-title-block.2`. */
+    pageType: string | null;
     scale: string | null;
     revision: string | null;
     issueDate: string | null;
