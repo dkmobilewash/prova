@@ -16,7 +16,8 @@ import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
 import { deleteTakeoffPlan } from "@/lib/actions";
 import { requireCapability } from "@/lib/authz";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
-import type { PlanMeasurementRow, PlanSheet } from "@/lib/takeoff-plan-view";
+import { printedScalesFromProposals } from "@/lib/takeoff-plan-view";
+import type { PlanMeasurementRow, PlanSheet, PrintedScaleByPage } from "@/lib/takeoff-plan-view";
 
 /**
  * TAKEOFF — measure a drawing on screen and turn what you traced into
@@ -86,19 +87,23 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   //
   // Scoped through `plan.id`, which the query above already scoped to this
   // company; a proposal carries no companyId of its own.
-  const printedScaleByPage = new Map<number, string>();
-  if (plan) {
-    const proposals = await prisma.planSheetProposal.findMany({
-      where: { planId: plan.id },
-      orderBy: { createdAt: "desc" },
-      select: { pageNumber: true, proposedScale: true },
-    });
-    for (const proposal of proposals) {
-      if (proposal.proposedScale !== null && !printedScaleByPage.has(proposal.pageNumber)) {
-        printedScaleByPage.set(proposal.pageNumber, proposal.proposedScale);
-      }
-    }
-  }
+  // KEYED BY PAGE NUMBER, NOT HUNG OFF A SHEET ROW — and that is the whole
+  // correction. This used to be folded into each `PlanSheet`, which is built
+  // from a `TakeoffPlanPage`, and the only thing that creates one of those is
+  // saving a calibration. So on the first calibration of a sheet there was no
+  // row, no `PlanSheet`, and no printed scale — null exactly when it mattered.
+  // A page number exists whether or not anybody has calibrated it.
+  const printedScaleByPage: PrintedScaleByPage = plan
+    ? printedScalesFromProposals(
+        await prisma.planSheetProposal.findMany({
+          where: { planId: plan.id },
+          // Newest first — `printedScalesFromProposals` keeps the first it sees
+          // per page and the ordering is what makes that the current reading.
+          orderBy: { createdAt: "desc" },
+          select: { pageNumber: true, proposedScale: true },
+        }),
+      )
+    : {};
 
   const isEstimateStage = job.status === "ESTIMATE";
 
@@ -145,7 +150,6 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
       pageNumber: page.pageNumber,
       label: page.label,
       pageWidthPt: page.pageWidthPt,
-      printedScale: printedScaleByPage.get(page.pageNumber) ?? null,
       calibration: current
         ? {
             id: current.id,
@@ -224,7 +228,12 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           the first time a run finishes. */}
       {isEstimateStage && <PlanSheetReview rows={await sheetIndexFor(plan.id, company.id)} />}
 
-      <TakeoffPlanViewer jobId={job.id} planId={plan.id} sheets={sheets} />
+      <TakeoffPlanViewer
+        jobId={job.id}
+        planId={plan.id}
+        sheets={sheets}
+        printedScaleByPage={printedScaleByPage}
+      />
 
       {sheets.map((sheet) => (
         <div key={sheet.id} className="flex flex-col gap-2">

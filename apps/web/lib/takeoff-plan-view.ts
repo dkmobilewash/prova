@@ -40,19 +40,65 @@ export type PlanSheet = {
   pageWidthPt: number | null;
   /** The newest calibration on this sheet, or null when nobody has set one. */
   calibration: PlanViewerCalibration | null;
-  /**
-   * What the title block says the scale is, verbatim, from the newest
-   * plan-ingestion proposal for this page — or null when no run has read one.
-   *
-   * It is NEVER a scale this app acts on: it cannot calibrate a sheet, because
-   * a calibration is the line somebody dragged, and `TakeoffScaleCalibration`
-   * deliberately stores that line rather than a factor. It exists so a
-   * calibration can be contradicted by evidence that did not come from the
-   * same two clicks — see `calibrationNotices`.
-   */
-  printedScale: string | null;
   measurements: PlanMeasurementRow[];
 };
+
+/*
+ * `printedScale` WAS A FIELD ON `PlanSheet` AND THAT MADE IT UNREACHABLE.
+ * Removed 2026-10-04, after clicking it.
+ *
+ * A `PlanSheet` is built from a `TakeoffPlanPage` row, and the ONLY thing in
+ * the app that creates one of those is the calibration-save upsert
+ * (`actions/takeoff.ts`). Plan ingestion does not: it writes `PlanSheetText`
+ * and `PlanSheetProposal`, never a page row. So a sheet nobody has calibrated
+ * yet has no `PlanSheet` at all — `sheets.find(...)` returns null, and the
+ * title-block scale read off it was null exactly when it was needed, which is
+ * the FIRST calibration of a sheet.
+ *
+ * Everything else in the dialog kept working and that is why it looked fine:
+ * the scale readback, the sheet width and the error band are computed from the
+ * draft line and the live `pageWidthPt`, none of which touch a stored row. The
+ * one addition that depended on one was the one nobody could see.
+ *
+ * It is a prop on the viewer now, keyed by page number — see
+ * `PrintedScaleByPage`. The field is deleted rather than fixed in place so the
+ * mistake cannot be made again: `sheet?.printedScale` is now a type error.
+ */
+
+/**
+ * The title-block scale per page number, independent of whether anybody has
+ * calibrated that page.
+ *
+ * Keyed by page number rather than by sheet id for that exact reason — a page
+ * with no calibration has no sheet id to key on.
+ */
+export type PrintedScaleByPage = Record<number, string>;
+
+/**
+ * Build that map from plan-sheet proposals, NEWEST FIRST.
+ *
+ * The caller orders by `createdAt desc` and this keeps the first scale it sees
+ * per page, because a re-run inserts rather than overwrites — proposals are
+ * append-only, so the newest row is the current reading. There is no
+ * `acceptedScale` to prefer: accepting a sheet writes only its number and
+ * title, by design, so the proposal is the only record of what was printed.
+ *
+ * A proposal with no scale is skipped rather than stored as an empty string —
+ * `standardScaleFromText` would return null for it anyway, but a key that
+ * exists with nothing behind it invites a caller to treat presence as an
+ * answer.
+ */
+export function printedScalesFromProposals(
+  proposals: readonly { pageNumber: number; proposedScale: string | null }[],
+): PrintedScaleByPage {
+  const byPage: PrintedScaleByPage = {};
+  for (const proposal of proposals) {
+    if (proposal.proposedScale !== null && !(proposal.pageNumber in byPage)) {
+      byPage[proposal.pageNumber] = proposal.proposedScale;
+    }
+  }
+  return byPage;
+}
 
 export type ToolId = "pan" | "calibrate" | "linear" | "area" | "count";
 
