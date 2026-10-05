@@ -746,3 +746,97 @@ describe("the cap is defined once, and both callers ask for it", () => {
     expect(screen).toMatch(/disabled=\{[^}]*tooMany !== null/);
   });
 });
+
+/**
+ * EVERY CLAIM QUOTES ITS OWN LINE — AND `importSubListing` NOW DEPENDS ON IT.
+ *
+ * ── FIRST, A CORRECTION TO WHAT THIS DOCSTRING SAID WHEN IT WAS WRITTEN ──
+ *
+ * It claimed the property was "true and unasserted". It is asserted — at
+ * `signals.test.ts:57`, *"carries the line number on every signal"* — for **one row
+ * of one fixture**. I missed it with a grep for `atLine` and `"of the listing"`,
+ * neither of which that case uses, and then wrote the stronger claim. Found by
+ * mutation: emptying `atLine` reds that case too.
+ *
+ * What is genuinely missing is the breadth and the consequence. One row of one
+ * document cannot speak for a claim branch that row does not reach, and the thing
+ * `importSubListing` actually depends on — that no TWO rows collide — was asserted
+ * nowhere. Those are the two cases below.
+ *
+ * `importSubListing` deduplicates a lead's evidence on
+ * `(leadId, sourceUrl, kind, claim)`, and it used to ALSO add each written claim
+ * back into its per-lead set so two rows of one paste could not write the same
+ * sentence twice. That line was deleted as unreachable, on exactly this argument:
+ *
+ *   every claim-producing branch appends `atLine`, and two rows of one paste
+ *   always have different line numbers, so two rows can never produce a
+ *   byte-identical `(kind, claim)`.
+ *
+ * The argument is sound. What enforced its premise was one row of one fixture, and
+ * a claim branch that row does not reach could lose its `atLine` with every test in
+ * this repo green — the deleted guard is the one that would have caught the
+ * collision, and it is gone. Hence a case over every row of every fixture, with a
+ * control that the corpus reaches at least five kinds, so no branch is exempt by
+ * simply never being exercised.
+ *
+ * So the premise is a test now. This is the cheapest possible insurance on a
+ * deletion, and the deletion was right: a guard that cannot fire should go, but
+ * the reason it cannot fire should be checked rather than remembered.
+ */
+describe("every claim names the line it came from", () => {
+  const rowsWithClaims = SUB_LISTING_CASES.flatMap((listing) => {
+    const parsed = parseSubListing(listing.text);
+    return parsed.rows.map((row) => ({
+      id: listing.id,
+      row,
+      claims: signalsForSub(row, parsed.header, "UNKNOWN"),
+    }));
+  });
+
+  /** Without this the loop below is a pass over an empty list. */
+  it("found rows that produce claims at all", () => {
+    expect(rowsWithClaims.length).toBeGreaterThan(20);
+    const total = rowsWithClaims.reduce((n, r) => n + r.claims.length, 0);
+    expect(total).toBeGreaterThan(50);
+    // And it reaches every kind the claim table can produce, so no branch is
+    // exempt from the assertion below by simply never being exercised.
+    const kinds = new Set(rowsWithClaims.flatMap((r) => r.claims.map((c) => c.kind)));
+    expect(kinds.size).toBeGreaterThanOrEqual(5);
+  });
+
+  it("puts the row's own line number in every claim it produces", () => {
+    const offenders: string[] = [];
+    for (const { id, row, claims } of rowsWithClaims) {
+      for (const claim of claims) {
+        if (!claim.claim.includes(`(line ${row.line} of the listing)`)) {
+          offenders.push(`[${id}] ${claim.kind} on line ${row.line}: ${JSON.stringify(claim.claim)}`);
+        }
+      }
+    }
+    expect(offenders.slice(0, 3)).toEqual([]);
+  });
+
+  /**
+   * The consequence, stated as its own case because it is the thing
+   * `importSubListing` relies on rather than a restatement of the one above: no
+   * two rows of one document can produce the same `(kind, claim)` pair.
+   */
+  it("so no two rows of one document can produce an identical kind-and-claim", () => {
+    const collisions: string[] = [];
+    for (const listing of SUB_LISTING_CASES) {
+      const parsed = parseSubListing(listing.text);
+      const seen = new Map<string, number>();
+      for (const row of parsed.rows) {
+        for (const claim of signalsForSub(row, parsed.header, "UNKNOWN")) {
+          const key = `${claim.kind}\u0000${claim.claim}`;
+          const first = seen.get(key);
+          if (first !== undefined && first !== row.line) {
+            collisions.push(`[${listing.id}] lines ${first} and ${row.line} both produced ${key}`);
+          }
+          seen.set(key, row.line);
+        }
+      }
+    }
+    expect(collisions.slice(0, 3)).toEqual([]);
+  });
+});
