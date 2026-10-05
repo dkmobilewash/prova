@@ -7,6 +7,7 @@ import { SalesOpportunityRow } from "@/components/SalesOpportunityRow";
 import { SalesActivityForm } from "@/components/SalesActivityForm";
 import { SalesActivityRow } from "@/components/SalesActivityRow";
 import { SalesLeadSignals } from "@/components/SalesLeadSignals";
+import { SalesLeadRegistry } from "@/components/SalesLeadRegistry";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { openFollowUp, type LoggedActivity } from "@/lib/sales-activity";
 import { viewerToday } from "@/lib/viewerToday";
@@ -167,6 +168,8 @@ export default async function SalesLeadPage({
             email: lead.email,
             phone: lead.phone,
             source: lead.source,
+            licenceNumber: lead.licenceNumber,
+            city: lead.city,
           }}
         />
       </section>
@@ -176,6 +179,22 @@ export default async function SalesLeadPage({
           they open the call with. Opportunities and Activity are what happened
           next. */}
       <SalesLeadSignals leadId={lead.id} signals={signalRows} />
+
+      {/* UNDER "What we know" and above the deals, because it is the same
+          question one step further on: the signals say whether this lead is
+          worth a call, and this says whether a call is possible at all. On an
+          imported lead there is no phone number and the licence is the only
+          route to one. */}
+      <SalesLeadRegistry
+        lead={{
+          licenceNumber: lead.licenceNumber,
+          registrationNumber: lead.registrationNumber,
+          city: lead.city,
+          listedByGc: lead.listedByGc,
+          listedOnProject: lead.listedOnProject,
+          phone: lead.phone,
+        }}
+      />
 
       <section className="mt-10">
         <h2 className="mb-3 text-lg font-semibold text-ink">Opportunities</h2>

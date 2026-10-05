@@ -7,6 +7,7 @@ import { deleteSalesLead } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { SALES_LEAD_SOURCE_OPTIONS } from "@/components/SalesLeadFields";
 import { BAND_LABELS, type FitBand } from "@/lib/sales-qualification";
+import { registrySummaryLine } from "@/lib/sales-registry";
 
 const btn =
   "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
@@ -56,6 +57,12 @@ export function SalesLeadRow({
     email: string | null;
     phone: string | null;
     source: string | null;
+    /** The public-register columns, off a §4104 listing or typed in. Shown
+     *  because the licence is what distinguishes a lead somebody can find a
+     *  number for from one nobody can reach — see lib/sales-registry.ts. */
+    licenceNumber: string | null;
+    city: string | null;
+    listedByGc: string | null;
     opportunityCount: number;
     /** All derived from SalesActivity at read time — see lib/sales-activity.ts.
      * Every one of these is nullable and null never means zero: a lead with
@@ -76,6 +83,16 @@ export function SalesLeadRow({
     awaitingReview: number;
   };
 }) {
+  /* Null when the lead has none of them, so a hand-typed lead grows no empty
+     line. Built by the same module the lead page reads, not assembled here. */
+  const registry = registrySummaryLine({
+    licenceNumber: lead.licenceNumber,
+    city: lead.city,
+    listedByGc: lead.listedByGc,
+    registrationNumber: null,
+    listedOnProject: null,
+    phone: null,
+  });
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +130,9 @@ export function SalesLeadRow({
                 .filter(Boolean)
                 .join(" · ") || "No contact info"}
             </p>
+            {registry && (
+              <p className="text-xs text-ink-muted">{registry}</p>
+            )}
             {/* The reason, not the band. On a STRONG lead this IS the opening
                 line; on a thin one it names the half that is missing. */}
             <p className="mt-0.5 truncate text-xs text-ink-muted">

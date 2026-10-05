@@ -455,3 +455,231 @@ describe("two rows are one company only when the document says so twice over", (
     }
   });
 });
+
+/**
+ * THE COLUMNS THE LISTING FILLS, AND THE ONE IT MUST NEVER OVERWRITE.
+ *
+ * `SalesLead` grew five columns off the reader — a licence number, a DIR
+ * registration, a city, the prime that listed them, the project it was listed
+ * on. Until they existed every one of those survived import only as prose inside
+ * a claim, which is a true sentence and an unjoinable one: California's CSLB
+ * licence file is public and carries a telephone number for very nearly every
+ * registrant, and a number inside "Listed with licence C-9 884201 (line 6 of the
+ * listing)" cannot be joined to anything.
+ *
+ * Two of these assertions are the whole point and neither is checkable by
+ * reading the function:
+ *
+ *   - the licence lands as DIGITS while the CLAIM keeps what the document
+ *     printed. A contractor holds one number under several classifications, so
+ *     the key and the quotation are deliberately different strings;
+ *   - a row that joins a lead which already existed FILLS BLANKS AND NEVER
+ *     OVERWRITES. A second import must not be able to move another company's
+ *     licence onto a lead somebody attached by hand — that is the one
+ *     confident-wrong-answer failure the review screen exists to prevent, and it
+ *     would look like perfectly well-formed data.
+ */
+describe("the public-register columns a listing fills", () => {
+  const YUCAIPA = [
+    "Project: Yucaipa High School Gymnasium",
+    "Agency: Yucaipa-Calimesa Joint Unified School District",
+    "Prime Contractor: Swinerton Builders",
+    "",
+    // One contractor, two classifications of one licence, two portions of work.
+    "Northstate Interiors\tOntario, CA\tC-9 775501\t1000012346\tMetal stud framing and drywall",
+    "Northstate Interiors, Inc.\tOntario, CA\tC-35 775501\t1000012346\tLath and cement plaster",
+  ];
+  const YUCAIPA_URL = "https://example.test/yucaipa/registry-columns.pdf";
+
+  it("stores the licence, registration, city, GC and project as fields", async () => {
+    const result = await importListing(YUCAIPA, YUCAIPA_URL);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.leadsCreated).toBe(1);
+
+    const [lead] = await leadsNamed("Northstate Interiors");
+    expect(lead).toBeTruthy();
+    expect(lead.city).toBe("Ontario, CA");
+    expect(lead.registrationNumber).toBe("1000012346");
+    expect(lead.listedOnProject).toBe("Yucaipa High School Gymnasium");
+    // The document named one prime, so every row of it is attributed to that one.
+    expect(lead.listedByGc).toBe("Swinerton Builders");
+  });
+
+  /**
+   * THE KEY IS THE DIGITS AND THE CLAIM IS THE DOCUMENT'S WORDS, and the pair of
+   * assertions is the test rather than either one alone.
+   *
+   * Storing "C-9 775501" would be a field that never joins, and dropping the
+   * class from the claim would be this app quoting a document as saying something
+   * it did not. A mutation doing either — `licence: row.licence` on the write, or
+   * normalising inside the claim — turns exactly one of these red.
+   */
+  it("stores the number without its classification while the claim keeps what was printed", async () => {
+    const [lead] = await leadsNamed("Northstate Interiors");
+    expect(lead.licenceNumber).toBe("775501");
+
+    const signals = await prisma.salesLeadSignal.findMany({
+      where: { leadId: lead.id, kind: "LICENCE" },
+    });
+    expect(signals.length).toBeGreaterThan(0);
+    const claims = signals.map((signal) => signal.claim).join("\n");
+    // Both classifications, verbatim, because that is what the page said.
+    expect(claims).toContain("C-9 775501");
+    expect(claims).toContain("C-35 775501");
+  });
+
+  /**
+   * A PAGE WITH SEVERAL BIDDERS ATTRIBUTES PER ROW OR NOT AT ALL.
+   *
+   * `header.prime` is null here BY DESIGN — five primes on one project name five
+   * drywall subs and only one of them is about to get the work, so the document
+   * level refuses to name one. The row level still can, because each listing sits
+   * under its own bidder. This is the distinguishing case for the fallback:
+   * reading only `header.prime` leaves both of these null, and reading only
+   * `row.listedBy` leaves the single-prime listing above null. Both must work.
+   */
+  it("attributes each row to the bidder whose listing it sat under", async () => {
+    const PAGE = `   Example University Capital Programs
+   BID SUMMARY SHEET WITH SUBCONTRACTORS
+   Contract: Example Hall Mailroom Conversion
+
+   Alpha Example Builders Inc
+                                        No.1 - $ 1,149,540.00 **
+   Total Bid                            $1,149,540.00
+   Sub Contractor Listing               Portion of Work:        Name of Business:           Location:     DIR #:
+                                        Metal Stud Framing      Zenith Wallworks Inc        Fairview      1000447788
+
+   Bravo Example Construction Co.,
+   Inc.                                 No.2 - $ 1,292,276.00 **
+   Total Bid                            $1,292,276.00
+                                        Portion of Work:        Name of Business:           Location:     DIR #:
+                                        Lath and Plaster        Zenith Lathing Co           Fort Hollow   1000330044`;
+    const parsed = parseSubListing(PAGE);
+    // The premise of the test, asserted rather than assumed: no single prime.
+    expect(parsed.header.prime).toBeNull();
+    expect(parsed.rows).toHaveLength(2);
+
+    const result = await importSubListing(
+      form({
+        listingText: PAGE,
+        sourceUrl: "https://example.test/example-university/bid-summary.pdf",
+        primeOutcome: "UNKNOWN",
+        lines: parsed.rows.map((row) => row.line).join(","),
+      }),
+    );
+    expect(result.ok).toBe(true);
+
+    const leads = await leadsNamed("Zenith");
+    expect(
+      leads.map((lead) => [lead.companyName, lead.listedByGc]).sort(),
+    ).toEqual([
+      ["Zenith Lathing Co", "Bravo Example Construction Co., Inc."],
+      ["Zenith Wallworks Inc", "Alpha Example Builders Inc"],
+    ]);
+  });
+
+  /**
+   * A WRAPPED PROJECT NAME IS MARKED, not stored as though it were the whole
+   * name. `parse.ts` reads line by line, so a two-line project heading leaves
+   * "… Modernization and" behind — and this column is rendered on the lead page,
+   * where a fragment reads as a whole name to whoever is about to say it out
+   * loud. signals.ts records that exact failure reaching a telephone; the words
+   * arriving in a column instead of a claim does not make it less true.
+   */
+  it("marks a project name that ran past the end of its line", async () => {
+    const result = await importListing(
+      [
+        "Project: Banning Elementary Addition and",
+        "Agency: Banning Unified School District",
+        "Prime Contractor: Erickson-Hall Construction",
+        "",
+        "Cutoff Drywall Systems\tBanning, CA\tC-9 775502\tMetal stud framing and drywall",
+        "Cutoff Ceilings Inc\tBeaumont, CA\tC-2 775503\tAcoustical ceilings",
+      ],
+      "https://example.test/banning/wrapped-project.pdf",
+    );
+    expect(result.ok).toBe(true);
+
+    const [lead] = await leadsNamed("Cutoff Drywall");
+    expect(lead.listedOnProject).toBe("Banning Elementary Addition and…");
+  });
+
+  /**
+   * FILL THE BLANKS, NEVER OVERWRITE — one listing, one lead that already exists,
+   * and both halves asserted in one case because a mutation that breaks either
+   * one passes the other.
+   *
+   * The lead below is deliberately HALF filled: it holds a licence number that
+   * disagrees with the document, and no city. Overwriting would put the
+   * listing's licence on a lead a person attached by hand, which is how a lookup
+   * ends up finding somebody else's company. Refusing to fill the city would
+   * waste the only thing the document adds.
+   */
+  it("fills what the lead did not know and leaves what it already held", async () => {
+    const existing = await prisma.salesLead.create({
+      data: {
+        companyId: context.company.id,
+        companyName: "Half Known Drywall",
+        // A number somebody typed in. It disagrees with the listing on purpose.
+        licenceNumber: "111222",
+      },
+    });
+
+    const listingText = [
+      "Project: Moreno Valley Aquatics Center",
+      "Agency: Moreno Valley Unified School District",
+      "Prime Contractor: Tilden-Coil Constructors",
+      "",
+      "Half Known Drywall\tPerris, CA\tC-9 775504\t1000012347\tMetal stud framing and drywall",
+    ].join("\n");
+    const parsed = parseSubListing(listingText);
+    expect(parsed.rows).toHaveLength(1);
+    const line = parsed.rows[0].line;
+
+    const result = await importSubListing(
+      form({
+        listingText,
+        sourceUrl: "https://example.test/moreno-valley/attach.pdf",
+        primeOutcome: "UNKNOWN",
+        lines: String(line),
+        [`attach:${line}`]: existing.id,
+      }),
+    );
+    expect(result.ok).toBe(true);
+
+    const after = await prisma.salesLead.findUnique({ where: { id: existing.id } });
+    // Held: the licence somebody already put there. A contradiction stays
+    // visible — the row's own LICENCE signal still carries 775504, with its
+    // source and line, in front of the person who has to decide.
+    expect(after?.licenceNumber).toBe("111222");
+    // Filled: everything it did not know.
+    expect(after?.city).toBe("Perris, CA");
+    expect(after?.registrationNumber).toBe("1000012347");
+    expect(after?.listedByGc).toBe("Tilden-Coil Constructors");
+    expect(after?.listedOnProject).toBe("Moreno Valley Aquatics Center");
+
+    const licenceClaims = await prisma.salesLeadSignal.findMany({
+      where: { leadId: existing.id, kind: "LICENCE" },
+    });
+    expect(licenceClaims.map((signal) => signal.claim).join("\n")).toContain("775504");
+  });
+
+  /**
+   * A lead typed in by hand gets none of these, and that is the common case
+   * rather than an edge: null means "no document said" everywhere in this file.
+   */
+  it("leaves every column null on a lead no listing produced", async () => {
+    const typed = await prisma.salesLead.create({
+      data: { companyId: context.company.id, companyName: "Nobody Listed Us Ltd" },
+    });
+    const lead = await prisma.salesLead.findUnique({ where: { id: typed.id } });
+    expect([
+      lead?.licenceNumber,
+      lead?.registrationNumber,
+      lead?.city,
+      lead?.listedByGc,
+      lead?.listedOnProject,
+    ]).toEqual([null, null, null, null, null]);
+  });
+});

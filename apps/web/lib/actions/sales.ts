@@ -13,8 +13,15 @@ import {
   SALES_SIGNAL_KINDS,
   type ReviewDecision,
 } from "@/lib/sales-qualification";
-import { parseSubListing } from "@/lib/sub-listing/parse";
+import { looksCutOff, parseSubListing } from "@/lib/sub-listing/parse";
+// The licence number is a JOIN KEY, and there is exactly one place that makes
+// one — see the module header. `identify()` below used to carry its own copy of
+// the digit rule, which is the #526 shape: a canonical rule with a hand-rolled
+// duplicate beside it, where a completeness test on the first cannot see the
+// second.
+import { licenceNumberFrom, readTypedLicence } from "@/lib/sales-licence";
 import { PRIME_OUTCOMES, signalsForSub } from "@/lib/sub-listing/signals";
+import type { ListedSub as ListedSubRow, SubListingParse } from "@/lib/sub-listing/parse";
 import { normaliseCompanyName } from "@/lib/sub-listing/leadMatch";
 import { prisma } from "@prova/db";
 import {
@@ -158,6 +165,30 @@ async function assertMoveNotBackwards(
   }
 }
 
+/**
+ * THE TWO LISTING COLUMNS A PERSON CAN ALSO TYPE, read for the create and edit
+ * forms so the two cannot drift.
+ *
+ * Only two of the five. `licenceNumber` and `city` are things somebody knows
+ * about a company they just met; `registrationNumber`, `listedByGc` and
+ * `listedOnProject` are PROVENANCE — which document introduced this lead — and a
+ * box that let anyone retype that would make it a claim about the past rather
+ * than a record of it. The import writes those three; nothing else does.
+ *
+ * The licence is refused rather than silently dropped when it is not a licence
+ * number. `readTypedLicence`'s header argues that out: the field is labelled on
+ * screen as the number a CSLB lookup uses, nothing downstream reviews it, and
+ * the person who can fix it is the one looking at the box.
+ */
+function readListingFields(formData: FormData): {
+  licenceNumber: string | null;
+  city: string | null;
+} {
+  const licence = readTypedLicence(text(formData, "licenceNumber"));
+  if (!licence.ok) throw new InputError(licence.why);
+  return { licenceNumber: licence.licenceNumber, city: text(formData, "city") || null };
+}
+
 export async function createSalesLead(
   formData: FormData,
 ): Promise<ActionResult> {
@@ -171,6 +202,7 @@ export async function createSalesLead(
     const email = text(formData, "email");
     const phone = text(formData, "phone");
     const source = optionalEnum(formData, "source", SALES_LEAD_SOURCES);
+    const listing = readListingFields(formData);
 
     await prisma.salesLead.create({
       data: {
@@ -180,6 +212,7 @@ export async function createSalesLead(
         email: email || null,
         phone: phone || null,
         source,
+        ...listing,
       },
     });
 
@@ -203,6 +236,12 @@ export async function updateSalesLead(
     const email = text(formData, "email");
     const phone = text(formData, "phone");
     const source = optionalEnum(formData, "source", SALES_LEAD_SOURCES);
+    /* Editable, and that is the point rather than an oversight: an import can
+       put the wrong licence on a lead (a listing misprints one, or a row was
+       attached to the wrong company), and a join key nobody can correct is a
+       wrong number that looks up as somebody else for good. The provenance
+       columns are not here — see `readListingFields`. */
+    const listing = readListingFields(formData);
 
     await prisma.salesLead.update({
       where: { id: leadId },
@@ -212,6 +251,7 @@ export async function updateSalesLead(
         email: email || null,
         phone: phone || null,
         source,
+        ...listing,
       },
     });
 
@@ -884,11 +924,15 @@ function identify(row: {
   licence: string | null;
   registration: string | null;
 }): Omit<ImportedCompany, "leadId"> {
-  const digits = row.licence?.match(/(\d{6,8})\s*$/);
   return {
     spelling: row.name.toLowerCase().replace(/\s+/g, " ").trim(),
     normalised: normaliseCompanyName(row.name),
-    licence: digits ? digits[1] : null,
+    // `licenceNumberFrom`, not a local regex. The local one was anchored at the
+    // END of the string, so it read "C-9 884201" and missed "884201 (C-9)" — and
+    // more to the point, it meant the number used to decide IDENTITY here and
+    // the number STORED on the lead were produced by two different rules that
+    // nothing compared. One extractor, one digit width, one test.
+    licence: licenceNumberFrom(row.licence),
     registration: row.registration,
   };
 }
@@ -943,6 +987,89 @@ function alreadyImported(
   }
 
   return null;
+}
+
+/**
+ * WHAT THE DOCUMENT SAID ABOUT THIS ROW THAT BELONGS IN A COLUMN RATHER THAN IN
+ * A SENTENCE.
+ *
+ * Every one of these was already being read by `parse.ts` and already reaching a
+ * `SalesLeadSignal.claim` as prose — true, sourced, and unjoinable. The licence
+ * is the one that matters most: California's CSLB file is public and carries a
+ * telephone number for all but a handful of registrants, so a licence in a
+ * column is the difference between a lead nobody can ring and a lead somebody
+ * can. See the field comments on `SalesLead`.
+ *
+ * Nothing here is inferred. Each field is null unless the document printed it,
+ * and null means "the document did not say" rather than "none".
+ */
+type ListingProvenance = {
+  licenceNumber: string | null;
+  registrationNumber: string | null;
+  city: string | null;
+  listedByGc: string | null;
+  listedOnProject: string | null;
+};
+
+const PROVENANCE_FIELDS = [
+  "licenceNumber",
+  "registrationNumber",
+  "city",
+  "listedByGc",
+  "listedOnProject",
+] as const satisfies readonly (keyof ListingProvenance)[];
+
+function blank(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function listingProvenance(
+  row: ListedSubRow,
+  header: SubListingParse["header"],
+): ListingProvenance {
+  /* A project name that wrapped is marked, exactly as the PROJECT claim marks
+     it. `parse.ts` reads a listing line by line, so "Lincoln Elementary
+     Modernization and" is what a two-line project heading leaves behind — and
+     this column is rendered on the lead page, where a fragment reads as a whole
+     name to whoever is about to say it out loud. That is the specific failure
+     signals.ts records ("a project truncated at a conjunction was read down a
+     telephone as though it were the whole name"), and it does not stop being
+     true because the words arrived in a column instead of a claim. */
+  const project = blank(header.project);
+
+  return {
+    /* Bare digits, from the one extractor — the class prefix and any leading
+       zero gone, because CSLB's own key has neither. "C-9 884201" and
+       "C-35 884201" are one contractor, and "061234" and "61234" are one licence.
+       Null when the cell cannot yield a key, which `licenceKey` can say the
+       reason for and this path deliberately does not ask: on an import there is
+       nobody to ask, and the row's LICENCE claim still quotes what was printed. */
+    licenceNumber: licenceNumberFrom(row.licence),
+    registrationNumber: blank(row.registration),
+    city: blank(row.city),
+    /* The ROW's own attribution first. `header.prime` is null by design when a
+       packet names more than one prime bidder — five primes on one project name
+       five drywall subs, and only one of them is about to get the work — so
+       falling back to it can never attribute the wrong GC: there is nothing to
+       fall back to in exactly the case where guessing would be wrong. */
+    listedByGc: blank(row.listedBy) ?? blank(header.prime),
+    listedOnProject: project && looksCutOff(project) ? `${project}\u2026` : project,
+  };
+}
+
+/** Just the fields this listing knows and the stored lead does not. */
+function provenanceGaps(
+  stored: Partial<ListingProvenance>,
+  incoming: ListingProvenance,
+): Partial<ListingProvenance> {
+  const patch: Partial<ListingProvenance> = {};
+  for (const field of PROVENANCE_FIELDS) {
+    if (blank(stored[field]) === null && incoming[field] !== null) {
+      patch[field] = incoming[field];
+    }
+  }
+  return patch;
 }
 
 export async function importSubListing(
@@ -1029,8 +1156,13 @@ export async function importSubListing(
           continue;
         }
 
+        const provenance = listingProvenance(row, parsed.header);
         const attachTo = text(formData, `attach:${row.line}`);
         let leadId: string;
+        /* Whether this row MADE the lead. A lead created here is created WITH
+           this row's columns, so there is nothing to fill in; every other path
+           leads to a row that already existed and must not be overwritten. */
+        let freshlyCreated = false;
 
         if (attachTo) {
           // Re-read and re-scope INSIDE the transaction. The candidate list the
@@ -1054,11 +1186,55 @@ export async function importSubListing(
                 companyId: company.id,
                 companyName: row.name,
                 source: "OUTBOUND",
+                // The licence, the city, the GC and the project — columns now,
+                // not only words inside the claims. `listingProvenance` above
+                // says what each one is and is not.
+                ...provenance,
               },
             });
             leadId = created.id;
             leadsCreated += 1;
+            freshlyCreated = true;
             importedHere.push({ ...identity, leadId: created.id });
+          }
+        }
+
+        /* FILL THE BLANKS, NEVER OVERWRITE — and the rule is one sentence
+           because the alternative has a specific victim.
+
+           Two paths arrive here with a lead that already existed: a person chose
+           to attach this row to it, or an earlier row of this same listing
+           created it. In both cases the stored columns are either from a document
+           somebody has already reviewed or from a human who typed them, and this
+           row is neither more recent nor better evidence. Overwriting would let a
+           second import silently restate where a lead came from — and on a
+           mis-attached row it would move another company's licence number onto
+           it, which is precisely the confident-wrong-answer failure the whole
+           review screen exists to prevent.
+
+           Filling a blank cannot do that: it adds what was not known. A
+           CONFLICT (stored says 884201, this row says 772130) is left alone and
+           stays visible, because the row's own LICENCE signal still carries the
+           number it printed, with its source and line. The contradiction belongs
+           in front of a person, not resolved by whichever import ran last.
+
+           Re-read inside the transaction rather than from anything the loop is
+           carrying: the attach path's `existing` is already such a read, and a
+           second row attaching to the same lead must see the first row's fill. */
+        if (!freshlyCreated) {
+          const stored = await tx.salesLead.findUnique({
+            where: { id: leadId },
+            select: {
+              licenceNumber: true,
+              registrationNumber: true,
+              city: true,
+              listedByGc: true,
+              listedOnProject: true,
+            },
+          });
+          const patch = stored ? provenanceGaps(stored, provenance) : {};
+          if (Object.keys(patch).length > 0) {
+            await tx.salesLead.update({ where: { id: leadId }, data: patch });
           }
         }
 

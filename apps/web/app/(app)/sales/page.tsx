@@ -244,6 +244,9 @@ export default async function SalesPage() {
                 email: lead.email,
                 phone: lead.phone,
                 source: lead.source,
+                licenceNumber: lead.licenceNumber,
+                city: lead.city,
+                listedByGc: lead.listedByGc,
                 opportunityCount: lead._count.opportunities,
                 ...(() => {
                   /* Derived per lead at read time, never stored — a stored

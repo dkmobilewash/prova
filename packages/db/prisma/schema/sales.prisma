@@ -37,6 +37,97 @@ model SalesLead {
   phone       String?
   source      SalesLeadSource?
 
+  /// ── THE FIELDS A §4104 LISTING PRINTS AND THIS MODEL USED TO DROP ──
+  ///
+  /// `lib/sub-listing/parse.ts` reads a licence number, a city, the prime that
+  /// filed the listing and the project it was filed on. Until these columns
+  /// existed, every one of them survived import only as PROSE inside a
+  /// `SalesLeadSignal.claim` — a true sentence, correctly sourced, and useless
+  /// to anything but a human eye.
+  ///
+  /// That mattered most for the licence, and as of 2026-10-05 the thing it joins
+  /// to has been MEASURED rather than assumed. California's CSLB publishes a free
+  /// bulk CSV — no registration, no fee — keyed on the licence number a §4104
+  /// listing already prints, whose phone column is populated on 5,003 of the 5,007
+  /// wall-and-ceiling firms counted across 25 counties (99.92%). A §4104 listing
+  /// carries no telephone number at all, so that column is the join key between a
+  /// lead nobody can ring and a lead somebody can. A number inside a sentence is
+  /// not a join key; a column is. Making the join POSSIBLE is all these columns do
+  /// — no lookup, no import of that file, and deliberately nothing that pretends a
+  /// phone number is known when none has been found.
+  ///
+  /// Two things that file does NOT contain, recorded here so nothing built on
+  /// these columns implies otherwise: no email address (CSLB states "Email
+  /// addresses are not provided"), and no line type — nothing says whether a
+  /// number is a desk line or a mobile, which is the fact an automated dialler
+  /// would turn on.
+  ///
+  /// `lib/sub-listing/leadMatch.ts` asked for this one in its own header
+  /// ("`SalesLead` has `companyName` and no licence number, no city… the honest
+  /// fix is a licence number on `SalesLead`"), and `importSubListing`'s
+  /// in-pass dedupe already treats a licence as identity. Both now have
+  /// somewhere to read it from.
+  ///
+  /// EVERY ONE IS NULLABLE AND NULL MEANS "THE DOCUMENT DID NOT SAY". A lead
+  /// typed in by hand has none of them; a listing with no licence column has no
+  /// licence. Nothing here is defaulted, derived or inferred.
+
+  /// The CSLB licence number, BARE DIGITS — see `lib/sales-licence.ts`, which is
+  /// the only thing that writes this and carries the measurement behind it.
+  ///
+  /// Measured over 5,007 target-set rows and a 32,423-row master sample: CSLB's
+  /// `LicenseNo` is a decimal integer of 2 to 7 digits, with no prefix, no
+  /// punctuation and NOT ONE value beginning with a zero. So this column is
+  /// normalised on the way in, which is the one deliberate departure from this
+  /// file's usual "store what the document printed" rule, and it is two
+  /// departures rather than one:
+  ///
+  ///   - the CLASS PREFIX goes. A contractor holds one number under several
+  ///     classifications, so the framing row prints "C-9 884201" and the plaster
+  ///     row prints "C-35 884201" for one registrant. The class is a fact about
+  ///     the scope of work, not about who holds the licence;
+  ///   - LEADING ZEROS go. The repo's own harvest of 26 real Caltrans files
+  ///     records a licence printed as "061234", with the zero significant in the
+  ///     document; CSLB stores none, so "061234" and "61234" are one licence and
+  ///     stripping is mandatory for the join rather than tidy.
+  ///
+  /// The verbatim string is not lost — it stays in the LICENCE signal's claim,
+  /// with its source and line number, which is where a claim belongs.
+  ///
+  /// NOT unique, on purpose. Two leads carrying one licence are a duplicate
+  /// worth noticing, but a unique index turns noticing it into a Postgres error
+  /// that production REDACTS, on an import of up to sixty rows — the
+  /// `InvoiceCounter` collision in miniature. The index below is for reading.
+  licenceNumber String?
+
+  /// The DIR public-works registration as the document printed it. Ten digits
+  /// starting 1 or 2, and no normalisation is applied because there is no class
+  /// prefix to strip. The second public identifier in this trade, and the one
+  /// that is present when a sub is listed on prevailing-wage work.
+  registrationNumber String?
+
+  /// The city, as the document spelled it. Not normalised, not geocoded, and no
+  /// state column: `parse.ts` reads a city and this stores what it read.
+  city String?
+
+  /// THE PRIME THAT LISTED THEM, AND THE PROJECT IT WAS LISTED ON — where this
+  /// lead came from, written once.
+  ///
+  /// These are PROVENANCE, not a current relationship, and the difference is
+  /// load-bearing. A sub appears on many listings over time; each of those is a
+  /// `SalesLeadSignal` with its own source URL, line number and bid outcome, and
+  /// the signals are where that history lives. These two columns answer only
+  /// "which document introduced us", so `importSubListing` fills them when they
+  /// are blank and NEVER overwrites them — a second import must not be able to
+  /// rewrite where a lead came from, least of all when a person has attached a
+  /// row to a lead by hand.
+  ///
+  /// `listedByGc` is the row's own `listedBy` where the reader could attribute
+  /// it, falling back to the document's single prime. A multi-prime packet
+  /// attributes per row or not at all; it never guesses.
+  listedByGc      String?
+  listedOnProject String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -45,6 +136,10 @@ model SalesLead {
   signals       SalesLeadSignal[]
 
   @@index([companyId])
+  /// For the lookup this column exists to make possible: find the lead holding
+  /// a licence number, within the one operator company. Composite rather than
+  /// bare, because every read in this file is already scoped to `companyId`.
+  @@index([companyId, licenceNumber])
 }
 
 /// One deal in progress with a SalesLead. A lead can have more than one
