@@ -432,7 +432,13 @@ export async function saveTakeoffCalibration(jobId: string, formData: FormData):
     // The same refusals the dialog showed, re-run here. The screen may be
     // minutes old, and a calibration it refused must not become savable by
     // posting the form again.
-    const refusal = calibrationRefusal(calibrationNotices(line, pageWidthPt, null));
+    //
+    // `printedScale` is null ON PURPOSE and it costs nothing: the title-block
+    // comparison is a WARN, `calibrationRefusal` reads only refusals, so
+    // loading the proposal here would change no outcome. A disagreement with
+    // the title block must not block a save — a detail at its own scale is
+    // ordinary — and the estimator was shown it on the screen that posted.
+    const refusal = calibrationRefusal(calibrationNotices(line, pageWidthPt, null, null));
     if (refusal) return actionFail(refusal);
 
     const page = await prisma.takeoffPlanPage.upsert({

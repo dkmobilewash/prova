@@ -43,6 +43,7 @@
 
 import type { Opening, WallInput } from "@/lib/takeoff";
 import type { Primitive, RecipeInput } from "@/lib/takeoff-recipes";
+import { TYPOGRAPHIC_EQUIVALENTS } from "@/lib/specs/quoteMatch";
 
 /** A calibration as stored: the line somebody dragged along a known dimension,
  * in page-width units, and what the drawing says that dimension is. */
@@ -335,6 +336,47 @@ const STANDARD_SCALES: { feetPerInch: number; name: string }[] = [
  * people to ignore the readback. */
 const SCALE_TOLERANCE = 0.02;
 
+/**
+ * The same scale, however it was typed.
+ *
+ * `1/4" = 1'-0"`, `1/4"=1'0"` and a model's `1/4″ = 1′-0″` are one scale typed
+ * three ways, so whitespace, hyphens and the shape of the quote marks all have
+ * to come out before a comparison means anything. The prime-mark table is
+ * REUSED from `specs/quoteMatch.ts` rather than retyped: it is a fact about
+ * typography, not about specs, and U+2019 is the variant a real paid run
+ * actually produced there. A second copy of that list is the defect this repo
+ * writes censuses to catch.
+ */
+function normaliseScaleText(text: string): string {
+  let out = text;
+  for (const { ascii, variants } of TYPOGRAPHIC_EQUIVALENTS) {
+    for (const variant of variants) out = out.split(variant).join(ascii);
+  }
+  return out.replace(/[\s-]/g, "").toLowerCase();
+}
+
+/**
+ * The scale a title block PRINTS, resolved to the same vocabulary `readScale`
+ * names a calibration in — or null when there is nothing comparable.
+ *
+ * Null covers three cases that are all genuinely "no answer", and conflating
+ * them with a guess is what this returns null to avoid: no title block was
+ * read; it said `AS NOTED`, which names no scale at all and is what a sheet
+ * carrying several of them says; or it printed a scale this file does not list,
+ * including the `1:100` metric form. A number invented from any of those would
+ * then be compared against an estimator's calibration and contradict it.
+ *
+ * It matches NAMES rather than parsing arithmetic out of the string, because
+ * `STANDARD_SCALES` is already the list of scales this app can name and a
+ * parser would be a second, divergent authority on the same question.
+ */
+export function standardScaleFromText(printed: string | null): { feetPerInch: number; name: string } | null {
+  if (printed === null) return null;
+  const wanted = normaliseScaleText(printed);
+  if (wanted === "") return null;
+  return STANDARD_SCALES.find((scale) => normaliseScaleText(scale.name) === wanted) ?? null;
+}
+
 export type ScaleReading = {
   /** Feet of building per inch of paper. */
   feetPerInch: number;
@@ -389,6 +431,17 @@ export function calibrationNotices(
   calibration: StoredCalibration,
   pageWidthPt: number | null,
   renderedWidthPx: number | null,
+  /**
+   * What the sheet's own title block says the scale is, when a plan-ingestion
+   * run has read one — `PlanSheetProposal.proposedScale`, verbatim.
+   *
+   * REQUIRED RATHER THAN OPTIONAL, deliberately. A defaulted safety argument
+   * is off until somebody remembers it, and nobody remembers it; this repo has
+   * an entry about a gate that existed and could not be reached. A caller with
+   * genuinely nothing to pass passes `null` and says why in one line, which is
+   * visible in a diff in a way a missing argument is not.
+   */
+  printedScale: string | null,
 ): CalibrationNotice[] {
   const notices: CalibrationNotice[] = [];
   const span = Math.hypot(calibration.x2 - calibration.x1, calibration.y2 - calibration.y1);
@@ -422,6 +475,31 @@ export function calibrationNotices(
             message: `This isn't a standard scale — 1 in = ${round2(reading.feetPerInch)} ft. Check the distance you typed, or that this sheet was printed to scale.`,
           },
     );
+  }
+
+  // THE TITLE BLOCK IS THE ONLY INDEPENDENT EVIDENCE ABOUT THIS NUMBER, and
+  // until now the app extracted it and then showed it in a metadata line
+  // nothing read. Everything else in `notices` is derived from the same two
+  // clicks and the same typed distance, so a calibration against the wrong
+  // dimension is self-consistent and silent: it reads back as a real scale,
+  // the sheet width looks plausible, and every quantity on the sheet is wrong
+  // by that factor. This is the one check that can disagree with the
+  // estimator, which is the whole reason it is worth having.
+  //
+  // A WARNING AND NEVER A REFUSAL. A detail blown up on a sheet whose title
+  // block names the plan's scale is ordinary draughting, and this file cannot
+  // tell that from a mistake — `AS NOTED` exists precisely because sheets
+  // carry several scales. So it names both readings and says which case would
+  // explain them, rather than deciding.
+  const printed = standardScaleFromText(printedScale);
+  if (reading && printed) {
+    const off = Math.abs(reading.feetPerInch - printed.feetPerInch) / printed.feetPerInch;
+    if (off > SCALE_TOLERANCE) {
+      notices.push({
+        level: "warn",
+        message: `The title block on this sheet says ${printed.name}, and this calibration reads 1 in = ${round2(reading.feetPerInch)} ft. If you calibrated against a blown-up detail that is expected — otherwise check the dimension you dragged along.`,
+      });
+    }
   }
 
   const sheetWidth = feetPerPageWidth(calibration);

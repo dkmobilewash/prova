@@ -415,6 +415,7 @@ export function TakeoffPlanViewer({
               planId={planId}
               pageNumber={pageNumber}
               pageWidthPt={pageSize?.widthPt ?? null}
+              printedScale={sheet?.printedScale ?? null}
               existingLabel={sheet?.label ?? ""}
               draft={calibrationDraft}
               onSaved={() => {
@@ -500,6 +501,7 @@ function CalibrationForm({
   planId,
   pageNumber,
   pageWidthPt,
+  printedScale,
   existingLabel,
   draft,
   onSaved,
@@ -508,6 +510,7 @@ function CalibrationForm({
   planId: string;
   pageNumber: number;
   pageWidthPt: number | null;
+  printedScale: string | null;
   existingLabel: string;
   draft: StoredCalibration | null;
   onSaved: () => void;
@@ -518,9 +521,9 @@ function CalibrationForm({
     if (!draft) return null;
     const parsed = parseDeclared(typed);
     const line: StoredCalibration = { ...draft, declaredDistanceFeet: parsed ?? 1 };
-    const notices = calibrationNotices(line, pageWidthPt, null);
+    const notices = calibrationNotices(line, pageWidthPt, null, printedScale);
     return { notices, refusal: calibrationRefusal(notices), parsed };
-  }, [draft, typed, pageWidthPt]);
+  }, [draft, typed, pageWidthPt, printedScale]);
 
   if (!draft) {
     return <p className="mt-2 text-xs text-ink-muted">Click once at each end of a dimension printed on the drawing.</p>;
