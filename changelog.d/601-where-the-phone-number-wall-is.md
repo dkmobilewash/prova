@@ -5,6 +5,17 @@ it corrects a documented claim that was too broad and records what an investigat
 eliminated, so the next person does not re-run the same checks.
 `cyrus/sales-signals`
 
+> **CORRECTED HOURS LATER — "It is not a URL" IS FALSE; see
+> `601-the-file-was-a-plain-get-all-along.md`.** The master CSV downloads from this container
+> in ONE plain GET of `DownLoadFile.ashx?fName=MasterLicenseData&type=C` — 200, 77,643,341
+> bytes of `text/csv`, no cookie, no viewstate, no retry. The 403 recorded below was on the
+> `lbMasterCSV` POST and is not disputed; the error is that it was generalised into a property
+> of the file. This session's OWN working notes said the plain GET worked, at HIGH confidence,
+> having read bytes out of it — and that is the half that did not get committed, while the
+> sentence telling the next person not to bother did. Kept as written, because the shape is
+> the lesson: the discouraging arm of a two-arm measurement is the one that must not travel
+> alone.
+
 A §4104 listing carries no telephone number. The whole cold-outbound chain therefore ends
 at a licence number, and the recorded premise for closing that gap is that CSLB publishes a
 free bulk CSV carrying one. That premise was recorded **without the route** — no URL, no
