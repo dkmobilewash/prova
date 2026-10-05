@@ -1193,6 +1193,30 @@ const PROVENANCE_FIELDS = [
   "listedOnProject",
 ] as const satisfies readonly (keyof ListingProvenance)[];
 
+/**
+ * A PRESENT-BUT-BLANK VALUE BECOMES NULL — and the one place that could matter is
+ * eliminated rather than guarded.
+ *
+ * `identify` keeps `row.registration` VERBATIM while `listingProvenance` stores
+ * `blank(row.registration)`, so for a whitespace-only cell the two would disagree: the
+ * in-pass check would see a contradiction where the stored-lead check saw none, and one
+ * lead could be counted in both `leadsCreated` and `leadsAttached`. A review raised it
+ * as a code-level possibility and could not establish whether the parser emits such a
+ * value.
+ *
+ * It cannot. Both readers in `parse.ts` return either `null` or a regex-matched digit
+ * string — `registrationOnly` matches `^[12]\d{9}$` on an already-trimmed field, and the
+ * licence reader returns a matched group. Measured first across 518 documents (all 18
+ * shared fixtures plus every blank-ish cell this repo has seen — `""`, a space, a
+ * non-breaking space, `-`, `--`, `N/A`, `n/a`, `none`, `TBD` — in both identifier
+ * columns across five delimiter styles): zero. Then written as a test, which SURVIVED
+ * both mutations aimed at it, including `fieldSpans` no longer trimming. The property is
+ * structural, so the test could not fire and was deleted rather than kept as decoration.
+ *
+ * The note is here instead, because this is where somebody would wonder. If a reader is
+ * ever changed to pass a raw cell through, this divergence becomes reachable and
+ * `identify` needs to blank it too.
+ */
 function blank(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
