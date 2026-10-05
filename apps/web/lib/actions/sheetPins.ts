@@ -6,9 +6,8 @@ import { prisma } from "@prova/db";
 import { actionFail as fail, actionOk as ok, runAction, type ActionResult } from "./shared";
 import { parseNumericInput } from "@/lib/numeric-input";
 import { can } from "@/lib/permissions";
-import { put } from "@vercel/blob";
+import { isOurBlobStoreUrl } from "@/lib/blob-urls";
 import {
-  MAX_DRAWING_BYTES,
   parseSheetPages,
   pinContentProblem,
   pinPlacementProblem,
@@ -166,46 +165,42 @@ export async function deleteSheetPin(pinId: string): Promise<ActionResult> {
  * Vercel tracing the binary into the function — a runtime failure with every
  * check green. That whole chain is deleted rather than fixed.
  */
-export async function uploadDrawingPdf(revisionId: string, formData: FormData): Promise<ActionResult> {
+export async function uploadDrawingPdf(
+  revisionId: string,
+  fileUrl: string,
+  fileName: string,
+  pagesJson: string,
+): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
     if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
 
     const revision = await prisma.drawingRevision.findFirst({
       where: { id: revisionId, set: { companyId: context.company.id } },
-      select: { id: true, fileUrl: true },
+      select: { id: true },
     });
     if (!revision) return fail("That drawing revision is not on this account.");
 
-    const file = formData.get("file");
-    if (!(file instanceof File) || file.size === 0) return fail("Pick a PDF to upload.");
-    if (file.type && file.type !== "application/pdf") {
-      return fail("That file is not a PDF. A drawing set has to be a PDF to pin on.");
-    }
-    if (file.size > MAX_DRAWING_BYTES) {
-      return fail(
-        `That file is ${Math.round(file.size / 1_000_000)}MB, and ${Math.round(MAX_DRAWING_BYTES / 1_000_000)}MB is the most we can take.`,
-      );
+    // The URL has to be one our own store issued. Without this, the field
+    // would accept any URL at all and the "upload" would be a link again --
+    // which is the whole thing this feature exists to stop.
+    // OUR store, not merely "a Vercel store" -- `lib/blob-urls.ts` exists
+    // because that distinction is the provenance hole #195 closed on photos,
+    // and the same hole would be open here: without it this field accepts any
+    // URL and the "upload" is a link again, which is the thing this feature
+    // exists to stop.
+    if (!isOurBlobStoreUrl(fileUrl, process.env)) {
+      return fail("That file did not come from this app's storage.");
     }
 
-    // The pages the browser read out of the same file it is uploading. Taken
-    // on trust deliberately: it is a display geometry, never a quantity, and
-    // the person supplying it is the person who chose the file. The unique
-    // key below is what stops a second upload duplicating them.
-    const pages = parseSheetPages(formData.get("pages"));
+    const pages = parseSheetPages(pagesJson);
     if (pages === null) return fail("That PDF's pages could not be read.");
     if (pages.length === 0) return fail("That PDF has no pages.");
-
-    const stored = await put(`drawings/${revision.id}/${file.name || "drawing.pdf"}`, Buffer.from(await file.arrayBuffer()), {
-      access: "public",
-      addRandomSuffix: true,
-      contentType: "application/pdf",
-    });
 
     await prisma.$transaction([
       prisma.drawingRevision.update({
         where: { id: revision.id },
-        data: { fileUrl: stored.url, fileName: file.name || "drawing.pdf" },
+        data: { fileUrl, fileName: fileName || "drawing.pdf" },
       }),
       prisma.sheetPage.createMany({
         data: pages.map((page) => ({
@@ -223,37 +218,37 @@ export async function uploadDrawingPdf(revisionId: string, formData: FormData): 
 }
 
 /** One sheet's picture, drawn by the browser from the PDF it just uploaded. */
-export async function storeSheetImage(pageId: string, formData: FormData): Promise<ActionResult> {
+export async function storeSheetImage(
+  pageId: string,
+  imageUrl: string,
+  widthPxRaw: string,
+): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
     if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
 
     const page = await prisma.sheetPage.findFirst({
       where: { id: pageId, revision: { set: { companyId: context.company.id } } },
-      select: { id: true, revisionId: true, pageNumber: true, imageUrl: true },
+      select: { id: true, imageUrl: true },
     });
     if (!page) return fail("That sheet is not on this account.");
     if (page.imageUrl) return ok; // already drawn; doing nothing is success
 
-    const file = formData.get("image");
-    if (!(file instanceof File) || file.size === 0) return fail("That sheet produced no picture.");
+    if (!isOurBlobStoreUrl(imageUrl, process.env)) {
+      return fail("That picture did not come from this app's storage.");
+    }
+
     // `parseNumericInput` and not a bare `Number()`, for the reason
     // `numericInputCensus.test.ts` states: a Server Action answers whoever
-    // posts to it, and `Number()` accepts `0x10` and `Infinity`. This value
+    // posts to it, and `Number()` accepts `0x10` and `Infinity`. The value
     // comes from a canvas rather than a keyboard, which is exactly why the lax
     // parser would never be noticed here.
-    const width = parseNumericInput(formData.get("widthPx"), { label: "The sheet width", integer: true, min: 1 });
+    const width = parseNumericInput(widthPxRaw, { label: "The sheet width", integer: true, min: 1 });
     if (!width.ok) return fail(width.error);
-    const widthPx = width.n;
 
-    const stored = await put(
-      `sheets/${page.revisionId}/${page.pageNumber}.png`,
-      Buffer.from(await file.arrayBuffer()),
-      { access: "public", addRandomSuffix: true, contentType: "image/png" },
-    );
     await prisma.sheetPage.update({
       where: { id: page.id },
-      data: { imageUrl: stored.url, imageWidthPx: Math.round(widthPx) },
+      data: { imageUrl, imageWidthPx: width.n },
     });
     revalidatePath("/drawings");
     return ok;
