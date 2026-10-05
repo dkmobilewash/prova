@@ -172,19 +172,36 @@ export async function ensureSheetPages(revisionId: string): Promise<ActionResult
     const already = await prisma.sheetPage.count({ where: { revisionId: revision.id } });
     if (already > 0) return ok; // already read; nothing to do is success
 
-    let pages: { pageNumber: number; widthPt: number; heightPt: number }[];
+    // TWO FAILURES, TWO MESSAGES, and that is a correction rather than a
+    // nicety. These were one try/catch, so a PARSE failure reported itself as
+    // "could not be fetched" — and on 2026-10-05 that sent the investigation
+    // at the network for an hour while the real cause (a native module missing
+    // from the serverless function) sat in Vercel's runtime log. An error
+    // message that names the wrong half is worse than a vague one.
+    let bytes: Buffer;
     try {
       const response = await fetch(revision.fileUrl);
       if (!response.ok) {
-        // The common case by far, and worth saying as the thing it is: the
-        // link points somewhere this app cannot reach without a login.
         return fail(
           "That drawing could not be fetched. The link has to be one this app can open without signing in — a file behind Procore or a GC portal cannot be read from here.",
         );
       }
-      pages = await readPageSizes(Buffer.from(await response.arrayBuffer()));
+      bytes = Buffer.from(await response.arrayBuffer());
     } catch {
-      return fail("That drawing could not be fetched, so its sheets could not be read.");
+      return fail(
+        "That drawing could not be reached. The link has to be one this app can open without signing in.",
+      );
+    }
+
+    let pages: { pageNumber: number; widthPt: number; heightPt: number }[];
+    try {
+      pages = await readPageSizes(bytes);
+    } catch (error) {
+      // Logged as well as returned: a parse failure is this app's problem, not
+      // the user's, and the sentence they see cannot carry what a maintainer
+      // needs.
+      console.error("[sheets] could not read the PDF", error);
+      return fail("That file was fetched but could not be read as a PDF.");
     }
     if (pages.length === 0) return fail("That PDF reported no usable pages.");
 

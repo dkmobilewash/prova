@@ -83,6 +83,29 @@ const nextConfig = {
   // which is the whole reason this entry exists (see the note above).
   outputFileTracingIncludes: {
     "/**": ["../../node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client/**"],
+    // THE OTHER HALF OF `serverExternalPackages` ABOVE, without which that
+    // line is a runtime failure wearing a green build.
+    //
+    // Marking the package external fixed the build by keeping webpack from
+    // parsing a native `.node` binary. It also took the package out of the
+    // bundle Vercel traces, so nothing shipped it into the serverless
+    // function — and pdf.js, which loads `@napi-rs/canvas` at call time,
+    // found nothing there. Production said so in its own runtime log on
+    // 2026-10-05:
+    //
+    //   Cannot load "@napi-rs/canvas" package: Error: Cannot find module
+    //   Warning: Cannot polyfill `DOMMatrix`, rendering may be broken.
+    //
+    // The screen's refusal read "that drawing could not be fetched", because
+    // the action's try/catch covered the fetch AND the parse. The fetch was
+    // fine; the parse had no canvas. Typecheck, 8,900 tests and a full
+    // production build were all green throughout.
+    //
+    // The glob is pnpm-shaped on purpose: the real package sits under
+    // `.pnpm/@napi-rs+canvas@…` with its per-platform binary in a sibling
+    // directory, and `node_modules/@napi-rs/canvas` is only a symlink to it.
+    "/drawings/**": ["../../node_modules/.pnpm/@napi-rs+canvas*/**/*"],
+    "/api/**": ["../../node_modules/.pnpm/@napi-rs+canvas*/**/*"],
   },
 };
 
