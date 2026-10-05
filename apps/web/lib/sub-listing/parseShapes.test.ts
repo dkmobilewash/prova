@@ -256,16 +256,28 @@ describe("a bare undelimited number winning the licence slot", () => {
     // licence to column discipline stopped the invented number but not this. The
     // row now arrives with a concern and no trade, so it is default-UNTICKED and
     // a person has to look at it — which is the right failure, not a fixed one.
+    //
+    // As of 2026-10-05 the missing portion of work raises its OWN concern, which
+    // is what the case below asserts. Until then this row was visible only
+    // because of an unrelated sentence about its licence column: remove that and
+    // the defect recorded here went out in silence.
     expect(row.portionOfWork).toBeNull();
     expect(row.tradeScope).toBeNull();
     expect(row.sourceText).toContain("gypsum board");
   });
 
-  it("says on screen that it saw a licence-shaped number and declined to read it", () => {
+  it("says on screen BOTH things it got wrong on this row", () => {
     // The refusal is never silence. The reviewer has the document open and can
     // settle in one glance what no amount of parsing will.
-    expect(row.concerns).toHaveLength(1);
-    expect(row.concerns[0]).toContain("inside a wider field rather than in a column of its own");
+    //
+    // TWO concerns now, not one, and the second is the point: this asserted a
+    // length of exactly 1 and the only sentence was about the LICENCE, while the
+    // lost portion of work — the defect the case above documents — went out
+    // silent. A row's missing portion of work now says so itself instead of
+    // depending on an unrelated concern to make the row visible.
+    expect(row.concerns).toHaveLength(2);
+    expect(row.concerns.some((c) => c.includes("inside a wider field rather than in a column of its own"))).toBe(true);
+    expect(row.concerns.some((c) => c.includes("no portion of work read on this row"))).toBe(true);
   });
 });
 
@@ -2975,5 +2987,68 @@ Notes
       "Vantage Wall Systems",
       "Crestline Plastering",
     ]);
+  });
+});
+
+/**
+ * THE ROW WITH NO COMPANY-NAME CELL, WHICH TOOK ITS TRADE AS ITS NAME.
+ *
+ * Found by review 2026-10-05 and measured rather than argued. `isNameCandidate`
+ * needs three letters somewhere, so a row of nothing but a licence, a city and a
+ * portion of work has no name cell to find — and the portion of work is the
+ * field that reads as one. The lead would have been called "Metal stud framing
+ * and drywall".
+ *
+ * Three facts decide how bad it is, and all three were measured:
+ *
+ *   - it CANNOT reach the database unnoticed. With the portion of work consumed
+ *     as the name there is no trade, so `tradeScope` is null and
+ *     `shouldInclude` leaves the row UNTICKED, under a label that reads "not one
+ *     of our five trades";
+ *   - but nothing said anything. `concerns` was EMPTY on all three shapes below,
+ *     including a correctly-named row that simply lost its portion of work —
+ *     and §4104 requires the listing to state one, so a row without it is a
+ *     column this reader has misaligned, not a blank in the document;
+ *   - and it is NOT refused, deliberately. Every cheap test for "this reads like
+ *     a trade rather than a firm" also matches real companies — `Acoustical
+ *     Ceilings Inc` is a name — so refusing would drop a real prospect to avoid
+ *     printing a silly one. The reviewer gates every row on that screen anyway.
+ */
+describe("a row whose portion of work did not read says so", () => {
+  function rowFor(line: string) {
+    const parsed = parseSubListing(
+      ["Project: Rialto Transit Center", "Prime Contractor: Swinerton Builders", "", line].join("\n"),
+    );
+    expect(parsed.rows, `the fixture ${line} parsed to no single row`).toHaveLength(1);
+    return parsed.rows[0];
+  }
+
+  it("flags the row that took its trade description as the company name", () => {
+    const row = rowFor("C-9 991009\tFontana, CA\tMetal stud framing and drywall");
+    // The defect itself, pinned so the concern cannot be read as hypothetical.
+    expect(row.name).toBe("Metal stud framing and drywall");
+    expect(row.portionOfWork).toBeNull();
+    // And no trade, which is what leaves it unticked on the review screen.
+    expect(row.tradeScope).toBeNull();
+    expect(row.concerns.some((c) => c.includes("no portion of work read on this row"))).toBe(true);
+    expect(row.concerns.some((c) => c.includes("read AS the company name"))).toBe(true);
+  });
+
+  it("flags a correctly-named row that merely lost its portion of work", () => {
+    const row = rowFor("Realname Drywall\tFontana, CA\tC-9 991010");
+    expect(row.name).toBe("Realname Drywall");
+    expect(row.portionOfWork).toBeNull();
+    expect(row.concerns.some((c) => c.includes("no portion of work read on this row"))).toBe(true);
+  });
+
+  /**
+   * THE CONTROL, and it is not optional: without it the concern could be pushed
+   * onto every row in the app and these two cases would still pass.
+   */
+  it("says nothing of the sort about a row whose portion of work read fine", () => {
+    const row = rowFor("Realname Drywall\tFontana, CA\tC-9 991011\tLath and cement plaster");
+    expect(row.portionOfWork).toBe("Lath and cement plaster");
+    expect(row.tradeScope).toBe("LATH_PLASTER");
+    expect(row.concerns.filter((c) => c.includes("no portion of work"))).toEqual([]);
   });
 });

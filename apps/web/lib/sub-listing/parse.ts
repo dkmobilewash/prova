@@ -1835,6 +1835,44 @@ function readRow(
   const concerns: string[] = [];
 
   /**
+   * NO PORTION OF WORK READ AT ALL — AND NOTHING SAID SO.
+   *
+   * Public Contract Code §4104 requires the listing to state the portion of work
+   * each subcontractor is listed for; it is the column that makes the document
+   * worth reading. A row where none read is therefore a row this parser has
+   * misread, not a row the document left blank — and it arrived with
+   * `concerns: []`, which breaks this file's own rule that a refusal is never
+   * silence.
+   *
+   * Measured 2026-10-05, three shapes, all three silent:
+   *
+   *   | row | name | portionOfWork |
+   *   | --- | --- | --- |
+   *   | `C-9 991009 | Fontana, CA | Metal stud framing and drywall` | **the SCOPE** | null |
+   *   | `Realname Drywall | Fontana, CA | C-9 991010` | correct | null |
+   *   | `Realname Drywall | Fontana, CA | C-9 991010 | Lath and cement plaster` | correct | correct |
+   *
+   * The first is the one worth the sentence: with no name cell to find, the scope
+   * cell became the COMPANY NAME, so the lead would be called "Metal stud framing
+   * and drywall". It cannot reach the database unnoticed — `tradeScope` is null
+   * with the portion gone, and `shouldInclude` leaves such a row UNTICKED, under a
+   * label reading "not one of our five trades" — but an unticked row with a
+   * plausible-looking company name is a row somebody ticks.
+   *
+   * A CONCERN rather than a refusal, deliberately, and the reason is the one
+   * CLAUDE.md records about the percentage column: every cheap test for "this
+   * reads like a trade, not a firm" also matches real companies — `Acoustical
+   * Ceilings Inc` is a name — and refusing would drop a real prospect to avoid
+   * printing a silly one. A reviewer gates every row on this screen anyway, so
+   * naming the doubt beats withholding the row.
+   */
+  if (scope === null) {
+    concerns.push(
+      "no portion of work read on this row — §4104 requires the listing to state one, so this is a column this reader has misaligned rather than a blank in the document. Check what the line actually says: where there was no company-name cell to find, the portion of work may have been read AS the company name",
+    );
+  }
+
+  /**
    * A row read off a heading that does not line up says so, because the guards
    * above remove the WRONG values and cannot restore the missing ones. The
    * company name is proved by its entity marker; everything else on the line is
