@@ -57,8 +57,15 @@ import { TYPOGRAPHIC_EQUIVALENTS } from "@/lib/specs/quoteMatch";
 // definition rather than two that can drift.
 export { MAX_VERTICES, polylineLength, ringArea, ringSelfIntersects };
 
-/** A calibration as stored: the line somebody dragged along a known dimension,
- * in page-width units, and what the drawing says that dimension is. */
+/** A calibration as stored: the line somebody drew along a known dimension by
+ * clicking each end, in page-width units, and what the drawing says that
+ * dimension is.
+ *
+ * "DREW BY CLICKING EACH END", not "dragged". The tool is click-once-per-end —
+ * `TakeoffPlanViewer` says so on screen: "Click once at each end of a dimension
+ * printed on the drawing." Three user-facing strings in this file said drag,
+ * and a click-through on 2026-10-05 reported the mismatch after trying to drag
+ * and getting one point. */
 export type StoredCalibration = {
   x1: number;
   y1: number;
@@ -395,14 +402,18 @@ export function calibrationNotices(
     return [{ level: "refuse", message: "Type what that dimension says on the drawing." }];
   }
   if (!(span > 0)) {
-    return [{ level: "refuse", message: "Drag along a dimension on the drawing first." }];
+    // THE FIRST THING SOMEBODY SEES WHEN THEY HAVE NOT DRAWN A LINE, so it has
+    // to name the action that works. It said "Drag along a dimension" and
+    // dragging places one point and stops — so the one message aimed at a
+    // confused person told them to do the thing that had just failed.
+    return [{ level: "refuse", message: "Click once at each end of a dimension on the drawing first." }];
   }
   if (span < MIN_CALIBRATION_SPAN) {
     return [
       {
         level: "refuse",
         message:
-          "That line is too short to set a scale from — a small slip in either end would move every quantity on the sheet. Drag along a longer dimension.",
+          "That line is too short to set a scale from — a small slip in either end would move every quantity on the sheet. Pick a longer dimension and click each end of it.",
       },
     ];
   }
@@ -442,7 +453,7 @@ export function calibrationNotices(
     if (off > SCALE_TOLERANCE) {
       notices.push({
         level: "warn",
-        message: `The title block on this sheet says ${printed.name}, and this calibration reads 1 in = ${round2(reading.feetPerInch)} ft. If you calibrated against a blown-up detail that is expected — otherwise check the dimension you dragged along.`,
+        message: `The title block on this sheet says ${printed.name}, and this calibration reads 1 in = ${round2(reading.feetPerInch)} ft. If you calibrated against a blown-up detail that is expected — otherwise check the dimension you clicked along.`,
       });
     }
   }
