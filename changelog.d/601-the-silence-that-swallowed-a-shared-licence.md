@@ -45,6 +45,24 @@ reads only the licence reds the registration arm exactly. A bound case — neith
 agreeing, names unlike, must stay silent — stops the whole set being satisfied by reverting to
 forty notes.
 
+**AND THE FIX IS CHECKED THE WAY THE REGRESSION WAS CAUGHT, not by reading it.** Every fix
+in this corner has turned out to have a scope error — the note itself, then the scoping of the
+note — so the gate was swept exhaustively against `c0970e3a`'s pre-scoping version rather than
+argued about. 9 company names (identical, suffix-only, unrelated, single-word, empty, `"&"`,
+`"Inc."`) × 3 licences × 3 registrations, on both sides: **6,561 (row, lead) pairs**.
+
+| | pairs |
+| --- | --- |
+| swept | 6,561 |
+| behaviour differs from pre-scoping | 1,728 |
+| …where an identifier agreed exactly | **0** |
+| …where the names bore on each other | **0** |
+
+So every remaining difference is the intended suppression and nothing else, which is the claim
+the entry above could only assert. The sweep classifies each differing pair independently —
+it re-asks the OLD function with both identifiers stripped to decide whether the names bear on
+each other, rather than trusting the new code's own `nameEvidence` to say so.
+
 ### Three other things the same review found, all fixed here
 
 **A dedupe line nothing could reach, justified by a false sentence.** `importSubListing` added
