@@ -85,9 +85,32 @@ const lineOf = (name: string) => parsedListing.rows.find((row) => row.name.start
  * out: a test that hard-coded `.0` would be a second copy of the identity scheme,
  * and it would keep passing if the scheme changed under it.
  */
-const keysOf = (parsed: { rows: readonly { line: number }[] }) => rowKeysFor(parsed.rows).join(",");
 const keyAt = (parsed: { rows: readonly { line: number }[] }, line: number) =>
   rowKeysFor(parsed.rows)[parsed.rows.findIndex((row) => row.line === line)]!;
+
+/**
+ * EVERY FIELD THE REVIEW SCREEN POSTS FOR A SELECTION — the keys AND the name each
+ * key stood for when it was ticked.
+ *
+ * The names are not decoration: the action refuses a selection whose rows no longer
+ * carry the names the screen showed, because a reading shifted by one line has the
+ * same ROW COUNT and so slips past the reconciliation check. That is not
+ * hypothetical — a trimmed copy of the paste imported three companies nobody chose.
+ * Tests that posted keys alone would be exercising a path the screen cannot produce.
+ */
+const selection = (
+  parsed: { rows: readonly { line: number; name: string }[] },
+  only?: readonly string[],
+): Record<string, string> => {
+  const keys = rowKeysFor(parsed.rows);
+  const wanted = only ?? keys;
+  const fields: Record<string, string> = { rows: wanted.join(",") };
+  for (const key of wanted) {
+    const row = parsed.rows[keys.indexOf(key)];
+    if (row) fields[`name:${key}`] = row.name;
+  }
+  return fields;
+};
 
 function form(values: Record<string, string>) {
   const fd = new FormData();
@@ -101,7 +124,7 @@ const base = (over: Record<string, string> = {}) =>
     sourceUrl: "https://example.test/riverside/lincoln-award-packet.pdf",
     sourceTitle: "Riverside USD — Lincoln Elementary award packet",
     primeOutcome: "UNKNOWN",
-    rows: keysOf(parsedListing),
+    ...selection(parsedListing),
     ...over,
   });
 
@@ -217,7 +240,7 @@ describe("importing a pasted subcontractor listing", () => {
   it("refuses to attach to another company's lead, re-read inside the transaction", async () => {
     const result = await importSubListing(
       base({
-        rows: keyAt(parsedListing, lineOf("Valley Interior Systems")),
+        ...selection(parsedListing, [keyAt(parsedListing, lineOf("Valley Interior Systems"))]),
         [`attach:${keyAt(parsedListing, lineOf("Valley Interior Systems"))}`]: otherCompanyLeadId,
       }),
     );
@@ -308,7 +331,7 @@ describe("importing a pasted subcontractor listing", () => {
         listingText: multi,
         sourceUrl: "https://example.test/two-bidders.pdf",
         primeOutcome: "AWARDED",
-        rows: keysOf(parsedMulti),
+        ...selection(parsedMulti),
       }),
     );
     expect(result.ok).toBe(true);
@@ -340,7 +363,7 @@ describe("importing a pasted subcontractor listing", () => {
         listingText: bare,
         sourceUrl: "https://example.test/bare.pdf",
         primeOutcome: "UNKNOWN",
-        rows: keysOf(parsedBare),
+        ...selection(parsedBare),
       }),
     );
     expect(result.ok).toBe(true);
@@ -376,7 +399,7 @@ function importListing(lines: string[], sourceUrl: string) {
       listingText,
       sourceUrl,
       primeOutcome: "UNKNOWN",
-      rows: keysOf(parsed),
+      ...selection(parsed),
     }),
   );
 }
@@ -672,7 +695,7 @@ describe("the public-register columns a listing fills", () => {
         listingText: PAGE,
         sourceUrl: "https://example.test/example-university/bid-summary.pdf",
         primeOutcome: "UNKNOWN",
-        rows: keysOf(parsed),
+        ...selection(parsed),
       }),
     );
     expect(result.ok).toBe(true);
@@ -749,7 +772,7 @@ describe("the public-register columns a listing fills", () => {
         listingText,
         sourceUrl: "https://example.test/moreno-valley/attach.pdf",
         primeOutcome: "UNKNOWN",
-        rows: keyAt(parseSubListing(listingText), line),
+        ...selection(parseSubListing(listingText), [keyAt(parseSubListing(listingText), line)]),
         [`attach:${keyAt(parseSubListing(listingText), line)}`]: existing.id,
       }),
     );
@@ -839,7 +862,7 @@ describe("the same subcontractor arriving in a second import", () => {
         listingText,
         sourceUrl,
         primeOutcome: "UNKNOWN",
-        rows: keyAt(parseSubListing(listingText), line),
+        ...selection(parseSubListing(listingText), [keyAt(parseSubListing(listingText), line)]),
       }),
     );
   }
@@ -1170,7 +1193,7 @@ describe("the same subcontractor arriving in a second import", () => {
         listingText,
         sourceUrl: "https://example.test/crossimport/chandler-second.pdf",
         primeOutcome: "UNKNOWN",
-        rows: keysOf(parsed),
+        ...selection(parsed),
       }),
     );
     expect(second.ok).toBe(true);
@@ -1221,7 +1244,7 @@ describe("the same subcontractor arriving in a second import", () => {
         listingText,
         sourceUrl: "https://example.test/crossimport/handpicked.pdf",
         primeOutcome: "UNKNOWN",
-        rows: keyAt(parseSubListing(listingText), line),
+        ...selection(parseSubListing(listingText), [keyAt(parseSubListing(listingText), line)]),
         [`attach:${keyAt(parseSubListing(listingText), line)}`]: chosen.id,
       }),
     );
@@ -1395,7 +1418,7 @@ describe("the same subcontractor arriving in a second import", () => {
         listingText,
         sourceUrl: "https://example.test/crossimport/doubletally.pdf",
         primeOutcome: "UNKNOWN",
-        rows: keysOf(parsed),
+        ...selection(parsed),
         [`attach:${keyAt(parsed, parsed.rows[1].line)}`]: holder.id,
       }),
     );
@@ -1522,7 +1545,7 @@ describe("re-reading one document does not write its evidence twice", () => {
         listingText,
         sourceUrl,
         primeOutcome: "UNKNOWN",
-        rows: keyAt(parseSubListing(listingText), line),
+        ...selection(parseSubListing(listingText), [keyAt(parseSubListing(listingText), line)]),
       }),
     );
   }
@@ -1708,13 +1731,13 @@ describe("a full-size listing, at the cap", () => {
     // The premise. Without it every count below could be about a shorter paste.
     expect(parsed.rows, "the 60-row fixture did not parse to 60 rows").toHaveLength(ROWS);
     expect(parsed.unread, "the 60-row fixture has unreadable lines").toHaveLength(0);
-    return { listingText, rows: keysOf(parsed) };
+    return { listingText, picked: selection(parsed) };
   }
 
   it("imports all 60, and the counts add up", async () => {
-    const { listingText, rows } = sixtyRows();
+    const { listingText, picked } = sixtyRows();
     const result = await importSubListing(
-      form({ listingText, sourceUrl: SOURCE, primeOutcome: "UNKNOWN", rows }),
+      form({ listingText, sourceUrl: SOURCE, primeOutcome: "UNKNOWN", ...picked }),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -1760,14 +1783,14 @@ describe("a full-size listing, at the cap", () => {
    * it is where 60 duplicate leads and 300 duplicate claims would have appeared.
    */
   it("re-importing the whole packet adds no lead and no claim", async () => {
-    const { listingText, rows } = sixtyRows();
+    const { listingText, picked } = sixtyRows();
     const before = await prisma.salesLeadSignal.count({
       where: { companyId: context.company.id, sourceUrl: SOURCE },
     });
     expect(before).toBeGreaterThan(0);
 
     const again = await importSubListing(
-      form({ listingText, sourceUrl: SOURCE, primeOutcome: "UNKNOWN", rows }),
+      form({ listingText, sourceUrl: SOURCE, primeOutcome: "UNKNOWN", ...picked }),
     );
     expect(again.ok).toBe(true);
     if (!again.ok) return;
@@ -1900,7 +1923,7 @@ describe("a labelled-column form with two bidder columns on one line", () => {
     const SOURCE = "https://example.test/mesa-verde/both-columns.pdf";
     const parsed = parseSubListing(listing.text);
     const result = await importSubListing(
-      form({ listingText: listing.text, sourceUrl: SOURCE, primeOutcome: "AWARDED", rows: keysOf(parsed) }),
+      form({ listingText: listing.text, sourceUrl: SOURCE, primeOutcome: "AWARDED", ...selection(parsed) }),
     );
     // Asserted as the ERROR being absent rather than only as ok, because this is
     // the sentence the whole shape used to get.
@@ -1946,7 +1969,7 @@ describe("a labelled-column form with two bidder columns on one line", () => {
     const sourceUrl = "https://example.test/mesa-verde/one-column.pdf";
 
     const result = await importSubListing(
-      form({ listingText: listing.text, sourceUrl, primeOutcome: "AWARDED", rows: keys[1] }),
+      form({ listingText: listing.text, sourceUrl, primeOutcome: "AWARDED", ...selection(parsed, [keys[1]!]) }),
     );
     if (!result.ok) expect(result.error).not.toMatch(/does not read the same way/);
     expect(result.ok).toBe(true);
@@ -2001,7 +2024,7 @@ describe("a labelled-column form with two bidder columns on one line", () => {
         listingText: listing.text,
         sourceUrl: "https://example.test/mesa-verde/both-on-one-lead.pdf",
         primeOutcome: "AWARDED",
-        rows: keys.join(","),
+        ...selection(parsed),
         [`attach:${keys[0]}`]: existing.id,
         [`attach:${keys[1]}`]: existing.id,
       }),
@@ -2032,5 +2055,157 @@ describe("a labelled-column form with two bidder columns on one line", () => {
     expect(new Set(rowsWritten.map((signal) => `${signal.kind}\u0000${signal.claim}`)).size).toBe(
       rowsWritten.length,
     );
+  });
+});
+
+/**
+ * A PASTE THAT BEGINS WITH A BLANK LINE — AND THE WORST DEFECT THIS FEATURE HAS HAD.
+ *
+ * `required()` and `text()` TRIM, and `listingText` was read through `required`. So
+ * the review screen parsed what was in the textarea and this action parsed the
+ * trimmed copy, with every line number one lower. The selection travels as POSITIONS,
+ * so it resolved to the rows BELOW the ticked ones.
+ *
+ * Found by the signed-in e2e journey on its first run — not by 482 unit tests, 58 db
+ * tests or a real-Chromium run of the component, because every one of those parses
+ * ONE string. Only browser → Server Action → database could show it. What it showed,
+ * on a four-row listing with one leading blank line: the reviewer ticked Ridgeline,
+ * Harbor Lath and Cedar Ceilings; the import created Harbor Lath, Cedar Ceilings and
+ * **Pinnacle Electric, the electrical sub deliberately left unticked** — and Ridgeline
+ * never arrived. The summary read "15 signals to check across 3 new leads",
+ * truthfully, about three companies nobody chose.
+ *
+ * A leading blank line is not an exotic input. It is what a paste out of a PDF looks
+ * like.
+ *
+ * ── AND THE GUARD THAT EXISTS FOR EXACTLY THIS COULD NOT SEE IT ──
+ *
+ * "The listing does not read the same way now as it did on screen" compares the
+ * number of keys with the number of rows they resolve to. A reading shifted by one
+ * line resolves THREE keys to THREE rows, so the count agreed and nothing fired. The
+ * screen now posts the NAME each key stood for and the server refuses when a resolved
+ * row does not carry it — an identity check rather than an arity one, which is the
+ * shape this class of defect needs.
+ *
+ * Two cases, because the cause and the guard are separately removable.
+ */
+describe("a paste that begins with a blank line", () => {
+  const BODY = [
+    "Project: Blankline Science Building",
+    "Agency: Example Unified School District",
+    "Prime Contractor: Northgate Builders",
+    "",
+    "Blankline Ridge Interiors\tFontana, CA\tC-9 990851\t1000030051\tMetal stud framing and drywall",
+    "Blankline Harbor Lath\tColton, CA\tC-35 990852\t1000030052\tLath and cement plaster",
+    "Blankline Cedar Ceilings\tRiverside, CA\tC-2 990853\t1000030053\tAcoustical ceilings",
+    "Blankline Pinnacle Electric\tPerris, CA\tC-10 990854\t1000030054\tElectrical",
+  ].join("\n");
+  /** One leading newline, which is what the textarea holds and what the parser must
+   *  see on both sides. */
+  const LISTING = `\n${BODY}`;
+  const SOURCE = "https://example.test/blankline/designation.pdf";
+
+  const OURS = ["Blankline Ridge Interiors", "Blankline Harbor Lath", "Blankline Cedar Ceilings"];
+  const NOT_OURS = "Blankline Pinnacle Electric";
+
+  /**
+   * THE PREMISE, and it is the whole defect in two lines: the two readings of one
+   * paste disagree about every line number. Asserted so that a future `parse.ts` that
+   * ignores leading blank lines makes this describe say so rather than pass for a new
+   * reason.
+   */
+  it("reads different line numbers trimmed and untrimmed", () => {
+    const onScreen = parseSubListing(LISTING);
+    const onServer = parseSubListing(LISTING.trim());
+    expect(onScreen.rows.map((row) => row.name)).toEqual([...OURS, NOT_OURS]);
+    expect(onServer.rows.map((row) => row.name)).toEqual([...OURS, NOT_OURS]);
+    expect(onScreen.rows.map((row) => row.line)).not.toEqual(onServer.rows.map((row) => row.line));
+    // And the shift is exactly one, which is why it imported the NEXT row down.
+    for (const [index, row] of onScreen.rows.entries()) {
+      expect(row.line).toBe(onServer.rows[index].line + 1);
+    }
+  });
+
+  /**
+   * THE GUARD, REACHED DIRECTLY — because with the fix in place nothing can reach it
+   * through the screen.
+   *
+   * Removing the name check leaves every other case in this file green: once both
+   * sides parse the same bytes the names always agree, so the guard has no reachable
+   * failure in the CURRENT code. By this repo's own rule that would argue for deleting
+   * it, and the rule is right — but the reason it cannot fire is a property of ONE
+   * normalisation that was wrong until today, not of the design. A CRLF fix, a
+   * `.normalize()`, or two deploys parsing one paste differently all land here.
+   *
+   * So it is kept and made checkable instead of kept and unverifiable, which is the
+   * only version of "defence in depth" this repo accepts. The case posts the right
+   * keys with one WRONG name — exactly what a shifted reading produces — and requires
+   * the refusal and an empty database.
+   */
+  it("refuses a selection whose rows no longer carry the names the screen showed", async () => {
+    const parsed = parseSubListing(LISTING);
+    const keys = rowKeysFor(parsed.rows);
+    const picked = selection(parsed, [keys[0]!, keys[1]!]);
+    const before = await prisma.salesLead.count({
+      where: { companyId: context.company.id, companyName: { startsWith: "Misread " } },
+    });
+
+    const result = await importSubListing(
+      form({
+        listingText: LISTING,
+        sourceUrl: "https://example.test/blankline/misread.pdf",
+        primeOutcome: "UNKNOWN",
+        ...picked,
+        // The second key now claims to be the row BELOW it, which is what a reading
+        // shifted by one line hands the server.
+        [`name:${keys[1]}`]: parsed.rows[2].name,
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/does not read the same way/);
+    expect(
+      await prisma.salesLead.count({
+        where: { companyId: context.company.id, companyName: { startsWith: "Misread " } },
+      }),
+    ).toBe(before);
+    // And nothing was written under that source at all.
+    expect(
+      await prisma.salesLeadSignal.count({
+        where: {
+          companyId: context.company.id,
+          sourceUrl: "https://example.test/blankline/misread.pdf",
+        },
+      }),
+    ).toBe(0);
+  });
+
+  it("imports the subcontractors the reviewer ticked, not the rows below them", async () => {
+    const parsed = parseSubListing(LISTING);
+    const ticked = parsed.rows.filter((row) => row.tradeScope !== null);
+    // The fixture's own premise: three of ours and one that is not, in that order.
+    expect(ticked.map((row) => row.name)).toEqual(OURS);
+
+    const keys = rowKeysFor(parsed.rows);
+    const result = await importSubListing(
+      form({
+        listingText: LISTING,
+        sourceUrl: SOURCE,
+        primeOutcome: "UNKNOWN",
+        ...selection(parsed, ticked.map((row) => keys[parsed.rows.indexOf(row)]!)),
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.leadsCreated).toBe(3);
+
+    const made = await prisma.salesLead.findMany({
+      where: { companyId: context.company.id, companyName: { startsWith: "Blankline " } },
+      select: { companyName: true },
+      orderBy: { companyName: "asc" },
+    });
+    // THE THREE TICKED, and the electrical sub nowhere — which is the half that was
+    // wrong. A shifted reading put it here and dropped the first row.
+    expect(made.map((lead) => lead.companyName).sort()).toEqual([...OURS].sort());
+    expect(made.map((lead) => lead.companyName)).not.toContain(NOT_OURS);
   });
 });

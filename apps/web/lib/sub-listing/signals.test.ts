@@ -862,6 +862,75 @@ describe("the cap is defined once, and both callers ask for it", () => {
       `the submit button's label does not count ${counted}`,
     ).toContain(counted);
   });
+
+  /**
+   * THE SCREEN MUST SEND THE NAME IT SHOWED, because the server REFUSES a selection
+   * without it — and nothing else can tell you it does.
+   *
+   * `importSubListing` compares each selected row's name against a `name:<key>` field,
+   * so that a reading which has shifted under the reviewer is refused rather than
+   * importing whatever now sits at that position. That guard exists because a trimmed
+   * copy of one paste imported three companies nobody chose.
+   *
+   * Deleting the line in the component that sends those names leaves all 61 db tests
+   * green: they build the FormData themselves, so they exercise the server's half and
+   * can never exercise the screen's. Every import in production would be refused with
+   * the whole suite passing — the "written, documented, and never called" shape in
+   * CLAUDE.md, with the caller being the one thing no test here renders.
+   *
+   * So this asserts the call exists, structurally. What it cannot say is that the name
+   * sent is the name DISPLAYED — that is the e2e journey's, which pastes a real
+   * listing and imports it.
+   */
+  it("has the review screen send the name it showed for every row it selects", () => {
+    const file = sources.find((source) => source.path.endsWith("SubListingImport.tsx"))!;
+    const ast = ts.createSourceFile(
+      "SubListingImport.tsx",
+      file.text,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+
+    const sets: ts.CallExpression[] = [];
+    const walk = (node: ts.Node) => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === "set" &&
+        node.expression.expression.getText(ast) === "formData"
+      ) {
+        sets.push(node);
+      }
+      ts.forEachChild(node, walk);
+    };
+    walk(ast);
+    // The size assertion: a parse that found no `formData.set` would satisfy nothing
+    // below for the wrong reason.
+    expect(sets.length, "no formData.set calls found in the review screen").toBeGreaterThan(3);
+
+    const named = sets.filter((call) => {
+      const [field, value] = call.arguments;
+      if (!field || !value) return false;
+      // A template literal `name:${…}` — a plain string cannot carry a key.
+      const isNameField =
+        ts.isTemplateExpression(field) && field.head.text === "name:" && field.templateSpans.length === 1;
+      return isNameField && value.getText(ast).endsWith(".name");
+    });
+    expect(
+      named,
+      "the screen never posts `name:${key}` from a row's own name — every import would be refused",
+    ).toHaveLength(1);
+
+    /* AND NOTHING MORE, DELIBERATELY. The obvious next assertion is "sent for every
+       selected row, not once outside the loop" — and it cannot fire: a `name:` field
+       built from `row.name` can only be written where `row` is in scope, which is the
+       per-row loop. Written and mutation-tested as a block-sharing check against
+       `attach:<key>`, and the mutation that was supposed to kill it killed the
+       assertion above instead, because hoisting the call out of the loop also has to
+       change what it reads. A guard whose only reachable failure is another guard's is
+       not a guard. */
+  });
 });
 
 /**

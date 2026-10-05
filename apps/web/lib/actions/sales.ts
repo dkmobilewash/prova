@@ -1260,7 +1260,31 @@ export async function importSubListing(
   try {
     assertSalesAccess({ company, role: user.role });
 
-    const listingText = required(formData, "listingText", "The listing you pasted");
+    /**
+     * READ RAW. `required` (and `text`) TRIM, AND TRIMMING THIS FIELD IMPORTED THE
+     * WRONG SUBCONTRACTORS.
+     *
+     * A paste out of a PDF very often begins with a blank line. The review screen
+     * parses what is in the textarea; this action used to parse the TRIMMED copy, so
+     * every line number here sat one lower than the one the reviewer was looking at
+     * — and the selection, which travels as positions, silently resolved to the rows
+     * BELOW the ticked ones.
+     *
+     * Measured end to end in CI, on a four-row listing with one leading blank line:
+     * the reviewer ticked Ridgeline, Harbor Lath and Cedar Ceilings; the import
+     * created Harbor Lath, Cedar Ceilings and **Pinnacle Electric — the electrical
+     * sub they had deliberately left unticked** — and Ridgeline never arrived. The
+     * summary said "15 signals to check across 3 new leads", truthfully, about three
+     * companies nobody chose.
+     *
+     * The reconciliation guard below could not see it: three keys resolved to three
+     * rows, so the COUNT agreed. That is why there is a name check as well now.
+     *
+     * Nothing else in this action wants the raw value, so this is the only field read
+     * this way; the emptiness check is kept by hand.
+     */
+    const listingText = String(formData.get("listingText") ?? "");
+    if (listingText.trim() === "") throw new InputError("The listing you pasted is required");
 
     // `requiredSourceUrl` rather than a second copy of it: it is 200 lines above
     // in this same file, it is what the hand-typed path uses, and the two had
@@ -1298,7 +1322,10 @@ export async function importSubListing(
     if (tooMany !== null) return { ok: false, error: tooMany };
 
     const chosen = unique.map((key) => byKey.get(key)).filter((row) => row !== undefined);
-    if (chosen.length !== unique.length) {
+    const misread = unique.some(
+      (key, index) => text(formData, `name:${key}`) !== (chosen[index]?.name ?? ""),
+    );
+    if (chosen.length !== unique.length || misread) {
       return {
         ok: false,
         error:

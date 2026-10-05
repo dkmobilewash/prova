@@ -217,7 +217,14 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
            subcontractor to add" — a clear, recoverable refusal — instead of
            resolving a stale line number onto whichever row now sits there. */
         formData.set("rows", included.map(({ key }) => key).join(","));
-        for (const { key } of included) {
+        for (const { row, key } of included) {
+          /* THE NAME THE REVIEWER WAS LOOKING AT WHEN THEY TICKED THIS ROW, so the
+             server can refuse a reading that has moved under them rather than
+             importing whatever now sits at that position. Its own reconciliation
+             check counts rows, and a reading shifted by one line has the same count
+             — which is how a trimmed copy of this paste imported three companies
+             nobody chose. See `importSubListing`. */
+          formData.set(`name:${key}`, row.name);
           const chosen = attach[key];
           if (chosen) formData.set(`attach:${key}`, chosen);
         }
