@@ -43,6 +43,14 @@ LICENCE column, nothing to do with the portion of work. The case beside it asser
 was only noticeable because of an unrelated sentence. It now says so itself, and the
 assertion names both.
 
+**AND IT IS NOT NOISE, WHICH IS THE OBVIOUS OBJECTION TO ANY NEW CONCERN.** A warning that
+fires on most rows is a warning nobody reads, so it was measured across the shared fixture
+corpus rather than argued about: **2 of 26 rows, 7.7%** — and both are in cases that exist
+*because* their row is misread (`total-in-a-company-name`, where a totals line was read as a
+company, and `bare-number-as-licence`). `clean-five`, the canonical well-formed document,
+produces **zero**. So the sentence appears on the rows a reviewer should look at and on no
+others.
+
 457 unit tests, up from 454. Two mutations, both killed: dropping the concern reds exactly
 the three cases written for it, and pushing it unconditionally reds eight including the
 control — which is in the suite because without it the concern could be attached to every
