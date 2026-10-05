@@ -12,6 +12,7 @@
  */
 
 import type { MeasurementKind, StoredCalibration } from "@/lib/takeoff-plan";
+import type { ZoneNotice } from "@/lib/takeoff-zones";
 
 /** A calibration as the viewer needs it: the drawn line plus the distance it
  * was declared to be, with the Decimal already turned into a number by the
@@ -31,6 +32,16 @@ export type PlanMeasurementRow = {
   /** True when this measurement reads at a scale the sheet has since moved
    * on from. Derived by the page, never stored. */
   outOfDate: boolean;
+  /**
+   * The scale this shape was traced against, named — `1/8" = 1'-0"` — and
+   * ONLY on a sheet that carries more than one scale.
+   *
+   * Null on an ordinary sheet, where the scale is a property of the page and
+   * printing it on every row is noise. `measurementScaleLabel` in
+   * `lib/takeoff-zones.ts` makes that decision from the sheet's own notices,
+   * so one rule governs the banner and the rows together.
+   */
+  scaleLabel: string | null;
 };
 
 export type PlanSheet = {
@@ -41,6 +52,20 @@ export type PlanSheet = {
   /** The newest calibration on this sheet, or null when nobody has set one. */
   calibration: PlanViewerCalibration | null;
   measurements: PlanMeasurementRow[];
+  /**
+   * What to say about a sheet calibrated at more than one scale. Empty on the
+   * ordinary sheet, and that silence is load-bearing.
+   *
+   * NON-EMPTY ALSO MEANS THE RESCALE OFFER MUST BE WITHDRAWN, which is the
+   * half of this that is a bug fix rather than a feature.
+   * `rescaleTakeoffMeasurements` repoints every unposted measurement to the
+   * NEWEST calibration and leaves the geometry alone — so on a sheet with a
+   * plan at 1/8" and a detail at 1-1/2", pressing it multiplies the detail's
+   * quantities by twelve. The old "reads at an older scale" banner invited
+   * exactly that press, because it could not tell a re-calibration from a
+   * second zone. `zoneNotices` is that discriminator.
+   */
+  zoneNotices: ZoneNotice[];
 };
 
 /*

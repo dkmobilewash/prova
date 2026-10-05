@@ -17,6 +17,7 @@ import { deleteTakeoffPlan } from "@/lib/actions";
 import { requireCapability } from "@/lib/authz";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
 import { printedScalesFromProposals } from "@/lib/takeoff-plan-view";
+import { measurementScaleLabel, zoneNotices, zoneScales } from "@/lib/takeoff-zones";
 import type { PlanMeasurementRow, PlanSheet, PrintedScaleByPage } from "@/lib/takeoff-plan-view";
 
 /**
@@ -129,6 +130,21 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   // which measurements read at an older scale. Nothing on the row says so.
   const sheets: PlanSheet[] = plan.pages.map((page) => {
     const current = page.calibrations[0] ?? null;
+    // EVERY calibration on the sheet, not just the newest — the question
+    // "does this page carry two scales" cannot be asked of one row. The data
+    // has supported this since the FK was added; nothing ever read it.
+    const zones = zoneScales(
+      page.calibrations.map((c) => ({
+        id: c.id,
+        x1: c.x1,
+        y1: c.y1,
+        x2: c.x2,
+        y2: c.y2,
+        declaredDistanceFeet: c.declaredDistanceFeet.toNumber(),
+      })),
+      page.pageWidthPt,
+    );
+    const notices = zoneNotices(zones);
     const measurements: PlanMeasurementRow[] = page.measurements.map((m) => ({
       id: m.id,
       kind: m.kind,
@@ -144,6 +160,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         declaredDistanceFeet: m.calibration.declaredDistanceFeet.toNumber(),
       },
       outOfDate: current !== null && m.calibrationId !== current.id,
+      scaleLabel: measurementScaleLabel(m.calibrationId, zones, notices),
     }));
     return {
       id: page.id,
@@ -161,6 +178,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           }
         : null,
       measurements,
+      zoneNotices: notices,
     };
   });
 

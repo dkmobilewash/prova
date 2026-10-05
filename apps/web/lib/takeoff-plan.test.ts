@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -413,6 +414,34 @@ describe("the calibration dialog describes an action the tool has", () => {
   it("never tells anybody to DRAG, because dragging places one point and stops", () => {
     const offenders = everySentence().filter((message) => /drag/i.test(message));
     expect(offenders, "a notice told the estimator to drag").toEqual([]);
+  });
+
+  it("CATCHES THE SAME WORDING IN THE ACTIONS TOO, which this census missed the first time", () => {
+    // #631 fixed three strings in `takeoff-plan.ts` and left a fourth in
+    // `lib/actions/takeoff.ts` — "Drag along a dimension on the drawing to
+    // set the scale" — standing, because the census above reads
+    // `calibrationNotices`'s OUTPUT and that refusal is the action's own.
+    // Right pattern, wrong SCOPE: the failure mode no size assertion can see,
+    // since nothing is ever missing from a file you do not read.
+    //
+    // So this reads the source of every module that speaks to the estimator
+    // about calibrating, with comments stripped — both files print the word
+    // "drag" in prose explaining the fix, and a raw-text scan would find
+    // those and report a defect that does not exist.
+    const roots = ["./takeoff-plan.ts", "./actions/takeoff.ts", "./takeoff-zones.ts"];
+    const sources = roots.map((rel) => ({
+      rel,
+      text: readFileSync(new URL(rel, import.meta.url), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1"),
+    }));
+    // The parse must be able to fail: a stripper that returned "" would pass
+    // every assertion below it.
+    expect(sources.length, "the roots list emptied").toBe(3);
+    for (const source of sources) {
+      expect(source.text.length, `${source.rel} stripped to nothing`).toBeGreaterThan(500);
+      expect(source.text, `${source.rel} still says "drag" outside a comment`).not.toMatch(/drag/i);
+    }
   });
 
   it("collected sentences from every branch, so the check is not vacuous", () => {
