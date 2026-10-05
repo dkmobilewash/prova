@@ -101,10 +101,52 @@ before today came from a reader that *could not* have produced these kinds, and
 a re-read of the same section may now legitimately return more than it did —
 without the bump that difference reads as the model being inconsistent.
 
-## Not verified here
+## The eval was run, and all three kinds are produced
 
-`pnpm eval:specs` spends real model calls and has not been run on the four new
-cases; they are asserted well-formed, rendered to real PDFs and read back with
-pdfjs, which is what the unit suite can do. Whether the reader actually finds an
-LD clause in a real Division 01 section is a model measurement, and it is the
-next thing to run.
+`pnpm eval:specs`, `claude-opus-5`, prompt `spec-section.2`, 10 cases in 107s.
+**Every fatal counter at zero** — INVENTED 0, EAGER 0, UNQUOTED 0,
+OVERCLAIMED 0:
+
+| case | what came back |
+| --- | --- |
+| `liquidated-damages` | **HIGH** `LIQUIDATED_DAMAGES` — "LDs $2,500/day, passed down to subs" |
+| `working-hours-occupied` | **HIGH** ×3 + MEDIUM ×1, all `WORKING_HOURS` |
+| `prevailing-wage-and-apprentices` | **HIGH** ×3 `WAGE_REQUIREMENT`, the apprenticeship ratio among them |
+| `solicitation-with-terms` | **nothing found**, which is the pass |
+
+Three details worth more than the pass itself.
+
+**The LD case did not invent a total.** `forbidden` holds `75,000` and "total
+liquidated damages" — 420 days × $2,500 is the number a reader eager to be
+useful would compute, and computing it would have been FATAL. It reported the
+mechanism and the document's own per-day figure, which is rule 11 working.
+
+**It found the pass-down clause**, not just the headline: "passed down to subs"
+is clause B, and it is the sentence that makes an Owner-to-Contractor LD this
+subcontractor's problem at all.
+
+**The boundary held, with the reasoning quoted back.** On
+`solicitation-with-terms` the reader said the mentions of liquidated damages and
+prevailing wage "are pointers only … with no amounts, rates or restrictions
+stated; those requirements belong to the Division 00/01 sections it points at".
+And on the pre-existing `not-a-spec` case it volunteered the bid bond
+specifically — "which belongs to the contract documents it points at rather
+than to this notice". That was the exact risk of admitting Division 00/01, and
+rule 8's new clause is what closed it.
+
+**No regression, established from a recorded baseline rather than a second
+run.** `CHANGELOG.md` records the reader shipping at *"6 of 6 with every fatal
+counter at zero … One `missed`, reported and not fatal, and it is arguably the
+reader being right: it declined to call Level 4 a cost driver because Level 4 is
+the default a drywall estimator prices without being told."* This run reports
+the same single `missed` on the same `names-and-excludes` case, for the same
+reason. The four new cases added no misses and no fatals.
+
+## Still not verified
+
+**Nothing here measures a real spec book.** The eval's own footer says so:
+*"synthetic sections, short, clean apart from one deliberately garbled page …
+Nothing here measures whether the reader holds up over thirty pages with
+cross-references into four other sections."* A real Division 01 is thirty pages
+with an LD clause in one paragraph of one subsection, and that is the click-list
+below rather than the eval.
