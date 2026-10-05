@@ -245,3 +245,157 @@ export const SALES_EXPECTED = {
    *  render at all. */
   nonOperatorRefusal: "Not part of your access",
 } as const;
+
+/**
+ * THE LISTING THE BROWSER PASTES — AND THE ONE THING NOTHING IN THIS REPO HAD
+ * EVER PROVED.
+ *
+ * Added 2026-10-05. `specs/sales-crm.spec.ts` step 4 opens the import surface
+ * and deliberately submits nothing, and its comment gave the reason: "driving a
+ * real paste would make this spec depend on `lib/sub-listing/parse.ts`, which
+ * is under active change in the other lane". `seedDatabase.ts` says the same
+ * thing in the same words. **Both sentences were true when they were written
+ * and are now false**: that parser is this branch's own work, it is finished,
+ * and it carries 401 unit tests including a 6,000-document generated corpus. A
+ * premise that stops somebody clicking the one path through a feature is worth
+ * re-reading before it is inherited — this file's own header is about exactly
+ * that, one level down.
+ *
+ * What the gap actually was, stated plainly because the list of what IS
+ * verified is long enough to read as coverage:
+ *
+ *   - `parse.ts` — unit suite plus the generated partition corpus;
+ *   - `leadMatch.ts` — unit suite plus an exhaustive 6,561-pair sweep;
+ *   - `importSubListing` — 54 tests against a real Postgres, up to the 60-row
+ *     cap;
+ *   - `SubListingImport.tsx` — driven in real Chromium over `file://`, 74
+ *     checks, **with the server action stubbed**.
+ *
+ * So each link was measured and the CHAIN never was: browser → Server Action →
+ * Postgres → revalidated page. That is the shape of the 2026-09-21 failure this
+ * whole e2e suite was built after — four green checks and 5,800 green unit
+ * tests while creating one invoice crashed every authenticated page.
+ *
+ * ── WHY THE TEXT LIVES HERE AND NOT IN THE SPEC ──
+ *
+ * Same reason as everything above it: `salesFixture.test.ts` runs the app's own
+ * `parseSubListing`, `shouldInclude` and `signalsForSub` over this string on
+ * every push and requires them to produce exactly the literals in
+ * `IMPORT_EXPECTED`. So a parser change that moves a sentence fails in CI's
+ * three-minute job, naming the fixture — instead of in a twenty-minute e2e run,
+ * naming a missing string, which reads like a product defect.
+ *
+ * ── WHY EVERY NAME AND NUMBER IN IT IS INVENTED ──
+ *
+ * No real company, licence or DIR registration appears in any fixture in this
+ * repo, and this one writes LEADS: every row the importer creates is
+ * permanently undeletable by design (sent correspondence closes, it never
+ * deletes), so a real firm pasted here would be a real firm nobody can remove.
+ * The `ZZ-E2E` tag is on every company name so cleanup can find them, the
+ * licences are a synthetic 99088xx block and the registrations a synthetic
+ * 10000300xx one.
+ */
+export const IMPORT_LISTING_TEXT = `
+${E2E_TAG} HARBOR UNIFIED SCHOOL DISTRICT
+DESIGNATION OF SUBCONTRACTORS
+
+Project: Harbor Elementary Modernization, Increment 1
+Agency: ${E2E_TAG} Harbor Unified School District
+Prime Contractor: ${E2E_TAG} Northgate Builders
+Bid Opening: April 2, 2026
+
+Name of Subcontractor            City, State       Licence       DIR Reg.      Portion of Work
+${E2E_TAG} Ridgeline Interiors       Fontana, CA       C-9 9908801   1000030001    Metal stud framing & drywall
+${E2E_TAG} Harbor Lath and Plaster   Colton, CA        C-35 9908802  1000030002    Lath and cement plaster
+${E2E_TAG} Cedar Ceilings LLC        Riverside, CA     C-2 9908803   1000030003    Acoustical ceilings
+${E2E_TAG} Pinnacle Electric Corp    Perris, CA        C-10 9908804  1000030004    Electrical
+
+Total Base Bid: $12,300,000
+`;
+
+/** Where the spec says it read the listing. Not a real host — `example.com` is
+ *  reserved for exactly this (RFC 2606), and the provenance this writes is
+ *  stored on every claim. */
+export const IMPORT_SOURCE_URL =
+  "https://example.com/zz-e2e/harbor-elementary/designation-of-subcontractors";
+export const IMPORT_SOURCE_TITLE = `${E2E_TAG} Harbor USD — Harbor Elementary sub list`;
+
+/**
+ * The three rows in Prova's trades, which the screen ticks BY DEFAULT.
+ *
+ * In listing order, because the spec asserts the created leads by name and a
+ * reordered array would be a test about the fixture's spelling.
+ */
+export const IMPORT_OUR_TRADES: readonly string[] = [
+  `${E2E_TAG} Ridgeline Interiors`,
+  `${E2E_TAG} Harbor Lath and Plaster`,
+  `${E2E_TAG} Cedar Ceilings LLC`,
+];
+
+/**
+ * THE FOURTH ROW, AND IT IS THE CONTROL RATHER THAN DECORATION.
+ *
+ * An electrical sub on a §4104 form is a real shape — every such form carries
+ * trades Prova does not sell to — and `tradeScopeFor("Electrical")` returns
+ * null, so `shouldInclude` leaves the box unticked. The spec asserts this name
+ * is on the REVIEW screen (the parser read it; nothing is hidden) and is NOT a
+ * lead afterwards. Without that pair, "three leads appeared" is satisfied by an
+ * importer that creates a lead for every row it can see.
+ */
+export const IMPORT_NOT_OUR_TRADE = `${E2E_TAG} Pinnacle Electric Corp`;
+
+/**
+ * WHAT THE PRODUCT MUST SAY ABOUT THE PASTE ABOVE.
+ *
+ * Literals, gated by `salesFixture.test.ts` against the real parser. Each one
+ * is composed by the app and none of them can be on the page before the event
+ * it reports — the submit label counts rows the parser read from a textarea
+ * that starts empty, and both summary sentences are written from the Server
+ * Action's own return value.
+ */
+export const IMPORT_EXPECTED = {
+  /** Every non-blank line lands in exactly one bucket and the reader says so.
+   *  Four rows, nothing unread — the state in which the review screen shows no
+   *  "might be missing subcontractors" warning. */
+  rowsParsed: 4,
+  unreadLines: 0,
+
+  /** `Add ${included.length} subcontractor…` — THREE, not four, because the
+   *  electrical row is unticked. The one number on the screen that proves the
+   *  trade default ran. */
+  submitButton: "Add 3 subcontractors",
+
+  /** The success sentence after the first import: 5 signals × 3 rows, all three
+   *  leads new, nothing attached and nothing skipped. */
+  doneFirstImport: "15 signals to check across 3 new leads.",
+
+  /**
+   * And after pasting THE SAME DOCUMENT AGAIN — the addendum case, and the
+   * defect this branch opened with. Importing one listing twice used to create
+   * a second lead for every row, each permanently undeletable. Zero new, zero
+   * claims, three recognised.
+   *
+   * It is the strongest sentence in this object: `0 new leads` and
+   * `3 you already had` are mutually exclusive failures, so no single bug
+   * produces both halves by accident.
+   */
+  doneReimport: "0 signals to check across 0 new leads and 3 you already had.",
+
+  /**
+   * One claim, verbatim, from the lead the first row creates.
+   *
+   * GEOGRAPHY rather than TRADE or PROJECT because it is the shortest claim
+   * that still carries the two things worth proving reached the database: the
+   * cell the parser read, and `(line 11 of the listing)` — the provenance every
+   * claim quotes, which is the premise the per-lead dedupe rests on.
+   */
+  firstLeadClaim: "Listed out of Fontana, CA (line 11 of the listing)",
+
+  /** `BAND_LABELS.THIN`. Five PROPOSED signals and not one confirmed, so an
+   *  imported lead is as thin as a lead nobody researched — the invariant the
+   *  whole PROPOSED state exists for, asserted here on a lead the browser
+   *  created rather than on a seeded one. */
+  bandAfterImport: "Too thin to call",
+  /** `SalesLeadRow`'s unreviewed badge for five unchecked signals. */
+  awaitingReviewAfterImport: "5 to check",
+} as const;

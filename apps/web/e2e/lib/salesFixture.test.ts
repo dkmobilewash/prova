@@ -13,7 +13,13 @@ import {
 } from "@/lib/sales-pipeline";
 import { daysInCurrentStage, type RecordedStageChange } from "@/lib/sales-stage-history";
 import { money } from "@/lib/money";
+import { parseSubListing } from "@/lib/sub-listing/parse";
+import { shouldInclude, signalsForSub } from "@/lib/sub-listing/signals";
 import {
+  IMPORT_EXPECTED,
+  IMPORT_LISTING_TEXT,
+  IMPORT_NOT_OUR_TRADE,
+  IMPORT_OUR_TRADES,
   PIPELINE_OPPORTUNITIES,
   PROJECT_CLAIM,
   RESEARCHED_LEAD_SIGNALS,
@@ -228,5 +234,102 @@ describe("the pipeline band the seeded opportunities produce", () => {
     // qualifier. That qualifier carries numbers the spec does not assert; this
     // pins that it is absent rather than merely unasserted.
     expect(trackedOpenCount(asPipeline())).toBe(pipeline.open.count);
+  });
+});
+
+/**
+ * THE PASTED LISTING, RE-DERIVED BY THE READER THE BROWSER WILL RUN.
+ *
+ * Same direction as everything above: the spec asserts LITERALS and this proves
+ * the literals are what the app's own `parseSubListing`, `shouldInclude` and
+ * `signalsForSub` produce from `IMPORT_LISTING_TEXT`. A parser change that moves
+ * a sentence fails here in three minutes, naming the fixture, instead of failing
+ * the e2e run twenty minutes later naming a missing string.
+ *
+ * ── WHAT THIS DELIBERATELY DOES NOT COPY ──
+ *
+ * The two summary SENTENCES (`doneFirstImport`, `doneReimport`) are composed in
+ * `components/SubListingImport.tsx`, from the Server Action's return value.
+ * Re-spelling that template here would be a second copy of a sentence — the
+ * failure CLAUDE.md records as "nothing is ever missing from a list nobody
+ * imports" — and it would pass while the component said something else.
+ *
+ * So this file gates only the part that DRIFTS, which is the counts: it pulls
+ * the digits out of each literal and requires them to equal what the reader
+ * derives. The WORDING is the component's, and the only instrument that proves
+ * it is the browser. That split is stated rather than implied, because a green
+ * here must not be read as "the sentence is right".
+ */
+describe("the listing specs/sales-crm.spec.ts pastes", () => {
+  const parsed = parseSubListing(IMPORT_LISTING_TEXT);
+  const included = parsed.rows.filter((row) => shouldInclude(row, undefined));
+  const excluded = parsed.rows.filter((row) => !shouldInclude(row, undefined));
+  const signalTotal = included.reduce(
+    (total, row) => total + signalsForSub(row, parsed.header, "AWARDED").length,
+    0,
+  );
+
+  /** Every number in a sentence, in order. The counts are what drift; the words
+   *  around them belong to the component. */
+  const digits = (sentence: string) => (sentence.match(/\d+/g) ?? []).map(Number);
+
+  it("reads every line, with nothing unread", () => {
+    expect(parsed.reconciliation.rowsParsed).toBe(IMPORT_EXPECTED.rowsParsed);
+    expect(parsed.unread).toHaveLength(IMPORT_EXPECTED.unreadLines);
+    // The partition itself, on this document: no line vanished. A paste with
+    // unread lines puts a warning on the review screen the spec does not expect.
+    expect(parsed.reconciliation.agreed).toBe(true);
+    expect(parsed.reconciliation.accountedFor).toBe(parsed.reconciliation.nonBlankLines);
+  });
+
+  it("ticks our three trades and leaves the electrical row alone", () => {
+    expect(included.map((row) => row.name)).toEqual([...IMPORT_OUR_TRADES]);
+    // THE CONTROL. The electrical row must be READ and NOT ticked — if the
+    // parser simply failed on it, "three ticked" would be satisfied by a reader
+    // that cannot see four rows at all, and the spec's absence assertion would
+    // prove nothing.
+    expect(excluded.map((row) => row.name)).toEqual([IMPORT_NOT_OUR_TRADE]);
+    expect(excluded[0]?.tradeScope).toBeNull();
+    expect(excluded[0]?.portionOfWork).toBe("Electrical");
+  });
+
+  it("promises the number of subcontractors the screen's button names", () => {
+    expect(
+      `Add ${included.length} subcontractor${included.length === 1 ? "" : "s"}`,
+    ).toBe(IMPORT_EXPECTED.submitButton);
+  });
+
+  it("carries the counts both summary sentences report", () => {
+    // 15 signals across 3 new leads, nothing attached, nothing skipped.
+    expect(digits(IMPORT_EXPECTED.doneFirstImport)).toEqual([signalTotal, included.length]);
+    // And on the second paste of the same document: nothing new, nothing
+    // proposed, every one of them recognised.
+    expect(digits(IMPORT_EXPECTED.doneReimport)).toEqual([0, 0, included.length]);
+  });
+
+  it("quotes a claim the first row really produces, line number and all", () => {
+    const first = included[0];
+    expect(first, "the fixture must read at least one row of ours").toBeDefined();
+    const claims = signalsForSub(first!, parsed.header, "AWARDED").map((signal) => signal.claim);
+    expect(claims).toContain(IMPORT_EXPECTED.firstLeadClaim);
+    // Every claim quotes its own line — the property the per-lead dedupe rests
+    // on, asserted here on the document the browser will paste.
+    for (const claim of claims) expect(claim).toContain(`(line ${first!.line} of the listing)`);
+  });
+
+  it("leaves an imported lead as thin as one nobody researched", () => {
+    const first = included[0]!;
+    const proposed = signalsForSub(first, parsed.header, "AWARDED").map((signal) => ({
+      kind: signal.kind,
+      state: "PROPOSED" as const,
+      claim: signal.claim,
+      disqualifies: false,
+    }));
+    // FIVE signals, none confirmed. `qualify` counts CONFIRMED only, so the band
+    // must be the thinnest one — research nobody has read cannot make a prospect
+    // look better than a prospect nobody researched.
+    expect(proposed).toHaveLength(5);
+    expect(BAND_LABELS[qualify(proposed).band]).toBe(IMPORT_EXPECTED.bandAfterImport);
+    expect(IMPORT_EXPECTED.awaitingReviewAfterImport).toBe(`${proposed.length} to check`);
   });
 });

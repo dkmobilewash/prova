@@ -151,10 +151,18 @@ export async function seedDatabase(clerkIds: ClerkIds): Promise<void> {
  * product that can create a PROPOSED signal by hand — `createSalesLeadSignal`
  * lands a hand-typed one CONFIRMED on purpose ("typed in BY A PERSON, so it
  * lands CONFIRMED and reviewed by them — they are the review"). Only the
- * research seam proposes, and the one UI path to that is the listing import,
- * whose parser is under active change in another lane. So the research state the
- * review screen exists for is seeded directly, and the REVIEW is what the
- * browser does.
+ * research seam proposes, and the one UI path to that is the listing import. So
+ * the research state the review screen exists for is seeded directly, and the
+ * REVIEW is what the browser does.
+ *
+ * THAT USED TO READ "the listing import, whose parser is under active change in
+ * another lane", which was true when it was written and is the reason this
+ * function exists. It is false now: the parser is finished, and
+ * `specs/sales-crm.spec.ts` step 8 pastes a real listing and imports it, so the
+ * browser does reach the proposing path. Seeding is still right for the REVIEW
+ * steps — a confirmable signal has to exist before step 5 opens the lead page,
+ * and step 8 runs after it — but nobody should read this paragraph as saying the
+ * import path is unclicked.
  *
  * `lib/salesFixture.ts` owns the data and the sentences it makes the pages say;
  * `salesFixture.test.ts` (unit suite, every push) proves those sentences are

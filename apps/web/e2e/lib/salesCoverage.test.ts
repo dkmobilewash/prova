@@ -120,6 +120,36 @@ describe("Prova's own sales screens are walked by a browser", () => {
     expect(mentions("PERSONAS.sales.email").length).toBeGreaterThanOrEqual(1);
   });
 
+  /**
+   * THE IMPORT PATH, WHICH WAS THE LAST PART OF THIS CHANNEL NO BROWSER DROVE.
+   *
+   * Until 2026-10-05 the one spec that opened the listing-import surface
+   * submitted nothing — deliberately, on a premise about the parser that had
+   * since expired. So `importSubListing` had 54 tests against a real Postgres,
+   * the component had 74 checks in real Chromium with the action STUBBED, and
+   * nothing anywhere drove browser → Server Action → database.
+   *
+   * What this can see is that some spec fills the listing textarea and waits on
+   * a Server Action round trip. What it cannot see — same limit as every case
+   * above, and as the expo-router entry in CLAUDE.md — is that the import
+   * worked, or that the page rendered. `e2e/verdicts.mjs` answers whether it
+   * RAN; only the browser answers whether it passed.
+   */
+  it("submits a real paste through the listing importer, not just opens it", () => {
+    const driving = [...sources.entries()]
+      .filter(
+        ([, source]) =>
+          source.includes('textarea[name="listingText"]') &&
+          source.includes(".fill(") &&
+          source.includes("settleAction("),
+      )
+      .map(([name]) => name);
+    expect(
+      driving.length,
+      "no spec fills the listing textarea and waits on the action — the import is the only way a PROPOSED signal is ever created by a person",
+    ).toBeGreaterThanOrEqual(1);
+  });
+
   it("reaches a lead's own page, not only the list", () => {
     // `/sales/[id]` is reached by CLICKING a lead, so its URL carries a cuid and
     // there is no literal path to grep for. What there IS, in any spec that gets

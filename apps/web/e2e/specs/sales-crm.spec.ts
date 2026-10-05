@@ -4,6 +4,12 @@ import { PERSONAS } from "../lib/personas";
 import { CRASH_MARKERS, HealthMonitor, expectHealthy } from "../lib/health";
 import { settleAction } from "../lib/journey";
 import {
+  IMPORT_EXPECTED,
+  IMPORT_LISTING_TEXT,
+  IMPORT_NOT_OUR_TRADE,
+  IMPORT_OUR_TRADES,
+  IMPORT_SOURCE_TITLE,
+  IMPORT_SOURCE_URL,
   PIPELINE_LEAD_NAME,
   PROJECT_CLAIM,
   RESEARCHED_LEAD_NAME,
@@ -185,11 +191,19 @@ test.describe("Prova's own sales CRM, behind the operator flag", () => {
     // with the bid by every prime, so "did this prime win" is not optional.
     await expect(form.getByText("Did the prime on this form win the job?")).toBeVisible();
 
-    // NOTHING IS SUBMITTED. With an empty paste the submit button names zero
-    // subcontractors and is disabled, which is the state worth asserting: the
-    // surface is live and refuses to import nothing. Driving a real paste would
-    // make this spec depend on `lib/sub-listing/parse.ts`, which has its own
-    // 286-case unit suite and is under active change in the other lane.
+    // NOTHING IS SUBMITTED HERE, and that is now about ORDER rather than about
+    // coupling. This paragraph used to end "driving a real paste would make this
+    // spec depend on `lib/sub-listing/parse.ts`, which has its own 286-case unit
+    // suite and is under active change in the other lane" — true when written,
+    // and the sentence that kept the one path through this feature unclicked.
+    // STEP 8 drives a real paste; it is appended at the END because importing
+    // creates leads and steps 2, 3 and 7 count rows on `/sales`.
+    //
+    // What stays worth asserting right here is the EMPTY state: the submit
+    // button names zero subcontractors and is disabled, so the surface is live
+    // and refuses to import nothing. Opening it also runs the parser over "" in
+    // the browser, so a reader that throws on an empty string takes the page
+    // down here rather than in front of somebody reading a real award packet.
     const submit = form.getByRole("button", { name: /^Add \d+ subcontractors?$/ });
     await expect(submit).toBeVisible();
     await expect(submit).toBeDisabled();
@@ -273,6 +287,199 @@ test.describe("Prova's own sales CRM, behind the operator flag", () => {
     // And the lead page is still reachable by its own URL after the write.
     await page.goto(leadUrl);
     await expectHealthy(page, "/sales/[id] revisited", { monitor });
+  });
+
+  /**
+   * THE WHOLE CHAIN, IN ONE PIECE, FOR THE FIRST TIME.
+   *
+   * Step 4 above opens this surface and submits nothing, and its comment gives
+   * the reason: driving a real paste would couple the spec to
+   * `lib/sub-listing/parse.ts`, "under active change in the other lane".
+   * **That was true when it was written and is not true now** — the parser is
+   * this branch's own finished work, with 401 unit tests over it including a
+   * 6,000-document generated corpus. The sentence had become the thing stopping
+   * anybody clicking the one path through the feature.
+   *
+   * Every LINK in that chain was already measured and the chain never was:
+   * `parse.ts` by unit tests, `leadMatch.ts` by an exhaustive 6,561-pair sweep,
+   * `importSubListing` by 54 tests against a real Postgres up to the 60-row cap,
+   * and this very component in real Chromium — **with the Server Action
+   * stubbed.** Nothing had ever driven browser → action → Postgres → revalidated
+   * page. That is the 2026-09-21 shape this suite exists for: four green checks
+   * and 5,800 green unit tests while creating one invoice crashed every
+   * authenticated page.
+   *
+   * ── WHY AT THE END AND NOT AT STEP 4 ──
+   *
+   * Importing CREATES LEADS, and steps 2, 3 and 7 locate rows and assert counts
+   * on `/sales`. Pasting before them would change what they are measuring and
+   * every later failure would be about this step. Appended, so the file reads as
+   * one path and nothing above it moves.
+   *
+   * ── WHAT MAKES EACH ASSERTION HERE NON-VACUOUS ──
+   *
+   *   - the three company names are asserted ABSENT from `/sales` first. They
+   *     cannot be on the page before the paste: nothing else in this suite
+   *     writes them, and the textarea starts empty;
+   *   - the submit button's number is composed by the product from what the
+   *     parser read — THREE of the four rows, because the electrical one is not
+   *     one of Prova's trades. A reader that could not see four rows would say
+   *     the same thing, so the electrical row is separately asserted PRESENT on
+   *     the review screen and ABSENT from the leads afterwards. An exclusion
+   *     only means something if it discriminates;
+   *   - the summary sentence is written from the Server Action's own return
+   *     value, so it cannot appear without a round trip;
+   *   - the claim asserted on the created lead carries `(line 11 of the
+   *     listing)`. A line number is not a string this screen could compose
+   *     without having read that row at that position.
+   *
+   * Every literal is gated by `e2e/lib/salesFixture.test.ts` in the UNIT suite,
+   * which re-derives it from the app's own reader on every push — so a parser
+   * change that moves a sentence fails in three minutes naming the fixture
+   * rather than here, twenty minutes later, naming a missing string.
+   */
+  test("8. a real listing pastes, imports, and the subs arrive as leads with their evidence", async () => {
+    await page.goto("/sales");
+    await expectHealthy(page, "/sales before the import", { monitor });
+
+    // THE ANCHOR. None of the three is on this page yet, and a count of zero is
+    // the thing that makes every assertion below it mean something.
+    for (const name of IMPORT_OUR_TRADES) {
+      await expect(page.getByText(name, { exact: false })).toHaveCount(0);
+    }
+    await expect(page.getByText(IMPORT_NOT_OUR_TRADE, { exact: false })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Read a subcontractor listing" }).click();
+    const form = page
+      .locator("form")
+      .filter({ has: page.locator('textarea[name="listingText"]') });
+
+    await form.locator('textarea[name="listingText"]').fill(IMPORT_LISTING_TEXT);
+    await form.locator('input[name="sourceUrl"]').fill(IMPORT_SOURCE_URL);
+    await form.locator('input[name="sourceTitle"]').fill(IMPORT_SOURCE_TITLE);
+    // An AWARD, not a bid — so the GC_RELATIONSHIP and PROJECT claims are the
+    // stronger wording. `signalsForSub` takes this as an argument and the
+    // fixture's expected claims were derived with it, so the two must agree.
+    await form
+      .getByText("Yes — I am reading an award, and this prime got it")
+      .click();
+
+    // THE REVIEW SCREEN READ ALL FOUR ROWS. Including the one it will not
+    // import — the parser hides nothing, which is the first thing this surface
+    // promises.
+    for (const name of [...IMPORT_OUR_TRADES, IMPORT_NOT_OUR_TRADE]) {
+      await expect(form.getByText(name, { exact: false }).first()).toBeVisible();
+    }
+    await expect(
+      form.getByText(`${IMPORT_EXPECTED.rowsParsed} subcontractor`, { exact: false }).first(),
+    ).toBeVisible();
+
+    // THREE, not four. The one number on screen that proves the trade default
+    // ran over what the parser read.
+    const submit = form.getByRole("button", { name: IMPORT_EXPECTED.submitButton, exact: true });
+    await expect(submit).toBeVisible();
+    await expect(submit).toBeEnabled();
+
+    await settleAction(page, () => submit.click());
+
+    // Composed from the action's return value — 15 signals, 3 new leads,
+    // nothing attached, nothing skipped. Unreachable without the round trip.
+    await expect(page.getByText(IMPORT_EXPECTED.doneFirstImport, { exact: true })).toBeVisible();
+    await expectHealthy(page, "/sales after importing a listing", { monitor });
+
+    // THE LEADS REACHED THE LIST, which is the revalidate as well as the write.
+    for (const name of IMPORT_OUR_TRADES) {
+      const row = page.locator("li").filter({ hasText: name });
+      await expect(row).toHaveCount(1);
+      // Five PROPOSED signals and not one confirmed, so an imported lead is as
+      // thin as a lead nobody researched. If this ever reads otherwise, the
+      // importer is banding a prospect on research nobody has checked, which is
+      // the one thing this feature must not appear to do.
+      await expect(row).toContainText(IMPORT_EXPECTED.bandAfterImport);
+      await expect(row).toContainText(IMPORT_EXPECTED.awaitingReviewAfterImport);
+    }
+
+    // AND THE DISCRIMINATION. The electrical sub was read, shown, and is not a
+    // lead. Without this, "three leads appeared" is satisfied by an importer
+    // that creates one per row it can see.
+    await expect(page.getByText(IMPORT_NOT_OUR_TRADE, { exact: false })).toHaveCount(0);
+
+    // The evidence itself, on the lead's own page, reached by clicking — so the
+    // claim is read out of the database rather than out of the paste still in
+    // the browser.
+    await page
+      .locator("li")
+      .filter({ hasText: IMPORT_OUR_TRADES[0]! })
+      .locator('a[href^="/sales/"]')
+      .first()
+      .click();
+    await page.waitForURL(/\/sales\/[A-Za-z0-9]+$/);
+    await expectHealthy(page, "an imported lead's own page", { monitor });
+    await expect(page.getByText(IMPORT_EXPECTED.firstLeadClaim, { exact: true })).toBeVisible();
+    // Proposed, not confirmed — the review this product requires has not
+    // happened, and nothing about importing may stand in for it.
+    await expect(page.getByText(SALES_EXPECTED.signalProposed, { exact: true })).toHaveCount(5);
+    await expect(page.getByText(/checked by/)).toHaveCount(0);
+    // The source the paste was filed under, stored per claim rather than per
+    // import, so a lead carrying two documents' claims still says which is which.
+    await expect(page.getByText(IMPORT_SOURCE_TITLE, { exact: false }).first()).toBeVisible();
+  });
+
+  /**
+   * THE ADDENDUM, AND THE DEFECT THIS BRANCH OPENED WITH.
+   *
+   * A reviewer re-reads a listing because an addendum revised it; that is the
+   * normal case, not an edge one. Importing the same document twice used to
+   * create a SECOND lead for every row — and every lead this importer writes is
+   * permanently undeletable by design, so the duplicate could not be cleaned up
+   * afterwards.
+   *
+   * There are 54 db tests over this against a real Postgres, including the whole
+   * 60-row packet re-imported. None of them is a browser: the reviewer's own
+   * path is to open the panel again and paste, and that path runs
+   * `leadCandidatesFor` over the leads the FIRST import created and offers them
+   * in a dropdown — code that exists only on the screen.
+   *
+   * `0 new leads` and `3 you already had` are mutually exclusive failures, so no
+   * single bug produces both halves of that sentence by accident. A count of ONE
+   * row per name is the other half: a re-import that made duplicates would
+   * satisfy the sentence if the summary were wrong and the write were right, or
+   * the reverse.
+   */
+  test("9. the same document pasted again recognises every lead and creates none", async () => {
+    await page.goto("/sales");
+    await page.getByRole("button", { name: "Read a subcontractor listing" }).click();
+    const form = page
+      .locator("form")
+      .filter({ has: page.locator('textarea[name="listingText"]') });
+
+    await form.locator('textarea[name="listingText"]').fill(IMPORT_LISTING_TEXT);
+    await form.locator('input[name="sourceUrl"]').fill(IMPORT_SOURCE_URL);
+    await form.locator('input[name="sourceTitle"]').fill(IMPORT_SOURCE_TITLE);
+    await form
+      .getByText("Yes — I am reading an award, and this prime got it")
+      .click();
+
+    // The same three, so the cap and the trade default are unchanged by the
+    // leads now existing.
+    const submit = form.getByRole("button", { name: IMPORT_EXPECTED.submitButton, exact: true });
+    await expect(submit).toBeEnabled();
+
+    await settleAction(page, () => submit.click());
+
+    await expect(page.getByText(IMPORT_EXPECTED.doneReimport, { exact: true })).toBeVisible();
+    await expectHealthy(page, "/sales after re-importing the same listing", { monitor });
+
+    // ONE row per name, not two. The sentence above and this count are
+    // independent observations of the same write.
+    for (const name of IMPORT_OUR_TRADES) {
+      await expect(page.locator("li").filter({ hasText: name })).toHaveCount(1);
+      // And still nothing new to check: re-reading one document is not new
+      // evidence, so the badge did not double either.
+      await expect(page.locator("li").filter({ hasText: name })).toContainText(
+        IMPORT_EXPECTED.awaitingReviewAfterImport,
+      );
+    }
   });
 });
 
