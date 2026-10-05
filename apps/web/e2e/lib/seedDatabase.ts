@@ -120,7 +120,69 @@ export async function seedDatabase(clerkIds: ClerkIds): Promise<void> {
     },
   });
 
+  await seedOperatorCompany(clerkIds);
+
   await seedCertifiedPayrollWeek(main.companyId);
+}
+
+/**
+ * THE ONE COMPANY IN THIS SUITE THAT IS PROVA'S OWN OPERATOR.
+ *
+ * `/sales` and `/sales/[id]` are gated on `Company.isProvaOperator` AND the
+ * viewer being that company's OWNER — two conditions deliberately kept out of
+ * `lib/permissions.ts`, because they are not a customer capability. Neither is
+ * reachable through the app: nothing in the product sets that flag, and every
+ * other persona's company is auto-created on first sign-in by
+ * `requireCompanyContext`, which leaves it false.
+ *
+ * So this is the only way those two pages can be rendered by a browser at all.
+ * Before it, the signed-in nav walk did reach `/sales` and got the refusal page
+ * every time — "Nothing here for this account." — which is a 200, renders
+ * fine, and passes `expectHealthy`. A green walk over a page that declined to
+ * show itself, for weeks, next to a money spine proved click by click on every
+ * commit.
+ *
+ * SEEDED THROUGH PRISMA AND NOT THROUGH THE UI, deliberately and unavoidably:
+ * there is no screen anywhere that turns a company into the operator, which is
+ * correct — it is a fact about who runs Prova, not a setting a customer edits.
+ *
+ * `businessScopeAskedAt` is set for the same reason MAIN's is: an OWNER whose
+ * company has not answered the onboarding questions lands on `/welcome`, not on
+ * the page the spec asked for.
+ */
+async function seedOperatorCompany(clerkIds: ClerkIds): Promise<void> {
+  const operator = await prisma.user.upsert({
+    where: { clerkId: clerkIds.operator.id },
+    update: {},
+    create: {
+      clerkId: clerkIds.operator.id,
+      email: clerkIds.operator.email,
+      name: "E2E OPERATOR",
+      // OWNER is half the gate. A MEMBER of an operator company still gets
+      // the refusal, and a spec that signed in as one would report the
+      // feature broken.
+      role: "OWNER",
+      company: {
+        create: {
+          name: `${E2E_TAG} Operator Co`,
+          businessScopeAskedAt: ESTABLISHED_ACCOUNT_ASKED_AT,
+          isProvaOperator: true,
+        },
+      },
+    },
+    select: { companyId: true },
+  });
+
+  // THE SAME CORRECTION MAIN NEEDS, and for a sharper reason. `upsert`'s
+  // `update: {}` never touches the company, so a scratch database seeded
+  // before this function existed — or by an older branch — keeps an operator
+  // whose flag is false, and every case in `sales-operator.spec.ts` fails on
+  // the refusal page with nothing saying why. Only a false is flipped; this
+  // cannot turn any other company into an operator.
+  await prisma.company.updateMany({
+    where: { id: operator.companyId, isProvaOperator: false },
+    data: { isProvaOperator: true, businessScopeAskedAt: ESTABLISHED_ACCOUNT_ASKED_AT },
+  });
 }
 
 /**

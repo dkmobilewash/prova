@@ -92,6 +92,33 @@
  *                 an unrelated spec fail with a refusal sentence, which
  *                 reads as a broken feature rather than as a neighbour's
  *                 write.
+ *   OPERATOR   — its own company, and the ONLY one in this table whose
+ *                 company is flagged `isProvaOperator`. For
+ *                 specs/sales-operator.spec.ts: `/sales` and `/sales/[id]`,
+ *                 which had never been loaded by any browser test and could
+ *                 not be, even in principle.
+ *
+ *                 THE CAUSE WAS STRUCTURAL RATHER THAN AN OVERSIGHT, which is
+ *                 why it needed a persona and not a spec. Those two pages are
+ *                 gated on two things that are deliberately NOT
+ *                 `lib/permissions.ts` capabilities — the company must be
+ *                 Prova's own operator, and the viewer must be its OWNER — and
+ *                 no persona here was seeded either way. Every other company
+ *                 in this table is auto-created on first sign-in by
+ *                 `requireCompanyContext`, which cannot set that flag. So the
+ *                 nav walk reached `/sales` and got the refusal page every
+ *                 time: "Nothing here for this account." A green walk over a
+ *                 page that refused to render is the vacuous green this whole
+ *                 directory exists to end.
+ *
+ *                 It must be its own company for the ordinary reason AND one
+ *                 more: `isProvaOperator` changes what the application shows
+ *                 rather than what data it holds — it also reveals
+ *                 `/internal/usage` and an extra integrations panel. Pointed
+ *                 at MAIN it would change what unrelated specs see on the
+ *                 nav rail and in settings, which reads as a broken feature
+ *                 rather than as a neighbour's flag.
+ *
  *   BAD_INPUTS — its own empty company, for specs/known-bad-inputs.spec.ts:
  *                 the inputs that took the product down on 2026-09-21
  *                 (`2,800`, `12,500`, `0.10`), each driven as its own
@@ -228,6 +255,12 @@ export const PERSONAS = {
     label: "SHOOT",
     username: "e2e_shoot",
     phone: "+15555550120",
+  },
+  operator: {
+    email: "e2e-operator+clerk_test@example.com",
+    label: "OPERATOR",
+    username: "e2e_operator",
+    phone: "+15555550122",
   },
   planIngest: {
     email: "e2e-planingest+clerk_test@example.com",

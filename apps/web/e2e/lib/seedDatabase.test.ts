@@ -34,7 +34,15 @@ vi.mock("@prova/db", () => ({
     user: {
       upsert: vi.fn(async (args: Record<string, unknown>) => {
         calls.userUpsert.push({ args });
-        return { id: `user-${calls.userUpsert.length}`, companyId: "company-main" };
+        // THE COMPANY ID FOLLOWS THE PERSONA, which it did not when every
+        // upsert returned `company-main`. That was invisible while MAIN was
+        // the only seeded company; the moment OPERATOR was added, its repair
+        // was asserted against MAIN's id and the two were indistinguishable.
+        // A fixture that returns one value for every caller cannot tell two
+        // callers apart, which is the whole question here.
+        const clerkId = (args as { where?: { clerkId?: string } }).where?.clerkId ?? "";
+        const companyId = clerkId === "clerk-operator" ? "company-operator" : "company-main";
+        return { id: `user-${calls.userUpsert.length}`, companyId };
       }),
       // The payroll seed looks the FIELD user up to hang its hours on.
       findFirst: vi.fn(async () => ({ id: "user-field" })),
@@ -79,7 +87,11 @@ const clerkIds = Object.fromEntries(
 
 type UpsertArgs = {
   where: { clerkId: string };
-  create: { role: string; company?: { create: { businessScopeAskedAt?: Date | null } }; companyId?: string };
+  create: {
+    role: string;
+    company?: { create: { businessScopeAskedAt?: Date | null; isProvaOperator?: boolean } };
+    companyId?: string;
+  };
 };
 
 beforeEach(async () => {
@@ -105,11 +117,39 @@ describe("seedDatabase: MAIN is an established account", () => {
   });
 
   it("repairs a MAIN seeded before this fix, touching only a null", () => {
-    expect(calls.companyUpdateMany).toHaveLength(1);
-    expect(calls.companyUpdateMany[0].args).toEqual({
+    const main = calls.companyUpdateMany.find(
+      (c) => (c.args as { where: { id: string } }).where.id === "company-main",
+    );
+    expect(main!.args).toEqual({
       where: { id: "company-main", businessScopeAskedAt: null },
       data: { businessScopeAskedAt: ESTABLISHED_ACCOUNT_ASKED_AT },
     });
+  });
+
+  it("repairs an OPERATOR whose flag is still false, and only a false", () => {
+    // The same shape as MAIN's repair and for the same reason: `upsert`'s
+    // `update: {}` never touches the company, so a scratch database seeded by
+    // an older branch keeps an operator that is not one — and every case in
+    // `sales-operator.spec.ts` then fails on the refusal page with nothing
+    // saying why. Narrowed on `isProvaOperator: false` so it can never flip a
+    // customer company into the operator.
+    const operator = calls.companyUpdateMany.find(
+      (c) => (c.args as { where: { id: string } }).where.id === "company-operator",
+    );
+    expect(operator!.args).toEqual({
+      where: { id: "company-operator", isProvaOperator: false },
+      data: { isProvaOperator: true, businessScopeAskedAt: ESTABLISHED_ACCOUNT_ASKED_AT },
+    });
+  });
+
+  it("repairs EXACTLY those two companies and no others", () => {
+    // The count assertion kept as its own case rather than folded into either
+    // repair above: a third `updateMany` appearing is the thing worth failing
+    // on, and reading it off one of the two would hide it.
+    expect(calls.companyUpdateMany.map((c) => (c.args as { where: { id: string } }).where.id).sort()).toEqual([
+      "company-main",
+      "company-operator",
+    ]);
   });
 
   it("seeds FIELD inside MAIN's company as a MEMBER, which the gate never stops", () => {
@@ -119,9 +159,30 @@ describe("seedDatabase: MAIN is an established account", () => {
     expect(shouldGateToOnboarding({ role: "MEMBER", businessScopeAskedAt: null })).toBe(false);
   });
 
-  it("seeds no other persona, so the brand-new ones still meet the gate", () => {
+  it("seeds OPERATOR as the one company that is Prova's own operator", () => {
+    const operator = calls.userUpsert
+      .map((c) => c.args as unknown as UpsertArgs)
+      .find((a) => a.where.clerkId === "clerk-operator");
+    // BOTH HALVES OF THE GATE, because `/sales` needs both and a MEMBER of an
+    // operator company still gets the refusal.
+    expect(operator!.create.role).toBe("OWNER");
+    expect(operator!.create.company?.create?.isProvaOperator).toBe(true);
+    // Established, or its OWNER lands on /welcome and never reaches /sales.
+    expect(operator!.create.company?.create?.businessScopeAskedAt).toEqual(ESTABLISHED_ACCOUNT_ASKED_AT);
+  });
+
+  it("seeds no persona beyond those three, so the rest still meet the gate", () => {
+    // THE INVARIANT THIS CASE HAS ALWAYS HELD, with one more name in it.
+    // Every persona absent from this list gets a company auto-created by
+    // `requireCompanyContext` on first sign-in — brand new, not established,
+    // not an operator — which is what the empty-state and onboarding specs
+    // depend on. OPERATOR is the deliberate third, and it is deliberate
+    // precisely because nothing in the product can set `isProvaOperator`, so
+    // a browser could not otherwise render `/sales` at all.
     const seeded = calls.userUpsert.map((c) => (c.args as unknown as UpsertArgs).where.clerkId).sort();
-    expect(seeded).toEqual(["clerk-field", "clerk-main"]);
+    expect(seeded).toEqual(["clerk-field", "clerk-main", "clerk-operator"]);
+    // Still zero: both companies are created NESTED inside their owner's
+    // upsert, never by a bare `company.create`.
     expect(calls.companyCreate).toHaveLength(0);
   });
 });
