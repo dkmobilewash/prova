@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { prisma } from "@prova/db";
 import { parseSubListing } from "@/lib/sub-listing/parse";
 import { qualify } from "@/lib/sales-qualification";
+import { MAX_LISTING_ROWS, tooManyRows } from "@/lib/sub-listing/signals";
 
 /**
  * THE IMPORTER, EXECUTED RATHER THAN READ.
@@ -153,6 +154,47 @@ describe("importing a pasted subcontractor listing", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/does not read the same way/);
     expect(await prisma.salesLeadSignal.count({ where: { companyId: context.company.id } })).toBe(0);
+  });
+
+  /**
+   * THE CAP, FROM THE SERVER END, AND THE ORDER IS HALF THE POINT.
+   *
+   * The selection here is 61 line numbers that this listing does not contain, so
+   * BOTH refusals apply — the cap and "does not read the same way". It must be
+   * the cap, because the cap is the cheap check and reconciling the rows is not.
+   * Move the cap below the reconciliation and this test reds with the other
+   * sentence, which is how it pins the order rather than just the limit.
+   *
+   * The expected string comes from `tooManyRows`, not retyped here, so the
+   * sentence a reviewer reads on screen before submitting and the one the server
+   * answers with are asserted to be the same object of truth and not two strings
+   * somebody kept in step.
+   */
+  it("refuses more than the cap, before it reconciles a single row", async () => {
+    const over = MAX_LISTING_ROWS + 1;
+    const lines = Array.from({ length: over }, (_, index) => index + 1).join(",");
+    const result = await importSubListing(base({ lines }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe(tooManyRows(over));
+      // Not the reconciliation refusal, which these line numbers also earn.
+      expect(result.error).not.toMatch(/does not read the same way/);
+    }
+    expect(await prisma.salesLeadSignal.count({ where: { companyId: context.company.id } })).toBe(0);
+  });
+
+  it("accepts exactly the cap without complaining about the count", async () => {
+    /* The other side of the boundary, and it cannot pass by the import
+       succeeding: this selection is still wrong for a different reason, so the
+       assertion is that the error is the RECONCILIATION one rather than the cap.
+       A cap written `>=` reds here; a cap written `>` reds the case above. */
+    const lines = Array.from({ length: MAX_LISTING_ROWS }, (_, index) => index + 1).join(",");
+    const result = await importSubListing(base({ lines }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/does not read the same way/);
+      expect(result.error).not.toMatch(/at once/);
+    }
   });
 
   it("refuses to attach to another company's lead, re-read inside the transaction", async () => {

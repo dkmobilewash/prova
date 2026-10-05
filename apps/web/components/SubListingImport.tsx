@@ -9,6 +9,7 @@ import {
   importSummaryFor,
   shouldInclude,
   signalsForSub,
+  tooManyRows,
   type PrimeOutcome,
 } from "@/lib/sub-listing/signals";
 import { leadCandidatesFor, type MatchEvidence } from "@/lib/sub-listing/leadMatch";
@@ -116,6 +117,12 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
   const includes = (row: { line: number; tradeScope: string | null }) =>
     shouldInclude(row, chosen[row.line]);
   const included = parsed.rows.filter(includes);
+  /* Asked BEFORE the round trip, from the same function the server asks. The
+     button used to offer "Add 94 subcontractors" and the server refused all 94,
+     so the reviewer learned the cap from an error after waiting for it. Null
+     when the count is fine; the refusal sentence otherwise, and it is the same
+     string the action would have returned because it comes from there. */
+  const tooMany = tooManyRows(included.length);
 
   /**
    * THE SELECTION IS KEYED BY LINE NUMBER, SO IT DIES WITH THE TEXT IT WAS
@@ -538,10 +545,14 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
 
       {error && <p className="mt-3 text-xs text-tag-rose-ink">{error}</p>}
 
+      {/* Shown whether or not anything has been submitted, because it is a fact
+          about the current selection rather than the result of an attempt. */}
+      {tooMany && <p className="mt-3 text-xs text-tag-amber-ink">{tooMany}</p>}
+
       <div className="mt-4 flex gap-2">
         <button
           type="submit"
-          disabled={pending || included.length === 0}
+          disabled={pending || included.length === 0 || tooMany !== null}
           className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-neutral-900 disabled:opacity-60"
         >
           {pending ? (

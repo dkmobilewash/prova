@@ -345,6 +345,32 @@ export function shouldInclude(
 }
 
 /**
+ * HOW MANY SUBCONTRACTORS ONE IMPORT MAY CARRY, AND THE SENTENCE THAT REFUSES
+ * MORE — in one place, read by the server action and by the review screen.
+ *
+ * The cap is not a performance limit. It is there because the whole feature's
+ * claim is that a person LOOKED at these rows, and a hundred-row paste ticked
+ * through in one click is that claim being false.
+ *
+ * It lived as a private `MAX_LISTING_ROWS` in `lib/actions/sales.ts` with the
+ * sentence written inline, which made the screen unable to say anything before
+ * the round trip: the submit button promised "Add 94 subcontractors", the server
+ * refused all 94, and the reviewer learned the limit from an error. The obvious
+ * fix — a `60` in the component too — is the second-list failure CLAUDE.md
+ * records, and it would have been two numbers AND two sentences free to drift.
+ *
+ * So the decision is a function rather than a constant, and both callers ask it.
+ * `null` means "this many is fine". A string is the refusal, and it is the SAME
+ * string in both places by construction, not by anybody keeping them in step.
+ */
+export const MAX_LISTING_ROWS = 60;
+
+export function tooManyRows(count: number): string | null {
+  if (count <= MAX_LISTING_ROWS) return null;
+  return `That is ${count} subcontractors at once. Import up to ${MAX_LISTING_ROWS} so the reading stays something a person has actually looked at.`;
+}
+
+/**
  * A one-line summary of what importing a row would do, for the review screen.
  *
  * Phrased as a count of signals rather than a promise about the band, because

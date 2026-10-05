@@ -2,7 +2,13 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseSubListing } from "./parse";
-import { shouldInclude, signalsForSub, importSummaryFor } from "./signals";
+import {
+  MAX_LISTING_ROWS,
+  importSummaryFor,
+  shouldInclude,
+  signalsForSub,
+  tooManyRows,
+} from "./signals";
 import { SUB_LISTING_CASES } from "./subListingCases";
 
 /**
@@ -636,5 +642,85 @@ describe("the stored column and the spoken sentence agree about the GC", () => {
           "call listedByGcFor from signals.ts, which is the single home for this rule.",
       ).toBe(true);
     }
+  });
+});
+
+/**
+ * THE CAP, AND WHY IT IS A FUNCTION RATHER THAN A NUMBER.
+ *
+ * It lived as a private `MAX_LISTING_ROWS` in `lib/actions/sales.ts` with the
+ * refusal written inline, so the review screen could say nothing before the
+ * round trip: the button offered "Add 94 subcontractors", the server refused all
+ * 94, and the reviewer learned the limit from an error after waiting for it.
+ *
+ * The obvious fix is a `60` in the component as well, and that is the second-list
+ * failure CLAUDE.md records — two numbers AND two sentences, free to drift. So
+ * both callers ask one function, and the census below is what stops a copy
+ * reappearing.
+ */
+describe("how many subcontractors one import may carry", () => {
+  it.each([0, 1, 59, MAX_LISTING_ROWS])("allows %i", (count) => {
+    expect(tooManyRows(count)).toBeNull();
+  });
+
+  it("refuses one over the cap, and names both numbers", () => {
+    const refusal = tooManyRows(MAX_LISTING_ROWS + 1);
+    expect(refusal).toContain(String(MAX_LISTING_ROWS + 1));
+    expect(refusal).toContain(String(MAX_LISTING_ROWS));
+  });
+
+  /**
+   * The boundary in both directions in one case, because a cap tested only from
+   * above passes with `>=` and a cap tested only from below passes with `>`.
+   */
+  it("puts the boundary exactly at the cap", () => {
+    expect(tooManyRows(MAX_LISTING_ROWS)).toBeNull();
+    expect(tooManyRows(MAX_LISTING_ROWS + 1)).not.toBeNull();
+  });
+
+  it("says why, not just that it refuses", () => {
+    expect(tooManyRows(94)).toContain("a person has actually looked at");
+  });
+});
+
+describe("the cap is defined once, and both callers ask for it", () => {
+  const roots = [
+    new URL("../../components/SubListingImport.tsx", import.meta.url),
+    new URL("../actions/sales.ts", import.meta.url),
+    new URL("./signals.ts", import.meta.url),
+  ];
+  const sources = roots.map((url) => ({
+    path: url.pathname,
+    text: readFileSync(url, "utf8"),
+  }));
+
+  /** Without this the three assertions below could be reading empty strings. */
+  it("read all three files it reasons about", () => {
+    expect(sources).toHaveLength(3);
+    for (const source of sources) {
+      expect(source.text.length, source.path).toBeGreaterThan(1000);
+    }
+  });
+
+  it("has the refusal sentence written in exactly one file", () => {
+    const needle = "so the reading stays something a person has actually looked at";
+    const holders = sources.filter((source) => source.text.includes(needle));
+    expect(holders.map((source) => source.path.split("/").pop())).toEqual(["signals.ts"]);
+  });
+
+  it("declares the number in exactly one file", () => {
+    const holders = sources.filter((source) => /MAX_LISTING_ROWS\s*=/.test(source.text));
+    expect(holders.map((source) => source.path.split("/").pop())).toEqual(["signals.ts"]);
+  });
+
+  /**
+   * The screen ASKING is the half a sentence-count cannot see: the number could
+   * live in one place and the component still never consult it, which is exactly
+   * the state this change was made from.
+   */
+  it("has the review screen import the function and gate its submit button on it", () => {
+    const screen = sources.find((source) => source.path.endsWith("SubListingImport.tsx"))!.text;
+    expect(screen).toContain("tooManyRows");
+    expect(screen).toMatch(/disabled=\{[^}]*tooMany/);
   });
 });

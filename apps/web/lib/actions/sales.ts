@@ -20,7 +20,12 @@ import { looksCutOff, parseSubListing } from "@/lib/sub-listing/parse";
 // duplicate beside it, where a completeness test on the first cannot see the
 // second.
 import { licenceNumberFrom, readTypedLicence } from "@/lib/sales-licence";
-import { PRIME_OUTCOMES, listedByGcFor, signalsForSub } from "@/lib/sub-listing/signals";
+import {
+  PRIME_OUTCOMES,
+  listedByGcFor,
+  signalsForSub,
+  tooManyRows,
+} from "@/lib/sub-listing/signals";
 import type { ListedSub as ListedSubRow, SubListingParse } from "@/lib/sub-listing/parse";
 import { identifiersContradict, normaliseCompanyName } from "@/lib/sub-listing/leadMatch";
 import { prisma } from "@prova/db";
@@ -873,7 +878,6 @@ export type SubListingImportSummary = {
 
 /** One pasted page's worth. A listing with more rows than this is a document
  *  nobody has reviewed, and the review is the point. */
-const MAX_LISTING_ROWS = 60;
 
 /**
  * WHAT THIS DOCUMENT HAS SAID ABOUT ONE ROW, FOR DECIDING WHETHER THE NEXT ROW
@@ -1012,8 +1016,9 @@ function sameCompany(
  * stopped being the whole story: the human choice is still there and is still
  * the only way a row joins a lead the licence cannot identify.)
  *
- * A linear scan: `MAX_LISTING_ROWS` is 60, and a map keyed on one of two
- * possible keys would have to be read twice and written twice anyway.
+ * A linear scan: the cap is 60 (`MAX_LISTING_ROWS`, in
+ * `lib/sub-listing/signals.ts`), and a map keyed on one of two possible keys
+ * would have to be read twice and written twice anyway.
  */
 function alreadyImported(
   row: Omit<ImportedCompany, "leadId">,
@@ -1278,12 +1283,10 @@ export async function importSubListing(
     const unique = [...new Set(wanted)];
 
     if (unique.length === 0) return { ok: false, error: "Pick at least one subcontractor to add." };
-    if (unique.length > MAX_LISTING_ROWS) {
-      return {
-        ok: false,
-        error: `That is ${unique.length} subcontractors at once. Import up to ${MAX_LISTING_ROWS} so the reading stays something a person has actually looked at.`,
-      };
-    }
+    /* The same function the review screen asks, so the sentence a reviewer reads
+       before submitting and the one the server answers with cannot differ. */
+    const tooMany = tooManyRows(unique.length);
+    if (tooMany !== null) return { ok: false, error: tooMany };
 
     const chosen = parsed.rows.filter((row) => unique.includes(row.line));
     if (chosen.length !== unique.length) {
