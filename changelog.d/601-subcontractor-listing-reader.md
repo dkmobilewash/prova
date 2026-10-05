@@ -623,6 +623,64 @@ Mutation-tested two ways. Removing the acronym loop reds 2 tests. **"Tidying" `A
 into `TRADE_KEYWORDS` as a lowercase word reds 21** — which is the point of the
 trap tests, since that refactor is the tempting one.
 
+### Three leads were named after towns, because a plan can fit by count and be one slot out
+
+`plan.length === fields.length` is the guard against a shifted column index, and it
+is necessary rather than sufficient. Four of twenty real bidder lists wrap `License`
+across two lines, so the heading LINE carries four labels and the plan is four wide
+— and a row whose portion of work wrapped away has four fields too. It matches by
+count, every slot shifts one to the left, and **the city lands in the company
+slot.**
+
+Measured on the real corpus: three leads named **"San Diego", "Corona" and
+"Gardena"**. Not a null and not a concern — a wrong company name, with a real trade
+and a real licence beside it making it look entirely credible, on a lead this
+importer cannot delete. The column plan was built to prevent exactly this swap.
+
+**The tell is a PAIR of slots disagreeing with their own kinds** — the company slot
+reads as a place AND the place slot does not. One slot alone would be a guess: a
+firm named after its own town has a place slot that reads perfectly. That control is
+a test, and it is why the condition is written as a pair.
+
+**THE FIRST VERSION REFUSED FIVE ROWS TO FIX THREE, and the correction is the useful
+part.** Two of the others — and one of the three — carry a company name with an
+entity marker plainly on the line, in the slot the shift moved it into. So the shift
+disqualifies the PLAN, not the row: `ENTITY_MARKER` is evidence that survives a
+shift because it is a property of the value rather than of its position. Refusing
+those threw away an identifiable prospect to avoid a wrong one, which is the trade
+this file argues against everywhere else.
+
+Only where no field carries one is the row refused, and there the refusal is right
+twice over: the remaining fallback is "the first field that could be a name", which
+on these rows is the portion of work. A named gap beats a lead called "Metals", and
+both beat one called "Corona".
+
+**Fixing the name moved the wrong value rather than removing it**, which is the
+second thing worth recording. One row came back correctly named with
+`portionOfWork: "San Diego"` — and the portion of work is quoted verbatim in the
+claim somebody reads down a telephone. So the positional scope fallback is withdrawn
+on a shifted row, because position is the thing that has gone wrong. A scope that
+names one of our five trades still survives, because that is intrinsic to the value.
+
+Net on the 20 real lists: **158 rows to 157, three wrong company names gone, one
+scope-as-city gone, one row honestly refused, and not one city lost.** 372 tests.
+
+**AND ONE CHANGE WAS WRITTEN, MUTATION-TESTED, MEASURED DEAD AND DELETED.** The
+diagnosis also reported that `columnKindOf` classifies a heading field collapsing two
+labels — `Portion of Work: Name of Business:` — as `name` alone, since `COLUMN_KINDS`
+tries `name` first, yielding a plan with no scope column. The argument is sound and
+the fix was in. Then the mutation restoring the old behaviour left all 372 tests
+green, and the real corpus was **byte-identical in every count** with it reverted —
+the row it was supposed to explain is glued in the document itself and stays glued
+either way. A fix with no measurable effect and no test that can fail is the shape
+this repo deletes, so it is deleted rather than kept with a comment arguing for it.
+
+**Still open and NOT fixed here**, so this entry cannot be read as closing it: the
+wrapped-`License` heading costs **12 cities** on the real corpus, because a four-label
+heading and a five-field row never produce a usable plan and no UCLA list prints a
+state code for the fallback patterns to find. The control row in the new tests
+asserts that loss as it is rather than as it should be.
+
 ### The labelled-column form is now READ, and says which question it is not answering
 
 The refusal above is a floor, not a capability. UC Berkeley and UC Davis Health are

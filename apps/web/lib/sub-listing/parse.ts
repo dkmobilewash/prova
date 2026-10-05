@@ -1076,6 +1076,32 @@ type ColumnKind = "name" | "scope" | "city" | "licence" | "registration";
  * the word "business" can mean anything else, and "Portion of Work" must read as
  * the scope rather than matching the bare word "work" somewhere later.
  */
+/**
+ * Whether a field in a column the document HEADED as the place reads as a place.
+ *
+ * A heading makes a bare city readable where no pattern can — `CITY_WITH_STATE`
+ * wants two trailing capitals and `CITY_SUFFIXED` wants the word "City", so
+ * UCLA's "Valencia" satisfies neither. But the heading and the row can still
+ * disagree, and a disagreement is not a licence to invent a city: an identifier,
+ * a figure or a street number in that column means something has shifted.
+ *
+ * Extracted so the shift detector below and the city read use ONE expression.
+ * `MONEY`/`moneyOnly` in this file is the scar: two expressions that had to agree
+ * about the same thing drifted, and nothing noticed until something asked the
+ * second question.
+ */
+function readsAsCity(candidate: string | undefined): boolean {
+  if (candidate === undefined) return false;
+  return (
+    /[A-Za-z]{2}/.test(candidate) &&
+    licenceOnly(candidate) === null &&
+    registrationOnly(candidate) === null &&
+    !moneyOnly(candidate) &&
+    !percentOnly(candidate) &&
+    !/^\d/.test(candidate)
+  );
+}
+
 const COLUMN_KINDS: [ColumnKind, RegExp][] = [
   ["name", /\b(?:name\s+of\s+(?:business|subcontractor|firm|contractor)|business\s+name|subcontractor(?:'s)?\s+name|firm\s+name|company\s+name|name|firm|company|business|subcontractor)\b/i],
   ["scope", /\b(?:portion\s+of\s+(?:the\s+)?work|description\s+of\s+work|type\s+of\s+work|scope(?:\s+of\s+work)?|portion|trade|work|description)\b/i],
@@ -1226,12 +1252,84 @@ function readRow(
    */
   const usablePlan = plan !== null && plan.length === fields.length ? plan : null;
   const plannedIndex = usablePlan ? usablePlan.indexOf("name") : -1;
-  const plannedName =
-    plannedIndex !== -1 && isNameCandidate(fields[plannedIndex]) ? plannedIndex : -1;
 
-  const marked = fields.findIndex((field) => isNameCandidate(field) && ENTITY_MARKER.test(field));
+  /**
+   * A PLAN CAN FIT BY COUNT AND STILL BE ONE SLOT OUT, AND THAT IS WORSE THAN NOT
+   * FITTING AT ALL.
+   *
+   * `plan.length === fields.length` is the guard against a shifted index, and it
+   * is necessary rather than sufficient. A row whose cell LEFT of the place
+   * column wrapped onto another line has one field fewer — so against a four-slot
+   * plan a five-column row matches the count exactly, every slot shifts one to
+   * the left, and the place lands in the company slot. Measured on real bidder
+   * lists: three leads named "San Diego", "Corona" and "Gardena". A wrong company
+   * name is the worst thing this reader can produce, and it is produced by the
+   * machinery built to prevent exactly this swap.
+   *
+   * The tell is a PAIR of slots disagreeing with their own kinds, which is why
+   * this cannot be mistaken for a firm legitimately named after a town: the
+   * company slot reads as a place AND the place slot does not. A firm called
+   * "Corona Fabricators" in Corona has a place slot that reads perfectly, and
+   * nothing here fires. One slot alone would be a guess; two is a shift.
+   *
+   * Such a row is REFUSED rather than patched, because the company name is not on
+   * the line at all — it wrapped away with everything else. Refusing the planned
+   * name only would hand the slot to the predicate path, which would take the
+   * portion of work instead and produce a lead named "Metals". A named gap beats
+   * either wrong answer, and every lead this importer writes is undeletable.
+   */
+  const shiftedPlan =
+    plannedIndex !== -1 &&
+    usablePlan !== null &&
+    ((cityIndex) =>
+      cityIndex !== -1 &&
+      cityIndex !== plannedIndex &&
+      !readsAsCity(fields[cityIndex]) &&
+      readsAsCity(fields[plannedIndex]))(usablePlan.indexOf("city"));
+
+  /**
+   * A SHIFTED ROW IS NOT NECESSARILY A ROW WITH NO COMPANY ON IT, and the first
+   * version of this refused five rows to fix three.
+   *
+   * Measured on the real corpus: of the five rows the detector above fires on,
+   * THREE carry a company name with an entity marker — `Inc.` — plainly on the
+   * line, in the slot the shift moved it into. Refusing those threw away an
+   * identifiable prospect to avoid a wrong one, which is the trade this file
+   * argues against everywhere else: a refusal can be the more destructive option.
+   *
+   * So the shift disqualifies THE PLAN, not the row. `ENTITY_MARKER` is the
+   * evidence that survives a shift, because it is a property of the value rather
+   * than of its position — `Finest City Acoustics Inc.` is a company wherever it
+   * lands. Where it is present the row reads correctly with the plan ignored.
+   *
+   * Only when no field carries one is the row refused, and then the refusal is
+   * right for a second reason: the remaining fallback is "the first field that
+   * could be a name", which on these rows is the portion of work. Refusing beats a
+   * lead named "Metals", and both beat a lead named "Corona".
+   */
+  const markedIndex = fields.findIndex(
+    (field) => isNameCandidate(field) && ENTITY_MARKER.test(field),
+  );
+
+  if (shiftedPlan && markedIndex === -1) {
+    return {
+      line,
+      text,
+      why: "the heading's columns do not line up with this row — a cell has wrapped onto another line, and no field on it reads as a company name",
+    };
+  }
+
+  const plannedName =
+    !shiftedPlan && plannedIndex !== -1 && isNameCandidate(fields[plannedIndex])
+      ? plannedIndex
+      : -1;
+
   const nameIndex =
-    plannedName !== -1 ? plannedName : marked !== -1 ? marked : fields.findIndex(isNameCandidate);
+    plannedName !== -1
+      ? plannedName
+      : markedIndex !== -1
+        ? markedIndex
+        : fields.findIndex(isNameCandidate);
   if (nameIndex === -1) return { line, text, why: "no field reads as a company name" };
 
   const name = fields[nameIndex];
@@ -1272,15 +1370,7 @@ function readRow(
   const plannedCityIndex = usablePlan ? usablePlan.indexOf("city") : -1;
   const plannedCity =
     plannedCityIndex !== -1 && plannedCityIndex !== nameIndex
-      ? ((candidate) =>
-          /[A-Za-z]{2}/.test(candidate) &&
-          licenceOnly(candidate) === null &&
-          registrationOnly(candidate) === null &&
-          !moneyOnly(candidate) &&
-          !percentOnly(candidate) &&
-          !/^\d/.test(candidate)
-            ? candidate
-            : null)(fields[plannedCityIndex])
+      ? (readsAsCity(fields[plannedCityIndex]) ? fields[plannedCityIndex] ?? null : null)
       : null;
 
   const city =
@@ -1357,10 +1447,27 @@ function readRow(
             : null)(fields[plannedScopeIndex])
       : null;
 
+  /**
+   * ON A SHIFTED ROW THE LAST FALLBACK IS WITHDRAWN, because it is positional and
+   * position is the thing that has gone wrong.
+   *
+   * `rest.find(eligible)` means "the first field that could be a scope", which on
+   * a complete row is a reasonable guess and on a row missing a cell is how a CITY
+   * came to be quoted as a portion of work. Measured: fixing the name on these
+   * rows moved the wrong value rather than removing it — one row came back with
+   * `name: "Finest City Acoustics Inc."` (right) and `portionOfWork: "San Diego"`
+   * (wrong), and the portion of work is quoted verbatim in the claim somebody
+   * reads down a telephone.
+   *
+   * The trade-naming find above it stays, because naming one of our five trades is
+   * intrinsic to the value rather than to where it sits — the same reason
+   * `ENTITY_MARKER` survives a shift. So a shifted row keeps a scope it can prove
+   * and gets null for one it can only guess at.
+   */
   const scope =
     plannedScope ??
     rest.find((field) => eligible(field) && tradeMatchFor(field).scope !== null) ??
-    rest.find(eligible) ??
+    (shiftedPlan ? null : rest.find(eligible)) ??
     null;
 
   /**
@@ -1393,6 +1500,19 @@ function readRow(
 
   const match = tradeMatchFor(scope);
   const concerns: string[] = [];
+
+  /**
+   * A row read off a heading that does not line up says so, because the guards
+   * above remove the WRONG values and cannot restore the missing ones. The
+   * company name is proved by its entity marker; everything else on the line is
+   * one slot out of where the heading says it should be, so the city and the
+   * portion of work may be absent rather than merely unread.
+   */
+  if (shiftedPlan) {
+    concerns.push(
+      "this page's column headings do not line up with this row — a cell wrapped onto another line, so the company name was read from its own wording rather than its column, and the city and portion of work may be missing rather than simply unread. Check this row against the document before importing.",
+    );
+  }
 
   if (amounts.length > 1) {
     concerns.push(

@@ -985,6 +985,121 @@ Crestline Plastering       Fort Hollow        CA      448120`;
  * Invented names throughout. The shape, the labels, the `(e.g. …)` line and the
  * `Subcontractor 2- Location` dash variant are the real documents'.
  */
+/**
+ * A PLAN THAT FITS BY COUNT AND IS ONE SLOT OUT — THE WORST THING THIS READER CAN
+ * DO, AND IT WAS DOING IT.
+ *
+ * `plan.length === fields.length` is the guard against a shifted index. It is
+ * necessary and not sufficient. Four of twenty real bidder lists wrap `License`
+ * across two lines, so the heading LINE carries four labels and the plan is four
+ * wide — and a row whose portion of work wrapped away has four fields too. It
+ * matches by count, every slot shifts one to the left, and **the city lands in the
+ * company slot.**
+ *
+ * Measured on the real corpus: three leads named **"San Diego", "Corona" and
+ * "Gardena"**. Not a null and not a concern — a wrong company name, on a lead this
+ * importer cannot delete, with a real trade and a real licence beside it making it
+ * look entirely credible. The column plan was built to prevent exactly this swap.
+ *
+ * **The fix is three decisions, and the second came from the first being wrong.**
+ *
+ * 1. The tell is a PAIR of slots disagreeing with their own kinds — the company
+ *    slot reads as a place AND the place slot does not. One slot alone would be a
+ *    guess: a firm named after its own town has a place slot that reads perfectly.
+ *    There is a control test for that below and it is why the condition is a pair.
+ * 2. **The shift disqualifies the PLAN, not the row.** The first version refused
+ *    the row outright, and that refused FIVE rows to fix three — two of the others,
+ *    and one of the three, carry a company name with an entity marker plainly on
+ *    the line. `ENTITY_MARKER` survives a shift because it is a property of the
+ *    value rather than of its position. Refusing those threw away an identifiable
+ *    prospect to avoid a wrong one, the trade this file argues against everywhere.
+ * 3. Only where no field carries one is the row refused — and there the refusal is
+ *    right twice over, because the remaining fallback is "the first field that
+ *    could be a name", which on these rows is the portion of work. A named gap
+ *    beats a lead called "Metals", and both beat one called "Corona".
+ *
+ * Net on the 20 real lists: 158 rows to 157, three wrong company names gone, one
+ * row honestly refused, and not one city lost.
+ */
+describe("a column plan that fits by count but is one slot out", () => {
+  const WRAPPED = `Sub Contractor Listing                                      License
+Portion of Work:        Name of Business:               Location:             DIR #:
+   #:
+Metal Stud Framing      Example Wallworks Inc           Fairview              884201            1000447788
+                        Crestline Lathing Co Inc.       Fort Hollow           448120            1000889922`;
+  const NO_COMPANY = `Sub Contractor Listing                                      License
+Portion of Work:        Name of Business:               Location:             DIR #:
+   #:
+Metal Stud Framing      Example Wallworks Inc           Fairview              884201            1000447788
+                                Lath and Plaster        Fort Hollow           448120            1000889922`;
+  const NAMED_AFTER_TOWN = `Portion of Work:        Name of Business:               Location:             License #:        DIR #:
+Acoustical Ceilings     Fort Hollow                     Fort Hollow           884201            1000447788
+Lath and Plaster        Crestline Lathing Co            Fairview              448120            1000889922`;
+  it("reads the company from its own wording when the plan has shifted", () => {
+    const parsed = parseSubListing(WRAPPED);
+    expect(parsed.rows.map((r) => r.name)).toEqual([
+      "Example Wallworks Inc",
+      "Crestline Lathing Co Inc.",
+    ]);
+    const shifted = parsed.rows[1];
+    // The plan's place slot holds the licence on this row, and a disagreement is
+    // not a licence to invent a city.
+    expect(shifted?.city).toBeNull();
+    expect(shifted?.concerns.join(" ")).toMatch(/do not line up with this row/);
+    // The COMPLETE row above it keeps its name, trade and licence — and loses its
+    // city, to a different and still-open cause: the heading line carries four
+    // labels where the row has five fields, so no plan applies to it at all and
+    // "Fairview" has no state code for the fallback patterns to recognise. That is
+    // the wrapped-`License` heading, worth 12 cities on the real corpus and NOT
+    // fixed here. Asserted as it is rather than as it should be, so this test does
+    // not quietly start claiming a fix that has not happened.
+    expect(parsed.rows[0]?.name).toBe("Example Wallworks Inc");
+    expect(parsed.rows[0]?.portionOfWork).toBe("Metal Stud Framing");
+    expect(parsed.rows[0]?.city).toBeNull();
+  });
+
+  /**
+   * THE CONTROL THE PAIR CONDITION EXISTS FOR: a firm named after a town, with its
+   * own place column reading correctly. A detector keyed on "the company slot
+   * looks like a city" alone refuses this row; keyed on the pair it never fires.
+   */
+  it("does not fire on a firm legitimately named after a town", () => {
+    const parsed = parseSubListing(NAMED_AFTER_TOWN);
+    expect(parsed.rows.map((r) => [r.name, r.city, r.portionOfWork])).toEqual([
+      ["Fort Hollow", "Fort Hollow", "Acoustical Ceilings"],
+      ["Crestline Lathing Co", "Fairview", "Lath and Plaster"],
+    ]);
+    expect(
+      parsed.rows.map((r) => r.concerns.join(" ")).join(" "),
+    ).not.toMatch(/do not line up/);
+  });
+
+  it("refuses a shifted row that carries no company name at all", () => {
+    const parsed = parseSubListing(NO_COMPANY);
+    expect(parsed.rows.map((r) => r.name)).toEqual(["Example Wallworks Inc"]);
+    expect(
+      [...parsed.unread, ...parsed.ignored].map((l) => l.why).join(" "),
+    ).toMatch(/no field on it reads as a company name/);
+  });
+
+  /**
+   * The positional scope fallback is withdrawn on a shifted row, because position
+   * is what has gone wrong. Fixing the NAME moved the wrong value rather than
+   * removing it: one real row came back correctly named with
+   * `portionOfWork: "San Diego"`, and the portion of work is quoted verbatim in the
+   * claim somebody reads down a telephone. A scope that names one of our five
+   * trades still survives, because that is intrinsic to the value.
+   */
+  it("quotes no portion of work it can only guess at", () => {
+    const parsed = parseSubListing(
+      WRAPPED.replace("Crestline Lathing Co Inc.", "Harbor Interiors Inc. "),
+    );
+    expect(parsed.rows[1]?.name).toBe("Harbor Interiors Inc.");
+    expect(parsed.rows[1]?.portionOfWork).toBeNull();
+  });
+
+});
+
 describe("the OTHER form: labels on the left, each bidder in a column", () => {
   const LABELLED = `Example University — Final Bid Results
 Generated September 16, 2026                            Alpha Example Builders Inc       Bravo Example Construction
