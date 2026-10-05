@@ -246,6 +246,19 @@ export type ListedSub = {
   registration: string | null;
   city: string | null;
   /**
+   * The BIDDING CONTRACTOR whose listing this row sat under — the general
+   * contractor, which is the whole point of a §4104 listing and the one fact that
+   * makes a lead worth calling rather than a name off a licence database.
+   *
+   * Null when the paste cannot say. A single bidder's table pasted on its own does
+   * not contain its own bidder's name, and the labelled-column form deliberately
+   * refuses attribution entirely — see the reader below. `header.prime` is the
+   * other half: it carries a prime the DOCUMENT labelled, and refuses when a page
+   * names more than one. This field is per row, so a whole page with six bidders
+   * is read correctly instead of being refused.
+   */
+  listedBy: string | null;
+  /**
    * The amount as the document printed it, to the CENT — not whole dollars,
    * which is what this line said until `parseAmount` stopped rounding. Only
    * ever rendered into a sentence, never stored as money.
@@ -1026,6 +1039,91 @@ function furnitureReason(line: string, fields: string[]): string | null {
 }
 
 /**
+ * WHO WAS BIDDING, READ OFF A WHOLE PAGE RATHER THAN TYPED IN.
+ *
+ * A §4104 listing is only worth more than a licence database because it says WHICH
+ * GENERAL CONTRACTOR listed this subcontractor on which job. Measured on the real
+ * documents, that fact was reaching no row: a bidder's own table does not contain
+ * the bidder's name, and a whole page contains SIX of them, so `header.prime`
+ * correctly refuses to name one and every row came back with no GC at all. The
+ * only way to a strong lead was for a person to hand-type four header lines into
+ * the paste before the parse.
+ *
+ * A UCLA page reads, per bidder:
+ *
+ *     Spiridon Group Incorporated
+ *                                       No.1 - $ 1,149,540.00 **
+ *     Total Bid                         $1,149,540.00
+ *     Sub Contractor Listing      Portion of Work:   Name of Business:   ...
+ *     <rows, indented to the table>
+ *
+ * **TWO RULES WERE MEASURED AND REJECTED BEFORE THIS ONE, and both looked right.**
+ * "The non-blank line above `Total Bid`" returns the alternate's dollar figure —
+ * `= $ 6,000.00` on six of seven anchors. "A line at an indent of six or less"
+ * works on the file as extracted and cannot survive a paste, which may arrive with
+ * its indentation stripped or shifted wholesale.
+ *
+ * What does survive is the RELATION: the bidder's name sits to the LEFT of where
+ * the table's own columns begin, because it is not in the table. So the threshold
+ * is taken from the heading this parser already finds in 20 of 20 real lists — the
+ * offset of its first label — and a candidate must start clear of it.
+ *
+ * And the bidder is the LAST candidate before a heading, not the first, which is
+ * what excludes the page's own title: `UCLA Capital Programs` is a perfectly
+ * company-shaped line and it appears before every bidder, so ordering disqualifies
+ * it without a list of strings to maintain. A `Label: value` line is excluded by
+ * shape for the same reason.
+ */
+const BIDDER_FURNITURE =
+  /^(?:sub\s*contractor\s*listing|bid\s+summary|total\b|awarded\s+vendor|vendor\s+name|page\s+\d)/i;
+
+function bidderCandidate(raw: string, tableStartsAt: number): string | null {
+  const indent = raw.length - raw.trimStart().length;
+  if (indent >= tableStartsAt - 4) return null;
+  const body = raw.trim();
+  // A label and its value is the document describing itself, not a bidder.
+  if (/^[^:]{1,40}:\s*\S/.test(body)) return null;
+  if (BIDDER_FURNITURE.test(body)) return null;
+  // Its own shape test rather than `readRow`'s `isNameCandidate`, which is a local
+  // const inside that function. Deliberately stricter: a bidder's name is prose,
+  // never an identifier or a figure, and two words of it is the weakest real case
+  // ("Apus General Contracting" has three, "MIK Construction, Inc." three).
+  if (!/[A-Za-z]{3}/.test(body)) return null;
+  if (MONEY.test(body) || PERCENT.test(body) || REGISTRATION.test(body)) return null;
+  if (/^\d/.test(body) || /^[=$(]/.test(body)) return null;
+  if (licenceOnly(body) !== null) return null;
+  if (!/[A-Za-z]{3}\s+\S/.test(body)) return null;
+  return body;
+}
+
+/**
+ * Where the table's own columns begin: the smallest offset at which any heading
+ * line prints its first recognised label. Null when the page prints no heading, in
+ * which case no bidder can be attributed and every row's `listedBy` stays null —
+ * the honest outcome, since without a heading there is no table edge to be left of.
+ */
+function tableStartsAt(lines: readonly string[]): number | null {
+  const offsets: number[] = [];
+  for (const raw of lines) {
+    const fields = splitFields(raw);
+    if (furnitureReason(raw, fields) !== "the table's column headings") continue;
+    /**
+     * The first field with a RECOGNISED kind, not simply the first field. Seven of
+     * twenty real lists print the heading on the same line as the words
+     * "Sub Contractor Listing", at the left margin — so `fields[0]` puts the
+     * table's edge at 3 and every bidder line fails the test. Measured: that read
+     * 27% of rows against 100% once the edge came from the first real label.
+     */
+    const label = fields.find((field) => columnKindOf(field) !== null);
+    if (label === undefined) continue;
+    const at = raw.indexOf(label);
+    if (at > 0) offsets.push(at);
+  }
+  return offsets.length > 0 ? Math.min(...offsets) : null;
+}
+
+
+/**
  * WHICH COLUMN IS WHICH, LEARNED FROM THE HEADING ROW THE DOCUMENT PRINTS.
  *
  * ── WHY THIS EXISTS: THE COLUMN ORDER WAS A GUESS AND THE GUESS WAS WRONG ──
@@ -1636,6 +1734,9 @@ function readRow(
     city,
     amount,
     percentOfBid,
+    // `readRow` sees one line and cannot know whose listing it sat under. The
+    // caller walks the page in order and overwrites this.
+    listedBy: null,
     concerns,
   };
 }
@@ -2274,6 +2375,10 @@ function readLabelledColumnsForm(text: string): LabelledFormRead {
         city,
         amount: null,
         percentOfBid: null,
+        // This shape deliberately does not attribute a subcontractor to a bidder —
+        // see the problem this reader raises. Null is that refusal, not a gap in
+        // the document.
+        listedBy: null,
         concerns,
       });
     }
@@ -2322,6 +2427,29 @@ export function parseSubListing(text: string): SubListingParse {
   /** Whether the document printed a heading at all, and whether one ever fitted. */
   let headingSeen = false;
   let planEverApplied = false;
+
+  /**
+   * The table's left edge, and the bidder whose listing we are currently inside.
+   * The edge is computed UP FRONT because the first bidder precedes the first
+   * heading, so a single forward pass has no threshold to judge it by yet.
+   */
+  const tableEdge = tableStartsAt(lines);
+  let listedBy: string | null = null;
+  let pendingBidder: string | null = null;
+  /**
+   * A BIDDER HAS A BID, and that is what tells a bidder from the page's own title.
+   *
+   * `UCLA Capital Programs` is a perfectly company-shaped line in the left column,
+   * and ordering alone does not exclude it: the document's preamble prints
+   * `Vendor Name:  (2)Lump Sum:  (3)Unit Prices:`, which this parser reads as a
+   * column heading, so the title committed and the two preamble rows beneath it
+   * arrived attributed to it — a GC that is not a GC, on every page.
+   *
+   * Every real bidder is followed by its own figure (`No.1 - $ 1,149,540.00`,
+   * `Total Bid  $1,149,540.00`) before its listing begins. The title is not. So a
+   * held candidate commits only once a money token has been seen after it.
+   */
+  let moneySincePending = false;
 
   /**
    * THE FORM SHAPE IS RECOGNISED AND REFUSED, WITH EVERY LINE STILL ACCOUNTED FOR.
@@ -2405,6 +2533,52 @@ export function parseSubListing(text: string): SubListingParse {
       return;
     }
 
+    /**
+     * A bidder line is HELD, and the next heading commits it. That is what makes
+     * the page's own title lose to the bidder beneath it: the LAST candidate
+     * before a heading wins, and a title is never the last one.
+     */
+    if (tableEdge !== null) {
+      /**
+       * THE CONTINUATION OF A WRAPPED NAME IS NOT ITSELF A CANDIDATE, which is why
+       * it is read here rather than inside `bidderCandidate`. "Williamson
+       * Construction Co.," wraps to "Inc." — one word, so the shape test rejects
+       * it, and the name shipped truncated at its own comma. A held name ending in
+       * a comma is an explicit invitation to the next left-column line, and only
+       * then is a single word admitted.
+       */
+      if (pendingBidder !== null && /,$/.test(pendingBidder)) {
+        // The FIRST field, not the whole line: the real continuation prints the
+        // bid figure beside it — `Inc.        No.1 - $ 1,500,000.00 **` — so a
+        // single-field test rejects the very line it was written for.
+        const tail = splitFields(raw)[0] ?? "";
+        const indent = raw.length - raw.trimStart().length;
+        if (indent < tableEdge - 4 && /^[A-Za-z][A-Za-z.&'-]*$/.test(tail)) {
+          pendingBidder = `${pendingBidder} ${tail}`;
+          ignored.push({ line, text: raw, why: "the bidding contractor's name" });
+          return;
+        }
+      }
+
+      const candidate = bidderCandidate(raw, tableEdge);
+      if (candidate !== null) {
+        /**
+         * A name wrapped across two lines ends in a comma — "Williamson
+         * Construction Co.," / "Inc." — and read alone it is a truncated company.
+         * The continuation joins it rather than replacing it.
+         */
+        pendingBidder =
+          pendingBidder !== null && /,$/.test(pendingBidder)
+            ? `${pendingBidder} ${candidate}`
+            : candidate;
+        moneySincePending = false;
+        ignored.push({ line, text: raw, why: "the bidding contractor's name" });
+        return;
+      }
+    }
+
+    if (MONEY.test(raw)) moneySincePending = true;
+
     const fields = splitFields(raw);
     const furniture = furnitureReason(raw, fields);
     if (furniture) {
@@ -2412,6 +2586,10 @@ export function parseSubListing(text: string): SubListingParse {
         // Only replace a plan with a better-understood one; a heading that
         // yields nothing usable must not erase what an earlier one taught us.
         headingSeen = true;
+        if (pendingBidder !== null && moneySincePending) {
+          listedBy = pendingBidder;
+          pendingBidder = null;
+        }
         const learned = columnPlanFrom(fields);
         if (learned) columnPlan = learned;
         const byLabel = planByLabels(raw);
@@ -2490,7 +2668,7 @@ export function parseSubListing(text: string): SubListingParse {
     if (planForRow !== null && planForRow.length === fields.length) planEverApplied = true;
     const result = readRow(raw, line, fields, planForRow);
     if (isUnread(result)) unread.push(result);
-    else rows.push(result);
+    else rows.push({ ...result, listedBy });
   });
 
   /**

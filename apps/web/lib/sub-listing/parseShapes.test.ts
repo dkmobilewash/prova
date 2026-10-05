@@ -1021,6 +1021,117 @@ Crestline Plastering       Fort Hollow        CA      448120`;
  * Net on the 20 real lists: 158 rows to 157, three wrong company names gone, one
  * row honestly refused, and not one city lost.
  */
+/**
+ * WHICH GENERAL CONTRACTOR LISTED THIS SUBCONTRACTOR — the fact that makes a §4104
+ * listing worth more than a licence database, and it was reaching no row.
+ *
+ * A bidder's own table does not contain the bidder's name, and a whole page
+ * contains SIX of them, so `header.prime` correctly refuses to name one and every
+ * row came back with no GC at all. Measured end to end: a perfect import of a real
+ * page, with every signal confirmed, topped out at "Trade and area confirmed, but
+ * nothing specific to open with yet" — a list of drywall companies obtainable from
+ * a licence database. The only route to a strong lead was a person hand-typing four
+ * header lines into the paste before parsing.
+ *
+ * So the bidder is read per row, and `header.prime` is left alone to do what it
+ * does: carry a prime the document LABELLED, and refuse when a page names several.
+ *
+ * **THREE RULES WERE MEASURED AND REJECTED BEFORE THIS ONE, and each looked right.**
+ *
+ * 1. "The non-blank line above `Total Bid`" returns the alternate's dollar figure —
+ *    `= $ 6,000.00` on six of seven anchors in the real document.
+ * 2. "A line indented six or less" works on the file as extracted and cannot
+ *    survive a paste, whose indentation may be stripped or shifted wholesale.
+ * 3. "Left of the smallest indent of any three-field line" puts the table's edge at
+ *    3, because furniture at the left margin has three fields. It attributed zero.
+ *
+ * What survives is the RELATION: the bidder's name sits to the LEFT of where the
+ * table's columns begin, because it is not in the table. The edge comes from the
+ * first RECOGNISED LABEL on a heading this parser already finds in 20 of 20 real
+ * lists — not the first FIELD, since seven of twenty print "Sub Contractor Listing"
+ * at the left margin on that same line, which read 27% of rows against 84%.
+ *
+ * Two further rules, each from a wrong value it removed:
+ *
+ * - **A bidder has a bid.** `Example University Capital Programs` is a perfectly
+ *   company-shaped left-column line, and ordering alone does not exclude it,
+ *   because the preamble's `Vendor Name: (2)Lump Sum:` reads as a column heading
+ *   and commits it. Every real bidder is followed by its own figure before its
+ *   listing; the title is not. That removed twelve rows attributed to a GC that is
+ *   not a GC.
+ * - **A name ending in a comma invites the next line.** "Williamson Construction
+ *   Co.," wraps to "Inc." — one word, so the shape test rejects it, and the name
+ *   shipped truncated at its own comma. The continuation is read from the first
+ *   FIELD, because the real one prints the bid figure beside it.
+ *
+ * Measured on six real whole pages: **188 of 223 rows carry the right GC (84%)**,
+ * and the 20 single-bidder blocks are unchanged at 157 rows, because a block
+ * contains no bidder line and null is the honest answer there.
+ */
+describe("which bidder listed each subcontractor", () => {
+  const PAGE = `   Example University Capital Programs
+   BID SUMMARY SHEET WITH SUBCONTRACTORS
+   Contract: Example Hall Mailroom Conversion
+
+   Alpha Example Builders Inc
+                                        No.1 - $ 1,149,540.00 **
+   Total Bid                            $1,149,540.00
+   Sub Contractor Listing               Portion of Work:        Name of Business:           Location:     DIR #:
+                                        Metal Stud Framing      Example Wallworks Inc       Fairview      1000447788
+                                        Acoustical Ceilings     Mock Acoustics Inc          Oakmere       1000889922
+
+   Bravo Example Construction Co.,
+   Inc.                                 No.2 - $ 1,292,276.00 **
+   Total Bid                            $1,292,276.00
+                                        Portion of Work:        Name of Business:           Location:     DIR #:
+                                        Lath and Plaster        Crestline Lathing Co        Fort Hollow   1000330044`;
+  it("attributes every row to the bidder whose listing it sat under", () => {
+    const parsed = parseSubListing(PAGE);
+    expect(parsed.rows.map((r) => [r.name, r.listedBy])).toEqual([
+      ["Example Wallworks Inc", "Alpha Example Builders Inc"],
+      ["Mock Acoustics Inc", "Alpha Example Builders Inc"],
+      ["Crestline Lathing Co", "Bravo Example Construction Co., Inc."],
+    ]);
+  });
+
+  /**
+   * The page names two bidders, so `header.prime` must still refuse to name one.
+   * The two mechanisms answer different questions and neither replaces the other.
+   */
+  it("still refuses to name one prime for a page with two", () => {
+    expect(parseSubListing(PAGE).header.prime).toBeNull();
+  });
+
+  /** A bidder has a bid; the owner's own title does not. */
+  it("does not mistake the page's own title for a bidder", () => {
+    expect(parseSubListing(PAGE).rows.map((r) => r.listedBy)).not.toContain(
+      "Example University Capital Programs",
+    );
+  });
+
+  /** A name ending in a comma takes the next line with it. */
+  it("joins a bidder name wrapped across two lines", () => {
+    expect(parseSubListing(PAGE).rows[2]?.listedBy).toBe(
+      "Bravo Example Construction Co., Inc.",
+    );
+  });
+
+  /**
+   * And one bidder's table pasted on its own carries no bidder, because the name is
+   * not in it. Null is the honest answer and the reason `header.prime` still exists
+   * for a document that labels its prime.
+   */
+  it("says null when the paste cannot know", () => {
+    const table = [
+      "Portion of Work:        Name of Business:         Location:      DIR #:",
+      "Metal Stud Framing      Example Wallworks Inc     Fairview       1000447788",
+    ].join("\n");
+    const parsed = parseSubListing(table);
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0]?.listedBy).toBeNull();
+  });
+});
+
 describe("a column plan that fits by count but is one slot out", () => {
   const WRAPPED = `Sub Contractor Listing                                      License
 Portion of Work:        Name of Business:               Location:             DIR #:

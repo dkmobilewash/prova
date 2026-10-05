@@ -859,11 +859,18 @@ matches the row it is looking at — preferring the field-based one, which keeps
 slot for a column this parser does not recognise.
 
 **Worth 3 cities on the real corpus: 128 to 131 of 154.** That is the honest figure
-and far smaller than the 25 it looked like it would be, because the four problem
-lists' heading lines are not recognised as headings in the first place — so neither
-the plan nor the new warning reaches them, and 23 rows still read `city: null`
-without a word said. Fixing `furnitureReason`'s heading detection for those shapes
-is named as the next gap rather than claimed as done.
+and far smaller than the 25 it looked like it would be.
+
+**AND THE REASON GIVEN HERE FOR THAT GAP WAS WRONG, corrected before this branch
+merged.** This paragraph said the four problem lists' heading lines "are not
+recognised as headings in the first place", so neither the plan nor the warning
+reached them. Measured instead of asserted: `furnitureReason` detects a heading on
+**20 of 20** real lists, these four included. The plan and the warning do reach
+them. What fails is one step later — a `License` label wrapped onto the line above
+its own `#:` leaves the plan one slot short, and the rows fall back to a positional
+read that has no city slot. It costs **12 cities**, it is a different fix from the
+one named here, and naming the wrong one would have sent the next person to the
+wrong function.
 
 Five mutations, each landing and each reding its own assertions: the stranded-line
 problem removed, its BETWEEN-rows bound removed, the planned-column concern removed
@@ -873,3 +880,38 @@ problem removed, its BETWEEN-rows bound removed, the planned-column concern remo
 document has been read.** Every fixture is a guess about a form nobody here has
 opened, the suite is deliberately green over the remaining documented
 limitations, and this must not merge on the strength of a green check.
+
+
+### Which bidder listed each subcontractor
+
+The leads this reader produces are only worth calling because of one field, and until
+now it was not read. A §4104 page is a list of subcontractors **under a prime
+bidder's name** — several bidders per page on a bid-summary sheet — and the sentence
+that makes a cold call warm is *"I saw <GC> listed you on <job>"*. Without the GC the
+import yields a trade and a town, which the free CSLB licence file already gives.
+
+`ListedSub` now carries `listedBy: string | null`. A bidder is recognised ABOVE the
+table edge, or between tables, by three things together: it sits left of where the
+table's own columns begin (`tableStartsAt`, derived from the first line whose fields
+contain a recognised column label — not from `fields[0]`, which read the page title
+and put the edge at column 3), it is not bid furniture (`BIDDER_FURNITURE`), and a
+bid figure follows it before the next candidate. A name wrapped across two lines is
+joined on the first field only, so `Williamson Construction Co., Inc.` arrives whole.
+
+**188 of 223 rows attributed on the real corpus (84%), every GC name correct.** The
+20 single-bidder blocks are unchanged at 157 rows / 131 cities / 151 scopes, so this
+reads a field that was being discarded rather than altering anything already read.
+
+**Two of six mutations SURVIVED, and they are reported rather than patched over,
+because a surviving mutation here is a case that proves nothing rather than a weak
+guard.** Dropping the bid-figure gate (M2) and dropping the left-of-table indent test
+(M5) both leave the suite green: on every fixture in it, the OTHER two conditions
+already exclude the lines those clauses exist for. Both clauses earn their place on
+the real corpus — without the figure gate `UCLA Capital Programs` is attributed as a
+GC — so the honest statement is that the fixtures do not yet distinguish them, not
+that the clauses are unnecessary. A distinguishing case for each is the named next
+step.
+
+**Unchanged and still the headline: no real bid or award document has been read by
+anybody here.** The 84% is measured against pages assembled from public records, not
+against a form a customer sent.
