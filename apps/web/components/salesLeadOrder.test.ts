@@ -47,20 +47,48 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /* The row's own server-action import, which the ORDER has nothing to do with.
    Mocked so this file loads without the actions barrel and its Prisma client —
-   nothing under test reads it. (`next/link` and `next/navigation` are aliased
-   to stubs by the config, since this container has no linked `next`.) */
+   nothing under test reads it. */
 vi.mock("@/lib/actions", () => ({
   deleteSalesLead: async () => ({ ok: true }),
 }));
 
+/* `next/link` and `next/navigation` are mocked HERE rather than left to a
+   config alias, and that distinction cost a red CI run: an earlier version of
+   this file said they were "aliased to stubs by the config", which was true of
+   the scratchpad config it was written against and false of `vitest.config.mts`.
+   The five render tests passed locally and failed in CI with `invariant expected
+   app router to be mounted` — a harness that was more permissive than the real
+   one, so the green said nothing. Same shape and same mock as
+   `components/Sidebar.test.ts`, which renders nav links for the same reason.
+   Nothing here navigates; an anchor with the same href is all these read. */
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: () => {}, push: () => {} }),
+  usePathname: () => "/sales",
+}));
+vi.mock("next/link", async () => {
+  const { createElement: h } = await import("react");
+  return {
+    default: ({
+      href,
+      children,
+      ...rest
+    }: {
+      href: string;
+      children?: unknown;
+    } & Record<string, unknown>) => h("a", { href, ...rest }, children),
+  };
+});
+
 import {
   SalesLeadList,
+  type SalesLeadRowLead,
+} from "@/components/SalesLeadRow";
+import {
   compareForCalling,
   groupForCalling,
   orderForCalling,
   type CallOrderLead,
-  type SalesLeadRowLead,
-} from "@/components/SalesLeadRow";
+} from "@/lib/sales-lead-order";
 import {
   BAND_LABELS,
   BAND_RANK,
