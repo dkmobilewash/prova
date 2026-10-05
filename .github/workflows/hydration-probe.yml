@@ -1,0 +1,176 @@
+# The #510 hydration probe. MANUAL ONLY.
+#
+# `workflow_dispatch` is the entire trigger list, and that is the point: this
+# job runs against `next dev`, which the E2E config's own comment says must
+# never gate anything — a dev build does not print "Minified React error #418",
+# so `lib/health.ts` files every mismatch as a CRASH, and the one previous dev
+# run in CI took 12.7 minutes and produced its own timeouts. Nothing about the
+# current build changes by this file existing: no push trigger, no
+# pull_request trigger, and the probe lives in `e2e/probes/` where the `e2e`
+# job's `testDir: "./specs"` cannot see it.
+#
+# WHAT IT ANSWERS. CLAUDE.md's #418 entry ends on a confound it names itself:
+# 96 loads against `next dev` ON A LAPTOP produced ZERO mismatches, while
+# production mode in CI reports 3-9 pages per run. Build mode AND machine moved
+# together, and the defect is a race. This runs the same probe on the same
+# runner class, so only the build mode differs.
+#
+#   zero here        -> it is the BUILD. The Flight 3,200-byte deferral is the
+#                       surviving mechanism (it does not exist in a dev build),
+#                       and the laptop result was not a laptop artefact.
+#   mismatches here  -> it was the MACHINE, the laptop zero means nothing, and
+#                       the log names the element and its component stack —
+#                       which is the thing no production run can ever give.
+#
+# Either outcome closes a question that has cost four separate investigations.
+name: Hydration probe (#510)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or SHA to probe (defaults to the branch you launch it from)"
+        required: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    # The probe walks 4 routes x 6 loads plus a 3-load control, each with a
+    # 2.5s settle, against a dev server that compiles on first hit. Generous
+    # rather than tight: a diagnostic cut short by its own timeout reports a
+    # zero that means nothing.
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: prova
+          POSTGRES_PASSWORD: prova
+          POSTGRES_DB: prova_e2e_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U prova"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      E2E_DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      DIRECT_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY }}
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: "/sign-in"
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: "/sign-up"
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL: "/dashboard"
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL: "/dashboard"
+      # The heap flag cures "Server is approaching the used memory threshold,
+      # restarting…". It does NOT cure "FATAL ERROR: Zone Allocation failed",
+      # which is a different allocator — hence 4 routes and one worker.
+      NODE_OPTIONS: --max-old-space-size=8192
+      # THE WHOLE REASON THIS WORKFLOW EXISTS. Opt-in, here and nowhere else.
+      E2E_DEV_SERVER: "1"
+
+    steps:
+      # First, before anything that costs a minute — copied from ci.yml's `e2e`
+      # job for the reason that job states: five seconds to a named failure
+      # instead of eight minutes to a confusing one. It FAILS rather than
+      # skipping, because a green check for a probe that signed nobody in
+      # would be the vacuous green this repo keeps paying for.
+      - name: Fail loudly if the Clerk test secrets are missing
+        run: |
+          set -e
+          set -o pipefail
+          missing=""
+          if [ -z "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" ]; then
+            missing="$missing E2E_CLERK_PUBLISHABLE_KEY"
+          fi
+          if [ -z "$CLERK_SECRET_KEY" ]; then
+            missing="$missing E2E_CLERK_SECRET_KEY"
+          fi
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing — this probe signs a real Clerk test user in and cannot run without them."
+            exit 1
+          fi
+          case "$CLERK_SECRET_KEY" in
+            sk_live_*)
+              echo "::error::E2E_CLERK_SECRET_KEY is a PRODUCTION (sk_live_) key. This harness MINTS users; refusing."
+              exit 1
+              ;;
+          esac
+          case "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" in
+            pk_live_*)
+              echo "::error::E2E_CLERK_PUBLISHABLE_KEY is a PRODUCTION (pk_live_) key. Refusing."
+              exit 1
+              ;;
+          esac
+          echo "Clerk test keys present, and both are development (_test_) keys."
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Apply migrations to the scratch database
+        run: pnpm --filter @prova/db exec prisma migrate deploy --schema prisma/schema
+
+      - name: Cache the Chromium build
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ runner.os }}-
+
+      - name: Install Chromium
+        run: pnpm --filter @prova/web exec playwright install --with-deps chromium
+
+      # The probe asserts only its own instrument — that every load hydrated,
+      # and that it caught a mismatch it injected itself. The MEASUREMENT is
+      # printed: read the `probe:` lines in this step's log.
+      - name: Probe hydration against next dev
+        id: probe
+        run: |
+          set -e
+          set -o pipefail
+          pnpm --filter @prova/web exec playwright test \
+            --config e2e/playwright.probe.config.ts --reporter=list
+
+      - name: What the numbers mean
+        if: always() && steps.probe.conclusion != 'skipped'
+        run: |
+          echo "Read the 'probe:' lines above, not this job's colour."
+          echo ""
+          echo "  loads vs hydrated — if these differ, the run proves nothing:"
+          echo "  a page React never hydrated cannot mismatch."
+          echo ""
+          echo "  control fired n/3 — if 0, the harness is broken and the"
+          echo "  mismatch count is meaningless. The probe fails on this."
+          echo ""
+          echo "  0 mismatches with the control firing => the defect is the"
+          echo "  BUILD, not the machine: Flight's 3,200-byte deferral is the"
+          echo "  surviving mechanism and does not exist in a dev build."
+          echo ""
+          echo "  any mismatch => it was the machine, and the log above names"
+          echo "  the ELEMENT and its component stack. That is the thing no"
+          echo "  production run can give. Put it in CLAUDE.md's #510 entry."
+
+      - name: Upload the Playwright report
+        if: always() && steps.probe.conclusion != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hydration-probe-report
+          path: apps/web/playwright-report
+          retention-days: 7
