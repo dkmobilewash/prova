@@ -130,6 +130,44 @@ function words(normalised: string): string[] {
 }
 
 /**
+ * What the NAMES alone say about one pair, with no identifier consulted.
+ *
+ * Extracted because the contradiction branch has to ask it too. A contradiction
+ * is only worth REPORTING when the name would otherwise have made this lead look
+ * like a match — see the loop.
+ *
+ * `null` means the names say nothing. A name with nothing left after
+ * normalisation cannot match a name; the caller decides whether an identifier
+ * rescues it.
+ */
+function nameEvidence(
+  target: string,
+  targetWords: readonly string[],
+  companyName: string,
+): "SAME_NAME" | "SIMILAR_NAME" | null {
+  if (!target) return null;
+  const existing = normaliseCompanyName(companyName);
+  if (!existing) return null;
+  if (existing === target) return "SAME_NAME";
+
+  const existingWords = words(existing);
+  // A single shared word is not a resemblance — "Western Fireproofing" and
+  // "Western Electric" share everything that is not the trade.
+  if (targetWords.length < 2 && existingWords.length < 2) return null;
+
+  /* Picked as a PAIR. The first version of this spread one array and then worked
+     out which was which from its length and first word — correct, as it happens,
+     and fragile for no reason: comparing an array against itself would make
+     `every` trivially true and invent a resemblance. */
+  const [shorter, longer]: readonly [readonly string[], readonly string[]] =
+    targetWords.length <= existingWords.length
+      ? [targetWords, existingWords]
+      : [existingWords, targetWords];
+  if (shorter.length >= 2 && shorter.every((word) => longer.includes(word))) return "SIMILAR_NAME";
+  return null;
+}
+
+/**
  * The two identifiers a §4104 listing can print, and that a lead can hold.
  *
  * Named rather than inline because `importSubListing` reads the same pair, and
@@ -283,11 +321,27 @@ export function leadCandidatesFor<
       registration: lead.registrationNumber,
     };
 
-    /* The contradiction is read BEFORE any resemblance, and reported with the
-       numbers, so the reviewer can see which of the two is wrong when one of
-       them is. A licence disagreement is reported in preference to a
-       registration one: it is the identifier this trade actually quotes. */
+    const nameSays = nameEvidence(target, targetWords, lead.companyName);
+
+    /* A CONTRADICTION IS ONLY WORTH SAYING WHEN THE NAME WOULD OTHERWISE HAVE
+       MADE THIS LEAD LOOK LIKE A MATCH.
+       Reported unconditionally at first, and that was a defect found by
+       measurement rather than review: a company with 40 licensed leads on file
+       produced FORTY amber notes on ONE pasted row — every one of them true
+       ("Unrelated Firm 07 is already a lead with licence 700207; this row prints
+       884201") and every one of them useless, because those are forty different
+       companies. At the scale this feature is for — 60 leads an import, several
+       imports — the screen became a wall of amber and the one note that mattered
+       was buried in it.
+       So an unrelated firm whose licence simply differs is passed over in
+       silence, and that silence is right: there is nothing to tell a reviewer
+       about a company this row was never going to be confused with. The note
+       exists for the case its own wording describes — the names agree and the
+       documents say two registrants.
+       A licence disagreement is still reported in preference to a registration
+       one: it is the identifier this trade actually quotes. */
     if (identifiersContradict(listedIds, leadIds)) {
+      if (nameSays === null) continue;
       const kind =
         listedIds.licence !== null &&
         leadIds.licence !== null &&
@@ -315,33 +369,15 @@ export function leadCandidatesFor<
       continue;
     }
 
-    /* A name with nothing left after normalisation cannot match a name, but it
-       could still have matched an identifier above — which is why this check is
-       here rather than at the top of the function, where it used to be. An empty
-       name cell, or one holding only the "&" out of "Lath & Plaster", is what a
-       badly split column leaves behind, and the licence cell may have read fine.
+    /* The name is consulted LAST for an attachment, and `nameSays` was computed
+       above the identifier checks only because the contradiction branch needs it.
+       An empty name cell, or one holding only the "&" out of "Lath & Plaster", is
+       what a badly split column leaves behind, and the licence cell may have read
+       fine — which is why a null here does not stop an identifier matching above.
        NOT "Inc.": that normalises to "inc" and is truthy, because the suffix
-       strip requires the name to END WITH " inc". The first test written for this
+       strip requires the name to END WITH " inc". The first test written for that
        used "Inc." and a mutation moving the guard back up survived it. */
-    if (!target) continue;
-    const existing = normaliseCompanyName(lead.companyName);
-    if (!existing) continue;
-
-    if (existing === target) {
-      attachable.push({ lead, evidence: "SAME_NAME" });
-      continue;
-    }
-
-    const existingWords = words(existing);
-    // A single shared word is not a resemblance — "Western Fireproofing" and
-    // "Western Electric" share everything that is not the trade.
-    if (targetWords.length < 2 && existingWords.length < 2) continue;
-
-    const shorter = targetWords.length <= existingWords.length ? targetWords : existingWords;
-    const longer = shorter === targetWords ? existingWords : targetWords;
-    if (shorter.length >= 2 && shorter.every((word) => longer.includes(word))) {
-      attachable.push({ lead, evidence: "SIMILAR_NAME" });
-    }
+    if (nameSays !== null) attachable.push({ lead, evidence: nameSays });
   }
 
   attachable.sort((a, b) => EVIDENCE_RANK[a.evidence] - EVIDENCE_RANK[b.evidence]);

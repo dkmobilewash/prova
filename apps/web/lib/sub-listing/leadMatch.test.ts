@@ -353,3 +353,90 @@ describe("which identifier is named when more than one agrees", () => {
     expect(attachable.map((c) => c.evidence)).toEqual(["SAME_LICENCE"]);
   });
 });
+
+describe("a contradiction is only worth saying when the name bears on it", () => {
+  /**
+   * FOUND BY MEASUREMENT, NOT REVIEW, and it is the defect this whole branch was
+   * most likely to ship. Every lead whose licence merely DIFFERED was reported as
+   * a "different registrant", so a company with 40 licensed leads on file
+   * produced FORTY amber notes on ONE pasted row — each true, each useless,
+   * because those are forty unrelated companies. At the scale the feature is for
+   * (60 leads an import, several imports) the screen becomes a wall of amber and
+   * the one note that matters is buried in it.
+   *
+   * 40 rather than 3, deliberately: with two or three leads the old behaviour and
+   * the new one are hard to tell apart, and the bug was invisible in a fixture
+   * that size. The number IS the test.
+   */
+  const unrelated: Lead[] = Array.from({ length: 40 }, (_, index) => ({
+    id: `lead_${index}`,
+    companyName: `Unrelated Firm ${String(index).padStart(2, "0")}`,
+    licenceNumber: String(700200 + index),
+    registrationNumber: null,
+  }));
+
+  it("says nothing about 40 unrelated firms whose licences merely differ", () => {
+    const { attachable, differentRegistrant } = leadCandidatesFor(
+      { name: "Sierra Wall & Ceiling", licence: "884201", registration: null },
+      unrelated,
+    );
+    expect(attachable).toEqual([]);
+    expect(differentRegistrant).toEqual([]);
+  });
+
+  it("does the same when the differing identifier is a DIR registration", () => {
+    const byRegistration = unrelated.map((lead) => ({
+      ...lead,
+      licenceNumber: null,
+      registrationNumber: String(1000070000 + Number(lead.id.slice(5))),
+    }));
+    const { differentRegistrant } = leadCandidatesFor(
+      { name: "Sierra Wall & Ceiling", licence: null, registration: "1000012345" },
+      byRegistration,
+    );
+    expect(differentRegistrant).toEqual([]);
+  });
+
+  /**
+   * The control, and without it the two cases above would be satisfied by a
+   * version that never reports a contradiction at all — which is the opposite
+   * defect and strictly worse, since it hides the collision the reviewer needs.
+   */
+  it("still reports the one lead among them whose NAME matches", () => {
+    const withTwin: Lead[] = [
+      ...unrelated,
+      {
+        id: "twin",
+        companyName: "Sierra Wall & Ceiling",
+        licenceNumber: "650118",
+        registrationNumber: null,
+      },
+    ];
+    const { attachable, differentRegistrant } = leadCandidatesFor(
+      { name: "Sierra Wall & Ceiling", licence: "884201", registration: null },
+      withTwin,
+    );
+    expect(attachable).toEqual([]);
+    expect(differentRegistrant.map((d) => [d.lead.id, d.kind, d.existing, d.listed])).toEqual([
+      ["twin", "licence", "650118", "884201"],
+    ]);
+  });
+
+  /** A merely SIMILAR name is enough to be worth the note: it is exactly the pair
+   *  a reviewer might otherwise have attached by hand. */
+  it("reports it on a similar name too, not only an identical one", () => {
+    const similar: Lead[] = [
+      {
+        id: "similar",
+        companyName: "Sierra Wall & Ceiling Systems",
+        licenceNumber: "650118",
+        registrationNumber: null,
+      },
+    ];
+    const { differentRegistrant } = leadCandidatesFor(
+      { name: "Sierra Wall & Ceiling", licence: "884201", registration: null },
+      similar,
+    );
+    expect(differentRegistrant.map((d) => d.lead.id)).toEqual(["similar"]);
+  });
+});
