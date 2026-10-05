@@ -1614,3 +1614,129 @@ describe("re-reading one document does not write its evidence twice", () => {
     expect(await leadsNamed("Repeatread Drywall")).toHaveLength(1);
   });
 });
+
+/**
+ * THE MAXIMUM LEGAL IMPORT, WHICH NOTHING HAD EVER RUN.
+ *
+ * Every other case in this file imports one to three rows. The cap is 60, a real
+ * award packet for a large school job carries that many subcontractors, and the
+ * whole feature's premise is that somebody pastes a whole listing — so the one
+ * input the product is FOR was the one input untested. Added 2026-10-05 after a
+ * night in which both genuine defects were found by asking what the code does at
+ * realistic scale rather than fixture scale.
+ *
+ * It is deliberately AT the cap rather than near it: 60 is the largest import the
+ * action accepts, so this is simultaneously the upper boundary of `tooManyRows`
+ * from the accepting side.
+ *
+ * ── WHAT THIS DOES NOT ESTABLISH, MEASURED RATHER THAN HAND-WAVED ──
+ *
+ * It asserts CORRECTNESS at 60 rows. It says nothing about production speed, and
+ * the gap is bigger than "a few queries per row". Measured by turning on
+ * `log_min_duration_statement=0` and counting what lands between this import's own
+ * BEGIN and COMMIT:
+ *
+ *   **484 operations inside ONE transaction** — 120 SELECT, 120 INSERT and the
+ *   prepared-statement traffic around them, about **8 per row** — summing to 39 ms
+ *   of statement time over a local unix socket.
+ *
+ * Production is Neon through a pooler with `connection_limit=5`, where each of
+ * those is a network round trip. At 5 ms that is ~2.4 s; at 20 ms, ~10 s; and
+ * CLAUDE.md records that Neon suspends idle computes, so the first request also
+ * pays a wake. A 60-row import is therefore the most likely thing in this feature
+ * to be slow or to hit an execution limit, and this test cannot see any of it.
+ *
+ * Deliberately NOT optimised here. Batching the per-row lookups into one query
+ * each would change the ordering the in-pass and cross-import rules depend on —
+ * code that has just been through two reviews and had two scope errors — and it
+ * would be a performance change verified on the one machine where performance
+ * does not matter. The number is recorded so the decision is somebody's rather
+ * than nobody's.
+ */
+describe("a full-size listing, at the cap", () => {
+  const SOURCE = "https://example.test/scale/sixty-row-award-packet.pdf";
+  const ROWS = 60;
+
+  function sixtyRows() {
+    const lines = [
+      "Project: Riverside Unified High School No. 4",
+      "Agency: Riverside Unified School District",
+      "Prime Contractor: Swinerton Builders",
+      "",
+      ...Array.from({ length: ROWS }, (_, index) => {
+        const n = String(index + 1).padStart(2, "0");
+        return [
+          `Scalefirm ${n} Drywall`,
+          "Fontana, CA",
+          `C-9 ${710001 + index}`,
+          `10000${String(70001 + index)}`,
+          "Metal stud framing and drywall",
+        ].join("\t");
+      }),
+    ];
+    const listingText = lines.join("\n");
+    const parsed = parseSubListing(listingText);
+    // The premise. Without it every count below could be about a shorter paste.
+    expect(parsed.rows, "the 60-row fixture did not parse to 60 rows").toHaveLength(ROWS);
+    expect(parsed.unread, "the 60-row fixture has unreadable lines").toHaveLength(0);
+    return { listingText, lines: parsed.rows.map((row) => row.line).join(",") };
+  }
+
+  it("imports all 60, and the counts add up", async () => {
+    const { listingText, lines } = sixtyRows();
+    const result = await importSubListing(
+      form({ listingText, sourceUrl: SOURCE, primeOutcome: "UNKNOWN", lines }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.leadsCreated).toBe(ROWS);
+    expect(result.value.leadsAttached).toBe(0);
+    expect(result.value.rowsSkipped).toBe(0);
+
+    const leads = await leadsNamed("Scalefirm");
+    expect(leads).toHaveLength(ROWS);
+
+    /* The summary's figure IS the number of rows written, asserted as an identity
+       rather than against 300 — so it survives the day a row yields a different
+       number of claims. */
+    const signals = await prisma.salesLeadSignal.count({
+      where: { companyId: context.company.id, sourceUrl: SOURCE },
+    });
+    expect(result.value.signalsProposed).toBe(signals);
+    // And every lead really did get its own evidence, not one lead getting all of it.
+    expect(signals).toBe(leads.reduce((total, lead) => total + lead.signals.length, 0));
+    for (const lead of leads) expect(lead.signals.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * IDEMPOTENCE AT SCALE. The single-row case is pinned above; this is the one a
+   * reviewer actually performs — re-pasting a whole packet after an addendum — and
+   * it is where 60 duplicate leads and 300 duplicate claims would have appeared.
+   */
+  it("re-importing the whole packet adds no lead and no claim", async () => {
+    const { listingText, lines } = sixtyRows();
+    const before = await prisma.salesLeadSignal.count({
+      where: { companyId: context.company.id, sourceUrl: SOURCE },
+    });
+    expect(before).toBeGreaterThan(0);
+
+    const again = await importSubListing(
+      form({ listingText, sourceUrl: SOURCE, primeOutcome: "UNKNOWN", lines }),
+    );
+    expect(again.ok).toBe(true);
+    if (!again.ok) return;
+
+    // It FOUND all sixty rather than passing by failing to match them.
+    expect(again.value.leadsAttached).toBe(ROWS);
+    expect(again.value.leadsCreated).toBe(0);
+    expect(again.value.signalsProposed).toBe(0);
+
+    expect(await leadsNamed("Scalefirm")).toHaveLength(ROWS);
+    expect(
+      await prisma.salesLeadSignal.count({
+        where: { companyId: context.company.id, sourceUrl: SOURCE },
+      }),
+    ).toBe(before);
+  });
+});
