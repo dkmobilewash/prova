@@ -522,9 +522,16 @@ export function SubListingImport({ leads }: { leads: ExistingLead[] }) {
                         {/* A lead the DOCUMENTS say is not this row: both printed an
                             identifier of the same kind and they disagree. It is
                             deliberately not in the dropdown — attaching would weld two
-                            firms together — and equally deliberately not hidden, because
-                            one of the two numbers may be a transposed digit somebody
-                            needs to go and fix. Both are printed so they can check. */}
+                            firms together — and it is shown rather than hidden whenever a
+                            reviewer could confuse the two, because one of the numbers may
+                            be a transposed digit somebody needs to go and fix. Both are
+                            printed so they can check.
+                            `leadCandidatesFor` decides WHICH ones reach here: a
+                            contradicting lead sharing neither an identifier nor a
+                            resembling name is left out, or a company with forty licensed
+                            leads on file would paint forty true and useless notes onto one
+                            row. This comment said "not hidden" without that qualifier and
+                            was wrong for a fortnight's worth of leads. */}
                         {matches.differentRegistrant.map((other) => (
                           <p key={other.lead.id} className="mt-2 text-xs text-tag-amber-ink">
                             {other.lead.companyName} is already a lead with {other.kind}{" "}

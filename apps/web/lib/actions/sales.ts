@@ -1479,10 +1479,21 @@ export async function importSubListing(
           }
         }
 
-        /* Read once per lead and then kept, because several rows of one paste
-           land on one lead and the set has to include what THIS paste has
-           already written — two rows of a listing can produce the same sentence
-           for a lead when the claim does not quote their line. */
+        /* Read ONCE PER LEAD and kept, because several rows of one paste can land
+           on one lead and the query is the same every time.
+           It used to also add each written claim back into the set, justified by
+           "two rows of a listing can produce the same sentence for a lead when the
+           claim does not quote their line". That sentence is FALSE: every one of
+           the five claim-producing branches in `signals.ts` appends `atLine`, and
+           `chosen` is a filter over `parsed.rows`, whose line numbers are distinct
+           — so two rows of one paste cannot produce a byte-identical
+           `(kind, claim)`, and one row produces at most one claim per kind, which
+           is in the key. Review proved the line dead by deleting it and watching
+           the whole db suite stay green.
+           Gone rather than reinforced, which is the same call as the licence
+           re-canonicalisation in `leadMatch.ts`: a guard that cannot change an
+           outcome is a claim nobody can check. The cache stays; only its false
+           reason and its unreachable half are gone. */
         let onRecord = claimsOnRecord.get(leadId);
         if (!onRecord) {
           const held = await tx.salesLeadSignal.findMany({
@@ -1493,12 +1504,9 @@ export async function importSubListing(
           claimsOnRecord.set(leadId, onRecord);
         }
 
-        const fresh = proposals.filter((proposal) => {
-          const key = claimKey(proposal.kind, proposal.claim);
-          if (onRecord.has(key)) return false;
-          onRecord.add(key);
-          return true;
-        });
+        const fresh = proposals.filter(
+          (proposal) => !onRecord.has(claimKey(proposal.kind, proposal.claim)),
+        );
 
         if (fresh.length > 0) {
           await tx.salesLeadSignal.createMany({

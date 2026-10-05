@@ -264,10 +264,16 @@ describe("the one case it refuses to offer: the documents say two registrants", 
   });
 
   /**
-   * Reported rather than dropped, and reported WITH BOTH NUMBERS. A suppression
-   * nobody can see is this module deciding, which its own title says it does
-   * not do — and one of the two numbers may be a transposed digit somebody has
-   * to go and fix, which they cannot do without seeing them.
+   * Reported WITH BOTH NUMBERS, because one of them may be a transposed digit
+   * somebody has to go and fix, which they cannot do without seeing them.
+   *
+   * This used to read "a suppression nobody can see is this module deciding,
+   * which its own title says it does not do", full stop. That is still the rule
+   * for any pair a reviewer could confuse and it is no longer the WHOLE rule: a
+   * contradicting lead that shares neither an identifier nor a resembling name is
+   * now passed over in silence, because reporting every differing licence put
+   * forty useless notes on one row. The cases below the 40-lead fixture pin both
+   * halves — what is still said, and what is now rightly not.
    */
   it("names the registration when that is the identifier that disagrees", () => {
     const other: Lead = {
@@ -307,10 +313,25 @@ describe("the one case it refuses to offer: the documents say two registrants", 
    * registrants, and without the `||` this would have come back as a confident
    * SAME_LICENCE.
    */
-  it("treats a shared licence with contradicting registrations as two registrants", () => {
+  /**
+   * BOTH SPELLINGS, because one of them proved nothing. This case's docstring is
+   * entirely about identifiers — the `||` in `identifiersContradict` — and it was
+   * written with the lead's name spelled EXACTLY like the row's, so it passed
+   * through the name path and would have passed with the identifier logic gone.
+   * Review demonstrated it: changing only `companyName` to "Keystone Interiors"
+   * red it against the then-shipped code.
+   *
+   * The unrelated-name arm is the one that matters. A shared licence is
+   * confusable however the names read — that is the premise of keying identity on
+   * the licence at all — so the note cannot depend on the spelling.
+   */
+  it.each([
+    ["an identical spelling", "Keystone Acoustical"],
+    ["an unrelated spelling", "Keystone Interiors"],
+  ])("treats a shared licence with contradicting registrations as two registrants, under %s", (_label, leadName) => {
     const other: Lead = {
       id: "W",
-      companyName: "Keystone Acoustical",
+      companyName: leadName,
       licenceNumber: "884201",
       registrationNumber: "1000099999",
     };
@@ -364,9 +385,12 @@ describe("a contradiction is only worth saying when the name bears on it", () =>
    * (60 leads an import, several imports) the screen becomes a wall of amber and
    * the one note that matters is buried in it.
    *
-   * 40 rather than 3, deliberately: with two or three leads the old behaviour and
-   * the new one are hard to tell apart, and the bug was invisible in a fixture
-   * that size. The number IS the test.
+   * 40 rather than 3 because that is the scale the defect was NOTICED at, not
+   * because the assertion needs it. Review checked: mutating the gate away reds
+   * these cases identically with the fixture at 40, 3, 2 and even 1, since
+   * `toEqual([])` fails on one stray note exactly as on forty. An earlier version
+   * of this comment claimed "the number IS the test", which was a true statement
+   * about how the bug was found dressed up as a false one about the test.
    */
   const unrelated: Lead[] = Array.from({ length: 40 }, (_, index) => ({
     id: `lead_${index}`,
@@ -420,6 +444,64 @@ describe("a contradiction is only worth saying when the name bears on it", () =>
     expect(differentRegistrant.map((d) => [d.lead.id, d.kind, d.existing, d.listed])).toEqual([
       ["twin", "licence", "650118", "884201"],
     ]);
+  });
+
+  /**
+   * THE REGRESSION THE FIRST VERSION OF THIS GATE SHIPPED, and the reason the
+   * gate is two conditions rather than one.
+   *
+   * Scoping the note to "the name bears on it" silenced a lead holding THIS ROW'S
+   * OWN LICENCE whenever its other identifier disagreed and its name was unlike
+   * the row's: not offered, not noted, nothing at all. `sameCompany` opens with
+   * the same contradiction test, so the server refuses to merge that pair too —
+   * the screen said nothing, the server declined, and the reviewer created the
+   * duplicate by hand, which is verbatim the failure the licence match exists to
+   * end. Review measured it at 1,584 of 18,225 (row, lead) shapes.
+   *
+   * Both directions are asserted, because the two identifiers are symmetric here
+   * and a fix that reads only `licence` would pass the first arm alone.
+   */
+  it.each([
+    ["the licence agrees and the registration disagrees", "884201", "1000012345", "884201", "1000099999", "registration"],
+    ["the registration agrees and the licence disagrees", "884201", "1000012345", "650118", "1000012345", "licence"],
+  ])("still reports a lead when %s, whatever the names say", (
+    _label, rowLicence, rowRegistration, leadLicence, leadRegistration, expectedKind,
+  ) => {
+    const unlike: Lead = {
+      id: "U",
+      companyName: "Nothing Alike At All",
+      licenceNumber: leadLicence,
+      registrationNumber: leadRegistration,
+    };
+    const { attachable, differentRegistrant } = leadCandidatesFor(
+      { name: "Keystone Acoustical", licence: rowLicence, registration: rowRegistration },
+      [unlike],
+    );
+    // Not attachable: the documents say two registrants.
+    expect(attachable).toEqual([]);
+    // But emphatically not silent either.
+    expect(differentRegistrant.map((d) => [d.lead.id, d.kind])).toEqual([["U", expectedKind]]);
+  });
+
+  /**
+   * THE BOUND, and without it the two arms above are satisfied by reverting the
+   * whole scoping and going back to forty notes a row. Nothing agrees here — the
+   * licences merely differ and the names are unlike — so this pair must stay
+   * silent.
+   */
+  it("still says nothing when NEITHER identifier agrees and the names are unlike", () => {
+    const unrelated: Lead = {
+      id: "N",
+      companyName: "Nothing Alike At All",
+      licenceNumber: "650118",
+      registrationNumber: null,
+    };
+    const { attachable, differentRegistrant } = leadCandidatesFor(
+      { name: "Keystone Acoustical", licence: "884201", registration: null },
+      [unrelated],
+    );
+    expect(attachable).toEqual([]);
+    expect(differentRegistrant).toEqual([]);
   });
 
   /** A merely SIMILAR name is enough to be worth the note: it is exactly the pair

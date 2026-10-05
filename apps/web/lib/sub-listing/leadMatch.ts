@@ -56,9 +56,23 @@
  * agreement un-says it — so an identical name over contradicting licences is
  * not a strong candidate, it is two companies. Those come back under
  * `differentRegistrant`, which the screen shows as a NOTE and can never render
- * as something to click. Dropping them silently was the other option and it is
- * worse than either: a suppression nobody can see is this file deciding, which
- * is the one thing its title says it does not do.
+ * as something to click.
+ *
+ * ── AND THE ONE CASE IT PASSES OVER IN SILENCE, WHICH IS NARROWER THAN IT WAS ──
+ *
+ * This section used to end "dropping them silently was the other option and it
+ * is worse than either: a suppression nobody can see is this file deciding".
+ * That is still the rule for anything a reviewer could confuse, and it is no
+ * longer the whole rule — because reporting EVERY lead whose licence merely
+ * differed put forty true, useless notes on one row (see
+ * `601-forty-true-notes-nobody-needed.md`).
+ *
+ * So a contradicting lead is passed over ONLY when nothing could confuse it with
+ * this row: the names do not bear on each other AND neither identifier agrees.
+ * A lead holding this row's own licence is always reported, however its name is
+ * spelled — the first version of that gate left this out and silently dropped
+ * 1,584 of 18,225 pair shapes, which review caught and which is recorded on the
+ * branch rather than quietly fixed.
  *
  * ── THE KEY IS BUILT THE WAY THE IMPORT BUILDS IT, NOT A SECOND WAY ──
  *
@@ -322,6 +336,13 @@ export function leadCandidatesFor<
     };
 
     const nameSays = nameEvidence(target, targetWords, lead.companyName);
+    /* One identifier of the PAIR agreeing exactly, whatever the other one says.
+       Computed here because the contradiction branch below has to know it: a lead
+       holding this row's own licence is confusable with it no matter how the two
+       names are spelled. */
+    const identifierAgrees =
+      (listedIds.licence !== null && listedIds.licence === leadIds.licence) ||
+      (listedIds.registration !== null && listedIds.registration === leadIds.registration);
 
     /* A CONTRADICTION IS ONLY WORTH SAYING WHEN THE NAME WOULD OTHERWISE HAVE
        MADE THIS LEAD LOOK LIKE A MATCH.
@@ -335,13 +356,23 @@ export function leadCandidatesFor<
        was buried in it.
        So an unrelated firm whose licence simply differs is passed over in
        silence, and that silence is right: there is nothing to tell a reviewer
-       about a company this row was never going to be confused with. The note
-       exists for the case its own wording describes — the names agree and the
-       documents say two registrants.
+       about a company this row was never going to be confused with.
+       **OR AN IDENTIFIER AGREES EXACTLY, which the first version of this gate
+       left out and which cost the very collision this file exists to surface.**
+       Found by review: a lead holding THIS ROW'S OWN LICENCE with a contradicting
+       DIR registration and an unrelated spelling came back in neither list — not
+       offered, not noted, nothing. `sameCompany` refuses to merge that pair too
+       (it opens with the same contradiction test), so the server declined and the
+       screen said nothing and the reviewer made the duplicate by hand, which is
+       verbatim the failure `601-the-licence-reaches-the-reviewer.md` was written
+       to end. Measured at 1,584 of 18,225 (row, lead) shapes.
+       A shared licence is confusable however the two names are spelled — that is
+       the whole premise of keying identity on the licence — so the name cannot be
+       the only thing that earns the note.
        A licence disagreement is still reported in preference to a registration
        one: it is the identifier this trade actually quotes. */
     if (identifiersContradict(listedIds, leadIds)) {
-      if (nameSays === null) continue;
+      if (nameSays === null && !identifierAgrees) continue;
       const kind =
         listedIds.licence !== null &&
         leadIds.licence !== null &&

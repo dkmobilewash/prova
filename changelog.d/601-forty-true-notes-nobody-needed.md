@@ -29,18 +29,31 @@ before deciding, which also removed the duplicated word-subset logic.
 | mutation | reds |
 | --- | --- |
 | report every differing licence again | the three new cases |
-| never report a contradiction at all | the **six** original contradiction cases |
+| never report a contradiction at all | the **four** older contradiction cases |
 | the shorter/longer pair the wrong way round | three name cases, including the new similar-name one |
 
-The second is why the new tests are not enough on their own: without those six, "say nothing
-about 40 unrelated firms" is satisfied by a version that reports nothing ever, which is the
-opposite defect and strictly worse, since it hides the collision a reviewer needs. Both
-directions are pinned.
+The second is why the new tests are not enough on their own: without those older cases, "say
+nothing about 40 unrelated firms" is satisfied by a version that reports nothing ever, which
+is the opposite defect and strictly worse, since it hides the collision a reviewer needs.
+Both directions are pinned.
 
-**The fixture is 40 leads and not 3 on purpose.** With two or three the old behaviour and
-the new one are nearly indistinguishable, and the bug was invisible in a fixture that size —
-the browser harness on this same code showed exactly one note, correctly, because it had four
-leads. The number IS the test.
+**Two numbers in this entry were wrong and are corrected here rather than left standing.**
+That row said **six**, and six tests do go red — but only four of them pre-date this change;
+the other two were added by this very commit, which is the opposite of the argument being
+made. (A fifth test in the same describe calls `identifiersContradict` directly and stays
+green, since the mutation is to the caller.) The conclusion survives on four; the number did
+not.
+
+And the fixture is 40 leads because that is the scale the defect was **noticed** at, not
+because the assertion needs it: review re-ran the gate mutation with the fixture at 40, 3, 2
+and 1 and got identical results every time, since `toEqual([])` fails on one stray note
+exactly as on forty. This entry claimed "the number IS the test", which was a true statement
+about how the bug was found dressed up as a false one about the test.
+
+**AND THE FIX IN THIS ENTRY WAS ITSELF TOO BLUNT — see
+`601-the-silence-that-swallowed-a-shared-licence.md`.** Scoping the note to "the name bears
+on it" also silenced a lead holding this row's OWN licence whenever its other identifier
+disagreed and its name was unlike. Read that entry before relying on this one.
 
 One smaller thing fixed on the way. Extracting the helper first spread one word array and
 then worked out which of the two was the shorter from its length and first word. That is

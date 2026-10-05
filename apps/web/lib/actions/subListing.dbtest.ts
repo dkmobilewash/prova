@@ -1478,12 +1478,12 @@ describe("the same subcontractor arriving in a second import", () => {
 describe("re-reading one document does not write its evidence twice", () => {
   const SOURCE = "https://example.test/idempotent/award-packet.pdf";
 
-  function listingFor(project: string) {
+  function listingFor(project: string, city = "Fontana, CA") {
     const listingText = [
       `Project: ${project}`,
       "Prime Contractor: Swinerton Builders",
       "",
-      "Repeatread Drywall, Inc.\tFontana, CA\tC-9 886601\t1000066601\tMetal stud framing and drywall",
+      `Repeatread Drywall, Inc.\t${city}\tC-9 886601\t1000066601\tMetal stud framing and drywall`,
     ].join("\n");
     const parsed = parseSubListing(listingText);
     expect(parsed.rows, "the fixture parsed to no single row").toHaveLength(1);
@@ -1491,8 +1491,8 @@ describe("re-reading one document does not write its evidence twice", () => {
     return { listingText, line: parsed.rows[0].line };
   }
 
-  function importAt(project: string, sourceUrl: string) {
-    const { listingText, line } = listingFor(project);
+  function importAt(project: string, sourceUrl: string, city?: string) {
+    const { listingText, line } = listingFor(project, city);
     return importSubListing(
       form({ listingText, sourceUrl, primeOutcome: "UNKNOWN", lines: String(line) }),
     );
@@ -1565,6 +1565,39 @@ describe("re-reading one document does not write its evidence twice", () => {
    * the test above would be satisfied by a filter that simply refused any second
    * import of a URL, which is a different and much worse rule.
    */
+  /**
+   * THE COUNT MUST BE WHAT WAS WRITTEN, not what was offered — and the case below
+   * could not tell the difference. Review found it: changing
+   * `signalsProposed += fresh.length` to `+= proposals.length` left the whole db
+   * suite green, because no case exercised a PARTIAL overlap and the ones that
+   * existed asserted only `> 0`.
+   *
+   * A partial overlap is a real shape rather than a contrived one: an agency
+   * reposts a corrected listing at the same URL with ONE field changed. Changing
+   * the city alone moves exactly one of the five claims — the GEOGRAPHY one,
+   * measured rather than assumed — so the honest count is 1 and the inflated one
+   * is 5.
+   *
+   * Asserted as an identity against the database rather than as a literal, so it
+   * stays true if the number of claims a row yields ever changes.
+   */
+  it("counts the claims it WROTE, not the ones it considered, on a partial re-import", async () => {
+    const lead = await theLead();
+    const before = await prisma.salesLeadSignal.count({ where: { leadId: lead.id } });
+
+    const corrected = await importAt("Fontana Senior Center", SOURCE, "Rialto, CA");
+    expect(corrected.ok).toBe(true);
+    if (!corrected.ok) return;
+    const after = await prisma.salesLeadSignal.count({ where: { leadId: lead.id } });
+
+    // The identity: the summary's number IS the number of rows written.
+    expect(corrected.value.signalsProposed).toBe(after - before);
+    /* And the overlap really is PARTIAL — without these the identity above is
+       satisfied by a re-import that wrote everything, or nothing. */
+    expect(corrected.value.signalsProposed).toBeGreaterThan(0);
+    expect(corrected.value.signalsProposed).toBeLessThan(5);
+  });
+
   it("still records a document re-posted at the same URL with different wording", async () => {
     const lead = await theLead();
     const before = await prisma.salesLeadSignal.count({ where: { leadId: lead.id } });

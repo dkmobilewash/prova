@@ -717,10 +717,32 @@ describe("the cap is defined once, and both callers ask for it", () => {
    * The screen ASKING is the half a sentence-count cannot see: the number could
    * live in one place and the component still never consult it, which is exactly
    * the state this change was made from.
+   *
+   * ── WHAT THIS CENSUS COULD NOT SEE, AND WHAT IT STILL CANNOT ──
+   *
+   * It asserted `toContain("tooManyRows")` and `/disabled=\{[^}]*tooMany/`, and
+   * review showed BOTH are satisfied by a screen that is backwards. An inverted
+   * gate (`tooMany === null`), a defused one (`tooMany && false`) and a cap asked
+   * of a constant (`tooManyRows(0)`) all passed, while disabling the submit button
+   * for every normal paste. `toContain` was satisfied by the import line alone.
+   *
+   * So the sense of the comparison and the ARGUMENT are both pinned now, which
+   * kills all three of those. What a text census still cannot do is prove the
+   * rendered button is disabled: nothing in this repo renders
+   * `SubListingImport`, and the screen suite runs in happy-dom. That behaviour was
+   * verified in real Chromium instead — 61 rows print the refusal and disable
+   * submit, which re-enables under the cap — and the durable CI version is the
+   * dev-only public route recorded in `601-the-screen-clicked-in-a-real-browser.md`.
+   *
+   * Worth keeping in proportion: the SERVER enforces the cap independently, and
+   * `subListing.dbtest.ts` pins that it refuses 61 before reconciling a row. A
+   * backwards gate here is a usability outage, not a data defect.
    */
   it("has the review screen import the function and gate its submit button on it", () => {
     const screen = sources.find((source) => source.path.endsWith("SubListingImport.tsx"))!.text;
-    expect(screen).toContain("tooManyRows");
-    expect(screen).toMatch(/disabled=\{[^}]*tooMany/);
+    // Asked of the real count, not of a constant.
+    expect(screen).toMatch(/tooManyRows\(\s*included\.length\s*\)/);
+    // And the gate's SENSE, which is what an inverted screen gets wrong.
+    expect(screen).toMatch(/disabled=\{[^}]*tooMany !== null/);
   });
 });
