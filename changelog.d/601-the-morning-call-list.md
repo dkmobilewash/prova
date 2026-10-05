@@ -79,3 +79,51 @@ markup, not by reading it: the `li` filter still resolves to exactly one, an exa
 match for "Call this one" still returns 0 on the fixture (which is why only non-empty
 bands get a heading, pinned by its own test), the Pipeline section filter still
 resolves to one, and the lead link still resolves to one. CI's `e2e` job is the proof.
+
+### Two CI failures this caused, and why the local checks could not see either
+
+**`ci` went red twice on this work** — the first red `ci` on the branch — and both
+were the harness rather than the feature. They are recorded because the second one
+corrects how this repo's own typecheck advice was being applied.
+
+**One: a comparator behind `"use client"`.** `lib/client-boundary.test.ts` refused
+`compareForCalling`, `orderForCalling` and `groupForCalling` living in
+`components/SalesLeadRow.tsx`: across the RSC boundary a non-component value from a
+`"use client"` module arrives as a CLIENT-REFERENCE PROXY, not the function. Nothing
+was broken at runtime, because the sort was only ever called from inside a client
+component — the violation was that the values were REACHABLE, and a guard that waited
+for somebody to actually call one would fire on the day a server component imported it
+rather than the day it became possible. The census named the fix in its own failure
+message and `lib/sales-lead-order.ts` is it.
+
+**Two: `TS2307` IS NOT ONLY NOISE — IT IS A BLINDFOLD, and that is the lesson.** CI's
+Typecheck failed on one error, `salesLeadOrder.test.ts(78,63): TS2769 No overload
+matches this call` — a `next/link` mock typing `children?: unknown` where
+`components/Sidebar.test.ts`, the file it was copied from, types it `ReactNode`.
+
+The local typecheck could not have caught it, and not for want of filtering. This
+container's `apps/web/node_modules` is empty (the `xlsx` tarball 403), so that file
+emitted five `TS2307 Cannot find module 'react'` — which means `createElement` is typed
+`any`, so the compiler never reaches the overload check and **TS2769 cannot be emitted
+for that call at all**. Thirteen TS2769s DO appear elsewhere in the same run, in files
+whose types resolve, which is what proves the checker was able to report that class and
+was blinded for this one specifically.
+
+CLAUDE.md's existing rule is to count the lines naming your file so an empty filter is
+not read as a pass. That is necessary and it is not sufficient: **five lines naming the
+file were all TS2307, and every one of them was a real type error that could no longer
+be reported.** The honest reading of a `TS2307` on an import is "every inference
+downstream of this import is now `any`, so this file is unchecked" — not "one more line
+of cascade". Where a diff touches a file whose imports do not resolve here, CI's
+Typecheck step is the only instrument, and a local zero means nothing about it.
+
+**Three: the mocks belong in the test file, not in a config.** The five render tests
+passed locally and failed in CI with `invariant expected app router to be mounted`,
+because a scratchpad config aliased `next/link` and `next/navigation` to stubs and
+`vitest.config.mts` has no such aliases. A harness more permissive than the real one
+produces a green that says nothing. The mocks are in the file now, copied from
+`Sidebar.test.ts`, and CI's Test step passes 584 of 584 with them.
+
+The control that made the local diagnosis readable rather than a shrug:
+`Sidebar.test.ts` — green in CI — fails in this container identically, on `next/image`
+resolution. So the resolve failure is a property of the container, not of the change.

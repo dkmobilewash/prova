@@ -40,7 +40,7 @@
  * `salesLeadRegistry.test.ts` and `actionForm.test.ts` both do and say.
  */
 
-import { createElement } from "react";
+import { createElement, type ReactNode } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -74,7 +74,7 @@ vi.mock("next/link", async () => {
       ...rest
     }: {
       href: string;
-      children?: unknown;
+      children?: ReactNode;
     } & Record<string, unknown>) => h("a", { href, ...rest }, children),
   };
 });
