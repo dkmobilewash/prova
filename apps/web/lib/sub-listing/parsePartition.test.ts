@@ -19,7 +19,8 @@ import { parseSubListing } from "./parse";
  *
  * So this generates listings instead: header lines in and out of place, rows with
  * cells missing, five delimiter styles, blank lines, page furniture, money and
- * percentage lines, names that normalise to nothing, licences of every shape the
+ * percentage lines, names that normalise to nothing (though see the blank-name case
+ * below: `"Inc."` is one of them and the reader accepts it), licences of every shape the
  * repo has seen refused.
  *
  * ── WHAT IT DOES NOT CLAIM ──
@@ -29,6 +30,23 @@ import { parseSubListing } from "./parse";
  * subcontractor as thoroughly as no bucket at all, and that half is
  * `hasDataEvidence` plus the converse cases in `parse.test.ts`. This is the other
  * half, and only the other half.
+ *
+ * ── AND THE SHAPES IT CANNOT REACH, WHICH MATTERS MORE THAN IT LOOKS ──
+ *
+ * **None of the generated documents reaches the numbered-box reader, the
+ * labelled-column reader, or the generic form refusal.** Those are the three early
+ * returns in `parseSubListing`, and they are the only places where `accountedFor` is
+ * deliberately NOT the sum of the four reported buckets — a labelled form reports
+ * `accountedFor: form.ignored.length` while still returning rows. So two of the
+ * properties below are false BY CONSTRUCTION on those paths, and this file both fails
+ * to cover them and would go red on correct code if the generator ever produced one.
+ * Measured, not assumed: a review censused all 6,000 and found zero.
+ *
+ * That gap is not cosmetic. The labelled-column reader is where two rows share a
+ * line, and the defect that cost this branch a day — a multi-bidder form that could
+ * be read and never imported — lived in exactly the shape no corpus here contains.
+ * A generator for those forms is worth writing; it is a different generator, because
+ * the invariant it would assert is a different invariant.
  *
  * Deterministic: one seed, so a failure is reproducible rather than a story about
  * a run nobody can repeat.
@@ -91,8 +109,22 @@ describe("the partition holds for arbitrary text, not just for the fixtures", ()
    * assertion below — the partition is trivially true of a document with no lines.
    * So the corpus is required to actually exercise all four buckets and to produce
    * documents the reader objects to.
+   *
+   * ── IT USED TO ASSERT TOTALS, AND SIX DOCUMENTS SATISFIED IT ──
+   *
+   * Measured by a review: replacing all but SIX of the 6,000 with empty strings left
+   * this control and both property cases green. `> 0` on a total is a floor of one
+   * document per bucket, so the corpus could silently shrink by three orders of
+   * magnitude with the whole file passing — and the file's whole claim is that it
+   * walks 6,000.
+   *
+   * So the floor is a RATE now, per document rather than per corpus. The numbers are
+   * deliberately well under what the generator produces (measured at baseline: 3.8
+   * rows, 0.26 unread lines and 0.39 problems per document, and 51% agreeing) so an
+   * ordinary generator change does not red it, while anything that stops exercising a
+   * path does.
    */
-  it("generates a corpus that reaches every bucket", () => {
+  it("generates a corpus that reaches every bucket, at a rate rather than at all", () => {
     expect(listings).toHaveLength(CASES);
     let rows = 0, header = 0, ignored = 0, unread = 0, problems = 0, agreed = 0;
     for (const text of listings) {
@@ -104,9 +136,21 @@ describe("the partition holds for arbitrary text, not just for the fixtures", ()
       problems += r.problems.length;
       if (r.reconciliation.agreed) agreed += 1;
     }
-    for (const [label, n] of [["rows", rows], ["header", header], ["ignored", ignored],
-      ["unread", unread], ["problems", problems], ["agreed", agreed]] as const) {
-      expect(n, `the corpus never produced any ${label}`).toBeGreaterThan(0);
+    /* A RATE PER DOCUMENT, not a total. Each floor is roughly a quarter of what the
+       generator measures at, so this is a liveness check on the path rather than a
+       pin on the generator's exact mix. */
+    for (const [label, n, perDocument] of [
+      ["rows", rows, 1],
+      ["header", header, 0.5],
+      ["ignored", ignored, 0.5],
+      ["unread", unread, 0.05],
+      ["problems", problems, 0.05],
+      ["agreed", agreed, 0.1],
+    ] as const) {
+      expect(
+        n / CASES,
+        `the corpus produces ${n} ${label} across ${CASES} documents — under ${perDocument} each, this path is barely walked`,
+      ).toBeGreaterThan(perDocument);
     }
     // And it is not uniformly clean either, or the unread/problem paths go unwalked.
     expect(agreed, "every generated document agreed — the corpus is too tidy").toBeLessThan(CASES);
@@ -143,9 +187,30 @@ describe("the partition holds for arbitrary text, not just for the fixtures", ()
 
   /**
    * A row is a company this app will CALL. One with no name is a row whose name
-   * cell the reader lost, and it would reach the screen looking importable — so
-   * the generator deliberately includes names that normalise to nothing (`""`,
-   * `"   "`, `"&"`, `"Inc."`) and asserts none of them becomes a row's name.
+   * cell the reader lost, and it would reach the screen looking importable.
+   *
+   * ── WHAT THIS DOCSTRING CLAIMED, AND WHAT IT ACTUALLY ASSERTS ──
+   *
+   * It said the generator "includes names that normalise to nothing (`""`, `"   "`,
+   * `"&"`, `"Inc."`) and asserts none of them becomes a row's name". The first half
+   * is true and the second is FALSE, measured: **1,611 of the 22,714 generated rows
+   * are named exactly `"Inc."`**, and this case is green over every one of them.
+   * `isNameCandidate` wants three consecutive letters and `Inc` has them.
+   *
+   * What it asserts is narrower and still worth having: no row reaches the screen
+   * with a BLANK name. Whether `Inc.` alone should be a lead is a product question
+   * about `isNameCandidate` rather than about the partition, and answering it here
+   * would be this file changing what it is for.
+   *
+   * ── AND IT IS THE WEAKEST CASE IN THIS FILE, SAID PLAINLY ──
+   *
+   * Review could not kill it from the name path: dropping the three-letter rule from
+   * `isNameCandidate`, and breaking `fieldSpans`'s empty test, left it green
+   * separately and together. The property is guaranteed one layer down — `fieldSpans`
+   * trims every chunk and drops the empty ones, so every field reaching `readRow` is
+   * a non-empty trimmed string. It is killable (assigning `""` to a row's name reds
+   * it), so it is not vacuous, but it is insurance against a future reader rather
+   * than a live guard on this one.
    */
   it("never produces a row whose company name is blank", () => {
     const offenders: string[] = [];

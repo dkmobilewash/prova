@@ -1733,9 +1733,25 @@ describe("a full-size listing, at the cap", () => {
       where: { companyId: context.company.id, sourceUrl: SOURCE },
     });
     expect(result.value.signalsProposed).toBe(signals);
-    // And every lead really did get its own evidence, not one lead getting all of it.
+
+    /* THE SUM IS NOT THE "EVERY LEAD GOT ITS OWN" CHECK, and this comment used to
+       say it was. Measured by mutation: write all 300 signals to the FIRST lead and
+       the sum still passes, because both sides then count the same rows. What the
+       sum uniquely catches is a claim landing on a lead OUTSIDE this listing's set —
+       diverting one gives 300 against 299 while every other assertion here stays
+       green. So it is a provenance check, and it earns its place as one. */
     expect(signals).toBe(leads.reduce((total, lead) => total + lead.signals.length, 0));
-    for (const lead of leads) expect(lead.signals.length).toBeGreaterThan(0);
+
+    /* THE DISTRIBUTION, which is what the sentence above was reaching for. An
+       EQUALITY rather than `> 0`: sixty identical rows must each produce the same
+       number of claims, so one lead holding everything reds here naming the lead
+       rather than passing on a technicality. Derived from the first lead rather
+       than written as 5, so a claim table that changes shape does not fail this. */
+    const per = leads[0].signals.length;
+    expect(per).toBeGreaterThan(0);
+    for (const lead of leads) {
+      expect(lead.signals.length, `${lead.companyName} holds ${lead.signals.length} of ${signals}`).toBe(per);
+    }
   });
 
   /**
