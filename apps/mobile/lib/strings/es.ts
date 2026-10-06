@@ -563,6 +563,7 @@ export const ES: Record<keyof typeof EN, string> = {
   "sheets.openFull": "Abrir a pantalla completa para marcar con precisión",
   "sheets.fullHint": "Pellizca para acercar. Toca dónde está.",
   "sheets.closeFull": "Listo",
+  "sheets.photoHere": "Foto aquí",
   "thing.sheets": "las hojas",
   "nav.sheets": "Hojas",
   "drawings.openSheets": "Hojas y marcas",
