@@ -227,7 +227,13 @@ export type AskUsageFeature =
    *  could not tell them apart could not answer "what did the thing we
    *  turned off actually cost us". They also claim the same page ledger, so
    *  nothing else distinguishes them. */
-  | "schedule-read";
+  | "schedule-read"
+  /** One pass drafting a job's proposal clauses
+   *  (lib/actions/proposalDrafts.ts). Its own row rather than folded into
+   *  `draft-estimate-lines`: the two are switched separately, and a bill
+   *  that could not tell them apart could not answer "what did the thing we
+   *  turned off actually cost us". */
+  | "proposal-draft";
 
 export type AskUsageRecord = {
   companyId: string;
@@ -402,6 +408,7 @@ const FEATURE_LABELS: Record<string, string> = {
   "addendum-read": "Addendum reading",
   "spec-read": "Spec section reading",
   "schedule-read": "Schedule reading",
+  "proposal-draft": "Proposal clause drafting",
 };
 
 /** The last thirty days for the settings page, grouped by who asked.

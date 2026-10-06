@@ -86,6 +86,7 @@ export const AI_FEATURE_LABEL: Record<AiFeatureKey, string> = {
   ADDENDUM_READ: "Reading addenda",
   SPEC_READ: "Reading spec sections",
   SCHEDULE_READ: "Reading schedules off a drawing",
+  PROPOSAL_DRAFT: "Drafting proposal clauses",
 };
 
 /**
@@ -158,6 +159,8 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
     "Reading a spec section from the bid documents and listing what in it costs money — finish levels, rated assemblies, mock-ups, testing, named products — for you to check against your number. It never says whether your bid already carries a cost, because it has not seen your estimate. With this off you read the section yourself, as you do today.",
   SCHEDULE_READ:
     "Reading a door, window, finish or partition schedule off a drawing into rows you accept or reject. The rows are proposed, never added to a takeoff on their own — and with this off you can still type a schedule in by hand.",
+  PROPOSAL_DRAFT:
+    "Writing the inclusions, exclusions and clarifications for a job's proposal \u2014 one per thing this app already knows about the bid: a spec requirement, an indirect nobody priced, a package carried from a sub. Every clause is proposed with the quote it came from, and nothing reaches the proposal until you accept it. With this off you can still write clauses by hand.",
 };
 
 /**

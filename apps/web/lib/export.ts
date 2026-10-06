@@ -705,6 +705,20 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     models: ["PlanScheduleProposal"],
   },
   {
+    key: "proposal-clause-drafts",
+    title: "Drafted proposal clauses, and the ones you dismissed",
+    detail:
+      "When the app drafts the clauses a scope letter does not mention, each suggestion is kept with the " +
+      "requirement it answers and the quote it came from \u2014 including the ones you turned down, so the same " +
+      "thing is not suggested again. Not exported yet, and the two halves differ. A clause you ACCEPTED is " +
+      "already in this file: it became a real clause on that job's proposal, which IS exported. What is left " +
+      "here is the suggestion queue and your decisions about it \u2014 useful to us for telling a good draft " +
+      "from a bad one, and not a record of your work in the way the accepted clause is. The dismissals are the " +
+      "part worth asking for if you ever want them: they are a list of what you decided does not belong on a " +
+      "letter, which is a judgement nobody else can reconstruct.",
+    models: ["ProposalClauseDraft"],
+  },
+  {
     key: "bid-addendum-readings",
     title: "What was read off each bid addendum, and the scopes an estimator ruled in or out",
     detail:
