@@ -277,6 +277,7 @@ model User {
   jobMediaAnnotations                  JobMediaAnnotation[]          @relation("JobMediaAnnotationBy")
   takeoffPlansUploaded                 TakeoffPlan[]                 @relation("TakeoffPlanUploadedBy")
   planSheetProposalsAccepted           PlanSheetProposal[]           @relation("PlanSheetProposalAcceptedBy")
+  planScheduleProposalsAccepted        PlanScheduleProposal[]        @relation("PlanScheduleProposalAcceptedBy")
   bidAddendumReadingsStarted           BidAddendumReading[]
   bidSpecReadingsStarted               BidSpecReading[]
   bidAddendumDecisions                 BidAddendumItemDecision[]

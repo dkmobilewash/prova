@@ -129,8 +129,9 @@ model TakeoffPlan {
   /// paper trail is still `DrawingSet`/`DrawingRevision`, and `label` on
   /// `TakeoffPlanPage` is still typed by a person. Accepting a proposal writes
   /// neither.
-  sheetTexts     PlanSheetText[]
-  sheetProposals PlanSheetProposal[]
+  sheetTexts        PlanSheetText[]
+  sheetProposals    PlanSheetProposal[]
+  scheduleProposals PlanScheduleProposal[]
 
   createdAt DateTime @default(now())
 

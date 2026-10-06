@@ -6,6 +6,8 @@ import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { TakeoffMeasurementList } from "@/components/TakeoffMeasurementList";
 import { TakeoffPlanUploader } from "@/components/TakeoffPlanUploader";
 import { PlanIngestPanel } from "@/components/PlanIngestPanel";
+import { ScheduleProposals } from "@/components/ScheduleProposals";
+import { loadScheduleProposals, scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery";
 import { PlanSheetReview } from "@/components/PlanSheetReview";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { latestIngestFor } from "@/lib/plan-ingest/claim";
@@ -128,6 +130,11 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
 
   // DERIVED HERE, NOT STORED: which calibration is current, and therefore
   // which measurements read at an older scale. Nothing on the row says so.
+  // WHAT READING THE SCHEDULES WILL COST, counted over the newest title-block
+  // proposal per page. The button says this number before anybody presses it,
+  // which is the house rule for every control that spends an allowance.
+  const scheduleSheetCount = await scheduleSheetCountFor(plan.id);
+
   const sheets: PlanSheet[] = plan.pages.map((page) => {
     const current = page.calibrations[0] ?? null;
     // EVERY calibration on the sheet, not just the newest — the question
@@ -236,7 +243,11 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           since it was written, and reading a PDF was never the same capability as
           rasterising one. `startPlanIngest` counts the file's own sheets now. */}
       {isEstimateStage && (
-        <PlanIngestPanel planId={plan.id} existing={await latestIngestFor(plan.id)} />
+        <PlanIngestPanel
+          planId={plan.id}
+          existing={await latestIngestFor(plan.id)}
+          scheduleSheetCount={scheduleSheetCount}
+        />
       )}
 
       {/* WHAT WAS READ, AND WHAT SOMEBODY SAYS IT IS — below the panel that reads
@@ -245,6 +256,11 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           sentence, which is more useful than a section that appears from nowhere
           the first time a run finishes. */}
       {isEstimateStage && <PlanSheetReview rows={await sheetIndexFor(plan.id, company.id)} />}
+
+      {/* BELOW the sheet review, because the page types it shows are what decide
+          which sheets have schedules at all. Silent until something has been
+          read — the convention every advisory surface here follows. */}
+      {isEstimateStage && <ScheduleProposals proposals={await loadScheduleProposals(plan.id)} />}
 
       <TakeoffPlanViewer
         jobId={job.id}

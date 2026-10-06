@@ -66,6 +66,12 @@ enum PlanIngestStage {
   /// calls a model, and it never opens the PDF — so a retry costs one model call
   /// and no parse.
   TITLE_BLOCK
+  /// Per page, and ONLY the pages the title block called a SCHEDULE: rebuild the
+  /// table from text coordinates in code, then read what its columns mean with
+  /// one model call. Opens the PDF, which the title-block stage deliberately
+  /// does not — see `lib/plan-ingest/scheduleRows.ts` for why that trade is the
+  /// right one here and wrong there.
+  SCHEDULE_ROWS
   /// Computed at READ TIME and deliberately never a stage — ordering, duplicate
   /// numbers and what still needs a person are pure computation over rows that
   /// already exist. As a per-page job it would run once per sheet over the whole
@@ -135,7 +141,8 @@ model PlanIngestJob {
   /// stage — `PAGE_INVENTORY` writes `PlanSheetText`, which is keyed on the PLAN
   /// rather than on a run because the text of a page of an immutable file does not
   /// depend on which run read it.
-  sheetProposals PlanSheetProposal[]
+  sheetProposals    PlanSheetProposal[]
+  scheduleProposals PlanScheduleProposal[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -488,4 +495,91 @@ enum PlanSheetProposalStatus {
   PROPOSED
   ACCEPTED
   REJECTED
+}
+
+/// ONE SCHEDULE READ OFF ONE SHEET, proposed for a person to accept.
+///
+/// A SEPARATE MODEL FROM `PlanSheetProposal` rather than more columns on it,
+/// because the two answer different questions about the same page and have
+/// different lifetimes. The sheet proposal is "what IS this sheet" — one answer,
+/// six fields, settled once. This is "what does its table SAY" — a list whose
+/// length the drawing decides, re-readable on its own without touching the sheet
+/// identity somebody already accepted.
+///
+/// ROWS ARE `Json`, NOT A CHILD TABLE, and this is the same call `BidSpecReading`
+/// made for its findings. A row here is a PROPOSAL: it is read, shown, and either
+/// accepted or thrown away as a set. Nothing joins to an individual row, nothing
+/// updates one in place, and nothing orders them other than as they appeared on
+/// the sheet. A child table would buy referential integrity for rows that have no
+/// referents, and cost a cascade on every re-read.
+///
+/// When a row becomes something the app acts on — a measurement matched to a door
+/// mark — THAT is a real row in a real table, and it is deliberately not in this
+/// PR. See the linking note in `lib/plan-ingest/scheduleRows.ts`.
+model PlanScheduleProposal {
+  id String @id @default(cuid())
+
+  /// WHICH RUN read it. A re-run inserts its own row rather than overwriting,
+  /// which is what keeps an accepted reading from being replaced by a later
+  /// pass — the same reason `PlanSheetProposal` carries this.
+  ingestJobId String
+  ingestJob   PlanIngestJob @relation(fields: [ingestJobId], references: [id], onDelete: Cascade)
+
+  /// CASCADEs from the plan, so one `takeoffPlan.deleteMany({ jobId })` reaches
+  /// it and it stays out of `HANDLED_MODELS` and both cleanup `del()` orders.
+  planId String
+  plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  /// 1-based, the way the viewer, the runner and the title block all count.
+  pageNumber Int
+
+  /// DOOR, WINDOW, FINISH, PARTITION, FIXTURE or OTHER — `SCHEDULE_KINDS` in
+  /// `packages/integrations/src/scheduleRows.ts`. TEXT rather than an enum for
+  /// the reason `proposedPageType` gives: this holds MODEL OUTPUT, and an enum
+  /// column rejecting an unexpected value at write time would cost the whole
+  /// reading to a production error that is redacted anyway.
+  kind String
+
+  /// The schedule's own title as printed — "DOOR SCHEDULE", "ROOM FINISH
+  /// SCHEDULE". Null when the table carries no heading.
+  title String?
+
+  /// The rows, in the order they appeared. Each element: `mark` (copied exactly
+  /// — it is an identity on somebody else's drawing), `description`, `size` (as
+  /// PRINTED, never parsed: `lib/feet-inches.ts` is the app's one reader for
+  /// that), `quantity` (null unless the schedule states one) and `notes`.
+  rows Json
+
+  /// Which column was read as what, checkable against the grid the model was
+  /// given, and which lines were dropped. `intake.prisma`'s standard: "a reason
+  /// nobody can check is a reason nobody can overrule."
+  reason String
+
+  confidence PlanSheetConfidence
+
+  /// How many ROWS of the reconstructed grid were handed to the model, and how
+  /// many came back as schedule rows. Stored because the DIFFERENCE is the
+  /// thing worth seeing: a grid of sixty lines read as twelve rows either
+  /// dropped a column of headers or lost half the schedule, and only a person
+  /// looking at the sheet can say which.
+  gridRowCount Int
+  readRowCount Int
+
+  model         String
+  promptVersion String
+
+  status PlanSheetProposalStatus @default(PROPOSED)
+
+  acceptedByUserId String?
+  acceptedBy       User?     @relation("PlanScheduleProposalAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  acceptedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One reading per page per run, so a retry landing on the same run replaces
+  /// its own answer rather than adding a second opinion.
+  @@unique([ingestJobId, pageNumber])
+  @@index([planId, pageNumber, createdAt])
+  @@index([planId, status])
 }
