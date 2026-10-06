@@ -1004,9 +1004,20 @@ model SheetPin {
   createdAt DateTime @default(now())
 
   @@unique([companyId, clientOperationId])
+
+  /// A PUNCH ITEM HAS ONE LOCATION, so pinning one that is already pinned
+  /// MOVES it rather than adding a second. Without this, item 14 can sit on
+  /// three sheets at once and the punch list quietly stops meaning anything.
+  ///
+  /// The column is nullable and Postgres treats NULLs as distinct, so every
+  /// photo and note pin is unaffected — only punch pins are constrained.
+  ///
+  /// `createSheetPin` also updates in place rather than inserting, but THE
+  /// READ IS NOT THE GUARANTEE — this index is. Two submits that both see no
+  /// existing pin would otherwise both insert.
+  @@unique([punchItemId])
   @@index([pageId])
   @@index([mediaId])
-  @@index([punchItemId])
 }
 
 

@@ -127,6 +127,31 @@ export type SheetSpec = {
    */
   walls?: WallSpec[];
   /**
+   * Draw the walls inside `q <scale> 0 0 <scale> 0 0 cm … Q`, so the sheet poses
+   * the question a plainly-drawn one cannot.
+   *
+   * THE FIXTURE COULD NOT ASK THIS, AND THAT IS WHY A REAL DEFECT SHIPPED. The
+   * first version of `sheetStrokes.ts` ignored the current transformation matrix
+   * entirely, which halves a wall's length and thickness on any sheet that uses
+   * one — and this generator writes its own content stream and never emitted a
+   * `cm`, so every test passed. Real CAD uses them constantly: a Form XObject
+   * always carries a matrix.
+   *
+   * The walls' own `fromFeet` and `lengthFeet` stay the TRUTH in both arms. A
+   * correct reader returns the same footage either way; that equality is the
+   * whole assertion.
+   *
+   * **THE LAST WALL IS DRAWN AFTER THE `Q`, DELIBERATELY, and the first version
+   * of this arm had nothing there.** With every wall inside one `q … Q` and the
+   * content stream ending at the `Q`, a reader that never POPS the matrix scores
+   * identically to one that does — there is nothing left to draw wrongly. So the
+   * `save`/`restore` mutation came back GREEN on a suite written for exactly
+   * that defect. Real CAD interleaves transformed and untransformed content all
+   * over a sheet; one wall after the restore is the smallest shape that makes a
+   * leak observable.
+   */
+  wallTransformScale?: number;
+  /**
    * Feet of building per INCH of paper — 8 is 1/8" = 1'-0", 4 is 1/4".
    *
    * Only needed when `walls` is set: a symbol has an absolute size in points
@@ -255,14 +280,20 @@ function contentStream(spec: SheetSpec): string {
     const feetPerInch = spec.feetPerInch ?? 8;
     // 72 points to the paper inch, `feetPerInch` feet of building to that inch.
     const ptPerFoot = 72 / feetPerInch;
-    const originX = 80;
-    const originY = 80;
+    // Under a `cm`, the coordinates WRITTEN are divided by the scale so the
+    // walls land in the same place and at the same size on paper. That is the
+    // point: the two arms are visually identical and differ only in whether a
+    // reader must honour the matrix.
+    const scale = spec.wallTransformScale ?? 1;
     ops.push("0.75 w");
-    for (const wall of spec.walls) {
-      const x = originX + wall.fromFeet.x * ptPerFoot;
-      const y = originY + wall.fromFeet.y * ptPerFoot;
-      const run = wall.lengthFeet * ptPerFoot;
-      const thickness = wall.thicknessFeet * ptPerFoot;
+
+    /** One wall's two faces, at whatever scale the surrounding matrix is. */
+    const drawWall = (wall: WallSpec, at: number) => {
+      const ptPerFootDrawn = ptPerFoot / at;
+      const x = (80 / at) + wall.fromFeet.x * ptPerFootDrawn;
+      const y = (80 / at) + wall.fromFeet.y * ptPerFootDrawn;
+      const run = wall.lengthFeet * ptPerFootDrawn;
+      const thickness = wall.thicknessFeet * ptPerFootDrawn;
       if (wall.direction === "horizontal") {
         ops.push(`${num(x)} ${num(y)} m ${num(x + run)} ${num(y)} l S`);
         ops.push(`${num(x)} ${num(y + thickness)} m ${num(x + run)} ${num(y + thickness)} l S`);
@@ -270,6 +301,20 @@ function contentStream(spec: SheetSpec): string {
         ops.push(`${num(x)} ${num(y)} m ${num(x)} ${num(y + run)} l S`);
         ops.push(`${num(x + thickness)} ${num(y)} m ${num(x + thickness)} ${num(y + run)} l S`);
       }
+    };
+
+    if (scale === 1) {
+      for (const wall of spec.walls) drawWall(wall, 1);
+    } else {
+      // Every wall but the last under the matrix, then the last one AFTER the
+      // restore at plain scale — see `wallTransformScale` for why that split is
+      // load-bearing rather than decorative.
+      const inside = spec.walls.slice(0, -1);
+      const after = spec.walls[spec.walls.length - 1];
+      ops.push(`q ${num(scale)} 0 0 ${num(scale)} 0 0 cm`);
+      for (const wall of inside) drawWall(wall, scale);
+      ops.push("Q");
+      drawWall(after, 1);
     }
     ops.push("1 w");
   }

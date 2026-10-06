@@ -55,6 +55,20 @@ export default async function PunchListsPage({
       // The photo prompt's input. A count, not the photos: this page never
       // renders them, and Gap 3's capture is what attaches one.
       _count: { select: { media: true } },
+      // WHERE THE ITEM IS, if somebody has put it on a drawing. Without this
+      // the pin is write-only: you can mark an item's exact location and then
+      // have no way back to it from the item itself, which is the half of a
+      // link people forget to build. At most one, by the unique index on
+      // `punchItemId` — an item has one location.
+      sheetPins: {
+        take: 1,
+        select: {
+          id: true,
+          page: {
+            select: { pageNumber: true, label: true, revisionId: true },
+          },
+        },
+      },
     },
   });
 
@@ -271,6 +285,16 @@ export default async function PunchListsPage({
                   jobName: item.job.name,
                   status: item.status,
                   area: item.area,
+                  // Where it is on the drawing, if anybody has said. A label
+                  // when the sheet has one, its number otherwise — "A-201" is
+                  // what a person calls it, "sheet 14" is what the PDF calls
+                  // it, and only one of those is useful on a job.
+                  pinnedOn: item.sheetPins[0]
+                    ? {
+                        revisionId: item.sheetPins[0].page.revisionId,
+                        label: item.sheetPins[0].page.label ?? `sheet ${item.sheetPins[0].page.pageNumber}`,
+                      }
+                    : null,
                   dueOn: item.dueOn,
                   assignedUserId: item.assignedUserId,
                   assignedCrewMemberId: item.assignedCrewMemberId,
