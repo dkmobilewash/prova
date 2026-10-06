@@ -10,6 +10,8 @@ import { money } from "@/lib/money";
 import { formatInstant } from "@/lib/render-date";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { groupProposalClauses, PROPOSAL_CLAUSE_HEADINGS } from "@/lib/proposal-clauses";
+import { ProposalDrafts, type ProposalDraftView } from "@/components/ProposalDrafts";
+import { loadProposalFacts } from "@/lib/estimating/proposal-facts-query";
 import { bidRecap, RECAP_RATE_KEYS, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
 import { proposalPriceState, proposalPriceWarning } from "@/lib/estimating/proposal-recap-currency";
 import { bidMargin, underCostWarning } from "@/lib/estimating/bid-margin";
@@ -45,6 +47,38 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
     },
   });
   if (!job) notFound();
+
+  // WHAT THE LETTER IS SILENT ABOUT, and the drafts already raised for it.
+  // Both are needed: the facts give the count on the button, and the drafts are
+  // what the panel shows. A fact with a draft in any status is already excluded
+  // by `loadProposalFacts`, so these two never double-count.
+  const [gaps, draftRows] = await Promise.all([
+    loadProposalFacts(job.id, company.id),
+    prisma.proposalClauseDraft.findMany({
+      where: { jobId: job.id },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, kind: true, text: true, factKind: true, factRef: true, citation: true, status: true },
+    }),
+  ]);
+  // Whether each accepted clause is already in the standard set, so the offer
+  // is not made for one that is. Read by text and kind, which is what
+  // `saveClauseToLibrary` compares — a library clause carries no link back to
+  // the draft it came from, deliberately: it is a snapshot, like the job clause.
+  const libraryTexts = new Set(
+    (await prisma.proposalClause.findMany({ where: { companyId: company.id }, select: { kind: true, text: true } })).map(
+      (clause) => `${clause.kind}:${clause.text}`,
+    ),
+  );
+  const drafts: ProposalDraftView[] = draftRows.map((draft) => ({
+    id: draft.id,
+    kind: draft.kind,
+    text: draft.text,
+    factKind: draft.factKind,
+    factRef: draft.factRef,
+    citation: draft.citation,
+    status: draft.status,
+    inLibrary: libraryTexts.has(`${draft.kind}:${draft.text}`),
+  }));
 
   const library = await prisma.proposalClause.findMany({
     where: { companyId: company.id },
@@ -247,6 +281,15 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
           here is a copy — editing your library later does not change this proposal.
         </p>
         <JobProposalClauseBuilder jobId={job.id} library={library} />
+
+      {/* BELOW the clause builder, and `print:hidden` on the section itself:
+          this is a working surface, not part of the document a GC receives. */}
+      <ProposalDrafts
+        jobId={job.id}
+        drafts={drafts}
+        gapCount={gaps.length}
+        canOfferLibrary={context.role === "OWNER"}
+      />
       </section>
     </PageShell>
   );
