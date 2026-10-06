@@ -65,6 +65,9 @@ export type PunchListRowItem = PunchItemFieldValues & {
   verifiedByName: string | null;
   reopenReason: string | null;
   photoCount: number;
+  /** Where this item is on a drawing, once somebody has pinned it. Null until
+   * then, and null forever for an item nobody puts on paper. */
+  pinnedOn: { revisionId: string; label: string } | null;
 };
 
 type PunchListRowProps = {
@@ -209,6 +212,19 @@ export function PunchListRow({ canDelete, canVerify, jobs, people, item, showJob
           {showJob && <span className="text-link">{item.jobName}</span>}
           {showJob && item.area && " · "}
           {item.area}
+          {/* THE WAY BACK, without which a pin is write-only: you can mark an
+              item's exact spot on the drawing and then have no route to it
+              from the item. `area` is the free text this replaces, and both
+              show while both exist — an item raised before pinning has only
+              the text, one raised ON the drawing has only the pin. */}
+          {item.pinnedOn && (
+            <>
+              {" · "}
+              <Link href={`/drawings/${item.pinnedOn.revisionId}`} className="text-link underline">
+                on {item.pinnedOn.label}
+              </Link>
+            </>
+          )}
           {assignee && ` · ${assignee}`}
           {item.dueOn && ` · due ${item.dueOn.toISOString().slice(0, 10)}`}
           {item.raisedByName && ` · raised by ${item.raisedByName}`}
