@@ -36,6 +36,36 @@ import type { StrokeSegment } from "./wallVectors";
  * `planPdf.ts` already learned that the hard way for text: an AutoCAD export
  * routinely carries `/Rotate 90`, and reading raw coordinates on one puts every
  * line on the wrong axis.
+ *
+ * ── AND THE VIEWPORT IS ONLY HALF THE TRANSFORM. THE FIRST VERSION OF THIS FILE
+ * SHIPPED WITH THE OTHER HALF MISSING, WHICH HALVED WALL LENGTHS. ──
+ *
+ * A path's coordinates are in the space of the CURRENT TRANSFORMATION MATRIX at
+ * the moment it is drawn, and pdfjs reports that matrix as its own operators
+ * rather than baking it in: `OPS.transform` for a `cm`, `OPS.save`/`OPS.restore`
+ * for `q`/`Q`. Measured on a sheet carrying two walls whose content-stream
+ * numbers are IDENTICAL, the second wrapped in `q 2 0 0 2 0 0 cm … Q`:
+ *
+ *   operators: { setLineWidth: 1, constructPath: 4, stroke: 4,
+ *                save: 1, transform: 1, restore: 1 }
+ *   path coords: [100, 600, 280, 600]     // wall A — 180pt, and 180pt on paper
+ *   path coords: [50, 150, 230, 150]      // wall B — 180pt, but 360pt on paper
+ *
+ * Ignoring those operators reports wall B at HALF its length and HALF its
+ * thickness — a 40ft wall becoming 20ft, or falling outside the thickness window
+ * and vanishing entirely. Both failures are silent, and the footage one is the
+ * expensive kind: it reads as a plausible number.
+ *
+ * **No test in this repo could have caught it**, because `syntheticSheet.ts`
+ * writes its own content stream and never emits a `cm`. That is CLAUDE.md's
+ * *"nothing is ever missing from a question nobody is asking"* — the fourth
+ * member of the census family, arriving as a fixture that cannot pose the
+ * question rather than a census that cannot see the file. Real CAD poses it
+ * constantly: a Form XObject always carries a matrix, and Revit and AutoCAD both
+ * wrap drawing content in one.
+ *
+ * So the CTM is tracked here, as a stack, and `syntheticSheet.ts` can now draw
+ * under a transform so the fixture can ask.
  */
 
 export type SheetStrokes = {
@@ -83,8 +113,36 @@ export async function sheetStrokes(bytes: Buffer, pageNumber: number): Promise<S
       const segments: StrokeSegment[] = [];
       let pathOperators = 0;
 
+      // The CTM stack. `ctm` is the matrix in force now; `q` pushes a copy and
+      // `Q` pops back to it. A `Q` with nothing pushed is malformed PDF, so the
+      // identity is kept rather than popping past the bottom.
+      const IDENTITY: number[] = [1, 0, 0, 1, 0, 0];
+      let ctm = IDENTITY;
+      const stack: number[][] = [];
+
       for (let i = 0; i < ops.fnArray.length; i += 1) {
-        if (ops.fnArray[i] !== OPS.constructPath) continue;
+        const fn = ops.fnArray[i];
+
+        if (fn === OPS.save) {
+          stack.push(ctm);
+          continue;
+        }
+        if (fn === OPS.restore) {
+          ctm = stack.pop() ?? IDENTITY;
+          continue;
+        }
+        if (fn === OPS.transform) {
+          // A `cm` CONCATENATES onto the matrix in force, it does not replace
+          // it — so nested transforms compose, which is how a Form XObject
+          // inside a scaled block lands in the right place.
+          ctm = Util.transform(ctm, ops.argsArray[i] as number[]);
+          continue;
+        }
+        // There is deliberately no "replace the matrix" case: PDF has no such
+        // operator. `cm` is the only way to change the CTM and it always
+        // concatenates, so `q`/`Q` are the only way back. Typecheck caught a
+        // first version of this that guessed at an `OPS.setTransform`.
+        if (fn !== OPS.constructPath) continue;
         pathOperators += 1;
 
         const args = ops.argsArray[i] as [number[], number[], unknown];
@@ -95,8 +153,12 @@ export async function sheetStrokes(bytes: Buffer, pageNumber: number): Promise<S
         let cursor: { x: number; y: number } | null = null;
         let subpathStart: { x: number; y: number } | null = null;
 
+        // CTM first, then the viewport — the order the PDF model composes them
+        // in. Captured per path, because the next path may be under a different
+        // matrix.
+        const toPage = Util.transform(viewport.transform, ctm);
         const toDisplay = (x: number, y: number) => {
-          const [dx, dy] = Util.applyTransform([x, y], viewport.transform);
+          const [dx, dy] = Util.applyTransform([x, y], toPage);
           return { x: dx, y: dy };
         };
 
