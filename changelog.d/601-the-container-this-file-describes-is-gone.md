@@ -42,6 +42,18 @@ the part of the original entry that survives unchanged, and it is what makes a s
 readable in either container. The filter and the count were scaffolding around one broken
 environment and they dated in a day.
 
+**CORRECTED 2026-10-06, by following my own recipe on the next restart — it failed.** This
+entry said a restart "costs one `initdb` and one `prisma migrate deploy`". Neither half is
+right: `/var/lib/postgresql` SURVIVED with its data (no `initdb`), and `pg_ctl` then refused
+to start at all. `postgres` rejects a data directory that is not 0700 or 0750, and the setup
+that produced this entry ran `chmod 755` — invisible the first time because `initdb` creates
+the directory 0700 and overwrote it, fatal the second time because the directory already
+exists so the `chmod` is the last word. A stale `postmaster.pid` from the dead container also
+has to go. The fix is `chmod 700` plus `rm -f postmaster.pid`, and skipping `initdb` when
+`PG_VERSION` exists. Written up rather than quietly patched because the entry was four hours
+old and broke the first person who followed it: the measurement was taken on a FIRST run and
+written up as a property of restarts.
+
 **A smaller thing worth one clause.** The db-suite recipe is right that the Postgres data
 directory must live where the `postgres` user owns it. The sharper version is that a cluster
 under the scratchpad does not survive a restart: `/tmp/claude-0` comes back `drwx------`, so

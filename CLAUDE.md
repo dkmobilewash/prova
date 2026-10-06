@@ -1656,6 +1656,37 @@ anything about SIZE.
   `/var/lib/postgresql/<name>` and the restart costs one `initdb` plus one
   `prisma migrate deploy`.
 
+  **CORRECTED 2026-10-06 BY FOLLOWING IT, four hours after it was written —
+  the last sentence is wrong in both halves, and the recipe as given FAILS
+  on the second restart.** What actually happened on the next restart:
+
+  | the paragraph above says | measured |
+  | --- | --- |
+  | the restart costs one `initdb` | **none.** `/var/lib/postgresql` survived with its data and `prova_scratch` intact |
+  | …plus one `prisma migrate deploy` | that part holds — it applied only the one new migration |
+  | (silent on this) | `pg_ctl` **refused to start at all** |
+
+  Two things it does not mention and both are required. `postgres` rejects a
+  data directory that is not `u=rwx` (0700) or `u=rwx,g=rx` (0750) — and the
+  setup script that produced this entry ran `chmod 755` on it, which is
+  `o=rx` and therefore refused. That was invisible the first time because
+  `initdb` CREATES the directory 0700 and overwrote the 755; on a second run
+  the directory already exists, so the `chmod` is the last word and the
+  server dies with `data directory "…" has invalid permissions`. And the
+  **stale `postmaster.pid` from the dead container must be deleted** — it
+  names a pid that no longer exists.
+
+  So: `chmod 700`, `rm -f <dir>/postmaster.pid`, then `pg_ctl start`, and
+  skip `initdb` when `PG_VERSION` is already there.
+
+  **The shape is the reason this is written down rather than quietly fixed in
+  a script.** The entry was four hours old, written from a measurement that
+  was real, and it broke the first person who followed it — because the
+  measurement was taken on a FIRST run and written up as a property of
+  restarts. `pg_ctl` names the cause exactly in its log and says nothing on
+  stdout beyond "could not start server. Examine the log output", so the fix
+  is one `tail` away and the temptation is to guess instead.
+
   **The limit that has NOT moved is the one that matters most:** this still
   does not reach the signed-in e2e suite. That needs Clerk's `sk_test_`
   secret, which is a credential and does not travel through an agent
