@@ -3,12 +3,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
@@ -74,6 +76,15 @@ export default function SheetsScreen() {
   const [offline, setOffline] = useState<string | "nothing" | null>(null);
   const [index, setIndex] = useState(0);
   const [boxWidth, setBoxWidth] = useState(0);
+  /** The sheet on the whole screen, where a pin can actually be put somewhere.
+   *
+   * A D-size sheet is 42in wide. Inline it renders at about 350pt, so a gloved
+   * fingertip (±8-10pt) is roughly 1.2in of paper — which at 1/8in = 1ft is
+   * TEN FEET in the building. That locates a room, not a wall, and a foreman
+   * who is handed a ten-foot circle twice stops using the feature. Zoom is
+   * what makes a pin worth placing at all. */
+  const [full, setFull] = useState(false);
+  const window = useWindowDimensions();
   const [draft, setDraft] = useState<{ x: number; y: number } | null>(null);
   const scroller = useRef<ScrollView | null>(null);
   const [note, setNote] = useState("");
@@ -84,6 +95,18 @@ export default function SheetsScreen() {
    * the queue is still full. */
   const [pending, setPending] = useState<HeldPin[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
+  /** ONE DEFINITION OF THE TAP, used by the inline sheet and the full-screen
+   * one. Two copies is how the two surfaces would start disagreeing about
+   * where a pin goes, and a pin that lands somewhere else is worse than no
+   * pin.
+   *
+   * BOTH axes over the WIDTH — `y` runs 0..H/W, not 0..1. The line this whole
+   * feature turns on. */
+  const place = useCallback((locationX: number, locationY: number, width: number) => {
+    if (width === 0) return;
+    setDraft({ x: locationX / width, y: locationY / width });
+    setProblem(null);
+  }, []);
 
   const load = useCallback(async () => {
     if (!jobId) return;
@@ -261,13 +284,7 @@ export default function SheetsScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={t("sheets.tapToPlace")}
                 onLayout={(e) => setBoxWidth(e.nativeEvent.layout.width)}
-                onPress={(e) => {
-                  if (boxWidth === 0) return;
-                  const { locationX, locationY } = e.nativeEvent;
-                  // BOTH over the WIDTH. The line this screen turns on.
-                  setDraft({ x: locationX / boxWidth, y: locationY / boxWidth });
-                  setProblem(null);
-                }}
+                onPress={(e) => place(e.nativeEvent.locationX, e.nativeEvent.locationY, boxWidth)}
                 style={s.sheetBox}
               >
                 <Image
@@ -320,6 +337,14 @@ export default function SheetsScreen() {
                   </Svg>
                 )}
               </Pressable>
+
+                {/* THE ACCURACY DOOR. Inline, a tap on a D-size sheet is about
+                    ten feet in the building; full screen and zoomed it becomes
+                    about a foot. The label says so rather than leaving somebody
+                    to find out by being wrong twice. */}
+                <Pressable accessibilityRole="button" onPress={() => setFull(true)} style={s.openFull}>
+                  <Text style={s.openFullText}>{t("sheets.openFull")}</Text>
+                </Pressable>
 
               {/* The pins as WORDS. A mark on a drawing is a dot of colour and
                   nothing else; this is where it says which kind it is and what
@@ -386,6 +411,92 @@ export default function SheetsScreen() {
         </Card>
       )}
     </ScrollView>
+
+      {/* THE SHEET ON THE WHOLE SCREEN, PINCHABLE.
+
+          WHY A MODAL AND NOT A NESTED SCROLLVIEW. The page is already a
+          vertical ScrollView; a zoomable one inside it is same-axis nesting,
+          and the pan then belongs to whichever wins. A Modal has no parent
+          scroll view, so there is nothing to fight — and the drawing gets the
+          whole screen, which is most of the accuracy win on its own: inline it
+          is ~250pt tall, here it is the display.
+
+          NO NEW DEPENDENCY. iOS ScrollView zooms natively via
+          maximumZoomScale. gesture-handler and reanimated are both on disk as
+          transitive deps and neither is needed — PressableScale.tsx made the
+          same call for the same reason.
+
+          THE ONE THING TO CHECK ON A DEVICE: locationX is expected to arrive
+          in the content view's OWN coordinate space, unaffected by the zoom
+          transform, which is what makes place() correct at any zoom with no
+          maths. That is how UIScrollView zoom works, and no test here can see
+          it — happy-dom has no layout and no pinch. If a pin lands elsewhere
+          when zoomed, this is where to look, and the fix is to divide by
+          width * zoomScale instead. */}
+      <Modal visible={full} animationType="slide" onRequestClose={() => setFull(false)}>
+        <View style={s.fullScreen}>
+          <ScrollView
+            maximumZoomScale={8}
+            minimumZoomScale={1}
+            bouncesZoom
+            centerContent
+            contentContainerStyle={s.fullContent}
+            showsHorizontalScrollIndicator={false}
+            showsVerticalScrollIndicator={false}
+          >
+            {sheet?.imageUrl ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("sheets.tapToPlace")}
+                onPress={(e) => place(e.nativeEvent.locationX, e.nativeEvent.locationY, window.width)}
+              >
+                <Image
+                  source={{ uri: sheet.imageUrl }}
+                  style={{ width: window.width, height: window.width * aspect }}
+                  resizeMode="contain"
+                />
+                <Svg
+                  style={StyleSheet.absoluteFill}
+                  width={window.width}
+                  height={window.width * aspect}
+                  pointerEvents="none"
+                >
+                  {shown.map((pin) => (
+                    <Circle
+                      key={pin.id}
+                      cx={pin.x * window.width}
+                      cy={pin.y * window.width}
+                      r={space.sm}
+                      fill={isHeld(pin.id) ? "none" : p.colors.brand}
+                      stroke={p.colors.ink}
+                      strokeWidth={space.two}
+                    />
+                  ))}
+                  {draft ? (
+                    <Circle
+                      cx={draft.x * window.width}
+                      cy={draft.y * window.width}
+                      r={space.sm}
+                      fill="none"
+                      stroke={p.colors.ink}
+                      strokeWidth={space.two}
+                    />
+                  ) : null}
+                </Svg>
+              </Pressable>
+            ) : null}
+          </ScrollView>
+
+          {/* Bottom third, per the field rules: held one-handed, often on a
+              ladder. */}
+          <View style={s.fullBar}>
+            <Text style={s.fullHint}>{t("sheets.fullHint")}</Text>
+            <Pressable accessibilityRole="button" onPress={() => setFull(false)} style={s.primary}>
+              <Text style={s.primaryText}>{t("sheets.closeFull")}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -393,6 +504,12 @@ export default function SheetsScreen() {
 const styles = (p: Palette) =>
   StyleSheet.create({
     fill: { flex: 1 },
+    openFull: { minHeight: hitTarget, justifyContent: "center", alignItems: "center" },
+    openFullText: { color: p.colors.link, fontSize: typography.size.md },
+    fullScreen: { flex: 1, backgroundColor: p.colors.canvas },
+    fullContent: { flexGrow: 1, justifyContent: "center" },
+    fullBar: { padding: space.md, gap: space.sm, backgroundColor: p.colors.surface },
+    fullHint: { color: p.colors.inkBody, fontSize: typography.size.sm, textAlign: "center" },
     page: { padding: space.md, paddingBottom: space.scrollBottom, gap: space.sm },
     empty: { color: p.colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.semibold },
     body: { color: p.colors.inkBody, fontSize: typography.size.md },
