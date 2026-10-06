@@ -87,25 +87,26 @@ export type SheetStrokes = {
 };
 
 /**
- * Reads the straight stroked segments off one page.
+ * Reads the straight stroked segments off a page that is ALREADY OPEN.
  *
- * Opens its own document rather than taking an open one: this is a diagnostic
- * path for now, and `openPlanPdf`'s shape is built around text. When wall
- * takeoff becomes a feature the two should share a document.
+ * Split out from `sheetStrokes` so one pdfjs document can serve both layers —
+ * see `openPlanPdf`'s `pageStrokes`. That is not a tidy-up: pdfjs DETACHES the
+ * buffer it is given, so opening a second document from the same bytes throws
+ * `Cannot perform Construct on a detached or out-of-bounds ArrayBuffer`. Any
+ * stage that wants text AND geometry has to read them from one document.
+ *
+ * `pdfjs` is passed in rather than imported again, because the `OPS` constants
+ * must be the ones belonging to the module that produced this operator list.
  */
-export async function sheetStrokes(bytes: Buffer, pageNumber: number): Promise<SheetStrokes> {
-  // The legacy build, the same entry `planPdf.ts` imports and for its reasons.
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const doc = await pdfjs.getDocument({
-    data: new Uint8Array(bytes),
-    // No eval, no worker, no canvas — the posture `planPdf.ts` established.
-    isEvalSupported: false,
-    verbosity: 0,
-  }).promise;
-
-  try {
-    const page = await doc.getPage(pageNumber);
-    try {
+export async function segmentsFromOpenPage(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pdfjs ships no types for the legacy build entry; `planPdf.ts` takes the same position.
+  page: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- as above.
+  pdfjs: any,
+  pageNumber: number,
+): Promise<SheetStrokes> {
+  {
+    {
       const viewport = page.getViewport({ scale: 1 });
       const ops = await page.getOperatorList();
       const { OPS, Util } = pdfjs;
@@ -211,6 +212,33 @@ export async function sheetStrokes(bytes: Buffer, pageNumber: number): Promise<S
         segments,
         pathOperators,
       };
+    }
+  }
+}
+
+/**
+ * Reads the stroked segments off one page of a PDF, opening its own document.
+ *
+ * For a caller that wants ONLY geometry — the wall-detection measurement. A
+ * stage that also needs the text layer must use `openPlanPdf`'s `pageStrokes`
+ * instead, because pdfjs detaches the buffer and a second document cannot be
+ * opened from the same bytes.
+ */
+export async function sheetStrokes(bytes: Buffer, pageNumber: number): Promise<SheetStrokes> {
+  // The legacy build, the same entry `planPdf.ts` imports and for its reasons.
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const doc = await pdfjs.getDocument({
+    // A COPY here, unlike `openPlanPdf`'s deliberate view: this entry point is
+    // for callers holding bytes they may still want afterwards.
+    data: new Uint8Array(bytes),
+    // No eval, no worker, no canvas — the posture `planPdf.ts` established.
+    isEvalSupported: false,
+    verbosity: 0,
+  }).promise;
+  try {
+    const page = await doc.getPage(pageNumber);
+    try {
+      return await segmentsFromOpenPage(page, pdfjs, pageNumber);
     } finally {
       page.cleanup();
     }

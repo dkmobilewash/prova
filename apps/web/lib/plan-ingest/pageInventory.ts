@@ -1,6 +1,8 @@
 import { prisma } from "@prova/db";
 import { readPlanBytes } from "./planBytes";
-import { hasTextLayer, openPlanPdf, titleBlockText, type PlanPdf } from "./planPdf";
+import { hasTextLayer, openPlanPdf, titleBlockText, type PlanPdf, type PlanPageText } from "./planPdf";
+import { dimensionLabels } from "./dimensionLabels";
+import { scaleFromDimensions } from "../takeoff/scaleFromDimensions";
 import type { StageCtx, StageWork } from "./stages";
 
 /**
@@ -37,6 +39,33 @@ export type PageInventoryDeps = {
   openPdf: (bytes: Buffer) => Promise<PlanPdf>;
   /** Record what one page says. Idempotent — see `PlanSheetText`'s header. */
   saveSheetText: (row: SheetTextRow) => Promise<void>;
+  /**
+   * Record the scale the sheet declares about itself. Idempotent, same key.
+   *
+   * A SEPARATE PORT from `saveSheetText` because the two can fail
+   * independently and only one of them is what the stage is named for: a sheet
+   * whose text was recorded and whose scale could not be told has been read
+   * SUCCESSFULLY, and must not lose the first write to the second.
+   */
+  saveScaleReading: (row: ScaleReadingRow) => Promise<void>;
+};
+
+export type ScaleReadingRow = {
+  planId: string;
+  pageNumber: number;
+  scaleName: string | null;
+  /** In page-width units — `sheet-geometry.ts`'s box, so the prefill is a copy
+   *  rather than a conversion. */
+  x1: number | null;
+  y1: number | null;
+  x2: number | null;
+  y2: number | null;
+  declaredDistanceFeet: number | null;
+  declaredText: string | null;
+  agreedText: string | null;
+  consideredCount: number;
+  inheritedError: number | null;
+  declineReason: string | null;
 };
 
 export type ReadPlanBytes = { ok: true; bytes: Buffer } | { ok: false; error: string };
@@ -120,6 +149,18 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
     const readable = hasTextLayer(page);
     const block = readable ? titleBlockText(page) : null;
 
+    // ── THE SCALE THE SHEET DECLARES ABOUT ITSELF ──
+    //
+    // Here rather than in a stage of its own, because this stage already has
+    // the document open and that is its whole economic point. It is also the
+    // only place it CAN be: pdfjs detaches the buffer it is given, so a second
+    // stage opening the same bytes throws — see `openPlanPdf`'s own comment and
+    // `PlanPdf.pageStrokes`, which exists for this.
+    //
+    // No model, no spend, no network. Deterministic geometry off the vectors
+    // the file already contains.
+    const scaleRow = await readScaleFromSheet(doc.pdf, page, ctx.planId, task.pageNumber, readable);
+
     await deps.saveSheetText({
       planId: ctx.planId,
       pageNumber: task.pageNumber,
@@ -133,12 +174,93 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
       rotation: page.rotation,
     });
 
+    // AFTER the text write and never instead of it: a page whose scale cannot
+    // be told has still been inventoried, and the sentence saying why is worth
+    // storing. See `declineReason`.
+    await deps.saveScaleReading(scaleRow);
+
     // SUCCESS EVEN WITH NO TEXT LAYER. A scanned sheet is a fact this stage has
     // just recorded, not a failure of it — see `PlanSheetText.hasTextLayer`. A
     // refusal here would spend three attempts and leave a Retry button that can
     // never succeed, on every scanned page of the set.
     return { ok: true };
   };
+}
+
+/**
+ * One page's scale reading, ready to store.
+ *
+ * NEVER THROWS. A sheet is inventoried for its text first, and a surprise in
+ * the geometry — a page pdfjs will not give an operator list for, a font that
+ * upsets it — must not lose that write or spend the task's three attempts. The
+ * caught sentence is stored as a decline, which is a fact about the page rather
+ * than a failure of the stage.
+ */
+async function readScaleFromSheet(
+  pdf: PlanPdf,
+  page: PlanPageText,
+  planId: string,
+  pageNumber: number,
+  readable: boolean,
+): Promise<ScaleReadingRow> {
+  const empty = {
+    planId,
+    pageNumber,
+    scaleName: null,
+    x1: null,
+    y1: null,
+    x2: null,
+    y2: null,
+    declaredDistanceFeet: null,
+    declaredText: null,
+    agreedText: null,
+    consideredCount: 0,
+    inheritedError: null,
+  };
+
+  // A SCAN HAS NOTHING TO READ, and says so rather than being attempted. Same
+  // posture `PlanSheetText.hasTextLayer` takes: the page is never guessed at.
+  if (!readable) {
+    return {
+      ...empty,
+      declineReason: "This sheet is a scan, so there are no printed dimensions to read a scale from.",
+    };
+  }
+
+  try {
+    const strokes = await pdf.pageStrokes(pageNumber);
+    const labels = dimensionLabels(page);
+    const verdict = scaleFromDimensions(labels, strokes.segments);
+    if (!verdict.ok) {
+      return { ...empty, consideredCount: verdict.considered, declineReason: verdict.reason };
+    }
+
+    // Into page-width units — both axes over the WIDTH, which is
+    // `sheet-geometry.ts`'s contract and deliberately not a fraction of the
+    // height. Storing it in the calibration's own convention is what makes the
+    // prefill a copy.
+    const w = page.widthPt;
+    return {
+      planId,
+      pageNumber,
+      scaleName: verdict.scaleName,
+      x1: verdict.best.x1 / w,
+      y1: verdict.best.y1 / w,
+      x2: verdict.best.x2 / w,
+      y2: verdict.best.y2 / w,
+      declaredDistanceFeet: verdict.best.declaredFeet,
+      declaredText: verdict.best.text,
+      agreedText: verdict.agreed.join("\n"),
+      consideredCount: verdict.considered,
+      inheritedError: verdict.inheritedError,
+      declineReason: null,
+    };
+  } catch (error) {
+    return {
+      ...empty,
+      declineReason: `This sheet's lines could not be read: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 }
 
 /** The real ports. Kept at the bottom so the stage above reads as logic. */
@@ -152,6 +274,18 @@ const realDeps: PageInventoryDeps = {
   saveSheetText: async (row) => {
     const { planId, pageNumber, ...rest } = row;
     await prisma.planSheetText.upsert({
+      where: { planId_pageNumber: { planId, pageNumber } },
+      create: { planId, pageNumber, ...rest },
+      update: rest,
+    });
+  },
+
+  // Same shape and same key as the text write: a second run over a set replaces
+  // a page's reading rather than accumulating one per run, because the answer is
+  // a property of the file and there is nothing to compare between runs.
+  saveScaleReading: async (row) => {
+    const { planId, pageNumber, ...rest } = row;
+    await prisma.planSheetScaleReading.upsert({
       where: { planId_pageNumber: { planId, pageNumber } },
       create: { planId, pageNumber, ...rest },
       update: rest,

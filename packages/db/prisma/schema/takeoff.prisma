@@ -130,6 +130,7 @@ model TakeoffPlan {
   /// `TakeoffPlanPage` is still typed by a person. Accepting a proposal writes
   /// neither.
   sheetTexts        PlanSheetText[]
+  sheetScaleReadings PlanSheetScaleReading[]
   sheetProposals    PlanSheetProposal[]
   scheduleProposals PlanScheduleProposal[]
 
