@@ -361,3 +361,72 @@ describe("a label belongs to the line it is CENTRED on", () => {
     expect(pairs).toHaveLength(1);
   });
 });
+
+/**
+ * A SHEET WHOSE LETTERING WAS SAVED AS LINE WORK.
+ *
+ * Found on the second real export this was pointed at: 79,001 stroked segments
+ * and 85 text items, every one of them title-block content. Its drawing-area
+ * text had been converted to outlines, which a CAD export does routinely — so
+ * there is nothing to read, and "no printed dimensions were found" on a sheet
+ * visibly covered in dimensions reads as the feature being broken.
+ *
+ * The decline is the same either way. These tests are about the SENTENCE, which
+ * is what decides whether an estimator keeps trusting the rest of the tool.
+ */
+describe("a sheet with line work and no readable dimensions", () => {
+  /** `count` segments that are not dimensions — a plan's worth of wall faces. */
+  function lineWork(count: number): StrokeSegment[] {
+    const out: StrokeSegment[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const y = 100 + (i % 500) * 3;
+      const x = 100 + Math.floor(i / 500) * 7;
+      out.push({ x1: x, y1: y, x2: x + 40, y2: y });
+    }
+    return out;
+  }
+
+  it("SAYS THE LETTERING IS LINE WORK rather than that there are no dimensions", () => {
+    const verdict = scaleFromDimensions([], lineWork(3000));
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.reason).toMatch(/plenty of line work/);
+    expect(verdict.reason).toMatch(/saved as line work rather than characters/);
+    expect(verdict.reason).toMatch(/Set it by hand/);
+  });
+
+  it("counts the few it DID read, which is the real sheet's case", () => {
+    // Colton had exactly two strays. Naming the number is what makes the
+    // sentence checkable against the drawing in front of somebody.
+    const a = dimension(200, 200, 99, `3' - 5"`, 3.4167);
+    const b = dimension(900, 900, 99, `3' - 4"`, 3.3333);
+    const verdict = scaleFromDimensions([a.label, b.label], [...lineWork(3000), a.segment, b.segment]);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.reason).toMatch(/only 2 printed dimensions/);
+  });
+
+  it("uses the PLAIN sentence on a page that genuinely has nothing on it", () => {
+    // A cover sheet is not a sheet whose text was outlined, and telling somebody
+    // its lettering was flattened would be a confident wrong explanation.
+    const verdict = scaleFromDimensions([], []);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.reason).toBe("No printed dimensions were found on this sheet.");
+  });
+
+  it("uses the plain sentence when there is a little line work and no dimensions", () => {
+    const verdict = scaleFromDimensions([], lineWork(50));
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.reason).toMatch(/No printed dimensions were found/);
+  });
+
+  it("DOES NOT FIRE when enough dimensions were read, however much line work there is", () => {
+    // The real sheets carry 23,000 to 168,000 segments and read perfectly well.
+    // This sentence must never appear on a sheet that worked.
+    const { segments, labels } = sheetAt(8, 6);
+    const verdict = scaleFromDimensions(labels, [...segments, ...lineWork(5000)]);
+    expect(verdict.ok).toBe(true);
+  });
+});
