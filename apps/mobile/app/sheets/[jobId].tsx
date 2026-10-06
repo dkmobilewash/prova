@@ -2,9 +2,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -207,29 +205,33 @@ export default function SheetsScreen() {
   }
 
   return (
-    // THE KEYBOARD COVERED THE NOTE FIELD, AND THE NOTE FIELD IS THE LAST
-    // THING ON THE SCREEN.
+    // THE KEYBOARD COVERED THE NOTE FIELD, AND MY FIRST FIX FOR IT DID
+    // NOTHING AT ALL.
     //
-    // Reported from a real phone on 2026-10-06: placing a pin opens the note
-    // card at the bottom — deliberately, because this phone is held one-handed
-    // on a ladder — and the keyboard then sat straight over it, so you could
-    // not see what you were typing. No test here can see it: the screen suite
-    // renders in happy-dom, which does no layout and has no keyboard.
+    // #645 wrapped this screen in a `KeyboardAvoidingView` with
+    // `behavior="padding"`, the pattern `app/sign-in.tsx` uses. On a real
+    // phone, on build 15, the content did not move by a single pixel — the
+    // note card and its Place button stayed under the keyboard, exactly as
+    // before. The census passed the whole time, which is the limit of a
+    // presence census and not a surprise: it can say the code is there, never
+    // that the framework honours it.
     //
-    // Three things, and only the first is the one that was reported:
+    // A KeyboardAvoidingView inside a navigator is the fragile arrangement
+    // here. It measures the keyboard against the window while its own frame
+    // starts below the header, so it needs a `keyboardVerticalOffset` nobody
+    // can state from inside this file — and sign-in, where it does work, is a
+    // screen with no header at all.
     //
-    //   - `KeyboardAvoidingView` lifts the content clear, the same pattern
-    //     `app/sign-in.tsx` already uses, `padding` on iOS only;
-    //   - `keyboardShouldPersistTaps="handled"` so the FIRST tap on "Place
-    //     note" saves instead of merely dismissing the keyboard — nobody
-    //     reported that because they tapped twice without noticing;
-    //   - and a scroll to the end when the field takes focus, because lifting
-    //     the view does not by itself bring a card that is below the fold into
-    //     sight.
-    <KeyboardAvoidingView style={s.fill} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    // `automaticallyAdjustKeyboardInsets` is the iOS-native answer and needs
+    // none of that: UIScrollView adjusts its own contentInset for the keyboard
+    // and scrolls the first responder into view. Verified to exist in the
+    // installed react-native 0.86.3 rather than assumed —
+    // `Libraries/Components/ScrollView/ScrollView.js:190`.
+    <>
       <ScrollView
         ref={scroller}
         contentContainerStyle={s.page}
+        automaticallyAdjustKeyboardInsets
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
@@ -382,7 +384,13 @@ export default function SheetsScreen() {
             // and still below the fold. The delay is the keyboard's own animation —
             // scrolling before it has opened scrolls to the wrong place.
             onFocus={() => {
-              setTimeout(() => scroller.current?.scrollToEnd({ animated: true }), 120);
+              // 400ms, not 120: the inset arrives with the keyboard's own
+              // animation (~250ms), and scrolling before it lands scrolls to
+              // the OLD end — which is the covered position. The native inset
+              // brings the FIELD into view by itself; this is for the Place
+              // button below it, which first-responder scrolling does not
+              // promise.
+              setTimeout(() => scroller.current?.scrollToEnd({ animated: true }), 400);
             }}
             placeholder={t("sheets.notePlaceholder")}
             placeholderTextColor={p.colors.inkMuted}
@@ -497,7 +505,7 @@ export default function SheetsScreen() {
           </View>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+    </>
   );
 }
 
