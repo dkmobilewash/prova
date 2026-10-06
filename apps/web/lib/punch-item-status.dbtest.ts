@@ -158,11 +158,20 @@ describe("a punch item's state, as the database keeps it", () => {
     // every database this ships to. And the order matters as much: the
     // backfill reads `completedAt`, so a migration that dropped first
     // would silently reopen every closed item in the table.
+    // Its OWN row, rather than whichever one `LIMIT 1` happens to find. This
+    // borrowed a row from the whole table until 2026-10-06, which made the probe
+    // depend on what else the database held: on a database where nothing else had
+    // written a punch item the temp table came back EMPTY, `[row]` was undefined,
+    // and the failure read `cannot read properties of undefined` rather than
+    // naming the real problem. Seen once on the first run against a newly created
+    // scratch database and not since — which is exactly the kind of fixture that
+    // fails on somebody else's machine and nowhere else.
+    await makeItem();
     await prisma.$executeRawUnsafe(`
       CREATE TEMP TABLE punch_backfill_probe AS
       SELECT id, "updatedAt", 'OPEN'::text AS status, NULL::timestamp AS "readyAt",
              true AS "isDone", timestamp '2026-09-01 12:00:00' AS "completedAt"
-      FROM "PunchListItem" LIMIT 1
+      FROM "PunchListItem" WHERE "companyId" = '${companyId}' LIMIT 1
     `);
     await prisma.$executeRawUnsafe(`
       UPDATE punch_backfill_probe
@@ -174,6 +183,9 @@ describe("a punch item's state, as the database keeps it", () => {
     const [row] = await prisma.$queryRawUnsafe<{ status: string; readyAt: Date }[]>(
       `SELECT status, "readyAt" FROM punch_backfill_probe`,
     );
+    // The probe must actually have a row, or every assertion below is about
+    // nothing and the failure says so instead of throwing on undefined.
+    expect(row).toBeDefined();
     expect(row.status).toBe("READY_FOR_REVIEW");
     expect(row.readyAt.toISOString()).toBe("2026-09-01T12:00:00.000Z");
   });

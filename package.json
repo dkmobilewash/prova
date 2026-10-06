@@ -12,6 +12,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:db": "pnpm --filter @prova/web run test:db",
+    "cslb:phone-fill": "pnpm --filter @prova/web run cslb:phone-fill",
     "eval:addenda": "pnpm --filter @prova/web run eval:addenda",
     "eval:draft-lines": "pnpm --filter @prova/web run eval:draft-lines",
     "eval:bid-research": "pnpm --filter @prova/web run eval:bid-research",

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:db": "vitest run --config vitest.db.config.mts",
+    "cslb:phone-fill": "vitest run --config vitest.task.config.mts lib/cslb/phoneFill.task.ts",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "test:e2e:local": "node e2e/run.mjs",
     "test:e2e:public": "node e2e/run.mjs --public",
