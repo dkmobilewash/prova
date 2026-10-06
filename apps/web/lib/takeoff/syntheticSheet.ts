@@ -116,6 +116,36 @@ export type SheetSpec = {
    */
   symbols: SymbolSpec[];
   clutter?: Clutter[];
+  /**
+   * The walls drawn on the sheet, each as TWO PARALLEL FACES — which is how a
+   * plan draws one and why `wallVectors.ts` looks for pairs.
+   *
+   * `trueWallFeet(spec)` is the truth an eval grades against, the way
+   * `trueCount(spec)` is for symbols. Lengths are in FEET of building and the
+   * generator converts using the sheet's own scale, so a case reads in the
+   * units a bid is in rather than in points.
+   */
+  walls?: WallSpec[];
+  /**
+   * Feet of building per INCH of paper — 8 is 1/8" = 1'-0", 4 is 1/4".
+   *
+   * Only needed when `walls` is set: a symbol has an absolute size in points
+   * and does not care about scale, but a wall's thickness is the whole question
+   * `wallVectors.ts` asks and it is meaningless without one.
+   */
+  feetPerInch?: number;
+};
+
+/** One wall run, in feet of building. */
+export type WallSpec = {
+  /** Where it starts, in feet from the sheet's bottom-left drawing origin. */
+  fromFeet: { x: number; y: number };
+  /** Horizontal or vertical: a plan's walls are, and a diagonal would make the
+   *  truth harder to state than the thing being measured. */
+  direction: "horizontal" | "vertical";
+  lengthFeet: number;
+  /** 0.406 is a 4-7/8" partition — 3-5/8" stud with 5/8" board each side. */
+  thicknessFeet: number;
 };
 
 /** Escape nothing: every string here is generated, ASCII, and controlled. */
@@ -214,6 +244,35 @@ function contentStream(spec: SheetSpec): string {
   ops.push(`${num(width - 220)} 30 180 90 re S`);
   ops.push("BT /F1 14 Tf", `${num(width - 210)} 50 Td (${spec.sheetNumber}) Tj`, "ET");
   ops.push("BT /F1 7 Tf", `${num(width - 210)} 95 Td (SYNTHETIC TEST SHEET - NOT A REAL PROJECT) Tj`, "ET");
+
+  // ── WALLS, as two parallel faces each ──
+  //
+  // Drawn at 0.75pt, the weight CAD gives a wall face. The origin is 80pt in
+  // from the sheet's bottom-left so a plan sits clear of the border, and every
+  // figure in a `WallSpec` is in FEET — converted here, once, so a case never
+  // has to think in points.
+  if (spec.walls && spec.walls.length > 0) {
+    const feetPerInch = spec.feetPerInch ?? 8;
+    // 72 points to the paper inch, `feetPerInch` feet of building to that inch.
+    const ptPerFoot = 72 / feetPerInch;
+    const originX = 80;
+    const originY = 80;
+    ops.push("0.75 w");
+    for (const wall of spec.walls) {
+      const x = originX + wall.fromFeet.x * ptPerFoot;
+      const y = originY + wall.fromFeet.y * ptPerFoot;
+      const run = wall.lengthFeet * ptPerFoot;
+      const thickness = wall.thicknessFeet * ptPerFoot;
+      if (wall.direction === "horizontal") {
+        ops.push(`${num(x)} ${num(y)} m ${num(x + run)} ${num(y)} l S`);
+        ops.push(`${num(x)} ${num(y + thickness)} m ${num(x + run)} ${num(y + thickness)} l S`);
+      } else {
+        ops.push(`${num(x)} ${num(y)} m ${num(x)} ${num(y + run)} l S`);
+        ops.push(`${num(x + thickness)} ${num(y)} m ${num(x + thickness)} ${num(y + run)} l S`);
+      }
+    }
+    ops.push("1 w");
+  }
 
   // Deterministic pseudo-jitter, so a run is reproducible but the layout is not
   // a clean lattice. A lattice would let a model infer a count from the pattern
@@ -315,6 +374,20 @@ export function synthesiseSheet(spec: SheetSpec): Buffer {
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
 
   return Buffer.from(pdf, "latin1");
+}
+
+/**
+ * The total wall footage on a sheet — the truth an eval grades against, the way
+ * `trueCount` is for symbols.
+ *
+ * Measured along the CENTRELINE, because that is what an estimator traces and
+ * what `wallVectors.ts` returns. A wall's two faces are each `lengthFeet` long
+ * and so is the line between them, so this is a plain sum — stated rather than
+ * assumed, because a reader checking the grading needs to know which of the
+ * three lengths a wall has is the one being compared.
+ */
+export function trueWallFeet(spec: SheetSpec): number {
+  return (spec.walls ?? []).reduce((total, wall) => total + wall.lengthFeet, 0);
 }
 
 /** The total number of symbols on a sheet — the truth an eval grades against. */
