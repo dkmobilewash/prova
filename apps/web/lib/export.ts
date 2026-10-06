@@ -691,6 +691,20 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     models: ["PlanSheetText", "PlanSheetProposal"],
   },
   {
+    key: "plan-schedule-readings",
+    title: "The schedules read off each plan sheet",
+    detail:
+      "When a sheet the title blocks called a schedule is read, its rows are kept as one " +
+      "proposal per sheet — the mark, size, description and notes of each line of the table, " +
+      "with which column was read as what. Not exported yet, and the reason is the same as " +
+      "the sheet index above: the rows are a reading of a PDF this file does not contain, " +
+      "and re-reading the drawing is what produces them. What WOULD be worth exporting is a " +
+      "reading an estimator has accepted, because that is their own work and it is the door " +
+      "schedule as they have agreed it stands — but nothing accepts one yet, and this line " +
+      "exists so that is stated rather than quietly true.",
+    models: ["PlanScheduleProposal"],
+  },
+  {
     key: "bid-addendum-readings",
     title: "What was read off each bid addendum, and the scopes an estimator ruled in or out",
     detail:

@@ -12,6 +12,7 @@ export * from "./quotes";
 export * from "./addenda";
 export * from "./specs";
 export * from "./planSheets";
+export * from "./scheduleRows";
 /** The symbol-counting INSTRUMENT, not a feature — nothing calls it but an eval.
  *  `symbols.ts`'s header says why it exists and why it is not wired up. */
 export * from "./symbols";

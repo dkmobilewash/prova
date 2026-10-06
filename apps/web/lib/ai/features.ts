@@ -85,6 +85,7 @@ export const AI_FEATURE_LABEL: Record<AiFeatureKey, string> = {
   PLAN_INGESTION: "Reading plan sets",
   ADDENDUM_READ: "Reading addenda",
   SPEC_READ: "Reading spec sections",
+  SCHEDULE_READ: "Reading schedules off a drawing",
 };
 
 /**
@@ -155,6 +156,8 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
     "Reading an addendum a GC issued on a bid, and listing what it says it changed for you to check against the document. It never decides whether something affects work you have already priced — that stays your tick on the addendum — and with this off you can still log addenda by hand.",
   SPEC_READ:
     "Reading a spec section from the bid documents and listing what in it costs money — finish levels, rated assemblies, mock-ups, testing, named products — for you to check against your number. It never says whether your bid already carries a cost, because it has not seen your estimate. With this off you read the section yourself, as you do today.",
+  SCHEDULE_READ:
+    "Reading a door, window, finish or partition schedule off a drawing into rows you accept or reject. The rows are proposed, never added to a takeoff on their own — and with this off you can still type a schedule in by hand.",
 };
 
 /**

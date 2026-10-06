@@ -47,6 +47,10 @@ export const STAGE_SPENDS: Record<PlanIngestStage, boolean> = {
   CLASSIFY: false,
   // One model call per page, one plan sheet claimed before it.
   TITLE_BLOCK: true,
+  // One model call per SCHEDULE page — a handful per set, not one per
+  // sheet, because the stage skips any page the title block did not call a
+  // schedule. A plan sheet is claimed before each call.
+  SCHEDULE_ROWS: true,
   // Not built, and would be pure computation over rows if it were.
   SHEET_INDEX: false,
 };

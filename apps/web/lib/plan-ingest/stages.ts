@@ -3,6 +3,7 @@ import type { RunnerPorts } from "./runner";
 import { STAGE_SPENDS } from "./stageCost";
 import { pageInventoryWork } from "./pageInventory";
 import { titleBlockWork } from "./titleBlock";
+import { scheduleRowsWork } from "./scheduleRows";
 
 /**
  * What each stage's per-page work actually is.
@@ -90,6 +91,7 @@ const STAGE_WORK: Record<PlanIngestStage, ((ctx: StageCtx) => StageWork) | null>
   PAGE_INVENTORY: pageInventoryWork,
   CLASSIFY: null,
   TITLE_BLOCK: titleBlockWork,
+  SCHEDULE_ROWS: scheduleRowsWork,
   SHEET_INDEX: null,
 };
 
