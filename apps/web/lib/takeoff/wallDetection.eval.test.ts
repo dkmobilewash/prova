@@ -209,3 +209,53 @@ describe("wall detection from a sheet's own vector strokes", () => {
     }
   }, 60_000);
 });
+
+/**
+ * THE TRANSFORM ARM, and it exists because the fixture could not ask the
+ * question until it did.
+ *
+ * `sheetStrokes.ts` shipped ignoring the current transformation matrix. Every
+ * test above passed, because `syntheticSheet.ts` writes its own content stream
+ * and never emitted a `cm` — so the defect was not missed by a weak assertion,
+ * it was unreachable by every assertion. CLAUDE.md's fourth census failure:
+ * *nothing is ever missing from a question nobody is asking.*
+ *
+ * Real CAD asks it constantly — a Form XObject always carries a matrix, and
+ * Revit and AutoCAD both wrap drawing content in one. Ignoring it halves a
+ * wall's length AND its thickness, so a 40ft wall reads as 20ft or falls outside
+ * the thickness window and disappears. Silent either way.
+ *
+ * The arms are identical on paper and differ only in whether the reader must
+ * honour the matrix, so the EQUALITY is the assertion.
+ */
+describe("a sheet drawn under a transform, which is what real CAD does", () => {
+  const plain = WALL_CASES.find((c) => c.id === "single-room-clean")!;
+
+  it("reads the SAME walls and the SAME footage at 2x", async () => {
+    const flat = await runCase(plain);
+    const scaled = await runCase({
+      ...plain,
+      id: "single-room-2x",
+      spec: { ...plain.spec, id: "single-room-2x", wallTransformScale: 2 },
+    });
+
+    expect(scaled.segments, "nothing was read, so an equal result means nothing").toBeGreaterThan(0);
+    expect(scaled.grades.FOUND).toBe(flat.grades.FOUND);
+    expect(scaled.grades.PHANTOM).toBe(0);
+    expect(scaled.grades.MISSED).toBe(0);
+    expect(scaled.foundFeet).toBeCloseTo(flat.foundFeet, 1);
+    expect(scaled.foundFeet).toBeCloseTo(trueWallFeet(plain.spec), 1);
+  }, 60_000);
+
+  it("holds at a fractional scale too, where the error would round the other way", async () => {
+    const scaled = await runCase({
+      ...plain,
+      id: "single-room-half",
+      spec: { ...plain.spec, id: "single-room-half", wallTransformScale: 0.5 },
+    });
+    expect(scaled.segments).toBeGreaterThan(0);
+    expect(scaled.grades.FOUND).toBe(plain.expectWalls);
+    expect(scaled.grades.MISSED).toBe(0);
+    expect(scaled.foundFeet).toBeCloseTo(trueWallFeet(plain.spec), 1);
+  }, 60_000);
+});
