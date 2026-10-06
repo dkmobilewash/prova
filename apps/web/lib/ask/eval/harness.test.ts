@@ -68,6 +68,67 @@ describe("every eval refuses to run without a key", () => {
     expect(files.some((file) => !file.includes(join("ask", "eval")))).toBe(true);
   });
 
+  /**
+   * THE EVALS THAT CALL NO MODEL, named rather than detected.
+   *
+   * This guard's real property is that **an eval must not pass on nothing**. For
+   * an eval that calls a model, an API-key check at collection is how that is
+   * guaranteed: without a key it refuses instead of scoring zero cases.
+   *
+   * `scaleAudit.eval.ts` calls no model. It is deterministic geometry over
+   * drawings somebody points it at, so there is no key to demand and demanding
+   * one would be theatre. It makes the SAME guarantee by other means, and the
+   * loop below asserts both halves rather than taking the exemption on trust:
+   * it SKIPS when given no input, and when given input it asserts the input
+   * resolved to something before reading a figure off the run.
+   *
+   * Detecting "calls a model" was tried and rejected as the discriminator:
+   * `@prova/integrations` is imported by eight of these files and NOT by the two
+   * in this folder, which do call a model. A named exemption with its own
+   * assertions is the pattern `clerkMountGate.test.ts` uses for `/sign-in` and
+   * `/sign-up`, and for the same reason — an exemption nobody checks is a hole,
+   * and one the guard re-proves is a second kind of guarantee.
+   */
+  const KEYLESS_EVALS: Record<string, string> = {
+    "scaleAudit.eval.ts":
+      "calls no model: deterministic geometry over real drawings, guarded by a skip plus a non-zero input assertion",
+  };
+
+  it("NAMES EVERY KEYLESS EXEMPTION, and each one still exists", () => {
+    // An exemption for a file that has been renamed or deleted is a hole left
+    // open for whatever lands on that name next.
+    for (const name of Object.keys(KEYLESS_EVALS)) {
+      expect(
+        files.some((file) => file.endsWith(name)),
+        `${name} is exempted from the key check but no such eval exists any more — remove the exemption`,
+      ).toBe(true);
+    }
+  });
+
+  it("holds the keyless evals to the SAME promise by other means", () => {
+    for (const name of Object.keys(KEYLESS_EVALS)) {
+      const file = files.find((f) => f.endsWith(name));
+      if (file === undefined) continue;
+      const source = readFileSync(file, "utf8");
+
+      // It must refuse to run on nothing rather than scoring a clean zero.
+      expect(
+        /describe\.skipIf\(/.test(source),
+        `${name} is exempt from the key check but does not skip when it has no input — so with nothing ` +
+          `set it would run and pass on nothing, which is the whole thing this guard exists to refuse`,
+      ).toBe(true);
+
+      // And when it IS given input, it must prove the input resolved to
+      // something before reading any figure off the run. A mistyped folder name
+      // otherwise produces no pages, no findings and a clean summary.
+      expect(
+        /expect\([^)]*\.length[\s\S]{0,200}?toBeGreaterThan\(0\)/.test(source),
+        `${name} never asserts its input resolved to anything, so a path that matches no file would ` +
+          `read as a clean run`,
+      ).toBe(true);
+    }
+  });
+
   it("demands a key BEFORE any case runs, not inside one", () => {
     // ── WHAT THIS ASSERTS, AND WHY IT IS NOT THE OLD REGEX ──
     //
@@ -84,6 +145,10 @@ describe("every eval refuses to run without a key", () => {
     const INSIDE_IT = /\bit\(\s*[\s\S]{0,400}?require(Eval)?ApiKey\s*\(/;
 
     for (const name of files) {
+      // The keyless evals are held to the same promise two cases above, by the
+      // means they actually have. See `KEYLESS_EVALS`.
+      if (Object.keys(KEYLESS_EVALS).some((exempt) => name.endsWith(exempt))) continue;
+
       const source = readFileSync(name, "utf8");
       expect(
         /require(Eval)?ApiKey\s*\(/.test(source),

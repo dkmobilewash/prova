@@ -18,6 +18,7 @@
     "eval:lead-search": "pnpm --filter @prova/web run eval:lead-search",
     "eval:symbols": "pnpm --filter @prova/web run eval:symbols",
     "eval:specs": "pnpm --filter @prova/web run eval:specs",
+    "scale:audit": "pnpm --filter @prova/web run scale:audit",
     "test:e2e": "pnpm --filter @prova/web run test:e2e:local",
     "test:e2e:public": "pnpm --filter @prova/web run test:e2e:public",
     "db:generate": "pnpm --filter @prova/db generate",
