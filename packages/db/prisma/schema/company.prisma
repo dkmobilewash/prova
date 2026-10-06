@@ -146,8 +146,9 @@ model Company {
   vendorPriceQuotes         VendorPriceQuote[]
   outboundMessages          OutboundMessage[]
   contactInteractions       ContactInteraction[]
-  proposalClauses           ProposalClause[]
-  jobProposalClauses        JobProposalClause[]
+  proposalClauses          ProposalClause[]
+  jobProposalClauses       JobProposalClause[]
+  proposalClauseDrafts     ProposalClauseDraft[]
   apprenticeshipEnrollments ApprenticeshipEnrollment[]
   apprenticeshipCommittees  ApprenticeshipCommittee[]
   contactPeople             ContactPerson[]
@@ -278,6 +279,8 @@ model User {
   jobMediaAnnotations                  JobMediaAnnotation[]          @relation("JobMediaAnnotationBy")
   takeoffPlansUploaded                 TakeoffPlan[]                 @relation("TakeoffPlanUploadedBy")
   planSheetProposalsAccepted           PlanSheetProposal[]           @relation("PlanSheetProposalAcceptedBy")
+  planScheduleProposalsAccepted        PlanScheduleProposal[]        @relation("PlanScheduleProposalAcceptedBy")
+  proposalClauseDraftsAccepted         ProposalClauseDraft[]         @relation("ProposalClauseDraftAcceptedBy")
   bidAddendumReadingsStarted           BidAddendumReading[]
   bidSpecReadingsStarted               BidSpecReading[]
   bidAddendumDecisions                 BidAddendumItemDecision[]

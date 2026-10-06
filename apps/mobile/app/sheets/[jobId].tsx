@@ -1,6 +1,16 @@
 import { useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
 import { Card } from "@/components/Card";
 import { JobContextChip } from "@/components/JobContextChip";
@@ -65,6 +75,7 @@ export default function SheetsScreen() {
   const [index, setIndex] = useState(0);
   const [boxWidth, setBoxWidth] = useState(0);
   const [draft, setDraft] = useState<{ x: number; y: number } | null>(null);
+  const scroller = useRef<ScrollView | null>(null);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   /** Pins this phone is holding. Drawn exactly like the real ones and listed
@@ -173,7 +184,32 @@ export default function SheetsScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={s.page}>
+    // THE KEYBOARD COVERED THE NOTE FIELD, AND THE NOTE FIELD IS THE LAST
+    // THING ON THE SCREEN.
+    //
+    // Reported from a real phone on 2026-10-06: placing a pin opens the note
+    // card at the bottom — deliberately, because this phone is held one-handed
+    // on a ladder — and the keyboard then sat straight over it, so you could
+    // not see what you were typing. No test here can see it: the screen suite
+    // renders in happy-dom, which does no layout and has no keyboard.
+    //
+    // Three things, and only the first is the one that was reported:
+    //
+    //   - `KeyboardAvoidingView` lifts the content clear, the same pattern
+    //     `app/sign-in.tsx` already uses, `padding` on iOS only;
+    //   - `keyboardShouldPersistTaps="handled"` so the FIRST tap on "Place
+    //     note" saves instead of merely dismissing the keyboard — nobody
+    //     reported that because they tapped twice without noticing;
+    //   - and a scroll to the end when the field takes focus, because lifting
+    //     the view does not by itself bring a card that is below the fold into
+    //     sight.
+    <KeyboardAvoidingView style={s.fill} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ScrollView
+        ref={scroller}
+        contentContainerStyle={s.page}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
       <JobContextChip />
       <SyncStatus state={offline} />
 
@@ -316,6 +352,13 @@ export default function SheetsScreen() {
           <TextInput
             value={note}
             onChangeText={setNote}
+            // Lifting the view is not the same as showing the field: this card is
+            // the last thing on a long screen, so it can be clear of the keyboard
+            // and still below the fold. The delay is the keyboard's own animation —
+            // scrolling before it has opened scrolls to the wrong place.
+            onFocus={() => {
+              setTimeout(() => scroller.current?.scrollToEnd({ animated: true }), 120);
+            }}
             placeholder={t("sheets.notePlaceholder")}
             placeholderTextColor={p.colors.inkMuted}
             inputMode="text"
@@ -343,11 +386,13 @@ export default function SheetsScreen() {
         </Card>
       )}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = (p: Palette) =>
   StyleSheet.create({
+    fill: { flex: 1 },
     page: { padding: space.md, paddingBottom: space.scrollBottom, gap: space.sm },
     empty: { color: p.colors.ink, fontSize: typography.size.lg, fontWeight: typography.weight.semibold },
     body: { color: p.colors.inkBody, fontSize: typography.size.md },
