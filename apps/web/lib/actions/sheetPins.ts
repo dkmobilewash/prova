@@ -7,6 +7,7 @@ import { actionFail as fail, actionOk as ok, runAction, type ActionResult } from
 import { parseNumericInput } from "@/lib/numeric-input";
 import { can } from "@/lib/permissions";
 import { isOurBlobStoreUrl } from "@/lib/blob-urls";
+import { createPunchListItems } from "@/lib/field/punch-list-items";
 import {
   parseSheetPages,
   pinContentProblem,
@@ -106,6 +107,31 @@ export async function createSheetPin(pageId: string, formData: FormData): Promis
       if (!item) return fail("That punch item is not on this account.");
     }
 
+    // A PUNCH ITEM HAS ONE LOCATION, so pinning one that is already pinned
+    // MOVES it. Without this, a foreman who pins item 14 on the wrong sheet,
+    // notices, and pins it again leaves TWO — and a punch list saying an item
+    // is in two places is worse than one with no pins at all.
+    //
+    // The unique index on `punchItemId` is the actual guarantee; this read
+    // only makes the common case pleasant. Two simultaneous submits can both
+    // see nothing here and both try to insert, and the database refuses the
+    // second — the same shape as the invoice-number collision this repo
+    // already paid for.
+    if (punchItemId) {
+      const existing = await prisma.sheetPin.findFirst({
+        where: { punchItemId, companyId: context.company.id },
+        select: { id: true },
+      });
+      if (existing) {
+        await prisma.sheetPin.update({
+          where: { id: existing.id },
+          data: { pageId: page.id, x, y },
+        });
+        revalidatePath("/drawings");
+        return ok;
+      }
+    }
+
     await prisma.sheetPin.create({
       data: {
         companyId: context.company.id,
@@ -120,6 +146,83 @@ export async function createSheetPin(pageId: string, formData: FormData): Promis
       },
     });
     revalidatePath("/drawings");
+    return ok;
+  });
+}
+
+/**
+ * RAISE A PUNCH ITEM AT A POINT ON THE DRAWING, in one action.
+ *
+ * **This is the one that makes the feature worth building.** `PunchListItem`
+ * already has an `area` — free text, "Level 3 corridor" — which is how a sub
+ * has always had to say where something is. A pin replaces that with a point
+ * on the contract drawing, and the item it belongs to carries
+ * `causedByOthers`, `responsibleParty` and `backchargeId`. An item that is
+ * somebody else's fault, with a photo, at an exact spot on the drawing, dated
+ * and named, is a backcharge packet rather than an argument.
+ *
+ * **TWO CAPABILITIES, DELIBERATELY BOTH.** Raising a punch item is
+ * `MANAGE_FIELD`; putting a pin on a drawing is `MANAGE_JOBS`. This does both,
+ * so it demands both rather than picking the friendlier one — a shortcut here
+ * would let someone raise field work through a door that was never meant to
+ * open on it.
+ *
+ * **IF THE PIN FAILS THE ITEM SURVIVES, and that is the right way round.** The
+ * item is created first, through the same shared core the punch-list form
+ * uses, so it is a real item on the real list even if the pin never lands. The
+ * opposite — a pin pointing at nothing — is the shape `onDelete: SetNull`
+ * already exists to clean up after.
+ */
+export async function createPunchItemAtPin(pageId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+    if (!can(context, "MANAGE_FIELD")) {
+      return fail("Raising a punch item needs field permission, which this account does not have.");
+    }
+
+    const page = await prisma.sheetPage.findFirst({
+      where: { id: pageId, revision: { set: { companyId: context.company.id } } },
+      select: { id: true, widthPt: true, heightPt: true, revision: { select: { set: { select: { jobId: true } } } } },
+    });
+    if (!page) return fail("That sheet is not on this account.");
+
+    const x = parseCoordinate(formData.get("x"), "across");
+    const y = parseCoordinate(formData.get("y"), "down");
+    if (typeof x === "string") return fail(x);
+    if (typeof y === "string") return fail(y);
+    const placement = pinPlacementProblem(x, y, page);
+    if (placement) return fail(placement);
+
+    const description = (formData.get("description") as string | null)?.trim() ?? "";
+    if (!description) return fail("Say what needs fixing.");
+
+    const jobId = page.revision.set.jobId;
+    if (!jobId) return fail("That drawing set is not attached to a job, so there is nothing to raise against.");
+
+    const raised = await createPunchListItems(context.company.id, jobId, {
+      descriptions: [description],
+      raisedByUserId: context.id,
+    });
+    if (!raised.ok) return raised;
+
+    const item = raised.value.items[0];
+    if (!item) return fail("That punch item could not be raised.");
+
+    await prisma.sheetPin.create({
+      data: {
+        companyId: context.company.id,
+        pageId: page.id,
+        x,
+        y,
+        kind: "PUNCH",
+        punchItemId: item.id,
+        createdByUserId: context.id,
+      },
+    });
+
+    revalidatePath("/drawings");
+    revalidatePath("/punch-lists");
     return ok;
   });
 }

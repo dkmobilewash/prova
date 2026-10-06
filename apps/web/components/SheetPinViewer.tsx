@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createSheetPin, deleteSheetPin } from "@/lib/actions";
+import { createPunchItemAtPin, createSheetPin, deleteSheetPin } from "@/lib/actions";
 import { describePin, type SheetPinKind } from "@/lib/sheet-pins";
 import { ConfirmDeleteButton } from "./ConfirmDeleteButton";
 import { Spinner } from "./Spinner";
@@ -39,6 +39,8 @@ type Pin = {
 type Props = {
   fileUrl: string;
   page: { id: string; pageNumber: number; widthPt: number; heightPt: number; imageUrl: string | null };
+  photos: { id: string; blobUrl: string; caption: string | null; capturedAt: Date }[];
+  punchItems: { id: string; description: string; area: string | null; dueOn: string | null }[];
   pins: Pin[];
 };
 
@@ -48,13 +50,21 @@ const PIN_COLOUR: Record<SheetPinKind, string> = {
   NOTE: "#a78bfa",
 };
 
-export function SheetPinViewer({ fileUrl, page, pins }: Props) {
+export function SheetPinViewer({ fileUrl, page, pins, photos, punchItems }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [placing, setPlacing] = useState<SheetPinKind | null>(null);
   const [draft, setDraft] = useState<{ x: number; y: number } | null>(null);
+  /** What a PHOTO or PUNCH pin points at. A pin of those kinds without one is
+   * refused by the action — which is exactly what used to happen on every
+   * click, because this component never collected it. */
+  const [targetId, setTargetId] = useState<string | null>(null);
+  /** A punch item raised at this point rather than chosen from the list. The
+   * `area` field has always been free text; this is the thing that replaces
+   * it with a point on the contract drawing. */
+  const [newPunch, setNewPunch] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -169,11 +179,38 @@ export function SheetPinViewer({ fileUrl, page, pins }: Props) {
     if (!draft || !placing) return;
     setBusy(true);
     setError(null);
+
+    // RAISING AN ITEM AND PINNING IT ARE ONE ACT, so they are one call. Doing
+    // it in two would leave an item with no pin whenever the second half
+    // failed, which is the state nobody goes back and tidies.
+    if (placing === "PUNCH" && newPunch.trim()) {
+      const data = new FormData();
+      data.set("x", String(draft.x));
+      data.set("y", String(draft.y));
+      data.set("description", newPunch);
+      const raised = await createPunchItemAtPin(page.id, data);
+      setBusy(false);
+      if (!raised.ok) {
+        setError(raised.error);
+        return;
+      }
+      setDraft(null);
+      setPlacing(null);
+      setNewPunch("");
+      setTargetId(null);
+      return;
+    }
+
     const data = new FormData();
     data.set("kind", placing);
     data.set("x", String(draft.x));
     data.set("y", String(draft.y));
     if (placing === "NOTE") data.set("note", note);
+    // The halves that were missing, and the whole reason those two buttons
+    // never worked: the action refuses a photo or punch pin that does not say
+    // what it points at, and nothing here ever said.
+    if (placing === "PHOTO" && targetId) data.set("mediaId", targetId);
+    if (placing === "PUNCH" && targetId) data.set("punchItemId", targetId);
     const result = await createSheetPin(page.id, data);
     setBusy(false);
     if (!result.ok) {
@@ -183,6 +220,8 @@ export function SheetPinViewer({ fileUrl, page, pins }: Props) {
     setDraft(null);
     setPlacing(null);
     setNote("");
+    setTargetId(null);
+    setNewPunch("");
   }
 
   async function remove(pinId: string) {
@@ -209,6 +248,8 @@ export function SheetPinViewer({ fileUrl, page, pins }: Props) {
               setPlacing(placing === kind ? null : kind);
               setDraft(null);
               setError(null);
+              setTargetId(null);
+              setNewPunch("");
             }}
             aria-pressed={placing === kind}
             className={`rounded-md border px-3 py-2 text-sm ${
@@ -277,6 +318,85 @@ export function SheetPinViewer({ fileUrl, page, pins }: Props) {
           </svg>
         )}
       </div>
+
+      {/* WHAT THE PIN POINTS AT, asked only once there is a point to put it on.
+          Showing the picker before the tap would be asking two questions at
+          once about a thing that may never be placed. */}
+      {draft && placing === "PHOTO" && (
+        <div className="space-y-2">
+          <p className="text-sm text-slate-300">Which photo is this?</p>
+          {photos.length === 0 ? (
+            <p className="text-sm text-slate-400">
+              No photos on this job yet. Take one on the phone, or add one from the job&apos;s Photos tab, and it
+              will be here.
+            </p>
+          ) : (
+            <div className="grid max-h-64 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-5">
+              {photos.map((photo) => (
+                <button
+                  key={photo.id}
+                  type="button"
+                  onClick={() => setTargetId(targetId === photo.id ? null : photo.id)}
+                  aria-pressed={targetId === photo.id}
+                  title={photo.caption ?? undefined}
+                  className={`overflow-hidden rounded-md border ${
+                    targetId === photo.id ? "border-sky-400 ring-2 ring-sky-400/40" : "border-slate-700"
+                  }`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element --
+                      a blob URL of unknown dimensions in a fixed-ratio tile */}
+                  <img src={photo.blobUrl} alt={photo.caption ?? "Site photo"} className="aspect-square w-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {draft && placing === "PUNCH" && (
+        <div className="space-y-2">
+          <p className="text-sm text-slate-300">Which item is this?</p>
+          {punchItems.length > 0 && (
+            <div className="max-h-48 space-y-1 overflow-y-auto">
+              {punchItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setTargetId(targetId === item.id ? null : item.id);
+                    setNewPunch("");
+                  }}
+                  aria-pressed={targetId === item.id}
+                  className={`block w-full rounded-md border px-3 py-2 text-left text-sm ${
+                    targetId === item.id
+                      ? "border-sky-400 bg-sky-400/15 text-sky-100"
+                      : "border-slate-700 text-slate-300 hover:border-slate-500"
+                  }`}
+                >
+                  {item.description}
+                  {/* `area` is the free text this pin is replacing. Shown while
+                      it still exists, so a person can see the two agree. */}
+                  {item.area && <span className="ml-2 text-xs text-slate-400">{item.area}</span>}
+                  {item.dueOn && <span className="ml-2 text-xs text-slate-400">due {item.dueOn}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+          <label className="block text-sm text-slate-300">
+            {punchItems.length > 0 ? "Or raise a new one here" : "Raise a new item here"}
+            <input
+              name="newPunch"
+              value={newPunch}
+              onChange={(e) => {
+                setNewPunch(e.target.value);
+                if (e.target.value) setTargetId(null);
+              }}
+              className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100"
+              placeholder="Ceiling grid out of level"
+            />
+          </label>
+        </div>
+      )}
 
       {draft && placing === "NOTE" && (
         <label className="block text-sm text-slate-300">

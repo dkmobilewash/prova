@@ -74,14 +74,21 @@ async function loadPdfjs() {
   return pdfjs;
 }
 
+export type PhotoChoice = { id: string; blobUrl: string; caption: string | null; capturedAt: Date };
+export type PunchChoice = { id: string; description: string; area: string | null; dueOn: string | null };
+
 export function SheetPinSurface({
   revisionId,
   fileUrl,
   pages,
+  photos,
+  punchItems,
 }: {
   revisionId: string;
   fileUrl: string | null;
   pages: Page[];
+  photos: PhotoChoice[];
+  punchItems: PunchChoice[];
 }) {
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
@@ -308,7 +315,15 @@ export function SheetPinSurface({
         </div>
       )}
 
-      {page && fileUrl && <SheetPinViewer fileUrl={fileUrl} page={page} pins={page.pins} />}
+      {page && fileUrl && (
+        <SheetPinViewer
+          fileUrl={fileUrl}
+          page={page}
+          pins={page.pins}
+          photos={photos}
+          punchItems={punchItems}
+        />
+      )}
     </div>
   );
 }
