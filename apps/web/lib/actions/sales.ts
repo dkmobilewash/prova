@@ -20,6 +20,7 @@ import { looksCutOff, parseSubListing } from "@/lib/sub-listing/parse";
 // duplicate beside it, where a completeness test on the first cannot see the
 // second.
 import { licenceNumberFrom, readTypedLicence } from "@/lib/sales-licence";
+import { CslbHeaderError, MASTER_FILE_URL, cslbRowsForLicences, textChunks } from "@/lib/cslb/masterFile";
 import {
   PRIME_OUTCOMES,
   listedByGcFor,
@@ -1608,6 +1609,119 @@ export async function importSubListing(
     // each. `createSalesLeadSignal` revalidates both and says why; this had the
     // mirror-image omission, so a lead already open in another tab would have
     // shown its old band.
+    for (const leadId of touched) revalidatePath(`/sales/${leadId}`);
+    revalidatePath("/sales");
+    return { ok: true, value: summary };
+  } catch (err) {
+    if (err instanceof InputError) return { ok: false, error: err.message };
+    throw err;
+  }
+}
+
+/* ── THE LICENCE BECOMES A PHONE NUMBER ──────────────────────────────────── */
+
+export type CslbPhoneFillSummary = {
+  /** Leads holding a licence and no phone — the ones this could help. */
+  candidates: number;
+  /** Phones written. */
+  filled: number;
+  /** Matched a row whose licence is not CLEAR; left blank, named in the result. */
+  notClear: number;
+  /** Matched a CLEAR row that itself carries no phone. */
+  noPhone: number;
+  /** No row in the file for that licence at all. */
+  noRow: number;
+  /** Rows the file had, so a surprising zero above can be read against it. */
+  rowsRead: number;
+};
+
+/**
+ * FILL `SalesLead.phone` FROM CSLB'S MASTER FILE, FOR EVERY LEAD THAT HAS A
+ * LICENCE AND NO PHONE.
+ *
+ * A §4104 listing prints a licence number and no telephone, so every imported
+ * lead arrives uncallable by construction (`601-the-licence-becomes-a-phone-call`).
+ * CSLB's free master CSV is keyed on that licence and carries `BusinessPhone` on
+ * 99.9% of rows (`601-the-file-was-a-plain-get-all-along`). This joins the two,
+ * once, on a button — not on import and not on a schedule, because the fetch is
+ * 77 MB from somebody else's server behind a WAF that decides per request, and
+ * a refusal on that GET must land as a sentence in front of a person rather than
+ * as a silent import with no phones in it.
+ *
+ * Three rules, each the cheap half of a scar:
+ *
+ *   - **Never overwrite.** A phone already on the lead was typed by a person or
+ *     filled by an earlier run, and either beats a bulk file. Only blanks fill.
+ *   - **Only `CLEAR` fills.** A matched row with a suspended, expired or
+ *     inactive licence is reported, not dialled: the number may be stale and the
+ *     firm is not a prospect. `ACTIVE` matches nothing in this file — see the
+ *     module header of `lib/cslb/masterFile.ts`.
+ *   - **A status that is not 200 is returned with its date**, because the earlier
+ *     403 on a different route was generalised into "the file cannot be fetched"
+ *     and cost this channel a day. A 403 here is a fact about one request.
+ *
+ * What is written is `SalesLead.phone`, the same column the hand-typed form
+ * writes, so the register card's existing `tel:` link appears with no new UI.
+ * No signal is created: the file is a lookup, not a claim about the prospect.
+ */
+export async function fillPhonesFromCslb(): Promise<ActionResultWith<CslbPhoneFillSummary>> {
+  const { company, ...user } = await requireCompanyContext();
+  try {
+    assertSalesAccess({ company, role: user.role });
+
+    const leads = await prisma.salesLead.findMany({
+      where: { companyId: company.id, licenceNumber: { not: null }, OR: [{ phone: null }, { phone: "" }] },
+      select: { id: true, licenceNumber: true },
+    });
+    const summary: CslbPhoneFillSummary = {
+      candidates: leads.length,
+      filled: 0,
+      notClear: 0,
+      noPhone: 0,
+      noRow: 0,
+      rowsRead: 0,
+    };
+    if (leads.length === 0) return { ok: true, value: summary };
+
+    const response = await fetch(MASTER_FILE_URL, { cache: "no-store" });
+    if (!response.ok || !response.body) {
+      // The date is the VIEWER'S, like every other date this app shows; the
+      // census in lib/viewerDayCensus.test.ts refuses a server-clock stamp.
+      throw new InputError(
+        `CSLB answered ${response.status} to the master-file download on ${await viewerToday()}. Nothing was changed. That is one request on one day, not proof the file is gone — try again later.`,
+      );
+    }
+
+    const wanted = new Set(leads.map((lead) => lead.licenceNumber!));
+    let found: Awaited<ReturnType<typeof cslbRowsForLicences>>;
+    try {
+      found = await cslbRowsForLicences(textChunks(response.body), wanted);
+    } catch (err) {
+      if (err instanceof CslbHeaderError) throw new InputError(err.message);
+      throw err;
+    }
+    summary.rowsRead = found.rowsRead;
+
+    const touched: string[] = [];
+    for (const lead of leads) {
+      const row = found.rows.get(lead.licenceNumber!);
+      if (!row) {
+        summary.noRow++;
+        continue;
+      }
+      if (row.status !== "CLEAR") {
+        summary.notClear++;
+        continue;
+      }
+      if (row.phone === null) {
+        summary.noPhone++;
+        continue;
+      }
+      await prisma.salesLead.update({ where: { id: lead.id }, data: { phone: row.phone } });
+      summary.filled++;
+      touched.push(lead.id);
+    }
+
     for (const leadId of touched) revalidatePath(`/sales/${leadId}`);
     revalidatePath("/sales");
     return { ok: true, value: summary };

@@ -14,46 +14,26 @@
  * that key. It is pure: no prisma, no network, no form handling, so the rule can
  * be executed by a test rather than argued about.
  *
- * ── HOW THAT FILE IS ACTUALLY OBTAINED, AND WHY NOT FROM HERE ──
+ * ── HOW THAT FILE IS ACTUALLY OBTAINED ──
  *
- * Measured against the live site 2026-10-05, because "there is a free bulk CSV"
- * is the premise of every future phone-number slice and it was recorded without
- * the route. The portal's own text corroborates the two facts this file depends
- * on: the master file's columns include a **telephone number**, and *"Email
- * addresses are not provided (Business & Professions Code Section 27)"* — so the
- * no-email finding is statutory rather than incidental, and no amount of looking
- * will produce one.
+ * **One plain GET.** `lib/cslb/masterFile.ts` holds the URL
+ * (`DownLoadFile.ashx?fName=MasterLicenseData&type=C`) and reads the file;
+ * `fillPhonesFromCslb` in `lib/actions/sales.ts` joins it to leads on this key.
+ * Measured twice on 2026-10-05: 200, 77,643,341 bytes, `text/csv`, no cookie,
+ * no viewstate, no retry — `changelog.d/601-the-file-was-a-plain-get-all-along.md`.
  *
- * **It is not a URL.** `/onlineservices/dataportal/ContractorList` is an ASP.NET
- * page and the file comes out of a three-step postback: GET the page for its
- * `__VIEWSTATE`/`__EVENTVALIDATION`, POST `ddlStatus=M` (License Master) to make
- * the download control appear, then POST `__EVENTTARGET=ctl00$MainContent$lbMasterCSV`.
- * Anything built to ingest this cannot simply GET a link.
- *
- * **From an agent container the first two steps work and the third does not.**
- * Measured, in this order, with `curl`:
- *
- *   | step | result |
- *   | --- | --- |
- *   | GET the portal page | **200**, 14,829 bytes |
- *   | POST `ddlStatus=M` | **200**, the CSV/Excel controls appear |
- *   | POST `lbMasterCSV` | **403**, an F5 WAF page, 312 bytes, on the FIRST attempt |
- *
- * So the blanket claim that "the CSLB host 403s this container" is too broad and
- * the refinement matters: the site is browsable and the form is usable, and it is
- * the FILE that is rejected. Defeating a WAF is not an option — same class as the
- * Turnstile wall on Clerk's sign-up form that CLAUDE.md records — so the file has
- * to come from a machine the WAF admits, and no reader for it can be tested here
- * against real data. Note also that `WebFetch` is egress-blocked for this host
- * while `curl` is not: two routes, two answers, which is the Playwright-fetch
- * split in a new place.
- *
- * One more thing the portal says that bears on who is worth calling: the free
- * master file covers licences *currently renewed, or expired but renewable*, and
- * excludes cancelled, revoked and expired-non-renewable ones. That is narrower
- * than "every licensee" and it is the narrowing you would want — a sub whose
- * licence is revoked is not a prospect. The $235 full file (700,000+ records,
- * text only) is a different product and is not needed for this.
+ * This header used to say, in bold, "It is not a URL", with a table showing the
+ * portal's `lbMasterCSV` POST answering 403 from a container, and concluded the
+ * file had to come from a machine the WAF admits. The 403 was real; the
+ * generalisation was not. The POST is one route and the GET is another, and the
+ * same session had measured the GET working and committed only the failure.
+ * Corrected here because a header that says a thing cannot be done is the kind
+ * nobody re-checks. Two facts from that measurement survive: the portal's own
+ * text says *"Email addresses are not provided (Business & Professions Code
+ * Section 27)"*, so the no-email finding is statutory; and the free master file
+ * covers licences currently renewed or expired-but-renewable, which is the
+ * narrowing you would want — a revoked licence is not a prospect. The $235 full
+ * file (700,000+ records, text only) is a different product and is not needed.
  *
  * ── THE KEY'S SHAPE IS MEASURED, AND IT IS NOT WHAT THIS FILE FIRST ASSUMED ──
  *

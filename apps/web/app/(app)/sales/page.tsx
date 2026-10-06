@@ -3,6 +3,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { SalesLeadForm } from "@/components/SalesLeadForm";
 import { SubListingImport } from "@/components/SubListingImport";
+import { CslbPhoneFill } from "@/components/CslbPhoneFill";
 import { SalesLeadList } from "@/components/SalesLeadRow";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { viewerToday } from "@/lib/viewerToday";
@@ -34,6 +35,14 @@ import { qualify } from "@/lib/sales-qualification";
  * from any other page it hasn't been given a link to -- middleware still
  * requires sign-in, but nothing here names what the page would have shown.
  */
+/**
+ * `fillPhonesFromCslb` streams a 77 MB file from CSLB inside this page's server
+ * action, and a server action runs under the segment config of the page that
+ * invoked it. Ten seconds is not enough for that download; sixty is what the
+ * repo's other long fetch (`api/plan-ingest/run`) already uses.
+ */
+export const maxDuration = 60;
+
 export default async function SalesPage() {
   const { company, ...currentUser } = await requireCompanyContext();
 
@@ -301,6 +310,13 @@ export default async function SalesPage() {
             licenceNumber: lead.licenceNumber,
             registrationNumber: lead.registrationNumber,
           }))}
+        />
+        {/* The step after reading a listing: the licence it printed becomes a
+            number somebody can ring. Counted here, from rows already in hand,
+            so the button can say how many leads it would touch before it is
+            pressed. */}
+        <CslbPhoneFill
+          candidates={leads.filter((lead) => lead.licenceNumber && !lead.phone).length}
         />
       </div>
     </div>
