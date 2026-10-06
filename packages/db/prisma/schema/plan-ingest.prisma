@@ -381,6 +381,31 @@ model PlanSheetProposal {
   proposedSheetNumber String?
   proposedTitle       String?
   proposedDiscipline  String?
+
+  /// WHAT KIND OF DRAWING THIS PAGE IS — one of `SHEET_PAGE_TYPES` in
+  /// `packages/integrations/src/planSheets.ts`: COVER, PLAN, ELEVATION, SECTION,
+  /// DETAIL, SCHEDULE or OTHER.
+  ///
+  /// `proposedTitle` already holds what the sheet printed ("EXTERIOR
+  /// ELEVATIONS"), and that is a label a person reads. This is the one the app
+  /// can act on — "which pages are the schedules?" is the question the takeoff
+  /// side needs answered, and four titles can mean one kind.
+  ///
+  /// A STRING RATHER THAN AN ENUM, deliberately, and for the opposite reason to
+  /// the one that usually applies. This column holds MODEL OUTPUT. An enum
+  /// column would reject an unexpected value at write time, and a Server Action
+  /// that throws has its message REDACTED in production — so a model answering
+  /// "FLOOR PLAN" would lose the whole proposal rather than one field.
+  /// `normaliseSheetPageType` is the gate instead: it maps the words a title
+  /// block actually prints onto the closed set and answers OTHER for anything
+  /// else, so what reaches this column is always one of the seven.
+  /// `sheetPageType.test.ts` is what holds that promise.
+  ///
+  /// Null means NOBODY HAS READ THIS PAGE YET, or the text gave nothing to judge
+  /// from — distinct from OTHER, which means it is none of the six. A proposal
+  /// written before prompt `plan-title-block.2` also holds null, because that
+  /// reader did not return the field at all.
+  proposedPageType    String?
   proposedScale       String?
 
   /// THE REVISION AND DATE PRINTED ON THIS SHEET, named so they cannot be
