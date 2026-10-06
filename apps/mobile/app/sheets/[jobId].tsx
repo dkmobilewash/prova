@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
@@ -398,6 +398,25 @@ export default function SheetsScreen() {
             style={s.input}
           />
           {problem && <Text style={s.problem}>{problem}</Text>}
+          {/* THE FIELD ACT, above the note field on purpose: a foreman at the
+              wall has not written anything yet, he has SEEN something. The
+              camera opens with this point carried into it -- the same way the
+              punch list already opens it with an item -- and the photo is
+              pinned at the shutter. */}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              if (!draft || !sheet) return;
+              router.push(
+                `/photos/${jobId}?sheetPageId=${sheet.id}&pinX=${draft.x}&pinY=${draft.y}&open=1`,
+              );
+              setDraft(null);
+              setProblem(null);
+            }}
+            style={s.secondary}
+          >
+            <Text style={s.secondaryText}>{t("sheets.photoHere")}</Text>
+          </Pressable>
           <Pressable
             accessibilityRole="button"
             onPress={placeNote}

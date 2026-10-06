@@ -116,6 +116,14 @@ export type CreateOp =
       tagIds?: string[];
       dailyFieldReportId?: string;
       punchListItemId?: string;
+      /** Where on a drawing this was taken, when the camera was opened from a
+       * sheet. Sent WITH the photo rather than as a second op: the drain runs
+       * ops independently on purpose -- see its own comment, a day of time
+       * must never sit behind a photo -- so there is no way to say "this pin
+       * after that photo". One request makes both rows or neither. */
+      sheetPageId?: string;
+      pinX?: number;
+      pinY?: number;
     }
   | ({
       type: "delay:create";
@@ -616,6 +624,11 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
       }
       if (op.dailyFieldReportId) parameters.dailyFieldReportId = op.dailyFieldReportId;
       if (op.punchListItemId) parameters.punchListItemId = op.punchListItemId;
+      if (op.sheetPageId && op.pinX !== undefined && op.pinY !== undefined) {
+        parameters.sheetPageId = op.sheetPageId;
+        parameters.pinX = String(op.pinX);
+        parameters.pinY = String(op.pinY);
+      }
       // One value per field in a native multipart upload, so several tags
       // travel comma-separated; the route splits them.
       if (op.tagIds?.length) parameters.tagIds = op.tagIds.join(",");

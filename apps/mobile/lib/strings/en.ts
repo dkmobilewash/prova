@@ -573,6 +573,7 @@ export const EN = {
   "sheets.openFull": "Open full screen to place accurately",
   "sheets.fullHint": "Pinch to zoom. Tap where it is.",
   "sheets.closeFull": "Done",
+  "sheets.photoHere": "Photo here",
   "thing.sheets": "the sheets",
   "nav.sheets": "Sheets",
   "drawings.openSheets": "Sheets and pins",
