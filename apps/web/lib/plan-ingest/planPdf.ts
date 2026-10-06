@@ -1,4 +1,5 @@
 import type { Buffer } from "node:buffer";
+import { segmentsFromOpenPage, type SheetStrokes } from "../takeoff/sheetStrokes";
 
 /**
  * READING A PLAN PDF ON THE SERVER — which six comments in this repo said was
@@ -85,6 +86,19 @@ export type PlanPageText = {
 export type PlanPdf = {
   pageCount: number;
   pageText: (pageNumber: number) => Promise<PlanPageText>;
+  /**
+   * The STROKED LINES on a page — the wall faces and dimension lines, in the
+   * same viewport points `pageText` reports positions in.
+   *
+   * ON THIS DOCUMENT RATHER THAN ITS OWN, and that is a correctness fix rather
+   * than convenience. See `openPlanPdf`: the bytes are handed to pdfjs as a
+   * VIEW, and pdfjs DETACHES the buffer behind it — so a stage that read text
+   * here and then called `sheetStrokes(bytes, …)` on the same Buffer threw
+   * `Cannot perform Construct on a detached or out-of-bounds ArrayBuffer`.
+   * Found 2026-10-06 by the first stage that wanted both layers. Reading them
+   * from one document also halves the parse.
+   */
+  pageStrokes: (pageNumber: number) => Promise<SheetStrokes>;
   close: () => Promise<void>;
 };
 
@@ -175,6 +189,16 @@ export async function openPlanPdf(bytes: Buffer): Promise<PlanPdf> {
     // second one the same size and holds both until the first is collected. This form
     // shares the bytes. Found while raising the upload ceiling, at which point the
     // measurement this file rests on would have been off by a factor of two.
+    //
+    // THE COST OF SHARING THEM, WHICH THIS COMMENT DID NOT SAY FOR MONTHS:
+    // pdfjs DETACHES the ArrayBuffer it is handed, and this view points at the
+    // CALLER'S buffer — so `openPlanPdf(bytes)` consumes `bytes`, and anything
+    // reading from it afterwards throws `Cannot perform Construct on a detached
+    // or out-of-bounds ArrayBuffer`. Latent until 2026-10-06, when the first
+    // stage to want both the text layer and the geometry hit it immediately.
+    // The memory reasoning above is right and stays; use `pageStrokes` rather
+    // than opening a second document, and treat the Buffer as spent once this
+    // returns.
     data: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
     // The base-fourteen fonts need no embedding, and glyph outlines are only
     // needed to DRAW text. `getTextContent` reads the content stream's string
@@ -208,6 +232,14 @@ export async function openPlanPdf(bytes: Buffer): Promise<PlanPdf> {
           rotation: page.rotate,
           items,
         };
+      } finally {
+        page.cleanup();
+      }
+    },
+    pageStrokes: async (pageNumber: number) => {
+      const page = await doc.getPage(pageNumber);
+      try {
+        return await segmentsFromOpenPage(page, pdfjs, pageNumber);
       } finally {
         page.cleanup();
       }

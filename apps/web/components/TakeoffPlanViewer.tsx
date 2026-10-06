@@ -18,7 +18,7 @@ import {
   type StoredCalibration,
 } from "@/lib/takeoff-plan";
 import { saveTakeoffCalibration, saveTakeoffMeasurement } from "@/lib/actions";
-import type { PlanSheet, PrintedScaleByPage } from "@/lib/takeoff-plan-view";
+import type { PlanSheet, PrintedScaleByPage, ScalePrefill, ScalePrefillByPage } from "@/lib/takeoff-plan-view";
 import { TOOLS, type ToolId } from "@/lib/takeoff-plan-view";
 
 /**
@@ -61,6 +61,7 @@ export function TakeoffPlanViewer({
   planId,
   sheets,
   printedScaleByPage,
+  scalePrefillByPage,
 }: {
   jobId: string;
   planId: string;
@@ -74,6 +75,9 @@ export function TakeoffPlanViewer({
    * `takeoff-plan-view.ts`.
    */
   printedScaleByPage: PrintedScaleByPage;
+  /** What each sheet said about its own scale, read off the dimensions
+   *  printed on it. A PREFILL and never a calibration — see `ScalePrefill`. */
+  scalePrefillByPage: ScalePrefillByPage;
 }) {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState<number | null>(null);
@@ -438,6 +442,16 @@ export function TakeoffPlanViewer({
               pageNumber={pageNumber}
               pageWidthPt={pageSize?.widthPt ?? null}
               printedScale={printedScaleByPage[pageNumber] ?? null}
+              prefill={scalePrefillByPage[pageNumber] ?? null}
+              onUsePrefill={(xs, ys) => {
+                // Seeds the draft so the proposed line DRAWS ON THE SHEET over
+                // the dimension it was read from. That is the verification
+                // channel and the reason this is two clicks rather than one:
+                // an estimator should see the line sitting on `16' - 4 1/2"`
+                // before agreeing to a number that multiplies through every
+                // quantity on the sheet.
+                setDraft({ xs: [...xs], ys: [...ys] });
+              }}
               existingLabel={sheet?.label ?? ""}
               draft={calibrationDraft}
               onSaved={() => {
@@ -518,6 +532,55 @@ function Shape({
  * comes off it. Every sentence here is computed by the same pure module the
  * server re-runs before saving.
  */
+/**
+ * WHAT THE SHEET SAID ABOUT ITS OWN SCALE, offered rather than applied.
+ *
+ * It shows its work, and that is the whole design. Never a bare
+ * `1/8" = 1'-0"`: the dimensions that agreed are listed, because an estimator
+ * can glance at the sheet and see `16' - 4 1/2"` printed where this says it is.
+ * A reason nobody can check is a reason nobody can overrule — the sentence
+ * `PlanSheetProposal.proposedReason` already insists on, applied to geometry.
+ *
+ * Pressing it draws the proposed line ON THE DRAWING and fills the box; the
+ * estimator then presses the same button they press today. Two clicks against
+ * today's find-a-dimension, click, click, type — and nothing reaches a quantity
+ * without somebody having looked at the line, which matters because a scale
+ * error multiplies through every wall on the sheet.
+ */
+function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => void }) {
+  const band = prefill.inheritedError * 100;
+  return (
+    <div className="rounded-md border border-line-card bg-surface p-2">
+      <p className="text-xs text-ink-body">
+        This sheet reads <span className="font-semibold text-ink">{prefill.scaleName}</span>
+        {prefill.agreed.length > 0 && (
+          <>
+            {" — matched "}
+            {prefill.agreed.length} printed dimension{prefill.agreed.length === 1 ? "" : "s"}
+            {prefill.considered > prefill.agreed.length && ` of ${prefill.considered} found`}.
+          </>
+        )}
+      </p>
+      {prefill.agreed.length > 0 && (
+        <p className="mt-1 text-[11px] text-ink-muted">{prefill.agreed.slice(0, 6).join("   ")}</p>
+      )}
+      <p className="mt-1 text-[11px] text-ink-muted">
+        {/* The band is stated because a scale nobody can put one on is one taken
+            on faith. It is MEASURED — how far the proposed line sits from the
+            scale the sheet voted for — not a theoretical bound. */}
+        Within {band < 0.05 ? "0.05" : band.toFixed(2)}% on {prefill.declaredText || "the dimension it read"}.
+      </p>
+      <button
+        type="button"
+        onClick={onUse}
+        className="mt-2 rounded-md border border-line-card bg-surface px-2 py-1 text-xs text-ink-body hover:bg-rail-hover"
+      >
+        Use this dimension
+      </button>
+    </div>
+  );
+}
+
 function CalibrationForm({
   jobId,
   planId,
@@ -526,6 +589,8 @@ function CalibrationForm({
   printedScale,
   existingLabel,
   draft,
+  prefill,
+  onUsePrefill,
   onSaved,
 }: {
   jobId: string;
@@ -535,6 +600,8 @@ function CalibrationForm({
   printedScale: string | null;
   existingLabel: string;
   draft: StoredCalibration | null;
+  prefill: ScalePrefill | null;
+  onUsePrefill: (xs: readonly [number, number], ys: readonly [number, number]) => void;
   onSaved: () => void;
 }) {
   const [typed, setTyped] = useState("");
@@ -548,7 +615,20 @@ function CalibrationForm({
   }, [draft, typed, pageWidthPt, printedScale]);
 
   if (!draft) {
-    return <p className="mt-2 text-xs text-ink-muted">Click once at each end of a dimension printed on the drawing.</p>;
+    return (
+      <div className="mt-2 flex flex-col gap-2">
+        {prefill && (
+          <ScaleOffer
+            prefill={prefill}
+            onUse={() => {
+              onUsePrefill(prefill.xs, prefill.ys);
+              setTyped(prefill.declaredText || formatFeetInches(prefill.declaredFeet));
+            }}
+          />
+        )}
+        <p className="text-xs text-ink-muted">Click once at each end of a dimension printed on the drawing.</p>
+      </div>
+    );
   }
 
   return (

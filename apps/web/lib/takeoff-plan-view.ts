@@ -100,6 +100,86 @@ export type PlanSheet = {
 export type PrintedScaleByPage = Record<number, string>;
 
 /**
+ * THE SCALE A SHEET DECLARED ABOUT ITSELF, ready to prefill the calibration
+ * form — a line, a printed distance, and the evidence for both.
+ *
+ * It is a PREFILL and not a calibration, which is the whole safety of it. The
+ * estimator sees the proposed line drawn over the dimension it was read from,
+ * the figure in the box, and the sentence saying which dimensions agreed; then
+ * they press the same button they press today. Nothing reaches a quantity
+ * without somebody having agreed to it, and a scale error multiplies through
+ * every wall on the sheet.
+ */
+export type ScalePrefill = {
+  /** `1/8" = 1'-0"`. */
+  scaleName: string;
+  /** The line, in page-width units — the convention
+   *  `TakeoffScaleCalibration` stores, so this is a copy and not a conversion. */
+  xs: [number, number];
+  ys: [number, number];
+  /** What the drawing says that line is, in feet. */
+  declaredFeet: number;
+  /** The figure as PRINTED — `16' - 4 1/2"` — so it can be found on the sheet. */
+  declaredText: string;
+  /** Every dimension that agreed, as printed. */
+  agreed: string[];
+  /** How many dimensions were found on the page at all. */
+  considered: number;
+  /** How far the proposed line sits from the scale the sheet voted for, as a
+   *  fraction. Shown, because a scale nobody can put a band on is one taken on
+   *  faith. */
+  inheritedError: number;
+};
+
+export type ScalePrefillByPage = Record<number, ScalePrefill>;
+
+/** The shape the page query selects. Named so the query cannot drift from what
+ *  this function needs. */
+export type ScaleReadingRowForView = {
+  pageNumber: number;
+  scaleName: string | null;
+  x1: number | null;
+  y1: number | null;
+  x2: number | null;
+  y2: number | null;
+  declaredDistanceFeet: unknown;
+  declaredText: string | null;
+  agreedText: string | null;
+  consideredCount: number;
+  inheritedError: number | null;
+};
+
+/**
+ * The prefills a page can offer, keyed by page number.
+ *
+ * A ROW WITH A `declineReason` YIELDS NOTHING, and that is not the same as no
+ * row: the reading exists, it says why it could not tell, and the form simply
+ * behaves as it does today. Every field is checked rather than assumed present,
+ * because a half-written row must not produce a line with one end.
+ */
+export function scalePrefillsFromReadings(rows: readonly ScaleReadingRowForView[]): ScalePrefillByPage {
+  const byPage: ScalePrefillByPage = {};
+  for (const row of rows) {
+    if (byPage[row.pageNumber] !== undefined) continue;
+    if (row.scaleName === null) continue;
+    if (row.x1 === null || row.y1 === null || row.x2 === null || row.y2 === null) continue;
+    const feet = Number(row.declaredDistanceFeet);
+    if (!Number.isFinite(feet) || feet <= 0) continue;
+    byPage[row.pageNumber] = {
+      scaleName: row.scaleName,
+      xs: [row.x1, row.x2],
+      ys: [row.y1, row.y2],
+      declaredFeet: feet,
+      declaredText: row.declaredText ?? "",
+      agreed: row.agreedText ? row.agreedText.split("\n").filter((line) => line.trim().length > 0) : [],
+      considered: row.consideredCount,
+      inheritedError: row.inheritedError ?? 0,
+    };
+  }
+  return byPage;
+}
+
+/**
  * Build that map from plan-sheet proposals, NEWEST FIRST.
  *
  * The caller orders by `createdAt desc` and this keeps the first scale it sees
