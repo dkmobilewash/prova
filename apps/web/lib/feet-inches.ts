@@ -77,10 +77,21 @@ export function parseFeetInches(raw: unknown, options?: NumericInputOptions): Nu
   // Split at the foot mark, or at the bare hyphen when there is none.
   const splitAt = hasFootMark ? trimmed.search(FOOT_MARKS) : trimmed.indexOf("-");
   const feetText = trimmed.slice(0, splitAt).trim();
+  // THE HYPHEN STRIP HAS TO TOLERATE THE SPACE BEFORE IT, and for months it did
+  // not: `.replace(/^-/, "")` ran BEFORE `.trim()`, so `24' - 6"` — which is
+  // how a drawing prints a dimension, and therefore how somebody copying one
+  // types it — kept its hyphen and came back "can't be negative". `24'-6"`
+  // worked, and so did any dimension whose inches were ZERO, because zero is
+  // not negative. That last part is why it stayed hidden: `11' - 0"` parses,
+  // `11' - 3"` does not.
+  //
+  // Found 2026-10-06 by pointing the automatic-scale reader at a real CAD
+  // export: 3 of its 32 printed dimensions parsed, and all three ended `- 0"`.
   const inchText = trimmed
     .slice(splitAt + 1)
     .replace(INCH_MARKS, "")
-    .replace(/^-/, "")
+    .trim()
+    .replace(/^-\s*/, "")
     .trim();
 
   const feet = piece(feetText, label, options ?? {});

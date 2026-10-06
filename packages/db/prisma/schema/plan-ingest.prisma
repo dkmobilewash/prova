@@ -338,6 +338,102 @@ model PlanSheetText {
   @@index([planId, hasTextLayer])
 }
 
+/// THE SCALE A SHEET DECLARES ABOUT ITSELF, read off the dimensions printed on
+/// it — and the two facts a calibration is made of, never a factor.
+///
+/// An architect writes `16' - 4 1/2"` above the line it measures. That is a LINE
+/// and a DISTANCE, which is exactly what `TakeoffScaleCalibration` stores and
+/// exactly what an estimator supplies by clicking twice and typing. So this
+/// table proposes the same evidence by the same route, found rather than typed:
+/// `TakeoffScaleCalibration` is UNCHANGED by this feature.
+///
+/// WHY THIS IS NOT THE THING #623 DECLINED. That PR's record says the printed
+/// scale "implies a factor and not a dimension", and that a calibration "is the
+/// line somebody drew… so the printed scale cannot become one without inventing
+/// a second calibration mechanism with different evidence behind it". Both still
+/// true, and both about the scale NAME in the title block, which yields a factor
+/// and needs `pageWidthPt` — a column whose own comment calls it "A LABEL INPUT
+/// AND NOTHING ELSE". Nothing here stores a factor. If a column for one is ever
+/// added, this has become the thing that was declined.
+///
+/// WHY NOT FIELDS ON `PlanSheetProposal`. That table is the title-block
+/// READER's output: it carries `proposedConfidence` and `promptVersion` and its
+/// own comment says it holds MODEL OUTPUT. This is deterministic geometry off
+/// the PDF's own vectors — no model, no prompt, no spend. The two have different
+/// trust properties and want different review, and merging them would make
+/// "proposed" mean two things in one row.
+model PlanSheetScaleReading {
+  id String @id @default(cuid())
+
+  /// Scoped to the PLAN rather than the ingest job, like `PlanSheetText`: a
+  /// second run over the same set replaces the reading for a page rather than
+  /// accumulating one per run. There is nothing to compare between runs here,
+  /// because the answer is a property of the file.
+  planId String
+  plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  pageNumber Int
+
+  /// The winning standard scale's NAME, exactly as `ARCHITECTURAL_SCALES` spells
+  /// it — `1/8" = 1'-0"`. Null when the sheet was read and no scale could be
+  /// told, which is what `declineReason` explains.
+  ///
+  /// A STRING AND NOT AN ENUM for the reason `proposedPageType` gives one level
+  /// up: a value this build has not heard of must not reject the write. The
+  /// closed set lives in code, where `scaleFromDimensions.test.ts` holds it in
+  /// step with `takeoff-plan.ts`'s own table.
+  scaleName String?
+
+  /// The line to propose as the calibration, in PAGE-WIDTH UNITS — x over the
+  /// rendered width, y over that same width, which is `sheet-geometry.ts`'s box
+  /// contract and NOT a fraction of the height. Stored in the same convention
+  /// `TakeoffScaleCalibration` uses so the prefill is a copy rather than a
+  /// conversion.
+  x1 Float?
+  y1 Float?
+  x2 Float?
+  y2 Float?
+
+  /// What the drawing says that line is. `Decimal(12,4)` to match
+  /// `TakeoffScaleCalibration.declaredDistanceFeet` exactly — a prefill that
+  /// rounds differently from the column it lands in would show one figure and
+  /// store another.
+  declaredDistanceFeet Decimal? @db.Decimal(12, 4)
+
+  /// The figure as PRINTED — `16' - 4 1/2"`. Shown to the estimator so they can
+  /// find it on the sheet, which is the whole verification channel: the proposed
+  /// line is drawn over the dimension it came from.
+  declaredText String?
+
+  /// Every printed dimension that agreed, as printed, newline separated. The
+  /// evidence sentence — "matched 6 printed dimensions on this sheet". Never
+  /// "AI determined": a reason nobody can check is a reason nobody can overrule.
+  agreedText String?
+
+  /// How many printed dimensions were found on the page at all, agreeing or not.
+  /// `agreedText` against this is the honest fraction.
+  consideredCount Int @default(0)
+
+  /// How far the proposed line sits from the scale the sheet voted for, as a
+  /// fraction — 0.00315 is the real export's figure. THE ERROR EVERY LATER
+  /// MEASUREMENT INHERITS, and it is stored because a scale nobody can put a
+  /// band on is one taken on faith. Measured rather than derived: an earlier
+  /// version reported a theoretical bound from the figure's own rounding and
+  /// understated the truth by threefold.
+  inheritedError Float?
+
+  /// Why no scale could be told, in words an estimator can act on. FALSE IS A
+  /// FACT, NOT A FAILURE — a sheet with no printed dimensions, or with two
+  /// scales on it, has been read successfully and has nothing to offer.
+  declineReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([planId, pageNumber])
+  @@index([planId])
+}
+
 /// WHAT THE MODEL READ OFF ONE TITLE BLOCK, and what a person said about it.
 ///
 /// THE ROW IS THE PROPOSAL, NOT THE FILING — `intake.prisma`'s rule, copied

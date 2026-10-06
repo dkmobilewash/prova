@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { pageInventoryWork, type PageInventoryDeps, type SheetTextRow } from "./pageInventory";
+import { pageInventoryWork, type PageInventoryDeps, type SheetTextRow, type ScaleReadingRow } from "./pageInventory";
 import { planSetPdf, scannedSheet, sheetWithTitleBlock } from "./planFixtures";
 import { openPlanPdf } from "./planPdf";
 import type { ClaimedTask } from "./runner";
@@ -35,6 +35,7 @@ function task(pageNumber: number): ClaimedTask {
 
 function deps(over: Partial<PageInventoryDeps> = {}) {
   const saved: SheetTextRow[] = [];
+  const scales: ScaleReadingRow[] = [];
   const bytes = planSetPdf([
     sheetWithTitleBlock({ sheetNumber: "A-101", title: "FIRST FLOOR PLAN" }),
     sheetWithTitleBlock({ sheetNumber: "A-102", title: "SECOND FLOOR PLAN", rotation: 90 }),
@@ -47,8 +48,11 @@ function deps(over: Partial<PageInventoryDeps> = {}) {
     saveSheetText: async (row) => {
       saved.push(row);
     },
+    saveScaleReading: async (row) => {
+      scales.push(row);
+    },
   };
-  return { deps: { ...base, ...over }, saved, openPdf, readPlanBytes: base.readPlanBytes };
+  return { deps: { ...base, ...over }, saved, scales, openPdf, readPlanBytes: base.readPlanBytes };
 }
 
 describe("reading what each page says", () => {
@@ -139,5 +143,85 @@ describe("when the file cannot be read", () => {
     expect(out.error).toContain("3 sheets");
     expect(out.error).toContain("no sheet 9");
     expect(d.saved).toHaveLength(0);
+  });
+});
+
+
+/**
+ * THE SCALE READING, which rides this stage because this stage already has the
+ * document open — and because it is the only place it CAN ride: pdfjs detaches
+ * the buffer it is handed, so a second stage opening the same bytes throws.
+ */
+describe("the scale a sheet declares about itself", () => {
+  it("records a reading for every page, including one it cannot read", async () => {
+    const d = deps();
+    const work = pageInventoryWork(CTX, d.deps);
+    expect(await work(task(1))).toEqual({ ok: true });
+    expect(await work(task(2))).toEqual({ ok: true });
+    expect(await work(task(3))).toEqual({ ok: true });
+
+    // ONE ROW PER PAGE AND NEVER A MISSING ONE: a page with no reading and a
+    // page nobody has read are different states, and only a stored row can tell
+    // them apart. The same reason `PlanSheetText.hasTextLayer` exists.
+    expect(d.scales).toHaveLength(3);
+    expect(d.scales.map((r) => r.pageNumber)).toEqual([1, 2, 3]);
+  });
+
+  it("says a SCAN is a scan rather than attempting it", async () => {
+    const d = deps();
+    const work = pageInventoryWork(CTX, d.deps);
+    // The third fixture sheet has no text layer.
+    await work(task(3));
+    const row = d.scales[0]!;
+    expect(row.scaleName).toBeNull();
+    expect(row.declineReason).toMatch(/is a scan/);
+    expect(row.consideredCount).toBe(0);
+  });
+
+  it("DECLINES the title-block fixtures rather than inventing a scale for them", async () => {
+    // These fixtures carry a title block and no dimension strings, so there is
+    // nothing to vote on. A reader that produced a scale here would be producing
+    // one from nothing, which is the failure this whole module is shaped to
+    // avoid — and it is worth a test, because "no dimensions" is the common case
+    // on a cover sheet or a schedule page.
+    const d = deps();
+    const work = pageInventoryWork(CTX, d.deps);
+    await work(task(1));
+    const row = d.scales[0]!;
+    expect(row.scaleName).toBeNull();
+    expect(row.declineReason).toBeTruthy();
+    expect(row.x1).toBeNull();
+    expect(row.declaredDistanceFeet).toBeNull();
+  });
+
+  it("still records the page's TEXT when the scale cannot be told", async () => {
+    // The ordering that matters: a surprise in the geometry must not lose the
+    // write this stage is named for.
+    const d = deps();
+    const work = pageInventoryWork(CTX, d.deps);
+    await work(task(1));
+    expect(d.saved).toHaveLength(1);
+    expect(d.saved[0]!.hasTextLayer).toBe(true);
+    expect(d.scales).toHaveLength(1);
+  });
+
+  it("reports success even when the geometry read throws, and stores the reason", async () => {
+    // A page pdfjs will not hand an operator list for must not spend the task's
+    // three attempts or lose the text write.
+    const d = deps();
+    const work = pageInventoryWork(CTX, {
+      ...d.deps,
+      openPdf: async (bytes) => {
+        const pdf = await openPlanPdf(bytes);
+        return {
+          ...pdf,
+          pageStrokes: async () => {
+            throw new Error("no operator list");
+          },
+        };
+      },
+    });
+    expect(await work(task(1))).toEqual({ ok: true });
+    expect(d.scales[0]!.declineReason).toMatch(/could not be read: no operator list/);
   });
 });

@@ -18,9 +18,9 @@ import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
 import { deleteTakeoffPlan } from "@/lib/actions";
 import { requireCapability } from "@/lib/authz";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
-import { printedScalesFromProposals } from "@/lib/takeoff-plan-view";
+import { printedScalesFromProposals, scalePrefillsFromReadings } from "@/lib/takeoff-plan-view";
 import { measurementScaleLabel, zoneNotices, zoneScales } from "@/lib/takeoff-zones";
-import type { PlanMeasurementRow, PlanSheet, PrintedScaleByPage } from "@/lib/takeoff-plan-view";
+import type { PlanMeasurementRow, PlanSheet, PrintedScaleByPage, ScalePrefillByPage } from "@/lib/takeoff-plan-view";
 
 /**
  * TAKEOFF — measure a drawing on screen and turn what you traced into
@@ -104,6 +104,33 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           // per page and the ordering is what makes that the current reading.
           orderBy: { createdAt: "desc" },
           select: { pageNumber: true, proposedScale: true },
+        }),
+      )
+    : {};
+
+  // WHAT EACH SHEET SAID ABOUT ITS OWN SCALE, read off the dimensions printed on
+  // it by `PAGE_INVENTORY`. Keyed by page number for the same reason the printed
+  // scale above is: a `PlanSheet` row only exists once somebody has calibrated,
+  // so keying by sheet id would be null exactly when the prefill matters most —
+  // on the first calibration of a sheet.
+  const scalePrefillByPage: ScalePrefillByPage = plan
+    ? scalePrefillsFromReadings(
+        await prisma.planSheetScaleReading.findMany({
+          where: { planId: plan.id },
+          orderBy: { updatedAt: "desc" },
+          select: {
+            pageNumber: true,
+            scaleName: true,
+            x1: true,
+            y1: true,
+            x2: true,
+            y2: true,
+            declaredDistanceFeet: true,
+            declaredText: true,
+            agreedText: true,
+            consideredCount: true,
+            inheritedError: true,
+          },
         }),
       )
     : {};
@@ -267,6 +294,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         planId={plan.id}
         sheets={sheets}
         printedScaleByPage={printedScaleByPage}
+        scalePrefillByPage={scalePrefillByPage}
       />
 
       {sheets.map((sheet) => (
