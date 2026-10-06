@@ -44,6 +44,8 @@ import { MissingIndirects } from "@/components/MissingIndirects";
 import { estimateCrossChecks } from "@/lib/estimating/estimate-crosschecks";
 import { loadCrossCheckInputs } from "@/lib/estimating/estimate-crosschecks-query";
 import { EstimateCrossChecks } from "@/components/EstimateCrossChecks";
+import { PriceAnomalies } from "@/components/PriceAnomalies";
+import { loadPriceAnomalies } from "@/lib/estimating/price-anomalies-query";
 import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import {
   employerBurdenPercentOn,
@@ -318,6 +320,15 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
       budgetedUnitCost: item.budgetedUnitCost != null ? Number(item.budgetedUnitCost) : null,
     })),
   });
+
+  // GATED ON THE ESTIMATE STAGE, like the cross-checks above and for the same
+  // reason: after award a mis-priced line is a change order rather than
+  // something to fix before sending, and the page is read-only anyway. It also
+  // costs three queries and a fringe-schedule load, which is not worth paying
+  // on a page nobody can act on.
+  const priceAnomalyReport = isEstimateStage
+    ? await loadPriceAnomalies(job.id, company.id)
+    : { anomalies: [], checked: 0, unchecked: 0 };
 
   const schedulesByCraft = new Map(
     craftClassifications.map((craft) => [
@@ -761,6 +772,12 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                 what stops a reader treating one as more serious than the
                 other. */}
             <EstimateCrossChecks checks={crossChecks} />
+            {/* BESIDE the cross-checks, because they answer adjacent halves of
+                the same question before a bid goes out: #630 asks what was
+                measured or carried and never priced, and this asks whether what
+                WAS priced looks like what the work has cost. Both advisory,
+                both silent when there is nothing to say. */}
+            <PriceAnomalies report={priceAnomalyReport} />
           </section>
 
           <section className="mb-10" data-tour="job-line-items">
