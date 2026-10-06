@@ -126,6 +126,11 @@ const CONTROLS: Record<AiFeatureKey, Control> = {
     file: "components/PlanIngestPanel.tsx",
     why: "The panel on a job's takeoff tab that opens a plan set and then reads its title blocks. See stageReachableCensus for the separate question of whether each STAGE has a caller.",
   },
+  PROPOSAL_DRAFT: {
+    kind: "component",
+    file: "components/ProposalDrafts.tsx",
+    why: "The panel on a job's proposal page listing what the scope letter is silent about, with a drafted clause and its citation for each one. Accept, edit or dismiss; nothing reaches the letter unpressed.",
+  },
   ADDENDUM_READ: {
     kind: "component",
     file: "components/AddendumFindings.tsx",

@@ -52,3 +52,94 @@ model JobProposalClause {
   @@index([companyId])
   @@index([jobId])
 }
+
+/// ONE DRAFTED CLAUSE, and the fact it answers.
+///
+/// A sub's scope letter fails by SILENCE: a requirement the specs state, an
+/// indirect nobody priced, a package carried from a sub's quote — each one
+/// belongs on the letter, and a GC reading a letter that does not mention it
+/// assumes it was priced. `lib/estimating/proposal-facts.ts` gathers those
+/// facts; this is where a drafted sentence for one lands, for a person to
+/// accept, edit or dismiss.
+///
+/// ── `factRef` IS WHY THIS TABLE EXISTS ──
+///
+/// Coverage is DECLARED, never inferred. A fact is answered when a draft
+/// carrying its `factRef` exists — not when some clause happens to contain the
+/// words "Level 5". Text matching is the one thing this repo refuses everywhere
+/// else (`costCategory`, `craftClassificationId`, the takeoff recipes), and here
+/// it fails in the direction that costs money: "Level 5 finish IS included" and
+/// "Level 5 finish is NOT included" contain the same words, and a coverage check
+/// built on words cannot tell them apart.
+///
+/// A fact with a draft in ANY status is never proposed again. That is what makes
+/// the panel a tool rather than a nag: a DISMISSED fact stays dismissed, because
+/// the estimator read it and decided it does not belong on this letter.
+///
+/// ── WHY A DRAFT RATHER THAN WRITING THE CLAUSE DIRECTLY ──
+///
+/// `lib/estimating/draft-lines.ts` turns model output into `JobLineItem` rows
+/// with no review step, and it is right to: a line item is a number on a screen
+/// somebody can see and change. An EXCLUSION is a sentence sent to a GC that
+/// decides who pays. So accepting a draft creates a `JobProposalClause` — the
+/// existing snapshot — and this row records that it was accepted, by whom.
+model ProposalClauseDraft {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  /// Which of the four a drafted clause would be. For a SPEC_FINDING the reader
+  /// drafts both an INCLUSION and an EXCLUSION, as two rows sharing a `factRef`
+  /// — the app cannot tell whether the requirement was priced, so the estimator
+  /// picks the true one. See `proposal-facts.ts`'s header.
+  kind ProposalClauseKind
+
+  /// The sentence, as it would read on the letter.
+  text String
+
+  /// `ProposalFactKind` in `lib/estimating/proposal-facts.ts`. TEXT rather than
+  /// an enum for the reason `proposedPageType` gives: a value this build has
+  /// never heard of should not cost the whole draft at write time.
+  factKind String
+
+  /// The fact this answers. Stable across re-runs — that is the contract
+  /// `proposal-facts.ts` keeps, and coverage depends on it.
+  factRef String
+
+  /// The quote and where to find it, where the fact had one. A clause a GC can
+  /// challenge is worth more than one nobody can check, and this is what the
+  /// estimator reads before accepting.
+  citation String?
+
+  status ProposalDraftStatus @default(PROPOSED)
+
+  /// Set when accepted, and the clause it became — so the letter and the draft
+  /// queue cannot disagree about whether this fact was answered.
+  acceptedClauseId String?
+  acceptedByUserId String?
+  acceptedBy       User?     @relation("ProposalClauseDraftAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  acceptedAt       DateTime?
+
+  model         String
+  promptVersion String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  /// The query the panel runs: every draft on this job, whatever its status.
+  @@index([jobId, status])
+  /// Coverage is looked up by fact, so it is indexed by fact.
+  @@index([jobId, factRef])
+}
+
+/// Where a drafted clause got to. DISMISSED is not a failure — it is an
+/// estimator saying this fact does not belong on this letter, and it is
+/// recorded so the fact is never proposed again.
+enum ProposalDraftStatus {
+  PROPOSED
+  ACCEPTED
+  DISMISSED
+}

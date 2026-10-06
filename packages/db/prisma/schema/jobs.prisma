@@ -208,6 +208,7 @@ model Job {
   closeoutSubmissionCounter      CloseoutSubmissionCounter?
   outboundMessages               OutboundMessage[]
   proposalClauses                JobProposalClause[]
+  proposalClauseDrafts           ProposalClauseDraft[]
   wallRuns                       WallRun[]
   bidRecap                       JobBidRecap?
 

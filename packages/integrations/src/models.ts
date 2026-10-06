@@ -57,6 +57,7 @@ export const AI_FEATURES = {
   PLAN_INGESTION: "plan-ingestion",
   ADDENDUM_READ: "addendum-read",
   SPEC_READ: "spec-read",
+  PROPOSAL_DRAFT: "proposal-draft",
 } as const;
 
 export type AiFeatureKey = keyof typeof AI_FEATURES;
@@ -96,6 +97,9 @@ const FEATURE_MODEL: Record<AiFeatureKey, string> = {
   // comment.
   ADDENDUM_READ: OPUS_5,
   SPEC_READ: OPUS_5,
+  // Opus: a handful of calls per bid, and the output is a sentence that
+  // decides who pays when a GC disputes scope. Not page work.
+  PROPOSAL_DRAFT: OPUS_5,
 };
 
 /** `ANTHROPIC_MODEL_PLAN_INGESTION` etc. — the per-feature env override. */
