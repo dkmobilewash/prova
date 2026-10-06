@@ -92,3 +92,71 @@ did not find first.
 
 **No product code and no schema.** Four gates green: 9,198 unit tests, 678 db
 tests, typecheck, lint. Nothing from any drawing is in the repo.
+
+## And then it was pointed at two more real sheets, which is the whole point
+
+Diego supplied an overall floor plan (ARCH D, 36x24) and an enlarged plan (ARCH
+E1). Three real sheets now, two scales, three CAD origins — and **the harness
+found more in one run than any amount of reasoning had.**
+
+| sheet | derived | printed | outcome |
+| --- | --- | --- | --- |
+| Augusta, enlarged plan | `1/4" = 1'-0"` | `1/4" = 1'-0"` | **AGREES**, 0.01% |
+| SCHD, upper level | `1/8" = 1'-0"` | none printed | `NO_TITLE_SCALE`, 0.31% |
+| Colton, overall plan | — | `1/8" = 1'-0"` | `MISSED` |
+
+**`1/4" = 1'-0"` is now proven on a real sheet at 0.01%**, which was the scale
+#655 had never seen outside a synthetic fixture. And `AGREES` is the first
+INDEPENDENTLY VERIFIED derivation: the geometry and the architect's own printed
+caption, two readings, same answer. **Zero disagreements across three sheets —
+it has never derived a wrong scale.**
+
+### A bug in this harness, found by the sheet it was built to check
+
+Augusta first reported `NO_TITLE_SCALE` while printing `1/4" = 1'-0"` in plain
+text — at x=958 on a 3,024pt page, **beneath the drawing** rather than in the
+title-block corner, with the block itself saying `SCALE: AS NOTED`. That is not
+a missing answer; it is the ordinary convention, where each view is captioned
+with its own scale and the block defers to them.
+
+So the answer key was on the sheet and this was looking past it, which would
+have read as an unverifiable derivation forever. It scans the whole page now,
+and returns ALL distinct scales rather than the first: a sheet carrying a plan
+and an enlarged detail prints two correct ones, and taking whichever matched
+would manufacture an `AGREES` — the one outcome an audit must never produce.
+That is the new `MANY_PRINTED`, excluded from the headline for the same reason
+`NO_TITLE_SCALE` is.
+
+### A hard limit, named rather than hidden
+
+Colton carries **79,001 stroked segments and 85 text items, every one of them
+title-block content** — the firm's address, the project name, the stamp. No room
+names, no door tags, no dimension strings but two strays. Its drawing-area text
+was converted to OUTLINES when the PDF was made, which a CAD export does
+routinely, and **you cannot read dimensions that are not characters.**
+
+The decline is correct. What was wrong was the sentence: "no printed dimensions
+were found" on a sheet visibly covered in dimensions reads as the feature being
+broken, and an estimator who believes that stops trusting the rest of it. It now
+says which fact it is — plenty of line work, almost no readable dimensions, its
+lettering saved as line work, set it by hand. The discriminator is measured:
+167,911 / 79,001 / 23,351 segments on the three real plans against a cover
+sheet's handful.
+
+### Two more mutations that came back green first
+
+**The multi-scale decision was in the caller, not the tested function.**
+Cherry-picking the first of two printed scales passed a suite written for this
+feature, because every test reached `printedScalesOnPage` and none reached the
+caller's choice. `classifyOutcome` takes the whole list now.
+
+**And the prose filter was defence in depth against the wrong sentence.** The
+real disclaimer it was written for — "Do not scale dimensions from prints… not
+always drawn to scale" — carries no `X = Y` figure, so dropping the filter
+changed nothing. What it is actually for is the general note that DOES:
+`DETAILS ARE DRAWN AT 1/2" = 1'-0" UNLESS NOTED OTHERWISE` is ordinary on an
+ordinary sheet, and without the filter it becomes a second printed scale and
+costs a checkable page its answer key. That is the test now.
+
+Eight mutations on this round, all red. Four gates: **9,210 unit tests, 678 db
+tests**. Nothing from any of the three drawings is in the repo.

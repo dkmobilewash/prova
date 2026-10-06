@@ -107,6 +107,13 @@ export type AuditOutcome =
   | "MISSED"
   /** Declined, and the sheet names no scale either. Nothing was there. */
   | "DECLINED"
+  /**
+   * The sheet prints MORE THAN ONE scale — a plan and an enlarged detail, say.
+   * Both are correct, so there is no single answer key, and picking the one that
+   * matched would manufacture an `AGREES`. Excluded from the headline for the
+   * same reason `NO_TITLE_SCALE` is.
+   */
+  | "MANY_PRINTED"
   /** The page could not be read at all. */
   | "ERROR";
 
@@ -124,10 +131,19 @@ export type AuditOutcome =
  * declined, but one had an answer printed on the sheet and did not find it. Only
  * the first is a shortfall, and `agreementRate` counts only the first.
  */
-export function classifyOutcome(derived: string | null, printed: string | null): AuditOutcome {
-  if (derived === null) return printed === null ? "DECLINED" : "MISSED";
-  if (printed === null) return "NO_TITLE_SCALE";
-  return derived === printed ? "AGREES" : "DISAGREES";
+export function classifyOutcome(derived: string | null, printed: readonly string[]): AuditOutcome {
+  // MORE THAN ONE PRINTED SCALE IS DECIDED HERE AND NOT IN THE CALLER, because a
+  // mutation showed what happens when it is: cherry-picking the first of two
+  // left the whole suite green, since every test reached
+  // `printedScalesOnPage` and none reached the caller's choice. A sheet with a
+  // plan and an enlarged detail prints two correct scales, and picking whichever
+  // matched would manufacture an `AGREES` — the one outcome an audit must never
+  // produce.
+  if (printed.length > 1) return "MANY_PRINTED";
+  const one = printed[0] ?? null;
+  if (derived === null) return one === null ? "DECLINED" : "MISSED";
+  if (one === null) return "NO_TITLE_SCALE";
+  return derived === one ? "AGREES" : "DISAGREES";
 }
 
 export type AuditPage = {
@@ -136,8 +152,11 @@ export type AuditPage = {
   outcome: AuditOutcome;
   /** What the geometry said, if anything. */
   derived: string | null;
-  /** What the title block printed, if anything. */
+  /** The scale printed on the sheet, when exactly one is. */
   printed: string | null;
+  /** Every distinct printed scale found, so a multi-view sheet is visible
+   *  rather than reduced to whichever one happened to match. */
+  printedAll: string[];
   /** Printed dimensions found, and how many agreed on the winner. */
   found: number;
   agreed: number;
@@ -150,36 +169,57 @@ export type AuditPage = {
 };
 
 /**
- * A scale name out of title-block text.
+ * EVERY STANDARD SCALE PRINTED ANYWHERE ON THE PAGE, distinct, in reading order.
  *
- * The title block is a flattened run of its region's strings, so the scale sits
- * among sheet numbers, dates and a firm's address. This finds the
- * `<something> = <something>` shape and hands each candidate to
- * `standardScaleFromText`, which is the existing matcher and knows about the
- * prime-mark variants.
+ * ── THIS LOOKED IN THE TITLE BLOCK ONLY, AND A REAL SHEET PROVED THAT WRONG ──
  *
- * Returns the first that MATCHES a standard scale rather than the first that
- * looks like one, because a title block carrying `AS NOTED` and a real scale
- * should yield the real one — and `standardScaleFromText` already answers null
- * for `AS NOTED`, which is what makes that work.
+ * The second export this was pointed at reported `NO_TITLE_SCALE` while printing
+ * `1/4" = 1'-0"` in plain text — at x=958 on a 3,024pt page, under the drawing
+ * rather than in the title-block corner. Its title block says **`SCALE: AS
+ * NOTED`**, which is not a missing answer but the ordinary convention: each view
+ * is captioned with its own scale beneath it, and the block defers to them.
+ *
+ * So the answer key was on the sheet and this function was looking past it,
+ * which would have read as an unverifiable derivation forever. Whole page now.
+ *
+ * ── AND WHY IT RETURNS ALL OF THEM RATHER THAN THE FIRST ──
+ *
+ * A sheet carrying a plan and an enlarged detail prints TWO scales, both
+ * correct. Taking the first would silently cherry-pick, and taking whichever
+ * matched would turn an unverifiable page into a false `AGREES` — the one
+ * outcome an audit must not manufacture. Several distinct scales is a fact about
+ * the sheet, reported as such, and it is the same multi-scale sheet `#640`
+ * already warns about.
+ *
+ * `standardScaleFromText` is what decides whether a candidate IS a scale, so
+ * `AS NOTED`, `NTS` and a metric `1:100` all yield nothing — and that is reused
+ * rather than re-decided here.
  */
-export function printedScaleFromTitleBlock(text: string | null): string | null {
-  if (!text) return null;
-  // `1/4" = 1'-0"`, `1/4"=1'0"`, `3/32" = 1'-0"`, and the prime-mark variants
-  // `standardScaleFromText` normalises.
+export function printedScalesOnPage(items: readonly { str: string }[]): string[] {
   // The quote class must carry the TRUE PRIME MARKS as well as the ASCII and
   // curly ones — `′` and `″`, which is what a CAD title block actually
   // letters a scale with. `standardScaleFromText` normalises them, but it never
   // sees a candidate this pattern did not find first, and a first version of
   // this omitted them: `1/4″ = 1′-0″` came back null.
   const QUOTES = "\"'’“”′″";
-  const candidates =
-    text.match(new RegExp(`[0-9][0-9/\\-\\s]*[${QUOTES}]?\\s*=\\s*[0-9][0-9\\s${QUOTES}-]*`, "g")) ?? [];
-  for (const candidate of candidates) {
-    const match = standardScaleFromText(candidate.trim());
-    if (match !== null) return match.name;
+  const pattern = new RegExp(`[0-9][0-9/\\-\\s]*[${QUOTES}]?\\s*=\\s*[0-9][0-9\\s${QUOTES}-]*`, "g");
+
+  const found: string[] = [];
+  for (const item of items) {
+    // A PARAGRAPH IS NOT A CAPTION. One real sheet carries a disclaimer reading
+    // "Do not scale dimensions from prints… not always drawn to scale" — which
+    // this filter is not needed for, since it holds no `X = Y` figure. What it
+    // IS needed for is the general note that does: "DETAILS ARE DRAWN AT
+    // 1/2\" = 1'-0\" UNLESS NOTED OTHERWISE" is an ordinary sentence on an
+    // ordinary sheet, and without this it becomes a second printed scale and
+    // turns a checkable page into `MANY_PRINTED`.
+    if (item.str.length > 60) continue;
+    for (const candidate of item.str.match(pattern) ?? []) {
+      const match = standardScaleFromText(candidate.trim());
+      if (match !== null && !found.includes(match.name)) found.push(match.name);
+    }
   }
-  return null;
+  return found;
 }
 
 /**
@@ -200,16 +240,21 @@ export async function auditPlanFile(file: string, bytes: Buffer, maxPages = 400)
         const strokes = await doc.pageStrokes(pageNumber);
         const labels = dimensionLabels(text);
         const verdict = scaleFromDimensions(labels, strokes.segments);
-        const block = titleBlockText(text);
-        const printed = printedScaleFromTitleBlock(block?.text ?? null);
+        // THE WHOLE PAGE, not the title block — see `printedScalesOnPage`. More
+        // than one distinct scale means the sheet carries views at different
+        // scales, which is ordinary drafting and not something to resolve by
+        // picking one.
+        const printedScales = printedScalesOnPage(text.items);
+        const printed = printedScales.length === 1 ? printedScales[0] : null;
 
         if (!verdict.ok) {
           out.push({
             file,
             pageNumber,
-            outcome: classifyOutcome(null, printed),
+            outcome: classifyOutcome(null, printedScales),
             derived: null,
             printed,
+            printedAll: printedScales,
             found: verdict.considered,
             agreed: 0,
             inheritedError: null,
@@ -223,9 +268,10 @@ export async function auditPlanFile(file: string, bytes: Buffer, maxPages = 400)
         out.push({
           file,
           pageNumber,
-          outcome: classifyOutcome(verdict.scaleName, printed),
+          outcome: classifyOutcome(verdict.scaleName, printedScales),
           derived: verdict.scaleName,
           printed,
+          printedAll: printedScales,
           found: verdict.considered,
           agreed: verdict.agreed.length,
           inheritedError: verdict.inheritedError,
@@ -240,6 +286,7 @@ export async function auditPlanFile(file: string, bytes: Buffer, maxPages = 400)
           outcome: "ERROR",
           derived: null,
           printed: null,
+          printedAll: [],
           found: 0,
           agreed: 0,
           inheritedError: null,
@@ -263,6 +310,7 @@ export function summarise(pages: readonly AuditPage[]): AuditSummary {
     AGREES: 0,
     DISAGREES: 0,
     NO_TITLE_SCALE: 0,
+    MANY_PRINTED: 0,
     MISSED: 0,
     DECLINED: 0,
     ERROR: 0,

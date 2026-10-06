@@ -154,6 +154,17 @@ export type DimensionLabel = {
  */
 const MAX_INHERITED_ERROR = 0.005;
 
+/**
+ * ENOUGH LINE WORK THAT A SHEET IS PLAINLY A DRAWING, so "no dimensions found"
+ * can be told from "nothing on this page".
+ *
+ * Measured on three real exports: 167,911 segments on an ARCH E1 floor plan,
+ * 79,001 on an ARCH D one, 23,351 on an enlarged plan. A cover sheet or a
+ * schedule page is orders of magnitude below that. 2,000 sits under every real
+ * plan and above anything that is not one.
+ */
+const PLAINLY_A_DRAWING = 2000;
+
 export type ScaleCandidate = {
   /** The dimension line, in page POINTS. */
   x1: number;
@@ -324,6 +335,33 @@ export function scaleFromDimensions(
   const minAgreeing = options.minAgreeing ?? DEFAULTS.minAgreeing;
   const minMargin = options.minMargin ?? DEFAULTS.minMargin;
   const considered = labels.length;
+
+  // ── A SHEET WHOSE LETTERING WAS SAVED AS LINE WORK ──
+  //
+  // Found on the second real export this was ever pointed at, and it is a hard
+  // limit rather than a defect: that sheet carries 79,001 stroked segments and
+  // **85 text items, every one of them title-block content** — the firm's
+  // address, the project name, the stamp. No room names, no door tags, no
+  // dimension strings. Its drawing-area text was converted to OUTLINES when the
+  // PDF was made, which a CAD export does routinely, and you cannot read
+  // dimensions that are not characters.
+  //
+  // The decline is correct either way. What is worth the few lines is the
+  // SENTENCE: "no printed dimensions were found" on a sheet visibly covered in
+  // dimensions reads as the feature being broken, and an estimator who thinks
+  // that stops trusting the rest of it. Saying which fact it is costs nothing
+  // and is the posture `PlanSheetText.hasTextLayer` already takes — FALSE IS A
+  // FACT, NOT A FAILURE.
+  if (considered < minAgreeing && segments.length >= PLAINLY_A_DRAWING) {
+    return {
+      ok: false,
+      reason:
+        `This sheet has plenty of line work and ${considered === 0 ? "no" : `only ${considered}`} printed ` +
+        `dimension${considered === 1 ? "" : "s"} that can be read as text — its lettering was saved as line ` +
+        `work rather than characters, so there is nothing here to read a scale from. Set it by hand.`,
+      considered,
+    };
+  }
 
   if (considered === 0) {
     return { ok: false, reason: "No printed dimensions were found on this sheet.", considered };
