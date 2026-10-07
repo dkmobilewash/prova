@@ -301,3 +301,42 @@ export function evidenceOrder(agreed: readonly string[], declaredText: string, l
     ...agreed.filter((text) => text !== declaredText),
   ].slice(0, limit);
 }
+
+/**
+ * ── THE ZOOM LADDER, AND WHY ITS BOTTOM MOVED ──
+ *
+ * These multiply the viewer's `BASE_SCALE` of 1.5, so the old floor of 0.5
+ * rendered at 0.75 of full size. A 42-inch ARCH E sheet is 3,024pt wide, which
+ * is about 2,270 CSS px at that scale — wider than the box it sits in. The
+ * control read "50%" and the drawing still ran off the edge, with nothing
+ * further out to press.
+ *
+ * Reported from a real plan set on 2026-10-07: "the area that displays the
+ * plans is too small and cuts off most of the plans even when you zoom all the
+ * way out to 50%". The percentage shown is this number and not the render
+ * scale, which is why 50% was never half of anything.
+ *
+ * HERE RATHER THAN IN THE VIEWER because `TakeoffPlanViewer.tsx` is
+ * `"use client"`, and such a module may export components, not plain values —
+ * the client/server boundary census says so, and said so about `inchLabel` the
+ * same way one commit earlier.
+ */
+export const ZOOM_STEPS = [0.15, 0.25, 0.33, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8];
+
+/**
+ * One step in or out from whatever is on screen NOW.
+ *
+ * Takes the CURRENT factor rather than an index, which is what lets − work
+ * sensibly from a fitted sheet: a fitted 42-inch drawing sits at about 0.3, so
+ * stepping out finds 0.25 rather than jumping to whichever index was last
+ * selected. Fit is a computed scale and is not in this list, so an index could
+ * not describe it at all.
+ */
+export function stepZoom(current: number, direction: 1 | -1): number {
+  if (direction === -1) {
+    const smaller = ZOOM_STEPS.filter((step) => step < current - 0.001);
+    return smaller.length > 0 ? smaller[smaller.length - 1] : ZOOM_STEPS[0];
+  }
+  const bigger = ZOOM_STEPS.filter((step) => step > current + 0.001);
+  return bigger.length > 0 ? bigger[0] : ZOOM_STEPS[ZOOM_STEPS.length - 1];
+}

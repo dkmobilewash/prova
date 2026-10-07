@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TakeoffPlanViewer, FoundWalls } from "./TakeoffPlanViewer";
 import { inchLabel, type WallCluster } from "@/lib/takeoff/wallVectors";
+import { stepZoom } from "@/lib/takeoff-plan-view";
 import type { PlanSheet } from "@/lib/takeoff-plan-view";
 
 /**
@@ -77,12 +78,33 @@ describe("the wall finder's control", () => {
     expect(paint([sheet()]).querySelector('[data-takeoff="find-walls"]')).not.toBeNull();
   });
 
-  it("is ABSENT with no scale set, because its bounds are in feet of building", () => {
-    // Not a style choice: `wallVectors` asks "is this thinner than 2-1/2in",
-    // and without a calibration there is no feet-per-unit, so every bound in it
-    // means nothing. A button that cannot answer should not be offered.
-    const page = paint([sheet({ calibration: null } as Partial<PlanSheet>)]);
-    expect(page.querySelector('[data-takeoff="find-walls"]')).toBeNull();
+  it("is SHOWN BUT DISABLED with no scale set — visible, not hidden", () => {
+    // It shipped HIDDEN and was reported the same day: somebody opened a sheet,
+    // went looking for the button they had been told about, and found nothing.
+    // An absence reads as "this feature does not exist", never as "this sheet
+    // needs a scale first".
+    //
+    // The gate itself is structural and unchanged — `wallVectors` asks "is this
+    // thinner than 2-1/2in", so without a calibration there is no feet-per-unit
+    // and every bound means nothing. What changed is that the reason is now on
+    // screen instead of inferred from a blank space.
+    const button = paint([sheet({ calibration: null } as Partial<PlanSheet>)]).querySelector(
+      '[data-takeoff="find-walls"]',
+    );
+    expect(button).not.toBeNull();
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("says WHY it is disabled, rather than leaving somebody to guess", () => {
+    const button = paint([sheet({ calibration: null } as Partial<PlanSheet>)]).querySelector(
+      '[data-takeoff="find-walls"]',
+    );
+    expect(button?.getAttribute("title")).toContain("Set the scale");
+  });
+
+  it("is enabled once the sheet has a scale", () => {
+    const button = paint([sheet()]).querySelector('[data-takeoff="find-walls"]');
+    expect((button as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("says what it does in words an estimator reads, not a tool name", () => {
@@ -233,5 +255,58 @@ describe("the ghost lines over the sheet", () => {
   it("draws nothing before anything has been found", () => {
     expect(svg(createElement(FoundWalls, { clusters: null, hovered: null })).lines).toHaveLength(0);
     expect(svg(createElement(FoundWalls, { clusters: [], hovered: null })).lines).toHaveLength(0);
+  });
+});
+
+/**
+ * SEEING THE WHOLE SHEET, which was not possible at any zoom.
+ *
+ * `ZOOM_STEPS` multiply `BASE_SCALE` of 1.5, so the old floor of 0.5 rendered
+ * at 0.75 of full size: a 42-inch ARCH E sheet is 3,024pt, which is ~2,270 CSS
+ * px — wider than the viewport. The control read "50%" and the drawing still
+ * ran off the edge, with nothing further out to press. Reported from a real
+ * plan set: "cuts off most of the plans even when you zoom all the way out".
+ *
+ * Steps alone cannot fix it, because the right zoom for a whole sheet depends
+ * on the sheet AND the window, so no fixed list contains it. Hence FIT.
+ */
+describe("stepping the zoom", () => {
+  it("steps DOWN from whatever is on screen, including a fitted sheet", () => {
+    // The case that makes this take a factor rather than an index: a fitted
+    // 42-inch sheet sits around 0.3, and pressing − must find 0.25 rather than
+    // jumping to whichever index was last selected.
+    expect(stepZoom(0.3, -1)).toBe(0.25);
+    expect(stepZoom(0.3, 1)).toBe(0.33);
+  });
+
+  it("goes further out than the old floor, which is the whole point", () => {
+    expect(stepZoom(0.5, -1)).toBeLessThan(0.5);
+    expect(stepZoom(0.25, -1)).toBeLessThan(0.25);
+  });
+
+  it("stops at the ends instead of running off them", () => {
+    expect(stepZoom(0.01, -1)).toBeGreaterThan(0);
+    expect(stepZoom(99, 1)).toBeLessThanOrEqual(8);
+    expect(stepZoom(99, 1)).toBeGreaterThan(0);
+  });
+
+  it("never returns the value it was given, or a step would do nothing", () => {
+    for (const from of [0.15, 0.25, 0.5, 1, 2, 8, 0.3, 0.42]) {
+      if (from > 0.15) expect(stepZoom(from, -1)).not.toBe(from);
+      if (from < 8) expect(stepZoom(from, 1)).not.toBe(from);
+    }
+  });
+});
+
+describe("the Fit control", () => {
+  it("is on the toolbar", () => {
+    expect(paint([sheet()]).querySelector('[data-takeoff="fit"]')).not.toBeNull();
+  });
+
+  it("is the state a sheet opens in", () => {
+    // A drawing should show all of itself before somebody zooms IN to measure.
+    // Opening at a fixed percentage is what produced the original complaint.
+    const fit = paint([sheet()]).querySelector('[data-takeoff="fit"]');
+    expect(fit?.className).toContain("tag-amber-ink");
   });
 });
