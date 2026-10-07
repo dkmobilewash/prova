@@ -228,6 +228,40 @@ describe("wall detection from a sheet's own vector strokes", () => {
  * The arms are identical on paper and differ only in whether the reader must
  * honour the matrix, so the EQUALITY is the assertion.
  */
+describe("the pen, read back through the graphics state", () => {
+  /**
+   * `Q` RESTORES THE PEN AS WELL AS THE MATRIX, and nothing checked it.
+   *
+   * Line width is graphics state. A reader that pops the matrix but not the
+   * pen reads every stroke after a transformed block at the INNER width — and
+   * since `heavierThanHatching` decides what is a wall by comparing pens, a
+   * drift there silently reclassifies the drawing.
+   *
+   * The fixture draws the walls inside `q … 3 w … Q` and the LAST wall after
+   * the restore, at the outer `1 w`. That split is what makes a leak
+   * observable: with everything inside one block there is nothing left to read
+   * wrongly, which is the same reason the matrix arm is built that way.
+   */
+  it("reads the OUTER pen for work drawn after the restore", async () => {
+    const plain = WALL_CASES.find((c) => c.id === "single-room-clean")!;
+    const bytes = synthesiseSheet({ ...plain.spec, wallTransformScale: 2 });
+    const { segments } = await sheetStrokes(bytes, 1);
+    const widths = segments.map((s) => s.width ?? 0).filter((w) => w > 0);
+    expect(widths.length).toBeGreaterThan(0);
+
+    // The inner pen is 3 under a 2x matrix, which reads as SIX: a width is in
+    // user space and scales with everything else, so a 0.5 pen inside a
+    // half-scale block draws a 0.25 line on the page. Expecting 3 here was the
+    // first draft of this test and it was the test that was wrong — comparing
+    // raw pen numbers across blocks would be comparing different units, the
+    // same mistake the CTM bug made with lengths.
+    const outer = widths.filter((w) => Math.abs(w - 1) < 0.01).length;
+    const inner = widths.filter((w) => Math.abs(w - 6) < 0.01).length;
+    expect(inner, "strokes inside the transformed block, at 3w under a 2x matrix").toBeGreaterThan(0);
+    expect(outer, "strokes drawn after the restore — zero means Q did not restore the pen").toBeGreaterThan(0);
+  });
+});
+
 describe("a sheet drawn under a transform, which is what real CAD does", () => {
   const plain = WALL_CASES.find((c) => c.id === "single-room-clean")!;
 

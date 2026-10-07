@@ -4,6 +4,8 @@ import { wallFromPair, wallsFromStrokes, type StrokeSegment, type WallFinderOpti
   CLUSTER_INCHES,
   wallsInTheBuilding,
   SAME_BUILDING_FEET,
+  NOT_A_BOX,
+  heavierThanHatching,
   type WallCandidate,
 } from "./wallVectors";
 
@@ -285,7 +287,10 @@ const FOOT = 1;
 
 describe("keeping only the walls in the building", () => {
   it("drops a title block sitting away from the plan", () => {
-    const plan = [at(0, 0, 40, 0), at(40, 0, 40, 30), at(0, 0, 0, 30), at(0, 30, 40, 30)];
+    // Plan-sized rather than four walls: `wallsInTheBuilding` now refuses a
+    // winner that is merely a box, so a four-run fixture would be refused for
+    // the right reason and prove nothing about the title block.
+    const plan = Array.from({ length: 14 }, (_, i) => at(0, i * 10, 40, i * 10));
     const titleBlock = [at(300, 0, 340, 0), at(300, 5, 340, 5)];
     const kept = wallsInTheBuilding([...plan, ...titleBlock], FOOT);
     expect(kept).toHaveLength(plan.length);
@@ -296,40 +301,63 @@ describe("keeping only the walls in the building", () => {
     // The first version compared ENDPOINTS and shattered a real plan into 46
     // pieces, keeping 49 runs of 203 — one corner of the offices. Walls meet in
     // Ts far more often than in Ls: one wall's END against another's MIDDLE.
-    const spine = at(0, 0, 100, 0);
-    const branches = [at(25, 0, 25, 40), at(50, 0, 50, 40), at(75, 0, 75, 40)];
+    const spine = at(0, 0, 200, 0);
+    const branches = Array.from({ length: 15 }, (_, i) => at(i * 12, 0, i * 12, 40));
     const kept = wallsInTheBuilding([spine, ...branches], FOOT);
-    expect(kept).toHaveLength(4);
+    expect(kept).toHaveLength(16);
   });
 
   it("bridges a doorway, a corridor and a wall it simply missed", () => {
     // Runs do not touch as often as a drawing suggests. Anything under the
     // same-building distance is still one building.
-    const a = at(0, 0, 30, 0);
-    const b = at(30 + SAME_BUILDING_FEET - 1, 0, 70, 0);
-    expect(wallsInTheBuilding([a, b], FOOT)).toHaveLength(2);
+    // Two halves of a plan, each plan-sized, separated by just under the
+    // same-building distance. Both must come back as one building.
+    const left = Array.from({ length: 8 }, (_, i) => at(0, i * 10, 30, i * 10));
+    const right = Array.from({ length: 8 }, (_, i) => at(30 + SAME_BUILDING_FEET - 1, i * 10, 70, i * 10));
+    expect(wallsInTheBuilding([...left, ...right], FOOT)).toHaveLength(16);
   });
 
   it("keeps the group with the most FOOTAGE, not the most runs", () => {
     // A dense notes column can out-count a building without out-measuring it.
-    const building = [at(0, 0, 120, 0), at(0, 0, 0, 90)];
-    // Short rules, many of them: 30 runs against the building's 2, but 60ft
-    // against its 210. The first draft of this fixture made them 8ft each,
-    // which is 240ft — so the notes genuinely were the bigger thing and the
-    // test was asserting the opposite of what it claimed.
+    // Plan-sized, because a two-run building is now refused as a box — and
+    // short rules for the notes, many of them: 30 runs against the building's
+    // 12, but 60ft against its 1,440.
+    //
+    // An earlier draft made the rules 8ft each, which is 240ft, so the notes
+    // genuinely WERE the bigger thing and the test asserted the opposite of
+    // what it claimed. The suite caught that; it is the fixture that has been
+    // wrong twice here, never the code.
+    const building = Array.from({ length: 12 }, (_, i) => at(0, i * 10, 120, i * 10));
     const notes = Array.from({ length: 30 }, (_, i) => at(500, i * 2, 502, i * 2));
     const kept = wallsInTheBuilding([...building, ...notes], FOOT);
-    expect(kept).toHaveLength(2);
+    expect(kept).toHaveLength(12);
     expect(kept.every((w) => w.x1 < 500)).toBe(true);
   });
 
   it("returns everything when the sheet holds nothing but the plan", () => {
-    const plan = [at(0, 0, 40, 0), at(40, 0, 40, 30)];
-    expect(wallsInTheBuilding(plan, FOOT)).toHaveLength(2);
+    const plan = Array.from({ length: 20 }, (_, i) => at(0, i * 10, 40, i * 10));
+    expect(wallsInTheBuilding(plan, FOOT)).toHaveLength(20);
   });
 
   it("returns nothing for nothing, rather than throwing", () => {
     expect(wallsInTheBuilding([], FOOT)).toEqual([]);
+  });
+
+  it("REFUSES A SHEET WHOSE BIGGEST GROUP IS A BOX, rather than offering it", () => {
+    // Found by looking at a real roof/equipment sheet: the plan yielded almost
+    // no wall, so the biggest group was the TITLE BLOCK — four runs, 64ft, a
+    // rectangle in the corner offered to an estimator as the walls of a
+    // building. The numbers looked unremarkable; only the picture showed it.
+    const titleBlock = [at(300, 0, 340, 0), at(340, 0, 340, 20), at(300, 20, 340, 20), at(300, 0, 300, 20)];
+    expect(wallsInTheBuilding(titleBlock, FOOT)).toEqual([]);
+  });
+
+  it("still returns a real plan, which is an order of magnitude bigger", () => {
+    // Real floor plans measured here returned 38, 58, 68, 230, 295 and 453
+    // runs. The gap between a box and a plan is not a margin, so this does not
+    // have to be a finely judged number to sit inside it.
+    const plan = Array.from({ length: NOT_A_BOX + 2 }, (_, i) => at(0, i * 10, 40, i * 10));
+    expect(wallsInTheBuilding(plan, FOOT)).toHaveLength(NOT_A_BOX + 2);
   });
 
   it("uses a distance wide enough for a corridor and far short of a title block", () => {
@@ -337,5 +365,96 @@ describe("keeping only the walls in the building", () => {
     // pieces; 12 kept 132 runs, 20 kept 178, 30 kept 186. It plateaus at 20.
     expect(SAME_BUILDING_FEET).toBeGreaterThanOrEqual(12);
     expect(SAME_BUILDING_FEET).toBeLessThan(60);
+  });
+});
+
+/**
+ * THE PEN, WHICH SAYS WHAT THE GEOMETRY CANNOT.
+ *
+ * A slab joint and a partition are both two parallel lines a wall-thickness
+ * apart; no test of their shape separates them, and they are both inside the
+ * building so position cannot either. Five slab joints ran the length of an
+ * apparatus bay on a real sheet and survived every other filter.
+ *
+ * CAD draws walls heavy and patterns thin. One real sheet carried 112,547
+ * strokes at a handful of discrete pens with 0.24pt accounting for 86% of them,
+ * and colouring the sheet by pen put the walls in the heavy band and the bay
+ * joints in the thin one.
+ */
+const pen = (width: number | undefined, x1 = 0, y1 = 0, x2 = 10, y2 = 0): StrokeSegment => ({
+  x1,
+  y1,
+  x2,
+  y2,
+  ...(width === undefined ? {} : { width }),
+});
+
+describe("dropping the hatching pen", () => {
+  it("keeps the heavy line work and drops the commonest thin pen", () => {
+    const sheet = [
+      ...Array.from({ length: 50 }, () => pen(0.24)), // hatching, text, patterns
+      ...Array.from({ length: 10 }, () => pen(1.44)), // the wall work
+    ];
+    const kept = heavierThanHatching(sheet);
+    expect(kept).toHaveLength(10);
+    expect(kept.every((s) => s.width === 1.44)).toBe(true);
+  });
+
+  it("takes the threshold from THIS sheet, not from a constant", () => {
+    // A practice that draws everything at half weight still works: here the
+    // thin pen is 0.1 and the wall pen 0.3, both far below the numbers on the
+    // sheet above.
+    const sheet = [...Array.from({ length: 40 }, () => pen(0.1)), ...Array.from({ length: 12 }, () => pen(0.3))];
+    const kept = heavierThanHatching(sheet);
+    expect(kept).toHaveLength(12);
+    expect(kept.every((s) => s.width === 0.3)).toBe(true);
+  });
+
+  it("keeps everything when MOST strokes carry no width", () => {
+    // An export that omits the pen on most of its content. Filtering on a
+    // signal that is mostly absent would throw away the drawing.
+    //
+    // THE FIRST VERSION OF THIS FIXTURE PROVED NOTHING: 20 widthless strokes
+    // and no others meant the heavy band was empty either way, so the other
+    // fallback caught it and removing this guard stayed GREEN. It needs a heavy
+    // band big enough to survive that fallback, so the guard under test is the
+    // only thing standing between the sheet and a wrong answer.
+    const sheet = [
+      ...Array.from({ length: 70 }, () => pen(undefined)),
+      ...Array.from({ length: 20 }, () => pen(0.24)),
+      ...Array.from({ length: 10 }, () => pen(1)),
+    ];
+    expect(heavierThanHatching(sheet)).toHaveLength(100);
+  });
+
+  it("keeps everything when the sheet is drawn at ONE weight", () => {
+    // Nothing is above a single pen's own mode, so this is the empty-band
+    // fallback doing the work — there is deliberately no separate guard for it.
+    const sheet = Array.from({ length: 30 }, () => pen(0.5));
+    expect(heavierThanHatching(sheet)).toHaveLength(30);
+  });
+
+  it("falls back rather than returning a drawing with no walls on it", () => {
+    // If the heavy band is nearly empty the assumption did not hold on this
+    // sheet, and handing back three strokes is worse than handing back all of
+    // them — the estimator can see a wrong line, not an absent feature.
+    const sheet = [...Array.from({ length: 60 }, () => pen(0.24)), pen(2), pen(2)];
+    expect(heavierThanHatching(sheet)).toHaveLength(62);
+  });
+
+  it("does not drop a wall drawn at the SAME weight as another heavy thing", () => {
+    // The filter is one-sided on purpose: it removes the thinnest band, not
+    // everything that is not the heaviest. A 0.84 wall survives beside 1.44
+    // line work.
+    const sheet = [
+      ...Array.from({ length: 40 }, () => pen(0.24)),
+      ...Array.from({ length: 6 }, () => pen(0.84)),
+      ...Array.from({ length: 6 }, () => pen(1.44)),
+    ];
+    expect(heavierThanHatching(sheet)).toHaveLength(12);
+  });
+
+  it("returns nothing for nothing", () => {
+    expect(heavierThanHatching([])).toEqual([]);
   });
 });

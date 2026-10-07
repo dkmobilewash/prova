@@ -119,17 +119,28 @@ export async function segmentsFromOpenPage(
       // identity is kept rather than popping past the bottom.
       const IDENTITY: number[] = [1, 0, 0, 1, 0, 0];
       let ctm = IDENTITY;
-      const stack: number[][] = [];
+      // THE PEN TRAVELS WITH THE MATRIX. Line width is graphics state, so `q`
+      // and `Q` save and restore it exactly as they do the CTM — keeping it in
+      // a separate stack would drift the moment a path changed one and not the
+      // other. 1.0 is the PDF default for a page that never sets it.
+      let lineWidth = 1;
+      const stack: { ctm: number[]; lineWidth: number }[] = [];
 
       for (let i = 0; i < ops.fnArray.length; i += 1) {
         const fn = ops.fnArray[i];
 
         if (fn === OPS.save) {
-          stack.push(ctm);
+          stack.push({ ctm, lineWidth });
           continue;
         }
         if (fn === OPS.restore) {
-          ctm = stack.pop() ?? IDENTITY;
+          const popped = stack.pop();
+          ctm = popped?.ctm ?? IDENTITY;
+          lineWidth = popped?.lineWidth ?? 1;
+          continue;
+        }
+        if (fn === OPS.setLineWidth) {
+          lineWidth = Number((ops.argsArray[i] as number[])[0]) || 0;
           continue;
         }
         if (fn === OPS.transform) {
@@ -158,6 +169,13 @@ export async function segmentsFromOpenPage(
         // in. Captured per path, because the next path may be under a different
         // matrix.
         const toPage = Util.transform(viewport.transform, ctm);
+        // A WIDTH IS IN USER SPACE AND HAS TO BE SCALED LIKE EVERYTHING ELSE.
+        // A 0.5 pen inside a half-scale block draws a 0.25 line on the page,
+        // and comparing raw pen numbers across blocks would be comparing
+        // different units — the same mistake the CTM bug made with lengths.
+        // The matrix's area scale, square-rooted, is the isotropic factor.
+        const widthScale = Math.sqrt(Math.abs(toPage[0] * toPage[3] - toPage[1] * toPage[2])) || 1;
+        const w = lineWidth * widthScale;
         const toDisplay = (x: number, y: number) => {
           const [dx, dy] = Util.applyTransform([x, y], toPage);
           return { x: dx, y: dy };
@@ -171,7 +189,7 @@ export async function segmentsFromOpenPage(
           } else if (op === OPS.lineTo) {
             const next = toDisplay(coords[at], coords[at + 1]);
             at += 2;
-            if (cursor !== null) segments.push({ x1: cursor.x, y1: cursor.y, x2: next.x, y2: next.y });
+            if (cursor !== null) segments.push({ x1: cursor.x, y1: cursor.y, x2: next.x, y2: next.y, width: w });
             cursor = next;
           } else if (op === OPS.curveTo) {
             // An arc, not a wall face. Skipped, and the cursor is moved to its
@@ -188,16 +206,16 @@ export async function segmentsFromOpenPage(
             const c = toDisplay(x + w, y + hh);
             const d = toDisplay(x, y + hh);
             segments.push(
-              { x1: a.x, y1: a.y, x2: b.x, y2: b.y },
-              { x1: b.x, y1: b.y, x2: c.x, y2: c.y },
-              { x1: c.x, y1: c.y, x2: d.x, y2: d.y },
-              { x1: d.x, y1: d.y, x2: a.x, y2: a.y },
+              { x1: a.x, y1: a.y, x2: b.x, y2: b.y, width: w },
+              { x1: b.x, y1: b.y, x2: c.x, y2: c.y, width: w },
+              { x1: c.x, y1: c.y, x2: d.x, y2: d.y, width: w },
+              { x1: d.x, y1: d.y, x2: a.x, y2: a.y, width: w },
             );
             cursor = a;
             subpathStart = a;
           } else if (op === OPS.closePath) {
             if (cursor !== null && subpathStart !== null) {
-              segments.push({ x1: cursor.x, y1: cursor.y, x2: subpathStart.x, y2: subpathStart.y });
+              segments.push({ x1: cursor.x, y1: cursor.y, x2: subpathStart.x, y2: subpathStart.y, width: w });
               cursor = subpathStart;
             }
           }

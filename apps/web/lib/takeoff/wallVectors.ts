@@ -44,6 +44,11 @@ export type StrokeSegment = {
   y1: number;
   x2: number;
   y2: number;
+  /** The pen that drew it, in page points, with the matrix in force applied.
+   *  Optional because a synthetic segment need not have one — and because the
+   *  question of whether it DISCRIMINATES a wall from a slab joint is being
+   *  measured rather than assumed. */
+  width?: number;
 };
 
 /** A wall this module is willing to claim: the centreline, in page points. */
@@ -486,6 +491,9 @@ export function inchLabel(inches: number): string {
  */
 export const SAME_BUILDING_FEET = 20;
 
+/** Fewer runs than this is not a floor plan — see `wallsInTheBuilding`. */
+export const NOT_A_BOX = 10;
+
 /** Closest approach between two centrelines, point to segment. */
 function gapBetween(a: WallCandidate, b: WallCandidate): number {
   const toSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
@@ -579,5 +587,93 @@ export function wallsInTheBuilding(
       best = group;
     }
   }
-  return best;
+
+  // ── A BUILDING IS NOT A BOX ──
+  //
+  // "The biggest group" is only the plan when there IS a plan. On a sheet that
+  // yields almost no wall — a roof plan, an equipment plan, a demolition sheet
+  // drawn in dashed line work — the biggest group is whatever else is on the
+  // page, and what won on one real sheet was the TITLE BLOCK: four runs, 64ft,
+  // a rectangle in the corner offered to an estimator as the walls of a
+  // building. Found by looking at the picture; the numbers looked unremarkable.
+  //
+  // A rectangle is four runs. Real floor plans measured here returned 38, 58,
+  // 68, 230, 295 and 453 — so the gap between "a box" and "a plan" is an order
+  // of magnitude, not a margin, and this does not have to be a finely judged
+  // number to sit inside it.
+  //
+  // Returning NOTHING is the right answer rather than a weak one: the panel
+  // already says "No walls found on this sheet. That is a fact about the
+  // drawing, not a failure", which is true of a roof plan and is far better
+  // than four lines somebody has to recognise as a title block.
+  return best.length < NOT_A_BOX ? [] : best;
+}
+
+/**
+ * ── THE PEN SAYS WHAT THE GEOMETRY CANNOT ──
+ *
+ * A slab joint, a trench drain and a floor pattern are all genuinely two
+ * parallel lines a wall-thickness apart. No test of their SHAPE can tell them
+ * from a partition, and `wallsInTheBuilding` cannot help because they are
+ * inside the building. Five of them ran the length of an apparatus bay on the
+ * sheet this was measured against, and survived every other filter.
+ *
+ * CAD draws walls heavy and patterns thin, and that survives the PDF export:
+ * one real sheet carried 112,547 strokes at a handful of discrete pens, with
+ * **0.24pt accounting for 86% of them** — hatching, text, dimension lines,
+ * floor patterns — and the wall work drawn above it. Colouring the sheet by pen
+ * showed the building's walls in the heavy band and the bay joints in the thin
+ * one, which is the whole of this idea.
+ *
+ * ── THE THRESHOLD IS THE SHEET'S OWN, NOT A NUMBER FROM OUTSIDE IT ──
+ *
+ * The commonest width on a drawing is whatever that office uses for hatching,
+ * so anything drawn heavier is deliberate line work. Taking the MODE rather
+ * than a constant means a practice that draws everything at half weight, or a
+ * sheet exported at a different scale, still works — and a sheet drawn entirely
+ * at one weight yields nothing to filter on, which is handled by returning it
+ * unchanged rather than returning nothing.
+ *
+ * ── WHAT IT ALSO FIXED, WHICH WAS NOT THE POINT ──
+ *
+ * It finds MORE walls, not fewer: 178 → 230 on the measured sheet. A thin
+ * stroke lying near a wall face could claim it first — the pairing marks each
+ * segment used — so the real partner was already taken by the time the other
+ * face was tried. Removing the thin strokes stops them stealing partners.
+ */
+export function heavierThanHatching(segments: readonly StrokeSegment[]): StrokeSegment[] {
+  const widths = segments.map((segment) => segment.width).filter((w): w is number => typeof w === "number" && w > 0);
+  // A sheet whose strokes carry no width at all — a synthetic fixture, or an
+  // export that omits it — is returned untouched. Filtering on a signal that is
+  // not there would silently return nothing.
+  if (widths.length < segments.length / 2) return [...segments];
+
+  const tally = new Map<number, number>();
+  for (const w of widths) {
+    const key = Math.round(w * 100) / 100;
+    tally.set(key, (tally.get(key) ?? 0) + 1);
+  }
+  let thin = 0;
+  let most = -1;
+  for (const [width, count] of tally) {
+    if (count > most) {
+      most = count;
+      thin = width;
+    }
+  }
+  const kept = segments.filter((segment) => (segment.width ?? 0) > thin * 1.01);
+  // ── THE ONE FALLBACK, AND IT IS THE ONLY ONE NEEDED ──
+  //
+  // If the heavy band is empty or nearly so, the assumption did not hold on
+  // this sheet, and handing back a drawing with no walls on it is the worst
+  // available answer: an estimator can see a wrong line and reject it, but a
+  // feature that silently finds nothing just looks broken.
+  //
+  // A SEPARATE GUARD FOR A SINGLE-WEIGHT SHEET WAS WRITTEN HERE AND DELETED,
+  // because mutation testing showed it unreachable: a sheet drawn at one pen
+  // has nothing above its own mode, so `kept` is empty and this line already
+  // catches it. An untested guard that cannot fire is the "written, documented
+  // and never called" shape, and keeping it would have meant shipping a branch
+  // no test could ever reach.
+  return kept.length < 8 ? [...segments] : kept;
 }

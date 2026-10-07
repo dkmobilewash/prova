@@ -303,6 +303,7 @@ function contentStream(spec: SheetSpec): string {
       }
     };
 
+    ops.push("1 w");
     if (scale === 1) {
       for (const wall of spec.walls) drawWall(wall, 1);
     } else {
@@ -311,7 +312,14 @@ function contentStream(spec: SheetSpec): string {
       // load-bearing rather than decorative.
       const inside = spec.walls.slice(0, -1);
       const after = spec.walls[spec.walls.length - 1];
+      // THE PEN GOES IN WITH THE MATRIX, for the same reason and with the same
+      // shape. `w` is graphics state, so `Q` restores it — and a reader that
+      // pops the matrix but not the pen reads every stroke after this block at
+      // the INNER width. The wall after the `Q` is what makes that observable,
+      // exactly as it does for the matrix: with everything inside one block
+      // there is nothing left to get wrong.
       ops.push(`q ${num(scale)} 0 0 ${num(scale)} 0 0 cm`);
+      ops.push("3 w");
       for (const wall of inside) drawWall(wall, scale);
       ops.push("Q");
       drawWall(after, 1);
