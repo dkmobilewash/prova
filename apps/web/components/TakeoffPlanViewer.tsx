@@ -22,6 +22,7 @@ import type { PlanSheet, PrintedScaleByPage, ScalePrefill, ScalePrefillByPage } 
 import { errorBandText, evidenceOrder, stepZoom, TOOLS, ZOOM_STEPS, type ToolId } from "@/lib/takeoff-plan-view";
 import {
   clusterByThickness,
+  heavierThanHatching,
   inchLabel,
   wallsFromStrokes,
   wallsInTheBuilding,
@@ -371,8 +372,15 @@ export function TakeoffPlanViewer({
         y1: segment.y1 / pageSize.widthPt,
         x2: segment.x2 / pageSize.widthPt,
         y2: segment.y2 / pageSize.widthPt,
+        // NOT divided by the page width. The pen is compared against other
+        // pens on the same sheet, never against a distance — scaling it into
+        // page-width units would be arithmetic with no meaning.
+        width: segment.width,
       }));
-      const everywhere = wallsFromStrokes(inUnits, { feetPerPoint: feetPerUnit });
+      // THE PEN FIRST. A slab joint is two parallel lines a wall-thickness
+      // apart and no test of its shape can refuse it — but it is drawn with the
+      // hatching pen, and a wall is not. See `heavierThanHatching`.
+      const everywhere = wallsFromStrokes(heavierThanHatching(inUnits), { feetPerPoint: feetPerUnit });
       // ONLY THE ONES IN THE BUILDING. Without this the title block, the notes
       // column, the sheet border and any detail drawn above the plan all come
       // back as walls — see `wallsInTheBuilding`, which exists because somebody
