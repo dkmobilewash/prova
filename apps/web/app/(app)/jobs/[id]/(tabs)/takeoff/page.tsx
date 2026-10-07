@@ -210,6 +210,8 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
             x2: current.x2,
             y2: current.y2,
             declaredDistanceFeet: current.declaredDistanceFeet.toNumber(),
+            // Provenance, not decoration — see `PlanViewerCalibration`.
+            note: current.note,
           }
         : null,
       measurements,

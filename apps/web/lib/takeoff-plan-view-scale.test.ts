@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { scalePrefillsFromReadings, type ScaleReadingRowForView } from "./takeoff-plan-view";
+import { readFileSync } from "node:fs";
+import {
+  errorBandText,
+  evidenceOrder,
+  scalePrefillsFromReadings,
+  type ScaleReadingRowForView,
+} from "./takeoff-plan-view";
 
 /**
  * Turning a stored scale reading into something the calibration form can offer.
@@ -122,5 +128,133 @@ describe("confirmed against the drawing, or not", () => {
     expect(prefill.scaleName).toBeTruthy();
     expect(prefill.agreed).toEqual([]);
     expect(prefill.unconfirmed).toBe(true);
+  });
+});
+
+/**
+ * WHAT THE OFFER SAYS ABOUT ITS OWN ACCURACY.
+ *
+ * Both of these were defects a click-through found on production, and both are
+ * the same kind: the app stating one fact two ways. Neither was a wrong
+ * calculation — which is why no existing test could see them, and why the
+ * decisions now live in functions rather than inline in JSX.
+ */
+describe("wording the measured error", () => {
+  it("does NOT print a floor as though it were the measurement", () => {
+    // The shipped bug: 0.01% was displayed as "Within 0.05%" because the
+    // component read `band < 0.05 ? "0.05" : …`, while the note beside it
+    // formatted the real figure and said 0.01%. One quantity, two answers.
+    expect(errorBandText(0.0001)).not.toContain("0.05");
+  });
+
+  it("states a sub-hundredth error as an inequality rather than inventing a value", () => {
+    // `toFixed(2)` of 0.004 is "0.00", which claims perfection. There is no
+    // decimal expansion of "smaller than my precision", so it says so.
+    expect(errorBandText(0.00004)).toBe("under 0.01%");
+    expect(errorBandText(0)).toBe("under 0.01%");
+  });
+
+  it("reports a real figure exactly, at the precision it has", () => {
+    expect(errorBandText(0.00315)).toBe("0.32%"); // the measured deviation on a real CAD sheet
+    expect(errorBandText(0.0017)).toBe("0.17%");
+    expect(errorBandText(0.0114)).toBe("1.14%");
+  });
+
+  it("never rounds an error DOWN to zero, which would overstate the precision", () => {
+    // The direction that matters: a reader deciding whether to trust this must
+    // never be shown a smaller error than was measured.
+    for (const e of [0.00005, 0.0001, 0.0005, 0.001, 0.005]) {
+      expect(errorBandText(e)).not.toBe("0.00%");
+    }
+  });
+});
+
+describe("ordering the evidence row", () => {
+  it("puts the QUOTED dimension first, so the row cannot contradict the sentence", () => {
+    // The shipped bug, from a real sheet: 24 matched dimensions, the row showed
+    // the first six, and the sentence quoted `25' - 0 1/2"` — which was not
+    // among them. Both true; it reads as an error.
+    const agreed = [`42' - 0"`, `84' - 0"`, `20' - 0"`, `4' - 0"`, `18' - 10"`, `6' - 4"`, `25' - 0 1/2"`];
+    const shown = evidenceOrder(agreed, `25' - 0 1/2"`);
+    expect(shown[0]).toBe(`25' - 0 1/2"`);
+    expect(shown).toContain(`25' - 0 1/2"`);
+  });
+
+  it("still shows at most six, so a 117-dimension sheet does not print a wall of text", () => {
+    const agreed = Array.from({ length: 117 }, (_, i) => `${i}' - 0"`);
+    expect(evidenceOrder(agreed, `116' - 0"`)).toHaveLength(6);
+  });
+
+  it("does not duplicate the quoted dimension", () => {
+    const shown = evidenceOrder([`60' - 0"`, `39' - 9"`, `4' - 4"`], `60' - 0"`);
+    expect(shown.filter((t) => t === `60' - 0"`)).toHaveLength(1);
+  });
+
+  it("is unchanged when the quoted dimension is already first, or absent", () => {
+    expect(evidenceOrder([`60' - 0"`, `39' - 9"`], `60' - 0"`)).toEqual([`60' - 0"`, `39' - 9"`]);
+    // A printed-scale prefill has a scale NAME as its declaredText and no
+    // agreeing dimensions at all; the row simply keeps its order.
+    expect(evidenceOrder([`a`, `b`], `1/8" = 1'-0"`)).toEqual([`a`, `b`]);
+    expect(evidenceOrder([], `60' - 0"`)).toEqual([]);
+  });
+});
+
+/**
+ * A SAVED SCALE MUST SHOW WHERE IT CAME FROM, and this is a census because the
+ * defect was never a wrong value — it was a value that reached nobody.
+ *
+ * Since #655 the reader writes its own account into `TakeoffScaleCalibration.note`:
+ * which dimensions it matched and how closely, or that it used the printed scale
+ * with nothing confirming it. That is provenance for a number multiplying every
+ * quantity on the sheet.
+ *
+ * It was rendered only INSIDE the draft form — and a sheet whose scale is
+ * already set has no draft, so saving it made it invisible. A click-through went
+ * looking on two sheets that saved successfully and reported, correctly, that
+ * nothing on screen said which way either scale had been set. Stored and shown
+ * nowhere is the "written, documented, and never called" shape wearing a
+ * database column.
+ *
+ * WHAT THIS CANNOT PROVE, stated because this repo has paid for the confusion:
+ * that React renders it. A census proves the code is THERE, never that a
+ * framework honours it — three expo-router header fixes shipped green and
+ * rendered nothing. The difference here is that nothing is being handed to a
+ * navigator: it is plain JSX in the component's own return, so "present" and
+ * "rendered" are the same claim. The part worth guarding is that it is present
+ * at all, in both places, because the two lines are independently deletable and
+ * the type system cannot see a prop that is passed and then ignored.
+ */
+describe("the provenance of a saved scale", () => {
+  const viewer = readFileSync(new URL("../components/TakeoffPlanViewer.tsx", import.meta.url), "utf8");
+  // Comments stripped: both files below discuss `existingNote` in prose, and a
+  // raw-text census would count a sentence about it as a use of it.
+  const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  it("is handed to the calibration form from the sheet's own calibration", () => {
+    expect(code).toMatch(/existingNote=\{calibration\?\.note \?\? ""\}/);
+  });
+
+  it("is RENDERED, not merely accepted as a prop", () => {
+    // The failure being guarded: `existingNote` destructured, typed, and never
+    // put on screen — which is exactly what the previous version did with the
+    // note itself.
+    const destructured = /\n\s*existingNote,/.test(code);
+    const rendered = /\{existingNote && \(/.test(code);
+    expect(destructured).toBe(true);
+    expect(rendered).toBe(true);
+  });
+
+  it("travels on the type, so a page that forgets it cannot compile", () => {
+    const view = readFileSync(new URL("./takeoff-plan-view.ts", import.meta.url), "utf8");
+    const type = view.slice(view.indexOf("export type PlanViewerCalibration"));
+    expect(type.slice(0, type.indexOf("};"))).toMatch(/note: string \| null;/);
+  });
+
+  it("parsed the files it is reasoning about", () => {
+    // The size assertion this family of census needs: a regex matching nothing
+    // passes every expectation above it, since nothing is ever missing from an
+    // empty string.
+    expect(code.length).toBeGreaterThan(10_000);
+    expect(code).toContain("function CalibrationForm");
   });
 });

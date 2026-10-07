@@ -19,7 +19,7 @@ import {
 } from "@/lib/takeoff-plan";
 import { saveTakeoffCalibration, saveTakeoffMeasurement } from "@/lib/actions";
 import type { PlanSheet, PrintedScaleByPage, ScalePrefill, ScalePrefillByPage } from "@/lib/takeoff-plan-view";
-import { TOOLS, type ToolId } from "@/lib/takeoff-plan-view";
+import { errorBandText, evidenceOrder, TOOLS, type ToolId } from "@/lib/takeoff-plan-view";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -453,6 +453,7 @@ export function TakeoffPlanViewer({
                 setDraft({ xs: [...xs], ys: [...ys] });
               }}
               existingLabel={sheet?.label ?? ""}
+              existingNote={calibration?.note ?? ""}
               draft={calibrationDraft}
               onSaved={() => {
                 setDraft(EMPTY);
@@ -557,7 +558,11 @@ function Shape({
  * error multiplies through every wall on the sheet.
  */
 function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => void }) {
-  const band = prefill.inheritedError * 100;
+  // Both of these are PURE and live in `takeoff-plan-view.ts`, where they are
+  // tested — the wording of a measured error and the order of the evidence are
+  // decisions, and a decision written inline in JSX is one no test can reach.
+  const band = errorBandText(prefill.inheritedError);
+  const shown = evidenceOrder(prefill.agreed, prefill.declaredText);
 
   // ── A SCALE OFF THE TITLE BLOCK, WITH NOTHING ON THE SHEET TO CHECK IT ──
   //
@@ -616,14 +621,32 @@ function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => vo
           </>
         )}
       </p>
-      {prefill.agreed.length > 0 && (
-        <p className="mt-1 text-[11px] text-ink-muted">{prefill.agreed.slice(0, 6).join("   ")}</p>
-      )}
+      {/* THE QUOTED DIMENSION GOES FIRST, and a click-through is why.
+
+          This row used to be `agreed.slice(0, 6)` in whatever order the vote
+          produced, while the sentence below quotes the ONE pair being proposed.
+          On a sheet with 24 matched dimensions the quoted one was not among the
+          six shown — "Within 0.17% on 25' - 0 1/2"" above a row that did not
+          contain `25' - 0 1/2"`. Both facts were true and the pair read as a
+          contradiction, which is worse than showing less. */}
+      {shown.length > 0 && <p className="mt-1 text-[11px] text-ink-muted">{shown.join("   ")}</p>}
       <p className="mt-1 text-[11px] text-ink-muted">
-        {/* The band is stated because a scale nobody can put one on is one taken
-            on faith. It is MEASURED — how far the proposed line sits from the
-            scale the sheet voted for — not a theoretical bound. */}
-        Within {band < 0.05 ? "0.05" : band.toFixed(2)}% on {prefill.declaredText || "the dimension it read"}.
+        {/* THE BAND IS MEASURED, AND IT USED TO PRINT A FLOOR AS IF IT WERE THE
+            MEASUREMENT. `band < 0.05 ? "0.05" : …` meant a pair accurate to
+            0.01% was reported as "Within 0.05%" — while the note written beside
+            it said 0.01%, because that one formats the real figure. A
+            click-through caught the contradiction.
+
+            Rounding UP to a floor is defensible in a progress bar and indefensible
+            in a number about accuracy: it is the figure somebody would rely on,
+            and it was overstating the error rather than the precision, which is
+            the direction that makes the feature look worse than it is. Either
+            way, two places showing one quantity differently is a defect.
+
+            Under a hundredth of a percent now says so as an inequality rather
+            than inventing a value — `toFixed(2)` on 0.004 would print "0.00",
+            which claims perfection. */}
+        Within {band} on {prefill.declaredText || "the dimension it read"}.
       </p>
       <button
         type="button"
@@ -666,6 +689,7 @@ function CalibrationForm({
   pageWidthPt,
   printedScale,
   existingLabel,
+  existingNote,
   draft,
   prefill,
   onUsePrefill,
@@ -677,6 +701,7 @@ function CalibrationForm({
   pageWidthPt: number | null;
   printedScale: string | null;
   existingLabel: string;
+  existingNote: string;
   draft: StoredCalibration | null;
   prefill: ScalePrefill | null;
   onUsePrefill: (xs: readonly [number, number], ys: readonly [number, number]) => void;
@@ -714,6 +739,28 @@ function CalibrationForm({
   if (!draft) {
     return (
       <div className="mt-2 flex flex-col gap-2">
+        {/* WHERE A SAVED SCALE CAME FROM, which was stored and then shown
+            nowhere at all.
+
+            Since #655 the automatic reader writes its own account into
+            `note` — which dimensions it matched and how closely, or that it
+            used the printed scale with nothing confirming it. That is
+            provenance for a number multiplying every quantity on the sheet.
+
+            It was only ever rendered INSIDE the draft form, and a sheet with a
+            scale already set has no draft — so the moment it was saved it
+            became invisible. A click-through went looking for it on two sheets
+            that saved successfully and reported, correctly, that nothing on
+            screen says which way a scale was set.
+
+            Shown here rather than in the toolbar because the toolbar states
+            WHAT the scale is in six words and this is a sentence; this panel is
+            where somebody who doubts it has already come to look. */}
+        {existingNote && (
+          <p className="rounded-md border border-line-card bg-surface px-2 py-1.5 text-[11px] text-ink-muted">
+            <span className="text-ink-body">How this sheet&apos;s scale was set:</span> {existingNote}
+          </p>
+        )}
         {prefill && (
           <ScaleOffer
             prefill={prefill}

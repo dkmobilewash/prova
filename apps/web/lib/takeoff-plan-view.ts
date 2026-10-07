@@ -17,7 +17,16 @@ import type { ZoneNotice } from "@/lib/takeoff-zones";
 /** A calibration as the viewer needs it: the drawn line plus the distance it
  * was declared to be, with the Decimal already turned into a number by the
  * page that read it. */
-export type PlanViewerCalibration = StoredCalibration & { id: string };
+export type PlanViewerCalibration = StoredCalibration & {
+  id: string;
+  /** WHY THE NOTE TRAVELS WITH THE CALIBRATION, when `StoredCalibration` is
+   * deliberately geometry alone: since #655 the automatic reader WRITES this
+   * field, recording which dimensions it matched and how closely. That made it
+   * provenance rather than a free-text remark — and it was stored where nothing
+   * could display it, so a saved scale had no visible account of where it came
+   * from. A click-through looked for exactly that and found nothing. */
+  note: string | null;
+};
 
 export type PlanMeasurementRow = {
   id: string;
@@ -249,3 +258,46 @@ export const TOOLS: { id: ToolId; label: string; hint: string }[] = [
   { id: "area", label: "Area", hint: "Click around the outline. It closes back to the first point." },
   { id: "count", label: "Count", hint: "Click each one. The name you give it becomes the line item." },
 ];
+
+/**
+ * HOW THE MEASURED ERROR IS WORDED, and it used to print a FLOOR as though it
+ * were the measurement.
+ *
+ * The offer said `Within {band < 0.05 ? "0.05" : band.toFixed(2)}%`, so a pair
+ * accurate to 0.01% was reported as "Within 0.05%" — while the note written
+ * beside it said 0.01%, because that one formatted the real figure. A
+ * click-through caught the two disagreeing and reported it as a defect, which
+ * it is: one quantity shown two ways.
+ *
+ * Rounding up to a floor is fine in a progress bar and wrong in a number about
+ * accuracy — it is the figure somebody decides on, and it overstated the error,
+ * which makes the reader trust the feature less than the evidence warrants.
+ *
+ * Below a hundredth of a percent it says so as an INEQUALITY rather than
+ * inventing a value, because `toFixed(2)` of 0.004 is "0.00" and that claims
+ * perfection. It returns a string for exactly that reason: there is no decimal
+ * expansion of "smaller than my precision".
+ */
+export function errorBandText(inheritedError: number): string {
+  const band = inheritedError * 100;
+  return band < 0.005 ? "under 0.01%" : `${band.toFixed(2)}%`;
+}
+
+/**
+ * THE QUOTED DIMENSION GOES FIRST IN THE EVIDENCE ROW.
+ *
+ * The row shows the first few of what can be dozens of matched dimensions,
+ * while the sentence under it quotes the ONE pair being proposed. On a sheet
+ * with 24 matches the quoted dimension was not among the six shown — "Within
+ * 0.17% on 25' - 0 1/2"" above a row that did not contain `25' - 0 1/2"`.
+ *
+ * Both halves were true and the pair read as a contradiction, which is worse
+ * than showing fewer. Found by a click-through, which flagged it as a mismatch
+ * rather than as a list being truncated — that is how it reads.
+ */
+export function evidenceOrder(agreed: readonly string[], declaredText: string, limit = 6): string[] {
+  return [
+    ...agreed.filter((text) => text === declaredText),
+    ...agreed.filter((text) => text !== declaredText),
+  ].slice(0, limit);
+}
