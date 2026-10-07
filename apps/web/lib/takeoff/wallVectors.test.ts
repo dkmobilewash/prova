@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { wallFromPair, wallsFromStrokes, type StrokeSegment, type WallFinderOptions,
   clusterByThickness,
   CLUSTER_INCHES,
+  wallsInTheBuilding,
+  SAME_BUILDING_FEET,
   type WallCandidate,
 } from "./wallVectors";
 
@@ -254,5 +256,86 @@ describe("grouping walls by thickness", () => {
     // both: it must merge a 0.28" split and preserve a 1.25" one.
     expect(CLUSTER_INCHES).toBeGreaterThan(0.28);
     expect(CLUSTER_INCHES).toBeLessThan(1.25);
+  });
+});
+
+/**
+ * KEEPING THE BUILDING AND DROPPING THE REST OF THE SHEET.
+ *
+ * The finder read the whole page, so it returned the title block's ruled lines,
+ * the notes column, the sheet border and the wall sections printed above the
+ * plan. Every one is a genuine pair of parallel lines at a genuine spacing.
+ *
+ * Nobody caught it from the numbers — the thicknesses clustered at 4.88", 4.92"
+ * and 4.80" across three projects and that was read as proof. It proves
+ * nothing. These tests are about POSITION, which is the thing that was never
+ * being asked.
+ */
+const at = (x1: number, y1: number, x2: number, y2: number): WallCandidate => ({
+  x1,
+  y1,
+  x2,
+  y2,
+  thicknessFeet: 0.40625,
+  lengthFeet: Math.hypot(x2 - x1, y2 - y1),
+});
+
+// One point per foot, so a gap in these coordinates is a gap in feet.
+const FOOT = 1;
+
+describe("keeping only the walls in the building", () => {
+  it("drops a title block sitting away from the plan", () => {
+    const plan = [at(0, 0, 40, 0), at(40, 0, 40, 30), at(0, 0, 0, 30), at(0, 30, 40, 30)];
+    const titleBlock = [at(300, 0, 340, 0), at(300, 5, 340, 5)];
+    const kept = wallsInTheBuilding([...plan, ...titleBlock], FOOT);
+    expect(kept).toHaveLength(plan.length);
+    expect(kept.every((w) => w.x1 < 300)).toBe(true);
+  });
+
+  it("keeps a plan whose runs meet in Ts, not just at corners", () => {
+    // The first version compared ENDPOINTS and shattered a real plan into 46
+    // pieces, keeping 49 runs of 203 — one corner of the offices. Walls meet in
+    // Ts far more often than in Ls: one wall's END against another's MIDDLE.
+    const spine = at(0, 0, 100, 0);
+    const branches = [at(25, 0, 25, 40), at(50, 0, 50, 40), at(75, 0, 75, 40)];
+    const kept = wallsInTheBuilding([spine, ...branches], FOOT);
+    expect(kept).toHaveLength(4);
+  });
+
+  it("bridges a doorway, a corridor and a wall it simply missed", () => {
+    // Runs do not touch as often as a drawing suggests. Anything under the
+    // same-building distance is still one building.
+    const a = at(0, 0, 30, 0);
+    const b = at(30 + SAME_BUILDING_FEET - 1, 0, 70, 0);
+    expect(wallsInTheBuilding([a, b], FOOT)).toHaveLength(2);
+  });
+
+  it("keeps the group with the most FOOTAGE, not the most runs", () => {
+    // A dense notes column can out-count a building without out-measuring it.
+    const building = [at(0, 0, 120, 0), at(0, 0, 0, 90)];
+    // Short rules, many of them: 30 runs against the building's 2, but 60ft
+    // against its 210. The first draft of this fixture made them 8ft each,
+    // which is 240ft — so the notes genuinely were the bigger thing and the
+    // test was asserting the opposite of what it claimed.
+    const notes = Array.from({ length: 30 }, (_, i) => at(500, i * 2, 502, i * 2));
+    const kept = wallsInTheBuilding([...building, ...notes], FOOT);
+    expect(kept).toHaveLength(2);
+    expect(kept.every((w) => w.x1 < 500)).toBe(true);
+  });
+
+  it("returns everything when the sheet holds nothing but the plan", () => {
+    const plan = [at(0, 0, 40, 0), at(40, 0, 40, 30)];
+    expect(wallsInTheBuilding(plan, FOOT)).toHaveLength(2);
+  });
+
+  it("returns nothing for nothing, rather than throwing", () => {
+    expect(wallsInTheBuilding([], FOOT)).toEqual([]);
+  });
+
+  it("uses a distance wide enough for a corridor and far short of a title block", () => {
+    // Measured by sweeping and looking: at 6ft a real plan broke into 46
+    // pieces; 12 kept 132 runs, 20 kept 178, 30 kept 186. It plateaus at 20.
+    expect(SAME_BUILDING_FEET).toBeGreaterThanOrEqual(12);
+    expect(SAME_BUILDING_FEET).toBeLessThan(60);
   });
 });

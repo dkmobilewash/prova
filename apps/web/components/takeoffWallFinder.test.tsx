@@ -252,6 +252,24 @@ describe("the ghost lines over the sheet", () => {
     expect(overlay.length).toBeGreaterThan(200);
   });
 
+  it("the viewer FILTERS to the building before grouping", () => {
+    // Measured as a mutation: the viewer could stop calling `wallsInTheBuilding`
+    // and every test above stayed green, because they exercise the function
+    // directly. Without that call the title block, the notes column, the sheet
+    // border and any detail above the plan all come back as walls — which is
+    // what shipped, and what a person found by looking at the drawing.
+    //
+    // Source text, because the detect path needs a real PDF to reach. It is the
+    // weaker half of a pair: the function's own behaviour is tested above, this
+    // asks only whether anything calls it.
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).toMatch(/wallsInTheBuilding\(\s*everywhere\s*,\s*feetPerUnit\s*\)/);
+    // And that what gets grouped is the FILTERED set, not the raw one.
+    expect(code).toMatch(/clusterByThickness\(walls\)/);
+    expect(code).not.toMatch(/clusterByThickness\(everywhere\)/);
+  });
+
   it("draws nothing before anything has been found", () => {
     expect(svg(createElement(FoundWalls, { clusters: null, hovered: null })).lines).toHaveLength(0);
     expect(svg(createElement(FoundWalls, { clusters: [], hovered: null })).lines).toHaveLength(0);
