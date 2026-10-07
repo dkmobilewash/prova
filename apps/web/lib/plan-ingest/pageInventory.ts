@@ -2,7 +2,7 @@ import { prisma } from "@prova/db";
 import { readPlanBytes } from "./planBytes";
 import { hasTextLayer, openPlanPdf, titleBlockText, type PlanPdf, type PlanPageText } from "./planPdf";
 import { dimensionLabels } from "./dimensionLabels";
-import { scaleFromDimensions } from "../takeoff/scaleFromDimensions";
+import { readSheetScale } from "../takeoff/scaleFromDimensions";
 import { scaleFromPrinted } from "../takeoff/scaleFromPrinted";
 import { printedScalesOnPage } from "../takeoff/scaleAudit";
 import type { StageCtx, StageWork } from "./stages";
@@ -239,7 +239,10 @@ async function readScaleFromSheet(
   try {
     const strokes = await pdf.pageStrokes(pageNumber);
     const labels = dimensionLabels(page);
-    const verdict = scaleFromDimensions(labels, strokes.segments);
+    // THE FLOOR THE APP WILL ACTUALLY HONOUR. Without it the reader proposes
+    // lines `calibrationNotices` then refuses as too short — which it did, on a
+    // real sheet, leaving the estimator unable to finish. See `minLinePoints`.
+    const verdict = readSheetScale(page, strokes.segments, labels);
     if (!verdict.ok) {
       // ── THE PRINTED SCALE, AND ONLY HERE ──
       //

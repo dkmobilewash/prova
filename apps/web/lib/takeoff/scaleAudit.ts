@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { openPlanPdf, titleBlockText } from "../plan-ingest/planPdf";
 import { dimensionLabels } from "../plan-ingest/dimensionLabels";
 import { standardScaleFromText } from "../takeoff-plan";
-import { scaleFromDimensions } from "./scaleFromDimensions";
+import { readSheetScale } from "./scaleFromDimensions";
 import { scaleFromPrinted } from "./scaleFromPrinted";
 
 /**
@@ -261,7 +261,11 @@ export async function auditPlanFile(file: string, bytes: Buffer, maxPages = 400)
         const text = await doc.pageText(pageNumber);
         const strokes = await doc.pageStrokes(pageNumber);
         const labels = dimensionLabels(text);
-        const verdict = scaleFromDimensions(labels, strokes.segments);
+        // THE SAME FLOOR THE PRODUCT PASSES, or this audit measures a reader
+        // the app does not have. `pageInventory.ts` passes it because a line
+        // under `MIN_CALIBRATION_SPAN` cannot be saved — an audit without it
+        // would keep reporting coverage that an estimator cannot reach.
+        const verdict = readSheetScale(text, strokes.segments, labels);
         // THE WHOLE PAGE, not the title block — see `printedScalesOnPage`. More
         // than one distinct scale means the sheet carries views at different
         // scales, which is ordinary drafting and not something to resolve by
