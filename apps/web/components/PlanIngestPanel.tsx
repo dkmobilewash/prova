@@ -350,6 +350,48 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
                 confirm or correct. A sheet with no selectable text is reported as a scan rather than guessed at,
                 and costs nothing.
               </p>
+
+              {/* ── READING THE SHEETS AGAIN, AND WHY THIS HAS TO EXIST ──
+
+                  What this pass records is DERIVED from the file: what each page
+                  says, and — since #655 — the scale the sheet declares about
+                  itself. Derived data goes stale when the code that derives it
+                  improves, and until now there was no way to re-run this stage
+                  from the app at all: the "Read the sheets" button is replaced
+                  by the one above the moment the pass completes.
+
+                  So a fix to the reader reached no plan already uploaded.
+                  Shipping #662 — which stopped the app proposing a calibration
+                  line it would then refuse — changed nothing for any existing
+                  plan set, and the only way to benefit was to DELETE the plan
+                  and upload it again. Found by a click-through that could not
+                  re-read a 29-sheet set and correctly stopped rather than press
+                  the paid button beside it.
+
+                  The server already allowed this: `startPlanIngest` blocks only
+                  a run still in flight (`finishedAt: null`), and every row this
+                  pass writes is an upsert keyed on the page, so a second pass
+                  replaces rather than duplicates.
+
+                  IT SAYS "COSTS NOTHING" ON THE BUTTON ITSELF, beside one that
+                  spends a sheet allowance. That is not decoration: the two sit
+                  together, the paid one names its price, and a reader who cannot
+                  tell them apart will press neither. */}
+              <div className="mt-3 border-t border-line-card pt-3">
+                <button
+                  type="button"
+                  onClick={onStart}
+                  disabled={isPending}
+                  className="min-h-[48px] rounded-md border border-line-card bg-surface px-4 text-sm font-medium text-ink-body hover:bg-rail-hover disabled:opacity-50"
+                >
+                  {isPending ? "Starting…" : "Read the sheets again — costs nothing"}
+                </button>
+                <p className="mt-2 text-sm text-ink-muted">
+                  Opens the file and reads every page over again, replacing what it recorded last time. Worth doing
+                  if C Stream has been improved since this set was uploaded — nothing you have confirmed yourself is
+                  touched, and no sheet allowance is used.
+                </p>
+              </div>
             </div>
           )}
 
