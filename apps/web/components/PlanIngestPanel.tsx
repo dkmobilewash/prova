@@ -351,47 +351,6 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
                 and costs nothing.
               </p>
 
-              {/* ── READING THE SHEETS AGAIN, AND WHY THIS HAS TO EXIST ──
-
-                  What this pass records is DERIVED from the file: what each page
-                  says, and — since #655 — the scale the sheet declares about
-                  itself. Derived data goes stale when the code that derives it
-                  improves, and until now there was no way to re-run this stage
-                  from the app at all: the "Read the sheets" button is replaced
-                  by the one above the moment the pass completes.
-
-                  So a fix to the reader reached no plan already uploaded.
-                  Shipping #662 — which stopped the app proposing a calibration
-                  line it would then refuse — changed nothing for any existing
-                  plan set, and the only way to benefit was to DELETE the plan
-                  and upload it again. Found by a click-through that could not
-                  re-read a 29-sheet set and correctly stopped rather than press
-                  the paid button beside it.
-
-                  The server already allowed this: `startPlanIngest` blocks only
-                  a run still in flight (`finishedAt: null`), and every row this
-                  pass writes is an upsert keyed on the page, so a second pass
-                  replaces rather than duplicates.
-
-                  IT SAYS "COSTS NOTHING" ON THE BUTTON ITSELF, beside one that
-                  spends a sheet allowance. That is not decoration: the two sit
-                  together, the paid one names its price, and a reader who cannot
-                  tell them apart will press neither. */}
-              <div className="mt-3 border-t border-line-card pt-3">
-                <button
-                  type="button"
-                  onClick={onStart}
-                  disabled={isPending}
-                  className="min-h-[48px] rounded-md border border-line-card bg-surface px-4 text-sm font-medium text-ink-body hover:bg-rail-hover disabled:opacity-50"
-                >
-                  {isPending ? "Starting…" : "Read the sheets again — costs nothing"}
-                </button>
-                <p className="mt-2 text-sm text-ink-muted">
-                  Opens the file and reads every page over again, replacing what it recorded last time. Worth doing
-                  if C Stream has been improved since this set was uploaded — nothing you have confirmed yourself is
-                  touched, and no sheet allowance is used.
-                </p>
-              </div>
             </div>
           )}
 
@@ -416,6 +375,56 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
                 {scheduleSheetCount === 0
                   ? "None of the title blocks on this set named a schedule. If you know a sheet carries one, correct its page type on the review list above and this will pick it up."
                   : "Reads the door, window, finish or partition schedules into rows for you to check. The table is rebuilt from the sheet's own text positions, so the rows and columns are not guessed at \u2014 only what each column means is."}
+              </p>
+            </div>
+          )}
+
+          {/* ── READING THE SHEETS AGAIN, AND WHY IT IS NOT INSIDE A STAGE ──
+
+              What this pass records is DERIVED from the file: what each page
+              says, and — since #655 — the scale the sheet declares about itself.
+              Derived data goes stale when the code deriving it improves, and for
+              a long time there was no way to re-run the stage from the app at
+              all, so a fix to the reader reached no plan already uploaded.
+
+              #663 ADDED THIS CONTROL AND GATED IT ON `view.stage ===
+              "PAGE_INVENTORY"`, WHICH IS THE SAME BUG IT WAS WRITTEN TO FIX, one
+              transition later. `view.stage` is the stage of the LATEST run — so
+              the moment anybody read the title blocks, the re-read button
+              vanished. Every set a person has actually worked with is past that
+              point, which made it invisible on exactly the sets that need it,
+              and present only on ones freshly uploaded that nothing had improved
+              under yet.
+
+              It cost a full click-test cycle. The test reported Augusta still
+              offering a dimension the form then refused; I checked the server
+              path, the task creation, the upsert and the job-finishing guard,
+              all of which were correct, and concluded the re-read "did not
+              happen" — which was true, and not for any of the reasons I was
+              looking at. A screenshot settled it in one glance: the panel was
+              showing the schedule stage, so the button was not on the page.
+
+              So the gate is now COMPLETION, not which stage completed. A set
+              that has been read at all can be read again, from wherever the
+              panel has got to.
+
+              IT SAYS "COSTS NOTHING" ON THE BUTTON ITSELF, because the buttons
+              beside it spend a sheet allowance and name their price. A reader
+              who cannot tell them apart will press neither. */}
+          {view.complete && !running && (
+            <div className="mt-1 border-t border-line-card pt-3" data-plan-ingest="reread">
+              <button
+                type="button"
+                onClick={onStart}
+                disabled={isPending}
+                className="min-h-[48px] rounded-md border border-line-card bg-surface px-4 text-sm font-medium text-ink-body hover:bg-rail-hover disabled:opacity-50"
+              >
+                {isPending ? "Starting…" : "Read the sheets again — costs nothing"}
+              </button>
+              <p className="mt-2 text-sm text-ink-muted">
+                Opens the file and reads every page over again, replacing what it recorded last time. Worth doing if
+                C Stream has been improved since this set was uploaded — nothing you have confirmed yourself is
+                touched, and no sheet allowance is used.
               </p>
             </div>
           )}
