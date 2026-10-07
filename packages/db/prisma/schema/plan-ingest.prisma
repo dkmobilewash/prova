@@ -384,6 +384,44 @@ model PlanSheetScaleReading {
   /// step with `takeoff-plan.ts`'s own table.
   scaleName String?
 
+  /// WHERE THE SCALE CAME FROM, and this column is the whole of what makes the
+  /// printed-scale path honest.
+  ///
+  /// `DIMENSIONS` — read off a dimension printed on the drawing. The line below
+  /// is that dimension's own line and `declaredDistanceFeet` is what the drawing
+  /// says it is, so an estimator sees the line sitting on `16' - 4 1/2"` and can
+  /// check it in two seconds. Nothing about this reading has to be taken on
+  /// faith.
+  ///
+  /// `PRINTED` — read off the scale the architect printed in the title block or
+  /// captioned under a view. **Nothing on the sheet confirms it**, and that is
+  /// not a detail to be inferred later from which columns are null: the review
+  /// screen has to SAY so, and an estimator has to accept it knowing there is
+  /// nothing to look at.
+  ///
+  /// WHY THIS EXISTS AT ALL, SINCE #623 DECLINED IT. That PR's reasoning stands:
+  /// a printed scale "implies a factor and not a dimension", and a calibration
+  /// "is the line somebody drew". What changed is a measurement. A real 76-page
+  /// bid set reads 9 of ~30 drywall-relevant sheets from their dimensions;
+  /// sixteen more PRINT their scale and fail only because no dimension on them
+  /// can be read — six have their lettering saved as line work, ten have
+  /// dimensions that scatter. Three geometry fixes were tried and measured at
+  /// zero or worse; the tables are in `scaleFromDimensions.ts`. Diego's call,
+  /// 2026-10-07: use the printed scale, clearly marked unverified.
+  ///
+  /// AND IT INVENTS NO DIMENSION, which is the part that keeps #623's rule
+  /// intact in substance. For a `PRINTED` reading the line is the SHEET'S OWN
+  /// WIDTH and the distance is what the printed scale says that width is — the
+  /// page is 42in across and says 1in = 8ft, so it spans 336ft. Both are facts
+  /// about the file, not a figure read off a dimension that is not there. It
+  /// reads back exactly at every architectural scale, and at a span of 1.0 of
+  /// the page it is the longest and least error-prone line available.
+  ///
+  /// A STRING AND NOT AN ENUM, for the reason `proposedPageType` gives one model
+  /// up: a value a future build has not heard of must not reject the write.
+  /// `scaleReadingSource.test.ts` holds the closed set.
+  source String @default("DIMENSIONS")
+
   /// The line to propose as the calibration, in PAGE-WIDTH UNITS — x over the
   /// rendered width, y over that same width, which is `sheet-geometry.ts`'s box
   /// contract and NOT a fraction of the height. Stored in the same convention

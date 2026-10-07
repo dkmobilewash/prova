@@ -23,6 +23,7 @@ const row = (over: Partial<ScaleReadingRowForView> = {}): ScaleReadingRowForView
   agreedText: `16' - 4 1/2"\n11' - 0"\n6' - 0"`,
   consideredCount: 30,
   inheritedError: 0.00315,
+  source: "DIMENSIONS",
   ...over,
 });
 
@@ -92,5 +93,34 @@ describe("what it refuses to offer", () => {
 
   it("offers nothing at all for no rows", () => {
     expect(scalePrefillsFromReadings([])).toEqual({});
+  });
+});
+
+/**
+ * WHERE THE SCALE CAME FROM, which changes what the screen says rather than
+ * being metadata. See `ScalePrefill.unconfirmed`.
+ */
+describe("confirmed against the drawing, or not", () => {
+  it("a DIMENSIONS reading is confirmed — the line sits on the dimension it came from", () => {
+    expect(scalePrefillsFromReadings([row({ source: "DIMENSIONS" })])[1]!.unconfirmed).toBe(false);
+  });
+
+  it("a PRINTED reading is UNCONFIRMED — nothing on the sheet checks it", () => {
+    expect(scalePrefillsFromReadings([row({ source: "PRINTED" })])[1]!.unconfirmed).toBe(true);
+  });
+
+  it("TREATS AN UNKNOWN SOURCE AS UNCONFIRMED, which is the safe default", () => {
+    // A row written before this column existed, or by a later build with a third
+    // source, must not quietly claim to be checkable. The dangerous direction is
+    // claiming confirmation nobody has.
+    expect(scalePrefillsFromReadings([row({ source: "" })])[1]!.unconfirmed).toBe(true);
+    expect(scalePrefillsFromReadings([row({ source: "SOMETHING_NEW" })])[1]!.unconfirmed).toBe(true);
+  });
+
+  it("still offers a PRINTED reading — it is unconfirmed, not unusable", () => {
+    const prefill = scalePrefillsFromReadings([row({ source: "PRINTED", agreedText: null })])[1]!;
+    expect(prefill.scaleName).toBeTruthy();
+    expect(prefill.agreed).toEqual([]);
+    expect(prefill.unconfirmed).toBe(true);
   });
 });

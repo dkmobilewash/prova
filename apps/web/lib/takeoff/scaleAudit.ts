@@ -5,6 +5,7 @@ import { openPlanPdf, titleBlockText } from "../plan-ingest/planPdf";
 import { dimensionLabels } from "../plan-ingest/dimensionLabels";
 import { standardScaleFromText } from "../takeoff-plan";
 import { scaleFromDimensions } from "./scaleFromDimensions";
+import { scaleFromPrinted } from "./scaleFromPrinted";
 
 /**
  * AUDITING AUTOMATIC SCALE OVER A WHOLE BID PACKAGE, and the point is that the
@@ -108,6 +109,15 @@ export type AuditOutcome =
   /** Declined, and the sheet names no scale either. Nothing was there. */
   | "DECLINED"
   /**
+   * The dimensions declined and the PRINTED scale covered the sheet.
+   *
+   * This is coverage the product has and the dimension reader does not, so the
+   * audit has to show it or it understates what ships. It is NOT counted in the
+   * agreement rate: there is no second reading to agree with, which is the whole
+   * property this outcome records the absence of.
+   */
+  | "PRINTED"
+  /**
    * The sheet prints MORE THAN ONE scale — a plan and an enlarged detail, say.
    * Both are correct, so there is no single answer key, and picking the one that
    * matched would manufacture an `AGREES`. Excluded from the headline for the
@@ -131,7 +141,14 @@ export type AuditOutcome =
  * declined, but one had an answer printed on the sheet and did not find it. Only
  * the first is a shortfall, and `agreementRate` counts only the first.
  */
-export function classifyOutcome(derived: string | null, printed: readonly string[]): AuditOutcome {
+export function classifyOutcome(
+  derived: string | null,
+  printed: readonly string[],
+  /** What the PRINTED fallback would do where the dimensions declined — the
+   *  product's own second chance, so this audit reports what ships rather than
+   *  what one reader manages alone. */
+  printedFallback: string | null = null,
+): AuditOutcome {
   // MORE THAN ONE PRINTED SCALE IS DECIDED HERE AND NOT IN THE CALLER, because a
   // mutation showed what happens when it is: cherry-picking the first of two
   // left the whole suite green, since every test reached
@@ -141,7 +158,12 @@ export function classifyOutcome(derived: string | null, printed: readonly string
   // produce.
   if (printed.length > 1) return "MANY_PRINTED";
   const one = printed[0] ?? null;
-  if (derived === null) return one === null ? "DECLINED" : "MISSED";
+  if (derived === null) {
+    // The fallback is checked before `MISSED`, because a sheet the product can
+    // read is not a miss — it is coverage without a second opinion.
+    if (printedFallback !== null) return "PRINTED";
+    return one === null ? "DECLINED" : "MISSED";
+  }
   if (one === null) return "NO_TITLE_SCALE";
   return derived === one ? "AGREES" : "DISAGREES";
 }
@@ -248,11 +270,15 @@ export async function auditPlanFile(file: string, bytes: Buffer, maxPages = 400)
         const printed = printedScales.length === 1 ? printedScales[0] : null;
 
         if (!verdict.ok) {
+          const fallback = scaleFromPrinted(printedScales, text.widthPt, text.heightPt);
           out.push({
             file,
             pageNumber,
-            outcome: classifyOutcome(null, printedScales),
-            derived: null,
+            outcome: classifyOutcome(null, printedScales, fallback?.scaleName ?? null),
+            // The product WOULD read this one, from the printed scale, so the
+            // row says which scale rather than leaving the column blank and
+            // understating what ships.
+            derived: fallback?.scaleName ?? null,
             printed,
             printedAll: printedScales,
             found: verdict.considered,
@@ -310,6 +336,7 @@ export function summarise(pages: readonly AuditPage[]): AuditSummary {
     AGREES: 0,
     DISAGREES: 0,
     NO_TITLE_SCALE: 0,
+    PRINTED: 0,
     MANY_PRINTED: 0,
     MISSED: 0,
     DECLINED: 0,
@@ -332,6 +359,10 @@ export function summarise(pages: readonly AuditPage[]): AuditSummary {
  * of nothing.
  */
 export function agreementRate(pages: readonly AuditPage[]): number | null {
+  // `PRINTED` is excluded alongside `NO_TITLE_SCALE` and `MANY_PRINTED`: the
+  // product read the sheet, but from the only statement of scale on it, so there
+  // is no second reading to agree with. Counting it as agreement would be a
+  // reading agreeing with itself.
   const checkable = pages.filter((p) => p.outcome === "AGREES" || p.outcome === "DISAGREES" || p.outcome === "MISSED");
   if (checkable.length === 0) return null;
   return checkable.filter((p) => p.outcome === "AGREES").length / checkable.length;

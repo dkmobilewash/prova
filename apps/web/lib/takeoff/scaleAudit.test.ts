@@ -170,16 +170,24 @@ describe("the summary", () => {
       page({ outcome: "AGREES" }),
       page({ outcome: "DISAGREES" }),
       page({ outcome: "NO_TITLE_SCALE" }),
+      page({ outcome: "PRINTED" }),
       page({ outcome: "MANY_PRINTED" }),
       page({ outcome: "MISSED" }),
       page({ outcome: "DECLINED" }),
       page({ outcome: "ERROR" }),
     ];
     const s = summarise(pages);
-    expect(s.pages).toBe(7);
+    expect(s.pages).toBe(8);
     expect(
-      s.AGREES + s.DISAGREES + s.NO_TITLE_SCALE + s.MANY_PRINTED + s.MISSED + s.DECLINED + s.ERROR,
-    ).toBe(7);
+      s.AGREES +
+        s.DISAGREES +
+        s.NO_TITLE_SCALE +
+        s.PRINTED +
+        s.MANY_PRINTED +
+        s.MISSED +
+        s.DECLINED +
+        s.ERROR,
+    ).toBe(8);
   });
 
   it("reports zeroes rather than gaps for an empty run", () => {
@@ -189,6 +197,7 @@ describe("the summary", () => {
       AGREES: 0,
       DISAGREES: 0,
       NO_TITLE_SCALE: 0,
+      PRINTED: 0,
       MANY_PRINTED: 0,
       MISSED: 0,
       DECLINED: 0,

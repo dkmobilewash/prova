@@ -130,6 +130,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
             agreedText: true,
             consideredCount: true,
             inheritedError: true,
+            source: true,
           },
         }),
       )

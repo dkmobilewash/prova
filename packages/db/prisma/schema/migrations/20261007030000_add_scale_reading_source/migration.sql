@@ -1,0 +1,14 @@
+-- Where a sheet's scale reading came from: a dimension printed on the drawing,
+-- or the scale printed in the title block.
+--
+-- Additive with a DEFAULT, so the running build cannot see it and every existing
+-- row keeps the meaning it already had — every reading written before now came
+-- from dimensions, because that was the only path there was.
+--
+-- The column exists because provenance has to be SHOWN. A dimension-derived
+-- scale is offered with the line it came from drawn over the drawing, so an
+-- estimator checks it by looking. A printed one cannot be checked by looking at
+-- anything, which is why #623 declined it, and it ships only because it says so
+-- on screen. Inferring that from which columns are null would break immediately:
+-- a PRINTED reading stores a line too — the sheet's own width.
+ALTER TABLE "PlanSheetScaleReading" ADD COLUMN     "source" TEXT NOT NULL DEFAULT 'DIMENSIONS';

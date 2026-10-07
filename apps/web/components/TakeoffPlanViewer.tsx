@@ -549,6 +549,43 @@ function Shape({
  */
 function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => void }) {
   const band = prefill.inheritedError * 100;
+
+  // ── A SCALE OFF THE TITLE BLOCK, WITH NOTHING ON THE SHEET TO CHECK IT ──
+  //
+  // The sentence is the whole of what makes this path acceptable. A
+  // dimension-derived scale is offered with the dimensions it matched and a line
+  // drawn over one of them, so an estimator verifies it by looking. A printed
+  // one cannot be verified by looking at anything, and #623 declined it for
+  // exactly that reason. It ships because a real bid set reads 9 of ~30 sheets
+  // from dimensions while 16 more PRINT their scale — but it ships SAYING so,
+  // never dressed as the other kind.
+  if (prefill.unconfirmed) {
+    return (
+      <div className="rounded-md border border-line-card bg-surface p-2">
+        <p className="text-xs text-ink-body">
+          The title block on this sheet says <span className="font-semibold text-ink">{prefill.scaleName}</span>.
+        </p>
+        <p className="mt-1 text-[11px] text-ink-muted">
+          {/* Said plainly rather than softened. The estimator is accepting a
+              figure with nothing to look at, and that is their decision to make
+              knowingly. */}
+          Nothing measurable on this sheet confirms it —{" "}
+          {prefill.considered === 0
+            ? "no printed dimensions could be read here"
+            : `its ${prefill.considered} printed dimension${prefill.considered === 1 ? "" : "s"} did not agree on a scale`}
+          . Using it sets the scale from the printed figure alone.
+        </p>
+        <button
+          type="button"
+          onClick={onUse}
+          className="mt-2 rounded-md border border-line-card bg-surface px-2 py-1 text-xs text-ink-body hover:bg-rail-hover"
+        >
+          Use the printed scale
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-md border border-line-card bg-surface p-2">
       <p className="text-xs text-ink-body">
@@ -622,7 +659,15 @@ function CalibrationForm({
             prefill={prefill}
             onUse={() => {
               onUsePrefill(prefill.xs, prefill.ys);
-              setTyped(prefill.declaredText || formatFeetInches(prefill.declaredFeet));
+              // A PRINTED scale's `declaredText` is the scale NAME, not a
+              // distance, so typing it into the distance box would be nonsense.
+              // The figure there is what the printed scale says the sheet's own
+              // width is — see `scaleFromPrinted`.
+              setTyped(
+                prefill.unconfirmed
+                  ? formatFeetInches(prefill.declaredFeet)
+                  : prefill.declaredText || formatFeetInches(prefill.declaredFeet),
+              );
             }}
           />
         )}
