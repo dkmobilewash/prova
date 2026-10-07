@@ -19,13 +19,22 @@ import {
 } from "@/lib/takeoff-plan";
 import { saveTakeoffCalibration, saveTakeoffMeasurement, saveTakeoffMeasurements } from "@/lib/actions";
 import type { PlanSheet, PrintedScaleByPage, ScalePrefill, ScalePrefillByPage } from "@/lib/takeoff-plan-view";
-import { errorBandText, evidenceOrder, stepZoom, TOOLS, ZOOM_STEPS, type ToolId } from "@/lib/takeoff-plan-view";
+import {
+  errorBandText,
+  evidenceOrder,
+  fitZoom,
+  stepZoom,
+  TOOLS,
+  ZOOM_STEPS,
+  type ToolId,
+} from "@/lib/takeoff-plan-view";
 import {
   clusterByThickness,
   heavierThanHatching,
   inchLabel,
   wallsFromStrokes,
   wallsInTheBuilding,
+  wallsNotLettering,
   type WallCluster,
 } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
@@ -145,6 +154,7 @@ export function TakeoffPlanViewer({
    *  fitting into. */
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [frameWidth, setFrameWidth] = useState(0);
+  const [frameHeight, setFrameHeight] = useState(0);
   const [cssWidth, setCssWidth] = useState(0);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -208,7 +218,10 @@ export function TakeoffPlanViewer({
   useEffect(() => {
     const frame = frameRef.current;
     if (!frame) return;
-    const measure = () => setFrameWidth(frame.clientWidth);
+    const measure = () => {
+      setFrameWidth(frame.clientWidth);
+      setFrameHeight(frame.clientHeight);
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(frame);
@@ -221,10 +234,10 @@ export function TakeoffPlanViewer({
   const zoomFactor = useMemo(() => {
     if (zoom !== FIT) return zoom;
     if (!pageSize || frameWidth === 0) return 1;
-    // 24px for the scrollbar and the container's own padding, so "fit" does not
-    // leave a horizontal scrollbar that makes it look like it did not work.
-    return Math.max(0.05, (frameWidth - 24) / (pageSize.widthPt * BASE_SCALE));
-  }, [zoom, pageSize, frameWidth]);
+    // Decided in `fitZoom`, which is pure and tested — see its header for why
+    // this fits BOTH dimensions and why that took a second attempt.
+    return fitZoom({ width: frameWidth, height: frameHeight }, pageSize, BASE_SCALE);
+  }, [zoom, pageSize, frameWidth, frameHeight]);
 
   // ── Render the current page at the current zoom ───────────────────────
   useEffect(() => {
@@ -367,6 +380,33 @@ export function TakeoffPlanViewer({
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
       const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
       const { segments } = await segmentsFromOpenPage(page, pdfjs, pageNumber);
+
+      // ── WHERE THE WORDS ARE ──
+      //
+      // Same derivation as `planPdf.ts`: an item's own matrix composed with the
+      // viewport's, whose translation is the item's position on the page as
+      // displayed. `y` is reported from the TOP of the glyph, so the box is
+      // grown downwards by its height.
+      const viewport = (page as { getViewport: (o: { scale: number }) => { transform: number[] } }).getViewport({
+        scale: 1,
+      });
+      const content = (await (page as { getTextContent: () => Promise<{ items: unknown[] }> }).getTextContent()) ?? {
+        items: [],
+      };
+      const textBoxes = content.items.flatMap((raw) => {
+        const item = raw as { str?: string; transform?: number[]; width?: number; height?: number };
+        if (typeof item.str !== "string" || item.str.trim() === "" || !Array.isArray(item.transform)) return [];
+        const m = pdfjs.Util.transform(viewport.transform, item.transform);
+        const h = item.height ?? 0;
+        return [
+          {
+            x: m[4] / pageSize.widthPt,
+            y: (m[5] - h) / pageSize.widthPt,
+            width: (item.width ?? 0) / pageSize.widthPt,
+            height: h / pageSize.widthPt,
+          },
+        ];
+      });
       const inUnits = segments.map((segment) => ({
         x1: segment.x1 / pageSize.widthPt,
         y1: segment.y1 / pageSize.widthPt,
@@ -385,7 +425,11 @@ export function TakeoffPlanViewer({
       // column, the sheet border and any detail drawn above the plan all come
       // back as walls — see `wallsInTheBuilding`, which exists because somebody
       // looked at the output rather than at its statistics.
-      const walls = wallsInTheBuilding(everywhere, feetPerUnit);
+      const inBuilding = wallsInTheBuilding(everywhere, feetPerUnit);
+      // AND NOT THE LETTERING. A stroked glyph is two parallel lines and the
+      // pairer takes it — two whole groups on one real sheet were dimension
+      // strings and room tags. See `wallsNotLettering`.
+      const walls = wallsNotLettering(inBuilding, textBoxes, feetPerUnit);
       setFound(clusterByThickness(walls));
     } catch {
       // The sheet is still on screen and the manual tools still work, so this
@@ -480,7 +524,7 @@ export function TakeoffPlanViewer({
           <button
             type="button"
             onClick={() => setZoom(stepZoom(zoomFactor, -1))}
-            disabled={zoom !== FIT && zoomFactor <= ZOOM_STEPS[0]}
+            disabled={zoomFactor <= ZOOM_STEPS[0]}
             aria-label="Zoom out"
             className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-40"
           >
@@ -492,7 +536,7 @@ export function TakeoffPlanViewer({
           <button
             type="button"
             onClick={() => setZoom(stepZoom(zoomFactor, 1))}
-            disabled={zoom !== FIT && zoomFactor >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
+            disabled={zoomFactor >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
             aria-label="Zoom in"
             className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-40"
           >

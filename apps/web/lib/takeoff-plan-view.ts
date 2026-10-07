@@ -335,8 +335,52 @@ export const ZOOM_STEPS = [0.15, 0.25, 0.33, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8];
 export function stepZoom(current: number, direction: 1 | -1): number {
   if (direction === -1) {
     const smaller = ZOOM_STEPS.filter((step) => step < current - 0.001);
-    return smaller.length > 0 ? smaller[smaller.length - 1] : ZOOM_STEPS[0];
+    // ── ALREADY SMALLER THAN THE SMALLEST STEP: STAY PUT ──
+    //
+    // This returned `ZOOM_STEPS[0]`, and on a big sheet that ZOOMS IN. A fitted
+    // 42-inch drawing in a narrow window sits at 11%, below the 15% floor, so
+    // pressing − took it to 15% — bigger — and then greyed the control out.
+    // Reported from a real plan set the hour it shipped.
+    //
+    // Fit is a computed scale and can legitimately be below every step; the
+    // honest answer there is that there is nothing further out.
+    return smaller.length > 0 ? smaller[smaller.length - 1] : current;
   }
   const bigger = ZOOM_STEPS.filter((step) => step > current + 0.001);
-  return bigger.length > 0 ? bigger[0] : ZOOM_STEPS[ZOOM_STEPS.length - 1];
+  return bigger.length > 0 ? bigger[0] : current;
+}
+
+/**
+ * THE SCALE THAT PUTS A WHOLE SHEET IN VIEW.
+ *
+ * ── BOTH DIMENSIONS, AND THE FIRST VERSION ONLY DID WIDTH ──
+ *
+ * That was a deliberate choice with a stated reason — sheets are landscape, so
+ * width binds, and fitting height too would shrink a 42x30 on a laptop. It was
+ * wrong, and reported within the hour of shipping: in a wide window Fit chose
+ * 28%, matched the sheet's width exactly, and left a 724px drawing in a 382px
+ * box with the top half cut off — labelled "Fit" the whole time.
+ *
+ * A control called Fit has one job. Whichever dimension binds, binds.
+ *
+ * PURE AND HERE rather than inline in the viewer, because a decision written
+ * inside a component is a decision no test can reach — `errorBandText` and
+ * `stepZoom` are here for the same reason, and a mutation proved this one
+ * untestable where it was.
+ *
+ * `inset` is the scrollbar and the container's own padding, so a fit does not
+ * leave a scrollbar that makes it look like it did not work.
+ */
+export function fitZoom(
+  frame: { width: number; height: number },
+  page: { widthPt: number; heightPt: number },
+  baseScale: number,
+  inset = 24,
+): number {
+  if (page.widthPt <= 0 || baseScale <= 0 || frame.width <= 0) return 1;
+  const forWidth = (frame.width - inset) / (page.widthPt * baseScale);
+  const forHeight =
+    frame.height > 0 && page.heightPt > 0 ? (frame.height - inset) / (page.heightPt * baseScale) : forWidth;
+  // Never zero or negative in a very small frame: the sheet would vanish.
+  return Math.max(0.05, Math.min(forWidth, forHeight));
 }

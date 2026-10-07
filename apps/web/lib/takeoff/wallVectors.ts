@@ -677,3 +677,65 @@ export function heavierThanHatching(segments: readonly StrokeSegment[]): StrokeS
   // no test could ever reach.
   return kept.length < 8 ? [...segments] : kept;
 }
+
+/**
+ * ── A STROKED GLYPH IS TWO PARALLEL LINES, AND THE PAIRER TAKES IT ──
+ *
+ * Reported from a real sheet by somebody looking at the drawing: two entire
+ * groups were text. 64 runs at 14-1/2" sitting on dimension strings — `4'-0"`,
+ * `10'-0"`, `12'-0"` — and 15 at 13-1/2" entirely on room-number tags (121, 133,
+ * and an A106 marker), with not one wall among them. 79 of 205 runs.
+ *
+ * When a drawing's lettering is saved as line work rather than text, the two
+ * sides of a `0` or a `1` are parallel, a few inches apart at drawing scale, and
+ * the right length. Nothing about their SHAPE says they are letters. The pen
+ * does not help either: a title is drawn heavy.
+ *
+ * What does say it is the text layer, which this app already extracts for every
+ * sheet — `PlanTextItem` carries each item's box in the same coordinate space as
+ * the strokes. A candidate sitting inside one is lettering.
+ *
+ * ── AND IT IS BOUNDED BY LENGTH, BECAUSE A ROOM TAG SITS ON A WALL ──
+ *
+ * A plan puts its labels ON the thing they label, so a long partition can easily
+ * run under a room number. Dropping it would be worse than keeping the tag: a
+ * missing wall is a short bid, while a wrong one is visible on the drawing and
+ * gets rejected.
+ *
+ * So length decides. Lettering on a drawing is a foot or two of building at
+ * plan scale; a wall is not. Above `LETTER_FEET` a candidate is kept wherever it
+ * sits, which costs a few tag-sized false positives and cannot cost a wall.
+ */
+export const LETTER_FEET = 4;
+
+/** Each text item's box, as this filter needs it. */
+export type TextBox = { x: number; y: number; width: number; height: number };
+
+export function wallsNotLettering(
+  walls: readonly WallCandidate[],
+  text: readonly TextBox[],
+  feetPerPoint: number,
+  letterFeet = LETTER_FEET,
+): WallCandidate[] {
+  if (text.length === 0) return [...walls];
+  // THE PAD IS IN FEET, CONVERTED — not in whatever units the caller happens to
+  // use. The first version wrote a bare `2`, which is 2 points to the server
+  // reader and TWO PAGE WIDTHS to the viewer, where coordinates run 0..1. That
+  // would have put every wall on the sheet inside a text box and filtered the
+  // drawing away. The same unit mistake the CTM bug made with lengths.
+  const padFeet = 0.5;
+  const pad = feetPerPoint > 0 ? padFeet / feetPerPoint : 0;
+  return walls.filter((wall) => {
+    if (wall.lengthFeet > letterFeet) return true;
+    const midX = (wall.x1 + wall.x2) / 2;
+    const midY = (wall.y1 + wall.y2) / 2;
+    const inside = text.some(
+      (box) =>
+        midX >= box.x - pad &&
+        midX <= box.x + box.width + pad &&
+        midY >= box.y - pad &&
+        midY <= box.y + box.height + pad,
+    );
+    return !inside;
+  });
+}
