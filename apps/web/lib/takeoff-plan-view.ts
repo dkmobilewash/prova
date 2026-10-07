@@ -125,6 +125,21 @@ export type ScalePrefill = {
   agreed: string[];
   /** How many dimensions were found on the page at all. */
   considered: number;
+  /**
+   * WHETHER ANYTHING ON THE SHEET CONFIRMS THIS, and it changes what the screen
+   * says rather than being metadata.
+   *
+   * `false` means the scale was read off a dimension printed on the drawing, and
+   * the proposed line is that dimension's own line — so the estimator sees it
+   * sitting on `16' - 4 1/2"` and checks it in two seconds.
+   *
+   * `true` means it came from the scale printed in the title block, and
+   * **nothing on the sheet confirms it**. The line in that case is the sheet's
+   * own width, which is honest arithmetic and not a dimension anybody drew, so
+   * there is nothing to look at. Saying so is the condition this path was
+   * approved under.
+   */
+  unconfirmed: boolean;
   /** How far the proposed line sits from the scale the sheet voted for, as a
    *  fraction. Shown, because a scale nobody can put a band on is one taken on
    *  faith. */
@@ -147,6 +162,7 @@ export type ScaleReadingRowForView = {
   agreedText: string | null;
   consideredCount: number;
   inheritedError: number | null;
+  source: string;
 };
 
 /**
@@ -174,6 +190,11 @@ export function scalePrefillsFromReadings(rows: readonly ScaleReadingRowForView[
       agreed: row.agreedText ? row.agreedText.split("\n").filter((line) => line.trim().length > 0) : [],
       considered: row.consideredCount,
       inheritedError: row.inheritedError ?? 0,
+      // Anything that is not an explicit `DIMENSIONS` reading is unconfirmed.
+      // Defaulting the UNKNOWN case to "unconfirmed" is deliberate: a row
+      // written by a build that did not have this column, or by one that grows a
+      // third source later, must not quietly claim to be checkable.
+      unconfirmed: row.source !== "DIMENSIONS",
     };
   }
   return byPage;
