@@ -5,6 +5,8 @@ import { wallFromPair, wallsFromStrokes, type StrokeSegment, type WallFinderOpti
   wallsInTheBuilding,
   SAME_BUILDING_FEET,
   NOT_A_BOX,
+  wallsNotLettering,
+  LETTER_FEET,
   heavierThanHatching,
   type WallCandidate,
 } from "./wallVectors";
@@ -456,5 +458,87 @@ describe("dropping the hatching pen", () => {
 
   it("returns nothing for nothing", () => {
     expect(heavierThanHatching([])).toEqual([]);
+  });
+});
+
+/**
+ * LETTERING IS NOT A WALL, though its shape says otherwise.
+ *
+ * Reported from a real sheet by somebody looking at the drawing: two entire
+ * groups were text. 64 runs at 14-1/2" on dimension strings — `4'-0"`, `10'-0"`
+ * — and 15 at 13-1/2" entirely on room-number tags, with not one wall among
+ * them. 79 of 205 runs.
+ *
+ * When lettering is saved as line work the two sides of a `0` are parallel, a
+ * few inches apart at drawing scale, and the right length. Nothing about their
+ * SHAPE says they are letters, and the pen does not help either — a title is
+ * drawn heavy. The text layer says it, and this app already extracts it.
+ */
+const label = (x: number, y: number, w = 6, h = 3) => ({ x, y, width: w, height: h });
+
+describe("telling lettering from walls", () => {
+  it("drops a short run sitting inside a text item", () => {
+    const glyph = at(100, 100, 102, 100); // 2ft, inside the tag's box
+    const kept = wallsNotLettering([glyph], [label(98, 98)], 1);
+    expect(kept).toEqual([]);
+  });
+
+  it("KEEPS A LONG WALL WHOSE MIDPOINT IS INSIDE A ROOM TAG", () => {
+    // A plan puts its labels ON the thing they label, so a partition running
+    // under a room number is ordinary. Dropping it would be worse than keeping
+    // a tag: a missing wall is a short bid, while a wrong one is visible on the
+    // drawing and gets rejected.
+    //
+    // THE MIDPOINT MUST LAND IN THE BOX or this tests nothing — the first
+    // fixture put the label off to one side, so the wall was kept because it
+    // was never near the text, and removing the length guard stayed GREEN.
+    const wall = at(90, 100, 130, 100); // 40ft; midpoint (110, 100)
+    const tag = label(107, 99, 6, 2); // x 107..113, y 99..101 — contains it
+    expect(wallsNotLettering([wall], [tag], 1)).toHaveLength(1);
+
+    // And the same geometry with a SHORT run is lettering, which is what makes
+    // the length the thing under test rather than the position.
+    const glyph = at(109, 100, 111, 100); // 2ft, same midpoint
+    expect(wallsNotLettering([glyph], [tag], 1)).toEqual([]);
+  });
+
+  it("keeps a short run that is nowhere near any text", () => {
+    const stub = at(500, 500, 502, 500);
+    expect(wallsNotLettering([stub], [label(98, 98)], 1)).toHaveLength(1);
+  });
+
+  it("keeps everything when the sheet reports no text at all", () => {
+    // A scanned sheet has no text layer. This needs no guard — nothing is
+    // inside an empty list — and a guard written here was deleted when
+    // mutation showed removing it changed nothing. The behaviour is still
+    // asserted, because it is the behaviour that matters, not the branch.
+    const walls = [at(100, 100, 102, 100), at(0, 0, 40, 0)];
+    expect(wallsNotLettering(walls, [], 1)).toHaveLength(2);
+  });
+
+  it("measures the pad in FEET, so it means the same in both coordinate spaces", () => {
+    // The first version used a bare `2`, which is 2 points to the server reader
+    // and TWO PAGE WIDTHS to the viewer, where coordinates run 0..1 — every
+    // wall on the sheet would have been inside a text box and the drawing
+    // filtered away. Same unit mistake the CTM bug made with lengths.
+    //
+    // Here one unit is one foot, so a half-foot pad reaches just outside the
+    // box and no further: a run 3ft clear of the label survives.
+    //
+    // The box runs x 98..104. At a half-foot pad its reach ends at 104.5; a
+    // bare `2` would reach 106. So a midpoint at 105 is the discriminator —
+    // kept under the real pad, swallowed under the wrong one.
+    const justOutside = at(104, 100, 106, 100); // midpoint x = 105
+    expect(wallsNotLettering([justOutside], [label(98, 98, 6, 3)], 1)).toHaveLength(1);
+
+    // And just INSIDE the real pad is still lettering, so the pad is doing
+    // something rather than being nominally present.
+    const justInside = at(103, 100, 105, 100); // midpoint x = 104
+    expect(wallsNotLettering([justInside], [label(98, 98, 6, 3)], 1)).toEqual([]);
+  });
+
+  it("uses a length bound that a letter cannot reach and a wall easily can", () => {
+    expect(LETTER_FEET).toBeGreaterThan(1);
+    expect(LETTER_FEET).toBeLessThan(10);
   });
 });

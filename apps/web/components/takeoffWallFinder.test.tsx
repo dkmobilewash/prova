@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TakeoffPlanViewer, FoundWalls } from "./TakeoffPlanViewer";
 import { inchLabel, type WallCluster } from "@/lib/takeoff/wallVectors";
-import { stepZoom } from "@/lib/takeoff-plan-view";
+import { fitZoom, stepZoom } from "@/lib/takeoff-plan-view";
 import type { PlanSheet } from "@/lib/takeoff-plan-view";
 
 /**
@@ -288,6 +288,20 @@ describe("the ghost lines over the sheet", () => {
     expect(code).toMatch(/width:\s*segment\.width/);
   });
 
+  it("the viewer drops LETTERING, and uses the filtered set", () => {
+    // Measured as a mutation: the viewer could stop calling `wallsNotLettering`
+    // and every test above stayed green, because they exercise the function
+    // directly. Without it, dimension strings and room-number tags come back as
+    // walls — 79 of 205 runs on a real sheet, in two whole groups.
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).toMatch(/wallsNotLettering\(\s*inBuilding\s*,\s*textBoxes\s*,\s*feetPerUnit\s*\)/);
+    expect(code).toMatch(/clusterByThickness\(walls\)/);
+    expect(code).not.toMatch(/clusterByThickness\(inBuilding\)/);
+    // And that Fit is computed by the tested function rather than inline again.
+    expect(code).toMatch(/fitZoom\(/);
+  });
+
   it("draws nothing before anything has been found", () => {
     expect(svg(createElement(FoundWalls, { clusters: null, hovered: null })).lines).toHaveLength(0);
     expect(svg(createElement(FoundWalls, { clusters: [], hovered: null })).lines).toHaveLength(0);
@@ -320,10 +334,19 @@ describe("stepping the zoom", () => {
     expect(stepZoom(0.25, -1)).toBeLessThan(0.25);
   });
 
-  it("stops at the ends instead of running off them", () => {
-    expect(stepZoom(0.01, -1)).toBeGreaterThan(0);
-    expect(stepZoom(99, 1)).toBeLessThanOrEqual(8);
-    expect(stepZoom(99, 1)).toBeGreaterThan(0);
+  it("NEVER ZOOMS IN WHEN ASKED TO ZOOM OUT", () => {
+    // The shipped bug, reported the hour it went live: a fitted 42-inch sheet
+    // in a narrow window sits at 11%, below the 15% floor, and `−` returned
+    // ZOOM_STEPS[0] — 15%, which is BIGGER — then greyed the control out.
+    // Fit is a computed scale and can legitimately be below every step.
+    expect(stepZoom(0.11, -1)).toBeLessThanOrEqual(0.11);
+    expect(stepZoom(0.05, -1)).toBeLessThanOrEqual(0.05);
+    expect(stepZoom(0.14, -1)).toBeLessThanOrEqual(0.14);
+  });
+
+  it("never zooms OUT when asked to zoom in", () => {
+    expect(stepZoom(99, 1)).toBeGreaterThanOrEqual(99);
+    expect(stepZoom(8, 1)).toBeGreaterThanOrEqual(8);
   });
 
   it("never returns the value it was given, or a step would do nothing", () => {
@@ -331,6 +354,30 @@ describe("stepping the zoom", () => {
       if (from > 0.15) expect(stepZoom(from, -1)).not.toBe(from);
       if (from < 8) expect(stepZoom(from, 1)).not.toBe(from);
     }
+  });
+});
+
+describe("what Fit computes", () => {
+  it("FITS BOTH DIMENSIONS, not just width", () => {
+    // The shipped bug, reported within the hour: in a wide, short window Fit
+    // matched the sheet's WIDTH and left the top half cut off — labelled "Fit"
+    // the whole time. A 42x30 sheet in a 1400x400 box is bound by height.
+    const z = fitZoom({ width: 1400, height: 400 }, { widthPt: 3024, heightPt: 2160 }, 1.5);
+    expect(z * 2160 * 1.5).toBeLessThanOrEqual(400);
+  });
+
+  it("is bound by width when width is the tighter of the two", () => {
+    const z = fitZoom({ width: 600, height: 4000 }, { widthPt: 3024, heightPt: 2160 }, 1.5);
+    expect(z * 3024 * 1.5).toBeLessThanOrEqual(600);
+  });
+
+  it("never returns zero, which would make the sheet vanish", () => {
+    expect(fitZoom({ width: 10, height: 10 }, { widthPt: 3024, heightPt: 2160 }, 1.5)).toBeGreaterThan(0);
+  });
+
+  it("falls back rather than dividing by nothing", () => {
+    expect(fitZoom({ width: 0, height: 0 }, { widthPt: 3024, heightPt: 2160 }, 1.5)).toBe(1);
+    expect(fitZoom({ width: 800, height: 600 }, { widthPt: 0, heightPt: 0 }, 1.5)).toBe(1);
   });
 });
 
