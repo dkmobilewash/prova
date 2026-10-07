@@ -20,7 +20,13 @@ import {
 import { saveTakeoffCalibration, saveTakeoffMeasurement, saveTakeoffMeasurements } from "@/lib/actions";
 import type { PlanSheet, PrintedScaleByPage, ScalePrefill, ScalePrefillByPage } from "@/lib/takeoff-plan-view";
 import { errorBandText, evidenceOrder, stepZoom, TOOLS, ZOOM_STEPS, type ToolId } from "@/lib/takeoff-plan-view";
-import { clusterByThickness, inchLabel, wallsFromStrokes, type WallCluster } from "@/lib/takeoff/wallVectors";
+import {
+  clusterByThickness,
+  inchLabel,
+  wallsFromStrokes,
+  wallsInTheBuilding,
+  type WallCluster,
+} from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 
 /**
@@ -366,7 +372,12 @@ export function TakeoffPlanViewer({
         x2: segment.x2 / pageSize.widthPt,
         y2: segment.y2 / pageSize.widthPt,
       }));
-      const walls = wallsFromStrokes(inUnits, { feetPerPoint: feetPerUnit });
+      const everywhere = wallsFromStrokes(inUnits, { feetPerPoint: feetPerUnit });
+      // ONLY THE ONES IN THE BUILDING. Without this the title block, the notes
+      // column, the sheet border and any detail drawn above the plan all come
+      // back as walls — see `wallsInTheBuilding`, which exists because somebody
+      // looked at the output rather than at its statistics.
+      const walls = wallsInTheBuilding(everywhere, feetPerUnit);
       setFound(clusterByThickness(walls));
     } catch {
       // The sheet is still on screen and the manual tools still work, so this

@@ -469,3 +469,115 @@ export function inchLabel(inches: number): string {
   const reduced = half % 2 === 0 ? `${half / 2}/${over / 2}` : `${half}/${over}`;
   return whole === 0 ? `${reduced}"` : `${whole}-${reduced}"`;
 }
+
+/**
+ * ── HOW FAR APART TWO RUNS CAN BE AND STILL BE THE SAME BUILDING, IN FEET ──
+ *
+ * MEASURED, by looking. At 6ft a real floor plan shattered into 46 pieces and
+ * the biggest held 49 of 203 runs — a corner of the offices, with the rest of
+ * the plan thrown away. Sweeping it: 12ft kept 132, 20ft kept 178, 30ft kept
+ * 186. It plateaus at 20, which is the number here.
+ *
+ * It has to be this generous because detected runs do not touch as often as a
+ * drawing suggests: a doorway, a cased opening, a corridor crossing or a wall
+ * the finder simply missed all leave a gap, and a plan is still one building
+ * across them. 20ft is wider than any of those and far narrower than the
+ * distance from a floor plan to the title block beside it.
+ */
+export const SAME_BUILDING_FEET = 20;
+
+/** Closest approach between two centrelines, point to segment. */
+function gapBetween(a: WallCandidate, b: WallCandidate): number {
+  const toSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lengthSquared = dx * dx + dy * dy;
+    if (lengthSquared === 0) return Math.hypot(px - x1, py - y1);
+    const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lengthSquared));
+    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+  };
+  return Math.min(
+    toSegment(a.x1, a.y1, b.x1, b.y1, b.x2, b.y2),
+    toSegment(a.x2, a.y2, b.x1, b.y1, b.x2, b.y2),
+    toSegment(b.x1, b.y1, a.x1, a.y1, a.x2, a.y2),
+    toSegment(b.x2, b.y2, a.x1, a.y1, a.x2, a.y2),
+  );
+}
+
+/**
+ * THE RUNS THAT BELONG TO THE BUILDING, AND NOT TO THE REST OF THE SHEET.
+ *
+ * ── WHY THIS EXISTS, AND IT IS NOT A REFINEMENT ──
+ *
+ * The finder had no idea WHERE on the sheet the drawing was. It read the whole
+ * page, so it returned the title block's ruled lines, the notes column, the
+ * sheet border, and the wall-section details printed above the plan — every one
+ * of them a real pair of parallel lines at a real spacing, and none of them a
+ * wall in this building.
+ *
+ * Nobody noticed from the numbers. The thicknesses looked right — clusters at
+ * 4.88", 4.92", 4.80" on three projects — and that was read as proof the result
+ * was real. It proves nothing: a drawing is full of parallel pairs at
+ * building-ish spacings, so some land on a partition thickness by arithmetic
+ * alone. The first person to LOOK at the output found it drawing nothing like
+ * the walls, and the fix only became obvious once there was a picture.
+ *
+ * ── THE IDEA ──
+ *
+ * A floor plan is ONE connected thing; everything else on the sheet is
+ * somewhere else. So the runs say where the plan is: join the ones near each
+ * other and keep the biggest group. Nothing here knows what a title block looks
+ * like or where a drawing is normally placed, which is why it survives a sheet
+ * laid out differently.
+ *
+ * Biggest by FOOTAGE rather than by count, because a dense notes column can
+ * out-count a building without out-measuring it.
+ *
+ * ── WHAT IT DOES NOT FIX, STATED BECAUSE IT IS VISIBLE IN THE SAME PICTURE ──
+ *
+ * Noise INSIDE the footprint survives, and on the sheet this was measured
+ * against that is five long lines down an apparatus bay — slab joints or a
+ * trench drain, which really are two parallel lines a wall-thickness apart.
+ * They are in the building, so they join the building. What saves an estimator
+ * there is the drawing itself: the bay is visibly empty, the lines are visibly
+ * not walls, and they are drawn on screen before anything is accepted.
+ */
+export function wallsInTheBuilding(
+  walls: readonly WallCandidate[],
+  feetPerPoint: number,
+  sameBuildingFeet = SAME_BUILDING_FEET,
+): WallCandidate[] {
+  if (walls.length === 0) return [];
+  const joinPoints = sameBuildingFeet / feetPerPoint;
+
+  const parent = walls.map((_, index) => index);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let i = 0; i < walls.length; i += 1) {
+    for (let j = i + 1; j < walls.length; j += 1) {
+      if (gapBetween(walls[i], walls[j]) <= joinPoints) {
+        const a = find(i);
+        const b = find(j);
+        if (a !== b) parent[a] = b;
+      }
+    }
+  }
+
+  const groups = new Map<number, WallCandidate[]>();
+  walls.forEach((wall, index) => {
+    const root = find(index);
+    const list = groups.get(root) ?? [];
+    list.push(wall);
+    groups.set(root, list);
+  });
+
+  let best: WallCandidate[] = [];
+  let bestFeet = -1;
+  for (const group of groups.values()) {
+    const feet = group.reduce((total, wall) => total + wall.lengthFeet, 0);
+    if (feet > bestFeet) {
+      bestFeet = feet;
+      best = group;
+    }
+  }
+  return best;
+}
