@@ -233,6 +233,45 @@ export type ScaleVerdict =
 const LABEL_OFFSET_PT = 30;
 const LABEL_CENTRING = 0.3;
 
+/**
+ * ── A BROKEN DIMENSION LINE: THE RIGHT MECHANISM, AND PAIRING ACROSS IT MADE
+ * THINGS WORSE. MEASURED, TWICE. DO NOT REBUILD IT WITHOUT READING THIS. ──
+ *
+ * CAD does not draw a dimension line THROUGH its own numerals. It breaks it:
+ *
+ *     |————————  113'-0"  ————————|
+ *
+ * So the label sits at the INNER END of each half and never near either half's
+ * middle, which the centring rule above rejects. That is a real description of
+ * a real convention, and page 47 of a real 76-page bid set proves the halves are
+ * all there is: a `113'-0"` dimension needs a 1017pt line at that sheet's stated
+ * 1/8", **no segment on the page is 1017pt, and the longest anything on it is
+ * 894pt.**
+ *
+ * It followed that rejoining the halves would rescue the 16 sheets of that set
+ * which print a scale this finds nothing for. IT DID NOT. Both attempts went
+ * BACKWARDS against the 9 sheets the centring rule alone reads:
+ *
+ *   | pairing                                    | sheets read |
+ *   | ------------------------------------------ | ----------- |
+ *   | centring only — what ships                 | **9**       |
+ *   | + rejoin halves across the gap             | 3           |
+ *   | + require the gap to match the lettering   | 7           |
+ *
+ * The extra candidates scatter the vote until no scale wins its margin, so the
+ * cost falls on sheets that WORKED. The margin rule is doing its job — it
+ * declines rather than guessing — and the honest reading is that the broken-line
+ * halves do not carry enough signal to name a scale, not that one more
+ * constraint would have found it. Requiring the gap to match the label's own
+ * width is the tightest constraint the geometry offers and it recovered two of
+ * the six lost sheets, nothing more.
+ *
+ * So the 16 remain unexplained by this. What is now KNOWN is that they are not
+ * fixed here, which is worth more than the two days somebody would otherwise
+ * spend rediscovering it. `DimensionLabel` deliberately no longer carries the
+ * lettering width that attempt needed.
+ */
+
 /** The shortest segment worth considering, in points. Below this the rounding in
  *  a printed dimension dominates whatever it would imply. */
 const MIN_SEGMENT_PT = 8;

@@ -73,6 +73,36 @@ const DIMENSION = /^\d{1,3}'\s*-?\s*(?:\d{1,2}(?:\s+\d{1,2}\/\d{1,2})?\s*"?)?$/;
 const MAX_PLAUSIBLE_FEET = 400;
 
 /**
+ * ── BARE FEET ARE OFTEN ELEVATIONS, AND REQUIRING THE INCHES CHANGES NOTHING.
+ * MEASURED. DO NOT SPEND AN AFTERNOON HERE. ──
+ *
+ * Two sheets of a real bid set found 28 and 18 "dimensions" and still declined,
+ * which looked like the vote failing. It was not. Their labels were
+ * `100'  113'  121'  111'`, each repeated three or four times — **spot
+ * ELEVATIONS above datum**, not lengths of anything, and not beside a dimension
+ * line at all. So pairing them produces noise, and the one sheet whose labels
+ * were ALL of that form correctly reported that nothing matched a standard
+ * scale.
+ *
+ * A real dimension on these sheets is written `8'-0"` — an architect states the
+ * inches even when they are zero — so making the inches REQUIRED would drop the
+ * elevations and keep the dimensions. That was tried, on all 78 real pages
+ * available:
+ *
+ *   | pattern                     | bid set | SCHD | Augusta |
+ *   | --------------------------- | ------- | ---- | ------- |
+ *   | inches optional — what ships| 9 read  | 1/8" | 1/4"    |
+ *   | inches REQUIRED             | 9 read  | 1/8" | 1/4"    |
+ *
+ * Byte-identical. The elevations were never what stopped those two sheets: one
+ * has three real dimensions and three cannot outvote anything, and the other has
+ * none at all once they are excluded. So the diagnosis is right and it is not a
+ * lever, and the change was reverted rather than kept for tidiness — `2'` does
+ * appear as a genuine dimension on detail sheets, so requiring inches would cost
+ * something eventually for a gain measured at zero.
+ */
+
+/**
  * Every printed dimension on a page, positioned in the same points
  * `sheetStrokes.ts` reports — which is the only reason the two can be compared.
  *
