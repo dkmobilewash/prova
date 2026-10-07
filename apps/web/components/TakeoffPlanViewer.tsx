@@ -19,7 +19,7 @@ import {
 } from "@/lib/takeoff-plan";
 import { saveTakeoffCalibration, saveTakeoffMeasurement, saveTakeoffMeasurements } from "@/lib/actions";
 import type { PlanSheet, PrintedScaleByPage, ScalePrefill, ScalePrefillByPage } from "@/lib/takeoff-plan-view";
-import { errorBandText, evidenceOrder, TOOLS, type ToolId } from "@/lib/takeoff-plan-view";
+import { errorBandText, evidenceOrder, stepZoom, TOOLS, ZOOM_STEPS, type ToolId } from "@/lib/takeoff-plan-view";
 import { clusterByThickness, inchLabel, wallsFromStrokes, type WallCluster } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 
@@ -56,7 +56,37 @@ const EMPTY: Draft = { xs: [], ys: [] };
  * sheet on a laptop without asking pdf.js to rasterise a 42-inch drawing at
  * full resolution on first paint. */
 const BASE_SCALE = 1.5;
-const ZOOM_STEPS = [0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8];
+
+/**
+ * ── THE BOTTOM OF THIS LIST USED TO BE 0.5, AND A WHOLE SHEET DID NOT FIT ──
+ *
+ * These multiply `BASE_SCALE`, so the old floor of 0.5 rendered at 0.75 of full
+ * size — on a 42-inch ARCH E sheet that is 3,024pt × 0.75 ≈ 2,270 CSS px, wider
+ * than the viewport it sits in. The control said "50%" and the drawing still
+ * ran off the edge, with no way to go further out. Reported from a real plan
+ * set on 2026-10-07: "the area that displays the plans is too small and cuts
+ * off most of the plans even when you zoom all the way out to 50%".
+ *
+ * The percentage shown is this number, not the render scale, which is why 50%
+ * was never half of anything.
+ */
+
+
+/**
+ * FIT, which is what somebody actually wants on a 42-inch sheet.
+ *
+ * Steps alone do not solve it: the right zoom for a whole sheet depends on the
+ * sheet's size AND the window's, so no fixed list contains it. This computes
+ * the exact scale that puts the full width in view, and it is a MODE rather
+ * than a step for that reason — resizing the window keeps it fitted.
+ *
+ * Sheets are landscape and far wider than tall, so width is the binding
+ * dimension; fitting height as well would shrink a 42×30 to the point of
+ * uselessness on a laptop.
+ */
+const FIT = "fit" as const;
+type Zoom = number | typeof FIT;
+
 
 export function TakeoffPlanViewer({
   jobId,
@@ -83,7 +113,9 @@ export function TakeoffPlanViewer({
 }) {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState<number | null>(null);
-  const [zoomIndex, setZoomIndex] = useState(2);
+  // FIT by default. A sheet opens showing all of itself, which is what
+  // somebody opening a drawing wants to see first; they zoom IN to measure.
+  const [zoom, setZoom] = useState<Zoom>(FIT);
   const [tool, setTool] = useState<ToolId>("pan");
 
   // ── FOUND WALLS ──
@@ -102,6 +134,10 @@ export function TakeoffPlanViewer({
   /** The page box, straight from the viewer — the ONLY place this number is
    * ever produced. Posted with a calibration so the scale can be named. */
   const [pageSize, setPageSize] = useState<{ widthPt: number; heightPt: number } | null>(null);
+  /** The scrolling box the sheet sits in — measured, so FIT knows what it is
+   *  fitting into. */
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const [frameWidth, setFrameWidth] = useState(0);
   const [cssWidth, setCssWidth] = useState(0);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -157,6 +193,32 @@ export function TakeoffPlanViewer({
     };
   }, [planId]);
 
+  // ── What FIT is fitting into ──────────────────────────────────────────
+  //
+  // Watched rather than read once: the sheet should stay fitted when the window
+  // changes, and a sidebar opening or the browser being resized both change
+  // this without any render of ours.
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const measure = () => setFrameWidth(frame.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, []);
+
+  /** The multiplier in force, with FIT resolved against the measured frame.
+   *  Falls back to the old default until the frame has been measured, so the
+   *  first paint is never a divide by zero. */
+  const zoomFactor = useMemo(() => {
+    if (zoom !== FIT) return zoom;
+    if (!pageSize || frameWidth === 0) return 1;
+    // 24px for the scrollbar and the container's own padding, so "fit" does not
+    // leave a horizontal scrollbar that makes it look like it did not work.
+    return Math.max(0.05, (frameWidth - 24) / (pageSize.widthPt * BASE_SCALE));
+  }, [zoom, pageSize, frameWidth]);
+
   // ── Render the current page at the current zoom ───────────────────────
   useEffect(() => {
     const doc = docRef.current;
@@ -181,7 +243,7 @@ export function TakeoffPlanViewer({
         setPageSize({ widthPt: unit.width, heightPt: unit.height });
 
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const scale = BASE_SCALE * ZOOM_STEPS[zoomIndex];
+        const scale = BASE_SCALE * zoomFactor;
         const viewport = page.getViewport({ scale: scale * dpr });
         canvas.width = Math.round(viewport.width);
         canvas.height = Math.round(viewport.height);
@@ -208,7 +270,7 @@ export function TakeoffPlanViewer({
     return () => {
       cancelled = true;
     };
-  }, [pageNumber, zoomIndex, pageCount]);
+  }, [pageNumber, zoomFactor, pageCount]);
 
   // Changing page or tool abandons a half-drawn shape rather than carrying
   // points from one sheet onto another.
@@ -389,23 +451,45 @@ export function TakeoffPlanViewer({
 
         <span className="mx-1 h-4 w-px bg-line-card" aria-hidden />
 
+        {/* ── ZOOM, WITH FIT AS A FIRST-CLASS SETTING ──
+
+            − and + step through `ZOOM_STEPS`. From FIT they step off the
+            CURRENT rendered size rather than jumping to a remembered index, so
+            pressing − on a fitted 42-inch sheet makes it a little smaller
+            instead of suddenly enormous. */}
         <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={() => setZoomIndex((i) => Math.max(0, i - 1))}
-            disabled={zoomIndex === 0}
+            onClick={() => setZoom(stepZoom(zoomFactor, -1))}
+            disabled={zoom !== FIT && zoomFactor <= ZOOM_STEPS[0]}
+            aria-label="Zoom out"
             className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-40"
           >
             −
           </button>
-          <span className="w-12 text-center text-xs text-ink-muted">{Math.round(ZOOM_STEPS[zoomIndex] * 100)}%</span>
+          <span className="w-12 text-center text-xs text-ink-muted" data-takeoff="zoom">
+            {Math.round(zoomFactor * 100)}%
+          </span>
           <button
             type="button"
-            onClick={() => setZoomIndex((i) => Math.min(ZOOM_STEPS.length - 1, i + 1))}
-            disabled={zoomIndex === ZOOM_STEPS.length - 1}
+            onClick={() => setZoom(stepZoom(zoomFactor, 1))}
+            disabled={zoom !== FIT && zoomFactor >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
+            aria-label="Zoom in"
             className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-40"
           >
             +
+          </button>
+          <button
+            type="button"
+            onClick={() => setZoom(FIT)}
+            data-takeoff="fit"
+            className={`ml-1 rounded-md border px-2 py-1 text-xs ${
+              zoom === FIT
+                ? "border-tag-amber-ink text-tag-amber-ink"
+                : "border-line-card text-ink-label hover:bg-neutral-800"
+            }`}
+          >
+            Fit
           </button>
         </div>
 
@@ -441,17 +525,33 @@ export function TakeoffPlanViewer({
             building ("thinner than 2-1/2in is not a wall"), so without a scale
             there is no feet-per-unit and every bound means nothing. Same guard
             the measuring tools already carry, for the same reason. */}
-        {calibration && (
-          <button
-            type="button"
-            onClick={onFindWalls}
-            disabled={finding}
-            data-takeoff="find-walls"
-            className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-50"
-          >
-            {finding ? "Reading the lines…" : "Find the walls"}
-          </button>
-        )}
+        {/* ── SHOWN DISABLED WITHOUT A SCALE, NOT HIDDEN ──
+
+            The gate itself is structural and unchanged: `wallVectors` asks "is
+            this thinner than 2-1/2in", so without a calibration there is no
+            feet-per-point and every bound in it means nothing.
+
+            HIDING it was the mistake, and it was reported the day it shipped —
+            somebody opened a sheet, went looking for the button they had been
+            told about, and found nothing. No error, no explanation, just an
+            absence, which reads as "this feature does not exist" rather than
+            "this sheet needs a scale first". Three separate defects this week
+            have had that shape; a capability nobody can see is a capability
+            nobody has.
+
+            So it is on the toolbar either way, and `title` says what is in the
+            way. The measuring tools beside it already take exactly this
+            posture — disabled until the sheet is calibrated, never hidden. */}
+        <button
+          type="button"
+          onClick={onFindWalls}
+          disabled={finding || !calibration}
+          data-takeoff="find-walls"
+          title={calibration ? undefined : "Set the scale on this sheet first — wall thickness is measured in feet of building."}
+          className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
+        >
+          {finding ? "Reading the lines…" : "Find the walls"}
+        </button>
 
         <span className="ml-auto text-xs text-ink-muted">
           {calibration ? (
@@ -554,6 +654,7 @@ export function TakeoffPlanViewer({
 
       {/* ── The sheet ─────────────────────────────────────────────── */}
       <div
+        ref={frameRef}
         className="relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-neutral-900"
         data-testid="takeoff-plan-port"
       >
