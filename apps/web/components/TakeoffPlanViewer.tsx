@@ -379,8 +379,8 @@ export function TakeoffPlanViewer({
                   x2={calibration.x2}
                   y2={calibration.y2}
                   stroke="#f0b429"
-                  strokeWidth={0.003}
-                  strokeDasharray="0.01 0.006"
+                  strokeWidth={STROKE_PX}
+                  strokeDasharray={`${STROKE_PX * 4} ${STROKE_PX * 2.5}`}
                   vectorEffect="non-scaling-stroke"
                 />
               )}
@@ -506,7 +506,16 @@ function Shape({
     );
   }
   if (kind === "AREA" && !open) {
-    return <polygon points={points} fill={colour} fillOpacity={0.18} stroke={colour} strokeWidth={0.002} vectorEffect="non-scaling-stroke" />;
+    return (
+      <polygon
+        points={points}
+        fill={colour}
+        fillOpacity={0.18}
+        stroke={colour}
+        strokeWidth={STROKE_PX}
+        vectorEffect="non-scaling-stroke"
+      />
+    );
   }
   return (
     <g>
@@ -515,7 +524,7 @@ function Shape({
         fill={kind === "AREA" ? colour : "none"}
         fillOpacity={kind === "AREA" ? 0.12 : 0}
         stroke={colour}
-        strokeWidth={0.002}
+        strokeWidth={STROKE_PX}
         vectorEffect="non-scaling-stroke"
       />
       {xs.map((x, i) => (
@@ -570,9 +579,18 @@ function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => vo
               figure with nothing to look at, and that is their decision to make
               knowingly. */}
           Nothing measurable on this sheet confirms it —{" "}
+          {/* "DID NOT AGREE" WAS THE WRONG WORD FOR THE COMMON CASE, and a
+              click-through caught it: a sheet with 2 printed dimensions cannot
+              agree on anything, because three are needed before a scale is
+              taken seriously. Saying they disagreed invites somebody to go
+              looking for a contradiction that is not there — and on the sheet
+              that reported it, one of the two measured correctly. */}
           {prefill.considered === 0
             ? "no printed dimensions could be read here"
-            : `its ${prefill.considered} printed dimension${prefill.considered === 1 ? "" : "s"} did not agree on a scale`}
+            : prefill.considered < 3
+              ? `only ${prefill.considered} printed dimension${prefill.considered === 1 ? "" : "s"} could be read, ` +
+                `too few to confirm a scale from`
+              : `its ${prefill.considered} printed dimensions did not settle on one scale`}
           . Using it sets the scale from the printed figure alone.
         </p>
         <button
@@ -618,6 +636,29 @@ function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => vo
   );
 }
 
+/**
+ * STROKE WIDTH IN SCREEN PIXELS, because `vectorEffect="non-scaling-stroke"`
+ * means that is the unit — and these lines were set to 0.002 of one.
+ *
+ * Found by a click-through of the prefill: the two end dots rendered on the
+ * drawing and **the line between them did not**. The dots are plain circles
+ * with `r={0.004}` in the viewBox's own units, so they scale and show. Every
+ * stroked line carries `non-scaling-stroke`, which makes its width a count of
+ * device pixels rather than user units — so `0.002` asked for two thousandths
+ * of a pixel.
+ *
+ * The pairing was incoherent under either reading, which is what makes this a
+ * defect rather than a taste: if the vector effect applies, the line is
+ * invisible; if it did not apply, the effect was pointless. 2 is the width that
+ * matches the intent the attribute was reaching for.
+ *
+ * This is NOT specific to the prefill — the same renderer draws every
+ * hand-clicked draft and every posted measurement, so it was always this thin.
+ * Nothing in this repo could have caught it: the screen suite renders in
+ * happy-dom, which does no layout.
+ */
+const STROKE_PX = 2;
+
 function CalibrationForm({
   jobId,
   planId,
@@ -642,6 +683,25 @@ function CalibrationForm({
   onSaved: () => void;
 }) {
   const [typed, setTyped] = useState("");
+  /**
+   * WHY THIS SCALE IS THE RIGHT ONE, and it has to survive the save.
+   *
+   * `TakeoffScaleCalibration.note` is described in the schema as "the one thing
+   * here that records WHY this scale is the right one". Until now the prefill
+   * filled the distance and left this empty, so once a scale was accepted
+   * NOTHING recorded where it came from — a scale read off the title block,
+   * which nothing on the sheet confirms, became indistinguishable from one
+   * matched against five printed dimensions. A click-through caught it: *"the
+   * toolbar doesn't show which way the scale was set."*
+   *
+   * That matters beyond tidiness. If a bid is ever questioned, "this came from
+   * the printed figure alone" is the sentence somebody needs, and it is the one
+   * sentence the estimator cannot reconstruct a week later.
+   *
+   * Still editable, because it is the estimator's own note and they may know
+   * more than the app does.
+   */
+  const [note, setNote] = useState("");
 
   const preview = useMemo(() => {
     if (!draft) return null;
@@ -659,6 +719,16 @@ function CalibrationForm({
             prefill={prefill}
             onUse={() => {
               onUsePrefill(prefill.xs, prefill.ys);
+              // The provenance, in words, so it survives the save — see `note`
+              // above for why that is not cosmetic.
+              setNote(
+                prefill.unconfirmed
+                  ? `From the ${prefill.scaleName} printed on this sheet. Nothing measurable on the sheet ` +
+                    `confirmed it.`
+                  : `Matched ${prefill.agreed.length} printed dimension${prefill.agreed.length === 1 ? "" : "s"}` +
+                    ` on this sheet (${prefill.agreed.slice(0, 3).join(", ")}), within ` +
+                    `${(prefill.inheritedError * 100).toFixed(2)}%.`,
+              );
               // A PRINTED scale's `declaredText` is the scale NAME, not a
               // distance, so typing it into the distance box would be nonsense.
               // The figure there is what the printed scale says the sheet's own
@@ -716,6 +786,8 @@ function CalibrationForm({
           What you measured (optional)
           <input
             name="note"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
             placeholder="24'-0&quot; column grid"
             className="w-52 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
           />

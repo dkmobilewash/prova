@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ARCHITECTURAL_SCALES,
   ENGINEERING_SCALES,
+  readSheetScale,
   scaleCandidates,
   scaleFromDimensions,
   type DimensionLabel,
@@ -17,6 +18,18 @@ import type { StrokeSegment } from "./wallVectors";
  * of building is 9 points, so an 11ft dimension is a 99pt line — the figures in
  * these cases are the figures a real sheet produced.
  */
+
+/**
+ * A NOTIONAL PAGE SMALL ENOUGH THAT THE SPAN FLOOR IS NOT THE SUBJECT.
+ *
+ * `scaleFromDimensions` derives its shortest-proposable line from
+ * `pageWidthPt * MIN_CALIBRATION_SPAN`, and most cases here are about the vote,
+ * the pairing or a refusal rather than about length — their dimensions are 54 to
+ * 270 points because that is what a real sheet's lettering produces. A 400pt
+ * page puts the floor at 20pt, below all of them, so each case tests what it is
+ * named for. The suite that IS about the floor passes a real ARCH E1 width.
+ */
+const ANY_PAGE = { pageWidthPt: 400 };
 
 /** A horizontal dimension line `lenPt` long at (x, y), with its label on it. */
 function dimension(x: number, y: number, lenPt: number, text: string, feet: number) {
@@ -46,7 +59,7 @@ describe("every architectural scale is read back exactly", () => {
   for (const scale of ARCHITECTURAL_SCALES) {
     it(`reads ${scale.name}`, () => {
       const { segments, labels } = sheetAt(scale.feetPerInch, 6);
-      const verdict = scaleFromDimensions(labels, segments);
+      const verdict = scaleFromDimensions(labels, segments, ANY_PAGE);
       expect(verdict.ok, `declined: ${verdict.ok ? "" : verdict.reason}`).toBe(true);
       if (!verdict.ok) return;
       expect(verdict.scaleName).toBe(scale.name);
@@ -59,7 +72,7 @@ describe("every architectural scale is read back exactly", () => {
 describe("the proposal it hands back is a real line and a real printed distance", () => {
   it("returns the pair, not a bare factor — which is the whole reason this is allowed to exist", () => {
     const { segments, labels } = sheetAt(8, 5);
-    const verdict = scaleFromDimensions(labels, segments);
+    const verdict = scaleFromDimensions(labels, segments, ANY_PAGE);
     expect(verdict.ok).toBe(true);
     if (!verdict.ok) return;
     // A line with two real endpoints…
@@ -84,6 +97,7 @@ describe("the proposal it hands back is a real line and a real printed distance"
     const verdict = scaleFromDimensions(
       [exact.label, { ...sloppy.label, text: `11' - 0" (b)` }, third.label],
       [exact.segment, sloppy.segment, third.segment],
+      ANY_PAGE,
     );
     expect(verdict.ok).toBe(true);
     if (!verdict.ok) return;
@@ -100,7 +114,7 @@ describe("a mis-paired label is outvoted, not trusted", () => {
     // nearest line is wrong.
     const { segments, labels } = sheetAt(8, 5);
     const wrong = dimension(200, 1900, 36, `4' - 6"`, 4.5); // 36pt is 4.00ft at 1/8"
-    const verdict = scaleFromDimensions([...labels, wrong.label], [...segments, wrong.segment]);
+    const verdict = scaleFromDimensions([...labels, wrong.label], [...segments, wrong.segment], ANY_PAGE);
     expect(verdict.ok).toBe(true);
     if (!verdict.ok) return;
     expect(verdict.scaleName).toBe('1/8" = 1\'-0"');
@@ -110,7 +124,7 @@ describe("a mis-paired label is outvoted, not trusted", () => {
 
 describe("what it REFUSES, which is most of the value", () => {
   it("refuses a sheet with no dimensions at all", () => {
-    const verdict = scaleFromDimensions([], [{ x1: 0, y1: 0, x2: 100, y2: 0 }]);
+    const verdict = scaleFromDimensions([], [{ x1: 0, y1: 0, x2: 100, y2: 0 }], ANY_PAGE);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.reason).toMatch(/No printed dimensions/);
@@ -118,7 +132,7 @@ describe("what it REFUSES, which is most of the value", () => {
 
   it("refuses when only ONE dimension agrees — it agrees with itself", () => {
     const one = dimension(200, 200, 99, `11' - 0"`, 11);
-    const verdict = scaleFromDimensions([one.label], [one.segment]);
+    const verdict = scaleFromDimensions([one.label], [one.segment], ANY_PAGE);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.reason).toMatch(/too few/);
@@ -126,14 +140,14 @@ describe("what it REFUSES, which is most of the value", () => {
 
   it("refuses TWO agreeing dimensions, because one mis-pairing could be either of them", () => {
     const { segments, labels } = sheetAt(8, 2);
-    const verdict = scaleFromDimensions(labels, segments);
+    const verdict = scaleFromDimensions(labels, segments, ANY_PAGE);
     expect(verdict.ok).toBe(false);
   });
 
   it("refuses dimensions that match no standard scale", () => {
     // 7.3 ft per inch is not a scale anybody prints.
     const { segments, labels } = sheetAt(7.3, 6);
-    const verdict = scaleFromDimensions(labels, segments);
+    const verdict = scaleFromDimensions(labels, segments, ANY_PAGE);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.reason).toMatch(/do not match any standard/);
@@ -147,6 +161,7 @@ describe("what it REFUSES, which is most of the value", () => {
     const verdict = scaleFromDimensions(
       [...plan.labels, ...detail.labels.map((l, i) => ({ ...l, text: `d${i}:${l.text}`, y: l.y + 4000 }))],
       [...plan.segments, ...detail.segments.map((s) => ({ ...s, y1: s.y1 + 4000, y2: s.y2 + 4000 }))],
+      ANY_PAGE,
     );
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
@@ -160,7 +175,7 @@ describe("what it REFUSES, which is most of the value", () => {
       { text: `9' - 0"`, feet: 9, x: 200, y: 200 },
       { text: `6' - 0"`, feet: 6, x: 300, y: 300 },
     ];
-    const verdict = scaleFromDimensions(labels, [{ x1: 2000, y1: 2000, x2: 2099, y2: 2000 }]);
+    const verdict = scaleFromDimensions(labels, [{ x1: 2000, y1: 2000, x2: 2099, y2: 2000 }], ANY_PAGE);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.reason).toMatch(/not beside any line/);
@@ -169,7 +184,7 @@ describe("what it REFUSES, which is most of the value", () => {
   it("refuses a dimension of zero or negative feet rather than dividing by it", () => {
     const { segments, labels } = sheetAt(8, 5);
     const bad: DimensionLabel = { text: `0' - 0"`, feet: 0, x: 200, y: 200 };
-    const verdict = scaleFromDimensions([...labels, bad], segments);
+    const verdict = scaleFromDimensions([...labels, bad], segments, ANY_PAGE);
     expect(verdict.ok).toBe(true);
     if (!verdict.ok) return;
     expect(verdict.agreed).not.toContain(`0' - 0"`);
@@ -181,7 +196,7 @@ describe("the engineering scales are excluded, and that is load-bearing", () => 
     // 1" = 20' is 1.25x from 1/16", so a reader voting over all nineteen scales
     // could land either side of it. This product takes off architectural sheets.
     const { segments, labels } = sheetAt(20, 6);
-    const verdict = scaleFromDimensions(labels, segments);
+    const verdict = scaleFromDimensions(labels, segments, ANY_PAGE);
     expect(verdict.ok).toBe(false);
   });
 
@@ -189,7 +204,7 @@ describe("the engineering scales are excluded, and that is load-bearing", () => 
     // The tightest collision in the full nineteen, and the reason this module
     // votes over twelve. 3/32" must still be readable on its own.
     const { segments, labels } = sheetAt(32 / 3, 6);
-    const verdict = scaleFromDimensions(labels, segments);
+    const verdict = scaleFromDimensions(labels, segments, ANY_PAGE);
     expect(verdict.ok).toBe(true);
     if (!verdict.ok) return;
     expect(verdict.scaleName).toBe('3/32" = 1\'-0"');
@@ -288,7 +303,7 @@ describe("the error band it reports is the error it has", () => {
     // Five exact dimensions and one 1% out. The exact ones win the vote; the
     // pair stored is an exact one, so the band is ~0.
     const { segments, labels } = sheetAt(8, 5);
-    const verdict = scaleFromDimensions(labels, segments);
+    const verdict = scaleFromDimensions(labels, segments, ANY_PAGE);
     expect(verdict.ok).toBe(true);
     if (!verdict.ok) return;
     expect(verdict.inheritedError).toBeLessThan(0.0005);
@@ -307,7 +322,7 @@ describe("the error band it reports is the error it has", () => {
       segments.push(d.segment);
       labels.push(d.label);
     }
-    const verdict = scaleFromDimensions(labels, segments);
+    const verdict = scaleFromDimensions(labels, segments, ANY_PAGE);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.reason).toMatch(/out — enough to move every quantity/);
@@ -322,6 +337,7 @@ describe("the error band it reports is the error it has", () => {
     const verdict = scaleFromDimensions(
       [short.label, long.label, third.label],
       [short.segment, long.segment, third.segment],
+      ANY_PAGE,
     );
     expect(verdict.ok).toBe(true);
     if (!verdict.ok) return;
@@ -387,7 +403,7 @@ describe("a sheet with line work and no readable dimensions", () => {
   }
 
   it("SAYS THE LETTERING IS LINE WORK rather than that there are no dimensions", () => {
-    const verdict = scaleFromDimensions([], lineWork(3000));
+    const verdict = scaleFromDimensions([], lineWork(3000), ANY_PAGE);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.reason).toMatch(/plenty of line work/);
@@ -400,7 +416,7 @@ describe("a sheet with line work and no readable dimensions", () => {
     // sentence checkable against the drawing in front of somebody.
     const a = dimension(200, 200, 99, `3' - 5"`, 3.4167);
     const b = dimension(900, 900, 99, `3' - 4"`, 3.3333);
-    const verdict = scaleFromDimensions([a.label, b.label], [...lineWork(3000), a.segment, b.segment]);
+    const verdict = scaleFromDimensions([a.label, b.label], [...lineWork(3000), a.segment, b.segment], ANY_PAGE);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.reason).toMatch(/only 2 printed dimensions/);
@@ -409,14 +425,14 @@ describe("a sheet with line work and no readable dimensions", () => {
   it("uses the PLAIN sentence on a page that genuinely has nothing on it", () => {
     // A cover sheet is not a sheet whose text was outlined, and telling somebody
     // its lettering was flattened would be a confident wrong explanation.
-    const verdict = scaleFromDimensions([], []);
+    const verdict = scaleFromDimensions([], [], ANY_PAGE);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.reason).toBe("No printed dimensions were found on this sheet.");
   });
 
   it("uses the plain sentence when there is a little line work and no dimensions", () => {
-    const verdict = scaleFromDimensions([], lineWork(50));
+    const verdict = scaleFromDimensions([], lineWork(50), ANY_PAGE);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.reason).toMatch(/No printed dimensions were found/);
@@ -426,7 +442,161 @@ describe("a sheet with line work and no readable dimensions", () => {
     // The real sheets carry 23,000 to 168,000 segments and read perfectly well.
     // This sentence must never appear on a sheet that worked.
     const { segments, labels } = sheetAt(8, 6);
-    const verdict = scaleFromDimensions(labels, [...segments, ...lineWork(5000)]);
+    const verdict = scaleFromDimensions(labels, [...segments, ...lineWork(5000)], ANY_PAGE);
     expect(verdict.ok).toBe(true);
+  });
+});
+
+/**
+ * A LINE THE APP WILL NOT SAVE IS NOT AN OFFER.
+ *
+ * Found by clicking the shipped feature on a real sheet: it proposed
+ * `5' - 9 1/4"`, whose line is 0.0344 of the page, and then refused its own
+ * suggestion — *"That line is too short to set a scale from"* — leaving the
+ * estimator unable to finish. `MIN_CALIBRATION_SPAN` is 0.05 and is enforced
+ * twice, including in `feetPerPageWidth`, which runs on every later page load:
+ * a line stored under the floor would leave the sheet permanently unmeasurable.
+ * So the floor cannot be relaxed here, and a line under it must never be
+ * proposed.
+ */
+describe("only a line the app would accept is proposed", () => {
+  /** A real ARCH E1 sheet: 3024pt wide, so the floor sits at 151.2pt. This
+   *  suite IS about length, so it passes the width a real sheet has. */
+  const FLOOR = { pageWidthPt: 3024 };
+
+  it("PROPOSES THE LONG DIMENSION and ignores the short ones", () => {
+    // Six dimensions: five short (54-99pt) and one long (180pt). The short ones
+    // still VOTE — a short dimension is evidence of the scale — but only the
+    // long one can be stored.
+    const segments: StrokeSegment[] = [];
+    const labels: DimensionLabel[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const feet = 6 + i;
+      const d = dimension(200, 200 + i * 300, feet * 9, `${feet}' - 0"`, feet);
+      segments.push(d.segment);
+      labels.push(d.label);
+    }
+    const long = dimension(200, 2000, 20 * 9, `20' - 0"`, 20);
+    segments.push(long.segment);
+    labels.push(long.label);
+
+    const verdict = scaleFromDimensions(labels, segments, FLOOR);
+    expect(verdict.ok).toBe(true);
+    if (!verdict.ok) return;
+    // The vote used all six…
+    expect(verdict.agreed).toHaveLength(6);
+    // …and the proposal is the only one long enough to save.
+    expect(verdict.best.declaredFeet).toBe(20);
+    expect(Math.hypot(verdict.best.x2 - verdict.best.x1, verdict.best.y2 - verdict.best.y1)).toBeGreaterThanOrEqual(
+      3024 * 0.05,
+    );
+  });
+
+  it("DECLINES, SAYING WHAT THE SCALE IS, when every line is too short", () => {
+    // The real sheet's case. It knows the scale and cannot calibrate from it,
+    // and those are different facts — so the sentence names the scale, because
+    // an estimator can act on that: click a long dimension and check the
+    // readback says the same.
+    const { segments, labels } = sheetAt(8, 6, 5);
+    const verdict = scaleFromDimensions(labels, segments, FLOOR);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.reason).toContain('1/8" = 1\'-0"');
+    expect(verdict.reason).toMatch(/too short a line to set a scale from/);
+    expect(verdict.reason).toMatch(/Click along a long dimension/);
+  });
+
+  it("does not call that a disagreement, because the dimensions DID agree", () => {
+    const { segments, labels } = sheetAt(8, 6, 5);
+    const verdict = scaleFromDimensions(labels, segments, FLOOR);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.reason).not.toMatch(/two different scales|do not match any standard/);
+  });
+
+  it("proposes anything when no floor is given, which is what the pure tests want", () => {
+    const { segments, labels } = sheetAt(8, 6, 5);
+    expect(scaleFromDimensions(labels, segments, ANY_PAGE).ok).toBe(true);
+  });
+
+  it("still refuses on ERROR before it ever gets to length", () => {
+    // A sheet whose lines are long enough but 1% out must still decline on the
+    // error cap — the two guards are independent and both have to hold.
+    const segments: StrokeSegment[] = [];
+    const labels: DimensionLabel[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const feet = 20 + i * 2;
+      const d = dimension(200, 200 + i * 300, feet * 9 * 1.01, `${feet}' - 0"`, feet);
+      segments.push(d.segment);
+      labels.push(d.label);
+    }
+    const verdict = scaleFromDimensions(labels, segments, FLOOR);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.reason).toMatch(/out — enough to move every quantity/);
+  });
+});
+
+/**
+ * THE ONE ENTRY POINT, and the reason it is one.
+ *
+ * The ingest stage and `scaleAudit.ts` each used to call
+ * `scaleFromDimensions` with their own page width, and a mutation setting either
+ * to zero evaporated the span floor with every test still green. The audit's was
+ * the worse one: an audit that does not apply the product's floor reports
+ * coverage an estimator cannot reach.
+ *
+ * No parameter fixes two call sites. `readSheetScale` takes the width FROM THE
+ * PAGE, so there is nothing to pass and nothing to forget — and these tests are
+ * what hold that, because the next person's instinct will be to pass a width
+ * again.
+ */
+describe("readSheetScale takes the floor from the page itself", () => {
+  const page = (widthPt: number) => ({ widthPt, items: [] as const });
+
+  it("DECLINES short dimensions on a real sheet width", () => {
+    // 6ft to 16ft at 1/8" is 54pt to 144pt, all under an ARCH E1 floor of
+    // 151.2pt. This is the real sheet's case, and the sheet's own width is the
+    // only thing that decides it.
+    const { segments, labels } = sheetAt(8, 6, 6);
+    const verdict = readSheetScale(page(3024), segments, labels);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.reason).toMatch(/too short a line to set a scale from/);
+  });
+
+  it("accepts the SAME dimensions on a page small enough that they clear it", () => {
+    // Nothing about the dimensions changed — only the page. That is the whole
+    // of what this function does, stated as a pair.
+    const { segments, labels } = sheetAt(8, 6, 6);
+    const verdict = readSheetScale(page(400), segments, labels);
+    expect(verdict.ok).toBe(true);
+    if (!verdict.ok) return;
+    expect(verdict.scaleName).toBe('1/8" = 1\'-0"');
+  });
+
+  it("proposes only a line that clears the page's own floor", () => {
+    const short = sheetAt(8, 5, 6);
+    const long = dimension(200, 3000, 40 * 9, `40' - 0"`, 40);
+    const verdict = readSheetScale(
+      page(3024),
+      [...short.segments, long.segment],
+      [...short.labels, long.label],
+    );
+    expect(verdict.ok).toBe(true);
+    if (!verdict.ok) return;
+    expect(verdict.best.declaredFeet).toBe(40);
+    expect(Math.hypot(verdict.best.x2 - verdict.best.x1, verdict.best.y2 - verdict.best.y1)).toBeGreaterThanOrEqual(
+      3024 * 0.05,
+    );
+  });
+
+  it("applies NO floor for a width of zero, and says so by declining nothing", () => {
+    // A page with no width is a fact about a broken read, not a reason to admit
+    // every short line as if the floor had been satisfied — but the floor has
+    // nothing to compute from either. Recorded so the behaviour is deliberate:
+    // the caller cannot reach this, because the width comes from the page.
+    const { segments, labels } = sheetAt(8, 6, 6);
+    expect(readSheetScale(page(0), segments, labels).ok).toBe(true);
   });
 });
