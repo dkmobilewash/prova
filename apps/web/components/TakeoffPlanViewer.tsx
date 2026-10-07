@@ -17,9 +17,11 @@ import {
   type MeasurementKind,
   type StoredCalibration,
 } from "@/lib/takeoff-plan";
-import { saveTakeoffCalibration, saveTakeoffMeasurement } from "@/lib/actions";
+import { saveTakeoffCalibration, saveTakeoffMeasurement, saveTakeoffMeasurements } from "@/lib/actions";
 import type { PlanSheet, PrintedScaleByPage, ScalePrefill, ScalePrefillByPage } from "@/lib/takeoff-plan-view";
 import { errorBandText, evidenceOrder, TOOLS, type ToolId } from "@/lib/takeoff-plan-view";
+import { clusterByThickness, inchLabel, wallsFromStrokes, type WallCluster } from "@/lib/takeoff/wallVectors";
+import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -83,6 +85,17 @@ export function TakeoffPlanViewer({
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [zoomIndex, setZoomIndex] = useState(2);
   const [tool, setTool] = useState<ToolId>("pan");
+
+  // ── FOUND WALLS ──
+  //
+  // Held in component state and NEVER written anywhere until a person accepts a
+  // group. A found wall is a proposal; the measurements table is for things
+  // somebody chose. That also means switching sheets or reloading simply
+  // forgets them, which is the correct behaviour for a proposal nobody acted on.
+  const [found, setFound] = useState<WallCluster[] | null>(null);
+  const [finding, setFinding] = useState(false);
+  const [findError, setFindError] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<number | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState(true);
@@ -241,6 +254,88 @@ export function TakeoffPlanViewer({
   const undoPoint = () =>
     setDraft((current) => ({ xs: current.xs.slice(0, -1), ys: current.ys.slice(0, -1) }));
 
+  // ── THE FEET-PER-PAGE-WIDTH THIS SHEET IS CALIBRATED AT ──
+  //
+  // One derivation, used by the readout below AND by the wall finder, so the
+  // two can never disagree about what the sheet's scale is.
+  const feetPerUnit = useMemo(
+    () => (calibration ? feetPerPageWidth(calibration as StoredCalibration) : null),
+    [calibration],
+  );
+
+  /**
+   * FINDING THE WALLS ON THIS SHEET.
+   *
+   * ── IT RUNS IN THE BROWSER, AND THAT IS NOT A SHORTCUT ──
+   *
+   * This component already holds the pdf.js document open to draw the sheet, so
+   * the stroked lines a wall is made of are a method call away —
+   * `getOperatorList()`, the same one the server-side reader uses. Detecting
+   * here means no upload, no round trip, no stored proposals and no new table:
+   * the drawing is already here and the answer is already in it.
+   *
+   * ── IT WORKS IN PAGE-WIDTH UNITS, NOT POINTS ──
+   *
+   * The finder only needs its coordinates and its feet-per-unit to agree with
+   * each other. Converting the segments to the same 0..1 box the measurements
+   * live in means the centrelines come back ready to SAVE, with no second
+   * conversion anywhere for a sign or a factor to go wrong in.
+   *
+   * ── WHY A BUTTON RATHER THAN AUTOMATIC ──
+   *
+   * On the biggest sheet measured this takes about 1.7 seconds and returns 511
+   * runs. Doing that unasked, on every sheet somebody opens, would be a freeze
+   * nobody requested — and a found wall is a proposal, which should arrive
+   * because a person asked a question.
+   */
+  async function onFindWalls() {
+    const doc = docRef.current;
+    if (!doc || !pageSize || feetPerUnit === null) return;
+    setFinding(true);
+    setFindError(null);
+    setFound(null);
+    try {
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
+      const { segments } = await segmentsFromOpenPage(page, pdfjs, pageNumber);
+      const inUnits = segments.map((segment) => ({
+        x1: segment.x1 / pageSize.widthPt,
+        y1: segment.y1 / pageSize.widthPt,
+        x2: segment.x2 / pageSize.widthPt,
+        y2: segment.y2 / pageSize.widthPt,
+      }));
+      const walls = wallsFromStrokes(inUnits, { feetPerPoint: feetPerUnit });
+      setFound(clusterByThickness(walls));
+    } catch {
+      // The sheet is still on screen and the manual tools still work, so this
+      // says what failed and stops — it does not take the page down.
+      setFindError("The lines on this sheet couldn't be read. Trace the walls by hand as usual.");
+    } finally {
+      setFinding(false);
+    }
+  }
+
+  /** Accepting a group writes its runs as ordinary LINEAR measurements, which
+   *  is the whole point: everything downstream — the measurement list, the wall
+   *  type, the height, the priced wall run — already works on those and needs
+   *  no part of this. */
+  async function onAcceptCluster(index: number) {
+    const cluster = found?.[index];
+    if (!cluster || !sheet) return;
+    const body = new FormData();
+    body.set("pageId", sheet.id);
+    body.set("label", `${inchLabel(cluster.inches)} wall`);
+    for (const run of cluster.runs) {
+      body.append("shape", JSON.stringify({ xs: [run.x1, run.x2], ys: [run.y1, run.y2] }));
+    }
+    const result = await saveTakeoffMeasurements(jobId, body);
+    if (!result.ok) return setFindError(result.error);
+    // Only the accepted group leaves the list. The rest stay on screen, because
+    // an estimator works through them one at a time and re-running the finder
+    // to get back to where they were would be a punishment for accepting one.
+    setFound((current) => (current ?? []).filter((_, i) => i !== index));
+  }
+
   // ── What the draft currently measures, for the live readout ───────────
   const draftReading = useMemo(() => {
     if (!calibration || draft.xs.length === 0) return null;
@@ -341,6 +436,23 @@ export function TakeoffPlanViewer({
           </>
         )}
 
+        {/* FIND THE WALLS — only once the sheet is calibrated, and the reason
+            is structural rather than tidy: the finder's bounds are in FEET of
+            building ("thinner than 2-1/2in is not a wall"), so without a scale
+            there is no feet-per-unit and every bound means nothing. Same guard
+            the measuring tools already carry, for the same reason. */}
+        {calibration && (
+          <button
+            type="button"
+            onClick={onFindWalls}
+            disabled={finding}
+            data-takeoff="find-walls"
+            className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-50"
+          >
+            {finding ? "Reading the lines…" : "Find the walls"}
+          </button>
+        )}
+
         <span className="ml-auto text-xs text-ink-muted">
           {calibration ? (
             <>
@@ -352,6 +464,93 @@ export function TakeoffPlanViewer({
           )}
         </span>
       </div>
+
+      {findError && (
+        <p className="mt-2 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-tag-amber-ink">
+          {findError}
+        </p>
+      )}
+
+      {/* ── WHAT THE SHEET GAVE UP, BIGGEST FOOTAGE FIRST ──
+
+          ── THIS LIST IS LONGER THAN ANYBODY EXPECTS, AND THAT IS THE TRUTH ──
+
+          The obvious design is "here are your three wall types". Seven real
+          sheets were measured before this was written and they return 15 to 21
+          thickness groups each, with the top three holding only about half the
+          footage. Showing three and calling it the answer would hide footage an
+          estimator is going to bid.
+
+          So: sorted by FEET, biggest first, the top six shown and the rest
+          counted honestly underneath. What the measurement also showed is that
+          the big groups are the real ones — 4.88", 4.92" and 4.80" on three
+          unrelated projects, every one of them a 4-7/8" partition, which is a
+          3-5/8" stud with 5/8" board each side. Noise does not land on 4-7/8".
+
+          That is the actual promise of this feature, and it is smaller and more
+          honest than "it does your takeoff": the biggest wall types come for
+          free. Accepting one group on one real sheet replaced ninety-nine hand
+          traces. Whatever it missed is still traced the way it always was. */}
+      {found !== null && (
+        <div className="mt-2 rounded-md border border-line-card bg-surface p-3" data-takeoff="found-walls">
+          {found.length === 0 ? (
+            <p className="text-sm text-ink-body">
+              No walls found on this sheet. That is a fact about the drawing, not a failure — a scanned or
+              image-only sheet has no lines to read. Trace them by hand as usual.
+            </p>
+          ) : (
+            <>
+              <p className="mb-2 text-sm text-ink-body">
+                Found {found.reduce((n, c) => n + c.runs.length, 0)} runs of wall. Each group is drawn on the
+                sheet in its own colour — check it sits on real walls before adding it.
+              </p>
+              <ul className="flex flex-col gap-1">
+                {found.slice(0, 6).map((cluster, index) => (
+                  <li
+                    key={`${cluster.inches}-${index}`}
+                    className="flex flex-wrap items-center gap-3 rounded-md px-2 py-1 hover:bg-rail-hover"
+                    onMouseEnter={() => setHovered(index)}
+                    onMouseLeave={() => setHovered(null)}
+                  >
+                    <span
+                      aria-hidden
+                      className="h-3 w-3 shrink-0 rounded-sm"
+                      style={{ backgroundColor: CLUSTER_COLOURS[index % CLUSTER_COLOURS.length] }}
+                    />
+                    <span className="text-sm font-medium text-ink">{inchLabel(cluster.inches)}</span>
+                    <span className="text-sm text-ink-body">
+                      {cluster.runs.length} {cluster.runs.length === 1 ? "run" : "runs"} ·{" "}
+                      {Math.round(cluster.feet).toLocaleString()} ft
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void onAcceptCluster(index)}
+                      className="ml-auto min-h-[36px] rounded-md border border-line-card px-3 text-xs font-medium text-ink-body hover:bg-rail-hover"
+                    >
+                      Add these
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {found.length > 6 && (
+                <p className="mt-2 text-xs text-ink-muted">
+                  And {found.length - 6} smaller {found.length - 6 === 1 ? "group" : "groups"}, holding{" "}
+                  {Math.round(found.slice(6).reduce((f, c) => f + c.feet, 0)).toLocaleString()} ft between them.
+                  A real floor plan carries more wall thicknesses than anybody expects; these are the ones a bid
+                  usually turns on.
+                </p>
+              )}
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => setFound(null)}
+            className="mt-2 text-xs text-ink-muted underline hover:text-ink-body"
+          >
+            Clear what was found
+          </button>
+        </div>
+      )}
 
       {/* ── The sheet ─────────────────────────────────────────────── */}
       <div
@@ -388,6 +587,8 @@ export function TakeoffPlanViewer({
               {(sheet?.measurements ?? []).map((m) => (
                 <Shape key={m.id} kind={m.kind} xs={m.xs} ys={m.ys} colour={m.postedAt ? "#6b7280" : "#38bdf8"} />
               ))}
+
+              <FoundWalls clusters={found} hovered={hovered} />
 
               {draft.xs.length > 0 && (
                 <Shape
@@ -483,6 +684,73 @@ export function TakeoffPlanViewer({
 }
 
 /** One shape on the overlay. `open` is a polyline still being drawn. */
+/**
+ * One colour per group, so the panel and the drawing refer to each other.
+ *
+ * Six, because a real sheet returns 15-21 thickness clusters and the panel
+ * shows the biggest few — a palette per cluster would be unreadable, and these
+ * are distinguishable against both a white drawing and each other. They are
+ * deliberately not `DESIGN.md` status colours: these mean "group 2", not
+ * "warning".
+ */
+const CLUSTER_COLOURS = ["#38bdf8", "#f472b6", "#a78bfa", "#34d399", "#fbbf24", "#fb923c"];
+
+/**
+ * THE FOUND WALLS, DRAWN ON THE DRAWING.
+ *
+ * ── THIS IS THE VERIFICATION CHANNEL, NOT DECORATION ──
+ *
+ * `wallVectors.ts` returns CENTRELINES rather than a number, and its header
+ * says why: a wrong answer is then a line sitting where there is no wall, which
+ * an estimator catches in a glance on a drawing they are already looking at. A
+ * takeoff that reported "1,284 ft" and nothing else would be asking them to
+ * take it on faith, and a confidently wrong number is the failure
+ * `symbolCount.eval.ts` refused to ship. These lines ARE the safety argument
+ * for the whole feature.
+ *
+ * ── AND THAT IS WHY IT IS ITS OWN COMPONENT ──
+ *
+ * Written inline in the viewer's SVG it could be made to render nothing and
+ * every test still passed — measured, as a mutation, which is the only reason
+ * anybody knew. The ghosts cannot be reached from a test that way, because they
+ * only exist after a real PDF has been read. Exported, they can be handed
+ * clusters and looked at. Same move as `errorBandText`: a decision inside JSX
+ * is a decision no test can reach.
+ *
+ * Dashed, and painted under the saved measurements, so a proposal never looks
+ * like something already counted.
+ */
+export function FoundWalls({
+  clusters,
+  hovered,
+}: {
+  clusters: WallCluster[] | null;
+  hovered: number | null;
+}) {
+  if (clusters === null) return null;
+  return (
+    <>
+      {clusters.map((cluster, index) =>
+        cluster.runs.map((run, runIndex) => (
+          <line
+            key={`${index}-${runIndex}`}
+            data-found-wall={index}
+            x1={run.x1}
+            y1={run.y1}
+            x2={run.x2}
+            y2={run.y2}
+            stroke={CLUSTER_COLOURS[index % CLUSTER_COLOURS.length]}
+            strokeWidth={hovered === index ? STROKE_PX * 2.5 : STROKE_PX}
+            strokeDasharray={`${STROKE_PX * 3} ${STROKE_PX * 2}`}
+            strokeOpacity={hovered === null || hovered === index ? 1 : 0.25}
+            vectorEffect="non-scaling-stroke"
+          />
+        )),
+      )}
+    </>
+  );
+}
+
 function Shape({
   kind,
   xs,

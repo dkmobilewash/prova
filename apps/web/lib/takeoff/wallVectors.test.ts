@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { wallFromPair, wallsFromStrokes, type StrokeSegment, type WallFinderOptions } from "./wallVectors";
+import { wallFromPair, wallsFromStrokes, type StrokeSegment, type WallFinderOptions,
+  clusterByThickness,
+  CLUSTER_INCHES,
+  type WallCandidate,
+} from "./wallVectors";
 
 /**
  * Wall detection from vector strokes, with no PDF and no model involved.
@@ -167,5 +171,88 @@ describe("the scale is the caller's, not a constant here", () => {
     expect(quarter?.thicknessFeet).toBeCloseTo(0.203, 2);
     // Below the 0.2ft floor: at detail scale these two lines are not a wall.
     expect(detail).toBeNull();
+  });
+});
+
+/**
+ * GROUPING THE WALLS A SHEET GAVE UP, which is what turns a list of 542 lines
+ * into a decision an estimator can actually make.
+ *
+ * Shaped by measurement rather than by guesswork: seven real sheets returned
+ * 15-21 thickness clusters each, not the three anybody would assume, with the
+ * top three holding about half the footage. Both facts are in these tests.
+ */
+const run = (thicknessInches: number, lengthFeet: number): WallCandidate => ({
+  x1: 0,
+  y1: 0,
+  x2: lengthFeet,
+  y2: 0,
+  thicknessFeet: thicknessInches / 12,
+  lengthFeet,
+});
+
+describe("grouping walls by thickness", () => {
+  it("merges the SAME wall drawn with CAD's own variation", () => {
+    // Measured on a real sheet: 4.92" and 4.64" came back as separate values
+    // holding 739ft and 682ft. They are one 4-7/8" partition.
+    const clusters = clusterByThickness([run(4.92, 10), run(4.64, 10), run(4.88, 10)]);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0].runs).toHaveLength(3);
+    expect(clusters[0].inches).toBeCloseTo(4.813, 2);
+  });
+
+  it("KEEPS TWO REAL WALL TYPES APART, which is the whole constraint", () => {
+    // A 3-5/8" stud wall and a 4-7/8" partition are different material. Merging
+    // them would add one type's footage to the other's — a wrong number on a
+    // bid, with nothing on screen looking wrong.
+    const clusters = clusterByThickness([run(3.625, 10), run(4.875, 10)]);
+    expect(clusters).toHaveLength(2);
+  });
+
+  it("does not let a chain of near-misses walk a cluster across that gap", () => {
+    // Each step is under the width; the span is 1.2", wider than the gap
+    // between two real types. Clustering against the running MEAN would let
+    // this drift into one group — it compares against the cluster's first
+    // member for exactly this reason.
+    const clusters = clusterByThickness([run(3.6, 1), run(4.0, 1), run(4.4, 1), run(4.8, 1)]);
+    expect(clusters.length).toBeGreaterThan(1);
+  });
+
+  it("sorts by FOOTAGE, not by how many runs there are", () => {
+    // The number a bid turns on is feet. Twenty short stubs are not a bigger
+    // scope than four long corridor walls, and must not be offered as one.
+    const clusters = clusterByThickness([
+      ...Array.from({ length: 20 }, () => run(2.5, 3)), //  60 ft over 20 runs
+      ...Array.from({ length: 4 }, () => run(4.875, 40)), // 160 ft over 4 runs
+    ]);
+    expect(clusters[0].inches).toBeCloseTo(4.875, 2);
+    expect(clusters[0].feet).toBeCloseTo(160, 5);
+    expect(clusters[0].runs).toHaveLength(4);
+  });
+
+  it("totals the footage of each group", () => {
+    const clusters = clusterByThickness([run(6, 12.5), run(6, 7.5)]);
+    expect(clusters[0].feet).toBeCloseTo(20, 5);
+  });
+
+  it("returns nothing for no walls, rather than an empty group", () => {
+    expect(clusterByThickness([])).toEqual([]);
+  });
+
+  it("keeps every run — a wall cannot be lost between the groups", () => {
+    // The property that matters most: this is presentation, and presentation
+    // must not change the quantities. An estimator accepting every group must
+    // get every wall that was found.
+    const walls = [run(4.875, 10), run(2.5, 4), run(8, 20), run(4.9, 6), run(15.5, 3)];
+    const clusters = clusterByThickness(walls);
+    expect(clusters.reduce((n, c) => n + c.runs.length, 0)).toBe(walls.length);
+    expect(clusters.reduce((f, c) => f + c.feet, 0)).toBeCloseTo(43, 5);
+  });
+
+  it("uses a width that is wider than CAD noise and narrower than a real gap", () => {
+    // The constant is load-bearing in both directions, so it is asserted in
+    // both: it must merge a 0.28" split and preserve a 1.25" one.
+    expect(CLUSTER_INCHES).toBeGreaterThan(0.28);
+    expect(CLUSTER_INCHES).toBeLessThan(1.25);
   });
 });

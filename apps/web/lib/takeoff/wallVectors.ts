@@ -272,7 +272,24 @@ export function wallsFromStrokes(
   segments: readonly StrokeSegment[],
   options: WallFinderOptions,
 ): WallCandidate[] {
-  const usable = segments.filter((segment) => lengthOf(segment) > 0);
+  // ── THE LENGTH FILTER IS HOISTED, AND THAT IS WHAT MAKES THIS RUNNABLE ──
+  //
+  // The pairing below is O(n²) with `inAHatchSeries` scanning inside it. A real
+  // ARCH D export carries 79,001 stroked segments and one measured here carried
+  // 116,893 — call it 10¹⁰ operations, which is not slow, it is never.
+  //
+  // `minLengthFeet` was already being applied, per PAIR, inside `wallFromPair`.
+  // Applying it to the INPUT first is not an approximation and not a heuristic:
+  // a wall's length is the overlap of its two faces, which is at most the
+  // shorter face, so a face below the minimum cannot belong to a wall above it.
+  // Exactly the same walls come back.
+  //
+  // Measured on real sheets, 2026-10-07: 116,893 segments → 7,998, and 23,351 →
+  // 1,623. Most of what a CAD sheet strokes is lettering outlines, hatching and
+  // leader lines, none of which is two feet of building long. That took the
+  // worst sheet to 1.7s and the smallest to 81ms.
+  const minLengthPoints = (options.minLengthFeet ?? DEFAULTS.minLengthFeet) / options.feetPerPoint;
+  const usable = segments.filter((segment) => lengthOf(segment) >= minLengthPoints);
   const order = [...usable].sort((a, b) => lengthOf(b) - lengthOf(a));
   const used = new Set<number>();
   const walls: WallCandidate[] = [];
@@ -343,4 +360,112 @@ function inAHatchSeries(
   }
 
   return false;
+}
+
+/** One thickness of wall found on a sheet: how many runs, and how much of it. */
+export type WallCluster = {
+  /** The cluster's thickness in INCHES, averaged over its runs — what an
+   *  estimator recognises ("4-7/8" is a 3-5/8" stud with board both sides"). */
+  inches: number;
+  runs: WallCandidate[];
+  feet: number;
+};
+
+/**
+ * HOW FAR APART TWO THICKNESSES HAVE TO BE TO BE DIFFERENT WALLS, in inches.
+ *
+ * MEASURED, not chosen. Real sheets do not return clean thicknesses: one came
+ * back with 4.92" and 4.64" as separate values holding 739ft and 682ft, which is
+ * one partition type split by how CAD drew its two faces. At 0.25" they stay
+ * apart; at 0.5" they merge, which is right.
+ *
+ * It does not go higher, and the reason is the whole value of the grouping: a
+ * 3-5/8" stud wall and a 4-7/8" partition are 1.25" apart and are DIFFERENT
+ * WALLS with different material. A bucket wide enough to swallow that gap would
+ * quietly add one type's footage to another's — a wrong number on a bid, which
+ * is worse than showing an estimator two groups where they expected one.
+ *
+ * Tested across 7 real sheets: 0.5" took one from 21 clusters to 13 while
+ * leaving every pair of real partition types distinct.
+ */
+export const CLUSTER_INCHES = 0.5;
+
+/**
+ * The walls on a sheet, grouped by thickness, BIGGEST FOOTAGE FIRST.
+ *
+ * ── WHY FOOTAGE AND NOT COUNT, AND WHY GROUPS AT ALL ──
+ *
+ * A real floor plan returns 15-21 thickness clusters, not the three anybody
+ * would guess, and the top three hold only about half the footage. That is the
+ * measurement this function is shaped by: there is no tidy "here are your three
+ * wall types", and pretending otherwise would mean hiding footage an estimator
+ * is going to bid.
+ *
+ * What IS true is that the LARGEST clusters are the ones a bid turns on, and
+ * they land on dimensions walls are actually built at — 4.88", 4.92", 4.80" on
+ * three unrelated projects, all of them 4-7/8": a 3-5/8" stud with 5/8" board
+ * each side. Noise does not land on 4-7/8". So sorting by footage puts the real
+ * partition runs at the top, where accepting ONE of them replaces ninety-nine
+ * hand traces, and leaves the long tail for a person to judge or ignore.
+ *
+ * Pure, like everything else in this file.
+ */
+export function clusterByThickness(
+  walls: readonly WallCandidate[],
+  clusterInches = CLUSTER_INCHES,
+): WallCluster[] {
+  const byThickness = [...walls].sort((a, b) => a.thicknessFeet - b.thicknessFeet);
+  const clusters: { runs: WallCandidate[]; feet: number }[] = [];
+
+  for (const wall of byThickness) {
+    const inches = wall.thicknessFeet * 12;
+    const open = clusters[clusters.length - 1];
+    // Against the cluster's FIRST member rather than its running mean: a mean
+    // drifts as members join, so a long enough chain of near-misses would walk
+    // a cluster across the 1.25" gap this is meant to preserve.
+    const start = open === undefined ? null : open.runs[0].thicknessFeet * 12;
+    if (open !== undefined && start !== null && inches - start <= clusterInches) {
+      open.runs.push(wall);
+      open.feet += wall.lengthFeet;
+    } else {
+      clusters.push({ runs: [wall], feet: wall.lengthFeet });
+    }
+  }
+
+  return clusters
+    .map((cluster) => ({
+      // The average, so the label is the thickness the runs actually have
+      // rather than whichever one happened to open the cluster.
+      inches:
+        cluster.runs.reduce((total, run) => total + run.thicknessFeet * 12, 0) / cluster.runs.length,
+      runs: cluster.runs,
+      feet: cluster.feet,
+    }))
+    .sort((a, b) => b.feet - a.feet);
+}
+
+/**
+ * A THICKNESS AN ESTIMATOR RECOGNISES: 4.875 → `4-7/8"`.
+ *
+ * To the nearest EIGHTH, because that is how a wall is specified, sold and
+ * talked about. `clusterByThickness` averages over a group's runs and hands
+ * back decimals no drawing ever carried — printing `4.81"` would state a
+ * precision the measurement does not have, on a label whose only job is to be
+ * recognised. `4-3/4"` is a wall somebody can picture.
+ *
+ * HERE RATHER THAN IN THE VIEWER, and that is a rule rather than a preference:
+ * it lived in `TakeoffPlanViewer.tsx` for one commit and the client/server
+ * boundary census failed it — a `"use client"` module may export components,
+ * not plain values. It is pure and it is about walls, so it belongs beside the
+ * finder that produces the number.
+ */
+export function inchLabel(inches: number): string {
+  const eighths = Math.round(inches * 8);
+  const whole = Math.floor(eighths / 8);
+  const part = eighths % 8;
+  if (part === 0) return `${whole}"`;
+  const half = part % 2 === 0 ? part / 2 : part;
+  const over = part % 2 === 0 ? 4 : 8;
+  const reduced = half % 2 === 0 ? `${half / 2}/${over / 2}` : `${half}/${over}`;
+  return whole === 0 ? `${reduced}"` : `${whole}-${reduced}"`;
 }

@@ -631,6 +631,7 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "deleteTakeoffPlan", reason: "Deletes are never commands (T5)." },
   { action: "saveTakeoffCalibration", reason: "A scale is set by dragging along a dimension on the drawing; a model has not seen the drawing." },
   { action: "saveTakeoffMeasurement", reason: "The measurement IS the traced geometry, which only the viewer produces." },
+  { action: "saveTakeoffMeasurements", reason: "Adding a group of found walls is a decision made by LOOKING at them drawn on the sheet — the whole safety of the wall finder is that a wrong line is visible on a drawing somebody is reading. A model has not seen the drawing, so it cannot make the only check that matters." },
   { action: "deleteTakeoffMeasurement", reason: "Deletes are never commands (T5)." },
   { action: "rescaleTakeoffMeasurements", reason: "Moving quantities onto a corrected scale needs the before-and-after figures on screen, which is the page's job." },
   { action: "postTakeoffMeasurements", reason: "Posting takes ids of shapes picked on the sheet; the picking is the decision and it happens on the drawing." },

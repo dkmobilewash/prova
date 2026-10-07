@@ -1,0 +1,237 @@
+// @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { TakeoffPlanViewer, FoundWalls } from "./TakeoffPlanViewer";
+import { inchLabel, type WallCluster } from "@/lib/takeoff/wallVectors";
+import type { PlanSheet } from "@/lib/takeoff-plan-view";
+
+/**
+ * THE WALL FINDER'S CONTROL HAS TO BE ON THE SCREEN AN ESTIMATOR IS ON.
+ *
+ * A RENDER test, not a census, and #665 is why: that PR shipped a button gated
+ * on a stage value, so it existed, called the right action, sat in the right
+ * branch and appeared on no screen anybody used. Every assertion a source
+ * census could make was true while the app was broken. A census proves the code
+ * is THERE; only rendering proves somebody can reach it.
+ *
+ * What this does NOT cover is the detection itself — that needs a real PDF and
+ * pdf.js, and it is measured in `wallVectors.test.ts` and against real drawings.
+ * This covers the seam: the button appears when it can work, stays away when it
+ * cannot, and the sheet is still usable either way.
+ */
+
+const sheet = (over: Partial<PlanSheet> = {}): PlanSheet =>
+  ({
+    id: "page_1",
+    pageNumber: 1,
+    label: "",
+    pageWidthPt: 3024,
+    calibration: {
+      id: "cal_1",
+      x1: 0.1,
+      y1: 0.5,
+      x2: 0.6,
+      y2: 0.5,
+      declaredDistanceFeet: 144,
+      note: null,
+    },
+    measurements: [],
+    zoneNotices: [],
+    ...over,
+  }) as unknown as PlanSheet;
+
+let host: HTMLDivElement;
+let root: ReturnType<typeof createRoot>;
+
+beforeEach(() => {
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  host.remove();
+});
+
+function paint(sheets: PlanSheet[]) {
+  act(() => {
+    root.render(
+      createElement(TakeoffPlanViewer, {
+        jobId: "job_1",
+        planId: "plan_1",
+        sheets,
+        printedScaleByPage: {},
+        scalePrefillByPage: {},
+      } as never),
+    );
+  });
+  return host;
+}
+
+describe("the wall finder's control", () => {
+  it("is on the toolbar once the sheet is calibrated", () => {
+    expect(paint([sheet()]).querySelector('[data-takeoff="find-walls"]')).not.toBeNull();
+  });
+
+  it("is ABSENT with no scale set, because its bounds are in feet of building", () => {
+    // Not a style choice: `wallVectors` asks "is this thinner than 2-1/2in",
+    // and without a calibration there is no feet-per-unit, so every bound in it
+    // means nothing. A button that cannot answer should not be offered.
+    const page = paint([sheet({ calibration: null } as Partial<PlanSheet>)]);
+    expect(page.querySelector('[data-takeoff="find-walls"]')).toBeNull();
+  });
+
+  it("says what it does in words an estimator reads, not a tool name", () => {
+    const button = paint([sheet()]).querySelector('[data-takeoff="find-walls"]');
+    expect(button?.textContent).toBe("Find the walls");
+  });
+
+  it("shows no results panel until it has been asked", () => {
+    // A proposal arrives because somebody asked a question. Nothing is detected
+    // on load — on the biggest sheet measured that would be a 1.7-second freeze
+    // nobody requested.
+    expect(paint([sheet()]).querySelector('[data-takeoff="found-walls"]')).toBeNull();
+  });
+
+  it("rendered a real viewer, rather than passing against an empty page", () => {
+    // The size assertion this family needs: every `toBeNull` above passes
+    // vacuously against a component that threw and rendered nothing.
+    const page = paint([sheet()]);
+    expect(page.querySelector("canvas")).not.toBeNull();
+    expect(page.textContent ?? "").toContain("Set scale");
+  });
+});
+
+describe("naming a thickness the way a wall is sold", () => {
+  it("rounds to the eighth an estimator recognises", () => {
+    // The finder's own figure is an average over a group and carries decimals
+    // no drawing ever had. `4.81"` states a precision the measurement does not
+    // have; `4-3/4"` is a wall somebody can picture.
+    expect(inchLabel(4.875)).toBe('4-7/8"');
+    expect(inchLabel(4.81)).toBe('4-3/4"');
+    expect(inchLabel(3.625)).toBe('3-5/8"');
+    expect(inchLabel(6.125)).toBe('6-1/8"');
+  });
+
+  it("drops the fraction when there isn't one, and the whole when there is none", () => {
+    expect(inchLabel(8)).toBe('8"');
+    expect(inchLabel(12.02)).toBe('12"');
+    expect(inchLabel(0.5)).toBe('1/2"');
+  });
+
+  it("never prints an unreduced fraction", () => {
+    // 4/8 and 2/4 are the same wall and neither is how anybody writes it.
+    for (let eighths = 1; eighths <= 160; eighths += 1) {
+      expect(inchLabel(eighths / 8)).not.toMatch(/\b(2\/4|4\/8|6\/8|2\/8)"/);
+    }
+  });
+});
+
+/**
+ * THE GHOST LINES, WHICH ARE THE SAFETY ARGUMENT AND WERE UNTESTABLE.
+ *
+ * Written inline in the viewer's SVG these could be made to render nothing and
+ * the whole suite stayed green — measured, as a mutation, which is the only
+ * reason anybody knew. The ghosts only exist after a real PDF has been read, so
+ * no test could reach them there.
+ *
+ * It matters more than most rendering: an estimator accepts a group of walls on
+ * the strength of SEEING them sit on real walls in the drawing. Ghosts that do
+ * not draw turn an informed decision into a blind one, and nothing on screen
+ * looks wrong.
+ */
+const cluster = (inches: number, runs: number): WallCluster => ({
+  inches,
+  feet: runs * 10,
+  runs: Array.from({ length: runs }, (_, i) => ({
+    x1: 0.1,
+    y1: 0.1 + i * 0.01,
+    x2: 0.5,
+    y2: 0.1 + i * 0.01,
+    thicknessFeet: inches / 12,
+    lengthFeet: 10,
+  })),
+});
+
+function svg(node: React.ReactElement) {
+  const frame = document.createElement("div");
+  document.body.append(frame);
+  const r = createRoot(frame);
+  act(() => r.render(createElement("svg", { viewBox: "0 0 1 1" }, node)));
+  const html = frame.innerHTML;
+  const lines = frame.querySelectorAll("line");
+  act(() => r.unmount());
+  frame.remove();
+  return { html, lines };
+}
+
+describe("the ghost lines over the sheet", () => {
+  it("draws one line per found run", () => {
+    const { lines } = svg(createElement(FoundWalls, { clusters: [cluster(4.875, 7)], hovered: null }));
+    expect(lines).toHaveLength(7);
+  });
+
+  it("draws every group, not just the first", () => {
+    const { lines } = svg(
+      createElement(FoundWalls, { clusters: [cluster(4.875, 3), cluster(6.125, 4)], hovered: null }),
+    );
+    expect(lines).toHaveLength(7);
+  });
+
+  it("puts each line where the wall is", () => {
+    const { lines } = svg(createElement(FoundWalls, { clusters: [cluster(4.875, 1)], hovered: null }));
+    expect(lines[0].getAttribute("x1")).toBe("0.1");
+    expect(lines[0].getAttribute("x2")).toBe("0.5");
+  });
+
+  it("gives each group its own colour, so the panel and the drawing agree", () => {
+    const { lines } = svg(
+      createElement(FoundWalls, { clusters: [cluster(4.875, 1), cluster(6.125, 1)], hovered: null }),
+    );
+    expect(lines[0].getAttribute("stroke")).not.toBe(lines[1].getAttribute("stroke"));
+  });
+
+  it("fades the other groups when one is hovered", () => {
+    const { lines } = svg(
+      createElement(FoundWalls, { clusters: [cluster(4.875, 1), cluster(6.125, 1)], hovered: 0 }),
+    );
+    expect(lines[0].getAttribute("stroke-opacity")).toBe("1");
+    expect(Number(lines[1].getAttribute("stroke-opacity"))).toBeLessThan(1);
+  });
+
+  it("is dashed, so a proposal never reads as something already counted", () => {
+    const { lines } = svg(createElement(FoundWalls, { clusters: [cluster(4.875, 1)], hovered: null }));
+    expect(lines[0].getAttribute("stroke-dasharray")).toBeTruthy();
+    // Device pixels, not sheet units — a hairline at 50% zoom is invisible, and
+    // `strokeWidth={0.002}` with this flag once shipped a line nobody could see.
+    expect(lines[0].getAttribute("vector-effect")).toBe("non-scaling-stroke");
+  });
+
+  it("IS ACTUALLY PLACED IN THE VIEWER'S SVG, not merely written and correct", () => {
+    // Measured as a mutation: deleting `<FoundWalls .../>` from the viewer left
+    // every test above green, because they render the component directly. A
+    // component that works and is on no screen is exactly #665's defect, and
+    // the pair of checks is what closes it — this one asks whether it is
+    // placed, the ones above ask whether it draws. Neither implies the other.
+    //
+    // Source text, deliberately, because the ghosts cannot be reached through
+    // the viewer without a real PDF. It is the weaker half of the pair and it
+    // is the half nothing else can cover.
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).toMatch(/<FoundWalls\s+clusters=\{found\}\s+hovered=\{hovered\}\s*\/>/);
+    // And that it sits inside the overlay rather than somewhere harmless.
+    const overlay = code.slice(code.indexOf("<svg"), code.indexOf("</svg>"));
+    expect(overlay).toContain("<FoundWalls");
+    expect(overlay.length).toBeGreaterThan(200);
+  });
+
+  it("draws nothing before anything has been found", () => {
+    expect(svg(createElement(FoundWalls, { clusters: null, hovered: null })).lines).toHaveLength(0);
+    expect(svg(createElement(FoundWalls, { clusters: [], hovered: null })).lines).toHaveLength(0);
+  });
+});
