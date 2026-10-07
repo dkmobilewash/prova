@@ -491,6 +491,9 @@ export function inchLabel(inches: number): string {
  */
 export const SAME_BUILDING_FEET = 20;
 
+/** Fewer runs than this is not a floor plan — see `wallsInTheBuilding`. */
+export const NOT_A_BOX = 10;
+
 /** Closest approach between two centrelines, point to segment. */
 function gapBetween(a: WallCandidate, b: WallCandidate): number {
   const toSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
@@ -584,7 +587,26 @@ export function wallsInTheBuilding(
       best = group;
     }
   }
-  return best;
+
+  // ── A BUILDING IS NOT A BOX ──
+  //
+  // "The biggest group" is only the plan when there IS a plan. On a sheet that
+  // yields almost no wall — a roof plan, an equipment plan, a demolition sheet
+  // drawn in dashed line work — the biggest group is whatever else is on the
+  // page, and what won on one real sheet was the TITLE BLOCK: four runs, 64ft,
+  // a rectangle in the corner offered to an estimator as the walls of a
+  // building. Found by looking at the picture; the numbers looked unremarkable.
+  //
+  // A rectangle is four runs. Real floor plans measured here returned 38, 58,
+  // 68, 230, 295 and 453 — so the gap between "a box" and "a plan" is an order
+  // of magnitude, not a margin, and this does not have to be a finely judged
+  // number to sit inside it.
+  //
+  // Returning NOTHING is the right answer rather than a weak one: the panel
+  // already says "No walls found on this sheet. That is a fact about the
+  // drawing, not a failure", which is true of a roof plan and is far better
+  // than four lines somebody has to recognise as a title block.
+  return best.length < NOT_A_BOX ? [] : best;
 }
 
 /**

@@ -4,6 +4,7 @@ import { wallFromPair, wallsFromStrokes, type StrokeSegment, type WallFinderOpti
   CLUSTER_INCHES,
   wallsInTheBuilding,
   SAME_BUILDING_FEET,
+  NOT_A_BOX,
   heavierThanHatching,
   type WallCandidate,
 } from "./wallVectors";
@@ -286,7 +287,10 @@ const FOOT = 1;
 
 describe("keeping only the walls in the building", () => {
   it("drops a title block sitting away from the plan", () => {
-    const plan = [at(0, 0, 40, 0), at(40, 0, 40, 30), at(0, 0, 0, 30), at(0, 30, 40, 30)];
+    // Plan-sized rather than four walls: `wallsInTheBuilding` now refuses a
+    // winner that is merely a box, so a four-run fixture would be refused for
+    // the right reason and prove nothing about the title block.
+    const plan = Array.from({ length: 14 }, (_, i) => at(0, i * 10, 40, i * 10));
     const titleBlock = [at(300, 0, 340, 0), at(300, 5, 340, 5)];
     const kept = wallsInTheBuilding([...plan, ...titleBlock], FOOT);
     expect(kept).toHaveLength(plan.length);
@@ -297,40 +301,63 @@ describe("keeping only the walls in the building", () => {
     // The first version compared ENDPOINTS and shattered a real plan into 46
     // pieces, keeping 49 runs of 203 — one corner of the offices. Walls meet in
     // Ts far more often than in Ls: one wall's END against another's MIDDLE.
-    const spine = at(0, 0, 100, 0);
-    const branches = [at(25, 0, 25, 40), at(50, 0, 50, 40), at(75, 0, 75, 40)];
+    const spine = at(0, 0, 200, 0);
+    const branches = Array.from({ length: 15 }, (_, i) => at(i * 12, 0, i * 12, 40));
     const kept = wallsInTheBuilding([spine, ...branches], FOOT);
-    expect(kept).toHaveLength(4);
+    expect(kept).toHaveLength(16);
   });
 
   it("bridges a doorway, a corridor and a wall it simply missed", () => {
     // Runs do not touch as often as a drawing suggests. Anything under the
     // same-building distance is still one building.
-    const a = at(0, 0, 30, 0);
-    const b = at(30 + SAME_BUILDING_FEET - 1, 0, 70, 0);
-    expect(wallsInTheBuilding([a, b], FOOT)).toHaveLength(2);
+    // Two halves of a plan, each plan-sized, separated by just under the
+    // same-building distance. Both must come back as one building.
+    const left = Array.from({ length: 8 }, (_, i) => at(0, i * 10, 30, i * 10));
+    const right = Array.from({ length: 8 }, (_, i) => at(30 + SAME_BUILDING_FEET - 1, i * 10, 70, i * 10));
+    expect(wallsInTheBuilding([...left, ...right], FOOT)).toHaveLength(16);
   });
 
   it("keeps the group with the most FOOTAGE, not the most runs", () => {
     // A dense notes column can out-count a building without out-measuring it.
-    const building = [at(0, 0, 120, 0), at(0, 0, 0, 90)];
-    // Short rules, many of them: 30 runs against the building's 2, but 60ft
-    // against its 210. The first draft of this fixture made them 8ft each,
-    // which is 240ft — so the notes genuinely were the bigger thing and the
-    // test was asserting the opposite of what it claimed.
+    // Plan-sized, because a two-run building is now refused as a box — and
+    // short rules for the notes, many of them: 30 runs against the building's
+    // 12, but 60ft against its 1,440.
+    //
+    // An earlier draft made the rules 8ft each, which is 240ft, so the notes
+    // genuinely WERE the bigger thing and the test asserted the opposite of
+    // what it claimed. The suite caught that; it is the fixture that has been
+    // wrong twice here, never the code.
+    const building = Array.from({ length: 12 }, (_, i) => at(0, i * 10, 120, i * 10));
     const notes = Array.from({ length: 30 }, (_, i) => at(500, i * 2, 502, i * 2));
     const kept = wallsInTheBuilding([...building, ...notes], FOOT);
-    expect(kept).toHaveLength(2);
+    expect(kept).toHaveLength(12);
     expect(kept.every((w) => w.x1 < 500)).toBe(true);
   });
 
   it("returns everything when the sheet holds nothing but the plan", () => {
-    const plan = [at(0, 0, 40, 0), at(40, 0, 40, 30)];
-    expect(wallsInTheBuilding(plan, FOOT)).toHaveLength(2);
+    const plan = Array.from({ length: 20 }, (_, i) => at(0, i * 10, 40, i * 10));
+    expect(wallsInTheBuilding(plan, FOOT)).toHaveLength(20);
   });
 
   it("returns nothing for nothing, rather than throwing", () => {
     expect(wallsInTheBuilding([], FOOT)).toEqual([]);
+  });
+
+  it("REFUSES A SHEET WHOSE BIGGEST GROUP IS A BOX, rather than offering it", () => {
+    // Found by looking at a real roof/equipment sheet: the plan yielded almost
+    // no wall, so the biggest group was the TITLE BLOCK — four runs, 64ft, a
+    // rectangle in the corner offered to an estimator as the walls of a
+    // building. The numbers looked unremarkable; only the picture showed it.
+    const titleBlock = [at(300, 0, 340, 0), at(340, 0, 340, 20), at(300, 20, 340, 20), at(300, 0, 300, 20)];
+    expect(wallsInTheBuilding(titleBlock, FOOT)).toEqual([]);
+  });
+
+  it("still returns a real plan, which is an order of magnitude bigger", () => {
+    // Real floor plans measured here returned 38, 58, 68, 230, 295 and 453
+    // runs. The gap between a box and a plan is not a margin, so this does not
+    // have to be a finely judged number to sit inside it.
+    const plan = Array.from({ length: NOT_A_BOX + 2 }, (_, i) => at(0, i * 10, 40, i * 10));
+    expect(wallsInTheBuilding(plan, FOOT)).toHaveLength(NOT_A_BOX + 2);
   });
 
   it("uses a distance wide enough for a corridor and far short of a title block", () => {

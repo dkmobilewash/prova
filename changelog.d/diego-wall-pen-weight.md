@@ -77,3 +77,46 @@ stops them stealing partners. The filter runs BEFORE the pairing for that reason
 3. *Expected: MORE of the real partitions traced than before, not fewer.*
 4. **Look before adding.** Anything drawn at a wall's weight that is not a wall
    will still be offered, and the drawing is how you catch it.
+
+## Verified on every readable sheet, and one of them failed
+
+Added after the above, because the same mistake had been made twice: a
+conclusion drawn from one sheet's statistics. The shipped pipeline was run over
+all seven real floor plans on this machine with a picture saved for each.
+
+| sheet | strokes | heavy | paired | in building | groups, biggest first |
+| --- | --- | --- | --- | --- | --- |
+| Salina p19 | 112,547 | 15,978 | 248 | **230** (1,678 ft) | 4-7/8"×92 |
+| Salina p27 | 80,250 | 16,073 | 98 | **68** (551 ft) | 4-7/8"×14 |
+| Salina p31 | 116,893 | 47,061 | 336 | **295** (2,012 ft) | 4-7/8"×124 |
+| Salina p32 | 33,571 | 7,248 | 46 | **38** (139 ft) | 4-7/8"×18 |
+| Salina p45 | 7,077 | 1,322 | 38 | **0** | — |
+| SCHD A102 | 167,911 | 72,753 | 467 | **453** (2,593 ft) | 5"×104 |
+| Augusta | 23,351 | 1,306 | 58 | **58** (484 ft) | 4-7/8"×21 |
+
+`4-7/8"` is the biggest group on five of seven — a 3-5/8" stud with 5/8" board
+each side, across three unrelated projects.
+
+**p45 was returning the TITLE BLOCK.** It is a sparse sheet that yields almost no
+wall, so "the biggest group" was a rectangle in the corner — four runs, 64ft,
+offered to an estimator as the walls of a building. The numbers looked
+unremarkable; only the picture showed it.
+
+**A building is not a box.** Real plans here returned 38, 58, 68, 230, 295 and
+453 runs, so the gap between a box and a plan is an order of magnitude rather
+than a margin. Below ten runs it now returns nothing, and the panel's existing
+*"No walls found on this sheet. That is a fact about the drawing, not a failure"*
+is the honest answer for a roof plan.
+
+Four of the pre-existing tests then went red: their fixtures were two- and
+four-run "buildings", smaller than the title block they were written to reject.
+Grown to plan size, with each test's point preserved. **The fixture has now been
+wrong twice in this file and the code neither time.**
+
+## What the pictures show, stated plainly
+
+**Precision is high, recall is partial.** On Augusta every red line sits on a real
+partition — and perhaps 40% of the partitions have one. On SCHD the coverage is
+far better. That is the right trade for a tool whose output a person checks on
+the drawing: what it offers can be trusted, and what it misses is still traced by
+hand.
