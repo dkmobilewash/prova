@@ -56,8 +56,23 @@ describe("the app is configured for EAS Update without breaking the launch", () 
     expect(updates.url, "updates.url is gone — no build will ever receive an update").toMatch(
       /^https:\/\/u\.expo\.dev\/[0-9a-f-]{36}$/,
     );
-    expect(app().runtimeVersion, "no runtime version policy — updates have no compatibility boundary")
-      .toBeTruthy();
+    // FINGERPRINT, NOT appVersion, and the difference is a crash.
+    //
+    // `appVersion` makes the runtime the version string — which has been
+    // `0.0.1` for seventeen builds and shows no sign of moving. Every build
+    // would share one runtime forever, so a JS update that needs a native
+    // module added later would be offered to builds that do not have it.
+    //
+    // `fingerprint` hashes the native inputs instead: config plugins, eas.json,
+    // every autolinked module. Verified to resolve rather than assumed —
+    // `expo-updates runtimeversion:resolve` returns a real hash over exactly
+    // those sources. A native change moves the runtime automatically, so an
+    // incompatible update is never offered at all.
+    expect(
+      app().runtimeVersion,
+      "the runtime policy left fingerprint. Under appVersion every build shares one runtime and a JS " +
+        "update needing new native code would reach builds without it.",
+    ).toEqual({ policy: "fingerprint" });
 
     const profiles = JSON.parse(readFileSync(EAS, "utf8")).build ?? {};
     const names = Object.keys(profiles);

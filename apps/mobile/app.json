@@ -72,7 +72,7 @@
     },
     "backgroundColor": "#f2f2f7",
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "updates": {
       "url": "https://u.expo.dev/2f42926a-3311-4a3a-a351-1b57abdb4f5e"
