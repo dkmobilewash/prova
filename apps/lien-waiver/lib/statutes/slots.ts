@@ -27,11 +27,11 @@ export interface SlotSpec {
 export const SLOTS: Record<SlotId, SlotSpec> = {
   companyName: {
     label: "Your company name",
-    help: "The company giving the waiver -- you.",
+    help: "The company giving the waiver — you.",
     kind: "text",
     fillable: true,
     required: true,
-    placeholder: "Desert Drywall LLC",
+    placeholder: "e.g. Desert Drywall LLC",
   },
   customer: {
     label: "Who you contracted with",
@@ -39,7 +39,7 @@ export const SLOTS: Record<SlotId, SlotSpec> = {
     kind: "text",
     fillable: true,
     required: true,
-    placeholder: "Acme Builders Inc.",
+    placeholder: "e.g. Acme Builders Inc.",
   },
   owner: {
     label: "Property owner",
@@ -53,7 +53,7 @@ export const SLOTS: Record<SlotId, SlotSpec> = {
     kind: "text",
     fillable: true,
     required: true,
-    placeholder: "Mesa Medical Office Building",
+    placeholder: "e.g. Mesa Medical Office Building",
   },
   jobNumber: {
     label: "Job number",
@@ -67,18 +67,18 @@ export const SLOTS: Record<SlotId, SlotSpec> = {
     kind: "text",
     fillable: true,
     required: true,
-    placeholder: "1234 E Main St, Mesa, AZ",
+    placeholder: "e.g. 1234 E Main St, Mesa, AZ",
   },
   jobDescription: {
     label: "Job description",
-    help: "What the job is -- for example, the project name and address.",
+    help: "What the job is — for example, the project name and address.",
     kind: "text",
     fillable: true,
     required: true,
   },
   checkMaker: {
     label: "Who is writing the check",
-    help: "Whoever the payment comes from -- usually the GC.",
+    help: "Whoever the payment comes from — usually the GC.",
     kind: "text",
     fillable: true,
     required: true,
@@ -99,7 +99,7 @@ export const SLOTS: Record<SlotId, SlotSpec> = {
   },
   throughDate: {
     label: "Through date",
-    help: "The last day of work this payment covers -- usually the end of the pay period.",
+    help: "The last day of work this payment covers — usually the end of the pay period.",
     kind: "date",
     fillable: true,
     required: true,
@@ -146,7 +146,7 @@ export const SLOTS: Record<SlotId, SlotSpec> = {
   },
   signerTitle: {
     label: "Your title",
-    help: "The title of the person signing -- Owner, President, Project Manager.",
+    help: "The title of the person signing — Owner, President, Project Manager.",
     kind: "text",
     fillable: true,
     required: false,

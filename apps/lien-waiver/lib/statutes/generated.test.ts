@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 import { buildForm, type SourceMeta } from "./build";
 import { DEFINITIONS } from "./definitions";
 import { htmlToParagraphs } from "./html-text.mjs";
+import { buildPacket } from "./packet";
+import { reviewDigest } from "./review";
 import type { BuiltForm } from "./types";
 
 /**
@@ -32,6 +34,7 @@ const ROOT = join(__dirname, "..", "..");
 const RAW = join(ROOT, "statutes", "raw");
 const TEXT = join(ROOT, "statutes", "text");
 const GENERATED = join(__dirname, "generated", "forms.json");
+const PACKET = join(ROOT, "docs", "attorney-packet.md");
 const UPDATE = process.env.UPDATE_STATUTES === "1";
 
 const sources: Array<{ id: string; state: string }> = JSON.parse(readFileSync(join(ROOT, "statutes", "sources.json"), "utf8")).sources;
@@ -94,5 +97,18 @@ describe("the generated forms", () => {
     const serialized = JSON.stringify(built, null, 2) + "\n";
     if (UPDATE) writeFileSync(GENERATED, serialized);
     expect(readFileSync(GENERATED, "utf8")).toBe(serialized);
+  });
+
+  it("docs/attorney-packet.md is the packet for exactly this text", () => {
+    const ids = [...new Set([...DEFINITIONS.map((definition) => definition.sourceId), "nm-48-2"])];
+    const packet = buildPacket({
+      definitions: DEFINITIONS,
+      forms: built,
+      paragraphs: Object.fromEntries(DEFINITIONS.map((definition) => [definition.sourceId, derivedParagraphs(definition.sourceId)])),
+      meta: Object.fromEntries(ids.map((id) => [id, readMeta(id)])),
+      digest: reviewDigest,
+    });
+    if (UPDATE) writeFileSync(PACKET, packet);
+    expect(readFileSync(PACKET, "utf8")).toBe(packet);
   });
 });
