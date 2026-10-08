@@ -247,8 +247,12 @@ export function roomGrid(
   widthUnits: number,
   heightUnits: number,
   feetPerUnit: number,
+  /** Widest grid to build. The default suits a desktop; a caller that knows it
+   *  is on a weaker machine can lower it and will be told what it cost through
+   *  the `feetPerCell` it gets back. */
+  cap?: number,
 ): RoomGrid {
-  const { width, height, feetPerCell } = gridSizeFor(widthUnits, heightUnits, feetPerUnit);
+  const { width, height, feetPerCell } = gridSizeFor(widthUnits, heightUnits, feetPerUnit, cap);
   const ink = rasterise(segments, width, height, widthUnits / width, heightUnits / height);
   const regions = regionsOf(ink, width, height);
   return { width, height, feetPerCell, label: regions.label, regions: [...regions] };
