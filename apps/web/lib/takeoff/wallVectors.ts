@@ -134,6 +134,21 @@ const MAX_FACE_LENGTH_RATIO = 3;
  */
 const SERIES_REACH = 2.5;
 
+/**
+ * How far off a whole number of steps a third stroke may sit and still count as
+ * continuing the series, as a fraction of one step.
+ *
+ * Hatching is machine-generated at a constant pitch — this repo's own generator
+ * emits it with `offset += 6` — so a real series member lands on a whole
+ * multiple to within a rounding error, and 0.2 is loose by a wide margin. It is
+ * the two strokes it must NOT admit that set the ceiling: on a measured
+ * exterior wall the inboard gypsum line sits at 1.07 steps and the column grid
+ * line at 1.51. The nearer of those is 0.07 from a whole number, which is why
+ * this cannot simply be made generous — and why `nearest === 1` is excluded
+ * rather than tolerated, since 1 is `b` itself.
+ */
+const SERIES_PITCH_TOLERANCE = 0.2;
+
 /** Direction of a segment, normalised to [0, π) so a line and its reverse are
  *  the same direction — which they are, for a wall face. */
 function angleOf(segment: StrokeSegment): number {
@@ -357,11 +372,35 @@ function inAHatchSeries(
     if (overlapAlong(a, other) < Math.min(aLen, lengthOf(other)) * 0.5) continue;
 
     const where = offsetOf(other);
-    // A third stroke continuing the series: past `b` in the same direction, or
-    // before `a` in the other — both within reach of one more step.
-    const continuesPastB = step > 0 ? where > step && where <= step + reach : where < step && where >= step - reach;
-    const continuesBeforeA = step > 0 ? where < 0 && where >= -reach : where > 0 && where <= reach;
-    if (continuesPastB || continuesBeforeA) return true;
+    // ── IT MUST CONTINUE THE SPACING, NOT MERELY BE NEARBY ──
+    //
+    // This header has always said a third stroke "continues the spacing", and
+    // for a long time the code only checked that one was somewhere in a RANGE
+    // beside the pair. That is a different test, and it cost the whole exterior
+    // envelope: measured against a 60-page answer key, EXT-1 and EXT-2 came
+    // back 13 ft found of 12,830 — zero per cent, on every export style.
+    //
+    // An exterior wall is not two lines. It is four — outer finish, sheathing,
+    // stud face, inner face — with a 5/8" board line and a column grid line
+    // beside them. On one real sheet the faces sit at 24.52, 24.65, 24.71 and
+    // 25.21 ft, with the board at 25.26 and the grid at 25.56. Fed those four
+    // lines alone the pairer returns the wall correctly; on the page it
+    // returned nothing, because two of those neighbours fall in the range and
+    // the range was the whole test.
+    //
+    // Hatching is a REPEATED pattern — it is generated at a constant pitch, and
+    // a wall assembly's layers are not. So the ratio is what decides: a series
+    // member sits at a whole number of steps from the pair, and a wall's
+    // neighbour does not. The board line lands at 1.07 steps and the grid at
+    // 1.51; neither is a whole number, and both used to reject the envelope.
+    const ratio = where / step;
+    const nearest = Math.round(ratio);
+    const offPitch = Math.abs(ratio - nearest);
+    // 0 is `a` and 1 is `b`; -1 continues before `a`, 2 and 3 continue past
+    // `b`, which is the same span `SERIES_REACH` already allowed.
+    const continuesTheSeries =
+      offPitch <= SERIES_PITCH_TOLERANCE && (nearest === -1 || nearest === -2 || nearest === 2 || nearest === 3);
+    if (continuesTheSeries && Math.abs(where) <= Math.abs(step) + reach + Math.abs(step)) return true;
   }
 
   return false;

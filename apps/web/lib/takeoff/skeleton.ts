@@ -55,11 +55,40 @@ export function thin(mask: Uint8Array, width: number, height: number): Uint8Arra
   ] as const;
   const doomed: number[] = [];
 
+  /**
+   * THE CELLS STILL SET, RATHER THAN THE WHOLE GRID.
+   *
+   * Each round used to walk every cell of the raster looking for ink. That is
+   * the right answer and the wrong cost: thinning takes one round per cell of
+   * the shape's half-thickness, so a 12-million-cell grid holding 27,000 cells
+   * of wall was visiting 12 million cells fifty times over to erode 27,000.
+   *
+   * Measured on a real sheet (Alden Green p20): 2,582 ms, against 571 ms for a
+   * page with FOUR TIMES the ink on a grid half the size. Cost tracked the GRID,
+   * not the work. The page that never returned — 28 minutes of CPU on Houston
+   * Hobby p7 — is the same defect with a bigger grid behind it, and a frozen tab
+   * is worse than a wrong answer.
+   *
+   * Thinning only ever CLEARS cells; nothing is ever set. So the set of
+   * candidates can only shrink, and keeping it is both exact and cheap.
+   */
+  let alive: number[] = [];
+  for (let at = 0; at < cells.length; at += 1) {
+    if (cells[at] === 0) continue;
+    const x = at % width;
+    const y = (at / width) | 0;
+    // The border is excluded here rather than in the sweep, because the
+    // neighbour reads below assume a full ring exists around every candidate.
+    if (x === 0 || y === 0 || x === width - 1 || y === height - 1) continue;
+    alive.push(at);
+  }
+
   const sweep = (second: boolean): boolean => {
     doomed.length = 0;
-    for (let y = 1; y < height - 1; y += 1) {
-      for (let x = 1; x < width - 1; x += 1) {
-        const at = y * width + x;
+    for (const at of alive) {
+      {
+        const x = at % width;
+        const y = (at / width) | 0;
         if (cells[at] === 0) continue;
         let filled = 0;
         let runs = 0;
@@ -85,13 +114,18 @@ export function thin(mask: Uint8Array, width: number, height: number): Uint8Arra
       }
     }
     for (const at of doomed) cells[at] = 0;
+    // Drop what was cleared, so the next round is smaller again. Only worth the
+    // copy when something actually went.
+    if (doomed.length > 0) alive = alive.filter((at) => cells[at] === 1);
     return doomed.length > 0;
   };
 
   // Bounded: thinning always terminates, but a bug here must not hang a browser
   // tab. One round removes at least one cell, so the cell count is the ceiling.
   let rounds = 0;
-  const ceiling = width * height;
+  // Every round removes at least one cell, so the live count is the ceiling —
+  // and it is now a far smaller number than the grid it used to be.
+  const ceiling = alive.length + 1;
   for (;;) {
     const first = sweep(false);
     const second = sweep(true);
