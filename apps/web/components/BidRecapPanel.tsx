@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition, type FormEvent } from "react";
 import { applyBidRecap, saveBidRecap, setLineBudgetedCost, setLineCostCategory } from "@/lib/actions";
 import { money } from "@/lib/money";
 import { EQUIPMENT_SPLIT_NOTE } from "@/lib/cost-category";
+import { bidMargin, formatMarginRate, underCostWarning } from "@/lib/estimating/bid-margin";
 import {
   bidRecap,
   COST_CATEGORY_LABELS,
@@ -78,10 +79,17 @@ export function BidRecapPanel({
     );
     const recap = bidRecap(lines, parsed);
     const spread = spreadToLines(lines, recap.bidTotal);
-    return { recap, landsAt: spread.length > 0 ? spreadTotal(lines, spread) : recap.bidTotal };
+    // The margin is of the LINE PRICES, so it does not depend on the draft
+    // rates at all — but it lives in this memo because it is derived from the
+    // same `lines` and nothing should recompute it on a keystroke.
+    return {
+      recap,
+      landsAt: spread.length > 0 ? spreadTotal(lines, spread) : recap.bidTotal,
+      margin: bidMargin(lines),
+    };
   }, [draft, lines]);
 
-  const { recap, landsAt } = preview;
+  const { recap, landsAt, margin } = preview;
   const roundingGap = Math.round((landsAt - recap.bidTotal) * 100) / 100;
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -156,8 +164,44 @@ export function BidRecapPanel({
             <td className="py-2 font-medium text-ink">Bid total</td>
             <td className="py-2 text-right font-semibold tabular-nums text-ink">{money(recap.bidTotal)}</td>
           </tr>
+          {/* A ROW, NOT A FOURTH NOTICE. This panel already carries three and
+              its own rule is that "a permanent notice is noise that teaches
+              people to stop reading notices" — so the margin is a figure under
+              the total, and only the under-cost case says a sentence (below).
+
+              It is the margin of the LINE PRICES against the line costs, not of
+              the bid total above: `bidTotal` is derived as cost plus rates
+              bounded 0-100, so a margin taken from it is positive by
+              construction and could never report anything. `bid-margin.ts` has
+              the argument and a test pins it. */}
+          <tr className="border-t border-line-row">
+            <td className="py-2 text-ink-label">
+              Margin on the line prices
+              {margin.state === "COVERED" || margin.state === "UNDER_COST" ? (
+                <span className="ml-2 text-xs text-ink-muted">{money(margin.priced)} priced</span>
+              ) : null}
+            </td>
+            <td
+              className={`py-2 text-right tabular-nums ${
+                margin.state === "UNDER_COST" ? "font-semibold text-tag-rose-ink" : "text-ink-body"
+              }`}
+            >
+              {margin.state === "NO_PRICES"
+                ? "no priced lines"
+                : margin.state === "NO_COSTS"
+                  ? "no costs recorded"
+                  : formatMarginRate(margin.rate)}
+            </td>
+          </tr>
         </tbody>
       </table>
+
+      {/* THE WARNING, and the only state that gets a sentence. Amber is for the
+          two fixable problems below; this one is rose, because a bid that does
+          not cover its cost is not a field somebody forgot to fill in. */}
+      {underCostWarning(margin, money) && (
+        <p className="text-sm text-tag-rose-ink">{underCostWarning(margin, money)}</p>
+      )}
 
       {/* #512. Rendered BEFORE the no-cost-type warning because it is the more
           fundamental one: a line with no cost is missing the figure this whole

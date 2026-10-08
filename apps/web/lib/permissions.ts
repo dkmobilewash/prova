@@ -261,6 +261,9 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   // PROJECT_MANAGER, ESTIMATOR, EXECUTIVE and FIELD all do.
   "/intake": "MANAGE_JOBS",
   "/drawings": "MANAGE_JOBS",
+  // One revision, its sheets, and the pins on them. Same capability as the
+  // list it hangs off: a sheet mark is job correspondence.
+  "/drawings/[revisionId]": "MANAGE_JOBS",
   "/closeout": "MANAGE_JOBS",
 };
 

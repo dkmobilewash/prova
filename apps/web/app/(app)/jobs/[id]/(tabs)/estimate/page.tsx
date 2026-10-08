@@ -39,6 +39,13 @@ import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { fringeScheduleInput } from "@/lib/labor-cost";
 import { laborCostApplyDecision } from "@/lib/estimating/labor-cost-apply";
 import { UseLaborCostButton } from "@/components/UseLaborCostButton";
+import { missingIndirects } from "@/lib/estimating/indirect-costs";
+import { MissingIndirects } from "@/components/MissingIndirects";
+import { estimateCrossChecks } from "@/lib/estimating/estimate-crosschecks";
+import { loadCrossCheckInputs } from "@/lib/estimating/estimate-crosschecks-query";
+import { EstimateCrossChecks } from "@/components/EstimateCrossChecks";
+import { PriceAnomalies } from "@/components/PriceAnomalies";
+import { loadPriceAnomalies } from "@/lib/estimating/price-anomalies-query";
 import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import {
   employerBurdenPercentOn,
@@ -279,6 +286,50 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
   // days would be a number nobody can reconcile. `burdenPercentToday` below is a
   // different question — what LOGGED hours cost — and keeps its own date.
   const burdenPercentForBid = employerBurdenPercentOn(employerBurdenRates, laborRateDate);
+
+  // WHICH GENERAL CONDITIONS THIS BID CARRIES NOTHING FOR. No new query: the
+  // lines and the catalog are both already in hand. Derived on every read and
+  // never stored — a stored "this bid has its indirects" is wrong the moment a
+  // line is deleted.
+  const missingIndirectLines = missingIndirects(
+    job.lineItems.map((item) => ({ indirectKind: item.indirectKind })),
+    catalogEntries.map((entry) => ({
+      id: entry.id,
+      description: entry.description,
+      indirectKind: entry.indirectKind,
+      defaultBudgetedUnitCost:
+        entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
+    })),
+  );
+  // A QUANTITY SOMEWHERE ELSE THAT IMPLIES A LINE HERE. Two queries, because
+  // both implying quantities live outside the job's own row — which is exactly
+  // why no check on this page could previously see them. Only fetched while
+  // the estimate is still being built: after award a missing line is a change
+  // order, and the page is read-only anyway.
+  const crossCheckInputs = isEstimateStage
+    ? await loadCrossCheckInputs(job.id, company.id)
+    : { measurements: [], carried: [] };
+  const crossChecks = estimateCrossChecks({
+    measurements: crossCheckInputs.measurements,
+    carried: crossCheckInputs.carried,
+    // Already in hand, and the live set: `lineItems` is loaded with
+    // `isDeleted: false`, so a deleted line cannot satisfy a cross-check.
+    lines: job.lineItems.map((item) => ({
+      description: item.description,
+      costCategory: item.costCategory,
+      budgetedUnitCost: item.budgetedUnitCost != null ? Number(item.budgetedUnitCost) : null,
+    })),
+  });
+
+  // GATED ON THE ESTIMATE STAGE, like the cross-checks above and for the same
+  // reason: after award a mis-priced line is a change order rather than
+  // something to fix before sending, and the page is read-only anyway. It also
+  // costs three queries and a fringe-schedule load, which is not worth paying
+  // on a page nobody can act on.
+  const priceAnomalyReport = isEstimateStage
+    ? await loadPriceAnomalies(job.id, company.id)
+    : { anomalies: [], checked: 0, unchecked: 0 };
+
   const schedulesByCraft = new Map(
     craftClassifications.map((craft) => [
       craft.id,
@@ -708,12 +759,34 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                   : null
               }
             />
+            {/* BELOW THE RECAP, because it is a question about the cost base the
+                recap marks up, and above the line list, because the answer is a
+                new line. Nothing is checked or stored — `missingIndirects` is
+                derived on every read. */}
+            <MissingIndirects jobId={job.id} missing={missingIndirectLines} />
+            {/* DIRECTLY BELOW `MissingIndirects`, because they are the same
+                kind of finding read at two ranges: that one asks whether a
+                FIXED LIST of general conditions is represented, this one asks
+                whether a quantity that exists somewhere else reached a line.
+                Both are muted, neither blocks, and putting them together is
+                what stops a reader treating one as more serious than the
+                other. */}
+            <EstimateCrossChecks checks={crossChecks} />
+            {/* BESIDE the cross-checks, because they answer adjacent halves of
+                the same question before a bid goes out: #630 asks what was
+                measured or carried and never priced, and this asks whether what
+                WAS priced looks like what the work has cost. Both advisory,
+                both silent when there is nothing to say. */}
+            <PriceAnomalies report={priceAnomalyReport} />
           </section>
 
           <section className="mb-10" data-tour="job-line-items">
             <h2 className="mb-3 text-lg font-semibold text-ink">Line items (estimate)</h2>
             <DraftLineItemsForm jobId={job.id} initialScope={job.scope ?? ""} />
-            <TakeoffForm jobId={job.id} />
+            <TakeoffForm
+              jobId={job.id}
+              defaultWastePercent={bidDefaults?.defaultWastePercent?.toString() ?? null}
+            />
             {/* The other way in. This form does the arithmetic from
                 dimensions somebody already has; the Takeoff tab is where you
                 get those dimensions off a drawing. */}

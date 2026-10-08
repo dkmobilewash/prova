@@ -107,7 +107,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       // record. `priceBasis` says whether a price was a catalog match, a
       // past-bid inference or a guess, which is exactly the provenance a
       // person re-reading their own estimate needs.
-      "tradeScope", "costCategory", "productionRate", "priceBasis",
+      "tradeScope", "costCategory", "indirectKind", "productionRate", "priceBasis",
       "phaseCodeId", "wallTypeComponentId",
       "createdAt", "updatedAt",
     ],
@@ -255,7 +255,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     note: "Your own catalog of standard line items and their default rates.",
     columns: [
       "id", "description", "unit", "tradeScope", "defaultUnitPrice",
-      "defaultBudgetedUnitCost", "defaultLaborHours", "productionRate", "costCategory", "craftClassificationId",
+      "defaultBudgetedUnitCost", "defaultLaborHours", "productionRate", "costCategory", "indirectKind", "craftClassificationId",
       "createdAt", "updatedAt",
     ],
     scope: byCompany,
@@ -343,7 +343,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "the same bid.",
     columns: [
       "id", "bidInvitationId", "packageLabel", "vendorId", "vendorName", "amount", "quotedOn",
-      "requestedOn", "dueBy", "declinedAt", "exclusions", "notes", "createdAt", "updatedAt",
+      "requestedOn", "dueBy", "declinedAt", "carriedAt", "validUntil", "exclusions", "notes", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -408,9 +408,13 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     key: "bidDefaults",
     model: "companyBidDefaults",
     label: "Default markup rates",
-    note: "Your standing markup, overhead and profit rates, which pre-fill a new job's recap.",
+    note: "Your standing markup, overhead and profit rates, plus the waste a takeoff adds — these pre-fill a new job.",
     columns: [
-      "id", ...RECAP_RATE_KEYS, "createdAt", "updatedAt",
+      // `defaultWastePercent` is named separately rather than folded into
+      // RECAP_RATE_KEYS, because it is not a rate: see the column's comment in
+      // bid-recap.prisma. The note above says so too, since a customer reading
+      // a CSV headed "Default markup rates" would otherwise read it as one.
+      "id", ...RECAP_RATE_KEYS, "defaultWastePercent", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -633,6 +637,17 @@ export const EXPORT_WITHHELD: ExportWithheld[] = [
  */
 export const EXPORT_OMISSIONS: ExportOmission[] = [
   {
+    key: "sheet-marks",
+    title: "Pins on drawing sheets",
+    detail:
+      "Photo, punch and note pins dropped on a plan sheet, and the arrows, clouds and text drawn " +
+      "on it. These are POSITIONS — a pair of numbers whose whole meaning is the sheet they sit on " +
+      "and the image behind them. In a spreadsheet they would be two columns of decimals nobody " +
+      "can act on, and the thing they point at (the photo, the punch item) is already exported in " +
+      "its own dataset. The drawing itself is the export.",
+    models: ["SheetPage", "SheetPin"],
+  },
+  {
     key: "compliance",
     title: "Licences, bonds, insurance and compliance documents",
     detail:
@@ -672,8 +687,41 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "sheet numbers are a different matter: that is a person's own work and it is the part " +
       "worth exporting, as the table of contents of a drawing set. It is omitted here because " +
       "no dataset has been written for it, not because it would be meaningless — and this line " +
+      "exists so that is stated rather than quietly true." +
+      " `PlanSheetScaleReading` is omitted for the first of those reasons and not the second: it" +
+      " is the scale a sheet declares about itself, derived from the dimension strings and" +
+      " stroked lines already in the PDF, so it is re-read at no cost and nobody's own work is" +
+      " lost by leaving it out. The calibration an estimator ACCEPTED from it is a different" +
+      " matter and is `TakeoffScaleCalibration`, exported with the takeoff.",
+    models: ["PlanSheetText", "PlanSheetProposal", "PlanSheetScaleReading"],
+  },
+  {
+    key: "plan-schedule-readings",
+    title: "The schedules read off each plan sheet",
+    detail:
+      "When a sheet the title blocks called a schedule is read, its rows are kept as one " +
+      "proposal per sheet — the mark, size, description and notes of each line of the table, " +
+      "with which column was read as what. Not exported yet, and the reason is the same as " +
+      "the sheet index above: the rows are a reading of a PDF this file does not contain, " +
+      "and re-reading the drawing is what produces them. What WOULD be worth exporting is a " +
+      "reading an estimator has accepted, because that is their own work and it is the door " +
+      "schedule as they have agreed it stands — but nothing accepts one yet, and this line " +
       "exists so that is stated rather than quietly true.",
-    models: ["PlanSheetText", "PlanSheetProposal"],
+    models: ["PlanScheduleProposal"],
+  },
+  {
+    key: "proposal-clause-drafts",
+    title: "Drafted proposal clauses, and the ones you dismissed",
+    detail:
+      "When the app drafts the clauses a scope letter does not mention, each suggestion is kept with the " +
+      "requirement it answers and the quote it came from \u2014 including the ones you turned down, so the same " +
+      "thing is not suggested again. Not exported yet, and the two halves differ. A clause you ACCEPTED is " +
+      "already in this file: it became a real clause on that job's proposal, which IS exported. What is left " +
+      "here is the suggestion queue and your decisions about it \u2014 useful to us for telling a good draft " +
+      "from a bad one, and not a record of your work in the way the accepted clause is. The dismissals are the " +
+      "part worth asking for if you ever want them: they are a list of what you decided does not belong on a " +
+      "letter, which is a judgement nobody else can reconstruct.",
+    models: ["ProposalClauseDraft"],
   },
   {
     key: "bid-addendum-readings",

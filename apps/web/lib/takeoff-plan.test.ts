@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -12,7 +13,9 @@ import {
   recipeInputsFromMeasurements,
   ringArea,
   ringSelfIntersects,
+  standardScaleFromText,
   verticesProblem,
+  type CalibrationNotice,
   type StoredCalibration,
   type StoredMeasurement,
 } from "./takeoff-plan";
@@ -265,17 +268,17 @@ describe("passing measurements to the other recipes", () => {
 describe("what the calibration dialog says before it saves", () => {
   it("refuses a line too short to set a scale from", () => {
     const stubby: StoredCalibration = { ...ROUND, x2: ROUND.x1 + 0.01 };
-    const refusal = calibrationRefusal(calibrationNotices(stubby, SHEET_42_IN_PT, 1200));
+    const refusal = calibrationRefusal(calibrationNotices(stubby, SHEET_42_IN_PT, 1200, null));
     expect(refusal).toMatch(/too short/);
   });
 
   it("refuses a missing distance before it divides by it", () => {
-    const refusal = calibrationRefusal(calibrationNotices({ ...ROUND, declaredDistanceFeet: 0 }, SHEET_42_IN_PT, 1200));
+    const refusal = calibrationRefusal(calibrationNotices({ ...ROUND, declaredDistanceFeet: 0 }, SHEET_42_IN_PT, 1200, null));
     expect(refusal).toMatch(/what that dimension says/);
   });
 
   it("names the scale and the sheet width when both are readable", () => {
-    const notices = calibrationNotices(QUARTER_INCH, SHEET_42_IN_PT, 1200);
+    const notices = calibrationNotices(QUARTER_INCH, SHEET_42_IN_PT, 1200, null);
     expect(calibrationRefusal(notices)).toBeNull();
     expect(notices.map((n) => n.message).join(" ")).toContain('1/4" = 1\'-0"');
     expect(notices.map((n) => n.message).join(" ")).toContain("168 ft across");
@@ -283,19 +286,174 @@ describe("what the calibration dialog says before it saves", () => {
 
   it("says so when the scale matches nothing standard", () => {
     const odd: StoredCalibration = { ...QUARTER_INCH, declaredDistanceFeet: 153.3 };
-    const notices = calibrationNotices(odd, SHEET_42_IN_PT, 1200);
+    const notices = calibrationNotices(odd, SHEET_42_IN_PT, 1200, null);
     expect(notices.some((n) => n.message.includes("isn't a standard scale"))).toBe(true);
   });
 
   it("flags a sheet that reads too wide to be a building", () => {
     const huge: StoredCalibration = { ...QUARTER_INCH, declaredDistanceFeet: 9000 };
-    const notices = calibrationNotices(huge, SHEET_42_IN_PT, 1200);
+    const notices = calibrationNotices(huge, SHEET_42_IN_PT, 1200, null);
     expect(notices.some((n) => n.message.includes("outside the range"))).toBe(true);
   });
 
   it("puts a number on the error band when the line is short but allowed", () => {
     const shortish: StoredCalibration = { ...ROUND, x2: ROUND.x1 + 0.08 };
-    const notices = calibrationNotices(shortish, SHEET_42_IN_PT, 1200);
+    const notices = calibrationNotices(shortish, SHEET_42_IN_PT, 1200, null);
     expect(notices.some((n) => n.message.includes("ft over a 100 ft run"))).toBe(true);
+  });
+});
+
+/**
+ * THE ONE CHECK THAT IS NOT DERIVED FROM THE SAME TWO CLICKS.
+ *
+ * Everything else `calibrationNotices` says comes from the calibration itself,
+ * so a calibration against the wrong dimension is self-consistent: it reads
+ * back as a real scale, the sheet width looks plausible, and every quantity
+ * taken off that sheet is wrong by the same factor. The title block is the
+ * only evidence that can contradict it — and until this, the app extracted it
+ * and rendered it in a metadata line nothing read.
+ */
+describe("the title block as independent evidence", () => {
+  const mismatch = (notices: CalibrationNotice[]) => notices.find((n) => n.message.includes("title block"));
+
+  it("says nothing when the printed scale agrees with the calibration", () => {
+    // QUARTER_INCH is exactly 1/4" = 1'-0" on a 42-inch sheet.
+    const notices = calibrationNotices(QUARTER_INCH, SHEET_42_IN_PT, 1200, '1/4" = 1\'-0"');
+    expect(mismatch(notices)).toBeUndefined();
+  });
+
+  it("NAMES BOTH READINGS when they disagree, which is the whole point", () => {
+    const notices = calibrationNotices(QUARTER_INCH, SHEET_42_IN_PT, 1200, '1/8" = 1\'-0"');
+    const found = mismatch(notices);
+    expect(found).toBeDefined();
+    expect(found!.message).toContain('1/8" = 1\'-0"');
+    // And the calibration's own reading, so the estimator can see the factor.
+    expect(found!.message).toContain("1 in = 4 ft");
+  });
+
+  it("WARNS AND NEVER REFUSES — a blown-up detail is ordinary draughting", () => {
+    const notices = calibrationNotices(QUARTER_INCH, SHEET_42_IN_PT, 1200, '1/8" = 1\'-0"');
+    expect(mismatch(notices)!.level).toBe("warn");
+    expect(calibrationRefusal(notices)).toBeNull();
+  });
+
+  it("survives a model's prime marks rather than demanding ASCII quotes", () => {
+    // What a title-block read actually returns some of the time: U+2033 and
+    // U+2032 instead of " and '. A comparison that missed this would simply
+    // go quiet — the failure mode that cannot be seen on screen.
+    const notices = calibrationNotices(QUARTER_INCH, SHEET_42_IN_PT, 1200, "1/8″ = 1′-0″");
+    expect(mismatch(notices)).toBeDefined();
+  });
+
+  it("is silent on a sheet that names no single scale", () => {
+    for (const printed of [null, "AS NOTED", "As noted", "", "1:100", "NTS"]) {
+      const notices = calibrationNotices(QUARTER_INCH, SHEET_42_IN_PT, 1200, printed);
+      expect(mismatch(notices), String(printed)).toBeUndefined();
+    }
+  });
+
+  it("is silent when the page width is unknown, because there is no reading to compare", () => {
+    const notices = calibrationNotices(QUARTER_INCH, null, 1200, '1/8" = 1\'-0"');
+    expect(mismatch(notices)).toBeUndefined();
+  });
+});
+
+describe("reading a printed scale", () => {
+  it("matches the standard scales however they are typed", () => {
+    expect(standardScaleFromText('1/4" = 1\'-0"')?.feetPerInch).toBe(4);
+    expect(standardScaleFromText('1/4"=1\'0"')?.feetPerInch).toBe(4);
+    expect(standardScaleFromText('  1/4"  =  1\'-0"  ')?.feetPerInch).toBe(4);
+    expect(standardScaleFromText("1/4″ = 1′-0″")?.feetPerInch).toBe(4);
+    expect(standardScaleFromText('1" = 20\'')?.feetPerInch).toBe(20);
+  });
+
+  it("returns the canonical NAME, not the string it was handed", () => {
+    // So a message quotes the app's own vocabulary rather than echoing
+    // whatever spacing a drawing happened to use.
+    expect(standardScaleFromText('1/4"=1\'0"')?.name).toBe('1/4" = 1\'-0"');
+  });
+
+  it("returns null rather than guessing", () => {
+    for (const printed of [null, "", "AS NOTED", "NTS", "1:100", "VARIES", "FULL SIZE"]) {
+      expect(standardScaleFromText(printed), String(printed)).toBeNull();
+    }
+  });
+});
+
+/**
+ * EVERY SENTENCE THIS MODULE SHOWS NAMES AN ACTION THE TOOL ACTUALLY HAS.
+ *
+ * Three of them said "drag". The tool is click-once-per-end — `TakeoffPlanViewer`
+ * says so on screen, "Click once at each end of a dimension printed on the
+ * drawing" — and dragging places the first point and stops. A click-through on
+ * 2026-10-05 reported it after trying to drag and getting one point, which is
+ * the worst case of the three: the refusal a confused person reads FIRST was
+ * telling them to do the thing that had just failed them.
+ *
+ * Pinned rather than just fixed, because wording drifts back. There is nothing
+ * here a type can catch and nothing a reviewer would notice — "Drag along a
+ * longer dimension" reads perfectly well to anybody who has not tried it.
+ */
+describe("the calibration dialog describes an action the tool has", () => {
+  const everySentence = () => {
+    const sentences: string[] = [];
+    // Every branch of `calibrationNotices` that can speak, in one place, so a
+    // new message cannot be added outside this net.
+    sentences.push(...calibrationNotices({ ...ROUND, declaredDistanceFeet: 0 }, SHEET_42_IN_PT, 1200, null).map((n) => n.message));
+    sentences.push(...calibrationNotices({ ...ROUND, x2: ROUND.x1 }, SHEET_42_IN_PT, 1200, null).map((n) => n.message));
+    sentences.push(...calibrationNotices({ ...ROUND, x2: ROUND.x1 + 0.01 }, SHEET_42_IN_PT, 1200, null).map((n) => n.message));
+    sentences.push(...calibrationNotices({ ...ROUND, x2: ROUND.x1 + 0.08 }, SHEET_42_IN_PT, 1200, null).map((n) => n.message));
+    sentences.push(...calibrationNotices(QUARTER_INCH, SHEET_42_IN_PT, 1200, null).map((n) => n.message));
+    sentences.push(
+      ...calibrationNotices(QUARTER_INCH, SHEET_42_IN_PT, 1200, '1/8" = 1\'-0"').map((n) => n.message),
+    );
+    sentences.push(...calibrationNotices({ ...QUARTER_INCH, declaredDistanceFeet: 9000 }, SHEET_42_IN_PT, 1200, null).map((n) => n.message));
+    return sentences;
+  };
+
+  it("never tells anybody to DRAG, because dragging places one point and stops", () => {
+    const offenders = everySentence().filter((message) => /drag/i.test(message));
+    expect(offenders, "a notice told the estimator to drag").toEqual([]);
+  });
+
+  it("CATCHES THE SAME WORDING IN THE ACTIONS TOO, which this census missed the first time", () => {
+    // #631 fixed three strings in `takeoff-plan.ts` and left a fourth in
+    // `lib/actions/takeoff.ts` — "Drag along a dimension on the drawing to
+    // set the scale" — standing, because the census above reads
+    // `calibrationNotices`'s OUTPUT and that refusal is the action's own.
+    // Right pattern, wrong SCOPE: the failure mode no size assertion can see,
+    // since nothing is ever missing from a file you do not read.
+    //
+    // So this reads the source of every module that speaks to the estimator
+    // about calibrating, with comments stripped — both files print the word
+    // "drag" in prose explaining the fix, and a raw-text scan would find
+    // those and report a defect that does not exist.
+    const roots = ["./takeoff-plan.ts", "./actions/takeoff.ts", "./takeoff-zones.ts"];
+    const sources = roots.map((rel) => ({
+      rel,
+      text: readFileSync(new URL(rel, import.meta.url), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1"),
+    }));
+    // The parse must be able to fail: a stripper that returned "" would pass
+    // every assertion below it.
+    expect(sources.length, "the roots list emptied").toBe(3);
+    for (const source of sources) {
+      expect(source.text.length, `${source.rel} stripped to nothing`).toBeGreaterThan(500);
+      expect(source.text, `${source.rel} still says "drag" outside a comment`).not.toMatch(/drag/i);
+    }
+  });
+
+  it("collected sentences from every branch, so the check is not vacuous", () => {
+    // Without this, a `calibrationNotices` that returned nothing at all would
+    // pass the assertion above — nothing is ever missing from an empty list.
+    const sentences = everySentence();
+    expect(sentences.length).toBeGreaterThan(8);
+    expect(sentences.some((m) => /click/i.test(m)), "no notice names the click").toBe(true);
+  });
+
+  it("says CLICK in the refusal a confused person reads first", () => {
+    const nothingDrawn = calibrationNotices({ ...ROUND, x2: ROUND.x1 }, SHEET_42_IN_PT, 1200, null);
+    expect(calibrationRefusal(nothingDrawn)).toBe("Click once at each end of a dimension on the drawing first.");
   });
 });

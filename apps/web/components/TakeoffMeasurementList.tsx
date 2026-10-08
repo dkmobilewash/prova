@@ -66,7 +66,26 @@ export function TakeoffMeasurementList({
   const [recipe, setRecipe] = useState(PLAN_RECIPES[0]?.id ?? "wall");
 
   const unposted = sheet.measurements.filter((m) => !m.postedAt);
-  const outOfDate = unposted.filter((m) => m.outOfDate);
+  /**
+   * MULTI-SCALE SHEETS DO NOT GET THE RESCALE OFFER, and this is a bug fix
+   * rather than a preference.
+   *
+   * `rescaleTakeoffMeasurements` repoints every unposted measurement to the
+   * newest calibration and leaves the traced geometry alone. On a sheet
+   * carrying a plan at 1/8" and a detail at 1-1/2" that multiplies the
+   * detail's quantities by twelve — and the banner below was the thing
+   * inviting the press, because "reads at an older scale" cannot tell a
+   * RE-CALIBRATION (same scale, drawn twice, older rows genuinely stale) from
+   * a SECOND ZONE (different scale, both rows correct).
+   *
+   * `sheet.zoneNotices` is that discriminator, computed by `lib/takeoff-zones.ts`
+   * and non-empty only when two scales differ beyond click jitter. Posted
+   * measurements were already safe — the action skips them — so what this
+   * protects is the unposted detail traces, which is everything somebody is
+   * part-way through.
+   */
+  const multiScale = sheet.zoneNotices.length > 0;
+  const outOfDate = multiScale ? [] : unposted.filter((m) => m.outOfDate);
   const chosen = useMemo(
     () => sheet.measurements.filter((m) => selected.includes(m.id)),
     [sheet.measurements, selected],
@@ -96,6 +115,20 @@ export function TakeoffMeasurementList({
 
   return (
     <div className="flex flex-col gap-3">
+      {/* ABOVE the older-scale banner, and the two are mutually exclusive by
+          construction: `outOfDate` is emptied on a multi-scale sheet. A
+          screen that said "these read at an older scale, press to fix" AND
+          "two scales is normal here" would be giving contradictory advice
+          about the same rows. */}
+      {sheet.zoneNotices.map((notice) => (
+        <div
+          key={notice.message}
+          role="status"
+          className="rounded-lg border border-tag-amber bg-tag-amber p-3 text-sm text-tag-amber-ink"
+        >
+          {notice.message}
+        </div>
+      ))}
       {outOfDate.length > 0 && (
         <div className="rounded-lg border border-line-row bg-amber-500/5 p-3">
           <p className="text-sm text-tag-amber-ink">
@@ -133,7 +166,17 @@ export function TakeoffMeasurementList({
                 <span className="text-ink-muted">{KIND_LABEL[row.kind]}</span>{" "}
                 {row.label ?? <span className="text-ink-muted">unnamed</span>} —{" "}
                 <span className="font-medium">{reads(row)}</span>
-                {row.outOfDate && !row.postedAt && <span className="ml-2 text-xs text-tag-amber-ink">older scale</span>}
+                {/* On a multi-scale sheet the row says WHICH scale it was
+                    traced against; on an ordinary one it says the scale is
+                    stale. Never both — a row cannot be at a second zone and
+                    behind the sheet at the same time, and `scaleLabel` is
+                    non-null only where `zoneNotices` fired. */}
+                {row.scaleLabel !== null && !row.postedAt && (
+                  <span className="ml-2 text-xs text-ink-muted">at {row.scaleLabel}</span>
+                )}
+                {row.scaleLabel === null && row.outOfDate && !row.postedAt && (
+                  <span className="ml-2 text-xs text-tag-amber-ink">older scale</span>
+                )}
                 {row.postedAt && <span className="ml-2 text-xs text-ink-muted">already on the estimate</span>}
               </span>
             </label>
@@ -290,10 +333,23 @@ function WallBridgeFields({ wallTypes }: { wallTypes: PostableWallType[] }) {
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-xs text-ink-label">
           {picked ? `Wall height (ft) — ${picked.defaultHeightFt ?? "type has none"}` : "Wall height (ft)"}
+          {/* "e.g. 9", NOT "9". A bare number in an empty required field reads
+              as a value that is already there — a click-through on 2026-10-05
+              posted a run, got "Height ft needs a number", and had to go back
+              and type the 9 it could already see. Worse when a wall type IS
+              picked: the label then shows that type's own default (10, say)
+              while the placeholder said 9, so one control carried two numbers
+              and neither was the value.
+
+              It stays a HINT rather than becoming a prefilled default on
+              purpose: `planMeasuredWallRun` refuses a run with no height
+              instead of assuming one, and prefilling a real figure here would
+              be the guess that module declines to make — the estimator would
+              be agreeing to a height nobody chose. */}
           <input
             name="heightFt"
             inputMode="decimal"
-            placeholder="9"
+            placeholder={picked?.defaultHeightFt ? `e.g. ${picked.defaultHeightFt}` : "e.g. 9"}
             className="w-24 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
           />
         </label>

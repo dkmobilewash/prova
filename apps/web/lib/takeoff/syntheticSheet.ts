@@ -116,6 +116,61 @@ export type SheetSpec = {
    */
   symbols: SymbolSpec[];
   clutter?: Clutter[];
+  /**
+   * The walls drawn on the sheet, each as TWO PARALLEL FACES — which is how a
+   * plan draws one and why `wallVectors.ts` looks for pairs.
+   *
+   * `trueWallFeet(spec)` is the truth an eval grades against, the way
+   * `trueCount(spec)` is for symbols. Lengths are in FEET of building and the
+   * generator converts using the sheet's own scale, so a case reads in the
+   * units a bid is in rather than in points.
+   */
+  walls?: WallSpec[];
+  /**
+   * Draw the walls inside `q <scale> 0 0 <scale> 0 0 cm … Q`, so the sheet poses
+   * the question a plainly-drawn one cannot.
+   *
+   * THE FIXTURE COULD NOT ASK THIS, AND THAT IS WHY A REAL DEFECT SHIPPED. The
+   * first version of `sheetStrokes.ts` ignored the current transformation matrix
+   * entirely, which halves a wall's length and thickness on any sheet that uses
+   * one — and this generator writes its own content stream and never emitted a
+   * `cm`, so every test passed. Real CAD uses them constantly: a Form XObject
+   * always carries a matrix.
+   *
+   * The walls' own `fromFeet` and `lengthFeet` stay the TRUTH in both arms. A
+   * correct reader returns the same footage either way; that equality is the
+   * whole assertion.
+   *
+   * **THE LAST WALL IS DRAWN AFTER THE `Q`, DELIBERATELY, and the first version
+   * of this arm had nothing there.** With every wall inside one `q … Q` and the
+   * content stream ending at the `Q`, a reader that never POPS the matrix scores
+   * identically to one that does — there is nothing left to draw wrongly. So the
+   * `save`/`restore` mutation came back GREEN on a suite written for exactly
+   * that defect. Real CAD interleaves transformed and untransformed content all
+   * over a sheet; one wall after the restore is the smallest shape that makes a
+   * leak observable.
+   */
+  wallTransformScale?: number;
+  /**
+   * Feet of building per INCH of paper — 8 is 1/8" = 1'-0", 4 is 1/4".
+   *
+   * Only needed when `walls` is set: a symbol has an absolute size in points
+   * and does not care about scale, but a wall's thickness is the whole question
+   * `wallVectors.ts` asks and it is meaningless without one.
+   */
+  feetPerInch?: number;
+};
+
+/** One wall run, in feet of building. */
+export type WallSpec = {
+  /** Where it starts, in feet from the sheet's bottom-left drawing origin. */
+  fromFeet: { x: number; y: number };
+  /** Horizontal or vertical: a plan's walls are, and a diagonal would make the
+   *  truth harder to state than the thing being measured. */
+  direction: "horizontal" | "vertical";
+  lengthFeet: number;
+  /** 0.406 is a 4-7/8" partition — 3-5/8" stud with 5/8" board each side. */
+  thicknessFeet: number;
 };
 
 /** Escape nothing: every string here is generated, ASCII, and controlled. */
@@ -214,6 +269,63 @@ function contentStream(spec: SheetSpec): string {
   ops.push(`${num(width - 220)} 30 180 90 re S`);
   ops.push("BT /F1 14 Tf", `${num(width - 210)} 50 Td (${spec.sheetNumber}) Tj`, "ET");
   ops.push("BT /F1 7 Tf", `${num(width - 210)} 95 Td (SYNTHETIC TEST SHEET - NOT A REAL PROJECT) Tj`, "ET");
+
+  // ── WALLS, as two parallel faces each ──
+  //
+  // Drawn at 0.75pt, the weight CAD gives a wall face. The origin is 80pt in
+  // from the sheet's bottom-left so a plan sits clear of the border, and every
+  // figure in a `WallSpec` is in FEET — converted here, once, so a case never
+  // has to think in points.
+  if (spec.walls && spec.walls.length > 0) {
+    const feetPerInch = spec.feetPerInch ?? 8;
+    // 72 points to the paper inch, `feetPerInch` feet of building to that inch.
+    const ptPerFoot = 72 / feetPerInch;
+    // Under a `cm`, the coordinates WRITTEN are divided by the scale so the
+    // walls land in the same place and at the same size on paper. That is the
+    // point: the two arms are visually identical and differ only in whether a
+    // reader must honour the matrix.
+    const scale = spec.wallTransformScale ?? 1;
+    ops.push("0.75 w");
+
+    /** One wall's two faces, at whatever scale the surrounding matrix is. */
+    const drawWall = (wall: WallSpec, at: number) => {
+      const ptPerFootDrawn = ptPerFoot / at;
+      const x = (80 / at) + wall.fromFeet.x * ptPerFootDrawn;
+      const y = (80 / at) + wall.fromFeet.y * ptPerFootDrawn;
+      const run = wall.lengthFeet * ptPerFootDrawn;
+      const thickness = wall.thicknessFeet * ptPerFootDrawn;
+      if (wall.direction === "horizontal") {
+        ops.push(`${num(x)} ${num(y)} m ${num(x + run)} ${num(y)} l S`);
+        ops.push(`${num(x)} ${num(y + thickness)} m ${num(x + run)} ${num(y + thickness)} l S`);
+      } else {
+        ops.push(`${num(x)} ${num(y)} m ${num(x)} ${num(y + run)} l S`);
+        ops.push(`${num(x + thickness)} ${num(y)} m ${num(x + thickness)} ${num(y + run)} l S`);
+      }
+    };
+
+    ops.push("1 w");
+    if (scale === 1) {
+      for (const wall of spec.walls) drawWall(wall, 1);
+    } else {
+      // Every wall but the last under the matrix, then the last one AFTER the
+      // restore at plain scale — see `wallTransformScale` for why that split is
+      // load-bearing rather than decorative.
+      const inside = spec.walls.slice(0, -1);
+      const after = spec.walls[spec.walls.length - 1];
+      // THE PEN GOES IN WITH THE MATRIX, for the same reason and with the same
+      // shape. `w` is graphics state, so `Q` restores it — and a reader that
+      // pops the matrix but not the pen reads every stroke after this block at
+      // the INNER width. The wall after the `Q` is what makes that observable,
+      // exactly as it does for the matrix: with everything inside one block
+      // there is nothing left to get wrong.
+      ops.push(`q ${num(scale)} 0 0 ${num(scale)} 0 0 cm`);
+      ops.push("3 w");
+      for (const wall of inside) drawWall(wall, scale);
+      ops.push("Q");
+      drawWall(after, 1);
+    }
+    ops.push("1 w");
+  }
 
   // Deterministic pseudo-jitter, so a run is reproducible but the layout is not
   // a clean lattice. A lattice would let a model infer a count from the pattern
@@ -315,6 +427,20 @@ export function synthesiseSheet(spec: SheetSpec): Buffer {
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
 
   return Buffer.from(pdf, "latin1");
+}
+
+/**
+ * The total wall footage on a sheet — the truth an eval grades against, the way
+ * `trueCount` is for symbols.
+ *
+ * Measured along the CENTRELINE, because that is what an estimator traces and
+ * what `wallVectors.ts` returns. A wall's two faces are each `lengthFeet` long
+ * and so is the line between them, so this is a plain sum — stated rather than
+ * assumed, because a reader checking the grading needs to know which of the
+ * three lengths a wall has is the one being compared.
+ */
+export function trueWallFeet(spec: SheetSpec): number {
+  return (spec.walls ?? []).reduce((total, wall) => total + wall.lengthFeet, 0);
 }
 
 /** The total number of symbols on a sheet — the truth an eval grades against. */

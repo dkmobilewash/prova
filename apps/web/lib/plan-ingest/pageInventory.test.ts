@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { pageInventoryWork, type PageInventoryDeps, type SheetTextRow } from "./pageInventory";
+import { pageInventoryWork, type PageInventoryDeps, type SheetTextRow, type ScaleReadingRow } from "./pageInventory";
 import { planSetPdf, scannedSheet, sheetWithTitleBlock } from "./planFixtures";
 import { openPlanPdf } from "./planPdf";
 import type { ClaimedTask } from "./runner";
@@ -35,6 +35,7 @@ function task(pageNumber: number): ClaimedTask {
 
 function deps(over: Partial<PageInventoryDeps> = {}) {
   const saved: SheetTextRow[] = [];
+  const scales: ScaleReadingRow[] = [];
   const bytes = planSetPdf([
     sheetWithTitleBlock({ sheetNumber: "A-101", title: "FIRST FLOOR PLAN" }),
     sheetWithTitleBlock({ sheetNumber: "A-102", title: "SECOND FLOOR PLAN", rotation: 90 }),
@@ -47,8 +48,11 @@ function deps(over: Partial<PageInventoryDeps> = {}) {
     saveSheetText: async (row) => {
       saved.push(row);
     },
+    saveScaleReading: async (row) => {
+      scales.push(row);
+    },
   };
-  return { deps: { ...base, ...over }, saved, openPdf, readPlanBytes: base.readPlanBytes };
+  return { deps: { ...base, ...over }, saved, scales, openPdf, readPlanBytes: base.readPlanBytes };
 }
 
 describe("reading what each page says", () => {
@@ -139,5 +143,201 @@ describe("when the file cannot be read", () => {
     expect(out.error).toContain("3 sheets");
     expect(out.error).toContain("no sheet 9");
     expect(d.saved).toHaveLength(0);
+  });
+});
+
+
+/**
+ * THE SCALE READING, which rides this stage because this stage already has the
+ * document open — and because it is the only place it CAN ride: pdfjs detaches
+ * the buffer it is handed, so a second stage opening the same bytes throws.
+ */
+describe("the scale a sheet declares about itself", () => {
+  it("records a reading for every page, including one it cannot read", async () => {
+    const d = deps();
+    const work = pageInventoryWork(CTX, d.deps);
+    expect(await work(task(1))).toEqual({ ok: true });
+    expect(await work(task(2))).toEqual({ ok: true });
+    expect(await work(task(3))).toEqual({ ok: true });
+
+    // ONE ROW PER PAGE AND NEVER A MISSING ONE: a page with no reading and a
+    // page nobody has read are different states, and only a stored row can tell
+    // them apart. The same reason `PlanSheetText.hasTextLayer` exists.
+    expect(d.scales).toHaveLength(3);
+    expect(d.scales.map((r) => r.pageNumber)).toEqual([1, 2, 3]);
+  });
+
+  it("says a SCAN is a scan rather than attempting it", async () => {
+    const d = deps();
+    const work = pageInventoryWork(CTX, d.deps);
+    // The third fixture sheet has no text layer.
+    await work(task(3));
+    const row = d.scales[0]!;
+    expect(row.scaleName).toBeNull();
+    expect(row.declineReason).toMatch(/is a scan/);
+    expect(row.consideredCount).toBe(0);
+  });
+
+  it("INVENTS NO SCALE FROM THE DIMENSIONS when there are none to vote on", async () => {
+    // These fixtures carry a title block and no dimension strings, so the
+    // dimension reader has nothing and must say so. It used to end there, and
+    // this test asserted a null scale.
+    //
+    // IT NO LONGER DOES, and the change is the feature rather than a regression:
+    // `planFixtures.ts:215` prints `SCALE: 1/4" = 1'-0"` in the block, so the
+    // PRINTED fallback reads it — which is exactly what it is for. What must
+    // still hold is that the DIMENSIONS reader produced nothing and that the row
+    // says where its scale came from.
+    const d = deps();
+    const work = pageInventoryWork(CTX, d.deps);
+    await work(task(1));
+    const row = d.scales[0]!;
+    expect(row.source).toBe("PRINTED");
+    expect(row.scaleName).toBe('1/4" = 1\'-0"');
+    // No dimension agreed, because none could be read — so no evidence list, and
+    // no error band, because there is no measured distance from anything.
+    expect(row.agreedText).toBeNull();
+    expect(row.inheritedError).toBeNull();
+    expect(row.consideredCount).toBe(0);
+    expect(row.declineReason).toBeNull();
+  });
+
+  it("falls back ONLY where the dimensions declined, never over an answer", async () => {
+    // The ordering is the safety of the whole path: a dimension-derived reading
+    // can be checked against the drawing and a printed one cannot, so the
+    // printed scale must never displace one. Proved by a fixture that HAS
+    // readable dimensions — its reading must stay `DIMENSIONS` even though its
+    // title block prints a scale too.
+    const d = deps();
+    const work = pageInventoryWork(CTX, {
+      ...d.deps,
+      openPdf: async (bytes) => {
+        const pdf = await openPlanPdf(bytes);
+        return {
+          ...pdf,
+          // A page whose dimensions DO agree: six 1/8"-scale dimensions, drawn
+          // the way `scaleFromDimensions.test.ts` builds them.
+          pageText: async (n: number) => {
+            const page = await pdf.pageText(n);
+            const items = [...page.items];
+            for (let i = 0; i < 6; i += 1) {
+              const feet = 8 + i * 2;
+              const lenPt = feet * 9;
+              items.push({ str: `${feet}' - 0"`, x: 200 + lenPt / 2 - 15, y: 200 + i * 300 - 4, width: 30, height: 10 });
+            }
+            return { ...page, items };
+          },
+          pageStrokes: async (n: number) => {
+            const strokes = await pdf.pageStrokes(n);
+            const segments = [...strokes.segments];
+            for (let i = 0; i < 6; i += 1) {
+              const feet = 8 + i * 2;
+              const lenPt = feet * 9;
+              segments.push({ x1: 200, y1: 200 + i * 300, x2: 200 + lenPt, y2: 200 + i * 300 });
+            }
+            return { ...strokes, segments };
+          },
+        };
+      },
+    });
+    await work(task(1));
+    const row = d.scales[0]!;
+    expect(row.source).toBe("DIMENSIONS");
+    expect(row.scaleName).toBe('1/8" = 1\'-0"');
+    // And NOT the 1/4" its title block prints — the dimensions won.
+    expect(row.agreedText).toBeTruthy();
+  });
+
+  it("still records the page's TEXT when the scale cannot be told", async () => {
+    // The ordering that matters: a surprise in the geometry must not lose the
+    // write this stage is named for.
+    const d = deps();
+    const work = pageInventoryWork(CTX, d.deps);
+    await work(task(1));
+    expect(d.saved).toHaveLength(1);
+    expect(d.saved[0]!.hasTextLayer).toBe(true);
+    expect(d.scales).toHaveLength(1);
+  });
+
+  it("reports success even when the geometry read throws, and stores the reason", async () => {
+    // A page pdfjs will not hand an operator list for must not spend the task's
+    // three attempts or lose the text write.
+    const d = deps();
+    const work = pageInventoryWork(CTX, {
+      ...d.deps,
+      openPdf: async (bytes) => {
+        const pdf = await openPlanPdf(bytes);
+        return {
+          ...pdf,
+          pageStrokes: async () => {
+            throw new Error("no operator list");
+          },
+        };
+      },
+    });
+    expect(await work(task(1))).toEqual({ ok: true });
+    expect(d.scales[0]!.declineReason).toMatch(/could not be read: no operator list/);
+  });
+});
+
+/**
+ * THE PRINTED SCALE, AS A FALLBACK ONLY.
+ *
+ * The ordering is the safety: a reading off a dimension printed on the drawing
+ * can be checked against the drawing, and one off the title block cannot. So the
+ * printed scale must never be reached while the dimensions have an answer, and
+ * `source` must say which happened — a PRINTED reading stores a line too (the
+ * sheet's own width), so nothing downstream can infer it.
+ */
+describe("the scale printed on the sheet", () => {
+  it("reads the fixture's printed scale, which is the fallback doing its job", async () => {
+    const d = deps();
+    const work = pageInventoryWork(CTX, d.deps);
+    await work(task(1));
+    expect(d.scales[0]!.source).toBe("PRINTED");
+    expect(d.scales[0]!.scaleName).toBe('1/4" = 1\'-0"');
+  });
+
+  it("STORES THE SHEET'S OWN WIDTH AS THE LINE, inventing no dimension", async () => {
+    // The whole reason this path keeps #623's rule in substance: the line is a
+    // fact about the file, not a figure read off a dimension that is not there.
+    // A full-width span is also the longest line available, so the geometry is
+    // the least error-prone there is.
+    const d = deps();
+    const work = pageInventoryWork(CTX, d.deps);
+    await work(task(1));
+    const row = d.scales[0]!;
+    expect(row.x1).toBe(0);
+    expect(row.x2).toBe(1);
+    expect(row.declaredDistanceFeet).not.toBeNull();
+    // ARCH D in the fixture at 1/4" = 1'-0": 36in x 4ft/in = 144ft.
+    expect(row.declaredDistanceFeet).toBeCloseTo(144, 2);
+  });
+
+  it("records `DIMENSIONS` on a scan, which never reaches either reader", async () => {
+    const d = deps();
+    const work = pageInventoryWork(CTX, d.deps);
+    await work(task(3));
+    expect(d.scales[0]!.source).toBe("DIMENSIONS");
+    expect(d.scales[0]!.declineReason).toMatch(/is a scan/);
+  });
+
+  it("STILL STORES EXACTLY ONE ROW PER PAGE whichever reader answered", async () => {
+    // The fallback must not become a second write. A page with two rows would
+    // make "which scale does this sheet have" a question with two answers.
+    const d = deps();
+    const work = pageInventoryWork(CTX, d.deps);
+    await work(task(1));
+    await work(task(2));
+    expect(d.scales).toHaveLength(2);
+    expect(d.scales.map((r) => r.pageNumber)).toEqual([1, 2]);
+  });
+
+  it("keeps the page's TEXT write whatever either reader did", async () => {
+    const d = deps();
+    const work = pageInventoryWork(CTX, d.deps);
+    await work(task(1));
+    expect(d.saved).toHaveLength(1);
+    expect(d.saved[0]!.hasTextLayer).toBe(true);
   });
 });

@@ -6,8 +6,12 @@ import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { TakeoffMeasurementList } from "@/components/TakeoffMeasurementList";
 import { TakeoffPlanUploader } from "@/components/TakeoffPlanUploader";
 import { PlanIngestPanel } from "@/components/PlanIngestPanel";
+import { ScheduleProposals } from "@/components/ScheduleProposals";
+import { loadScheduleProposals, scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery";
 import { PlanSheetReview } from "@/components/PlanSheetReview";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
+import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
+import { sheetSuitability, duplicateWallsCaution } from "@/lib/takeoff/sheetSuitability";
 import { latestIngestFor } from "@/lib/plan-ingest/claim";
 import { TakeoffCurrencyBanner } from "@/components/TakeoffCurrencyBanner";
 import { TakeoffPlanRevisionForm } from "@/components/TakeoffPlanRevisionForm";
@@ -16,7 +20,12 @@ import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
 import { deleteTakeoffPlan } from "@/lib/actions";
 import { requireCapability } from "@/lib/authz";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
-import type { PlanMeasurementRow, PlanSheet } from "@/lib/takeoff-plan-view";
+import { printedScalesFromProposals, scalePrefillsFromReadings,
+  scaleDeclinesFromReadings,
+  type ScaleDeclineByPage,
+} from "@/lib/takeoff-plan-view";
+import { measurementScaleLabel, zoneNotices, zoneScales } from "@/lib/takeoff-zones";
+import type { PlanMeasurementRow, PlanSheet, PrintedScaleByPage, ScalePrefillByPage } from "@/lib/takeoff-plan-view";
 
 /**
  * TAKEOFF — measure a drawing on screen and turn what you traced into
@@ -79,6 +88,63 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
     },
   });
 
+  // THE PRINTED SCALE PER PAGE, newest proposal first. One query for the plan
+  // rather than one per page, and the newest row wins because there is no
+  // `acceptedScale` to prefer — accepting a sheet writes only its number and
+  // title, by design, so the proposal is the only record of what was printed.
+  //
+  // Scoped through `plan.id`, which the query above already scoped to this
+  // company; a proposal carries no companyId of its own.
+  // KEYED BY PAGE NUMBER, NOT HUNG OFF A SHEET ROW — and that is the whole
+  // correction. This used to be folded into each `PlanSheet`, which is built
+  // from a `TakeoffPlanPage`, and the only thing that creates one of those is
+  // saving a calibration. So on the first calibration of a sheet there was no
+  // row, no `PlanSheet`, and no printed scale — null exactly when it mattered.
+  // A page number exists whether or not anybody has calibrated it.
+  const printedScaleByPage: PrintedScaleByPage = plan
+    ? printedScalesFromProposals(
+        await prisma.planSheetProposal.findMany({
+          where: { planId: plan.id },
+          // Newest first — `printedScalesFromProposals` keeps the first it sees
+          // per page and the ordering is what makes that the current reading.
+          orderBy: { createdAt: "desc" },
+          select: { pageNumber: true, proposedScale: true },
+        }),
+      )
+    : {};
+
+  // WHAT EACH SHEET SAID ABOUT ITS OWN SCALE, read off the dimensions printed on
+  // it by `PAGE_INVENTORY`. Keyed by page number for the same reason the printed
+  // scale above is: a `PlanSheet` row only exists once somebody has calibrated,
+  // so keying by sheet id would be null exactly when the prefill matters most —
+  // on the first calibration of a sheet.
+  const scaleReadingRows = plan
+    ? await prisma.planSheetScaleReading.findMany({
+        where: { planId: plan.id },
+        orderBy: { updatedAt: "desc" },
+        select: {
+          pageNumber: true,
+          scaleName: true,
+          x1: true,
+          y1: true,
+          x2: true,
+          y2: true,
+          declaredDistanceFeet: true,
+          declaredText: true,
+          agreedText: true,
+          consideredCount: true,
+          inheritedError: true,
+          source: true,
+          declineReason: true,
+        },
+      })
+    : [];
+  const scalePrefillByPage: ScalePrefillByPage = scalePrefillsFromReadings(scaleReadingRows);
+  // THE SAME ROWS, ASKED THE OTHER QUESTION: why a sheet offered nothing. One
+  // query, two derivations — the reason is already on the row, and re-querying
+  // for it would be a second trip for data we are holding.
+  const scaleDeclineByPage: ScaleDeclineByPage = scaleDeclinesFromReadings(scaleReadingRows);
+
   const isEstimateStage = job.status === "ESTIMATE";
 
   if (!plan) {
@@ -101,8 +167,57 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
 
   // DERIVED HERE, NOT STORED: which calibration is current, and therefore
   // which measurements read at an older scale. Nothing on the row says so.
+  // WHAT READING THE SCHEDULES WILL COST, counted over the newest title-block
+  // proposal per page. The button says this number before anybody presses it,
+  // which is the house rule for every control that spends an allowance.
+  /**
+   * WHICH SHEETS A WALL TAKEOFF WOULD DOUBLE-COUNT.
+   *
+   * Scored against a 60-page answer key: a THIRD of everything the wall finder
+   * reported was not a wall, and every phantom page was a mechanical plan, a
+   * reflected ceiling plan or an elevation — 13,767 ft invented. Those sheets
+   * carry the architectural walls repeated in grey, so the finder is right
+   * about the lines and they are still the same walls the A-101 already has.
+   *
+   * The evidence was already in the database. `proposedPageType` has held
+   * COVER/PLAN/ELEVATION/SECTION/DETAIL/SCHEDULE since the ingest was built and
+   * its schema comment says why: "'which pages are the schedules?' is the
+   * question the takeoff side needs answered". The takeoff side never asked.
+   *
+   * Read from the SAME rows the sheet review below uses, rather than queried
+   * again — one answer, one round trip.
+   */
+  const sheetRows = isEstimateStage ? await sheetIndexFor(plan.id, company.id) : [];
+  const duplicateWallsByPage: Record<number, string> = {};
+  for (const row of sheetRows) {
+    const number = effectiveSheetNumber(row);
+    const title = effectiveTitle(row);
+    const caution = duplicateWallsCaution(
+      sheetSuitability(number, title, row.proposal?.pageType ?? null),
+      number,
+    );
+    if (caution) duplicateWallsByPage[row.pageNumber] = caution;
+  }
+
+  const scheduleSheetCount = await scheduleSheetCountFor(plan.id);
+
   const sheets: PlanSheet[] = plan.pages.map((page) => {
     const current = page.calibrations[0] ?? null;
+    // EVERY calibration on the sheet, not just the newest — the question
+    // "does this page carry two scales" cannot be asked of one row. The data
+    // has supported this since the FK was added; nothing ever read it.
+    const zones = zoneScales(
+      page.calibrations.map((c) => ({
+        id: c.id,
+        x1: c.x1,
+        y1: c.y1,
+        x2: c.x2,
+        y2: c.y2,
+        declaredDistanceFeet: c.declaredDistanceFeet.toNumber(),
+      })),
+      page.pageWidthPt,
+    );
+    const notices = zoneNotices(zones);
     const measurements: PlanMeasurementRow[] = page.measurements.map((m) => ({
       id: m.id,
       kind: m.kind,
@@ -118,6 +233,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         declaredDistanceFeet: m.calibration.declaredDistanceFeet.toNumber(),
       },
       outOfDate: current !== null && m.calibrationId !== current.id,
+      scaleLabel: measurementScaleLabel(m.calibrationId, zones, notices),
     }));
     return {
       id: page.id,
@@ -132,9 +248,12 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
             x2: current.x2,
             y2: current.y2,
             declaredDistanceFeet: current.declaredDistanceFeet.toNumber(),
+            // Provenance, not decoration — see `PlanViewerCalibration`.
+            note: current.note,
           }
         : null,
       measurements,
+      zoneNotices: notices,
     };
   });
 
@@ -192,7 +311,11 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           since it was written, and reading a PDF was never the same capability as
           rasterising one. `startPlanIngest` counts the file's own sheets now. */}
       {isEstimateStage && (
-        <PlanIngestPanel planId={plan.id} existing={await latestIngestFor(plan.id)} />
+        <PlanIngestPanel
+          planId={plan.id}
+          existing={await latestIngestFor(plan.id)}
+          scheduleSheetCount={scheduleSheetCount}
+        />
       )}
 
       {/* WHAT WAS READ, AND WHAT SOMEBODY SAYS IT IS — below the panel that reads
@@ -200,9 +323,22 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           all times rather than behind a condition: an empty index says so in one
           sentence, which is more useful than a section that appears from nowhere
           the first time a run finishes. */}
-      {isEstimateStage && <PlanSheetReview rows={await sheetIndexFor(plan.id, company.id)} />}
+      {isEstimateStage && <PlanSheetReview rows={sheetRows} />}
 
-      <TakeoffPlanViewer jobId={job.id} planId={plan.id} sheets={sheets} />
+      {/* BELOW the sheet review, because the page types it shows are what decide
+          which sheets have schedules at all. Silent until something has been
+          read — the convention every advisory surface here follows. */}
+      {isEstimateStage && <ScheduleProposals proposals={await loadScheduleProposals(plan.id)} />}
+
+      <TakeoffPlanViewer
+        duplicateWallsByPage={duplicateWallsByPage}
+        jobId={job.id}
+        planId={plan.id}
+        sheets={sheets}
+        printedScaleByPage={printedScaleByPage}
+        scalePrefillByPage={scalePrefillByPage}
+        scaleDeclineByPage={scaleDeclineByPage}
+      />
 
       {sheets.map((sheet) => (
         <div key={sheet.id} className="flex flex-col gap-2">

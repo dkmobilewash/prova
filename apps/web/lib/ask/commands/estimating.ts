@@ -631,6 +631,7 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "deleteTakeoffPlan", reason: "Deletes are never commands (T5)." },
   { action: "saveTakeoffCalibration", reason: "A scale is set by dragging along a dimension on the drawing; a model has not seen the drawing." },
   { action: "saveTakeoffMeasurement", reason: "The measurement IS the traced geometry, which only the viewer produces." },
+  { action: "saveTakeoffMeasurements", reason: "Adding a group of found walls is a decision made by LOOKING at them drawn on the sheet — the whole safety of the wall finder is that a wrong line is visible on a drawing somebody is reading. A model has not seen the drawing, so it cannot make the only check that matters." },
   { action: "deleteTakeoffMeasurement", reason: "Deletes are never commands (T5)." },
   { action: "rescaleTakeoffMeasurements", reason: "Moving quantities onto a corrected scale needs the before-and-after figures on screen, which is the page's job." },
   { action: "postTakeoffMeasurements", reason: "Posting takes ids of shapes picked on the sheet; the picking is the decision and it happens on the drawing." },
@@ -686,6 +687,9 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "saveEstimateTemplateItem", reason: "A wrong line here is a wrong line in every estimate built from this template afterwards, and the default quantity decides what the line starts at." },
   { action: "deleteEstimateTemplateItem", reason: "Deletes are never commands (T5)." },
   { action: "applyTemplateToEstimate", reason: "Applying a template APPENDS lines rather than syncing them, so applying the wrong one — or the right one twice — doubles an estimate. The collision warning is meant to be read by a person before the press." },
+  { action: "setBidQuoteCarried", reason: "Which sub's price we are carrying is the judgement levelling exists to support — read the exclusions, decide who is comparable, then pick. `bid-levelling.ts` refuses to name a winner on purpose, and an assistant doing it on a sentence would be making exactly the call that module declines to make." },
+  { action: "addCarriedQuoteToEstimate", reason: "Puts a subcontractor's lump sum on the estimate as a cost. The press follows reading the quote's exclusions on screen; done from a sentence, the biggest cost line on a bid would land without anybody having looked at what it leaves out." },
+  { action: "addIndirectCostLine", reason: "The button prints the company's own figure for the kind BEFORE it is pressed, because adding supervision quietly puts $2,400 on a bid. An assistant doing it on request would be putting a cost on an estimate the person never saw, which is the surprise the button is shaped to prevent. Reading which kinds are absent is a question for a person looking at the estimate, not a sentence." },
   { action: "deleteBidInvitation", reason: "Deletes are never commands (T5)." },
   // The pre-bid pursuit list (lib/actions/bidPursuits.ts, BidPursuit). The
   // read side is the bid_pursuits tool. createBidPursuit and

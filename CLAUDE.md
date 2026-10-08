@@ -1070,6 +1070,55 @@ anything about SIZE.
   a report of this shape now needs a timestamp before it counts as
   evidence.
 
+  **SOMEBODY FINALLY RECORDED ONE, 2026-10-04, AND IT IS NOT A LOST UPDATE.**
+  The timestamp this entry has been asking for since 5 Sep. A bid quote's
+  expiry edited on production, signed in, nothing clicked afterwards and no
+  reload, polled from the page every 250ms with the clock started on the Save
+  click itself:
+
+  | | |
+  | --- | --- |
+  | Save pressed | t0 |
+  | action resolved, edit form CLOSED | **1,251 ms** |
+  | row repainted with the saved value | **3,502 ms** |
+  | still correct at | 15,000 ms |
+
+  Reload afterwards agreed: the change was stored and the screen was right.
+  So the write lands, the revalidation fires, and **the DOM corrects itself
+  without a reload** — at three and a half seconds, which is the post-action
+  server render this entry already measured at 1.5-4.4s.
+
+  **THE DEFECT IS THE GAP BETWEEN THOSE TWO ROWS, AND IT IS A UI BUG RATHER
+  THAN A DATA ONE.** `ActionForm` ran its `onSuccess` the instant
+  `await action(formData)` resolved, so for **2.25 seconds** the form was gone
+  — telling the estimator the save had finished — while the row behind it
+  still showed the OLD value. That is why this reads as a lost update: the
+  thing you were editing disappears, confirming the action worked, and the
+  screen contradicts you. Two separate click-throughs reported it as a bug;
+  neither timed it, and the untimed report is indistinguishable from a real
+  lost update, which is exactly what this entry warned.
+
+  Fixed by firing `onSuccess` (and the reset) from a settle effect gated on
+  `useTransition`'s `isPending`, which is false only once the transition's own
+  re-render has committed — so a form closes onto fresh data. The cost is that
+  a successful save leaves the form open ~2s longer, with its button disabled
+  and spinning for all of it.
+
+  **AND THE WRONG DIAGNOSIS IS WORTH MORE THAN THE FIX, because this file is
+  where it would have been believed.** Before timing it I concluded that
+  `SubmitButton`'s spinner was dead in every `ActionForm` — `useFormStatus` is
+  documented as reporting a form submitted through the `action` prop, and this
+  form uses `onSubmit`, so it followed. It is FALSE.
+  `components/actionForm.test.ts` had already measured exactly that inference,
+  says in its header that it "looked like it must break `SubmitButton`" and
+  does not because React 19 tracks a transition started in the form's own
+  submit handler, and asserts `disabled` and `aria-busy` mid-flight. Its last
+  line reads *"This test exists so that stays true rather than being
+  rediscovered."* It was rediscovered anyway, from the React docs, by somebody
+  who had not read the test sitting beside the component — and a Slack message
+  claiming 16 files were broken went out before the test was run. **Read the
+  test next to the code before believing a doc-derived inference about it.**
+
   What IS established, and was from the start: a page that fails after a
   commit invites a second click, and no create action is idempotent. #19
   disabled 57 create buttons while their form is in flight and added an
@@ -2090,6 +2139,62 @@ anything about SIZE.
   `E2E_DEV_SERVER=1`**, on the same runner class that reports 3-7 mismatched
   pages in production mode. Until that runs, this is strong evidence about
   the build and weak evidence about the mechanism.
+
+  **IT HAS RUN, 2026-10-05, AND THE CONFOUND IS SETTLED: THE DEFECT IS THE
+  BUILD, NOT THE MACHINE.** Run `37347729521`, `main` at `627465b8`, the
+  `Hydration probe (#510)` workflow — `workflow_dispatch` only, in
+  `e2e/probes/` where the gating suite's `testDir` cannot see it, so this
+  diagnostic can never turn CI red.
+
+  | | |
+  | --- | --- |
+  | loads | **24** (4 routes × 6), every one proved HYDRATED |
+  | hydration mismatches | **0** |
+  | positive control | **fired 3/3** |
+
+  **The control is why the zero is readable at all.** Phases one and two of
+  that probe would return a clean zero from a run that signed nobody in, or
+  loaded pages React never hydrated — the vacuous green this directory
+  exists to end. So every load carries a `__reactFiber$` proof, and the last
+  phase INJECTS a `<div>` inside `<body>` and fails the probe if it cannot
+  catch it. 24/24 hydrated and 3/3 control is the instrument saying it was
+  able to see what it did not find.
+
+  **And the comparison is contemporaneous rather than historical, which is
+  what makes it worth reading.** The same runner class, the same day, in
+  production mode: run `37344541638` (#631) printed NINE mismatched pages
+  and `37346674544` (#633) printed SIX, both with `verdicts: collected 94,
+  returned 94` and zero 429s. Against this entry's own measured production
+  rate of 12 in 40 loads, P(0 in 24) ≈ 0.0002; at a deliberately
+  conservative 10% per load it is still ≈ 0.08.
+
+  So the laptop's 96-load zero was NOT a laptop artefact, and the paragraph
+  above can stop hedging about which variable moved. Only the build differs
+  here. **Flight's 3,200-byte deferral remains the surviving mechanism**,
+  and it does not exist in a development build.
+
+  **THE EXPENSIVE CONSEQUENCE, AND THE REASON THIS IS WRITTEN UP RATHER THAN
+  LEFT AS A GREEN RUN: THE DEV-MODE INSTRUMENT IS NOW EXHAUSTED.** The
+  paragraph above calls it "the one instrument nobody has pointed at it yet"
+  and wants it for the one thing production cannot give — the ELEMENT and
+  its component stack. It has now been pointed, and it reports nothing,
+  because the defect does not reproduce there. **A development build can
+  only name an element it actually sees disagree.** So the element-naming
+  route is CLOSED, not pending, and the next person must not spend a run on
+  it: a dev-mode probe will keep returning 24/24, 3/3, zero, which looks
+  like progress and is the same measurement repeated.
+
+  That is the opposite of what this entry implied for ten days, and both
+  versions were true when written. What is needed next is a PRODUCTION-mode
+  instrument that can identify an element without React's help — and the
+  honest state of it is that nobody has designed one.
+
+  **Two bounds, stated because the number above is smaller than it looks.**
+  24 loads is a QUARTER of the laptop sweep's 96, over 4 routes rather than
+  16 — so this is the weaker sample of the two, and it is only decisive
+  about the MACHINE question because of what it is being compared against.
+  And it is ONE run of a RACE, which is this file's own rule: re-dispatch
+  the probe before treating a future zero as confirmation of anything.
 
   And the counter-example that keeps it honest, from this file's own record:
   the accidental dev-mode CI run (`36097089609`) DID name an element, the

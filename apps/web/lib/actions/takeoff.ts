@@ -18,6 +18,7 @@ import {
   type StoredMeasurement,
   type WallBridge,
 } from "@/lib/takeoff-plan";
+import { zoneNotices, zoneScales } from "@/lib/takeoff-zones";
 import { syncWallScheduleLines } from "@/lib/estimating/wall-schedule";
 import { planMeasuredWallRun, WALL_TYPE_GONE } from "@/lib/estimating/measured-wall-run";
 import {
@@ -419,7 +420,13 @@ export async function saveTakeoffCalibration(jobId: string, formData: FormData):
 
     const points = pointsFromForm(formData);
     if (!points || points.xs.length !== 2 || points.ys.length !== 2) {
-      return actionFail("Drag along a dimension on the drawing to set the scale.");
+      // "Click once at each end", not "Drag" — #631 corrected three of these
+      // in `takeoff-plan.ts` and MISSED this one, because the census it added
+      // reads `calibrationNotices`'s output and this refusal is the action's
+      // own. The census's SCOPE was wrong while its pattern was fine, which is
+      // the failure mode CLAUDE.md says no size assertion can see: nothing is
+      // ever missing from a directory you do not walk.
+      return actionFail("Click once at each end of a dimension on the drawing to set the scale.");
     }
     const line = {
       x1: points.xs[0],
@@ -432,7 +439,13 @@ export async function saveTakeoffCalibration(jobId: string, formData: FormData):
     // The same refusals the dialog showed, re-run here. The screen may be
     // minutes old, and a calibration it refused must not become savable by
     // posting the form again.
-    const refusal = calibrationRefusal(calibrationNotices(line, pageWidthPt, null));
+    //
+    // `printedScale` is null ON PURPOSE and it costs nothing: the title-block
+    // comparison is a WARN, `calibrationRefusal` reads only refusals, so
+    // loading the proposal here would change no outcome. A disagreement with
+    // the title block must not block a save — a detail at its own scale is
+    // ordinary — and the estimator was shown it on the screen that posted.
+    const refusal = calibrationRefusal(calibrationNotices(line, pageWidthPt, null, null));
     if (refusal) return actionFail(refusal);
 
     const page = await prisma.takeoffPlanPage.upsert({
@@ -522,6 +535,94 @@ export async function saveTakeoffMeasurement(jobId: string, formData: FormData):
   return actionOk;
 }
 
+/**
+ * SAVING A WHOLE GROUP OF FOUND WALLS AT ONCE.
+ *
+ * ── WHY THIS IS NOT `saveTakeoffMeasurement` IN A LOOP ──
+ *
+ * The wall finder returns a hundred-odd runs on a real floor plan, and one real
+ * sheet measured here returned 542. A hundred Server Actions is a hundred round
+ * trips, a hundred `revalidatePath` calls, and a half-written group if the tab
+ * is closed in the middle — a person would be left with "some of my walls", and
+ * no way to tell which.
+ *
+ * So the whole group lands in ONE transaction: every wall or none.
+ *
+ * ── WHAT IT DOES NOT RELAX ──
+ *
+ * Every guard the single save applies, this applies, because a measurement that
+ * arrived in a batch is a measurement. The sheet must belong to the company,
+ * the page must be calibrated (no calibration, no row to point at), and every
+ * shape goes through `verticesProblem` — a detected wall is a proposal from a
+ * geometry library, not a trusted input, and the one that fails is NAMED rather
+ * than the whole batch failing anonymously.
+ *
+ * LINEAR only, deliberately. The finder returns centrelines; nothing in it can
+ * produce an area or a count, so accepting those here would be a door nothing
+ * opens.
+ */
+export async function saveTakeoffMeasurements(jobId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company, id: userId } = context;
+
+  const pageId = String(formData.get("pageId") ?? "");
+  const page = await prisma.takeoffPlanPage.findFirst({
+    where: { id: pageId, plan: { jobId, companyId: company.id } },
+    include: { calibrations: { orderBy: { createdAt: "desc" }, take: 1 } },
+  });
+  if (!page) return actionFail("That sheet is no longer on this job. Reload the page.");
+
+  const calibration = page.calibrations[0];
+  if (!calibration) return actionFail("Set the scale on this sheet before measuring it.");
+
+  const label = String(formData.get("label") ?? "").trim();
+
+  // One `shape` field per wall, each a JSON `{xs, ys}`. A flat pair of arrays
+  // could not say where one run ends and the next begins.
+  const raw = formData.getAll("shape").map(String);
+  if (raw.length === 0) return actionFail("Nothing was selected to add.");
+
+  const shapes: { xs: number[]; ys: number[] }[] = [];
+  for (let i = 0; i < raw.length; i += 1) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw[i]);
+    } catch {
+      return actionFail("Those lines didn't come through. Find the walls again.");
+    }
+    const shape = parsed as { xs?: unknown; ys?: unknown };
+    if (!Array.isArray(shape.xs) || !Array.isArray(shape.ys)) {
+      return actionFail("Those lines didn't come through. Find the walls again.");
+    }
+    const xs = shape.xs.map(Number);
+    const ys = shape.ys.map(Number);
+    if (xs.some((n) => !Number.isFinite(n)) || ys.some((n) => !Number.isFinite(n))) {
+      return actionFail("Those lines didn't come through. Find the walls again.");
+    }
+    // NAMED, not counted. "Wall 14 of 47 didn't come through" tells somebody
+    // which one to look at; "one of these is wrong" tells them to start again.
+    const problem = verticesProblem("LINEAR", xs, ys);
+    if (problem) return actionFail(`Wall ${i + 1} of ${raw.length} couldn't be added: ${problem}`);
+    shapes.push({ xs, ys });
+  }
+
+  await prisma.takeoffMeasurement.createMany({
+    data: shapes.map((shape) => ({
+      pageId: page.id,
+      calibrationId: calibration.id,
+      kind: "LINEAR" as const,
+      xs: shape.xs,
+      ys: shape.ys,
+      label: label || null,
+      createdByUserId: userId,
+    })),
+  });
+
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  return actionOk;
+}
+
 export async function deleteTakeoffMeasurement(jobId: string, measurementId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
@@ -556,11 +657,39 @@ export async function rescaleTakeoffMeasurements(jobId: string, formData: FormDa
   const pageId = String(formData.get("pageId") ?? "");
   const page = await prisma.takeoffPlanPage.findFirst({
     where: { id: pageId, plan: { jobId, companyId: company.id } },
-    include: { calibrations: { orderBy: { createdAt: "desc" }, take: 1 } },
+    // EVERY calibration, not `take: 1`. The refusal below cannot be decided
+    // from the newest one alone, and this is the same posture the save action
+    // takes: "the screen may be minutes old, and a calibration it refused
+    // must not become savable by posting the form again."
+    include: { calibrations: { orderBy: { createdAt: "desc" } } },
   });
   if (!page) return actionFail("That sheet is no longer on this job. Reload the page.");
   const newest = page.calibrations[0];
   if (!newest) return actionFail("This sheet has no scale set yet.");
+
+  // A SHEET WITH TWO REAL SCALES MUST NOT BE RESCALED, because this action
+  // repoints geometry without changing it: a detail traced at 1-1/2" moved
+  // onto a 1/8" calibration reads twelve times too big, silently, on figures
+  // headed for a bid. The UI withdraws the button for this case; this is the
+  // half that survives a stale form, and production redacts a thrown message
+  // so it must be a returned refusal rather than an exception.
+  const zones = zoneScales(
+    page.calibrations.map((c) => ({
+      id: c.id,
+      x1: c.x1,
+      y1: c.y1,
+      x2: c.x2,
+      y2: c.y2,
+      declaredDistanceFeet: c.declaredDistanceFeet.toNumber(),
+    })),
+    page.pageWidthPt,
+  );
+  if (zoneNotices(zones).length > 0) {
+    return actionFail(
+      "This sheet is calibrated at more than one scale, so there is no single current scale to move these to. " +
+        "Each measurement already reads at the scale it was traced against.",
+    );
+  }
 
   const moved = await prisma.takeoffMeasurement.updateMany({
     where: { pageId: page.id, calibrationId: { not: newest.id }, postedAt: null },

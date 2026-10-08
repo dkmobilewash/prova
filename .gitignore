@@ -34,3 +34,10 @@ apps/web/test-results
 apps/web/playwright-report-public
 apps/web/test-results-public
 apps/web/blob-report
+
+# expo prebuild output — generated from app.json + plugins/, never edited by hand
+# and 1.2GB once built. `npx expo prebuild` writes these; anything that needs to
+# persist belongs in app.json or a config plugin, which is the whole reason
+# plugins/withSceneLifecycle.js exists rather than a patched AppDelegate.swift.
+apps/mobile/ios
+apps/mobile/android

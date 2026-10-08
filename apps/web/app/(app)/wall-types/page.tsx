@@ -16,7 +16,7 @@ export default async function WallTypesPage() {
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
   const { company } = context;
 
-  const [types, catalog, crafts] = await Promise.all([
+  const [types, catalog, crafts, bidDefaults] = await Promise.all([
     prisma.wallType.findMany({
       where: { companyId: company.id },
       orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
@@ -34,6 +34,13 @@ export default async function WallTypesPage() {
       where: { companyId: company.id },
       orderBy: { name: "asc" },
       select: { id: true, name: true, unionLocal: { select: { parentInternational: true, localNumber: true } } },
+    }),
+    // Only the waste figure. The recap rates on this row have no business on
+    // this page, and selecting the whole thing would invite one of them being
+    // rendered here later by accident.
+    prisma.companyBidDefaults.findUnique({
+      where: { companyId: company.id },
+      select: { defaultWastePercent: true },
     }),
   ]);
 
@@ -95,7 +102,13 @@ export default async function WallTypesPage() {
       ) : (
         <ul data-tour="wall-types-list" className="mb-6 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {views.map((type) => (
-            <WallTypeCard key={type.id} type={type} catalog={catalogOptions} crafts={craftOptions} />
+            <WallTypeCard
+              key={type.id}
+              type={type}
+              catalog={catalogOptions}
+              crafts={craftOptions}
+              defaultWastePercent={bidDefaults?.defaultWastePercent?.toString() ?? null}
+            />
           ))}
         </ul>
       )}

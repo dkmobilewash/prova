@@ -148,6 +148,7 @@ model Company {
   contactInteractions       ContactInteraction[]
   proposalClauses          ProposalClause[]
   jobProposalClauses       JobProposalClause[]
+  proposalClauseDrafts     ProposalClauseDraft[]
   apprenticeshipEnrollments ApprenticeshipEnrollment[]
   apprenticeshipCommittees  ApprenticeshipCommittee[]
   contactPeople             ContactPerson[]
@@ -167,6 +168,7 @@ model Company {
   workerCertifications      WorkerCertification[]
   requiredCertifications    CertificationRequirement[]
   bidPursuits               BidPursuit[]
+  sheetPins SheetPin[]
 }
 
 enum UserRole {
@@ -276,6 +278,8 @@ model User {
   jobMediaAnnotations                  JobMediaAnnotation[]          @relation("JobMediaAnnotationBy")
   takeoffPlansUploaded                 TakeoffPlan[]                 @relation("TakeoffPlanUploadedBy")
   planSheetProposalsAccepted           PlanSheetProposal[]           @relation("PlanSheetProposalAcceptedBy")
+  planScheduleProposalsAccepted        PlanScheduleProposal[]        @relation("PlanScheduleProposalAcceptedBy")
+  proposalClauseDraftsAccepted         ProposalClauseDraft[]         @relation("ProposalClauseDraftAcceptedBy")
   bidAddendumReadingsStarted           BidAddendumReading[]
   bidSpecReadingsStarted               BidSpecReading[]
   bidAddendumDecisions                 BidAddendumItemDecision[]
@@ -315,6 +319,7 @@ model User {
   /// AI settings rows this person last changed — an audit line on an
   /// owner-only switch, not a thing they own.
   aiSettingsChanged         CompanyAiSettings[]
+  sheetPins SheetPin[] @relation("SheetPinCreatedBy")
 
   @@index([companyId])
 }

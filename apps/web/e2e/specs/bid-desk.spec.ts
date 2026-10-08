@@ -278,15 +278,20 @@ test.describe("the bid desk", () => {
     await expect(row.getByText("Same exclusions on every quote — these are comparable.")).toHaveCount(0);
   });
 
-  test("7. a won bid, linked to the job it became (#491)", async () => {
-    // A job for it to have become, built through the real wizard on the GC
-    // this bid came from.
+  test("7. a bid linked to its job, before and after the win (#491)", async () => {
+    // A job for it to be for, built through the real wizard on the GC this bid
+    // came from.
     jobId = await startJob(page, monitor, { name: JOB_NAME, gcName: GC_NAME });
     await finishWizard(page, monitor, jobId);
 
-    // The status lives on the GC's record, which is where a win is recorded.
+    // THE LINK IS OFFERED BEFORE THE WIN, and this assertion used to demand
+    // the opposite — `toHaveCount(0)` on a bid that was still INVITED. That
+    // was right until #619 let `linkBidToJob` run on any status, after which
+    // it pinned the gate that made the action unreachable. Asserting the
+    // control is HERE is the browser half of that regression guard: carrying a
+    // quote onto a job's estimate happens while the bid is still out.
     await page.goto("/bids");
-    await expect(bidRow().getByRole("button", { name: "Link to the job this became" })).toHaveCount(0);
+    await expect(bidRow().getByRole("button", { name: "Link the job this bid is for" })).toBeVisible();
 
     await bidRow().getByRole("link", { name: new RegExp(PROJECT) }).click();
     await page.waitForURL(/\/contacts\/[^/]+$/);
@@ -302,14 +307,14 @@ test.describe("the bid desk", () => {
 
     await page.goto("/bids");
     await expectHealthy(page, "/bids with a won bid", { monitor });
-    // Only a WON bid can be linked, so the control appears with the win.
-    const link = bidRow().getByRole("button", { name: "Link to the job this became" });
+    // Still here after the win — the control is not gated either way.
+    const link = bidRow().getByRole("button", { name: "Link the job this bid is for" });
     await expect(link).toBeVisible();
     await link.click();
     // By the option that names the job — `jobPickerLabel` decorates it with the
     // GC and the status (issue #65: fifteen jobs, seven with the same name), so
     // the label is not a string this file can spell.
-    const jobPicker = bidRow().getByRole("combobox", { name: "Which job did this become?" });
+    const jobPicker = bidRow().getByRole("combobox", { name: "Which job is this bid for?" });
     const jobValue = await jobPicker.locator("option", { hasText: JOB_NAME }).first().getAttribute("value");
     expect(jobValue, "the job should be offered to link").toBeTruthy();
     await jobPicker.selectOption(jobValue!);
@@ -318,7 +323,7 @@ test.describe("the bid desk", () => {
     await page.reload();
     await expectHealthy(page, "/bids with the bid linked to its job", { monitor });
     const row = bidRow();
-    await expect(row).toContainText("Became");
+    await expect(row).toContainText("This bid is for");
     await expect(row).toContainText(JOB_NAME);
     await expect(row).toContainText(`Bid ${BASE}`);
     // The job has not finished, so there is no verdict — and the panel gives

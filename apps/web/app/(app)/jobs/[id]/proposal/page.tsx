@@ -10,8 +10,11 @@ import { money } from "@/lib/money";
 import { formatInstant } from "@/lib/render-date";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { groupProposalClauses, PROPOSAL_CLAUSE_HEADINGS } from "@/lib/proposal-clauses";
+import { ProposalDrafts, type ProposalDraftView } from "@/components/ProposalDrafts";
+import { loadProposalFacts } from "@/lib/estimating/proposal-facts-query";
 import { bidRecap, RECAP_RATE_KEYS, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
 import { proposalPriceState, proposalPriceWarning } from "@/lib/estimating/proposal-recap-currency";
+import { bidMargin, underCostWarning } from "@/lib/estimating/bid-margin";
 
 /**
  * A job's bid proposal — the scope + price + exclusions document a sub sends
@@ -44,6 +47,38 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
     },
   });
   if (!job) notFound();
+
+  // WHAT THE LETTER IS SILENT ABOUT, and the drafts already raised for it.
+  // Both are needed: the facts give the count on the button, and the drafts are
+  // what the panel shows. A fact with a draft in any status is already excluded
+  // by `loadProposalFacts`, so these two never double-count.
+  const [gaps, draftRows] = await Promise.all([
+    loadProposalFacts(job.id, company.id),
+    prisma.proposalClauseDraft.findMany({
+      where: { jobId: job.id },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, kind: true, text: true, factKind: true, factRef: true, citation: true, status: true },
+    }),
+  ]);
+  // Whether each accepted clause is already in the standard set, so the offer
+  // is not made for one that is. Read by text and kind, which is what
+  // `saveClauseToLibrary` compares — a library clause carries no link back to
+  // the draft it came from, deliberately: it is a snapshot, like the job clause.
+  const libraryTexts = new Set(
+    (await prisma.proposalClause.findMany({ where: { companyId: company.id }, select: { kind: true, text: true } })).map(
+      (clause) => `${clause.kind}:${clause.text}`,
+    ),
+  );
+  const drafts: ProposalDraftView[] = draftRows.map((draft) => ({
+    id: draft.id,
+    kind: draft.kind,
+    text: draft.text,
+    factKind: draft.factKind,
+    factRef: draft.factRef,
+    citation: draft.citation,
+    status: draft.status,
+    inLibrary: libraryTexts.has(`${draft.kind}:${draft.text}`),
+  }));
 
   const library = await prisma.proposalClause.findMany({
     where: { companyId: company.id },
@@ -116,6 +151,24 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
   );
   const priceWarning = proposalPriceWarning(recapState);
 
+  // DOES THIS BID COVER ITS OWN COST? The same conversion as above, over the
+  // same lines — `budgetedUnitCost`, never `currentEstimatedUnitCost`. Nothing
+  // new is queried: the page already reads every live line's cost to compute
+  // `addedTotal`, and it has never RENDERED one, which is the point of the
+  // print:hidden box below.
+  const marginWarning = underCostWarning(
+    bidMargin(
+      job.lineItems.map((line) => ({
+        id: line.id,
+        quantity: Number(line.quantity),
+        unitCost: line.budgetedUnitCost != null ? Number(line.budgetedUnitCost) : null,
+        unitPrice: line.unitPrice != null ? Number(line.unitPrice) : null,
+        costCategory: (line.costCategory as CostCategoryValue | null) ?? null,
+      })),
+    ),
+    money,
+  );
+
   return (
     // A document, so "reading" — and `print:p-0` so the printed page runs to
     // the browser's own margins, the way the G702/G703 does.
@@ -136,6 +189,18 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
       {priceWarning && (
         <p className="mb-6 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink print:hidden">
           {priceWarning}
+        </p>
+      )}
+
+      {/* PRINT:HIDDEN FOR THE SAME REASON AND MORE SO. This page deliberately
+          shows the GC no cost figure at all — the schedule of values prints
+          prices and nothing else. A margin on the printed page would hand a
+          customer our cost base, which is worse than the sentence above it.
+          Rose rather than amber: the warnings above are fields somebody forgot
+          to fill in, and this one is a bid that does not cover the work. */}
+      {marginWarning && (
+        <p className="mb-6 rounded-md bg-tag-rose px-3 py-2 text-sm text-tag-rose-ink print:hidden">
+          {marginWarning}
         </p>
       )}
 
@@ -216,6 +281,15 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
           here is a copy — editing your library later does not change this proposal.
         </p>
         <JobProposalClauseBuilder jobId={job.id} library={library} />
+
+      {/* BELOW the clause builder, and `print:hidden` on the section itself:
+          this is a working surface, not part of the document a GC receives. */}
+      <ProposalDrafts
+        jobId={job.id}
+        drafts={drafts}
+        gapCount={gaps.length}
+        canOfferLibrary={context.role === "OWNER"}
+      />
       </section>
     </PageShell>
   );

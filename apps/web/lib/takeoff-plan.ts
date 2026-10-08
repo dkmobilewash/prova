@@ -41,11 +41,31 @@
  * laptop with no drawing in front of you.
  */
 
+import {
+  MAX_VERTICES,
+  polylineLength,
+  ringArea,
+  ringSelfIntersects,
+} from "@/lib/sheet-geometry";
 import type { Opening, WallInput } from "@/lib/takeoff";
 import type { Primitive, RecipeInput } from "@/lib/takeoff-recipes";
+import { TYPOGRAPHIC_EQUIVALENTS } from "@/lib/specs/quoteMatch";
 
-/** A calibration as stored: the line somebody dragged along a known dimension,
- * in page-width units, and what the drawing says that dimension is. */
+// The page-width box and its geometry moved to `lib/sheet-geometry.ts` when
+// plan pins became a second consumer. Re-exported here so the four existing
+// importers of this module keep resolving, and so there is exactly one
+// definition rather than two that can drift.
+export { MAX_VERTICES, polylineLength, ringArea, ringSelfIntersects };
+
+/** A calibration as stored: the line somebody drew along a known dimension by
+ * clicking each end, in page-width units, and what the drawing says that
+ * dimension is.
+ *
+ * "DREW BY CLICKING EACH END", not "dragged". The tool is click-once-per-end —
+ * `TakeoffPlanViewer` says so on screen: "Click once at each end of a dimension
+ * printed on the drawing." Three user-facing strings in this file said drag,
+ * and a click-through on 2026-10-05 reported the mismatch after trying to drag
+ * and getting one point. */
 export type StoredCalibration = {
   x1: number;
   y1: number;
@@ -82,10 +102,6 @@ export const MIN_CALIBRATION_SPAN = 0.05;
  * band works out to, because "allowed" and "advisable" are different. */
 export const SHORT_CALIBRATION_SPAN = 0.15;
 
-/** A traced shape may not carry more vertices than this. A corridor traced
- * around its inside face is a few dozen points; five hundred is a runaway
- * pointer handler, and an unbounded array is a payload nobody sized. */
-export const MAX_VERTICES = 500;
 
 /** Two decimals, matching `takeoff.ts` — a quantity should read like a
  * quantity rather than like a float. */
@@ -124,69 +140,6 @@ export function verticesProblem(kind: MeasurementKind, xs: number[], ys: number[
     return `That isn't ${noun} yet — it needs at least ${needed} point${needed === 1 ? "" : "s"}.`;
   }
   return null;
-}
-
-/** Length of an open polyline, in page-width units. */
-export function polylineLength(xs: number[], ys: number[]): number {
-  let total = 0;
-  for (let i = 1; i < xs.length; i += 1) {
-    total += Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]);
-  }
-  return total;
-}
-
-/** Do segments `a`-`b` and `c`-`d` properly cross? Shared endpoints do not
- * count: consecutive edges of a ring always touch. */
-function segmentsCross(
-  ax: number, ay: number, bx: number, by: number,
-  cx: number, cy: number, dx: number, dy: number,
-): boolean {
-  const side = (px: number, py: number, qx: number, qy: number, rx: number, ry: number): number => {
-    const value = (qx - px) * (ry - py) - (qy - py) * (rx - px);
-    if (Math.abs(value) < 1e-12) return 0;
-    return value > 0 ? 1 : -1;
-  };
-  const d1 = side(ax, ay, bx, by, cx, cy);
-  const d2 = side(ax, ay, bx, by, dx, dy);
-  const d3 = side(cx, cy, dx, dy, ax, ay);
-  const d4 = side(cx, cy, dx, dy, bx, by);
-  return d1 !== d2 && d3 !== d4 && d1 !== 0 && d2 !== 0 && d3 !== 0 && d4 !== 0;
-}
-
-/** Does the closed ring cross itself? */
-export function ringSelfIntersects(xs: number[], ys: number[]): boolean {
-  const n = xs.length;
-  if (n < 4) return false;
-  for (let i = 0; i < n; i += 1) {
-    const i2 = (i + 1) % n;
-    for (let j = i + 1; j < n; j += 1) {
-      const j2 = (j + 1) % n;
-      if (i === j || i2 === j || j2 === i) continue;
-      if (segmentsCross(xs[i], ys[i], xs[i2], ys[i2], xs[j], ys[j], xs[j2], ys[j2])) return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Area of a closed ring in page-width units squared, or null if the ring
- * crosses itself.
- *
- * THE REFUSAL IS THE POINT. The shoelace formula happily returns a number for
- * a bowtie — the two lobes partly cancel — and that number is plausible,
- * smaller than either lobe, and wrong. A figure that looks reasonable and is
- * wrong is the failure mode this whole module is built against, so a ring that
- * crosses itself gets no area at all and the screen says to redraw it.
- */
-export function ringArea(xs: number[], ys: number[]): number | null {
-  if (xs.length < 3) return null;
-  if (ringSelfIntersects(xs, ys)) return null;
-  let twice = 0;
-  for (let i = 0; i < xs.length; i += 1) {
-    const j = (i + 1) % xs.length;
-    twice += xs[i] * ys[j] - xs[j] * ys[i];
-  }
-  return Math.abs(twice) / 2;
 }
 
 /**
@@ -335,6 +288,47 @@ const STANDARD_SCALES: { feetPerInch: number; name: string }[] = [
  * people to ignore the readback. */
 const SCALE_TOLERANCE = 0.02;
 
+/**
+ * The same scale, however it was typed.
+ *
+ * `1/4" = 1'-0"`, `1/4"=1'0"` and a model's `1/4″ = 1′-0″` are one scale typed
+ * three ways, so whitespace, hyphens and the shape of the quote marks all have
+ * to come out before a comparison means anything. The prime-mark table is
+ * REUSED from `specs/quoteMatch.ts` rather than retyped: it is a fact about
+ * typography, not about specs, and U+2019 is the variant a real paid run
+ * actually produced there. A second copy of that list is the defect this repo
+ * writes censuses to catch.
+ */
+function normaliseScaleText(text: string): string {
+  let out = text;
+  for (const { ascii, variants } of TYPOGRAPHIC_EQUIVALENTS) {
+    for (const variant of variants) out = out.split(variant).join(ascii);
+  }
+  return out.replace(/[\s-]/g, "").toLowerCase();
+}
+
+/**
+ * The scale a title block PRINTS, resolved to the same vocabulary `readScale`
+ * names a calibration in — or null when there is nothing comparable.
+ *
+ * Null covers three cases that are all genuinely "no answer", and conflating
+ * them with a guess is what this returns null to avoid: no title block was
+ * read; it said `AS NOTED`, which names no scale at all and is what a sheet
+ * carrying several of them says; or it printed a scale this file does not list,
+ * including the `1:100` metric form. A number invented from any of those would
+ * then be compared against an estimator's calibration and contradict it.
+ *
+ * It matches NAMES rather than parsing arithmetic out of the string, because
+ * `STANDARD_SCALES` is already the list of scales this app can name and a
+ * parser would be a second, divergent authority on the same question.
+ */
+export function standardScaleFromText(printed: string | null): { feetPerInch: number; name: string } | null {
+  if (printed === null) return null;
+  const wanted = normaliseScaleText(printed);
+  if (wanted === "") return null;
+  return STANDARD_SCALES.find((scale) => normaliseScaleText(scale.name) === wanted) ?? null;
+}
+
 export type ScaleReading = {
   /** Feet of building per inch of paper. */
   feetPerInch: number;
@@ -389,6 +383,17 @@ export function calibrationNotices(
   calibration: StoredCalibration,
   pageWidthPt: number | null,
   renderedWidthPx: number | null,
+  /**
+   * What the sheet's own title block says the scale is, when a plan-ingestion
+   * run has read one — `PlanSheetProposal.proposedScale`, verbatim.
+   *
+   * REQUIRED RATHER THAN OPTIONAL, deliberately. A defaulted safety argument
+   * is off until somebody remembers it, and nobody remembers it; this repo has
+   * an entry about a gate that existed and could not be reached. A caller with
+   * genuinely nothing to pass passes `null` and says why in one line, which is
+   * visible in a diff in a way a missing argument is not.
+   */
+  printedScale: string | null,
 ): CalibrationNotice[] {
   const notices: CalibrationNotice[] = [];
   const span = Math.hypot(calibration.x2 - calibration.x1, calibration.y2 - calibration.y1);
@@ -397,14 +402,18 @@ export function calibrationNotices(
     return [{ level: "refuse", message: "Type what that dimension says on the drawing." }];
   }
   if (!(span > 0)) {
-    return [{ level: "refuse", message: "Drag along a dimension on the drawing first." }];
+    // THE FIRST THING SOMEBODY SEES WHEN THEY HAVE NOT DRAWN A LINE, so it has
+    // to name the action that works. It said "Drag along a dimension" and
+    // dragging places one point and stops — so the one message aimed at a
+    // confused person told them to do the thing that had just failed.
+    return [{ level: "refuse", message: "Click once at each end of a dimension on the drawing first." }];
   }
   if (span < MIN_CALIBRATION_SPAN) {
     return [
       {
         level: "refuse",
         message:
-          "That line is too short to set a scale from — a small slip in either end would move every quantity on the sheet. Drag along a longer dimension.",
+          "That line is too short to set a scale from — a small slip in either end would move every quantity on the sheet. Pick a longer dimension and click each end of it.",
       },
     ];
   }
@@ -422,6 +431,31 @@ export function calibrationNotices(
             message: `This isn't a standard scale — 1 in = ${round2(reading.feetPerInch)} ft. Check the distance you typed, or that this sheet was printed to scale.`,
           },
     );
+  }
+
+  // THE TITLE BLOCK IS THE ONLY INDEPENDENT EVIDENCE ABOUT THIS NUMBER, and
+  // until now the app extracted it and then showed it in a metadata line
+  // nothing read. Everything else in `notices` is derived from the same two
+  // clicks and the same typed distance, so a calibration against the wrong
+  // dimension is self-consistent and silent: it reads back as a real scale,
+  // the sheet width looks plausible, and every quantity on the sheet is wrong
+  // by that factor. This is the one check that can disagree with the
+  // estimator, which is the whole reason it is worth having.
+  //
+  // A WARNING AND NEVER A REFUSAL. A detail blown up on a sheet whose title
+  // block names the plan's scale is ordinary draughting, and this file cannot
+  // tell that from a mistake — `AS NOTED` exists precisely because sheets
+  // carry several scales. So it names both readings and says which case would
+  // explain them, rather than deciding.
+  const printed = standardScaleFromText(printedScale);
+  if (reading && printed) {
+    const off = Math.abs(reading.feetPerInch - printed.feetPerInch) / printed.feetPerInch;
+    if (off > SCALE_TOLERANCE) {
+      notices.push({
+        level: "warn",
+        message: `The title block on this sheet says ${printed.name}, and this calibration reads 1 in = ${round2(reading.feetPerInch)} ft. If you calibrated against a blown-up detail that is expected — otherwise check the dimension you clicked along.`,
+      });
+    }
   }
 
   const sheetWidth = feetPerPageWidth(calibration);

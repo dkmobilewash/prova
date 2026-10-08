@@ -14,6 +14,7 @@ import {
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
 import { WALL_BASIS_LABELS, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
+import { DEFAULT_WASTE_PERCENT } from "@/lib/takeoff";
 
 /**
  * The partition schedule on /wall-types: a card per wall type, its parts
@@ -153,10 +154,13 @@ export function WallTypeCard({
   type,
   catalog,
   crafts,
+  defaultWastePercent,
 }: {
   type: WallTypeView;
   catalog: PickOption[];
   crafts: PickOption[];
+  /** The company figure, or null when nobody has set one. */
+  defaultWastePercent: string | null;
 }) {
   const save = useSubmit((fd) => updateWallType(type.id, fd), false);
   const [isRemoving, startRemove] = useTransition();
@@ -212,11 +216,22 @@ export function WallTypeCard({
 
       <ul className="mt-3 flex flex-col gap-2 border-t border-line-row pt-3">
         {type.components.map((component) => (
-          <WallComponentRow key={component.id} component={component} catalog={catalog} crafts={crafts} />
+          <WallComponentRow
+            key={component.id}
+            component={component}
+            catalog={catalog}
+            crafts={crafts}
+            defaultWastePercent={defaultWastePercent}
+          />
         ))}
         {type.components.length === 0 && <li className="text-sm text-ink-body">No parts yet — add the studs, track and board below.</li>}
       </ul>
-      <NewWallComponentForm wallTypeId={type.id} catalog={catalog} crafts={crafts} />
+      <NewWallComponentForm
+        wallTypeId={type.id}
+        catalog={catalog}
+        crafts={crafts}
+        defaultWastePercent={defaultWastePercent}
+      />
     </li>
   );
 }
@@ -227,10 +242,22 @@ function ComponentFields({
   component,
   catalog,
   crafts,
+  defaultWastePercent,
 }: {
   component?: WallComponentView;
   catalog: PickOption[];
   crafts: PickOption[];
+  /**
+   * THE COMPANY'S FIGURE, replacing a hard-coded `"0"`.
+   *
+   * Zero was the worst of the available defaults: a component authored without
+   * thinking about waste bought exactly the material the geometry needed and
+   * no offcuts, which under-buys every time. The takeoff form on the other
+   * side of the same job prefilled 10 for the same question. One number now
+   * answers both, and `DEFAULT_WASTE_PERCENT` is the floor when the company
+   * has not said.
+   */
+  defaultWastePercent: string | null;
 }) {
   return (
     <>
@@ -258,7 +285,12 @@ function ComponentFields({
       </label>
       <label className={labelClass}>
         Waste %
-        <input name="wastePercent" defaultValue={component?.wastePercent ?? "0"} inputMode="decimal" className={`${field} w-16`} />
+        <input
+          name="wastePercent"
+          defaultValue={component?.wastePercent ?? defaultWastePercent ?? String(DEFAULT_WASTE_PERCENT)}
+          inputMode="decimal"
+          className={`${field} w-16`}
+        />
       </label>
       <label className="flex items-center gap-1 self-end pb-2 text-xs text-ink-label">
         <input type="checkbox" name="roundUp" defaultChecked={component?.roundUp ?? false} />
@@ -317,10 +349,12 @@ function WallComponentRow({
   component,
   catalog,
   crafts,
+  defaultWastePercent,
 }: {
   component: WallComponentView;
   catalog: PickOption[];
   crafts: PickOption[];
+  defaultWastePercent: string | null;
 }) {
   const save = useSubmit((fd) => updateWallTypeComponent(component.id, fd), false);
   const [isRemoving, startRemove] = useTransition();
@@ -328,7 +362,7 @@ function WallComponentRow({
   return (
     <li className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
       <form onSubmit={save.onSubmit} className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
-        <ComponentFields component={component} catalog={catalog} crafts={crafts} />
+        <ComponentFields component={component} catalog={catalog} crafts={crafts} defaultWastePercent={defaultWastePercent} />
         <button type="submit" disabled={save.isPending} className={small}>
           {save.isPending ? (
             <span className="inline-flex items-center gap-1.5">
@@ -373,15 +407,17 @@ function NewWallComponentForm({
   wallTypeId,
   catalog,
   crafts,
+  defaultWastePercent,
 }: {
   wallTypeId: string;
   catalog: PickOption[];
   crafts: PickOption[];
+  defaultWastePercent: string | null;
 }) {
   const { isPending, error, onSubmit } = useSubmit((fd) => addWallTypeComponent(wallTypeId, fd));
   return (
     <form onSubmit={onSubmit} className="mt-3 flex flex-wrap items-end gap-2 rounded-md border border-dashed border-line-card p-3">
-      <ComponentFields catalog={catalog} crafts={crafts} />
+      <ComponentFields catalog={catalog} crafts={crafts} defaultWastePercent={defaultWastePercent} />
       <button type="submit" disabled={isPending} className={small}>
         {isPending ? "Adding…" : "Add part"}
       </button>

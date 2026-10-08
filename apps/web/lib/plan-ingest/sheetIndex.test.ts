@@ -4,8 +4,10 @@ import {
   duplicateSheetNumbers,
   effectiveSheetNumber,
   reviewRank,
+  pageRanges,
   sheetIndexSentence,
   sortForReview,
+  splitForReview,
   type SheetRow,
 } from "./sheetIndex";
 
@@ -20,6 +22,7 @@ function row(over: Partial<SheetRow> & { pageNumber: number }): SheetRow {
             sheetNumber: `A-${100 + over.pageNumber}`,
             title: "PLAN",
             discipline: "ARCHITECTURAL",
+            pageType: "PLAN",
             scale: null,
             revision: null,
             issueDate: null,
@@ -163,5 +166,77 @@ describe("the sentence at the top", () => {
 
   it("does not pretend an unread set has been read", () => {
     expect(sheetIndexSentence(countSheets([]))).toBe("Nothing has been read from this plan set yet.");
+  });
+});
+
+describe("splitting the rows that can be acted on from the ones that cannot", () => {
+  /**
+   * A fifty-five page set rendered fifty-five rows, and fifty of them said only
+   * "Sheet 23 of the file / Not read yet." — no number to check, no title to
+   * correct, no Pick and no Reject, because this panel cannot read a sheet.
+   * Those fifty pushed the five that could be worked off the top of the screen.
+   */
+  it("keeps only the rows carrying a proposal in the worklist", () => {
+    const split = splitForReview([
+      row({ pageNumber: 1 }),
+      row({ pageNumber: 2, proposal: null }),
+      row({ pageNumber: 3 }),
+    ]);
+    expect(split.toCheck.map((r) => r.pageNumber).sort((a, b) => a - b)).toEqual([1, 3]);
+    expect(split.notReadYet).toEqual([2]);
+  });
+
+  it("TELLS A SCAN FROM AN UNREAD SHEET, because the next step differs", () => {
+    // An unread sheet with text can be read again. A scan has no text to read
+    // at all, so the only way to give it a number is to type it on the sheet
+    // itself — and a reader told to "read it again" would try what cannot work.
+    const split = splitForReview([
+      row({ pageNumber: 4, proposal: null, hasTextLayer: true }),
+      row({ pageNumber: 5, proposal: null, hasTextLayer: false }),
+    ]);
+    expect(split.notReadYet).toEqual([4]);
+    expect(split.scans).toEqual([5]);
+  });
+
+  it("lists the leftovers in PAGE order, not in review order", () => {
+    // `sortForReview` puts the least certain first, which is right for rows
+    // somebody is about to correct and wrong for a list whose only use is
+    // finding a page in the viewer.
+    const split = splitForReview([
+      row({ pageNumber: 9, proposal: null }),
+      row({ pageNumber: 2, proposal: null }),
+      row({ pageNumber: 40, proposal: null }),
+    ]);
+    expect(split.notReadYet).toEqual([2, 9, 40]);
+  });
+
+  it("returns three empty lists for no rows at all", () => {
+    const split = splitForReview([]);
+    expect(split.toCheck).toEqual([]);
+    expect(split.notReadYet).toEqual([]);
+    expect(split.scans).toEqual([]);
+  });
+});
+
+describe("collapsing page numbers into ranges", () => {
+  it("turns a long run into one range", () => {
+    expect(pageRanges([6, 7, 8, 9, 10])).toBe("6-10");
+  });
+
+  it("keeps separate runs separate", () => {
+    expect(pageRanges([6, 7, 8, 11, 12, 40])).toBe("6-8, 11, 12, 40");
+  });
+
+  it("DOES NOT hyphenate a pair, which is longer than listing it", () => {
+    expect(pageRanges([11, 12])).toBe("11, 12");
+  });
+
+  it("sorts before it ranges, so an unsorted list still collapses", () => {
+    expect(pageRanges([8, 6, 7])).toBe("6-8");
+  });
+
+  it("handles one page and none", () => {
+    expect(pageRanges([40])).toBe("40");
+    expect(pageRanges([])).toBe("");
   });
 });

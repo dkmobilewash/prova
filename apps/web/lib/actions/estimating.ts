@@ -18,6 +18,8 @@ import { ActionResult, actionFail, actionOk, InputError, runAction, BID_INVITATI
 import { catalogActuals, catalogSourcedLine, repriceDecision } from "@/lib/catalog-actuals";
 import { quotePriceDecision } from "@/lib/catalog-quote-price";
 import { bidQuoteProblem } from "@/lib/bid-levelling";
+import { carriedLinePlan, carryDecision } from "@/lib/estimating/carried-quote";
+import { NOT_ESTIMATE_STAGE } from "@/lib/estimating/draft-lines";
 import { addendumProblem, requirementProblem } from "@/lib/bid-responsiveness";
 import { templateItemProblem, templateProblem } from "@/lib/estimate-templates";
 import { applyEstimateTemplate } from "@/lib/estimating/apply-template";
@@ -28,6 +30,8 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { loadFringeSchedulesByCraft, TIME_ENTRY_COST_SELECT } from "@/lib/fringe-schedules-query";
 import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
 import { addCatalogLine } from "@/lib/estimating/catalog-line";
+import { addIndirectLine } from "@/lib/estimating/add-indirect";
+import { isIndirectCostKind } from "@/lib/estimating/indirect-costs";
 import { createBidInvitationRecord } from "@/lib/estimating/bid-invitation";
 import { issueEstimateVersionNumber } from "@/lib/estimating/estimate-version";
 
@@ -305,6 +309,40 @@ export async function addLineItemFromCatalog(jobId: string, formData: FormData):
   }
 
   revalidatePath(`/jobs/${jobId}`);
+  return actionOk;
+}
+
+/**
+ * Adds one general-conditions line the estimate had nothing for.
+ *
+ * The way out of the sentence `missingIndirects` produces — CLAUDE.md's "real
+ * empty states with a way out", and the thing `setLineBudgetedCost` says is
+ * missing when a screen names a problem and leaves the fix elsewhere.
+ *
+ * The request carries a KIND and nothing else — no description and no cost. The
+ * figure is read from the company's own catalog entry server-side, because this
+ * writes the column the bid recap marks up and a number the browser sent must
+ * not be able to reach it (#105 finding 3). The body is in
+ * `lib/estimating/add-indirect.ts`; the sentences it returns are the core's.
+ */
+export async function addIndirectCostLine(jobId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
+
+  // NARROWED, never cast — #527's scar, where an unrecognised value was
+  // silently coerced and quietly cleared a line's cost type with a success
+  // response.
+  const kind = String(formData.get("kind") ?? "").trim();
+  if (!isIndirectCostKind(kind)) {
+    return actionFail("That isn't a kind of general conditions this app knows.");
+  }
+
+  const added = await addIndirectLine(company.id, { jobId, kind });
+  if (!added.ok) return actionFail(added.error);
+
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/jobs/${jobId}/estimate`);
   return actionOk;
 }
 
@@ -745,9 +783,14 @@ export async function saveBidQuote(bidInvitationId: string, formData: FormData):
     // because the row looks complete afterwards. `formData.has` distinguishes
     // "the form left this blank" from "this form does not own this field";
     // an omitted key is left alone by Prisma.
-    const requestFields: { requestedOn?: Date | null; dueBy?: Date | null } = {};
+    const requestFields: { requestedOn?: Date | null; dueBy?: Date | null; validUntil?: Date | null } = {};
     if (formData.has("requestedOn")) requestFields.requestedOn = optionalDateFromString(formData.get("requestedOn"));
     if (formData.has("dueBy")) requestFields.dueBy = optionalDateFromString(formData.get("dueBy"));
+    // `validUntil` lives on the ANSWER form only, so it takes the same
+    // treatment and for the same reason: the request form does not own it,
+    // and spreading it in as null would wipe an expiry the sub gave the moment
+    // somebody edited the request half of the row.
+    if (formData.has("validUntil")) requestFields.validUntil = optionalDateFromString(formData.get("validUntil"));
 
     const data = {
       packageLabel,
@@ -808,6 +851,191 @@ export async function recordBidQuoteDecline(bidQuoteId: string, formData: FormDa
     if (updated.count === 0) return actionFail("That quote is no longer on this bid. Reload the page.");
 
     revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+/**
+ * Marks which quote's price went into our bid — or clears it.
+ *
+ * ONE PER PACKAGE, cleared and set in one transaction. Two carried quotes on
+ * one scope is a contradiction rather than a race, and a partial unique index
+ * over `packageLabel` where `carriedAt` is non-null is not expressible in this
+ * schema — so the write enforces it, and `carriedIn` reads the first without
+ * trying to adjudicate.
+ *
+ * The DATE is stamped here rather than entered, which is the one place this
+ * diverges from `declinedAt` beside it. A decline is something that happened
+ * out there on a day somebody can tell you; carrying a quote is a decision made
+ * on this screen at the moment of the press, so stamping it is recording the
+ * act rather than guessing at one.
+ */
+export async function setBidQuoteCarried(bidQuoteId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  return runAction(async () => {
+    const carried = String(formData.get("carried") ?? "") === "true";
+
+    const quote = await prisma.bidQuote.findFirst({
+      where: { id: bidQuoteId, companyId: company.id },
+      select: {
+        id: true,
+        vendorName: true,
+        packageLabel: true,
+        bidInvitationId: true,
+        amount: true,
+        declinedAt: true,
+        carriedAt: true,
+      },
+    });
+    if (!quote) return actionFail("That quote is no longer on this bid. Reload the page.");
+
+    if (!carried) {
+      await prisma.bidQuote.update({ where: { id: quote.id }, data: { carriedAt: null } });
+      revalidatePath("/bids");
+      return actionOk;
+    }
+
+    const decision = carryDecision({
+      id: quote.id,
+      vendorName: quote.vendorName,
+      packageLabel: quote.packageLabel,
+      amount: quote.amount != null ? Number(quote.amount) : null,
+      declinedAt: quote.declinedAt,
+      carriedAt: quote.carriedAt,
+    });
+    if (!decision.ok) return actionFail(decision.error);
+
+    await prisma.$transaction([
+      // Everything else in this package stops being carried, so the screen can
+      // never show two answers to one question.
+      prisma.bidQuote.updateMany({
+        where: {
+          companyId: company.id,
+          bidInvitationId: quote.bidInvitationId,
+          packageLabel: quote.packageLabel,
+          carriedAt: { not: null },
+        },
+        data: { carriedAt: null },
+      }),
+      prisma.bidQuote.update({ where: { id: quote.id }, data: { carriedAt: new Date() } }),
+    ]);
+
+    revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+/**
+ * Puts the carried quote's price on the estimate as a subcontractor line.
+ *
+ * THE RE-ENTRY THIS KILLS is the one `ARCHITECTURE.md` names as the reason the
+ * product exists: a levelled quote was read, judged, and then the winning
+ * number was retyped into a line item by hand — on the most expensive lines in
+ * the bid, from a screen that already knew the figure.
+ *
+ * ── IT NEEDS THE BID LINKED TO A JOB, AND SAYS SO ──
+ *
+ * A `BidQuote` hangs off a `BidInvitation`, which carries no line items; the
+ * estimate lives on a `Job`. Until 2026-10-04 those could only be linked after
+ * the bid was WON, which is after every decision a quote informs — so this
+ * action is only possible because `linkBidToJob` dropped that gate. When no job
+ * is linked the refusal says to link one rather than failing silently.
+ *
+ * ── A LUMP SUM, QUANTITY 1, CODED SUBCONTRACTOR ──
+ *
+ * `BidQuote.amount` has no unit and no quantity: it is what one sub said one
+ * package costs. Spreading it across units would invent a breakdown the sub
+ * never gave — the rule `catalog-quote-price.ts` states for the neighbouring
+ * case, where prices are never converted between units because guessing the
+ * factor invents a number that looks right.
+ *
+ * `costCategory: SUBCONTRACTOR` is set rather than left null, because it is not
+ * a guess: a price from a subcontractor IS subcontractor cost, and an
+ * uncategorised line is marked up at nothing by the recap. This is the one
+ * place in the estimate where the category is known from the source rather than
+ * chosen.
+ *
+ * It writes a COST and no price. What the GC is asked to pay for this scope is
+ * the recap's business, not the sub's.
+ */
+export async function addCarriedQuoteToEstimate(bidQuoteId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+
+  return runAction(async () => {
+    const quote = await prisma.bidQuote.findFirst({
+      where: { id: bidQuoteId, companyId: company.id },
+      select: {
+        id: true,
+        vendorName: true,
+        packageLabel: true,
+        amount: true,
+        declinedAt: true,
+        carriedAt: true,
+        bidInvitation: { select: { wonJobId: true, wonJob: { select: { id: true, status: true } } } },
+      },
+    });
+    if (!quote) return actionFail("That quote is no longer on this bid. Reload the page.");
+
+    // NOTHING ABOUT THE FIGURE COMES FROM THE REQUEST — the caller names a
+    // quote and the amount is read here (#105 finding 3).
+    const plan = carriedLinePlan({
+      id: quote.id,
+      vendorName: quote.vendorName,
+      packageLabel: quote.packageLabel,
+      amount: quote.amount != null ? Number(quote.amount) : null,
+      declinedAt: quote.declinedAt,
+      carriedAt: quote.carriedAt,
+    });
+    if (!plan.ok) return actionFail(plan.error);
+
+    const job = quote.bidInvitation.wonJob;
+    if (!job) {
+      return actionFail(
+        "This bid isn't linked to a job yet, so there is no estimate to put the price on. Link it to the job you are building the number on, below.",
+      );
+    }
+    if (job.status !== "ESTIMATE") {
+      // The same stage rule every other direct estimate edit keeps. After award
+      // a scope change is a change order, not a new line typed onto the bid.
+      return actionFail(NOT_ESTIMATE_STAGE);
+    }
+
+    const already = await prisma.jobLineItem.findFirst({
+      where: { jobId: job.id, isDeleted: false, description: plan.description },
+      select: { id: true },
+    });
+    if (already) {
+      return actionFail(
+        `The estimate already carries a line called "${plan.description}". Edit that one rather than adding a second.`,
+      );
+    }
+
+    await prisma.jobLineItem.create({
+      data: {
+        jobId: job.id,
+        description: plan.description,
+        quantity: 1,
+        // A COST AND NO PRICE. What the GC pays for this scope is the recap's
+        // business; this records what the sub said it costs us.
+        unitPrice: null,
+        budgetedUnitCost: plan.unitCost.toFixed(2),
+        currentEstimatedUnitCost: plan.unitCost.toFixed(2),
+        costCategory: "SUBCONTRACTOR",
+      },
+    });
+
+    revalidatePath("/bids");
+    revalidatePath(`/jobs/${job.id}`);
+    revalidatePath(`/jobs/${job.id}/estimate`);
     return actionOk;
   });
 }
@@ -988,9 +1216,22 @@ export async function linkBidToJob(bidInvitationId: string, formData: FormData):
     where: { id: bidInvitationId, companyId: company.id },
   });
   if (!bid) return actionFail("That bid is no longer on this company. Reload the page.");
-  if (bid.status !== "WON") {
-    return actionFail("Only a bid marked Won can be linked to a job — mark it Won first.");
-  }
+  // THE "WON FIRST" GATE WAS REMOVED ON 2026-10-04, and the sentence it
+  // returned was "Only a bid marked Won can be linked to a job — mark it Won
+  // first."
+  //
+  // It made one thing impossible: an estimator building the number on a job,
+  // with a levelled subcontractor quote in front of them, could not say the two
+  // were the same work until after the bid was won — which is after every
+  // decision the quote informs. Linking is how a carried quote reaches the
+  // estimate at all.
+  //
+  // Nothing about won-ness is lost, because `status` is what records it and
+  // always was. What DID have to change is every reader that inferred won-ness
+  // from this link existing: `bid-outcome-query.ts` filtered on
+  // `wonJobId: { not: null }` with no status check, so without that fix every
+  // bid still being estimated would have walked into the bid-versus-actual
+  // comparison as though it had been won.
 
   const jobId = String(formData.get("jobId") ?? "").trim();
   if (!jobId) {

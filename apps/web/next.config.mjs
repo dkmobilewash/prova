@@ -6,6 +6,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@prova/ui", "@prova/db"],
+  // `@napi-rs/canvas` ships a NATIVE `.node` binary. webpack follows the
+  // import -- a dynamic `import()` does not stop it -- tries to PARSE the
+  // binary, and the build dies with "Module parse failed: Unexpected
+  // character". Nothing can bundle a compiled Skia; it has to be left to Node
+  // at runtime, which is exactly what this option is for.
+  //
+  // READ THIS BEFORE ADDING pdfjs-dist TO THE LIST, because this repo has
+  // already paid for that once: `lib/plan-ingest/planPdf.ts` records that
+  // NO `serverExternalPackages` HERE, AND THAT IS A DELETION WITH A REASON.
+  // `@napi-rs/canvas` was added so the SERVER could rasterise a plan sheet,
+  // which needed this line (webpack cannot parse a native `.node` binary) --
+  // and the line then kept Vercel from TRACING the binary into the function,
+  // so pdf.js found nothing at runtime and the feature failed with every
+  // check green. The whole problem is gone because the server no longer
+  // renders anything: a PDF is UPLOADED now, so the browser already has the
+  // bytes and does the rendering with the canvas it has natively.
+  //
+  // `lib/plan-ingest/planPdf.ts` still reads PDF TEXT on the server and needs
+  // nothing here, which it explains at length. Do not add pdfjs-dist to a
+  // list that no longer exists.
   // The floating N badge is dev-only chrome, and this branch gets filmed for
   // the demo video — nothing that says "dev server" can be in frame.
   devIndicators: false,
