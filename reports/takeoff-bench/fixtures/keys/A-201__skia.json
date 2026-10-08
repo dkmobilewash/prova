@@ -1,0 +1,26 @@
+{
+ "caseId": "A-201__skia",
+ "sheetId": "A-201",
+ "variant": "skia",
+ "producer": "skia",
+ "title": "EXTERIOR ELEVATIONS",
+ "targets": "a second, unrelated PDF writer's structure",
+ "displayWidthPt": 2592,
+ "displayHeightPt": 1728,
+ "expectWalls": false,
+ "traps": [
+  "long horizontal floor and parapet lines",
+  "parapet cap flashing: two lines 8\" apart",
+  "storefront mullions: two lines 4-1/2\" apart, 10' tall"
+ ],
+ "scales": [
+  {
+   "view": "ELEVATIONS",
+   "scaleName": "1/8\" = 1'-0\"",
+   "feetPerInch": 8
+  }
+ ],
+ "scaleBehaviour": "name-it",
+ "expectedRefusal": null,
+ "walls": []
+}
