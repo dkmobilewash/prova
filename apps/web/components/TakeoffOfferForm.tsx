@@ -62,7 +62,21 @@ function requestFrom(formData: FormData): OfferRequest {
   };
 }
 
-type Accepted = { request: OfferRequest; sendTo: string; alreadyHadIt: boolean };
+/**
+ * What the confirmation renders from. `alreadyHadIt` USED TO BE HERE AND ITS
+ * REMOVAL IS THE FIX, not a tidy-up: this component rendered a distinct
+ * paragraph when the action said the address was already on file, which made
+ * the public endpoint an email-enumeration oracle — POST an address, read the
+ * page, learn whether that contractor is a lead of ours. `requestDrawingSetRead`
+ * no longer returns the flag at all (see `DrawingSetReadResult`), so there is
+ * nothing here to render and no shape of this form that can leak it again.
+ *
+ * Nothing is lost by the person who filled this in. Their next step is the
+ * same sentence either way — send the set to this address — and a repeat
+ * submit is no longer discarded: the action writes what they typed onto the
+ * lead it already has.
+ */
+type Accepted = { request: OfferRequest; sendTo: string };
 
 const labelClass = "flex flex-col gap-1.5 text-sm font-semibold text-ink-label";
 const fieldClass =
@@ -80,15 +94,6 @@ export function TakeoffOfferForm() {
     return (
       <div className="rounded-lg border border-line-card bg-surface p-5">
         <h3 className="text-xl font-semibold text-ink">{heading}</h3>
-        {accepted.alreadyHadIt && (
-          // Told the truth rather than congratulated. Somebody who filled this
-          // in twice is somebody who was not sure the first one worked, and
-          // "thanks, we have your details" a second time does not answer that.
-          <p className="mt-3 text-base leading-relaxed text-ink-body">
-            We already had these details from an earlier request, so this did not start a second
-            one. Nothing has gone missing &mdash; the set is still the next move.
-          </p>
-        )}
         <p className="mt-3 text-base leading-relaxed text-ink-body">{body}</p>
         <div className="mt-5 rounded-md border border-line-card bg-canvas p-4">
           <p className="text-sm font-semibold text-ink-label">Send the set to</p>
@@ -124,11 +129,7 @@ export function TakeoffOfferForm() {
               setError(result.error);
               return;
             }
-            setAccepted({
-              request,
-              sendTo: result.value.sendTo,
-              alreadyHadIt: result.value.alreadyHadIt,
-            });
+            setAccepted({ request, sendTo: result.value.sendTo });
           } catch {
             // A thrown message is redacted in production, so there is nothing
             // worth showing from it. Name the fallback they can act on.

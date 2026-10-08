@@ -101,9 +101,87 @@ export const DELIVERABLES: Deliverable[] = [
     id: "page-inventory",
     title: "The set's own particulars",
     body:
-      "Page count, sheet size per page, and which pages have no text layer at all — the scanned ones nothing can read without a person.",
+      "How many pages the set has, and which of them have no text layer at all — the scanned ones nothing can read without a person.",
     check: "Compare the page count to the file you sent.",
     backing: { kind: "stage", stage: "PAGE_INVENTORY" },
+  },
+];
+
+/**
+ * WHAT THE FREE READ IS THE FRONT HALF OF.
+ *
+ * The section above says what arrives. It does not say what any of it is FOR,
+ * and a sub bidding work this week does not want a sheet index for its own
+ * sake — they want a bid. Reading the set is the first step of a takeoff and
+ * an estimate, which is the product this page is the front door to, and a page
+ * that never says so is offering a filing exercise.
+ *
+ * ── THE LINE THIS LIST IS NOT ALLOWED TO CROSS ──
+ *
+ * Every entry names work that happens WITH A PERSON ON THE SCREEN. The free
+ * read is the INPUT to a takeoff; it is not a takeoff. `LIMITS` below says we
+ * do not measure walls off a drawing in an inbox, and that is not a hedge to
+ * be softened once this section exists — `lib/takeoff/wallVectors.ts` and the
+ * scale reader in `lib/takeoff-plan.ts` both run in the plan VIEWER, and
+ * neither is a `PlanIngestStage`, so neither can run unattended. Two sections
+ * on one page disagreeing about that is worse than either of them alone.
+ *
+ * So each entry is in two halves, and the split is the honesty: `handed` is
+ * what the free read gives them, `feeds` is the work inside C Stream it goes
+ * into. Nothing here promises the second half happens by itself.
+ *
+ * `backing` is resolved by the same census that resolves `DELIVERABLES` —
+ * `takeoff-offer.test.ts` runs both lists through ONE resolver, so a chain
+ * named here that the app cannot do fails the build.
+ */
+export type FedWork = {
+  id: string;
+  /** What the free read hands them, named in the words of the work it feeds
+   *  rather than restated from the deliverable above. */
+  handed: string;
+  /** The real work in C Stream it is the input to — and who does it. */
+  feeds: string;
+  backing: Backing;
+};
+
+/**
+ * THREE CHAINS, in the order the work actually happens: the wall types first,
+ * because nothing can be posted against a type that does not exist yet; then
+ * a run traced on a sheet; then the rows that run turns into on the bid.
+ */
+export const WHAT_IT_FEEDS: FedWork[] = [
+  {
+    id: "schedule-to-wall-types",
+    handed: "The partition schedule off the set, typed out as rows.",
+    feeds:
+      "Those rows are what your wall types get built from — each type's layers entered once, against your own catalog. The estimate's wall lines are then derived from the schedule instead of being retyped on every bid.",
+    backing: {
+      kind: "module",
+      path: "lib/estimating/wall-schedule.ts",
+      symbol: "syncWallScheduleLines",
+    },
+  },
+  {
+    id: "sheet-index-to-runs",
+    handed: "Sheet numbers and titles, so you know which page carries which plan.",
+    feeds:
+      "You open that page in C Stream, trace the runs on it and post them against one of those wall types — with the drawing in front of you, which is the only place that happens. A type with no layers is refused rather than posting a run that changes nothing on the bid.",
+    backing: {
+      kind: "module",
+      path: "lib/estimating/measured-wall-run.ts",
+      symbol: "planMeasuredWallRun",
+    },
+  },
+  {
+    id: "runs-to-estimate-lines",
+    handed: "A set broken into pages that can be read, with the scanned ones named.",
+    feeds:
+      "What you post off those pages goes through the same recipe every time — board, sheets, studs, track and waste, as rows on the estimate. The arithmetic is plain code, so a row on your bid traces back to the run it came from.",
+    backing: {
+      kind: "module",
+      path: "lib/takeoff-recipes.ts",
+      symbol: "recipeLines",
+    },
   },
 ];
 
@@ -129,16 +207,29 @@ export const LIMITS: string[] = [
  * HOW THE RESULT ARRIVES — the delivery form, written down because it is the
  * half of this that a contractor is actually agreeing to.
  *
- * A LINK, NOT AN ATTACHMENT, and that is a deliverability decision rather
- * than a design one. `packages/integrations/src/email.ts`'s own header
- * records the finding this rests on: the most-repeated complaint about every
- * competitor is mail problems surfaced badly — quotes from the vendor's
- * domain going unopened. A first email from an unknown sender carrying a PDF
- * attachment is the single most filterable thing we could send. A short plain-
- * text mail with one link is not.
+ * PLAIN TEXT IN THE BODY — no attachment, and no link either.
+ *
+ * THIS PARAGRAPH ARGUED FOR A LINK UNTIL 2026-10-08 and it is worth leaving
+ * the correction visible rather than tidying it away: it opened "A LINK, NOT
+ * AN ATTACHMENT", which was the decision when it was written and was dropped
+ * before any of this shipped. `form` below records the same drift one field
+ * down. A doc comment is where a promise goes to outlive the thing it
+ * described.
+ *
+ * The half of the old argument that survives is the one about attachments.
+ * `packages/integrations/src/email.ts`'s own header records the finding it
+ * rests on: the most-repeated complaint about every competitor is mail
+ * problems surfaced badly — quotes from the vendor's domain going unopened. A
+ * first email from an unknown sender carrying a PDF attachment is the single
+ * most filterable thing we could send. A short plain-text mail that needs
+ * nothing clicked is not, and `lib/takeoff-delivery.ts` renders the whole read
+ * into the body rather than minting anything to host.
  *
  * It is also the only form that lets them forward it to their estimator
- * without re-sending a file, and the only one we can correct after the fact.
+ * without re-sending a file, and the only one that is readable with no signal
+ * and no account. What the old paragraph claimed for a link — that we could
+ * correct it after the fact — is the one thing a mailed body cannot do, which
+ * is why the gaps go at the top of it and not the bottom.
  */
 export const DELIVERY = {
   /** What they hand over. */
@@ -159,7 +250,21 @@ export const DELIVERY = {
    * saying the two disagreed — not by any test here, because no test can know
    * which of two honest sentences is the true one. The lesson for the next
    * edit: this object is what a contractor is agreeing to, so it changes in
-   * the same commit as the thing that delivers it, never before. */
+   * the same commit as the thing that delivers it, never before.
+   *
+   * AND THE CORRECTION MISSED THREE SITES, FOUND 2026-10-08. Fixing the
+   * sentence that was wrong is not the same as removing the claim: `NEXT_STEPS`
+   * step 3 was still titled "We email you the link" — rendered by
+   * `components/WallTakeoffOffer.tsx` DIRECTLY ABOVE this very field, so two
+   * adjacent lines of one list item contradicted each other on a public page —
+   * `requestProblem` still told anyone who left the email box blank "that is
+   * where the link goes", and this object's own header paragraph above still
+   * argued for a link in capitals. A comment restating a decision is a copy of
+   * it, and CLAUDE.md's rule for a canonical claim is both guards: that the
+   * claim is right, and that it is the only one. There is a test for the second
+   * half now — `takeoff-offer.test.ts` derives what this sentence DENIES from
+   * this sentence and fails the build on any other line of the offer promising
+   * it. */
   form:
     "A plain email. Everything we read is in the body of it — no attachment to open, no link to click, no login, no account.",
   /** What they can do with it. */
@@ -174,7 +279,7 @@ export const DELIVERY = {
 export const NEXT_STEPS: { step: number; title: string; body: string }[] = [
   { step: 1, title: "Tell us where to send it", body: "The form below. Name, company, email — that is all of it." },
   { step: 2, title: "Send the set", body: DELIVERY.intake },
-  { step: 3, title: "We email you the link", body: `${DELIVERY.form} Normally ${DELIVERY.turnaround}.` },
+  { step: 3, title: "We email you the read", body: `${DELIVERY.form} Normally ${DELIVERY.turnaround}.` },
 ];
 
 /**
@@ -255,7 +360,7 @@ export function looksLikeEmailAddress(value: string): boolean {
 export function requestProblem(request: OfferRequest): string | null {
   if (!request.companyName.trim()) return "Add your company name so we know who the set belongs to.";
   if (!request.contactName.trim()) return "Add your name.";
-  if (!request.email.trim()) return "Add an email address — that is where the link goes.";
+  if (!request.email.trim()) return "Add an email address — that is where the read goes.";
   if (!looksLikeEmailAddress(request.email)) return "That email address does not look right. Check it and try again.";
   if (request.trade && !OFFER_TRADE_VALUES.includes(request.trade as OfferTrade)) {
     return "Pick one of the trades listed.";

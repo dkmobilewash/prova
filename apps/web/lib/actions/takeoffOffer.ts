@@ -8,6 +8,7 @@ import { deliveredReadFor } from "@/lib/drawing-set-read-query";
 import { deliveryBody, deliverySubjectLine } from "@/lib/takeoff-delivery";
 import { viewerAsOf } from "@/lib/viewerToday";
 import {
+  DEDUPE_WINDOW_HOURS,
   overCeiling,
   requestNote,
   requestProblem,
@@ -52,19 +53,54 @@ import {
  *      anyone can POST to must have nothing to point, and this one has
  *      nothing to point.
  *
- *   2. THE WRITE SET IS EXACTLY THREE ROWS, all on that one company: a
- *      `SalesLead`, one `SalesOpportunity`, one `SalesActivity`. Nothing is
- *      updated, nothing is deleted, no file is written, no mail is sent.
- *      Prova's own internal CRM is the only thing this can reach.
+ *   2. THE WRITE SET IS BOUNDED AND ENUMERATED, all of it on that one
+ *      company. A first request writes FOUR rows: a `SalesLead`, one
+ *      `SalesOpportunity`, that opportunity's opening `SalesStageChange`,
+ *      and one `SalesActivity`. A repeat inside the dedupe window writes
+ *      exactly ONE — a `SalesActivity` on the lead that is already there.
+ *      Nothing is updated, nothing is deleted, no file is written, no mail
+ *      is sent. Prova's own internal CRM is the only thing this can reach.
  *
- *   3. TWO CEILINGS BOUND IT, both decided in `lib/takeoff-offer.ts`:
+ *      THIS SENTENCE SAID "EXACTLY THREE ROWS" AND NAMED THREE MODELS, and
+ *      it was a safety property rather than a description — so it is
+ *      corrected here rather than left to be read as one. The stage change
+ *      is the fourth because the house convention for `SalesOpportunity` is
+ *      four rows, not three: `sales.prisma` says `SalesStageChange` is
+ *      "written only by createSalesOpportunity and updateSalesOpportunity,
+ *      in the same transaction as the row itself", and an opportunity with
+ *      no history is excluded from every read on /sales that asks how long
+ *      a deal has been sitting. A write set that is one row short of the
+ *      convention is not a smaller blast radius, it is a deal nobody can
+ *      see.
+ *
+ *   3. EVERY FIELD IS LENGTH-CAPPED AND CONTROL-CHARACTER-STRIPPED before
+ *      anything is written — `readRequest` below, which says what each cap
+ *      is for. An unauthenticated write with unbounded text is a row
+ *      somebody can make arbitrarily large, and a field carrying newlines
+ *      is a forged line in the delivery mail.
+ *
+ *   4. TWO CEILINGS BOUND IT, both decided in `lib/takeoff-offer.ts`:
  *      `overCeiling` caps how many inbound leads this form will create in
  *      an hour, and `withinDedupeWindow` makes a repeat submit from the same
- *      address a no-op. Together those are the difference between an open
- *      write path and an unusable pipeline. Neither is security — a public
- *      form with no ceiling is simply a CRM somebody can fill up in an
- *      afternoon, and the refusal when the ceiling trips still gives the
- *      contractor the intake address, so nothing is lost.
+ *      address create no second lead. Together those are the difference
+ *      between an open write path and an unusable pipeline. Neither is
+ *      security — a public form with no ceiling is simply a CRM somebody can
+ *      fill up in an afternoon, and the refusal when the ceiling trips still
+ *      gives the contractor the intake address, so nothing is lost.
+ *
+ *      WHAT NEITHER CEILING IS, AND IT IS WORTH STATING BECAUSE THE CODE
+ *      LOOKS LIKE IT: both are a READ followed by a WRITE, with no lock and
+ *      no unique index between them. Concurrent POSTs can all pass their
+ *      count before any of them commits, so the hourly ceiling is a ceiling
+ *      on sequential submits and the dedupe window is proof against a human
+ *      filling the form in twice, not against a script firing twenty at
+ *      once. Closing that needs a unique index or an advisory lock — a
+ *      migration, which is announced in Slack before it is pushed. Moving
+ *      these two reads inside the transaction below would NOT close it:
+ *      Postgres runs at READ COMMITTED here, so a transaction still cannot
+ *      see a sibling's uncommitted insert, and the only thing it would
+ *      change is how long each request holds one of five pooled
+ *      connections.
  *
  * ── WHY NOTHING HERE THROWS, AND WHY THERE IS NO `runAction` BOUNDARY ──
  *
@@ -131,8 +167,72 @@ function fail(error: string): Extract<ActionResult, { ok: false }> {
   return actionFail(error) as Extract<ActionResult, { ok: false }>;
 }
 
+/**
+ * HOW LONG EACH FIELD IS ALLOWED TO BE, and why each number is the number.
+ *
+ * `requestProblem` caps the EMAIL at 320 (`looksLikeEmailAddress`, which is
+ * the SMTP maximum) and nothing else. Everything below arrives on an
+ * UNAUTHENTICATED POST, so "nobody would type that" is not a bound: without
+ * these, one request can write a row of any size to Prova's own CRM, and
+ * every one of these strings is also read back out into the delivery mail and
+ * onto /sales.
+ *
+ * The numbers are the longest value a real contractor could have, roughly
+ * doubled — not round numbers for their own sake. A refusal here is a dead
+ * end for somebody who came to hand over a bid set, so the caps are set where
+ * only a paste or a script can reach them.
+ */
+const FIELD_LIMITS = {
+  /** A legal entity name with its suffixes. "Ridgeline Drywall & Plaster
+   *  Systems of Southern Nevada, Incorporated" is 72 characters. */
+  companyName: 160,
+  /** A person's full name. Long enough for a double-barrelled surname and a
+   *  title somebody types in anyway. */
+  contactName: 120,
+  /** A phone number with a country code, an extension and whatever
+   *  punctuation their phone put in. Not parsed, so this is the only bound
+   *  it has. */
+  phone: 40,
+  /** A project name as a GC writes it on a bid invitation — these run long
+   *  ("Sunset Medical Office Building — Shell & Core, Phase 2"). */
+  projectName: 200,
+  /** A GC's company name, same shape as ours. */
+  gcName: 160,
+} as const;
+
+/**
+ * Control characters are STRIPPED rather than refused, which is the opposite
+ * of the decision made about length below, and the asymmetry is deliberate.
+ *
+ * A control character in one of these fields is almost never typed — it is
+ * pasted, out of a PDF bid invitation or a spreadsheet, and the contractor
+ * cannot see it. Refusing "Acme Drywall\r\nInc" with a sentence about
+ * characters they cannot see is a dead end they have no way to act on. A
+ * length they CAN see, and can shorten.
+ *
+ * It matters at all because a newline in `companyName` is a forged line in
+ * the delivery mail: `lib/takeoff-delivery.ts` renders a plain-text body with
+ * one fact per line, so a field carrying `\n` plants a line that reads as
+ * ours. That renderer defends itself too — both layers, because neither is
+ * sufficient alone. This one stops the character reaching the database at
+ * all, so it is also not in the note, not on /sales, and not in anything
+ * written later that nobody has thought about yet.
+ *
+ * C0 (including tab and newline), DEL, C1, and the two Unicode line
+ * separators — every one of them replaced with a SPACE rather than deleted,
+ * so "Acme\nDrywall" is "Acme Drywall" and not "AcmeDrywall", and then runs
+ * of whitespace are collapsed. None of these fields is multi-line on the
+ * form, so nothing legitimate is lost.
+ */
+function singleLine(value: string): string {
+  return value
+    .replace(/[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function text(formData: FormData, key: string) {
-  return String(formData.get(key) ?? "").trim();
+  return singleLine(String(formData.get(key) ?? ""));
 }
 
 function readRequest(formData: FormData): OfferRequest {
@@ -147,15 +247,75 @@ function readRequest(formData: FormData): OfferRequest {
   };
 }
 
+/**
+ * Which field is too long, as a sentence naming it and the limit — or null.
+ *
+ * REFUSED RATHER THAN TRUNCATED, and this is the choice the other way round
+ * from `singleLine` above. Truncating silently is the worse failure here
+ * because of WHO reads these strings next: `companyName` is how the operator
+ * knows whose drawing set has just landed, and `projectName` is how they
+ * match it to the right bid. A truncated company name is a lead that is
+ * quietly about somebody slightly else, and nothing on /sales says it was
+ * cut. The form clears nothing on a failure (`TakeoffOfferForm`'s header is
+ * explicit about why), so a refusal arrives over what they typed and
+ * shortening it is one edit.
+ *
+ * `trade` and `email` are absent on purpose: `requestProblem` already bounds
+ * both — `trade` against the enum, `email` at 320 — and a second cap here
+ * would be a second list of the same rule.
+ *
+ * Returned in field order, not longest-first, so two runs over the same input
+ * name the same field.
+ */
+function tooLongProblem(request: OfferRequest): string | null {
+  const fields: { key: keyof typeof FIELD_LIMITS; label: string }[] = [
+    { key: "companyName", label: "company name" },
+    { key: "contactName", label: "name" },
+    { key: "phone", label: "phone number" },
+    { key: "projectName", label: "project name" },
+    { key: "gcName", label: "general contractor" },
+  ];
+  for (const { key, label } of fields) {
+    const limit = FIELD_LIMITS[key];
+    if (request[key].length > limit) {
+      return `That ${label} is too long — ${limit} characters or fewer and we will take it from there.`;
+    }
+  }
+  return null;
+}
+
+/**
+ * What comes back on success — and it is ONE FIELD, which is the fix rather
+ * than a simplification.
+ *
+ * THIS TYPE CARRIED AN `alreadyHadIt: boolean` AND IT WAS AN EMAIL-ENUMERATION
+ * ORACLE. Its own comment claimed "the contractor is told the same thing
+ * either way", and that was false twice over: `TakeoffOfferForm` rendered a
+ * distinct paragraph when it was true, and the flag was in the raw POST
+ * response whatever the page did with it. So anyone could POST an address to
+ * this endpoint and learn whether it is a `SalesLead` on Prova's operating
+ * company from the last day — leads this form created AND ones we typed in
+ * ourselves off a cold call. A hit writes nothing, so it cost the prober
+ * nothing and was not bounded by anything: only MISSES create a lead, and
+ * only leads count against the hourly ceiling. Twenty probes an hour into who
+ * is talking to us, on a page whose whole purpose is being handed to named
+ * prospects.
+ *
+ * So the response is now identical for a first request and a repeat, byte for
+ * byte, and `takeoffOffer.dbtest.ts` asserts that rather than trusting it.
+ * Nothing is lost by the submitter: their next step is the same sentence
+ * either way — send the set to this address — which is what made the flag
+ * safe to remove and is also what made it worthless to them in the first
+ * place.
+ *
+ * A REPEAT IS NO LONGER SILENT, which is the other half of making this
+ * honest. The dedupe branch below writes the note onto the existing lead, so
+ * "identical response" does not mean "the second request was thrown away".
+ */
 export type DrawingSetReadResult = {
   /** Where the contractor sends the set. Returned, not assumed, so the
    *  confirmation state renders the same address the action validated. */
   sendTo: string;
-  /** True when a request from this address was already on file inside the
-   *  dedupe window, so nothing new was written. The contractor is told the
-   *  same thing either way — from their side it DID work both times, which
-   *  is the whole point of the window. */
-  alreadyHadIt: boolean;
 };
 
 export async function requestDrawingSetRead(
@@ -199,7 +359,11 @@ export async function requestDrawingSetRead(
   }
 
   const request = readRequest(formData);
-  const problem = requestProblem(request);
+  // The band's own rules first — required fields and the shape of the address
+  // — because those are the corrections a real contractor hits, and
+  // `requestProblem` owns the ordering between them. The length refusal is
+  // second because nothing typed by hand reaches it.
+  const problem = requestProblem(request) ?? tooLongProblem(request);
   if (problem) return fail(problem);
 
   const now = new Date();
@@ -222,23 +386,37 @@ export async function requestDrawingSetRead(
   // one this is for. `mode: "insensitive"` rather than lowercasing both
   // sides in JS: the comparison has to happen where the rows are, or the
   // query would have to read every lead on the company to do it.
+  //
+  // SCOPED TO `source: "INBOUND"`, WHICH IS WHAT THIS FORM CREATES, and the
+  // lookup was missing that for the same reason the ceiling count above has
+  // always had it. Without it a lead the operator typed in by hand off a cold
+  // call — OUTBOUND, REFERRAL, EVENT — makes a contractor's genuine FIRST
+  // request read as a repeat, so no lead is created for somebody we have
+  // never heard from and the operator never learns they asked.
+  //
+  // What this discriminator is and is not: `SalesLeadSource` is the only
+  // column that distinguishes these rows, and INBOUND is the nearest it gets
+  // to "this form made it". A lead somebody hand-enters AS inbound still
+  // matches, which is a narrower hole than the one it closes and needs a
+  // column to fix rather than a `where` clause.
   const existing = await prisma.salesLead.findFirst({
     where: {
       companyId: operator.id,
+      source: "INBOUND",
       email: { equals: request.email, mode: "insensitive" },
     },
     orderBy: { createdAt: "desc" },
-    select: { createdAt: true },
+    select: {
+      id: true,
+      createdAt: true,
+      // The deal this lead is already in, so the repeat's note hangs off the
+      // same opportunity the first one did — /sales reads activities per
+      // opportunity and an unattached one is invisible there. Newest first
+      // and one row: a lead can have more than one opportunity over time
+      // (`sales.prisma`), and the live one is the last one opened.
+      opportunities: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true } },
+    },
   });
-  if (existing && withinDedupeWindow(existing.createdAt, now)) {
-    // Deliberately idempotent, which no other create action in this app is
-    // (#19 disabled 57 create buttons while in flight instead). A disabled
-    // button does not cover this case: a public form is double-submitted,
-    // and then filled in AGAIN twenty minutes later by somebody who is not
-    // sure it worked. Two identical leads is not a data problem, it is
-    // somebody getting rung twice.
-    return { ok: true, value: { sendTo, alreadyHadIt: true } };
-  }
 
   // The day the request arrived, at UTC midnight like every other date in
   // this app. `SalesActivity.occurredOn` is normally ENTERED rather than
@@ -261,6 +439,56 @@ export async function requestDrawingSetRead(
   // fixed. Worth knowing before trusting that census's scope: the pattern it
   // reads for is narrower than the mistake it is about.
   const arrivedOn = await viewerAsOf();
+
+  if (existing && withinDedupeWindow(existing.createdAt, now)) {
+    // Deliberately idempotent IN THE LEAD, which no other create action in
+    // this app is (#19 disabled 57 create buttons while in flight instead). A
+    // disabled button does not cover this case: a public form is
+    // double-submitted, and then filled in AGAIN twenty minutes later by
+    // somebody who is not sure it worked. Two identical leads is not a data
+    // problem, it is somebody getting rung twice.
+    //
+    // THE NOTE IS NOT IDEMPOTENT, AND THAT IS THE CORRECTION. This branch
+    // used to return `ok` and write NOTHING AT ALL, which is only harmless
+    // when the second submit is the same submit. It very often is not: a sub
+    // bidding four jobs this week fills this in on Monday morning for
+    // "Harborview / Turner" and again that afternoon for "Civic Center /
+    // Swinerton". `SalesLead` has no project, GC or trade column, so the
+    // whole of the second request lived in a note that was never written —
+    // the project, the GC and the fact that a SECOND set was coming, all
+    // discarded behind a confirmation screen that said we had their details.
+    //
+    // So the dedupe window now suppresses the LEAD and the DEAL, which is
+    // what it is for — nobody gets rung twice, and the pipeline does not
+    // count one contractor as two — while everything the contractor typed is
+    // written onto the lead that already exists. Exactly one row.
+    await prisma.salesActivity.create({
+      data: {
+        companyId: operator.id,
+        leadId: existing.id,
+        opportunityId: existing.opportunities[0]?.id ?? null,
+        type: "NOTE",
+        occurredOn: arrivedOn,
+        // `requestNote(request)` unchanged and in full, under one line saying
+        // which branch wrote it. Without that line two notes a few hours
+        // apart on one lead read as a double write rather than as two bids,
+        // and the operator's first question — "did the form fire twice?" — is
+        // the one the note can answer for free. The window's length is read
+        // from the constant that decides it, so the sentence cannot drift
+        // from the rule.
+        summary: `Sent the /wall-takeoff form again within ${DEDUPE_WINDOW_HOURS} hours, so no second lead was created. What they sent this time:\n\n${requestNote(request)}`,
+        // followUpOn and loggedByUserId null for the same reasons as the
+        // first note below: nothing is owed yet, and a public form has no
+        // author.
+      },
+    });
+
+    // The lead's activity list and /sales's last-contact column both move.
+    revalidatePath("/sales");
+
+    // Byte-identical to the success below. See `DrawingSetReadResult`.
+    return { ok: true, value: { sendTo } };
+  }
 
   // One transaction, because a lead with no note is a lead nobody can act
   // on: `SalesLead` has no trade, project or GC column, so everything the
@@ -289,6 +517,42 @@ export async function requestDrawingSetRead(
       },
     });
 
+    // THE OPENING STAGE RECORD, in the same transaction as the row itself —
+    // which is what `sales.prisma` says this model is for, in as many words:
+    // "written only by createSalesOpportunity and updateSalesOpportunity, in
+    // the same transaction as the row itself". This action is now the third
+    // writer and it matches `createSalesOpportunity`'s shape rather than
+    // inventing one.
+    //
+    // IT WAS MISSING, and the cost was not cosmetic. `lib/sales-pipeline.ts`
+    // derives `daysInStage` from this history, and both `longestOpen` and
+    // `trackedOpenCount` filter on `daysInStage !== null` — so every deal
+    // this form created was excluded from the "what has gone quiet" list on
+    // /sales. The one read whose whole job is surfacing a neglected deal
+    // could not see the deals made by the feature built to generate them,
+    // while `SalesOpportunityRow` rendered "stage not recorded" beside each
+    // one. It also falsified `historyDisagrees`'s own comment — "should be
+    // unreachable: both writes happen in one transaction" — which was true of
+    // every other writer and is true again now.
+    //
+    // `fromStage: null` because the deal did not come from anywhere; it
+    // started here. `effectiveOn` is `arrivedOn`, the same day as the note:
+    // the day the request arrived IS the day this deal reached NEW, and it is
+    // the one date in this action. `recordedByUserId` null — the column is
+    // nullable for exactly the case where history has no author, and here
+    // there is no user, only a public form. No `note`: the stage did not move
+    // for a reason, it opened, and what they typed is in the activity below.
+    await tx.salesStageChange.create({
+      data: {
+        companyId: operator.id,
+        opportunityId: opportunity.id,
+        fromStage: null,
+        toStage: "NEW",
+        effectiveOn: arrivedOn,
+        recordedByUserId: null,
+      },
+    });
+
     await tx.salesActivity.create({
       data: {
         companyId: operator.id,
@@ -312,7 +576,7 @@ export async function requestDrawingSetRead(
   // every write here.
   revalidatePath("/sales");
 
-  return { ok: true, value: { sendTo, alreadyHadIt: false } };
+  return { ok: true, value: { sendTo } };
 }
 
 /**
@@ -372,6 +636,18 @@ export async function requestDrawingSetRead(
  * caller renders both. `ok: false` is reserved for the cases where there is
  * no read to give back at all.
  *
+ * ── AND ONE OF THOSE BRANCHES STILL WRITES THE EVIDENCE RECORD ──
+ *
+ * `sent: false` is not the same question as "was anything written". A
+ * provider that ACCEPTED the message and returned no id to track it by has
+ * almost certainly delivered it (`email.ts` says so where it sets
+ * `mayHaveSent`), so that branch records the EMAIL activity and annotates it
+ * — it does not report a clean send, and it does not leave a sent mail with
+ * no record. `lib/actions/messages.ts` and `lib/notification-dispatch.ts` are
+ * the precedent and the branch itself cites them. The other failure branches
+ * write nothing, which is the same rule read the other way: evidence of an
+ * email that does not exist is worse than none.
+ *
  * ── WHY THE TEXT IS NOT COMPOSED HERE ──
  *
  * `deliverySubjectLine` and `deliveryBody` (`lib/takeoff-delivery.ts`) are the
@@ -411,7 +687,10 @@ export async function requestDrawingSetRead(
  * success, including the ones that could not send — see the header.
  */
 export type SentReadResult = {
-  /** True only when the provider accepted the message. */
+  /** True only when the provider CONFIRMED it, with a message id to track it
+   *  by. False on a send the provider accepted without one — that branch is
+   *  not a clean send and must not render as one, even though it does write
+   *  the activity row. See the header. */
   sent: boolean;
   subject: string;
   body: string;
@@ -419,6 +698,67 @@ export type SentReadResult = {
    *  real send. Never a reason-code: the operator acts on this. */
   problem: string | null;
 };
+
+/**
+ * THE EMAIL ACTIVITY — written by BOTH branches that reached the provider,
+ * which is one helper rather than two copies for the reason CLAUDE.md gives
+ * for every canonical value in this repo: the second copy is the one that
+ * drifts. The summary's first sentence is the record of WHAT was sent and to
+ * WHOM, and it must read the same whether or not the provider gave us an id.
+ *
+ * `occurredOn` is normally ENTERED rather than stamped — nobody entered
+ * anything here, because nobody was asked: the operator pressed send. So the
+ * honest value is the day the send happened, DERIVED FROM THE SEND and stored
+ * at UTC midnight like every other date in this app, rather than a business
+ * date somebody chose.
+ *
+ * `viewerAsOf()` RATHER THAN `new Date()`, and this is a correction rather
+ * than a flourish: the first version of this line read
+ * `new Date().toISOString().slice(0, 10)`, which is the SERVER'S day.
+ * `viewerDayCensus.test.ts` failed the build naming that exact expression,
+ * and its header says why it is worth a census — west of UTC the server's day
+ * rolls over in the afternoon, so for seven hours of every day an operator
+ * sending a read at 5pm in Los Angeles would have it logged as TOMORROW on
+ * their own lead, and the activity list they read it back from is sorted by
+ * that column.
+ *
+ * It is the one date in this action, and `viewerAsOf` is the exact shape
+ * needed: the reader's calendar day, as the UTC-midnight instant every dated
+ * record here is stored at. It inherits that helper's UTC floor and never
+ * throws, which matters because this action is also called from a database
+ * test with no request around it.
+ */
+async function recordReadEmailed(params: {
+  companyId: string;
+  leadId: string;
+  loggedByUserId: string;
+  fileName: string | null;
+  to: string;
+  /** Appended to the summary when the send is not confirmed. Null on a
+   *  confirmed send, where there is nothing to warn anybody about. */
+  caveat: string | null;
+}): Promise<void> {
+  const sentOn = await viewerAsOf();
+  // Names what was sent AND which file it was about: a lead can be sent more
+  // than one read, and "we emailed them the read" on its own does not say
+  // which set.
+  const sentLine = `Emailed the free drawing-set read of ${params.fileName ?? "the drawing set they sent"} to ${params.to}.`;
+  await prisma.salesActivity.create({
+    data: {
+      companyId: params.companyId,
+      leadId: params.leadId,
+      type: "EMAIL",
+      occurredOn: sentOn,
+      summary: params.caveat ? `${sentLine} ${params.caveat}` : sentLine,
+      // Who pressed send is audit, not content — same as `createSalesActivity`
+      // and `ContactInteraction`. Unlike the public intake above, there IS a
+      // user here, so the column is filled.
+      loggedByUserId: params.loggedByUserId,
+      // followUpOn null: sending the read owes nothing by itself. The
+      // operator logs a follow-up when they decide to chase it.
+    },
+  });
+}
 
 export async function sendDrawingSetRead(
   leadId: string,
@@ -487,17 +827,58 @@ export async function sendDrawingSetRead(
 
   const send = await sendEmail({ to, toName: lead.contactName, subject, text: body });
   if (!send.ok) {
+    // `mayHaveSent` is the provider having ACCEPTED the message and returned
+    // no id to track it by — see `email.ts`, which sets it for exactly that
+    // case and says "the provider ACCEPTED this. The mail has almost
+    // certainly gone."
+    //
+    // SO THE ACTIVITY IS WRITTEN HERE TOO, AND IT WAS NOT. This branch
+    // returned before reaching the activity write, so correspondence with a
+    // prospect happened with no evidence record of it anywhere: the lead's
+    // activity list said we had never written to them, and the send button
+    // re-enabled itself. The operator's obvious next move — press it again —
+    // sends a second copy of a cold first contact to a stranger, which is the
+    // one failure this whole feature cannot afford.
+    //
+    // THE REPO HAS ALREADY DECIDED THIS, TWICE, and this is following that
+    // precedent rather than making a fresh judgement.
+    // `lib/actions/messages.ts` keeps its QUEUED handover and only annotates
+    // it, because "recording that as FAILED tells a user their email didn't
+    // send, they send it again, and the GC gets two";
+    // `lib/notification-dispatch.ts` does the same and states the principle
+    // both ways round — "evidence of an email that does not exist is worse
+    // than none", and "recording that as failed invites a second copy". The
+    // division is `mayHaveSent`: a provable non-send writes nothing, an
+    // accepted-but-unconfirmed one writes the record and says what is unknown
+    // about it.
+    //
+    // It is NOT reported as a clean send. `sent` stays false, the problem
+    // sentence still goes back, and the row itself carries the caveat — so
+    // the operator reading the lead a week later gets the same warning the
+    // screen gave, which is the half a return value cannot deliver.
+    if (send.mayHaveSent) {
+      await recordReadEmailed({
+        companyId: context.company.id,
+        leadId,
+        loggedByUserId: context.id,
+        fileName: read.subject.fileName,
+        to,
+        caveat:
+          "The provider accepted it but confirmed no message id, so this send cannot be tracked. Treat it as sent — do not send it again without checking with them first.",
+      });
+      revalidatePath(`/sales/${leadId}`);
+      revalidatePath("/sales");
+    }
+
     return {
       ok: true,
       value: {
         sent: false,
         subject,
         body,
-        // `mayHaveSent` is the provider having ACCEPTED the message and
-        // returned no id to track it by — see `email.ts`, which sets it for
-        // exactly that case. "It did not go" and "it may already have gone"
-        // are different things to tell somebody who is about to press send
-        // again at a prospect, so the sentence says which.
+        // "It did not go" and "it may already have gone" are different things
+        // to tell somebody who is about to press send again at a prospect, so
+        // the sentence says which.
         problem: send.mayHaveSent
           ? `${send.error}. It may already have reached them — check with them before sending it again.`
           : send.error,
@@ -505,50 +886,20 @@ export async function sendDrawingSetRead(
     };
   }
 
-  // ONLY NOW. An EMAIL activity is an evidence record that we wrote to this
-  // prospect; writing one on a send that failed is a false record of
-  // correspondence, and the next person reading the lead would see a contact
-  // that never happened. Every branch above returns before reaching here.
-  //
-  // `occurredOn` is normally ENTERED rather than stamped — nobody entered
-  // anything here, because nobody was asked: the operator pressed send. So
-  // the honest value is the day the send happened, DERIVED FROM THE SEND and
-  // stored at UTC midnight like every other date in this app, rather than a
-  // business date somebody chose.
-  //
-  // `viewerAsOf()` RATHER THAN `new Date()`, and this is a correction rather
-  // than a flourish: the first version of this line read
-  // `new Date().toISOString().slice(0, 10)`, which is the SERVER'S day.
-  // `viewerDayCensus.test.ts` failed the build naming this exact
-  // expression, and its header says why it is worth a census — west of UTC
-  // the server's day rolls over in the afternoon, so for seven hours of
-  // every day an operator sending a read at 5pm in Los Angeles would have
-  // it logged as TOMORROW on their own lead, and the activity list they
-  // read it back from is sorted by that column.
-  //
-  // It is the one date in this action, and `viewerAsOf` is the exact shape
-  // needed: the reader's calendar day, as the UTC-midnight instant every
-  // dated record here is stored at. It inherits that helper's UTC floor and
-  // never throws, which matters because this action is also called from a
-  // database test with no request around it.
-  const sentOn = await viewerAsOf();
-  await prisma.salesActivity.create({
-    data: {
-      companyId: context.company.id,
-      leadId,
-      type: "EMAIL",
-      occurredOn: sentOn,
-      // Names what was sent AND which file it was about: a lead can be sent
-      // more than one read, and "we emailed them the read" on its own does
-      // not say which set.
-      summary: `Emailed the free drawing-set read of ${read.subject.fileName ?? "the drawing set they sent"} to ${to}.`,
-      // Who pressed send is audit, not content — same as `createSalesActivity`
-      // and `ContactInteraction`. Unlike the public intake above, there IS a
-      // user here, so the column is filled.
-      loggedByUserId: context.id,
-      // followUpOn null: sending the read owes nothing by itself. The
-      // operator logs a follow-up when they decide to chase it.
-    },
+  // A CONFIRMED SEND, with an id to track it by — the only branch that calls
+  // this a send. An EMAIL activity is an evidence record that we wrote to
+  // this prospect, and writing one on a send that PROVABLY did not happen is
+  // a false record of correspondence: the next person reading the lead would
+  // see a contact that never took place. Every branch above either returns
+  // before reaching here or, in the one case where the provider accepted the
+  // mail, writes the record itself with the caveat attached.
+  await recordReadEmailed({
+    companyId: context.company.id,
+    leadId,
+    loggedByUserId: context.id,
+    fileName: read.subject.fileName,
+    to,
+    caveat: null,
   });
 
   // The lead's own page shows its activity list; /sales derives the pipeline,

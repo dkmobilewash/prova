@@ -8,7 +8,9 @@ import { DrawingSetReadSend } from "@/components/DrawingSetReadSend";
 import { requireCompanyContext } from "@/lib/auth";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { deliveredReadFor, readCandidates } from "@/lib/drawing-set-read-query";
+import { formatInstant } from "@/lib/render-date";
 import { deliveryBody, deliverySubjectLine } from "@/lib/takeoff-delivery";
+import { viewerTimeZone } from "@/lib/viewerToday";
 
 /**
  * TURNING A FINISHED DRAWING-SET READ INTO THE EMAIL WE SEND A PROSPECT.
@@ -92,11 +94,37 @@ export default async function DrawingSetReadPage({
     include: {
       activities: {
         where: { type: "NOTE" },
-        // Oldest first: the intake note written by `/wall-takeoff` is the
-        // first thing on the lead, and it is the one that says what they
-        // asked for. Anything logged since is somebody's follow-up.
-        orderBy: [{ occurredOn: "asc" }, { createdAt: "asc" }],
-        take: 1,
+        // OLDEST ARRIVAL FIRST, BY `createdAt` AND NEVER BY `occurredOn`.
+        //
+        // The note `requestNote` writes when a lead comes in from
+        // `/wall-takeoff` is the first note to ARRIVE on the lead, and it is
+        // the only record of the Trade, Project, GC and Phone the contractor
+        // typed. It is NOT the note with the earliest `occurredOn`, and this
+        // clause used to order by that: `sales.prisma` says in as many words
+        // that the column is "Entered, not stamped — logging Monday's call on
+        // Wednesday must record Monday", and `createSalesActivity` refuses
+        // only FUTURE dates. So an operator logging a job walk on the 8th and
+        // dating it the 1st is doing the ordinary, documented thing, and under
+        // an `occurredOn`-first order that backdated follow-up outranked the
+        // intake note — which then never reached the screen at all, with
+        // nothing to say it existed.
+        //
+        // `createdAt` is Prisma's own `@default(now())` stamp, so it records
+        // when the row arrived, which is the question this section asks: what
+        // did they send us first. `occurredOn` answers a different question
+        // nobody is asking here — which day the contact happened on — and
+        // the operator is free to choose it.
+        //
+        // `id` breaks a tie rather than leaving two rows in whatever order the
+        // planner returns them, so the page cannot show a different note on
+        // two loads of the same lead.
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        // TWO, not one. The second row is never rendered: it is read only to
+        // learn WHETHER anything else is written on this lead, so the section
+        // can point at it instead of hiding it. That is the inverse of the
+        // defect above — a note that is not on screen should at least leave a
+        // trace that it exists.
+        take: 2,
         select: { id: true, summary: true, occurredOn: true },
       },
     },
@@ -107,6 +135,26 @@ export default async function DrawingSetReadPage({
   }
 
   const candidates = await readCandidates(company.id);
+  // THE READER'S ZONE, FOR THE ONE DATE ON THIS PAGE THAT IS A REAL INSTANT.
+  //
+  // `candidate.uploadedAt` is `TakeoffPlan.createdAt`, `@default(now())` — the
+  // moment the upload finished. Every other date this app hands `toIsoDate` is
+  // a day somebody ENTERED, stored at UTC midnight, and therefore right in UTC
+  // by construction; this one is not, and it was rendered with `toIsoDate`
+  // anyway. A set uploaded at 18:00 Pacific on the 7th listed as "uploaded
+  // 2026-10-08" — tomorrow, on the one control whose stated job is telling
+  // two uploads of the same job apart.
+  //
+  // `lib/render-date.ts` is where that distinction lives and `formatInstant`
+  // is its answer for a `@default(now())` column, so this is the existing rule
+  // rather than a new one. The zone comes from the reader's own `prova_tz`
+  // cookie and falls back to UTC, which is exactly the behaviour this page had
+  // before — the floor of the change is the old output.
+  //
+  // The intake note's `occurredOn` below deliberately keeps `toIsoDate` for
+  // the opposite reason, and the two sitting side by side is the point: it is
+  // an entered calendar day, so UTC is the only zone that does not move it.
+  const timeZone = await viewerTimeZone();
   // Taken as given and PROVED by `deliveredReadFor`, not validated against the
   // candidate list above — that list is capped at the newest 25, and a URL
   // somebody saved for an older set must still render rather than silently
@@ -120,7 +168,10 @@ export default async function DrawingSetReadPage({
   // was not composed from. Narrowing two nullable values separately is how a
   // screen ends up offering to send one set's text under another set's id.
   const chosen = chosenPlanId !== null && read !== null ? { planId: chosenPlanId, read } : null;
+  // `take: 2` above, so `activities` holds the intake note and, if there is
+  // one, evidence that something else is written on this lead.
   const intakeNote = lead.activities[0] ?? null;
+  const hasLaterNotes = lead.activities.length > 1;
 
   return (
     <PageShell width="reading">
@@ -143,7 +194,17 @@ export default async function DrawingSetReadPage({
             <p className="whitespace-pre-line text-sm leading-relaxed text-ink-body">
               {intakeNote.summary}
             </p>
-            <p className="mt-3 text-xs text-ink-muted">Logged {toIsoDate(intakeNote.occurredOn)}</p>
+            {/* NAMES WHICH NOTE THIS IS, because it is not the only one and the
+                section heading does not say so. "Dated" rather than "logged":
+                `occurredOn` is the day the operator typed, not the day the row
+                arrived, and the whole defect above came from treating those as
+                the same quantity. */}
+            <p className="mt-3 text-xs text-ink-muted">
+              The first note on this lead, dated {toIsoDate(intakeNote.occurredOn)}.
+              {hasLaterNotes
+                ? " There is more written on the lead since — read it on the lead itself."
+                : ""}
+            </p>
           </div>
         ) : (
           <p className="mt-2 text-sm leading-relaxed text-ink-body">
@@ -196,7 +257,8 @@ export default async function DrawingSetReadPage({
                         {chosen ? " — chosen" : ""}
                       </span>
                       <span className="mt-0.5 text-xs text-ink-muted">
-                        {candidate.jobName} · uploaded {toIsoDate(candidate.uploadedAt)} ·{" "}
+                        {candidate.jobName} · uploaded{" "}
+                        {formatInstant(candidate.uploadedAt, timeZone)} ·{" "}
                         {candidate.sheetCount}{" "}
                         {candidate.sheetCount === 1 ? "sheet" : "sheets"} ·{" "}
                         {candidate.scheduleCount}{" "}

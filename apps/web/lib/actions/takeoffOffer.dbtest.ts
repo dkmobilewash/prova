@@ -5,6 +5,7 @@ import { deliveryBody, deliverySubjectLine, type DeliveredRead } from "@/lib/tak
 import {
   DEDUPE_WINDOW_HOURS,
   HOURLY_LEAD_CEILING,
+  requestNote,
   requestProblem,
   type OfferRequest,
 } from "@/lib/takeoff-offer";
@@ -33,11 +34,42 @@ import {
  *    mocked client cannot make it — which is why the fixture below creates a
  *    SECOND, non-operator company and asserts its lead count never moves.
  *
- *  - IDEMPOTENCE. `withinDedupeWindow` returning true is a decision; "and
- *    therefore nothing was written" is a row count. Those are different
- *    claims, and only the second one is the bug a double-submitted public
- *    form actually causes. Every dedupe case here asserts the COUNT, not
- *    just the returned flag — a return value is what the action says it did.
+ *  - IDEMPOTENCE, AND IT IS NOT "NOTHING WAS WRITTEN". `withinDedupeWindow`
+ *    returning true is a decision; what was written is a row count. Those are
+ *    different claims, and only the second one is the bug a double-submitted
+ *    public form actually causes. Every dedupe case here asserts the COUNTS,
+ *    and asserts them FIRST — a return value is only what the action says it
+ *    did.
+ *
+ *    The counts changed, and the change is the point: the dedupe branch used
+ *    to write NOTHING, so a sub who submitted twice in a day for two
+ *    different projects lost the second project, the second GC and the fact
+ *    that a second set was coming. It now suppresses the LEAD and the DEAL
+ *    and writes the note. "One lead, two notes" is the shape to look for
+ *    below, not "one of everything".
+ *
+ *  - THAT THE RESPONSE CANNOT TELL THE TWO BRANCHES APART. The payload
+ *    carried an `alreadyHadIt` flag, which made this endpoint an
+ *    email-enumeration oracle: POST an address, read the flag, learn whether
+ *    that contractor is a lead of ours — free and unbounded, because a hit
+ *    writes nothing and only misses count against the hourly ceiling. The
+ *    test for it compares the two SERIALISED payloads, because a field-by-
+ *    field comparison passes just as happily with the flag back in.
+ *
+ *  - THE OPENING `SalesStageChange`. `sales.prisma` says that model is
+ *    written only by the actions that create or move an opportunity, in the
+ *    same transaction as the row itself. This action did not, and the cost is
+ *    a claim about a READ somewhere else: `longestOpen` and
+ *    `trackedOpenCount` filter on `daysInStage !== null`, so every deal this
+ *    form created was invisible to the one list on /sales whose job is
+ *    surfacing a deal that has gone quiet. A row count is the only thing that
+ *    can say the history exists.
+ *
+ *  - THE INPUT BOUNDS. Every field here arrives on an unauthenticated POST.
+ *    That a control character never reaches the database, and that an
+ *    over-long field is refused rather than truncated, are both claims about
+ *    stored rows — and the NUL case cannot even be asserted in a unit test,
+ *    because it is Postgres that refuses to store one.
  *
  *  - CASE-INSENSITIVE MATCHING. `mode: "insensitive"` is executed by
  *    Postgres, not by the application. It typechecks whether or not it
@@ -236,6 +268,13 @@ async function clearSalesRows() {
   const companyId = { in: [operatorCompanyId, otherCompanyId] };
   // Activities first, then opportunities, then leads: SalesActivity.leadId
   // and SalesOpportunity.leadId are both RESTRICT.
+  //
+  // SalesStageChange is deliberately absent and that is not an omission:
+  // `sales.prisma` declares its opportunity relation `onDelete: Cascade`, so
+  // the opportunity delete takes its history with it. A redundant deleteMany
+  // here would pass whether or not that is true, which is the kind of
+  // reassurance this suite has no use for — the stage-change COUNT is
+  // asserted to be zero at the start of the test that cares.
   await prisma.salesActivity.deleteMany({ where: { companyId } });
   await prisma.salesOpportunity.deleteMany({ where: { companyId } });
   await prisma.salesLead.deleteMany({ where: { companyId } });
@@ -268,10 +307,13 @@ describe("requestDrawingSetRead — the public /wall-takeoff intake", () => {
     await clearSalesRows();
   });
 
-  it("creates a lead, an opportunity and a NOTE activity on the operator company", async () => {
+  it("creates a lead, an opportunity, its opening stage record and a NOTE activity on the operator company", async () => {
+    // The write set is FOUR rows and the test name says so. It said three
+    // until the stage record was found missing, and a test named after a
+    // wrong write set is how a missing row stays missing.
     const result = await requestDrawingSetRead(form(VALID));
 
-    expect(result).toEqual({ ok: true, value: { sendTo: SEND_TO, alreadyHadIt: false } });
+    expect(result).toEqual({ ok: true, value: { sendTo: SEND_TO } });
 
     const leads = await prisma.salesLead.findMany({ where: { companyId: operatorCompanyId } });
     expect(leads).toHaveLength(1);
@@ -290,6 +332,29 @@ describe("requestDrawingSetRead — the public /wall-takeoff intake", () => {
     // "worth nothing" instead of "not yet estimated".
     expect(opportunities[0].estimatedMrr).toBeNull();
 
+    // THE OPENING STAGE RECORD. `sales.prisma` says this model is written
+    // only by the actions that create or move an opportunity, in the same
+    // transaction as the row itself — so an opportunity without one is a
+    // broken invariant rather than a missing nicety. The cost is specific and
+    // is why this is asserted here rather than left to /sales: `longestOpen`
+    // and `trackedOpenCount` in `lib/sales-pipeline.ts` both filter on
+    // `daysInStage !== null`, which is derived from this history, so a deal
+    // with none is invisible to the one read that surfaces a neglected deal.
+    const changes = await prisma.salesStageChange.findMany({
+      where: { opportunityId: opportunities[0].id },
+    });
+    expect(changes).toHaveLength(1);
+    // Null because the deal did not come from anywhere — it started here.
+    // This is the field `SalesOpportunityRow` reads as "stage not recorded"
+    // when the row is absent entirely.
+    expect(changes[0].fromStage).toBeNull();
+    expect(changes[0].toStage).toBe("NEW");
+    expect(changes[0].companyId).toBe(operatorCompanyId);
+    // No user recorded this; a public form did. The column is nullable for
+    // exactly that case, the same as the activity's `loggedByUserId` below.
+    expect(changes[0].recordedByUserId).toBeNull();
+    expect(changes[0].effectiveOn.toISOString()).toMatch(/T00:00:00\.000Z$/);
+
     const activities = await prisma.salesActivity.findMany({ where: { leadId: leads[0].id } });
     expect(activities).toHaveLength(1);
     expect(activities[0].type).toBe("NOTE");
@@ -305,22 +370,134 @@ describe("requestDrawingSetRead — the public /wall-takeoff intake", () => {
     expect(activities[0].summary).toContain(VALID.phone);
     // Stored at UTC midnight, same rule as every other date in this app.
     expect(activities[0].occurredOn.toISOString()).toMatch(/T00:00:00\.000Z$/);
+    // ONE date for the whole request: the day it arrived is the day the deal
+    // reached NEW and the day of the note. Two different days on rows written
+    // in one transaction would be two different answers to one question.
+    expect(changes[0].effectiveOn.toISOString()).toBe(activities[0].occurredOn.toISOString());
   });
 
-  it("writes nothing on a second identical submit inside the dedupe window", async () => {
-    expect((await requestDrawingSetRead(form(VALID))).ok).toBe(true);
-
+  it("answers a repeat with a byte-identical response, so the endpoint is not an address oracle", async () => {
+    const first = await requestDrawingSetRead(form(VALID));
     const second = await requestDrawingSetRead(form(VALID));
 
-    // The ROW COUNT FIRST, deliberately. "It said it deduped" and "it wrote
-    // nothing" are different claims and only the second one is the bug — so
-    // the count is the assertion that must be the one to fire. Asserting the
-    // returned flag first put a mutation's failure on the flag and left the
-    // counts unexecuted, which is a count assertion nothing has proved.
+    // THE POINT OF THIS TEST, and the reason it compares SERIALISED payloads
+    // rather than fields: the defect was a flag in the response saying which
+    // branch ran, so anyone could POST an address and learn whether that
+    // contractor is a lead of ours. A field-by-field `toEqual` of the two
+    // results would pass just as happily with the flag back in, as long as
+    // both carried one. `JSON.stringify` compares the whole shape, so an
+    // added key or a differing value both fail here.
+    expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+    expect(second).toEqual({ ok: true, value: { sendTo: SEND_TO } });
+
+    // NOT VACUOUS, which this comparison is in real danger of being: two
+    // identical REFUSALS would satisfy the line above. So both halves are
+    // pinned — the first submit really did write, and the second really was
+    // deduped — and only then is "and they look the same" worth anything.
+    expect(first.ok).toBe(true);
+    expect(await prisma.salesLead.count({ where: { companyId: operatorCompanyId } })).toBe(1);
+    expect(await prisma.salesActivity.count({ where: { companyId: operatorCompanyId } })).toBe(2);
+  });
+
+  it("writes a second submit as a NOTE on the existing lead, and creates no second lead or deal", async () => {
+    expect((await requestDrawingSetRead(form(VALID))).ok).toBe(true);
+    const leads = await prisma.salesLead.findMany({ where: { companyId: operatorCompanyId } });
+    expect(leads).toHaveLength(1);
+    const opportunities = await prisma.salesOpportunity.findMany({ where: { leadId: leads[0].id } });
+    expect(opportunities).toHaveLength(1);
+
+    // A DIFFERENT PROJECT AND A DIFFERENT GC, which is the whole case. A sub
+    // bidding four jobs this week submits Monday morning for one and Monday
+    // afternoon for another; the address is the same and nothing else is.
+    // `SalesLead` has no project, GC or trade column, so this second request
+    // exists only in the note — and the note was never written.
+    const SECOND: OfferRequest = {
+      ...VALID,
+      projectName: "Civic Center Annex",
+      gcName: "Swinerton",
+      trade: "CEILINGS",
+    };
+    const second = await requestDrawingSetRead(form(SECOND));
+
+    // THE ROW COUNTS FIRST, deliberately. "It said it deduped" and "what it
+    // wrote" are different claims and only the second one is the bug — so the
+    // counts are the assertions that must be the ones to fire. Asserting the
+    // return value first put a mutation's failure there and left the counts
+    // unexecuted, which is a count assertion nothing has proved.
     expect(await prisma.salesLead.count({ where: { companyId: operatorCompanyId } })).toBe(1);
     expect(await prisma.salesOpportunity.count({ where: { companyId: operatorCompanyId } })).toBe(1);
-    expect(await prisma.salesActivity.count({ where: { companyId: operatorCompanyId } })).toBe(1);
-    expect(second).toEqual({ ok: true, value: { sendTo: SEND_TO, alreadyHadIt: true } });
+    // No second opening record either: the deal did not reopen, it was never
+    // created again.
+    expect(await prisma.salesStageChange.count({ where: { companyId: operatorCompanyId } })).toBe(1);
+
+    const activities = await prisma.salesActivity.findMany({
+      where: { companyId: operatorCompanyId },
+    });
+    expect(activities).toHaveLength(2);
+    // Found by content rather than by `createdAt` order: both rows are
+    // written within a millisecond of each other, so an ordered read is a
+    // coin toss and a test that flakes gets deleted rather than read.
+    const repeat = activities.filter((a) => a.summary.includes(SECOND.projectName));
+    expect(repeat).toHaveLength(1);
+    expect(repeat[0].type).toBe("NOTE");
+    expect(repeat[0].leadId).toBe(leads[0].id);
+    // Attached to the deal that already exists, because /sales reads
+    // activities per opportunity and an unattached one is invisible there.
+    expect(repeat[0].opportunityId).toBe(opportunities[0].id);
+    expect(repeat[0].loggedByUserId).toBeNull();
+    expect(repeat[0].followUpOn).toBeNull();
+    expect(repeat[0].occurredOn.toISOString()).toMatch(/T00:00:00\.000Z$/);
+    // THE WHOLE NOTE, derived from the band rather than retyped: the claim is
+    // that nothing the contractor typed was dropped, and `requestNote` is
+    // what decides what that is.
+    expect(repeat[0].summary).toContain(requestNote(SECOND));
+    expect(repeat[0].summary).toContain("Swinerton");
+    expect(repeat[0].summary).toContain("Acoustical ceilings");
+    // And says which branch wrote it, with the window's own length, so two
+    // notes a few hours apart do not read as a double write. Derived from the
+    // constant that decides the rule.
+    expect(repeat[0].summary).toContain(`within ${DEDUPE_WINDOW_HOURS} hours`);
+    // The first note is still the first note — nothing was overwritten.
+    const original = activities.filter((a) => a.id !== repeat[0].id);
+    expect(original).toHaveLength(1);
+    expect(original[0].summary).toContain(VALID.projectName);
+    expect(original[0].summary).not.toContain(SECOND.projectName);
+
+    expect(second).toEqual({ ok: true, value: { sendTo: SEND_TO } });
+  });
+
+  it("does not read a first request as a repeat because of a lead we typed in ourselves", async () => {
+    // A cold call the operator logged by hand, same address, OUTBOUND. The
+    // dedupe lookup was not scoped by source, so this row made a contractor's
+    // genuine FIRST request look like a duplicate: no lead, no deal, and
+    // nobody on our side ever learning they had asked.
+    await prisma.salesLead.create({
+      data: {
+        companyId: operatorCompanyId,
+        companyName: VALID.companyName,
+        email: VALID.email,
+        source: "OUTBOUND",
+      },
+    });
+
+    const result = await requestDrawingSetRead(form(VALID));
+
+    // Counts first, and both of them: two leads in total, exactly one of
+    // which is this form's.
+    expect(await prisma.salesLead.count({ where: { companyId: operatorCompanyId } })).toBe(2);
+    const inbound = await prisma.salesLead.findMany({
+      where: { companyId: operatorCompanyId, source: "INBOUND" },
+    });
+    expect(inbound).toHaveLength(1);
+    expect(await prisma.salesOpportunity.count({ where: { companyId: operatorCompanyId } })).toBe(1);
+    expect(await prisma.salesStageChange.count({ where: { companyId: operatorCompanyId } })).toBe(1);
+    // The note hangs off the lead this form created, not the hand-entered one.
+    const activities = await prisma.salesActivity.findMany({
+      where: { companyId: operatorCompanyId },
+    });
+    expect(activities).toHaveLength(1);
+    expect(activities[0].leadId).toBe(inbound[0].id);
+    expect(result).toEqual({ ok: true, value: { sendTo: SEND_TO } });
   });
 
   it("creates a second lead for the same address once the window has passed", async () => {
@@ -339,8 +516,8 @@ describe("requestDrawingSetRead — the public /wall-takeoff intake", () => {
 
     const result = await requestDrawingSetRead(form(VALID));
 
-    expect(result).toEqual({ ok: true, value: { sendTo: SEND_TO, alreadyHadIt: false } });
     expect(await prisma.salesLead.count({ where: { companyId: operatorCompanyId } })).toBe(2);
+    expect(result).toEqual({ ok: true, value: { sendTo: SEND_TO } });
   });
 
   it("matches the address regardless of case", async () => {
@@ -353,7 +530,10 @@ describe("requestDrawingSetRead — the public /wall-takeoff intake", () => {
     );
 
     expect(await prisma.salesLead.count({ where: { companyId: operatorCompanyId } })).toBe(1);
-    expect(second).toEqual({ ok: true, value: { sendTo: SEND_TO, alreadyHadIt: true } });
+    // One lead and TWO notes: the case-insensitive match deduped the lead and
+    // kept what the second submit said.
+    expect(await prisma.salesActivity.count({ where: { companyId: operatorCompanyId } })).toBe(2);
+    expect(second).toEqual({ ok: true, value: { sendTo: SEND_TO } });
   });
 
   it("refuses once the hourly ceiling is reached, and names the address to use instead", async () => {
@@ -376,6 +556,8 @@ describe("requestDrawingSetRead — the public /wall-takeoff intake", () => {
       HOURLY_LEAD_CEILING,
     );
     expect(await prisma.salesOpportunity.count({ where: { companyId: operatorCompanyId } })).toBe(0);
+    expect(await prisma.salesStageChange.count({ where: { companyId: operatorCompanyId } })).toBe(0);
+    expect(await prisma.salesActivity.count({ where: { companyId: operatorCompanyId } })).toBe(0);
   });
 
   it("returns a refusal rather than throwing when there is no operator company", async () => {
@@ -435,11 +617,125 @@ describe("requestDrawingSetRead — the public /wall-takeoff intake", () => {
     // the scoping — and this is the assertion that it held.
     expect(await prisma.salesLead.count({ where: { companyId: otherCompanyId } })).toBe(0);
     expect(await prisma.salesOpportunity.count({ where: { companyId: otherCompanyId } })).toBe(0);
+    expect(await prisma.salesStageChange.count({ where: { companyId: otherCompanyId } })).toBe(0);
     expect(await prisma.salesActivity.count({ where: { companyId: otherCompanyId } })).toBe(0);
 
     const leads = await prisma.salesLead.findMany();
     expect(leads).toHaveLength(1);
     expect(leads[0].companyId).toBe(operatorCompanyId);
+  });
+
+  /**
+   * ── THE INPUT BOUNDS, AND WHY THE NUMBERS ARE TYPED OUT HERE ──
+   *
+   * `FIELD_LIMITS` is not exported and cannot be: `takeoffOffer.ts` is a
+   * `"use server"` module, where every export must be an async function, so a
+   * shared constant would fail the build rather than merely be untidy. So
+   * these two tests pin the BOUNDARY from both sides — the longest accepted
+   * value and the shortest refused one — which is a stronger claim than one
+   * comparison against a number imported from the thing under test, and the
+   * action's own sentence names the limit so a drift fails here readably
+   * instead of silently.
+   */
+  it("accepts a company name at the cap and refuses the next character, by name, writing nothing", async () => {
+    const atCap = { ...VALID, companyName: "R".repeat(160) };
+    expect((await requestDrawingSetRead(form(atCap))).ok).toBe(true);
+    const leads = await prisma.salesLead.findMany({ where: { companyId: operatorCompanyId } });
+    expect(leads).toHaveLength(1);
+    expect(leads[0].companyName).toHaveLength(160);
+
+    await clearSalesRows();
+    const overCap = { ...VALID, companyName: "R".repeat(161) };
+
+    const result = await requestDrawingSetRead(form(overCap));
+
+    // COUNT FIRST. The refusal sentence is the smaller half: the claim that
+    // matters is that an unauthenticated POST cannot write a row of any size
+    // it likes.
+    expect(await prisma.salesLead.count({ where: { companyId: operatorCompanyId } })).toBe(0);
+    expect(await prisma.salesActivity.count({ where: { companyId: operatorCompanyId } })).toBe(0);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a refusal");
+    // REFUSED, NOT TRUNCATED, and the sentence has to say which field and how
+    // short: the form clears nothing on a failure, so this arrives over what
+    // they typed and shortening it is one edit. A truncated company name
+    // would be a lead quietly about somebody slightly else.
+    expect(result.error).toMatch(/company name is too long/i);
+    expect(result.error).toContain("160");
+  });
+
+  it("refuses every other over-long field by its own name", async () => {
+    // One field per case, each one character over, so a pass cannot come from
+    // a different field being wrong. The labels are the contractor's words
+    // for the fields, not the column names.
+    const cases: { field: keyof OfferRequest; length: number; names: RegExp }[] = [
+      { field: "contactName", length: 121, names: /name is too long/i },
+      { field: "phone", length: 41, names: /phone number is too long/i },
+      { field: "projectName", length: 201, names: /project name is too long/i },
+      { field: "gcName", length: 161, names: /general contractor is too long/i },
+    ];
+    for (const { field, length, names } of cases) {
+      await clearSalesRows();
+      const result = await requestDrawingSetRead(form({ ...VALID, [field]: "x".repeat(length) }));
+
+      expect(
+        await prisma.salesLead.count({ where: { companyId: operatorCompanyId } }),
+        `an over-long ${field} was written rather than refused`,
+      ).toBe(0);
+      expect(result.ok, `an over-long ${field} was accepted`).toBe(false);
+      if (result.ok) throw new Error("expected a refusal");
+      expect(result.error).toMatch(names);
+    }
+  });
+
+  it("strips control characters rather than storing them, so a field cannot forge a line in the mail", async () => {
+    // The company name is the attack: `lib/takeoff-delivery.ts` renders a
+    // plain-text body one fact per line, so a newline here plants a line that
+    // reads as ours. The NUL in the project name is the other half — Postgres
+    // cannot store one at all, so an unstripped value fails the write rather
+    // than the assertion, which is exactly the kind of guard worth having.
+    const dirty: OfferRequest = {
+      ...VALID,
+      companyName: "Ridgeline Drywall\r\nFrom: Prova <office@prova.test>",
+      contactName: "Marisol\tVega",
+      projectName: "Sunset\u0000MOB",
+      gcName: "Harker\u2028Construction",
+    };
+
+    const result = await requestDrawingSetRead(form(dirty));
+
+    expect(result).toEqual({ ok: true, value: { sendTo: SEND_TO } });
+    const leads = await prisma.salesLead.findMany({ where: { companyId: operatorCompanyId } });
+    expect(leads).toHaveLength(1);
+    // Replaced with a SPACE and collapsed, not deleted: "Acme\nDrywall" must
+    // not become "AcmeDrywall".
+    expect(leads[0].companyName).toBe("Ridgeline Drywall From: Prova <office@prova.test>");
+    expect(leads[0].companyName).not.toMatch(/[\r\n]/);
+    expect(leads[0].contactName).toBe("Marisol Vega");
+
+    const activities = await prisma.salesActivity.findMany({
+      where: { companyId: operatorCompanyId },
+    });
+    expect(activities).toHaveLength(1);
+    // The note is multi-line by construction — `requestNote` joins its lines
+    // with newlines — so the claim is about the FIELDS inside it, each of
+    // which must occupy exactly one line of it.
+    expect(activities[0].summary).toContain("Project: Sunset MOB");
+    expect(activities[0].summary).toContain("GC: Harker Construction");
+    expect(activities[0].summary).not.toMatch(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/);
+  });
+
+  it("refuses an address with a line break in it, and writes nothing", async () => {
+    // Stripping turns the break into a space, and a space in an address is
+    // what `looksLikeEmailAddress` already refuses — so this needs no new
+    // rule, and the test is here to prove the two compose rather than to
+    // introduce a third.
+    const result = await requestDrawingSetRead(form({ ...VALID, email: "mar\nisol@ridgeline.test" }));
+
+    expect(await prisma.salesLead.count({ where: { companyId: operatorCompanyId } })).toBe(0);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a refusal");
+    expect(result.error).toMatch(/email/i);
   });
 });
 
@@ -733,7 +1029,7 @@ describe("sendDrawingSetRead — mailing the finished read back", () => {
     expect(result.value.body).toBe(deliveryBody(READ));
   });
 
-  it("says it may already have reached them when the provider sets mayHaveSent", async () => {
+  it("records exactly one annotated activity when the provider accepted it without a message id", async () => {
     sendResult = {
       ok: false,
       error: "The provider accepted this but returned no message id",
@@ -743,10 +1039,38 @@ describe("sendDrawingSetRead — mailing the finished read back", () => {
 
     const result = await sendDrawingSetRead(leadId, PLAN_ID);
 
-    // Still no activity row: we cannot record a send we cannot confirm.
-    expect(await emailActivityCount()).toBe(0);
+    // ONE ROW, AND THIS TEST ASSERTED ZERO. Its comment read "we cannot
+    // record a send we cannot confirm", which is the right instinct pointed
+    // the wrong way: `email.ts` sets `mayHaveSent` only when the provider
+    // ANSWERED 2XX, and says in as many words that "the mail has almost
+    // certainly gone". Writing nothing left real correspondence with a
+    // prospect unrecorded and re-enabled the button — and the operator's
+    // obvious next move sends a second cold email to a stranger.
+    // `lib/actions/messages.ts` and `lib/notification-dispatch.ts` had both
+    // already decided this: "recording that as failed invites a second copy".
+    expect(await emailActivityCount()).toBe(1);
+    const activities = await prisma.salesActivity.findMany({
+      where: { companyId: operatorCompanyId, leadId, type: "EMAIL" },
+    });
+    expect(activities).toHaveLength(1);
+    // The same first sentence as a confirmed send — what was sent, which file,
+    // to whom — because the record of the correspondence does not change with
+    // the provider's bookkeeping.
+    expect(activities[0].summary).toContain("drawing-set read");
+    expect(activities[0].summary).toContain(READ.subject.fileName ?? "");
+    expect(activities[0].summary).toContain("marisol@ridgeline-drywall.test");
+    // AND THE WARNING, which is the half a return value cannot deliver: the
+    // operator reading this lead next week gets what the screen said.
+    expect(activities[0].summary).toMatch(/no message id/i);
+    expect(activities[0].summary).toMatch(/do not send it again/i);
+    expect(activities[0].loggedByUserId).toBe(ownerUserId);
+    expect(activities[0].occurredOn.toISOString()).toMatch(/T00:00:00\.000Z$/);
+
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected the read back");
+    // NOT REPORTED AS A CLEAN SEND. The row exists and `sent` is still false:
+    // there is no id to track this by, so the screen must not render it as
+    // confirmed.
     expect(result.value.sent).toBe(false);
     // The provider's reason is still there, AND the sentence distinguishes
     // this from the branch above. "It did not go" and "it may already have

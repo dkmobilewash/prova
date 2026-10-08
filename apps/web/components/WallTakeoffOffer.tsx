@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { TakeoffOfferForm } from "@/components/TakeoffOfferForm";
-import { DELIVERABLES, DELIVERY, LIMITS, NEXT_STEPS } from "@/lib/takeoff-offer";
+import { DELIVERABLES, DELIVERY, LIMITS, NEXT_STEPS, WHAT_IT_FEEDS } from "@/lib/takeoff-offer";
 
 /**
  * The visitor-facing content of `/wall-takeoff` — the free drawing-set read,
@@ -100,6 +100,39 @@ export function WallTakeoffOffer({ open, sendTo }: { open: boolean; sendTo: stri
         </ul>
       </section>
 
+      {/* -------------------------------------------- what the read feeds into
+          Placed here on purpose: it answers the question a contractor has the
+          moment they have read what arrives — what any of this is FOR. The
+          claims are `WHAT_IT_FEEDS`; both halves of each entry come off the
+          module, and the heading and the lead sentence below are mine.
+
+          The two halves are rendered as two lines rather than one sentence
+          because they are two different kinds of statement: what we hand over
+          for nothing, and what the app does afterwards with a person driving
+          it. Running them together is how this section would start reading
+          like a promise that the second half happens by itself. */}
+      <section className="mt-12">
+        <h2 className="text-2xl font-semibold text-ink">Where it goes from there</h2>
+        <p className="mt-2 text-base leading-relaxed text-ink-body">
+          The read is the front half of a takeoff and an estimate &mdash; the part that is the
+          same tedious hour for everybody. This is what each piece of it is the input to once
+          you are in C Stream, and who does the rest.
+        </p>
+        <ol className="mt-5 flex flex-col gap-4">
+          {WHAT_IT_FEEDS.map((fed) => (
+            <li
+              key={fed.id}
+              className="rounded-lg border border-line-card bg-surface p-4 sm:p-5"
+            >
+              <h3 className="text-lg font-semibold text-ink-label">{fed.handed}</h3>
+              <p className="mt-2 text-base leading-relaxed text-ink-body">
+                <span className="font-semibold text-brand">Feeds:</span> {fed.feeds}
+              </p>
+            </li>
+          ))}
+        </ol>
+      </section>
+
       {/* -------------------------------------------------- what we will not
           Same type size as the promises above. See the header. */}
       <section className="mt-12">
@@ -155,7 +188,7 @@ export function WallTakeoffOffer({ open, sendTo }: { open: boolean; sendTo: stri
             </a>
           </div>
         )}
-        {/* DELIVERY.shareable belongs here: it is what the link in step 3 is
+        {/* DELIVERY.shareable belongs here: it is what the read in step 3 is
             good for, and it answers the question a contractor asks next —
             whether their estimator can use it too. */}
         <p className="mt-3 text-base leading-relaxed text-ink-body">{DELIVERY.shareable}</p>

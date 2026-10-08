@@ -48,12 +48,14 @@ vi.mock("next/image", () => ({
 vi.mock("@/lib/actions/takeoffOffer", () => ({
   requestDrawingSetRead: vi.fn(async () => ({
     ok: true as const,
-    value: { sendTo: "help@example.com", alreadyHadIt: false },
+    value: { sendTo: "help@example.com" },
   })),
 }));
 
 const { WallTakeoffOffer } = await import("@/components/WallTakeoffOffer");
-const { DELIVERABLES, DELIVERY, LIMITS, NEXT_STEPS } = await import("@/lib/takeoff-offer");
+const { DELIVERABLES, DELIVERY, LIMITS, NEXT_STEPS, WHAT_IT_FEEDS } = await import(
+  "@/lib/takeoff-offer",
+);
 
 /** The markup is HTML, so the module's own apostrophes and ampersands arrive
  *  entity-escaped. Compared on decoded text rather than on the raw string, so
@@ -82,6 +84,7 @@ describe("the offer itself is on the page", () => {
     expect(DELIVERABLES.length).toBeGreaterThanOrEqual(4);
     expect(LIMITS.length).toBeGreaterThanOrEqual(4);
     expect(NEXT_STEPS.length).toBeGreaterThanOrEqual(3);
+    expect(WHAT_IT_FEEDS.length).toBeGreaterThanOrEqual(3);
     expect(open.length).toBeGreaterThan(2_000);
     expect(closed.length).toBeGreaterThan(1_000);
   });
@@ -104,7 +107,7 @@ describe("the offer itself is on the page", () => {
     expect(open).not.toMatch(/text-sm[^"]*">\s*(?:<span[^>]*>)?We do not price/);
   });
 
-  it("renders the three steps and the link's shareability", () => {
+  it("renders the three steps and what they can do with the read", () => {
     for (const step of NEXT_STEPS) {
       expect(open).toContain(step.title);
       expect(open).toContain(step.body);
@@ -121,6 +124,70 @@ describe("the offer itself is on the page", () => {
     // link still has to learn what was being offered.
     for (const deliverable of DELIVERABLES) expect(closed).toContain(deliverable.title);
     for (const limit of LIMITS) expect(closed).toContain(limit);
+    for (const fed of WHAT_IT_FEEDS) expect(closed, fed.id).toContain(fed.handed);
+  });
+});
+
+/**
+ * WHERE IT GOES FROM THERE — the section that answers what any of the free
+ * read is FOR.
+ *
+ * It had no coverage here at all when it landed: `lib/takeoff-offer.test.ts`
+ * asserts the component NAMES `WHAT_IT_FEEDS` and `.map`s it, which is a grep
+ * over source and not a render. The agent that built the section proved it by
+ * rendering in a throwaway file and deleting it; this is that, kept.
+ *
+ * BOTH HALVES OF EVERY ENTRY, because the split is the honesty of the section.
+ * `handed` is what the free read gives them and `feeds` is the work inside the
+ * app it goes into — an entry rendering only `handed` would restate a
+ * deliverable and quietly drop the claim that a person does the rest, which is
+ * the one thing this section may not lose.
+ */
+describe("where the read goes from there", () => {
+  it("renders both halves of every chain", () => {
+    for (const fed of WHAT_IT_FEEDS) {
+      expect(open, `${fed.id} — handed`).toContain(fed.handed);
+      expect(open, `${fed.id} — feeds`).toContain(fed.feeds);
+    }
+  });
+
+  it("sits between what you get back and what we will not do", () => {
+    // POSITION IS THE ARGUMENT, not a layout preference, so it is asserted
+    // rather than left to whoever edits the file next. The section answers the
+    // question a contractor has the moment they have read what arrives — so it
+    // follows the promises. And it must come BEFORE the limits, because the
+    // limits are what stop it reading as a claim that the takeoff happens by
+    // itself: a page that says where the read leads and only afterwards says
+    // we do not measure walls has sold the second half before denying it.
+    //
+    // String indices, which a DOM-less render can see: CLAUDE.md is explicit
+    // that no test in this repo can measure layout, and this is document order
+    // rather than layout.
+    const got = open.indexOf("What you get back");
+    const feeds = open.indexOf("Where it goes from there");
+    const limits = open.indexOf("What we will not do");
+    expect(got, "the deliverables heading").toBeGreaterThan(-1);
+    expect(feeds, "the chains heading").toBeGreaterThan(-1);
+    expect(limits, "the limits heading").toBeGreaterThan(-1);
+    expect(feeds).toBeGreaterThan(got);
+    expect(feeds).toBeLessThan(limits);
+    // And the entries themselves are inside that window, not merely the
+    // heading — a heading with the list rendered somewhere else would satisfy
+    // the three comparisons above.
+    for (const fed of WHAT_IT_FEEDS) {
+      const at = open.indexOf(fed.handed);
+      expect(at, fed.id).toBeGreaterThan(feeds);
+      expect(at, fed.id).toBeLessThan(limits);
+    }
+  });
+
+  it("keeps the chains out of the deliverables list", () => {
+    // The two sections make different kinds of statement and the page renders
+    // them as two lists. A chain's `feeds` appearing above the deliverables
+    // heading would mean the lists had been merged, which is how the section
+    // starts reading as something that arrives in the inbox.
+    const got = open.indexOf("What you get back");
+    for (const fed of WHAT_IT_FEEDS) expect(open.indexOf(fed.feeds), fed.id).toBeGreaterThan(got);
   });
 });
 
