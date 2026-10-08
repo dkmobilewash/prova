@@ -117,6 +117,7 @@ export function TakeoffPlanViewer({
   printedScaleByPage,
   scalePrefillByPage,
   scaleDeclineByPage,
+  duplicateWallsByPage = {},
 }: {
   jobId: string;
   planId: string;
@@ -134,6 +135,21 @@ export function TakeoffPlanViewer({
    *  printed on it. A PREFILL and never a calibration — see `ScalePrefill`. */
   scalePrefillByPage: ScalePrefillByPage;
   scaleDeclineByPage?: ScaleDeclineByPage;
+  /**
+   * Per page, why a wall takeoff here would probably be a DOUBLE COUNT.
+   *
+   * Empty for an ordinary floor plan, and that silence is the point: this is
+   * shown beside found walls on a mechanical plan, a reflected ceiling plan or
+   * an elevation, where the architectural walls are repeated in grey. Scored
+   * against a 60-page answer key, those sheets invented 13,767 ft — a third of
+   * everything the finder reported across the set.
+   *
+   * A CAUTION AND NOT A REFUSAL. A wall can genuinely be measured on a section,
+   * and a sheet number read by a model can be wrong; disabling the tool would
+   * remove a capability on a guess, and leave a reader unable to tell "no walls
+   * here" from "the app decided for me".
+   */
+  duplicateWallsByPage?: Record<number, string>;
 }) {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState<number | null>(null);
@@ -696,6 +712,18 @@ export function TakeoffPlanViewer({
           className="rounded-md border border-line-card bg-surface p-3 xl:w-[23rem] xl:shrink-0 xl:overflow-auto xl:max-h-[calc(var(--shell-port)-11rem)]"
           data-takeoff="found-walls"
         >
+          {/* ABOVE the groups, because a caution under the thing it is about is
+              read after the decision has been made — `PlanSheetReview`'s
+              convention and the one the quote reader's cautions follow. */}
+          {duplicateWallsByPage[pageNumber] && found.length > 0 && (
+            <p
+              className="mb-3 rounded-md bg-tag-amber p-2 text-xs text-tag-amber-ink"
+              data-takeoff="duplicate-walls-caution"
+            >
+              <span className="font-semibold">Check this is the right sheet. </span>
+              {duplicateWallsByPage[pageNumber]}
+            </p>
+          )}
           {found.length === 0 ? (
             /* ── TWO KINDS OF EMPTY, AND THIS SAID THE WRONG ONE ──
 

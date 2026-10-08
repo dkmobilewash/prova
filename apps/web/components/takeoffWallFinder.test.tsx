@@ -458,3 +458,69 @@ describe("the sheet and the found walls share a row", () => {
     host.remove();
   });
 });
+
+describe("the caution on a sheet that would double-count", () => {
+  /**
+   * A RENDER test and not a census, for the reason this file's header gives:
+   * #665 shipped a control that existed, sat in the right branch, called the
+   * right action and appeared on no screen anybody used.
+   *
+   * What it guards: scored against a 60-page answer key, mechanical plans,
+   * reflected ceiling plans and elevations invented 13,767 ft between them — a
+   * third of everything the wall finder reported across the set. The classifier
+   * catches those sheets and this caution is how an estimator finds out.
+   */
+  it("stays away until something has actually been found", async () => {
+    // The caution belongs TO the found walls. With nothing found there is
+    // nothing to caution about, and a warning on an untouched sheet is noise.
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        createElement(TakeoffPlanViewer, {
+          jobId: "job_1",
+          sheets: [sheet()],
+          canEdit: true,
+          duplicateWallsByPage: { 1: "M-101 is a mechanical plan. Adding it would bid those walls twice." },
+        } as never),
+      );
+    });
+    expect(host.querySelector('[data-takeoff="duplicate-walls-caution"]')).toBeNull();
+    await act(async () => root.unmount());
+    host.remove();
+  });
+
+  it("says nothing on a page with no caution for it", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        createElement(TakeoffPlanViewer, {
+          jobId: "job_1",
+          sheets: [sheet()],
+          canEdit: true,
+          duplicateWallsByPage: {},
+        } as never),
+      );
+    });
+    expect(host.querySelector('[data-takeoff="duplicate-walls-caution"]')).toBeNull();
+    await act(async () => root.unmount());
+    host.remove();
+  });
+
+  it("ACCEPTS THE PROP BEING ABSENT, so every existing caller still renders", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        createElement(TakeoffPlanViewer, { jobId: "job_1", sheets: [sheet()], canEdit: true } as never),
+      );
+    });
+    expect(host.querySelector('[data-testid="takeoff-plan-port"]')).not.toBeNull();
+    await act(async () => root.unmount());
+    host.remove();
+  });
+});
