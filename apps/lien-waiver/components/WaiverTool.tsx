@@ -54,6 +54,18 @@ export function WaiverTool({ state }: { state: StateCode }) {
   const form = formKey ? getForm(state, formKey) : null;
   const checked = useMemo(() => (form ? checkFills(form, raw) : null), [form, raw]);
 
+  const fieldProps = (id: string, slot: string, placeholder: string | undefined, help: string | undefined, invalid: boolean) => ({
+    id,
+    autoComplete: "off",
+    placeholder,
+    value: raw[slot] ?? "",
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) => setRaw((current) => ({ ...current, [slot]: event.target.value })),
+    "aria-describedby": help ? `${id}-help` : undefined,
+    "aria-invalid": invalid,
+    className:
+      "min-h-touch w-full rounded-md border-2 border-line bg-paper px-3 text-lg text-ink placeholder:text-quiet/70 focus:border-ink",
+  });
+
   return (
     <div className="mt-8">
       <section aria-labelledby="pick">
@@ -121,19 +133,20 @@ export function WaiverTool({ state }: { state: StateCode }) {
                     ) : null}
                     <div className="mt-1 flex items-center">
                       {spec.kind === "money" ? <span className="mr-2 text-lg text-ink">$</span> : null}
-                      <input
-                        id={id}
-                        name={slot}
-                        type={spec.kind === "date" ? "date" : "text"}
-                        inputMode={spec.kind === "money" ? "decimal" : undefined}
-                        autoComplete="off"
-                        placeholder={spec.placeholder}
-                        value={raw[slot] ?? ""}
-                        onChange={(event) => setRaw((current) => ({ ...current, [slot]: event.target.value }))}
-                        aria-describedby={spec.help ? `${id}-help` : undefined}
-                        aria-invalid={showError}
-                        className="min-h-touch w-full rounded-md border-2 border-line bg-paper px-3 text-lg text-ink placeholder:text-quiet/70 focus:border-ink"
-                      />
+                      {/* Three literal branches rather than one input with
+                          computed type/inputMode, so C-Stream's repo-wide
+                          numeric-input census (apps/web/lib/
+                          numericInputCensus.test.ts) can READ that a money
+                          field opens a keypad -- it cannot evaluate an
+                          expression, and an unreadable attribute is checked,
+                          not trusted. */}
+                      {spec.kind === "money" ? (
+                        <input type="text" inputMode="decimal" name={slot} {...fieldProps(id, slot, spec.placeholder, spec.help, showError)} />
+                      ) : spec.kind === "date" ? (
+                        <input type="date" name={slot} {...fieldProps(id, slot, spec.placeholder, spec.help, showError)} />
+                      ) : (
+                        <input type="text" name={slot} {...fieldProps(id, slot, spec.placeholder, spec.help, showError)} />
+                      )}
                     </div>
                     {showError ? (
                       <p role="alert" className="mt-1 text-sm font-semibold text-danger">
@@ -296,19 +309,19 @@ function Download({
               <label htmlFor="dl-name" className="block font-semibold text-ink">
                 Your name
               </label>
-              <input id="dl-name" required autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
+              <input id="dl-name" type="text" name="name" required autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
             </div>
             <div>
               <label htmlFor="dl-email" className="block font-semibold text-ink">
                 Email
               </label>
-              <input id="dl-email" required type="email" inputMode="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
+              <input id="dl-email" name="email" required type="email" inputMode="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
             </div>
             <div>
               <label htmlFor="dl-company" className="block font-semibold text-ink">
                 Company <span className="font-normal text-quiet">(optional)</span>
               </label>
-              <input id="dl-company" autoComplete="organization" value={company} onChange={(event) => setCompany(event.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
+              <input id="dl-company" type="text" name="company" autoComplete="organization" value={company} onChange={(event) => setCompany(event.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
             </div>
             <label className="flex min-h-touch items-start gap-3 text-ink">
               <input type="checkbox" className="mt-1 h-6 w-6 shrink-0" checked={marketing} onChange={(event) => setMarketing(event.target.checked)} />
@@ -317,7 +330,7 @@ function Download({
             {/* Honeypot: hidden from people and from screen readers. */}
             <div aria-hidden="true" className="absolute left-[-9999px] top-auto h-px w-px overflow-hidden">
               <label htmlFor="dl-website">Website</label>
-              <input id="dl-website" tabIndex={-1} autoComplete="off" value={website} onChange={(event) => setWebsite(event.target.value)} />
+              <input id="dl-website" type="text" name="website" tabIndex={-1} autoComplete="off" value={website} onChange={(event) => setWebsite(event.target.value)} />
             </div>
           </>
         )}

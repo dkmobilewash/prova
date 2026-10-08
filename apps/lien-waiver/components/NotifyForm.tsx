@@ -47,19 +47,19 @@ export function NotifyForm({ state }: { state: string }) {
         <label htmlFor="n-name" className="block font-semibold text-ink">
           Your name
         </label>
-        <input id="n-name" required autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
+        <input id="n-name" type="text" name="name" required autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
       </div>
       <div>
         <label htmlFor="n-email" className="block font-semibold text-ink">
           Email
         </label>
-        <input id="n-email" required type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
+        <input id="n-email" name="email" required type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
       </div>
       <div>
         <label htmlFor="n-company" className="block font-semibold text-ink">
           Company <span className="font-normal text-quiet">(optional)</span>
         </label>
-        <input id="n-company" autoComplete="organization" value={company} onChange={(e) => setCompany(e.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
+        <input id="n-company" type="text" name="company" autoComplete="organization" value={company} onChange={(e) => setCompany(e.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
       </div>
       <label className="flex min-h-touch items-start gap-3 text-ink">
         <input type="checkbox" className="mt-1 h-6 w-6 shrink-0" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} />
@@ -67,7 +67,7 @@ export function NotifyForm({ state }: { state: string }) {
       </label>
       <div aria-hidden="true" className="absolute left-[-9999px] top-auto h-px w-px overflow-hidden">
         <label htmlFor="n-website">Website</label>
-        <input id="n-website" tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
+        <input id="n-website" type="text" name="website" tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
       </div>
       {error ? (
         <p role="alert" className="font-semibold text-danger">
