@@ -18,7 +18,13 @@ import {
   type StoredCalibration,
 } from "@/lib/takeoff-plan";
 import { saveTakeoffCalibration, saveTakeoffMeasurement, saveTakeoffMeasurements } from "@/lib/actions";
-import type { PlanSheet, PrintedScaleByPage, ScalePrefill, ScalePrefillByPage } from "@/lib/takeoff-plan-view";
+import type {
+  PlanSheet,
+  PrintedScaleByPage,
+  ScaleDeclineByPage,
+  ScalePrefill,
+  ScalePrefillByPage,
+} from "@/lib/takeoff-plan-view";
 import {
   errorBandText,
   evidenceOrder,
@@ -109,6 +115,7 @@ export function TakeoffPlanViewer({
   sheets,
   printedScaleByPage,
   scalePrefillByPage,
+  scaleDeclineByPage,
 }: {
   jobId: string;
   planId: string;
@@ -125,6 +132,7 @@ export function TakeoffPlanViewer({
   /** What each sheet said about its own scale, read off the dimensions
    *  printed on it. A PREFILL and never a calibration — see `ScalePrefill`. */
   scalePrefillByPage: ScalePrefillByPage;
+  scaleDeclineByPage?: ScaleDeclineByPage;
 }) {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState<number | null>(null);
@@ -804,6 +812,7 @@ export function TakeoffPlanViewer({
               pageWidthPt={pageSize?.widthPt ?? null}
               printedScale={printedScaleByPage[pageNumber] ?? null}
               prefill={scalePrefillByPage[pageNumber] ?? null}
+              declineReason={scaleDeclineByPage?.[pageNumber] ?? null}
               onUsePrefill={(xs, ys) => {
                 // Seeds the draft so the proposed line DRAWS ON THE SHEET over
                 // the dimension it was read from. That is the verification
@@ -1120,6 +1129,7 @@ function CalibrationForm({
   existingNote,
   draft,
   prefill,
+  declineReason,
   onUsePrefill,
   onSaved,
 }: {
@@ -1132,6 +1142,7 @@ function CalibrationForm({
   existingNote: string;
   draft: StoredCalibration | null;
   prefill: ScalePrefill | null;
+  declineReason: string | null;
   onUsePrefill: (xs: readonly [number, number], ys: readonly [number, number]) => void;
   onSaved: () => void;
 }) {
@@ -1184,6 +1195,34 @@ function CalibrationForm({
             Shown here rather than in the toolbar because the toolbar states
             WHAT the scale is in six words and this is a sentence; this panel is
             where somebody who doubts it has already come to look. */}
+        {/* ── WHY THIS SHEET OFFERED NOTHING ──
+
+            The reader has recorded a reason for every decline since #655 — "its
+            lettering was saved as line work rather than characters, so there is
+            nothing here to read a scale from. Set it by hand." — and it was
+            written to the database and shown to NOBODY. An estimator got an
+            empty form and no explanation, which reads as a broken feature.
+
+            It matters most on the sets that provoked it. Two whole bid packages
+            measured here have their text converted to outlines — 373,377 strokes
+            and ZERO text items on one sheet — so EVERY sheet in both declines
+            and the app looks broken across an entire project.
+
+            It is not broken, and saying so is the point. The dimensions are
+            still printed on those sheets; a person reads `24'-0"` perfectly
+            well, it is simply drawn as lines. Setting the scale by hand works as
+            it always has, and the wall finder then works too — 150, 135 and 105
+            walls on three of those sheets, measured. What was lost is the
+            automatic scale, not the takeoff.
+
+            Shown only when there is no prefill: a sheet that offered something
+            does not need to explain itself. */}
+        {prefill === null && declineReason && (
+          <p className="rounded-md border border-line-card bg-surface px-2 py-1.5 text-[11px] text-ink-muted">
+            <span className="text-ink-body">C Stream couldn&apos;t read a scale here:</span> {declineReason}
+          </p>
+        )}
+
         {existingNote && (
           <p className="rounded-md border border-line-card bg-surface px-2 py-1.5 text-[11px] text-ink-muted">
             <span className="text-ink-body">How this sheet&apos;s scale was set:</span> {existingNote}

@@ -172,6 +172,9 @@ export type ScaleReadingRowForView = {
   consideredCount: number;
   inheritedError: number | null;
   source: string;
+  /** Why this sheet yielded no scale, when it yielded none. Written by the
+   *  reader since #655 and, until now, shown to nobody. */
+  declineReason: string | null;
 };
 
 /**
@@ -383,4 +386,42 @@ export function fitZoom(
     frame.height > 0 && page.heightPt > 0 ? (frame.height - inset) / (page.heightPt * baseScale) : forWidth;
   // Never zero or negative in a very small frame: the sheet would vanish.
   return Math.max(0.05, Math.min(forWidth, forHeight));
+}
+
+/** What a sheet says about why it has no scale, keyed by page number. */
+export type ScaleDeclineByPage = Record<number, string>;
+
+/**
+ * ── WHY THIS SHEET OFFERED NOTHING, IN WORDS, ON THE SCREEN ──
+ *
+ * The reader has recorded a reason for every decline since #655 — "its lettering
+ * was saved as line work rather than characters, so there is nothing here to
+ * read a scale from. Set it by hand." — and it has been written to the database
+ * and shown to NOBODY. The estimator got an empty form and no explanation.
+ *
+ * That matters more than it sounds on the sets that provoked it. Two whole bid
+ * packages measured here have their text converted to outlines: 373,377 strokes
+ * and ZERO text items on one sheet. Every sheet in both declines, so the app
+ * looks broken on an entire project.
+ *
+ * It is not broken, and that is the point of saying so. The dimensions are still
+ * PRINTED on those sheets — a person reads `24'-0"` perfectly well, it is simply
+ * drawn as lines — so setting the scale by hand works exactly as it always has,
+ * and the wall finder then works too: 150, 135 and 105 walls on three of those
+ * sheets, measured. What was lost was the automatic scale, not the takeoff, and
+ * an estimator who is told that will carry on in two clicks.
+ *
+ * A row with no reason yields nothing: silence is the right answer for a sheet
+ * that simply has not been read yet, which is not the same as one that could not
+ * be.
+ */
+export function scaleDeclinesFromReadings(rows: readonly ScaleReadingRowForView[]): ScaleDeclineByPage {
+  const byPage: ScaleDeclineByPage = {};
+  for (const row of rows) {
+    if (byPage[row.pageNumber] !== undefined) continue;
+    const reason = row.declineReason?.trim();
+    if (!reason) continue;
+    byPage[row.pageNumber] = reason;
+  }
+  return byPage;
 }

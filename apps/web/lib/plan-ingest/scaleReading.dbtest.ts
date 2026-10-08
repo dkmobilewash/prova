@@ -99,6 +99,7 @@ describe("PlanSheetScaleReading", () => {
         consideredCount: row.consideredCount,
         inheritedError: row.inheritedError,
         source: row.source,
+        declineReason: row.declineReason,
       },
     ])[2];
     expect(prefill?.declaredFeet).toBeCloseTo(15.2865, 4);
@@ -134,6 +135,7 @@ describe("PlanSheetScaleReading", () => {
           consideredCount: row.consideredCount,
           inheritedError: row.inheritedError,
           source: row.source,
+          declineReason: row.declineReason,
         },
       ]),
     ).toEqual({});
