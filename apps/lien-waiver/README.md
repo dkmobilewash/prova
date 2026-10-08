@@ -53,8 +53,15 @@ no-statutory-form page.
 
 ## Deploying (Diego)
 
-New Vercel project, Root Directory `apps/lien-waiver` (its `vercel.json` sets the
-install and build commands). Environment variables:
+Vercel project **`lien-waiver-tool`** (team "Diego's projects",
+`prj_Dd1q4nwsBrAsFJuYG0oNYhNY8oMM`), Root Directory `apps/lien-waiver`, set to
+skip deployments for commits that do not touch this app. Its `vercel.json`
+sets the install and build commands.
+
+The import screen cannot offer `apps/lien-waiver` as a root directory while the
+app exists only on a branch -- it browses the default branch. Create the
+project at the repo root, let that first build fail, then set the root in
+Settings (or through the API), which takes any path. Environment variables:
 
 | Variable | Needed for |
 | --- | --- |
@@ -63,10 +70,10 @@ install and build commands). Environment variables:
 | `RESEND_API_KEY` | sending the PDF and the lead note |
 | `LIEN_TOOL_EMAIL_FROM` | the sender, on a domain verified in Resend |
 | `RESEND_AUDIENCE_ID` | the Resend audience leads are added to |
-| `LEAD_NOTIFY_EMAIL` | where lead notes go (default `diego@cstream.ai`) |
-| `EMAIL_ALLOWLIST` | outside production, the ONLY addresses email goes to (default `diego@cstream.ai`) |
+| `LEAD_NOTIFY_EMAIL` | where lead notes go (default `diego@cstream.ai`) -- **set** |
+| `EMAIL_ALLOWLIST` | outside production, the ONLY addresses email goes to (default `diego@cstream.ai`) -- **set** |
 | `LIEN_TOOL_MAILING_ADDRESS` | printed at the foot of every email (C-Stream's email rule) |
-| `NEXT_PUBLIC_CSTREAM_URL` | where "Get a free job breakdown" points (default `https://cstream.ai`) |
+| `NEXT_PUBLIC_CSTREAM_URL` | where "Get a free job breakdown" points (default `https://cstream.ai`) -- **set** |
 
 Optional extra layer, not configured by code: a Vercel Firewall rate-limit rule
 on `/api/waiver` and `/api/notify`.
