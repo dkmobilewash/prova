@@ -31,6 +31,13 @@ await mkdir(rawDir, { recursive: true });
 let failed = 0;
 for (const source of sources) {
   if (only.size && !only.has(source.id)) continue;
+  if (source.capture === "headless-render") {
+    // A plain fetch of these gets an empty app shell (TX) or a 403 (CA), and
+    // writing that over a good capture is the one thing this script must
+    // never do. They come in through scripts/import-rendered.mjs.
+    console.log(`skip ${source.id}  rendered source: ${source.why}`);
+    continue;
+  }
   try {
     const response = await fetch(source.url, {
       redirect: "follow",

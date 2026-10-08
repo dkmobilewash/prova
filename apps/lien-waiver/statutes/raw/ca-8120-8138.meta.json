@@ -1,0 +1,15 @@
+{
+  "id": "ca-8120-8138",
+  "state": "CA",
+  "citation": "Cal. Civ. Code §§ 8120–8138 (Div. 4, Pt. 6, Title 1, Ch. 3: Waiver and Release)",
+  "requestedUrl": "https://leginfo.legislature.ca.gov/faces/codes_displayText.xhtml?lawCode=CIV&division=4.&title=1.&part=6.&chapter=3.&article=",
+  "finalUrl": "https://leginfo.legislature.ca.gov/faces/codes_displayText.xhtml?lawCode=CIV&division=4.&title=1.&part=6.&chapter=3.&article=",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8 (rendered DOM)",
+  "capturedVia": "headless-render",
+  "renderer": "firecrawl",
+  "rendererScrapeId": "01a11d5f-5a43-721f-80ed-5026ba1fbf8e",
+  "retrievedAt": "2026-10-08T21:16:06.440Z",
+  "bytes": 52549,
+  "sha256": "a6995fa58a27b8cbdc4ab1aba28d1ab2a949bbd3dd4d991c79512b869d2903cf"
+}
