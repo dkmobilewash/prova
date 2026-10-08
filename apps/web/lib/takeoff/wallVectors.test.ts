@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { wallFromPair, wallsFromStrokes, type StrokeSegment, type WallFinderOptions } from "./wallVectors";
+import { wallFromPair, wallsFromStrokes, type StrokeSegment, type WallFinderOptions,
+  clusterByThickness,
+  CLUSTER_INCHES,
+  wallsInTheBuilding,
+  SAME_BUILDING_FEET,
+  NOT_A_BOX,
+  wallsNotLettering,
+  LETTER_FEET,
+  type WallCandidate,
+} from "./wallVectors";
 
 /**
  * Wall detection from vector strokes, with no PDF and no model involved.
@@ -167,5 +176,265 @@ describe("the scale is the caller's, not a constant here", () => {
     expect(quarter?.thicknessFeet).toBeCloseTo(0.203, 2);
     // Below the 0.2ft floor: at detail scale these two lines are not a wall.
     expect(detail).toBeNull();
+  });
+});
+
+/**
+ * GROUPING THE WALLS A SHEET GAVE UP, which is what turns a list of 542 lines
+ * into a decision an estimator can actually make.
+ *
+ * Shaped by measurement rather than by guesswork: seven real sheets returned
+ * 15-21 thickness clusters each, not the three anybody would assume, with the
+ * top three holding about half the footage. Both facts are in these tests.
+ */
+const run = (thicknessInches: number, lengthFeet: number): WallCandidate => ({
+  x1: 0,
+  y1: 0,
+  x2: lengthFeet,
+  y2: 0,
+  thicknessFeet: thicknessInches / 12,
+  lengthFeet,
+});
+
+describe("grouping walls by thickness", () => {
+  it("merges the SAME wall drawn with CAD's own variation", () => {
+    // Measured on a real sheet: 4.92" and 4.64" came back as separate values
+    // holding 739ft and 682ft. They are one 4-7/8" partition.
+    const clusters = clusterByThickness([run(4.92, 10), run(4.64, 10), run(4.88, 10)]);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0].runs).toHaveLength(3);
+    expect(clusters[0].inches).toBeCloseTo(4.813, 2);
+  });
+
+  it("KEEPS TWO REAL WALL TYPES APART, which is the whole constraint", () => {
+    // A 3-5/8" stud wall and a 4-7/8" partition are different material. Merging
+    // them would add one type's footage to the other's — a wrong number on a
+    // bid, with nothing on screen looking wrong.
+    const clusters = clusterByThickness([run(3.625, 10), run(4.875, 10)]);
+    expect(clusters).toHaveLength(2);
+  });
+
+  it("does not let a chain of near-misses walk a cluster across that gap", () => {
+    // Each step is under the width; the span is 1.2", wider than the gap
+    // between two real types. Clustering against the running MEAN would let
+    // this drift into one group — it compares against the cluster's first
+    // member for exactly this reason.
+    const clusters = clusterByThickness([run(3.6, 1), run(4.0, 1), run(4.4, 1), run(4.8, 1)]);
+    expect(clusters.length).toBeGreaterThan(1);
+  });
+
+  it("sorts by FOOTAGE, not by how many runs there are", () => {
+    // The number a bid turns on is feet. Twenty short stubs are not a bigger
+    // scope than four long corridor walls, and must not be offered as one.
+    const clusters = clusterByThickness([
+      ...Array.from({ length: 20 }, () => run(2.5, 3)), //  60 ft over 20 runs
+      ...Array.from({ length: 4 }, () => run(4.875, 40)), // 160 ft over 4 runs
+    ]);
+    expect(clusters[0].inches).toBeCloseTo(4.875, 2);
+    expect(clusters[0].feet).toBeCloseTo(160, 5);
+    expect(clusters[0].runs).toHaveLength(4);
+  });
+
+  it("totals the footage of each group", () => {
+    const clusters = clusterByThickness([run(6, 12.5), run(6, 7.5)]);
+    expect(clusters[0].feet).toBeCloseTo(20, 5);
+  });
+
+  it("returns nothing for no walls, rather than an empty group", () => {
+    expect(clusterByThickness([])).toEqual([]);
+  });
+
+  it("keeps every run — a wall cannot be lost between the groups", () => {
+    // The property that matters most: this is presentation, and presentation
+    // must not change the quantities. An estimator accepting every group must
+    // get every wall that was found.
+    const walls = [run(4.875, 10), run(2.5, 4), run(8, 20), run(4.9, 6), run(15.5, 3)];
+    const clusters = clusterByThickness(walls);
+    expect(clusters.reduce((n, c) => n + c.runs.length, 0)).toBe(walls.length);
+    expect(clusters.reduce((f, c) => f + c.feet, 0)).toBeCloseTo(43, 5);
+  });
+
+  it("uses a width that is wider than CAD noise and narrower than a real gap", () => {
+    // The constant is load-bearing in both directions, so it is asserted in
+    // both: it must merge a 0.28" split and preserve a 1.25" one.
+    expect(CLUSTER_INCHES).toBeGreaterThan(0.28);
+    expect(CLUSTER_INCHES).toBeLessThan(1.25);
+  });
+});
+
+/**
+ * KEEPING THE BUILDING AND DROPPING THE REST OF THE SHEET.
+ *
+ * The finder read the whole page, so it returned the title block's ruled lines,
+ * the notes column, the sheet border and the wall sections printed above the
+ * plan. Every one is a genuine pair of parallel lines at a genuine spacing.
+ *
+ * Nobody caught it from the numbers — the thicknesses clustered at 4.88", 4.92"
+ * and 4.80" across three projects and that was read as proof. It proves
+ * nothing. These tests are about POSITION, which is the thing that was never
+ * being asked.
+ */
+const at = (x1: number, y1: number, x2: number, y2: number): WallCandidate => ({
+  x1,
+  y1,
+  x2,
+  y2,
+  thicknessFeet: 0.40625,
+  lengthFeet: Math.hypot(x2 - x1, y2 - y1),
+});
+
+// One point per foot, so a gap in these coordinates is a gap in feet.
+const FOOT = 1;
+
+describe("keeping only the walls in the building", () => {
+  it("drops a title block sitting away from the plan", () => {
+    // Plan-sized rather than four walls: `wallsInTheBuilding` now refuses a
+    // winner that is merely a box, so a four-run fixture would be refused for
+    // the right reason and prove nothing about the title block.
+    const plan = Array.from({ length: 14 }, (_, i) => at(0, i * 10, 40, i * 10));
+    const titleBlock = [at(300, 0, 340, 0), at(300, 5, 340, 5)];
+    const kept = wallsInTheBuilding([...plan, ...titleBlock], FOOT);
+    expect(kept).toHaveLength(plan.length);
+    expect(kept.every((w) => w.x1 < 300)).toBe(true);
+  });
+
+  it("keeps a plan whose runs meet in Ts, not just at corners", () => {
+    // The first version compared ENDPOINTS and shattered a real plan into 46
+    // pieces, keeping 49 runs of 203 — one corner of the offices. Walls meet in
+    // Ts far more often than in Ls: one wall's END against another's MIDDLE.
+    const spine = at(0, 0, 200, 0);
+    const branches = Array.from({ length: 15 }, (_, i) => at(i * 12, 0, i * 12, 40));
+    const kept = wallsInTheBuilding([spine, ...branches], FOOT);
+    expect(kept).toHaveLength(16);
+  });
+
+  it("bridges a doorway, a corridor and a wall it simply missed", () => {
+    // Runs do not touch as often as a drawing suggests. Anything under the
+    // same-building distance is still one building.
+    // Two halves of a plan, each plan-sized, separated by just under the
+    // same-building distance. Both must come back as one building.
+    const left = Array.from({ length: 8 }, (_, i) => at(0, i * 10, 30, i * 10));
+    const right = Array.from({ length: 8 }, (_, i) => at(30 + SAME_BUILDING_FEET - 1, i * 10, 70, i * 10));
+    expect(wallsInTheBuilding([...left, ...right], FOOT)).toHaveLength(16);
+  });
+
+  it("keeps the group with the most FOOTAGE, not the most runs", () => {
+    // A dense notes column can out-count a building without out-measuring it.
+    // Plan-sized, because a two-run building is now refused as a box — and
+    // short rules for the notes, many of them: 30 runs against the building's
+    // 12, but 60ft against its 1,440.
+    //
+    // An earlier draft made the rules 8ft each, which is 240ft, so the notes
+    // genuinely WERE the bigger thing and the test asserted the opposite of
+    // what it claimed. The suite caught that; it is the fixture that has been
+    // wrong twice here, never the code.
+    const building = Array.from({ length: 12 }, (_, i) => at(0, i * 10, 120, i * 10));
+    const notes = Array.from({ length: 30 }, (_, i) => at(500, i * 2, 502, i * 2));
+    const kept = wallsInTheBuilding([...building, ...notes], FOOT);
+    expect(kept).toHaveLength(12);
+    expect(kept.every((w) => w.x1 < 500)).toBe(true);
+  });
+
+  it("returns everything when the sheet holds nothing but the plan", () => {
+    const plan = Array.from({ length: 20 }, (_, i) => at(0, i * 10, 40, i * 10));
+    expect(wallsInTheBuilding(plan, FOOT)).toHaveLength(20);
+  });
+
+  it("returns nothing for nothing, rather than throwing", () => {
+    expect(wallsInTheBuilding([], FOOT)).toEqual([]);
+  });
+
+  it("REFUSES A SHEET WHOSE BIGGEST GROUP IS A BOX, rather than offering it", () => {
+    // Found by looking at a real roof/equipment sheet: the plan yielded almost
+    // no wall, so the biggest group was the TITLE BLOCK — four runs, 64ft, a
+    // rectangle in the corner offered to an estimator as the walls of a
+    // building. The numbers looked unremarkable; only the picture showed it.
+    const titleBlock = [at(300, 0, 340, 0), at(340, 0, 340, 20), at(300, 20, 340, 20), at(300, 0, 300, 20)];
+    expect(wallsInTheBuilding(titleBlock, FOOT)).toEqual([]);
+  });
+
+  it("still returns a real plan, which is an order of magnitude bigger", () => {
+    // Real floor plans measured here returned 38, 58, 68, 230, 295 and 453
+    // runs. The gap between a box and a plan is not a margin, so this does not
+    // have to be a finely judged number to sit inside it.
+    const plan = Array.from({ length: NOT_A_BOX + 2 }, (_, i) => at(0, i * 10, 40, i * 10));
+    expect(wallsInTheBuilding(plan, FOOT)).toHaveLength(NOT_A_BOX + 2);
+  });
+
+  it("uses a distance wide enough for a corridor and far short of a title block", () => {
+    // Measured by sweeping and looking: at 6ft a real plan broke into 46
+    // pieces; 12 kept 132 runs, 20 kept 178, 30 kept 186. It plateaus at 20.
+    expect(SAME_BUILDING_FEET).toBeGreaterThanOrEqual(12);
+    expect(SAME_BUILDING_FEET).toBeLessThan(60);
+  });
+});
+
+/** A text item's box, as `wallsNotLettering` reads it. */
+const label = (x: number, y: number, w = 6, h = 3) => ({ x, y, width: w, height: h });
+
+describe("telling lettering from walls", () => {
+  it("drops a short run sitting inside a text item", () => {
+    const glyph = at(100, 100, 102, 100); // 2ft, inside the tag's box
+    const kept = wallsNotLettering([glyph], [label(98, 98)], 1);
+    expect(kept).toEqual([]);
+  });
+
+  it("KEEPS A LONG WALL WHOSE MIDPOINT IS INSIDE A ROOM TAG", () => {
+    // A plan puts its labels ON the thing they label, so a partition running
+    // under a room number is ordinary. Dropping it would be worse than keeping
+    // a tag: a missing wall is a short bid, while a wrong one is visible on the
+    // drawing and gets rejected.
+    //
+    // THE MIDPOINT MUST LAND IN THE BOX or this tests nothing — the first
+    // fixture put the label off to one side, so the wall was kept because it
+    // was never near the text, and removing the length guard stayed GREEN.
+    const wall = at(90, 100, 130, 100); // 40ft; midpoint (110, 100)
+    const tag = label(107, 99, 6, 2); // x 107..113, y 99..101 — contains it
+    expect(wallsNotLettering([wall], [tag], 1)).toHaveLength(1);
+
+    // And the same geometry with a SHORT run is lettering, which is what makes
+    // the length the thing under test rather than the position.
+    const glyph = at(109, 100, 111, 100); // 2ft, same midpoint
+    expect(wallsNotLettering([glyph], [tag], 1)).toEqual([]);
+  });
+
+  it("keeps a short run that is nowhere near any text", () => {
+    const stub = at(500, 500, 502, 500);
+    expect(wallsNotLettering([stub], [label(98, 98)], 1)).toHaveLength(1);
+  });
+
+  it("keeps everything when the sheet reports no text at all", () => {
+    // A scanned sheet has no text layer. This needs no guard — nothing is
+    // inside an empty list — and a guard written here was deleted when
+    // mutation showed removing it changed nothing. The behaviour is still
+    // asserted, because it is the behaviour that matters, not the branch.
+    const walls = [at(100, 100, 102, 100), at(0, 0, 40, 0)];
+    expect(wallsNotLettering(walls, [], 1)).toHaveLength(2);
+  });
+
+  it("measures the pad in FEET, so it means the same in both coordinate spaces", () => {
+    // The first version used a bare `2`, which is 2 points to the server reader
+    // and TWO PAGE WIDTHS to the viewer, where coordinates run 0..1 — every
+    // wall on the sheet would have been inside a text box and the drawing
+    // filtered away. Same unit mistake the CTM bug made with lengths.
+    //
+    // Here one unit is one foot, so a half-foot pad reaches just outside the
+    // box and no further: a run 3ft clear of the label survives.
+    //
+    // The box runs x 98..104. At a half-foot pad its reach ends at 104.5; a
+    // bare `2` would reach 106. So a midpoint at 105 is the discriminator —
+    // kept under the real pad, swallowed under the wrong one.
+    const justOutside = at(104, 100, 106, 100); // midpoint x = 105
+    expect(wallsNotLettering([justOutside], [label(98, 98, 6, 3)], 1)).toHaveLength(1);
+
+    // And just INSIDE the real pad is still lettering, so the pad is doing
+    // something rather than being nominally present.
+    const justInside = at(103, 100, 105, 100); // midpoint x = 104
+    expect(wallsNotLettering([justInside], [label(98, 98, 6, 3)], 1)).toEqual([]);
+  });
+
+  it("uses a length bound that a letter cannot reach and a wall easily can", () => {
+    expect(LETTER_FEET).toBeGreaterThan(1);
+    expect(LETTER_FEET).toBeLessThan(10);
   });
 });

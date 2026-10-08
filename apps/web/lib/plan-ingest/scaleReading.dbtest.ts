@@ -98,6 +98,8 @@ describe("PlanSheetScaleReading", () => {
         agreedText: row.agreedText,
         consideredCount: row.consideredCount,
         inheritedError: row.inheritedError,
+        source: row.source,
+        declineReason: row.declineReason,
       },
     ])[2];
     expect(prefill?.declaredFeet).toBeCloseTo(15.2865, 4);
@@ -132,6 +134,8 @@ describe("PlanSheetScaleReading", () => {
           agreedText: row.agreedText,
           consideredCount: row.consideredCount,
           inheritedError: row.inheritedError,
+          source: row.source,
+          declineReason: row.declineReason,
         },
       ]),
     ).toEqual({});
@@ -154,5 +158,73 @@ describe("PlanSheetScaleReading", () => {
       await prisma.planSheetScaleReading.create({ data: reading(plan.id, page) });
     }
     expect(await prisma.planSheetScaleReading.count({ where: { planId: plan.id } })).toBe(4);
+  });
+});
+
+/**
+ * READING A SET AGAIN REPLACES WHAT IT RECORDED, which is the whole point of
+ * the control added for it.
+ *
+ * What this stage writes is DERIVED from the file, so it goes stale when the
+ * code that derives it improves — and until the re-read button existed there
+ * was no way to re-run the stage from the app at all. Shipping a fix to the
+ * scale reader therefore changed nothing for any plan already uploaded.
+ *
+ * The property that button depends on is this one: a second pass must REPLACE
+ * the row rather than add a second, or "which scale does this sheet have"
+ * becomes a question with two answers. It is an upsert keyed on
+ * `(planId, pageNumber)`, and that is worth proving against a real database
+ * rather than reading off the schema.
+ */
+describe("reading a set again", () => {
+  it("REPLACES the reading rather than adding a second", async () => {
+    const { plan } = await aPlan();
+
+    // First pass: the old code's answer, with a line too short to save.
+    await prisma.planSheetScaleReading.create({
+      data: { ...reading(plan.id, 1), declaredText: `5' - 9 1/4"`, source: "DIMENSIONS" },
+    });
+
+    // Second pass: the current code declines on that sheet and falls back to
+    // the printed scale — a different source AND a different line.
+    await prisma.planSheetScaleReading.upsert({
+      where: { planId_pageNumber: { planId: plan.id, pageNumber: 1 } },
+      create: reading(plan.id, 1),
+      update: {
+        source: "PRINTED",
+        declaredText: `1/8" = 1'-0"`,
+        x1: 0,
+        x2: 1,
+        declaredDistanceFeet: 288,
+        agreedText: null,
+        inheritedError: null,
+      },
+    });
+
+    const rows = await prisma.planSheetScaleReading.findMany({ where: { planId: plan.id } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].source).toBe("PRINTED");
+    expect(rows[0].declaredText).toBe(`1/8" = 1'-0"`);
+    expect(Number(rows[0].declaredDistanceFeet)).toBeCloseTo(288, 2);
+    // The stale evidence is GONE rather than left beside the new answer — a
+    // prefill showing last week's matched dimensions under this week's scale
+    // would be the worst of both.
+    expect(rows[0].agreedText).toBeNull();
+    expect(rows[0].inheritedError).toBeNull();
+  });
+
+  it("leaves the other pages of the same set alone", async () => {
+    const { plan } = await aPlan();
+    await prisma.planSheetScaleReading.create({ data: reading(plan.id, 1) });
+    await prisma.planSheetScaleReading.create({ data: reading(plan.id, 2) });
+    await prisma.planSheetScaleReading.upsert({
+      where: { planId_pageNumber: { planId: plan.id, pageNumber: 1 } },
+      create: reading(plan.id, 1),
+      update: { source: "PRINTED" },
+    });
+    const two = await prisma.planSheetScaleReading.findFirstOrThrow({
+      where: { planId: plan.id, pageNumber: 2 },
+    });
+    expect(two.source).toBe("DIMENSIONS");
   });
 });

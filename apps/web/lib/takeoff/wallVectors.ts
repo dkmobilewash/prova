@@ -44,6 +44,11 @@ export type StrokeSegment = {
   y1: number;
   x2: number;
   y2: number;
+  /** The pen that drew it, in page points, with the matrix in force applied.
+   *  Optional because a synthetic segment need not have one — and because the
+   *  question of whether it DISCRIMINATES a wall from a slab joint is being
+   *  measured rather than assumed. */
+  width?: number;
 };
 
 /** A wall this module is willing to claim: the centreline, in page points. */
@@ -272,7 +277,24 @@ export function wallsFromStrokes(
   segments: readonly StrokeSegment[],
   options: WallFinderOptions,
 ): WallCandidate[] {
-  const usable = segments.filter((segment) => lengthOf(segment) > 0);
+  // ── THE LENGTH FILTER IS HOISTED, AND THAT IS WHAT MAKES THIS RUNNABLE ──
+  //
+  // The pairing below is O(n²) with `inAHatchSeries` scanning inside it. A real
+  // ARCH D export carries 79,001 stroked segments and one measured here carried
+  // 116,893 — call it 10¹⁰ operations, which is not slow, it is never.
+  //
+  // `minLengthFeet` was already being applied, per PAIR, inside `wallFromPair`.
+  // Applying it to the INPUT first is not an approximation and not a heuristic:
+  // a wall's length is the overlap of its two faces, which is at most the
+  // shorter face, so a face below the minimum cannot belong to a wall above it.
+  // Exactly the same walls come back.
+  //
+  // Measured on real sheets, 2026-10-07: 116,893 segments → 7,998, and 23,351 →
+  // 1,623. Most of what a CAD sheet strokes is lettering outlines, hatching and
+  // leader lines, none of which is two feet of building long. That took the
+  // worst sheet to 1.7s and the smallest to 81ms.
+  const minLengthPoints = (options.minLengthFeet ?? DEFAULTS.minLengthFeet) / options.feetPerPoint;
+  const usable = segments.filter((segment) => lengthOf(segment) >= minLengthPoints);
   const order = [...usable].sort((a, b) => lengthOf(b) - lengthOf(a));
   const used = new Set<number>();
   const walls: WallCandidate[] = [];
@@ -343,4 +365,345 @@ function inAHatchSeries(
   }
 
   return false;
+}
+
+/** One thickness of wall found on a sheet: how many runs, and how much of it. */
+export type WallCluster = {
+  /** The cluster's thickness in INCHES, averaged over its runs — what an
+   *  estimator recognises ("4-7/8" is a 3-5/8" stud with board both sides"). */
+  inches: number;
+  runs: WallCandidate[];
+  feet: number;
+};
+
+/**
+ * HOW FAR APART TWO THICKNESSES HAVE TO BE TO BE DIFFERENT WALLS, in inches.
+ *
+ * MEASURED, not chosen. Real sheets do not return clean thicknesses: one came
+ * back with 4.92" and 4.64" as separate values holding 739ft and 682ft, which is
+ * one partition type split by how CAD drew its two faces. At 0.25" they stay
+ * apart; at 0.5" they merge, which is right.
+ *
+ * It does not go higher, and the reason is the whole value of the grouping: a
+ * 3-5/8" stud wall and a 4-7/8" partition are 1.25" apart and are DIFFERENT
+ * WALLS with different material. A bucket wide enough to swallow that gap would
+ * quietly add one type's footage to another's — a wrong number on a bid, which
+ * is worse than showing an estimator two groups where they expected one.
+ *
+ * Tested across 7 real sheets: 0.5" took one from 21 clusters to 13 while
+ * leaving every pair of real partition types distinct.
+ */
+export const CLUSTER_INCHES = 0.5;
+
+/**
+ * The walls on a sheet, grouped by thickness, BIGGEST FOOTAGE FIRST.
+ *
+ * ── WHY FOOTAGE AND NOT COUNT, AND WHY GROUPS AT ALL ──
+ *
+ * A real floor plan returns 15-21 thickness clusters, not the three anybody
+ * would guess, and the top three hold only about half the footage. That is the
+ * measurement this function is shaped by: there is no tidy "here are your three
+ * wall types", and pretending otherwise would mean hiding footage an estimator
+ * is going to bid.
+ *
+ * What IS true is that the LARGEST clusters are the ones a bid turns on, and
+ * they land on dimensions walls are actually built at — 4.88", 4.92", 4.80" on
+ * three unrelated projects, all of them 4-7/8": a 3-5/8" stud with 5/8" board
+ * each side. Noise does not land on 4-7/8". So sorting by footage puts the real
+ * partition runs at the top, where accepting ONE of them replaces ninety-nine
+ * hand traces, and leaves the long tail for a person to judge or ignore.
+ *
+ * Pure, like everything else in this file.
+ */
+export function clusterByThickness(
+  walls: readonly WallCandidate[],
+  clusterInches = CLUSTER_INCHES,
+): WallCluster[] {
+  const byThickness = [...walls].sort((a, b) => a.thicknessFeet - b.thicknessFeet);
+  const clusters: { runs: WallCandidate[]; feet: number }[] = [];
+
+  for (const wall of byThickness) {
+    const inches = wall.thicknessFeet * 12;
+    const open = clusters[clusters.length - 1];
+    // Against the cluster's FIRST member rather than its running mean: a mean
+    // drifts as members join, so a long enough chain of near-misses would walk
+    // a cluster across the 1.25" gap this is meant to preserve.
+    const start = open === undefined ? null : open.runs[0].thicknessFeet * 12;
+    if (open !== undefined && start !== null && inches - start <= clusterInches) {
+      open.runs.push(wall);
+      open.feet += wall.lengthFeet;
+    } else {
+      clusters.push({ runs: [wall], feet: wall.lengthFeet });
+    }
+  }
+
+  return clusters
+    .map((cluster) => ({
+      // The average, so the label is the thickness the runs actually have
+      // rather than whichever one happened to open the cluster.
+      inches:
+        cluster.runs.reduce((total, run) => total + run.thicknessFeet * 12, 0) / cluster.runs.length,
+      runs: cluster.runs,
+      feet: cluster.feet,
+    }))
+    .sort((a, b) => b.feet - a.feet);
+}
+
+/**
+ * A THICKNESS AN ESTIMATOR RECOGNISES: 4.875 → `4-7/8"`.
+ *
+ * To the nearest EIGHTH, because that is how a wall is specified, sold and
+ * talked about. `clusterByThickness` averages over a group's runs and hands
+ * back decimals no drawing ever carried — printing `4.81"` would state a
+ * precision the measurement does not have, on a label whose only job is to be
+ * recognised. `4-3/4"` is a wall somebody can picture.
+ *
+ * HERE RATHER THAN IN THE VIEWER, and that is a rule rather than a preference:
+ * it lived in `TakeoffPlanViewer.tsx` for one commit and the client/server
+ * boundary census failed it — a `"use client"` module may export components,
+ * not plain values. It is pure and it is about walls, so it belongs beside the
+ * finder that produces the number.
+ */
+export function inchLabel(inches: number): string {
+  const eighths = Math.round(inches * 8);
+  const whole = Math.floor(eighths / 8);
+  const part = eighths % 8;
+  if (part === 0) return `${whole}"`;
+  const half = part % 2 === 0 ? part / 2 : part;
+  const over = part % 2 === 0 ? 4 : 8;
+  const reduced = half % 2 === 0 ? `${half / 2}/${over / 2}` : `${half}/${over}`;
+  return whole === 0 ? `${reduced}"` : `${whole}-${reduced}"`;
+}
+
+/**
+ * ── HOW FAR APART TWO RUNS CAN BE AND STILL BE THE SAME BUILDING, IN FEET ──
+ *
+ * MEASURED, by looking. At 6ft a real floor plan shattered into 46 pieces and
+ * the biggest held 49 of 203 runs — a corner of the offices, with the rest of
+ * the plan thrown away. Sweeping it: 12ft kept 132, 20ft kept 178, 30ft kept
+ * 186. It plateaus at 20, which is the number here.
+ *
+ * It has to be this generous because detected runs do not touch as often as a
+ * drawing suggests: a doorway, a cased opening, a corridor crossing or a wall
+ * the finder simply missed all leave a gap, and a plan is still one building
+ * across them. 20ft is wider than any of those and far narrower than the
+ * distance from a floor plan to the title block beside it.
+ */
+export const SAME_BUILDING_FEET = 20;
+
+/** Fewer runs than this is not a floor plan — see `wallsInTheBuilding`. */
+export const NOT_A_BOX = 10;
+
+/** Closest approach between two centrelines, point to segment. */
+function gapBetween(a: WallCandidate, b: WallCandidate): number {
+  const toSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lengthSquared = dx * dx + dy * dy;
+    if (lengthSquared === 0) return Math.hypot(px - x1, py - y1);
+    const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lengthSquared));
+    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+  };
+  return Math.min(
+    toSegment(a.x1, a.y1, b.x1, b.y1, b.x2, b.y2),
+    toSegment(a.x2, a.y2, b.x1, b.y1, b.x2, b.y2),
+    toSegment(b.x1, b.y1, a.x1, a.y1, a.x2, a.y2),
+    toSegment(b.x2, b.y2, a.x1, a.y1, a.x2, a.y2),
+  );
+}
+
+/**
+ * THE RUNS THAT BELONG TO THE BUILDING, AND NOT TO THE REST OF THE SHEET.
+ *
+ * ── WHY THIS EXISTS, AND IT IS NOT A REFINEMENT ──
+ *
+ * The finder had no idea WHERE on the sheet the drawing was. It read the whole
+ * page, so it returned the title block's ruled lines, the notes column, the
+ * sheet border, and the wall-section details printed above the plan — every one
+ * of them a real pair of parallel lines at a real spacing, and none of them a
+ * wall in this building.
+ *
+ * Nobody noticed from the numbers. The thicknesses looked right — clusters at
+ * 4.88", 4.92", 4.80" on three projects — and that was read as proof the result
+ * was real. It proves nothing: a drawing is full of parallel pairs at
+ * building-ish spacings, so some land on a partition thickness by arithmetic
+ * alone. The first person to LOOK at the output found it drawing nothing like
+ * the walls, and the fix only became obvious once there was a picture.
+ *
+ * ── THE IDEA ──
+ *
+ * A floor plan is ONE connected thing; everything else on the sheet is
+ * somewhere else. So the runs say where the plan is: join the ones near each
+ * other and keep the biggest group. Nothing here knows what a title block looks
+ * like or where a drawing is normally placed, which is why it survives a sheet
+ * laid out differently.
+ *
+ * Biggest by FOOTAGE rather than by count, because a dense notes column can
+ * out-count a building without out-measuring it.
+ *
+ * ── WHAT IT DOES NOT FIX, STATED BECAUSE IT IS VISIBLE IN THE SAME PICTURE ──
+ *
+ * Noise INSIDE the footprint survives, and on the sheet this was measured
+ * against that is five long lines down an apparatus bay — slab joints or a
+ * trench drain, which really are two parallel lines a wall-thickness apart.
+ * They are in the building, so they join the building. What saves an estimator
+ * there is the drawing itself: the bay is visibly empty, the lines are visibly
+ * not walls, and they are drawn on screen before anything is accepted.
+ */
+export function wallsInTheBuilding(
+  walls: readonly WallCandidate[],
+  feetPerPoint: number,
+  sameBuildingFeet = SAME_BUILDING_FEET,
+): WallCandidate[] {
+  if (walls.length === 0) return [];
+  const joinPoints = sameBuildingFeet / feetPerPoint;
+
+  const parent = walls.map((_, index) => index);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let i = 0; i < walls.length; i += 1) {
+    for (let j = i + 1; j < walls.length; j += 1) {
+      if (gapBetween(walls[i], walls[j]) <= joinPoints) {
+        const a = find(i);
+        const b = find(j);
+        if (a !== b) parent[a] = b;
+      }
+    }
+  }
+
+  const groups = new Map<number, WallCandidate[]>();
+  walls.forEach((wall, index) => {
+    const root = find(index);
+    const list = groups.get(root) ?? [];
+    list.push(wall);
+    groups.set(root, list);
+  });
+
+  let best: WallCandidate[] = [];
+  let bestFeet = -1;
+  for (const group of groups.values()) {
+    const feet = group.reduce((total, wall) => total + wall.lengthFeet, 0);
+    if (feet > bestFeet) {
+      bestFeet = feet;
+      best = group;
+    }
+  }
+
+  // ── A BUILDING IS NOT A BOX ──
+  //
+  // "The biggest group" is only the plan when there IS a plan. On a sheet that
+  // yields almost no wall — a roof plan, an equipment plan, a demolition sheet
+  // drawn in dashed line work — the biggest group is whatever else is on the
+  // page, and what won on one real sheet was the TITLE BLOCK: four runs, 64ft,
+  // a rectangle in the corner offered to an estimator as the walls of a
+  // building. Found by looking at the picture; the numbers looked unremarkable.
+  //
+  // A rectangle is four runs. Real floor plans measured here returned 38, 58,
+  // 68, 230, 295 and 453 — so the gap between "a box" and "a plan" is an order
+  // of magnitude, not a margin, and this does not have to be a finely judged
+  // number to sit inside it.
+  //
+  // Returning NOTHING is the right answer rather than a weak one: the panel
+  // already says "No walls found on this sheet. That is a fact about the
+  // drawing, not a failure", which is true of a roof plan and is far better
+  // than four lines somebody has to recognise as a title block.
+  return best.length < NOT_A_BOX ? [] : best;
+}
+
+/**
+ * ── THE PEN FILTER WAS HERE, AND IT COST MORE THAN IT SAVED ──
+ *
+ * #669 dropped every stroke at or below a sheet's commonest pen width, on the
+ * reasoning that CAD draws walls heavy and hatching thin. It worked on the
+ * sheet it was measured against: five slab joints running an apparatus bay
+ * disappeared, and the wall count went UP because thin strokes had been
+ * stealing partners from real wall faces.
+ *
+ * The cost was never measured, and it is enormous. Across 13 sheets from four
+ * projects:
+ *
+ *   WITH the filter     919 walls
+ *   WITHOUT it        2,264 walls
+ *
+ * On one sheet it was 12 against 380. **It was deleting 59% of the walls on a
+ * drawing to remove a handful of wrong lines.**
+ *
+ * The premise is what fails: "the commonest pen is the hatching pen" is true of
+ * some exports and false of others. On one sheet the mode landed ABOVE the pen
+ * the walls were drawn with, so the filter kept the furniture and deleted the
+ * building. Dropping only the THINNEST band instead was tried and is better on
+ * one sheet, worse on another — neither rule wins, which is the signal that the
+ * idea needs a discriminator it does not have.
+ *
+ * And the trade was the wrong way round for this product. A missing wall is a
+ * SHORT BID that nothing on screen reveals; a wrong line is drawn on the
+ * drawing and gets rejected in a glance. Precision was never the complaint —
+ * what was reported as "reading the wrong walls" was the title block and the
+ * room numbers, and both are fixed by `wallsInTheBuilding` and
+ * `wallsNotLettering`, which stay.
+ *
+ * `StrokeSegment.width` is still read and still carried, because the
+ * measurement that produced those numbers needs it and because a future rule
+ * may use the pen as one signal among several rather than as a gate.
+ */
+
+/**
+ * ── A STROKED GLYPH IS TWO PARALLEL LINES, AND THE PAIRER TAKES IT ──
+ *
+ * Reported from a real sheet by somebody looking at the drawing: two entire
+ * groups were text. 64 runs at 14-1/2" sitting on dimension strings — `4'-0"`,
+ * `10'-0"`, `12'-0"` — and 15 at 13-1/2" entirely on room-number tags (121, 133,
+ * and an A106 marker), with not one wall among them. 79 of 205 runs.
+ *
+ * When a drawing's lettering is saved as line work rather than text, the two
+ * sides of a `0` or a `1` are parallel, a few inches apart at drawing scale, and
+ * the right length. Nothing about their SHAPE says they are letters. The pen
+ * does not help either: a title is drawn heavy.
+ *
+ * What does say it is the text layer, which this app already extracts for every
+ * sheet — `PlanTextItem` carries each item's box in the same coordinate space as
+ * the strokes. A candidate sitting inside one is lettering.
+ *
+ * ── AND IT IS BOUNDED BY LENGTH, BECAUSE A ROOM TAG SITS ON A WALL ──
+ *
+ * A plan puts its labels ON the thing they label, so a long partition can easily
+ * run under a room number. Dropping it would be worse than keeping the tag: a
+ * missing wall is a short bid, while a wrong one is visible on the drawing and
+ * gets rejected.
+ *
+ * So length decides. Lettering on a drawing is a foot or two of building at
+ * plan scale; a wall is not. Above `LETTER_FEET` a candidate is kept wherever it
+ * sits, which costs a few tag-sized false positives and cannot cost a wall.
+ */
+export const LETTER_FEET = 4;
+
+/** Each text item's box, as this filter needs it. */
+export type TextBox = { x: number; y: number; width: number; height: number };
+
+export function wallsNotLettering(
+  walls: readonly WallCandidate[],
+  text: readonly TextBox[],
+  feetPerPoint: number,
+  letterFeet = LETTER_FEET,
+): WallCandidate[] {
+  if (text.length === 0) return [...walls];
+  // THE PAD IS IN FEET, CONVERTED — not in whatever units the caller happens to
+  // use. The first version wrote a bare `2`, which is 2 points to the server
+  // reader and TWO PAGE WIDTHS to the viewer, where coordinates run 0..1. That
+  // would have put every wall on the sheet inside a text box and filtered the
+  // drawing away. The same unit mistake the CTM bug made with lengths.
+  const padFeet = 0.5;
+  const pad = feetPerPoint > 0 ? padFeet / feetPerPoint : 0;
+  return walls.filter((wall) => {
+    if (wall.lengthFeet > letterFeet) return true;
+    const midX = (wall.x1 + wall.x2) / 2;
+    const midY = (wall.y1 + wall.y2) / 2;
+    const inside = text.some(
+      (box) =>
+        midX >= box.x - pad &&
+        midX <= box.x + box.width + pad &&
+        midY >= box.y - pad &&
+        midY <= box.y + box.height + pad,
+    );
+    return !inside;
+  });
 }

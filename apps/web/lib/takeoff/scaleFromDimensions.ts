@@ -1,4 +1,5 @@
 import type { StrokeSegment } from "./wallVectors";
+import { MIN_CALIBRATION_SPAN } from "../takeoff-plan";
 
 /**
  * THE DRAWING SETS ITS OWN SCALE, because the architect already wrote the answer
@@ -233,6 +234,45 @@ export type ScaleVerdict =
 const LABEL_OFFSET_PT = 30;
 const LABEL_CENTRING = 0.3;
 
+/**
+ * ── A BROKEN DIMENSION LINE: THE RIGHT MECHANISM, AND PAIRING ACROSS IT MADE
+ * THINGS WORSE. MEASURED, TWICE. DO NOT REBUILD IT WITHOUT READING THIS. ──
+ *
+ * CAD does not draw a dimension line THROUGH its own numerals. It breaks it:
+ *
+ *     |————————  113'-0"  ————————|
+ *
+ * So the label sits at the INNER END of each half and never near either half's
+ * middle, which the centring rule above rejects. That is a real description of
+ * a real convention, and page 47 of a real 76-page bid set proves the halves are
+ * all there is: a `113'-0"` dimension needs a 1017pt line at that sheet's stated
+ * 1/8", **no segment on the page is 1017pt, and the longest anything on it is
+ * 894pt.**
+ *
+ * It followed that rejoining the halves would rescue the 16 sheets of that set
+ * which print a scale this finds nothing for. IT DID NOT. Both attempts went
+ * BACKWARDS against the 9 sheets the centring rule alone reads:
+ *
+ *   | pairing                                    | sheets read |
+ *   | ------------------------------------------ | ----------- |
+ *   | centring only — what ships                 | **9**       |
+ *   | + rejoin halves across the gap             | 3           |
+ *   | + require the gap to match the lettering   | 7           |
+ *
+ * The extra candidates scatter the vote until no scale wins its margin, so the
+ * cost falls on sheets that WORKED. The margin rule is doing its job — it
+ * declines rather than guessing — and the honest reading is that the broken-line
+ * halves do not carry enough signal to name a scale, not that one more
+ * constraint would have found it. Requiring the gap to match the label's own
+ * width is the tightest constraint the geometry offers and it recovered two of
+ * the six lost sheets, nothing more.
+ *
+ * So the 16 remain unexplained by this. What is now KNOWN is that they are not
+ * fixed here, which is worth more than the two days somebody would otherwise
+ * spend rediscovering it. `DimensionLabel` deliberately no longer carries the
+ * lettering width that attempt needed.
+ */
+
 /** The shortest segment worth considering, in points. Below this the rounding in
  *  a printed dimension dominates whatever it would imply. */
 const MIN_SEGMENT_PT = 8;
@@ -297,7 +337,58 @@ export function scaleCandidates(
   return out;
 }
 
+/**
+ * THE SCALE A PAGE IS DRAWN AT — the one entry point the product and the audit
+ * both use, so the two cannot drift.
+ *
+ * WHY THIS EXISTS RATHER THAN TWO CALLERS PASSING THE SAME THING. Two mutations
+ * survived when the ingest stage and `scaleAudit.ts` each called
+ * `scaleFromDimensions` with their own page width: setting either to zero
+ * evaporated the span floor and left every test green. The audit's was the worse
+ * one — an audit that does not apply the product's floor reports coverage an
+ * estimator cannot reach, which is this repo's most expensive recurring shape.
+ *
+ * No parameter can fix that, because the defect is two call sites rather than a
+ * wrong value. One function with the width taken from the page itself removes
+ * the question: there is nothing left to pass, and nothing to forget.
+ */
+export function readSheetScale(
+  page: { widthPt: number; items: readonly { str: string; x: number; y: number; width: number }[] },
+  segments: readonly StrokeSegment[],
+  labels: readonly DimensionLabel[],
+  options: Omit<ScaleOptions, "pageWidthPt"> = {},
+): ScaleVerdict {
+  return scaleFromDimensions(labels, segments, { ...options, pageWidthPt: page.widthPt });
+}
+
 export type ScaleOptions = {
+  /**
+   * THE PAGE'S WIDTH IN POINTS, REQUIRED — because the shortest line worth
+   * proposing is derived from it, and a caller must not be able to forget the
+   * floor.
+   *
+   * `MIN_CALIBRATION_SPAN` refuses a calibration line under a twentieth of the
+   * page width, enforced in TWO places: `calibrationNotices` refuses the save,
+   * and `feetPerPageWidth` returns null — which runs on every later page load,
+   * so a line stored under the floor would leave the sheet permanently
+   * unmeasurable. The floor cannot be relaxed here without storing provenance
+   * on the calibration itself.
+   *
+   * WHAT HAPPENED WITHOUT IT, found by clicking the shipped feature: on a real
+   * sheet the app proposed `5' - 9 1/4"`, whose line is 0.0344 of the page, and
+   * then refused its own suggestion as too short. The estimator could not
+   * finish. An offer the app will not honour is worse than no offer, because it
+   * reads as the feature being broken.
+   *
+   * AND IT IS REQUIRED RATHER THAN OPTIONAL BECAUSE TWO MUTATIONS SURVIVED when
+   * it was a `minLinePoints?` the caller supplied: setting it to 0 in the ingest
+   * stage, and setting it to 0 in `scaleAudit.ts`, both left every test green.
+   * The second is the worse one — an audit that does not apply the product's
+   * floor reports coverage an estimator cannot reach, which is this repo's
+   * recurring shape. Deriving the floor from a width every caller already has
+   * removes the question.
+   */
+  pageWidthPt: number;
   /**
    * The fewest DISTINCT dimension labels that must agree before a scale is
    * proposed.
@@ -330,10 +421,17 @@ const DEFAULTS = { minAgreeing: 3, minMargin: 2 };
 export function scaleFromDimensions(
   labels: readonly DimensionLabel[],
   segments: readonly StrokeSegment[],
-  options: ScaleOptions = {},
+  options: ScaleOptions,
 ): ScaleVerdict {
   const minAgreeing = options.minAgreeing ?? DEFAULTS.minAgreeing;
   const minMargin = options.minMargin ?? DEFAULTS.minMargin;
+  // Derived, never supplied: see `pageWidthPt`. A non-finite or absent width
+  // yields no floor rather than a NaN comparison that silently admits
+  // everything.
+  const minLinePoints =
+    Number.isFinite(options.pageWidthPt) && options.pageWidthPt > 0
+      ? options.pageWidthPt * MIN_CALIBRATION_SPAN
+      : 0;
   const considered = labels.length;
 
   // ── A SHEET WHOSE LETTERING WAS SAVED AS LINE WORK ──
@@ -400,6 +498,11 @@ export function scaleFromDimensions(
     const held = bestPerScale.get(scale.name);
     const err = (c: ScaleCandidate) => Math.abs(c.feetPerInch - scale.feetPerInch) / scale.feetPerInch;
     const accurate = (c: ScaleCandidate) => err(c) <= BEST_PAIR_TOLERANCE;
+    // A line the app would refuse to save is not a candidate. See
+    // `minLinePoints` — this is the whole of the fix for an offer the app then
+    // rejected as too short.
+    const usable = (c: ScaleCandidate) => lengthOf(c) >= minLinePoints;
+    if (!usable(candidate)) continue;
     if (held === undefined) {
       bestPerScale.set(scale.name, candidate);
     } else if (accurate(candidate) && accurate(held)) {
@@ -448,8 +551,24 @@ export function scaleFromDimensions(
 
   const best = bestPerScale.get(winner.name);
   if (best === undefined) {
-    // Unreachable: a name in `supporters` was put there with a candidate.
-    return { ok: false, reason: "No dimension line could be proposed for this scale.", considered };
+    // REACHABLE, and this is the case the span floor creates. The vote counts
+    // every agreeing label, because a short dimension is still evidence of the
+    // scale — but only a line long enough to SAVE can be proposed. A sheet
+    // dimensioned entirely in short runs therefore knows its own scale and has
+    // nothing to calibrate from.
+    //
+    // The sentence says that rather than "no scale found", because the two are
+    // different facts and an estimator can act on this one: pick a long
+    // dimension by hand, and the readback will confirm this scale.
+    return {
+      ok: false,
+      reason:
+        `This sheet reads ${winner.name} from ${winner.votes} printed dimension` +
+        `${winner.votes === 1 ? "" : "s"}, but every one of them is too short a line to set a scale from — ` +
+        `a small slip at either end would move every quantity. Click along a long dimension and the ` +
+        `readback should say ${winner.name}.`,
+      considered,
+    };
   }
 
   if (nearEngineeringScale(best.feetPerInch)) {

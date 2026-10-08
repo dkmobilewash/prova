@@ -110,7 +110,9 @@ describe.skipIf(targets.length === 0)("automatic scale, over real drawings", () 
       const s = summarise(pages);
       lines.push(
         `${label} — ${s.pages}pp  agrees ${s.AGREES}  disagrees ${s.DISAGREES}  ` +
-          `noTitleScale ${s.NO_TITLE_SCALE}  missed ${s.MISSED}  declined ${s.DECLINED}  error ${s.ERROR}`,
+          `noTitleScale ${s.NO_TITLE_SCALE}  printed ${s.PRINTED}  manyPrinted ${s.MANY_PRINTED}  ` +
+          `missed ${s.MISSED}  ` +
+          `declined ${s.DECLINED}  error ${s.ERROR}`,
         "",
       );
     }
@@ -121,7 +123,25 @@ describe.skipIf(targets.length === 0)("automatic scale, over real drawings", () 
       "─".repeat(78),
       `TOTAL ${total.pages} pages across ${files.length} file${files.length === 1 ? "" : "s"}`,
       `  agrees ${total.AGREES}   disagrees ${total.DISAGREES}   noTitleScale ${total.NO_TITLE_SCALE}   ` +
-        `missed ${total.MISSED}   declined ${total.DECLINED}   error ${total.ERROR}`,
+        `printed ${total.PRINTED}   manyPrinted ${total.MANY_PRINTED}   missed ${total.MISSED}   ` +
+        `declined ${total.DECLINED}   ` +
+        `error ${total.ERROR}`,
+      // EVERY PAGE IS IN EXACTLY ONE BUCKET AND THE SUMMARY MUST PRINT ALL OF
+      // THEM. `MANY_PRINTED` was missing from these two lines when it was added,
+      // so a 76-page run reported 70 and the six multi-scale sheets were
+      // invisible — and the arithmetic not adding up is the only thing that
+      // would have shown it. This line fails loudly instead.
+      total.AGREES +
+      total.DISAGREES +
+      total.NO_TITLE_SCALE +
+      total.PRINTED +
+      total.MANY_PRINTED +
+      total.MISSED +
+      total.DECLINED +
+      total.ERROR ===
+      total.pages
+        ? ""
+        : `  *** ${total.pages} pages but the buckets above hold a different number — a bucket is missing here ***`,
       rate === null
         ? "  agreement: NOT MEASURABLE — no page had both a derived and a printed scale."
         : `  agreement where both readings exist: ${(rate * 100).toFixed(1)}%  ` +

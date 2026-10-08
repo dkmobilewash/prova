@@ -160,3 +160,58 @@ costs a checkable page its answer key. That is the test now.
 
 Eight mutations on this round, all red. Four gates: **9,210 unit tests, 678 db
 tests**. Nothing from any of the three drawings is in the repo.
+
+## A 76-page bid set, which is what the harness was built for
+
+Diego supplied a full bid package. **76 pages in 7.4 seconds**, and the number is
+not flattering:
+
+| | |
+| --- | --- |
+| `AGREES` | 1 |
+| `DISAGREES` | **0** |
+| derived, nothing printed to check against | 8 |
+| `MISSED` — a scale IS printed and none was found | **16** |
+| `DECLINED` — cover, specs, schedules, civil | 45 |
+| **agreement where both readings exist** | **5.9%** (1 of 17) |
+
+So it reads 9 of 76 sheets. Where it reads one it is essentially exact — p19 at
+**50 of 199 dimensions and 0.00%**, p45 verified against its own title block at
+0.00%, p32 at 0.00%, p16 at 0.00% — across FOUR scales (1/8", 1/4", 1/2" and the
+3/4" sheets it declines). **Across 79 real pages it has never produced a wrong
+scale.** The problem is coverage, not accuracy.
+
+### The 16 are diagnosed, the fix was built, and it made things WORSE
+
+CAD does not draw a dimension line through its own numerals — it breaks it:
+`|———— 113'-0" ————|`. So the label sits at the INNER END of each half and never
+near either half's middle, which the centring rule rejects. That is a real
+convention, and page 47 proves the halves are all there is: a `113'-0"` dimension
+needs a 1017pt line, **no segment on that page is 1017pt, and the longest
+anything on it is 894pt.**
+
+It followed that rejoining the halves would rescue those 16. **It did not.** Both
+attempts went backwards against the 9 sheets the centring rule alone reads:
+
+| pairing | sheets read |
+| --- | --- |
+| centring only — what ships | **9** |
+| + rejoin the halves across the gap | 3 |
+| + require the gap to match the lettering's width | 7 |
+
+The extra candidates scatter the vote until no scale wins its margin, so the
+cost lands on sheets that WORKED. The margin rule is doing its job: it declines
+rather than guessing. Requiring the gap to match the label's own width is the
+tightest constraint the geometry offers, and it recovered two of the six lost
+sheets and nothing more.
+
+**So it is reverted, and the refutation is written into
+`scaleFromDimensions.ts` beside the rule it was meant to replace** — with the
+table, so the next person does not spend two days rediscovering it. The 16
+remain unexplained by this mechanism; what is now known is that they are not
+fixed by it. Six of them find **zero** readable dimensions at all, which is
+Colton's outlined-lettering case and not a pairing question.
+
+This is the same shape as the symbol-counting refusal: a measurement that says
+no is worth building, and a fix that makes a number worse does not ship because
+its story is good.

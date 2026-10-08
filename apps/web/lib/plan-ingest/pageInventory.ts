@@ -2,7 +2,9 @@ import { prisma } from "@prova/db";
 import { readPlanBytes } from "./planBytes";
 import { hasTextLayer, openPlanPdf, titleBlockText, type PlanPdf, type PlanPageText } from "./planPdf";
 import { dimensionLabels } from "./dimensionLabels";
-import { scaleFromDimensions } from "../takeoff/scaleFromDimensions";
+import { readSheetScale } from "../takeoff/scaleFromDimensions";
+import { scaleFromPrinted } from "../takeoff/scaleFromPrinted";
+import { printedScalesOnPage } from "../takeoff/scaleAudit";
 import type { StageCtx, StageWork } from "./stages";
 
 /**
@@ -54,6 +56,12 @@ export type ScaleReadingRow = {
   planId: string;
   pageNumber: number;
   scaleName: string | null;
+  /**
+   * `DIMENSIONS` or `PRINTED` — see the column's own comment. It is not
+   * inferable from which fields are null, because a PRINTED reading stores a
+   * line too (the sheet's own width), so it has to travel explicitly.
+   */
+  source: string;
   /** In page-width units — `sheet-geometry.ts`'s box, so the prefill is a copy
    *  rather than a conversion. */
   x1: number | null;
@@ -207,6 +215,7 @@ async function readScaleFromSheet(
     planId,
     pageNumber,
     scaleName: null,
+    source: "DIMENSIONS",
     x1: null,
     y1: null,
     x2: null,
@@ -230,8 +239,44 @@ async function readScaleFromSheet(
   try {
     const strokes = await pdf.pageStrokes(pageNumber);
     const labels = dimensionLabels(page);
-    const verdict = scaleFromDimensions(labels, strokes.segments);
+    // THE FLOOR THE APP WILL ACTUALLY HONOUR. Without it the reader proposes
+    // lines `calibrationNotices` then refuses as too short — which it did, on a
+    // real sheet, leaving the estimator unable to finish. See `minLinePoints`.
+    const verdict = readSheetScale(page, strokes.segments, labels);
     if (!verdict.ok) {
+      // ── THE PRINTED SCALE, AND ONLY HERE ──
+      //
+      // A FALLBACK and never a first choice: a reading off a dimension printed
+      // on the drawing can be CHECKED against the drawing, and one off the title
+      // block cannot. So this runs only where the dimensions have already
+      // declined, and `source` records which happened. See `scaleFromPrinted`
+      // for why this is not the thing #623 declined, and what it costs.
+      const printed = scaleFromPrinted(printedScalesOnPage(page.items), page.widthPt, page.heightPt);
+      if (printed !== null) {
+        return {
+          planId,
+          pageNumber,
+          scaleName: printed.scaleName,
+          source: "PRINTED",
+          x1: printed.x1,
+          y1: printed.y1,
+          x2: printed.x2,
+          y2: printed.y2,
+          declaredDistanceFeet: printed.declaredDistanceFeet,
+          declaredText: printed.declaredText,
+          // No dimension agreed, because none could be read — so there is no
+          // evidence list, and the screen says so rather than showing an empty
+          // one as if it were a short one.
+          agreedText: null,
+          consideredCount: verdict.considered,
+          // The error a dimension-derived line carries is its distance from the
+          // scale the sheet voted for. There is no such distance here: the scale
+          // IS the printed one. Null rather than zero, because zero would read
+          // as "measured and perfect".
+          inheritedError: null,
+          declineReason: null,
+        };
+      }
       return { ...empty, consideredCount: verdict.considered, declineReason: verdict.reason };
     }
 
@@ -244,6 +289,7 @@ async function readScaleFromSheet(
       planId,
       pageNumber,
       scaleName: verdict.scaleName,
+      source: "DIMENSIONS",
       x1: verdict.best.x1 / w,
       y1: verdict.best.y1 / w,
       x2: verdict.best.x2 / w,

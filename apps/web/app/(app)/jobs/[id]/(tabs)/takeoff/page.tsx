@@ -18,7 +18,10 @@ import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
 import { deleteTakeoffPlan } from "@/lib/actions";
 import { requireCapability } from "@/lib/authz";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
-import { printedScalesFromProposals, scalePrefillsFromReadings } from "@/lib/takeoff-plan-view";
+import { printedScalesFromProposals, scalePrefillsFromReadings,
+  scaleDeclinesFromReadings,
+  type ScaleDeclineByPage,
+} from "@/lib/takeoff-plan-view";
 import { measurementScaleLabel, zoneNotices, zoneScales } from "@/lib/takeoff-zones";
 import type { PlanMeasurementRow, PlanSheet, PrintedScaleByPage, ScalePrefillByPage } from "@/lib/takeoff-plan-view";
 
@@ -113,27 +116,32 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   // scale above is: a `PlanSheet` row only exists once somebody has calibrated,
   // so keying by sheet id would be null exactly when the prefill matters most —
   // on the first calibration of a sheet.
-  const scalePrefillByPage: ScalePrefillByPage = plan
-    ? scalePrefillsFromReadings(
-        await prisma.planSheetScaleReading.findMany({
-          where: { planId: plan.id },
-          orderBy: { updatedAt: "desc" },
-          select: {
-            pageNumber: true,
-            scaleName: true,
-            x1: true,
-            y1: true,
-            x2: true,
-            y2: true,
-            declaredDistanceFeet: true,
-            declaredText: true,
-            agreedText: true,
-            consideredCount: true,
-            inheritedError: true,
-          },
-        }),
-      )
-    : {};
+  const scaleReadingRows = plan
+    ? await prisma.planSheetScaleReading.findMany({
+        where: { planId: plan.id },
+        orderBy: { updatedAt: "desc" },
+        select: {
+          pageNumber: true,
+          scaleName: true,
+          x1: true,
+          y1: true,
+          x2: true,
+          y2: true,
+          declaredDistanceFeet: true,
+          declaredText: true,
+          agreedText: true,
+          consideredCount: true,
+          inheritedError: true,
+          source: true,
+          declineReason: true,
+        },
+      })
+    : [];
+  const scalePrefillByPage: ScalePrefillByPage = scalePrefillsFromReadings(scaleReadingRows);
+  // THE SAME ROWS, ASKED THE OTHER QUESTION: why a sheet offered nothing. One
+  // query, two derivations — the reason is already on the row, and re-querying
+  // for it would be a second trip for data we are holding.
+  const scaleDeclineByPage: ScaleDeclineByPage = scaleDeclinesFromReadings(scaleReadingRows);
 
   const isEstimateStage = job.status === "ESTIMATE";
 
@@ -209,6 +217,8 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
             x2: current.x2,
             y2: current.y2,
             declaredDistanceFeet: current.declaredDistanceFeet.toNumber(),
+            // Provenance, not decoration — see `PlanViewerCalibration`.
+            note: current.note,
           }
         : null,
       measurements,
@@ -295,6 +305,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         sheets={sheets}
         printedScaleByPage={printedScaleByPage}
         scalePrefillByPage={scalePrefillByPage}
+        scaleDeclineByPage={scaleDeclineByPage}
       />
 
       {sheets.map((sheet) => (
