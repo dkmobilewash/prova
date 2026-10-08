@@ -10,6 +10,8 @@ import { ScheduleProposals } from "@/components/ScheduleProposals";
 import { loadScheduleProposals, scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery";
 import { PlanSheetReview } from "@/components/PlanSheetReview";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
+import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
+import { sheetSuitability, duplicateWallsCaution } from "@/lib/takeoff/sheetSuitability";
 import { latestIngestFor } from "@/lib/plan-ingest/claim";
 import { TakeoffCurrencyBanner } from "@/components/TakeoffCurrencyBanner";
 import { TakeoffPlanRevisionForm } from "@/components/TakeoffPlanRevisionForm";
@@ -168,6 +170,35 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   // WHAT READING THE SCHEDULES WILL COST, counted over the newest title-block
   // proposal per page. The button says this number before anybody presses it,
   // which is the house rule for every control that spends an allowance.
+  /**
+   * WHICH SHEETS A WALL TAKEOFF WOULD DOUBLE-COUNT.
+   *
+   * Scored against a 60-page answer key: a THIRD of everything the wall finder
+   * reported was not a wall, and every phantom page was a mechanical plan, a
+   * reflected ceiling plan or an elevation — 13,767 ft invented. Those sheets
+   * carry the architectural walls repeated in grey, so the finder is right
+   * about the lines and they are still the same walls the A-101 already has.
+   *
+   * The evidence was already in the database. `proposedPageType` has held
+   * COVER/PLAN/ELEVATION/SECTION/DETAIL/SCHEDULE since the ingest was built and
+   * its schema comment says why: "'which pages are the schedules?' is the
+   * question the takeoff side needs answered". The takeoff side never asked.
+   *
+   * Read from the SAME rows the sheet review below uses, rather than queried
+   * again — one answer, one round trip.
+   */
+  const sheetRows = isEstimateStage ? await sheetIndexFor(plan.id, company.id) : [];
+  const duplicateWallsByPage: Record<number, string> = {};
+  for (const row of sheetRows) {
+    const number = effectiveSheetNumber(row);
+    const title = effectiveTitle(row);
+    const caution = duplicateWallsCaution(
+      sheetSuitability(number, title, row.proposal?.pageType ?? null),
+      number,
+    );
+    if (caution) duplicateWallsByPage[row.pageNumber] = caution;
+  }
+
   const scheduleSheetCount = await scheduleSheetCountFor(plan.id);
 
   const sheets: PlanSheet[] = plan.pages.map((page) => {
@@ -292,7 +323,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           all times rather than behind a condition: an empty index says so in one
           sentence, which is more useful than a section that appears from nowhere
           the first time a run finishes. */}
-      {isEstimateStage && <PlanSheetReview rows={await sheetIndexFor(plan.id, company.id)} />}
+      {isEstimateStage && <PlanSheetReview rows={sheetRows} />}
 
       {/* BELOW the sheet review, because the page types it shows are what decide
           which sheets have schedules at all. Silent until something has been
@@ -300,6 +331,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
       {isEstimateStage && <ScheduleProposals proposals={await loadScheduleProposals(plan.id)} />}
 
       <TakeoffPlanViewer
+        duplicateWallsByPage={duplicateWallsByPage}
         jobId={job.id}
         planId={plan.id}
         sheets={sheets}
