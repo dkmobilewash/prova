@@ -3,9 +3,20 @@
  * template literal and piece of JSX text — read through the TypeScript
  * parser rather than a regex.
  *
- * FOR TESTS ONLY (the censuses that import it: routeInboundLinks.test.ts and
- * usSpellingCensus.test.ts). Nothing in the app imports it, so it never
- * reaches a bundle; `typescript` is a devDependency.
+ * FOR TESTS ONLY. Nothing in the app imports it, so it never reaches a
+ * bundle; `typescript` is a devDependency. That property is the one worth
+ * stating, and it is checkable in one line:
+ * `grep -rl source-literals apps/web --include=*.ts` must return test files
+ * only.
+ *
+ * THE LIST OF IMPORTERS THAT USED TO BE HERE IS GONE BECAUSE IT WAS WRONG.
+ * It named `routeInboundLinks.test.ts` and `usSpellingCensus.test.ts` — and
+ * the second one does not exist anywhere in this repo, while two real
+ * importers (`copyFixes.test.ts`, `certifiedPayrollOpening.test.ts`) were
+ * missing. A hand-written roll-call of call sites rots faster than the claim
+ * it decorates, which is CLAUDE.md's own reason for deleting counts rather
+ * than refreshing them: a re-derivation nobody runs is a claim with an expiry
+ * date. The grep above is the re-derivation, and it cannot go stale.
  *
  * WHY A PARSER, and it is the whole point of this file. Every census here
  * that scans source for a string has to decide what a COMMENT is, and CLAUDE.md

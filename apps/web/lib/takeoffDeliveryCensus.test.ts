@@ -79,7 +79,7 @@
  *   import, no `process.env`" IN PROSE, so a raw-text purity census would
  *   report the honest file as the offender. The same goes the other way for
  *   the call-site half — a commented-out or discussed call is not a call, and
- *   `lib/takeoff-offer.ts:154` already names this module in prose.
+ *   `lib/takeoff-offer.ts` already names this module in prose.
  *
  * ──────────────────────────────────────────────────────────────────────────
  * MUTATION-TESTED, five ways, each confirmed to have landed in the file
@@ -799,7 +799,7 @@ describe("vacuity — whether the finders can still find", () => {
   it("is not fooled by a call that exists only in a comment", () => {
     // THE #185 SHAPE, and the reason this file parses. A call discussed in
     // prose or left commented out is not a call site, and this repo's docs
-    // already name this module in prose at `lib/takeoff-offer.ts:154`.
+    // already name this module in prose at `lib/takeoff-offer.ts`.
     expect(
       deliveryCallSites(
         'import { deliveryBody } from "./takeoff-delivery";\n// const s = deliveryBody(read);\nexport const x = 1;',
