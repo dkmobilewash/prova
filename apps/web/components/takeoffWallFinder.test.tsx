@@ -284,6 +284,17 @@ describe("the ghost lines over the sheet", () => {
     expect(code).toMatch(/fitZoom\(/);
   });
 
+  it("the viewer SHOWS the decline reason, and only when it has nothing to offer", () => {
+    // The reason was stored since #655 and rendered nowhere. A sheet that
+    // offered a scale does not need to explain itself, so the message is gated
+    // on there being no prefill — otherwise every successful sheet would carry
+    // a note about something that did not matter.
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).toMatch(/\{prefill === null && declineReason && \(/);
+    expect(code).toMatch(/declineReason=\{scaleDeclineByPage\?\.\[pageNumber\] \?\? null\}/);
+  });
+
   it("draws nothing before anything has been found", () => {
     expect(svg(createElement(FoundWalls, { clusters: null, hovered: null })).lines).toHaveLength(0);
     expect(svg(createElement(FoundWalls, { clusters: [], hovered: null })).lines).toHaveLength(0);

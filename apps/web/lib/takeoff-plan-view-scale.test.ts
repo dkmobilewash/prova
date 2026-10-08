@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
+  scaleDeclinesFromReadings,
   errorBandText,
   evidenceOrder,
   scalePrefillsFromReadings,
@@ -30,6 +31,8 @@ const row = (over: Partial<ScaleReadingRowForView> = {}): ScaleReadingRowForView
   consideredCount: 30,
   inheritedError: 0.00315,
   source: "DIMENSIONS",
+  // Written by the reader on a decline and, until #672, shown to nobody.
+  declineReason: null,
   ...over,
 });
 
@@ -256,5 +259,59 @@ describe("the provenance of a saved scale", () => {
     // empty string.
     expect(code.length).toBeGreaterThan(10_000);
     expect(code).toContain("function CalibrationForm");
+  });
+});
+
+/**
+ * SAYING WHY A SHEET HAS NO SCALE.
+ *
+ * The reader has recorded a reason for every decline since #655 and it was
+ * written to the database and shown to NOBODY — the estimator got an empty form
+ * and no explanation, which reads as a broken feature. Same shape as the
+ * provenance bug: stored, and reaching no one.
+ *
+ * It matters most on the sets that provoked it. Two whole bid packages measured
+ * here have their lettering saved as line work — 373,377 strokes and ZERO text
+ * items on one sheet — so every sheet in both declines and the app looks broken
+ * across a whole project. It is not: the dimensions are still printed, a person
+ * reads them fine, and setting the scale by hand makes the wall finder work (150
+ * walls on one of those sheets, measured).
+ */
+describe("why a sheet has no scale", () => {
+  it("carries the reason the reader recorded", () => {
+    const reasons = scaleDeclinesFromReadings([
+      row({ pageNumber: 3, scaleName: null, declineReason: "its lettering was saved as line work" }),
+    ]);
+    expect(reasons[3]).toBe("its lettering was saved as line work");
+  });
+
+  it("says nothing for a sheet that simply has not been read", () => {
+    // Silence is right for "not read yet" and wrong for "could not be read".
+    // They are different states and must not look the same.
+    expect(scaleDeclinesFromReadings([])).toEqual({});
+    expect(scaleDeclinesFromReadings([row({ pageNumber: 1, declineReason: null })])).toEqual({});
+  });
+
+  it("ignores an empty or whitespace reason rather than showing a blank box", () => {
+    expect(scaleDeclinesFromReadings([row({ pageNumber: 1, declineReason: "   " })])).toEqual({});
+  });
+
+  it("keeps the NEWEST reading's reason, as the prefill does", () => {
+    // Rows arrive newest-first. A sheet re-read after a fix must not show the
+    // old reason beside the new answer.
+    const reasons = scaleDeclinesFromReadings([
+      row({ pageNumber: 2, declineReason: "the new reason" }),
+      row({ pageNumber: 2, declineReason: "the old reason" }),
+    ]);
+    expect(reasons[2]).toBe("the new reason");
+  });
+
+  it("is independent of whether a prefill was produced", () => {
+    // The two derivations read the same rows and answer different questions.
+    // A row can carry both — a scale AND a note about something it could not
+    // do — and the component decides which to show.
+    const rows = [row({ pageNumber: 1, declineReason: "something worth saying" })];
+    expect(Object.keys(scalePrefillsFromReadings(rows))).toHaveLength(1);
+    expect(scaleDeclinesFromReadings(rows)[1]).toBe("something worth saying");
   });
 });
