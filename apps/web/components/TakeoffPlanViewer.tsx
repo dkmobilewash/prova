@@ -40,6 +40,7 @@ import {
   wallsFromStrokes,
   wallsInTheBuilding,
   wallsNotLettering,
+  wallsNotTheSheetBorder,
   type WallCluster,
 } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
@@ -148,6 +149,9 @@ export function TakeoffPlanViewer({
   // somebody chose. That also means switching sheets or reloading simply
   // forgets them, which is the correct behaviour for a proposal nobody acted on.
   const [found, setFound] = useState<WallCluster[] | null>(null);
+  /** How many strokes the sheet held when it was last read, so an empty result
+   *  can say which kind of empty it is. See the message below. */
+  const [strokesSeen, setStrokesSeen] = useState(0);
   const [finding, setFinding] = useState(false);
   const [findError, setFindError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
@@ -387,6 +391,7 @@ export function TakeoffPlanViewer({
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
       const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
       const { segments } = await segmentsFromOpenPage(page, pdfjs, pageNumber);
+      setStrokesSeen(segments.length);
 
       // ── WHERE THE WORDS ARE ──
       //
@@ -433,7 +438,11 @@ export function TakeoffPlanViewer({
       // AND NOT THE LETTERING. A stroked glyph is two parallel lines and the
       // pairer takes it — two whole groups on one real sheet were dimension
       // strings and room tags. See `wallsNotLettering`.
-      const walls = wallsNotLettering(inBuilding, textBoxes, feetPerUnit);
+      const notLettering = wallsNotLettering(inBuilding, textBoxes, feetPerUnit);
+      // AND NOT THE SHEET'S OWN BORDER, which a real set offered as a 114ft
+      // wall — the longest single run in the panel and entirely false. The
+      // height is in page-width units, hence the aspect rather than 1.
+      const walls = wallsNotTheSheetBorder(notLettering, 1, pageSize.heightPt / pageSize.widthPt);
       setFound(clusterByThickness(walls));
     } catch {
       // The sheet is still on screen and the manual tools still work, so this
@@ -661,9 +670,23 @@ export function TakeoffPlanViewer({
       {found !== null && (
         <div className="mt-2 rounded-md border border-line-card bg-surface p-3" data-takeoff="found-walls">
           {found.length === 0 ? (
-            <p className="text-sm text-ink-body">
-              No walls found on this sheet. That is a fact about the drawing, not a failure — a scanned or
-              image-only sheet has no lines to read. Trace them by hand as usual.
+            /* ── TWO KINDS OF EMPTY, AND THIS SAID THE WRONG ONE ──
+
+               It read: "a scanned or image-only sheet has no lines to read."
+               That is one reason a sheet yields nothing, and the app had no
+               idea whether it was THIS sheet's reason. A click-through found it
+               on a drawing made entirely of line work and said so: the sheet
+               was plainly not a scan, and the message asserted a cause nobody
+               had established.
+
+               The app knows which it is — it has just counted the strokes. A
+               sheet with none is genuinely an image; a sheet with fifty
+               thousand has lines that did not pair, which is a different fact
+               and a different thing for an estimator to do about it. */
+            <p className="text-sm text-ink-body" data-takeoff="no-walls">
+              {strokesSeen === 0
+                ? "No walls found: this sheet has no line work at all, so it is an image or a scan. There is nothing here to read. Trace them by hand as usual."
+                : `No walls found. This sheet does have line work — ${strokesSeen.toLocaleString()} lines — but none of it paired up as a wall. That happens when walls are drawn as a single line or as solid fill rather than two faces. Trace them by hand as usual.`}
             </p>
           ) : (
             <>

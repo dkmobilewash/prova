@@ -295,6 +295,38 @@ describe("the ghost lines over the sheet", () => {
     expect(code).toMatch(/declineReason=\{scaleDeclineByPage\?\.\[pageNumber\] \?\? null\}/);
   });
 
+  it("the viewer drops the SHEET BORDER, measured against the page's own height", () => {
+    // Measured as a mutation: the viewer could stop calling this and the
+    // function's own tests stayed green. A real permit set offered the left
+    // border as a 114ft wall — one group, the longest run in the panel.
+    //
+    // The height argument is the ASPECT, not 1: the viewer's box has x running
+    // 0..1 and y over that same width, so a landscape sheet's height is less
+    // than 1. Passing 1 would compare a vertical border against the width and
+    // let it straight through, which is the one mistake this filter exists to
+    // avoid.
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).toMatch(/wallsNotTheSheetBorder\(\s*notLettering\s*,\s*1\s*,\s*pageSize\.heightPt \/ pageSize\.widthPt\s*\)/);
+    expect(code).toMatch(/clusterByThickness\(walls\)/);
+    expect(code).not.toMatch(/clusterByThickness\(notLettering\)/);
+  });
+
+  it("the empty state says WHICH kind of empty, instead of blaming a scan", () => {
+    // It read "a scanned or image-only sheet has no lines to read" on a drawing
+    // made entirely of line work — a cause the app had never established. It
+    // has just counted the strokes and knows which it is.
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).toMatch(/\{strokesSeen === 0/);
+    expect(code).toMatch(/setStrokesSeen\(segments\.length\)/);
+    // The branch for a sheet that DOES have line work must not claim a scan.
+    const branch = code.slice(code.indexOf("strokesSeen === 0"));
+    const elseArm = branch.slice(branch.indexOf(": `"), branch.indexOf("`}"));
+    expect(elseArm).not.toMatch(/scan/i);
+    expect(elseArm).toMatch(/does have line work/);
+  });
+
   it("draws nothing before anything has been found", () => {
     expect(svg(createElement(FoundWalls, { clusters: null, hovered: null })).lines).toHaveLength(0);
     expect(svg(createElement(FoundWalls, { clusters: [], hovered: null })).lines).toHaveLength(0);

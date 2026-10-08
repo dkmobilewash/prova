@@ -707,3 +707,52 @@ export function wallsNotLettering(
     return !inside;
   });
 }
+
+/**
+ * ── HOW MUCH OF THE SHEET A WALL MAY SPAN ──
+ *
+ * A click-through on a real permit set reported a group reading "10-1/2" · 1
+ * run · 114 ft", and it was a single line down the LEFT SHEET BORDER. One
+ * group, 114 feet, entirely false — and the most inviting thing in the panel,
+ * because a 114ft run is the longest single thing on the sheet.
+ *
+ * The border is geometrically distinctive in one way that nothing inside the
+ * building is: it runs the full extent of the PAGE. On that sheet the border
+ * line measured about 95% of the page height. A building drawn at a sensible
+ * scale leaves margins, a title block and a dimension zone, so its longest wall
+ * cannot approach the paper's own dimension — the one measured there was 68% of
+ * the sheet's width, and that is a long exterior wall on a tightly laid-out
+ * sheet.
+ *
+ * 90% therefore sits in a gap rather than on a judgement call. It is compared
+ * against the page extent ALONG THE RUN'S OWN AXIS, because a vertical border
+ * on a landscape sheet is short against the width and nearly the whole height —
+ * comparing against the wrong dimension is how this would miss.
+ */
+export const MOST_OF_THE_SHEET = 0.9;
+
+/**
+ * Walls that are not the sheet's own border.
+ *
+ * `pageHeight` is in the same units as the coordinates — the viewer's box has x
+ * running 0..1 and y over that same width, so a landscape sheet's height is
+ * LESS than 1. Passing the wrong one would compare a vertical run against the
+ * width and let the border through, which is the mistake this is written to
+ * avoid.
+ */
+export function wallsNotTheSheetBorder(
+  walls: readonly WallCandidate[],
+  pageWidth: number,
+  pageHeight: number,
+  mostOfTheSheet = MOST_OF_THE_SHEET,
+): WallCandidate[] {
+  if (!(pageWidth > 0) || !(pageHeight > 0)) return [...walls];
+  return walls.filter((wall) => {
+    const dx = Math.abs(wall.x2 - wall.x1);
+    const dy = Math.abs(wall.y2 - wall.y1);
+    // The page's extent along whichever axis this run mostly follows.
+    const extent = dx >= dy ? pageWidth : pageHeight;
+    const span = Math.max(dx, dy);
+    return span < extent * mostOfTheSheet;
+  });
+}
