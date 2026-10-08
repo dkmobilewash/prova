@@ -7,6 +7,8 @@ import { wallFromPair, wallsFromStrokes, type StrokeSegment, type WallFinderOpti
   NOT_A_BOX,
   wallsNotLettering,
   LETTER_FEET,
+  wallsNotTheSheetBorder,
+  MOST_OF_THE_SHEET,
   type WallCandidate,
 } from "./wallVectors";
 
@@ -436,5 +438,72 @@ describe("telling lettering from walls", () => {
   it("uses a length bound that a letter cannot reach and a wall easily can", () => {
     expect(LETTER_FEET).toBeGreaterThan(1);
     expect(LETTER_FEET).toBeLessThan(10);
+  });
+});
+
+/**
+ * THE SHEET'S OWN BORDER IS NOT A WALL.
+ *
+ * A click-through on a real permit set reported a group reading "10-1/2" · 1
+ * run · 114 ft" — a single line down the LEFT SHEET BORDER. One group, 114
+ * feet, entirely false, and the most inviting thing in the panel because it was
+ * the longest run on the sheet.
+ *
+ * The border is distinctive in one way nothing inside a building is: it runs
+ * the full extent of the PAGE. Measured on the sheet it was reported on, that
+ * border was ~95% of the page height, while the longest real wall was 68% of
+ * the width — so 90% sits in a gap rather than on a judgement call.
+ *
+ * Verified against the three real sheets from that click-through: it drops
+ * exactly the reported border on Augusta and NOTHING on Naples or West Herr.
+ */
+describe("telling the sheet border from a wall", () => {
+  // One unit = one foot here; the page is 168 x 120, a landscape sheet.
+  const PAGE_W = 168;
+  const PAGE_H = 120;
+
+  it("drops a run spanning almost the whole page height", () => {
+    const border = at(2, 2, 2, 116); // 114ft down a 120ft page — the real case
+    expect(wallsNotTheSheetBorder([border], PAGE_W, PAGE_H)).toEqual([]);
+  });
+
+  it("drops a run spanning almost the whole page WIDTH", () => {
+    const border = at(2, 2, 162, 2);
+    expect(wallsNotTheSheetBorder([border], PAGE_W, PAGE_H)).toEqual([]);
+  });
+
+  it("KEEPS A LONG EXTERIOR WALL, which is the whole risk", () => {
+    // The longest real wall measured on that sheet was 68% of the page width.
+    // Dropping it would trade a visible wrong line for an invisible short bid.
+    const exterior = at(10, 40, 124, 40); // 114ft across a 168ft page
+    expect(wallsNotTheSheetBorder([exterior], PAGE_W, PAGE_H)).toHaveLength(1);
+  });
+
+  it("measures against the run's OWN axis, not whichever came first", () => {
+    // 114ft is 95% of the height and 68% of the width. A vertical run of that
+    // length is the border; a horizontal one is a wall. Comparing against the
+    // wrong dimension is exactly how this would miss.
+    const vertical = at(2, 2, 2, 116);
+    const horizontal = at(10, 40, 124, 40);
+    const kept = wallsNotTheSheetBorder([vertical, horizontal], PAGE_W, PAGE_H);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].y1).toBe(40);
+  });
+
+  it("keeps everything when the page size is unknown", () => {
+    // Filtering on a dimension that is not there would silently empty the
+    // drawing — the same fallback every other filter here carries.
+    const walls = [at(2, 2, 2, 116), at(10, 40, 124, 40)];
+    expect(wallsNotTheSheetBorder(walls, 0, 0)).toHaveLength(2);
+    expect(wallsNotTheSheetBorder(walls, PAGE_W, 0)).toHaveLength(2);
+  });
+
+  it("uses a fraction that clears a real wall and catches a border", () => {
+    expect(MOST_OF_THE_SHEET).toBeGreaterThan(0.7);
+    expect(MOST_OF_THE_SHEET).toBeLessThan(1);
+  });
+
+  it("returns nothing for nothing", () => {
+    expect(wallsNotTheSheetBorder([], PAGE_W, PAGE_H)).toEqual([]);
   });
 });
