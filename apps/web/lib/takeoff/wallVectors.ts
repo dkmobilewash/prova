@@ -316,15 +316,42 @@ export function wallsFromStrokes(
 
   for (let i = 0; i < order.length; i += 1) {
     if (used.has(i)) continue;
+    // ── THE OUTERMOST PARTNER, NOT THE FIRST ONE ──
+    //
+    // This used to take the first valid partner it met in length order and
+    // stop. For a wall drawn as two faces that is the only partner there is, so
+    // it was right for years. An exterior wall is drawn as FOUR — outer finish,
+    // sheathing, stud face, inner face — and then three of the six pairings are
+    // inside the thickness band:
+    //
+    //   outer finish -> inner face   8.28in   the wall
+    //   sheathing    -> inner face   6.72in   two layers of it
+    //   stud face    -> inner face   6.00in   the stud cavity
+    //
+    // Whichever came first won. Measured against a 60-page answer key, the
+    // envelope was being found and then reported at 6.6in — 297 ft of it on one
+    // sheet — against a true EXT-2 of 8-1/8in. A wall at the wrong thickness is
+    // priced as the wrong assembly, which is a worse failure than not finding
+    // it: the footage looks right and the bid is wrong.
+    //
+    // What an estimator measures is finish to finish, so the widest valid pair
+    // is the wall and the narrower ones are its layers.
+    let bestJ = -1;
+    let bestWall: WallCandidate | null = null;
     for (let j = i + 1; j < order.length; j += 1) {
       if (used.has(j)) continue;
       const wall = wallFromPair(order[i], order[j], options);
       if (wall === null) continue;
       if (inAHatchSeries(order, i, j, options)) continue;
+      if (bestWall === null || wall.thicknessFeet > bestWall.thicknessFeet) {
+        bestWall = wall;
+        bestJ = j;
+      }
+    }
+    if (bestWall !== null) {
       used.add(i);
-      used.add(j);
-      walls.push(wall);
-      break;
+      used.add(bestJ);
+      walls.push(bestWall);
     }
   }
 
