@@ -84,13 +84,80 @@ test.describe("on-screen plan takeoff", () => {
    * (lib/takeoff-plan-view.ts). Each name is unique on this page. */
   const tool = (label: string): Locator => page.getByRole("button", { name: label, exact: true });
 
-  /** A click at a fraction of the sheet's WIDTH on both axes — which is the
-   * contract the whole feature rests on (`pointAt` divides x AND y by the
-   * rendered width, so a stored shape survives any zoom). */
-  async function clickOverlay(fx: number, fy: number): Promise<void> {
-    const box = await overlay().boundingBox();
-    expect(box, "the measuring overlay must have a box before anything is clicked").not.toBeNull();
-    await overlay().click({ position: { x: box!.width * fx, y: box!.width * fy } });
+  /**
+   * The overlay's box, once it has stopped changing size.
+   *
+   * ── WHAT IS KNOWN, AND WHAT IS NOT ──
+   *
+   * KNOWN: on 2026-10-08 this spec failed in CI with "the sheet reads about 100
+   * ft across; it read 93", and PASSED on a re-run of the same commit. A test
+   * that answers differently twice about identical code teaches everybody to
+   * re-run until green, which is how a suite stops meaning anything.
+   *
+   * KNOWN: the viewer's `zoomFactor` falls back to 1 until both the page size
+   * and the measured frame have arrived, and only then resolves to FIT. So the
+   * sheet's rendered width CAN change after pdf.js has drawn — and waiting for
+   * `canvas.width > 0`, which is all this spec did, proves the drawing happened
+   * rather than that the layout has settled. Those are different moments.
+   *
+   * NOT KNOWN: whether that is what actually went wrong. The flake did not
+   * reproduce locally across repeated runs, and instrumenting this loop showed
+   * it returning on its minimum three polls every time, with the width already
+   * steady at 358px — so LOCALLY IT WAITS FOR NOTHING. It is kept because the
+   * condition it guards is real in the code above and was observed in CI, not
+   * because it has been shown to fire; a cheap wait against a race nobody can
+   * reproduce is a reasonable hedge, and saying so is better than implying a
+   * diagnosis nobody has earned.
+   *
+   * The assertion in `clickPair` is the half that IS proven: mutated to an
+   * impossible threshold it fails and names its own cause, so it is reached on
+   * every run rather than being decoration.
+   */
+  async function settledOverlayBox(): Promise<{ width: number; height: number }> {
+    let previous = -1;
+    let steady = 0;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const box = await overlay().boundingBox();
+      if (box && box.width > 0 && Math.abs(box.width - previous) < 0.5) {
+        steady += 1;
+        // Three readings the same: one could be two polls inside a single
+        // frame, which proves nothing about whether another resize is coming.
+        if (steady >= 3) return { width: box.width, height: box.height };
+      } else {
+        steady = 0;
+      }
+      previous = box?.width ?? -1;
+      await page.waitForTimeout(100);
+    }
+    throw new Error("the sheet never stopped resizing, so no click on it can be trusted");
+  }
+
+  /**
+   * Click two points on the sheet, both measured against ONE settled box.
+   *
+   * A PAIR rather than two calls, because every use is a pair whose SEPARATION
+   * is the measurement — and a separation taken against two different boxes is
+   * not a separation at all. Reading the box once makes that structural instead
+   * of a thing each call site has to remember.
+   *
+   * Fractions are of the sheet's WIDTH on both axes, which is the contract the
+   * whole feature rests on: `pointAt` divides x AND y by the rendered width, so
+   * a stored shape survives any zoom.
+   */
+  async function clickPair(ax: number, ay: number, bx: number, by: number): Promise<void> {
+    const box = await settledOverlayBox();
+    await overlay().click({ position: { x: box.width * ax, y: box.width * ay } });
+    await overlay().click({ position: { x: box.width * bx, y: box.width * by } });
+    // LOUD RATHER THAN WRONG. If the sheet resized between the two clicks, the
+    // second landed at a different fraction than asked for and the measurement
+    // below is quietly wrong by however much it moved. This turns that into a
+    // failure that names its own cause instead of an off-by-7ft nobody can
+    // explain.
+    const after = await overlay().boundingBox();
+    expect(
+      Math.abs((after?.width ?? 0) - box.width),
+      `the sheet resized between the two clicks (${box.width} -> ${after?.width}), so their separation is not what was asked for`,
+    ).toBeLessThan(1);
   }
 
   test.beforeAll(async ({ browser }) => {
@@ -166,8 +233,7 @@ test.describe("on-screen plan takeoff", () => {
 
     await tool("Set scale").click();
     await expect(page.getByText("Click once at each end of a dimension printed on the drawing.")).toBeVisible();
-    await clickOverlay(0.2, 0.5);
-    await clickOverlay(0.7, 0.5);
+    await clickPair(0.2, 0.5, 0.7, 0.5);
 
     const calibration = page.locator("form").filter({ has: page.getByRole("button", { name: "Set the scale" }) });
     await calibration.locator('input[name="declaredDistanceFeet"]').fill(DECLARED);
@@ -192,8 +258,7 @@ test.describe("on-screen plan takeoff", () => {
 
   test("4. trace a run, and the length it reads is the geometry times the scale (#476)", async () => {
     await tool("Line").click();
-    await clickOverlay(0.2, 0.6);
-    await clickOverlay(0.6, 0.6);
+    await clickPair(0.2, 0.6, 0.6, 0.6);
 
     // 0.4 of a page width, on a sheet that reads 100 ft across.
     const readout = page.getByText(/^2 points · [\d.]+ ft$/);
