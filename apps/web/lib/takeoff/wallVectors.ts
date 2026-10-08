@@ -111,6 +111,31 @@ const PARALLEL_TOLERANCE_RAD = (2 * Math.PI) / 180;
 const MAX_FACE_LENGTH_RATIO = 3;
 
 /**
+ * How unequal two faces may be and still be PREFERRED as a wall, when several
+ * partners are valid.
+ *
+ * `MAX_FACE_LENGTH_RATIO` above is the hard gate — past 3 a pair is not a wall
+ * at all. This is a softer question that only arises once more than one partner
+ * passes it: which of them is the wall?
+ *
+ * MEASURED ON THE EXTERIOR ENVELOPE, where the choice is real. On one sheet the
+ * faces within two feet of the west wall sit at +0.00, +1.56, +2.28, +8.28,
+ * +8.88 and +12.48 inches, and the last of those is a COLUMN GRID LINE — 115 ft
+ * long, running past the building at both ends. It is inside the thickness band
+ * and it is the widest, so "take the widest" takes it: 188 ft of one sheet came
+ * back at 12.4in, which is no assembly on the drawing.
+ *
+ * A wall's two faces are the two sides of one wall and are close to the same
+ * length — 41 ft against 28.3 ft here, a ratio of 1.45. The grid line is 2.87
+ * times its partner on the page where the hard gate misses it, and 4.06 on the
+ * page where the gate catches it. Two sits between with margin on both sides.
+ *
+ * It is a PREFERENCE and not a gate: if no balanced partner exists, the widest
+ * valid one is still taken, so nothing that used to be found stops being found.
+ */
+const BALANCED_FACE_RATIO = 2;
+
+/**
  * HATCHING IS A SERIES; A WALL IS A PAIR. This is the whole discriminator, and
  * it was arrived at by measurement rather than by taste.
  *
@@ -316,15 +341,57 @@ export function wallsFromStrokes(
 
   for (let i = 0; i < order.length; i += 1) {
     if (used.has(i)) continue;
+    // ── THE OUTERMOST PARTNER, NOT THE FIRST ONE ──
+    //
+    // This used to take the first valid partner it met in length order and
+    // stop. For a wall drawn as two faces that is the only partner there is, so
+    // it was right for years. An exterior wall is drawn as FOUR — outer finish,
+    // sheathing, stud face, inner face — and then three of the six pairings are
+    // inside the thickness band:
+    //
+    //   outer finish -> inner face   8.28in   the wall
+    //   sheathing    -> inner face   6.72in   two layers of it
+    //   stud face    -> inner face   6.00in   the stud cavity
+    //
+    // Whichever came first won. Measured against a 60-page answer key, the
+    // envelope was being found and then reported at 6.6in — 297 ft of it on one
+    // sheet — against a true EXT-2 of 8-1/8in. A wall at the wrong thickness is
+    // priced as the wrong assembly, which is a worse failure than not finding
+    // it: the footage looks right and the bid is wrong.
+    //
+    // What an estimator measures is finish to finish, so the widest valid pair
+    // is the wall and the narrower ones are its layers.
+    // The widest valid partner whose face is a PLAUSIBLE PARTNER, falling back
+    // to the widest of any kind. Taking the widest alone reaches past the wall
+    // and pairs with the column grid line — see `BALANCED_FACE_RATIO`.
+    let bestJ = -1;
+    let bestWall: WallCandidate | null = null;
+    let anyJ = -1;
+    let anyWall: WallCandidate | null = null;
+    const iLength = lengthOf(order[i]);
     for (let j = i + 1; j < order.length; j += 1) {
       if (used.has(j)) continue;
       const wall = wallFromPair(order[i], order[j], options);
       if (wall === null) continue;
       if (inAHatchSeries(order, i, j, options)) continue;
+      if (anyWall === null || wall.thicknessFeet > anyWall.thicknessFeet) {
+        anyWall = wall;
+        anyJ = j;
+      }
+      const jLength = lengthOf(order[j]);
+      const ratio = Math.max(iLength, jLength) / Math.max(Math.min(iLength, jLength), 1e-9);
+      if (ratio > BALANCED_FACE_RATIO) continue;
+      if (bestWall === null || wall.thicknessFeet > bestWall.thicknessFeet) {
+        bestWall = wall;
+        bestJ = j;
+      }
+    }
+    const chosen = bestWall ?? anyWall;
+    const chosenJ = bestWall !== null ? bestJ : anyJ;
+    if (chosen !== null) {
       used.add(i);
-      used.add(j);
-      walls.push(wall);
-      break;
+      used.add(chosenJ);
+      walls.push(chosen);
     }
   }
 
