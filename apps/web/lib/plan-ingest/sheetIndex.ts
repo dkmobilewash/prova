@@ -216,3 +216,85 @@ export function sheetIndexSentence(counts: SheetIndexCounts): string {
       : "";
   return `${of}: ${parts.join(", ")}.${tail}`;
 }
+
+/**
+ * ── THE ROWS THAT CAN BE ACTED ON, AND THE ONES THAT CANNOT ──
+ *
+ * A fifty-five page set rendered fifty-five rows, and fifty of them said only
+ * "Sheet 23 of the file / Not read yet." — a wall of identical dead rows that
+ * pushed the five rows somebody could actually DO something with off the top of
+ * the screen. A click-through found it on a real set: five actionable rows under
+ * fifty that were not.
+ *
+ * The distinction is not cosmetic and it is not about length. A row with a
+ * proposal has a number to check, a title to correct and a Pick or Reject to
+ * press. A row without one HAS NO CONTROL ON IT AT ALL — this panel cannot read
+ * a sheet, and the only way to give an unread page a number is to type it on the
+ * sheet itself in the viewer. So those rows are not a shorter version of the
+ * work, they are not the work; they are a list of what is left.
+ *
+ * Splitting them here rather than in the component is this directory's own rule:
+ * the unit suite runs in `environment: "node"` and cannot render, so logic that
+ * lives in the component is logic no test can reach.
+ */
+export type ReviewSplit = {
+  /** Rows carrying a proposal — the ones with controls on them. */
+  toCheck: SheetRow[];
+  /** Pages read as having text, where the reader found no sheet number. */
+  notReadYet: number[];
+  /** Pages with no text layer at all: a scan, which must be typed on the sheet. */
+  scans: number[];
+};
+
+export function splitForReview(rows: SheetRow[]): ReviewSplit {
+  const toCheck: SheetRow[] = [];
+  const notReadYet: number[] = [];
+  const scans: number[] = [];
+  for (const row of sortForReview(rows)) {
+    if (row.proposal) toCheck.push(row);
+    else if (row.hasTextLayer) notReadYet.push(row.pageNumber);
+    else scans.push(row.pageNumber);
+  }
+  // NO SORT ON THE TWO LISTS, though page order is what they need: every row
+  // without a proposal gets `reviewRank` 0, and `sortForReview` tie-breaks a
+  // shared rank with `|| a.pageNumber - b.pageNumber`. So the walk above already
+  // emits them in page order.
+  //
+  // Both sorts were written in first, on the reasoning that review order is
+  // priority order and these lists want page order. Mutating them away left the
+  // tests green, which is the whole argument — unreachable code shaped like a
+  // safeguard is worse than none, because the next reader trusts it. If
+  // `reviewRank` ever splits proposal-less rows, this comment is the thing that
+  // is wrong and the sort comes back.
+  return { toCheck, notReadYet, scans };
+}
+
+/**
+ * Collapse page numbers into ranges: `[6,7,8,11,12,40]` reads `6-8, 11-12, 40`.
+ *
+ * Fifty numbers in a row is something nobody reads; three ranges is something
+ * somebody can hold. The hyphen is only used for a run of three or more, because
+ * "11-12" is longer than "11, 12" and harder to scan.
+ */
+export function pageRanges(pages: number[]): string {
+  if (pages.length === 0) return "";
+  const sorted = [...pages].sort((a, b) => a - b);
+  const out: string[] = [];
+  let start = sorted[0];
+  let last = sorted[0];
+  const flush = () => {
+    if (last - start >= 2) out.push(`${start}-${last}`);
+    else for (let n = start; n <= last; n += 1) out.push(String(n));
+  };
+  for (let i = 1; i < sorted.length; i += 1) {
+    if (sorted[i] === last + 1) {
+      last = sorted[i];
+      continue;
+    }
+    flush();
+    start = sorted[i];
+    last = sorted[i];
+  }
+  flush();
+  return out.join(", ");
+}
