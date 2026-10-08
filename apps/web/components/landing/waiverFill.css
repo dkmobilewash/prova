@@ -1,0 +1,55 @@
+/* WaiverFill.tsx — the lien waiver filling itself in.
+   Same shape as the submittal stamp in app/globals.css (kept out of that
+   file: app/globals.motion.test.ts counts its motion rules).
+
+   AT REST = FINISHED. These rules come BEFORE the media block: every value
+   is visible and the mark has landed for the server render, no-JS, and
+   prefers-reduced-motion: reduce. The block below only replays arrival. */
+.landing-waiver {
+  --landing-waiver-field-duration: 350ms;
+  --landing-waiver-field-start: 200ms;
+  --landing-waiver-field-stagger: 300ms;
+  --landing-waiver-mark-duration: 520ms;
+  --landing-waiver-mark-delay: 1700ms;
+  /* Overshoot, local to its only use — struck, not placed. */
+  --landing-waiver-ease: cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+/* The resting angle lives here, not in a Tailwind class: the keyframes set
+   `transform` outright, so the last frame must carry the same angle. */
+.landing-waiver__mark {
+  transform: rotate(-7deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Transform and opacity only. Every moving element sits in a fixed-height,
+     clipped stage, so nothing changes height and nothing below moves. */
+  [data-motion-play="playing"] .landing-waiver__value {
+    animation: landing-waiver-fill var(--landing-waiver-field-duration) var(--ease-landing)
+      calc(var(--landing-waiver-field-start) + var(--landing-waiver-i, 0) * var(--landing-waiver-field-stagger))
+      both;
+  }
+  [data-motion-play="playing"] .landing-waiver__mark {
+    animation: landing-waiver-mark var(--landing-waiver-mark-duration) var(--landing-waiver-ease)
+      var(--landing-waiver-mark-delay) both;
+  }
+  @keyframes landing-waiver-fill {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes landing-waiver-mark {
+    from {
+      opacity: 0;
+      transform: translateY(-24px) rotate(-15deg) scale(2);
+    }
+    to {
+      opacity: 1;
+      transform: rotate(-7deg);
+    }
+  }
+}
