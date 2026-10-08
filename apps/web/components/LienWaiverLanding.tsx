@@ -58,6 +58,29 @@ const card = "rounded-xl border border-line-card bg-surface p-5";
 /** Stagger indexes read by lienWaiverLanding.css. */
 const at = (i: number, j = 0) => ({ "--i": i, "--j": j }) as CSSProperties;
 
+/** The two reasons a sub signs up. No numbers: nothing here has been
+ * measured, and the page's no-invented-statistics test holds it to that. */
+const SAVES = [
+  {
+    title: "Save time",
+    icon: <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z M12 7v5l3 2" />,
+    points: [
+      "No hunting for the right form or guessing which one the GC wants",
+      "No retyping your company, the GC and the job every month",
+      "Ready before the GC asks, so it never holds up the pay app",
+    ],
+  },
+  {
+    title: "Save money",
+    icon: <path d="M12 3v18 M16.5 7.5c0-1.7-2-3-4.5-3s-4.5 1.3-4.5 3 2 2.7 4.5 3 4.5 1.3 4.5 3-2 3-4.5 3-4.5-1.3-4.5-3" />,
+    points: [
+      "Retainage and unpaid change orders written into the exceptions, not waived by accident",
+      "The right waiver for the payment, so you never release money you have not received",
+      "A correct waiver the first time means the check is not sent back and held up",
+    ],
+  },
+];
+
 const WHAT_IT_IS = [
   {
     title: "You get paid",
@@ -248,8 +271,8 @@ export function LienWaiverLanding() {
             Make your lien waiver. Get paid.
           </h1>
           <p className="mt-6 max-w-lg text-lg leading-relaxed text-ink-body">
-            Your GC wants a lien waiver before every payment. Pick the right one, answer a few questions, and
-            download a clean PDF — without giving away money you are still owed.
+            Stop hunting for the right form and retyping the same job details every month. Answer a few
+            questions, download a clean PDF, and never sign away money you are still owed.
           </p>
           <SignUpRow />
         </div>
@@ -257,6 +280,28 @@ export function LienWaiverLanding() {
           <WaiverFill />
         </div>
       </section>
+
+      {/* Time and money. */}
+      <Reveal className={sectionSpace}>
+        <ul className="grid gap-3 sm:grid-cols-2 sm:gap-4">
+          {SAVES.map((item, i) => (
+            <li key={item.title} className={`lw-rise ${card} p-6 sm:p-8`} style={at(i)}>
+              <span className="lw-pop flex h-12 w-12 items-center justify-center rounded-lg bg-tag-brand-soft text-brand" style={at(i)}>
+                <Icon>{item.icon}</Icon>
+              </span>
+              <p className="mt-5 font-headline text-2xl font-semibold text-ink sm:text-3xl">{item.title}</p>
+              <ul className="mt-4 flex flex-col gap-2">
+                {item.points.map((point) => (
+                  <li key={point} className="flex gap-3 text-sm leading-relaxed text-ink-body sm:text-base">
+                    <span aria-hidden className="shrink-0 text-brand">&#8212;</span>
+                    <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      </Reveal>
 
       {/* What a lien waiver is. */}
       <Reveal className={sectionSpace}>
