@@ -37,11 +37,12 @@ import {
 import {
   clusterByThickness,
   inchLabel,
-  wallsFromStrokes,
   wallsInTheBuilding,
   wallsNotLettering,
+  wallsNotTheSheetBorder,
   type WallCluster,
 } from "@/lib/takeoff/wallVectors";
+import { wallsFromBothEngines } from "@/lib/takeoff/wallRuns";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 
 /**
@@ -148,6 +149,9 @@ export function TakeoffPlanViewer({
   // somebody chose. That also means switching sheets or reloading simply
   // forgets them, which is the correct behaviour for a proposal nobody acted on.
   const [found, setFound] = useState<WallCluster[] | null>(null);
+  /** How many strokes the sheet held when it was last read, so an empty result
+   *  can say which kind of empty it is. See the message below. */
+  const [strokesSeen, setStrokesSeen] = useState(0);
   const [finding, setFinding] = useState(false);
   const [findError, setFindError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
@@ -387,6 +391,7 @@ export function TakeoffPlanViewer({
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
       const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
       const { segments } = await segmentsFromOpenPage(page, pdfjs, pageNumber);
+      setStrokesSeen(segments.length);
 
       // ── WHERE THE WORDS ARE ──
       //
@@ -424,7 +429,17 @@ export function TakeoffPlanViewer({
         // page-width units would be arithmetic with no meaning.
         width: segment.width,
       }));
-      const everywhere = wallsFromStrokes(inUnits, { feetPerPoint: feetPerUnit });
+      // BOTH ENGINES, MERGED. Pairing asks "are these two lines a wall" and
+      // needs no room to close; the room engine asks which enclosed regions are
+      // thin AND separate two different spaces, and does not care how the wall
+      // was drawn. Opposite blind spots, so neither wins alone -- measured
+      // through the filters below on three real sheets, the union beats both on
+      // every one of them (augusta 608/472 -> 707ft, naples 657/789 -> 1,302ft,
+      // west-herr 1,495/1,093 -> 1,679ft). `mergeWalls` is what stops the
+      // overlap being billed twice; see `wallRuns.ts`.
+      const everywhere = wallsFromBothEngines(inUnits, 1, pageSize.heightPt / pageSize.widthPt, {
+        feetPerPoint: feetPerUnit,
+      });
       // ONLY THE ONES IN THE BUILDING. Without this the title block, the notes
       // column, the sheet border and any detail drawn above the plan all come
       // back as walls — see `wallsInTheBuilding`, which exists because somebody
@@ -433,7 +448,11 @@ export function TakeoffPlanViewer({
       // AND NOT THE LETTERING. A stroked glyph is two parallel lines and the
       // pairer takes it — two whole groups on one real sheet were dimension
       // strings and room tags. See `wallsNotLettering`.
-      const walls = wallsNotLettering(inBuilding, textBoxes, feetPerUnit);
+      const notLettering = wallsNotLettering(inBuilding, textBoxes, feetPerUnit);
+      // AND NOT THE SHEET'S OWN BORDER, which a real set offered as a 114ft
+      // wall — the longest single run in the panel and entirely false. The
+      // height is in page-width units, hence the aspect rather than 1.
+      const walls = wallsNotTheSheetBorder(notLettering, 1, pageSize.heightPt / pageSize.widthPt);
       setFound(clusterByThickness(walls));
     } catch {
       // The sheet is still on screen and the manual tools still work, so this
@@ -658,12 +677,43 @@ export function TakeoffPlanViewer({
           honest than "it does your takeoff": the biggest wall types come for
           free. Accepting one group on one real sheet replaced ninety-nine hand
           traces. Whatever it missed is still traced the way it always was. */}
+      {/* ── THE SHEET IS THE INSTRUMENT, SO IT GETS THE ROOM ──
+          Found walls used to stack ABOVE the drawing, and the frame reserved a
+          fixed 22rem for them whether they were there or not. With six groups
+          showing, the panel took the top half of the screen and the sheet was
+          left a short strip — and because Fit fits BOTH dimensions, a short
+          frame makes a small sheet, so the width beside it went empty. A real
+          click-through landed at 11% zoom with a third of the screen black.
+
+          That is backwards for a feature whose entire verification step is
+          LOOKING at the drawing: the found walls are a claim, and the sheet is
+          the only thing that can check it. So on a wide screen they sit side by
+          side and the drawing takes what is left, which is most of it. Narrow
+          screens keep the stack, where a column each would make both unusable. */}
+      <div className="flex flex-col gap-3 xl:flex-row-reverse xl:items-start">
       {found !== null && (
-        <div className="mt-2 rounded-md border border-line-card bg-surface p-3" data-takeoff="found-walls">
+        <div
+          className="rounded-md border border-line-card bg-surface p-3 xl:w-[23rem] xl:shrink-0 xl:overflow-auto xl:max-h-[calc(var(--shell-port)-11rem)]"
+          data-takeoff="found-walls"
+        >
           {found.length === 0 ? (
-            <p className="text-sm text-ink-body">
-              No walls found on this sheet. That is a fact about the drawing, not a failure — a scanned or
-              image-only sheet has no lines to read. Trace them by hand as usual.
+            /* ── TWO KINDS OF EMPTY, AND THIS SAID THE WRONG ONE ──
+
+               It read: "a scanned or image-only sheet has no lines to read."
+               That is one reason a sheet yields nothing, and the app had no
+               idea whether it was THIS sheet's reason. A click-through found it
+               on a drawing made entirely of line work and said so: the sheet
+               was plainly not a scan, and the message asserted a cause nobody
+               had established.
+
+               The app knows which it is — it has just counted the strokes. A
+               sheet with none is genuinely an image; a sheet with fifty
+               thousand has lines that did not pair, which is a different fact
+               and a different thing for an estimator to do about it. */
+            <p className="text-sm text-ink-body" data-takeoff="no-walls">
+              {strokesSeen === 0
+                ? "No walls found: this sheet has no line work at all, so it is an image or a scan. There is nothing here to read. Trace them by hand as usual."
+                : `No walls found. This sheet does have line work — ${strokesSeen.toLocaleString()} lines — but none of it paired up as a wall. That happens when walls are drawn as a single line or as solid fill rather than two faces. Trace them by hand as usual.`}
             </p>
           ) : (
             <>
@@ -720,9 +770,19 @@ export function TakeoffPlanViewer({
       )}
 
       {/* ── The sheet ─────────────────────────────────────────────── */}
+      {/* The height reserve shrinks to 11rem once the panel is beside rather
+          than above; that reserve is the toolbar and the page's own padding,
+          and nothing else.
+
+          NO `min-w-0` HERE, though a flex child's default min-width would
+          normally demand it: this frame is `overflow-auto`, which establishes a
+          scroll container and resets the min-content floor by itself. It was
+          written in first, on the usual reasoning, and measured out — identical
+          boxes at 1512, 1280, 1024 and 768 with and without it. Unreachable
+          code shaped like a safeguard is worse than none. */}
       <div
         ref={frameRef}
-        className="relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-neutral-900"
+        className="relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-neutral-900 xl:flex-1 xl:max-h-[calc(var(--shell-port)-11rem)]"
         data-testid="takeoff-plan-port"
       >
         {loadError ? (
@@ -773,6 +833,8 @@ export function TakeoffPlanViewer({
         {isRendering && !loadError && (
           <p className="absolute right-3 top-3 rounded bg-neutral-800 px-2 py-1 text-xs text-ink-muted">Drawing…</p>
         )}
+      </div>
+
       </div>
 
       {/* ── What the draft reads, and what to do with it ──────────── */}

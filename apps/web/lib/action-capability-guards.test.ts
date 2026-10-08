@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import ts from "typescript";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CAPABILITIES, JOB_FUNCTIONS, can, type Capability } from "./permissions";
 
@@ -436,32 +437,167 @@ function soleCapabilityGating(action: string): Capability | null {
  *
  * A source check is shape, not behaviour, and this repo has been bitten by
  * shape checks that passed over real defects. It is here only to name the
- * offender precisely; the claim is proved by execution below. */
-function bodyOfAction(action: string): string {
-  const owningModule = definingModule.get(action);
-  if (!owningModule) return "";
-  const source = sourceOfModule(owningModule);
-  const start = source.indexOf(`export async function ${action}`);
-  if (start < 0) return "";
+ * offender precisely; the claim is proved by execution below.
+ *
+ * READ THROUGH THE TYPESCRIPT PARSER, AND THE TWO REASONS ARE DIFFERENT
+ * SIZES. Issue #541 named the first; the second was found while fixing it
+ * and is the one that was costing something.
+ *
+ * ONE — A COMMENT IS NOT A GUARD, and until 2026-10-08 this file could not
+ * tell the difference. `bodyOfAction` returned raw source and
+ * `assertsCapability` was a pair of `includes` calls, so a line somebody
+ * commented out satisfied a census written to prove every action is gated.
+ * That is CLAUDE.md's #185 shape — a census disarmed by a comment quoting
+ * its own pattern — landing in the one suite that decides whether a
+ * capability check exists.
+ *
+ * MEASURED RATHER THAN REPEATED, because the issue's own wording is a
+ * little stronger than what happens and the difference is worth having
+ * written down. Comment out `deleteSafetyIncident`'s real
+ * `can(context, "MANAGE_FIELD")` and on the OLD reader exactly one test
+ * fails: the EXECUTION case in section 5, which calls the action as an
+ * ESTIMATOR and gets the owner refusal instead of the access one. Every
+ * SOURCE-level check stays green — including "leaves no action reachable
+ * only from a guarded page without a guard", whose entire purpose is to
+ * name that action. On the parser it fails too, naming
+ * `safety.deleteSafetyIncident (needs MANAGE_FIELD; reachable from
+ * /safety)`.
+ *
+ * So the execution layer is a real backstop for anything in `MUST_ASSERT`,
+ * and the thing that was actually broken is narrower and worse: the source
+ * reader cannot be trusted to say whether a guard EXISTS, and three of the
+ * decision records in this file — `KNOWN_OPEN`,
+ * `UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE` and a `MIXED_DOORS` entry with
+ * `capability: null` — are checked by asking it that question in the
+ * NEGATIVE, where nothing executes at all because the action is recorded
+ * as open on purpose. Those three lists are debt registers that may only
+ * shrink, and a comment is enough to make one of them lie.
+ *
+ * TWO — THE BRACE COUNTER ENDED SIX BODIES EARLY, which no comment
+ * stripper would have fixed. `bodyOfAction` took the first `{` after the
+ * declaration and counted to zero, and an INLINE OBJECT TYPE in the return
+ * annotation closes that count before the body has started:
+ *
+ *     export async function prepareAskAttachment(…)
+ *       : Promise<ActionResultWith<{ pathname: string }>> {
+ *
+ * The "body" was the signature. Measured against the parser on the day
+ * this changed: 402 of 408 bodies read correctly and SIX were truncated to
+ * between 100 and 300 characters — `ask.confirmAskProposal`,
+ * `ask.loadAskProposal`, `ask.prepareAskAttachment`,
+ * `messages.sendHelpRequestEmail`, `quickbooks.loadQuickBooksAccounts` and
+ * `quickbooks.reconcileQuickBooksInvoices`. One of the six was hiding a
+ * REAL guard: `prepareAskAttachment` has asserted MANAGE_JOBS since it was
+ * written and this file had never seen it, which is why it sat in
+ * `UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE` as an open endpoint while being
+ * closed. It is in `SECTION_DECIDED` now and executed like the rest.
+ *
+ * So `withoutComments` from `components/rowActionsCensus.test.ts` — which
+ * is the repo's existing answer to #185 and was the obvious thing to copy —
+ * is NOT sufficient here, for a reason specific to these inputs: the defect
+ * is not only that comments were counted, it is that the extraction never
+ * found the body. Stripping comments from a signature still leaves a
+ * signature. `lib/source-literals.ts` makes the other half of the case and
+ * makes it better: comments are simply not nodes, so nothing returned by a
+ * parser walk can come from one, and there is no regex left to be wrong
+ * about a `}` inside a string or a `//` inside a URL.
+ *
+ * What this deliberately does NOT widen: the two shapes recognised are the
+ * same two as before, down to `can`'s first argument having to be the
+ * identifier `context`. This change is about what counts as CODE, not about
+ * what counts as a guard. */
+const moduleAst = new Map<string, ts.SourceFile>();
+function astOfModule(name: string): ts.SourceFile {
+  const cached = moduleAst.get(name);
+  if (cached) return cached;
+  const parsed = parseSource(sourceOfModule(name), `${name}.ts`);
+  moduleAst.set(name, parsed);
+  return parsed;
+}
 
-  let depth = 0;
-  let index = source.indexOf("{", start);
-  for (; index < source.length; index += 1) {
-    if (source[index] === "{") depth += 1;
-    else if (source[index] === "}") {
-      depth -= 1;
-      if (depth === 0) break;
+function parseSource(source: string, fileName: string): ts.SourceFile {
+  return ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+}
+
+/** Every `export async function` in one parsed file, by name — the parser's
+ * own answer to the question `definingModule`'s regex answers, which is
+ * what makes the equality assertion in section 4 a real cross-check rather
+ * than a tautology. */
+function exportedActionsIn(file: ts.SourceFile): Map<string, ts.FunctionDeclaration> {
+  const found = new Map<string, ts.FunctionDeclaration>();
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionDeclaration(node) && node.name && node.body) {
+      const flags = ts.getCombinedModifierFlags(node);
+      if ((flags & ts.ModifierFlags.Export) !== 0 && (flags & ts.ModifierFlags.Async) !== 0) {
+        found.set(node.name.text, node);
+      }
     }
-  }
-  return source.slice(start, index + 1);
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return found;
+}
+
+const moduleActionNodes = new Map<string, Map<string, ts.FunctionDeclaration>>();
+function actionNodesOf(name: string): Map<string, ts.FunctionDeclaration> {
+  const cached = moduleActionNodes.get(name);
+  if (cached) return cached;
+  const nodes = exportedActionsIn(astOfModule(name));
+  moduleActionNodes.set(name, nodes);
+  return nodes;
+}
+
+/** The capabilities one function body asserts, as CODE. */
+function capabilitiesAssertedByNode(node: ts.FunctionDeclaration): Set<string> {
+  const found = new Set<string>();
+  const visit = (child: ts.Node) => {
+    if (ts.isCallExpression(child) && ts.isIdentifier(child.expression)) {
+      const callee = child.expression.text;
+      const [first, second] = child.arguments;
+      if (callee === "requireCapabilityForAction" && first && ts.isStringLiteral(first)) {
+        found.add(first.text);
+      }
+      if (
+        callee === "can" &&
+        first &&
+        ts.isIdentifier(first) &&
+        first.text === "context" &&
+        second &&
+        ts.isStringLiteral(second)
+      ) {
+        found.add(second.text);
+      }
+    }
+    ts.forEachChild(child, visit);
+  };
+  visit(node.body as ts.Block);
+  return found;
+}
+
+/** The same thing from raw source, for the fixture test in section 4 — a
+ * scanner that returns nothing looks exactly like a clean app, so it is
+ * mutation-tested against a hand-written module that puts a guard in a
+ * line comment, in a block comment, in a docstring and in a string. */
+function capabilitiesAssertedIn(source: string, action: string): Set<string> {
+  const node = exportedActionsIn(parseSource(source, "fixture.ts")).get(action);
+  return node ? capabilitiesAssertedByNode(node) : new Set<string>();
+}
+
+const assertedCache = new Map<string, Set<string>>();
+function capabilitiesAssertedBy(action: string): Set<string> {
+  const owningModule = definingModule.get(action);
+  if (!owningModule) return new Set<string>();
+  const key = `${owningModule}.${action}`;
+  const cached = assertedCache.get(key);
+  if (cached) return cached;
+  const node = actionNodesOf(owningModule).get(action);
+  const found = node ? capabilitiesAssertedByNode(node) : new Set<string>();
+  assertedCache.set(key, found);
+  return found;
 }
 
 function assertsCapability(action: string, capability: Capability): boolean {
-  const body = bodyOfAction(action);
-  return (
-    body.includes(`requireCapabilityForAction("${capability}"`) ||
-    body.includes(`can(context, "${capability}")`)
-  );
+  return capabilitiesAssertedBy(action).has(capability);
 }
 
 /* ------------------------------------------------------------------ *
@@ -905,6 +1041,29 @@ const SECTION_DECIDED: Record<
       "The other half of approveTimesheetDay, same control, same capability, already asserted. Reopening unlocks a day's hours for editing, so it is if anything the more consequential of the two. Recorded for execution, no behaviour change.",
   },
 
+  /* ---- An eleventh that already asserts the right capability, and which
+   * this file could not SEE rather than merely never executing.
+   *
+   * It moved out of UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE below, where it was
+   * recorded as an open endpoint behind the dashboard's several gates. That
+   * record was false and had always been false: the action asserts
+   * MANAGE_JOBS on its second line. The entry existed because
+   * `assertsCapability` read the function body by counting braces from the
+   * first `{` after the declaration, and this signature ends
+   * `: Promise<ActionResultWith<{ pathname: string }>> {` — so the count
+   * closed on the return TYPE and the "body" was the signature.
+   *
+   * Worth separating from the ten above, because the ten were a gap in what
+   * this file CHOSE to execute and this was a gap in what it could read. The
+   * ten were honest and idle; this one was wrong. Nothing in the Ask lane
+   * changed to pay it off — the guard was there the whole time. ---- */
+  "ask.prepareAskAttachment": {
+    capability: "MANAGE_JOBS",
+    section: "Ask panel — attach a file",
+    reason:
+      "Already asserts MANAGE_JOBS and always has; it was invisible to this file's own body reader, not ungated (see the parser note above assertsCapability). MANAGE_JOBS is the right capability and is not a new judgement: the attachment goes through DOCUMENT INTAKE, and `intake.recordIntakeDocument` — the action that records what lands there — is gated on MANAGE_JOBS by the entry in MIXED_DOORS above, for /intake's own stated reason that a drop of GC paperwork is the correspondence that capability names. Its doors are /dashboard and /ask, neither of which refuses anyone at the route level, so the ordinary rule derives nothing and this records it instead. No behaviour change.",
+  },
+
   /* ---- /contacts/[id] — the "Client portal" section.
    *
    * These two moved OUT of UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE below, which
@@ -990,7 +1149,6 @@ const UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE: Record<string, { page: string; reason:
   "ask.cancelAskProposal": { page: "/dashboard", reason: "An Ask card action, also reached from /ask, which withholds nothing. Its guard is not capability-shaped: what it should ask is whether the card's own command is one this person could run (canRunCommand), which follows the card rather than the page. Same argument this file already records for settleAskDraft, and the same lane." },
   "ask.confirmAskProposal": { page: "/dashboard", reason: "Same as cancelAskProposal — and it already refuses anyone lacking the command's declared capability in a returned sentence, per lib/ask/commands/schedule.ts's own note, so a page-derived capability on top would be the wrong boundary rather than a missing one." },
   "ask.loadAskProposal": { page: "/dashboard", reason: "Same as cancelAskProposal. A read of a card the asking person already owns." },
-  "ask.prepareAskAttachment": { page: "/dashboard", reason: "Same as cancelAskProposal, in the Ask lane. It prepares an attachment for a card the asking person already owns, so what should guard it is the card's own command rather than the page the card was opened on." },
   "gettingStarted.hideGettingStarted": { page: "/dashboard", reason: "A per-person preference write — it hides a panel on the person's own dashboard and touches no job, no money and nothing a GC sees. Explicitly the lowest-risk category in this sweep and left for last on purpose. Recorded rather than fixed so that the count stays honest." },
 };
 
@@ -1019,6 +1177,124 @@ describe("the walk this file's claims rest on", () => {
     // And a page guarded ONLY at the page, never in ROUTE_CAPABILITY,
     // is picked up by reading the source rather than the map.
     expect(capabilityDemandedByPage("/jobs/[id]/certified-payroll")).toBe("MANAGE_COMPLIANCE");
+  });
+
+  it("reads every action through the parser, and says so if the parse collapses", () => {
+    // THE SIZE AND SCOPE ASSERTION for the guard reader, and the two
+    // sources are deliberately unrelated: `definingModule` is built by a
+    // REGEX over the same files (section 2), and this is the PARSER's
+    // answer to the same question. Neither can drift with the other.
+    //
+    // CLAUDE.md's rule for anything that derives its input: it can get the
+    // answer wrong, and it can get an EMPTY QUESTION, and only the first
+    // looks like a failure. A parse that returned nothing here would make
+    // `assertsCapability` false everywhere — which reads as "no action is
+    // guarded", so the holes check would go red rather than quiet. But a
+    // parse that returned nothing for ONE MODULE is the dangerous shape:
+    // every `assertsCapability` for it becomes false, every "and does not
+    // assert it" message fires, and somebody fixes the record instead of
+    // the parser. So the sets are required to be equal, by name.
+    const parsed = new Map<string, string>();
+    for (const name of ACTION_MODULES) {
+      for (const action of actionNodesOf(name).keys()) parsed.set(action, name);
+    }
+
+    const parsedNames = [...parsed.keys()].sort();
+    const regexNames = [...definingModule.keys()].sort();
+    expect(
+      parsedNames,
+      `The parser found ${parsedNames.length} exported actions and the regex walk found ` +
+        `${regexNames.length}. An action the parser cannot see asserts nothing as far as this ` +
+        `file is concerned, so fix the parse rather than the records that then disagree with it.`,
+    ).toEqual(regexNames);
+    expect(parsed.size).toBeGreaterThanOrEqual(300);
+
+    // And it must be finding GUARDS, not merely functions. 300 (action,
+    // capability) pairs the day this was written; a floor rather than an
+    // equality, because adding a guard should not fail a test about
+    // something else — but a reader that stops recognising `can(context,
+    // …)` collapses this to zero and fails here, with the number on
+    // screen, instead of silently reporting every action ungated.
+    const pairs = regexNames.reduce((total, action) => total + capabilitiesAssertedBy(action).size, 0);
+    expect(
+      pairs,
+      `The guard reader found ${pairs} capability assertions across ${regexNames.length} actions. ` +
+        `If that has collapsed, the two call shapes it recognises have been renamed or the parse ` +
+        `is failing — every check in this file that reads "does not assert it" is downstream of it.`,
+    ).toBeGreaterThanOrEqual(250);
+  });
+
+  it("counts a guard only when it is CODE, never when it is prose", () => {
+    /* THE MUTATION THIS FILE FAILED, written as a fixture so it cannot be
+       failed again. Issue #541: comment out a real guard and the old
+       `includes` pair still found it, so an action whose only gate was a
+       commented-out line passed a census built to prove the gate exists.
+
+       A fixture rather than a note, for the reason `rowActionsCensus.test.ts`
+       gives about its own scanner: a reader that returns nothing looks
+       exactly like a clean app, and the only way to know this one can tell
+       prose from code is to hand it both and watch which comes back. */
+    const FIXTURE = [
+      '"use server";',
+      "",
+      "/** This action is gated on MANAGE_COMPLIANCE. */",
+      "export async function prosePromise(formData: FormData): Promise<ActionResult> {",
+      "  const context = await requireCompanyContext();",
+      '  // if (!can(context, "MANAGE_FIELD")) return actionFail(FIELD_ONLY);',
+      '  /* requireCapabilityForAction("MANAGE_JOBS", "nope"); */',
+      '  const note = \'can(context, "MANAGE_BILLING")\';',
+      "  return actionOk(note);",
+      "}",
+      "",
+      "/* An inline object type in the return annotation: this is where the old",
+      "   brace counter stopped, six times over, before the body began. */",
+      "export async function realGuard(",
+      "  id: string,",
+      "): Promise<ActionResultWith<{ pathname: string }>> {",
+      "  const context = await requireCompanyContext();",
+      '  if (!can(context, "VIEW_JOB_COSTS")) return actionFail("not your job function");',
+      '  const brace = "}";',
+      "  return { ok: true, value: { pathname: brace + id } };",
+      "}",
+    ].join("\n");
+
+    // Four ways of writing a guard that is not one: a docstring, a line
+    // comment, a block comment and a string literal. None counts.
+    expect([...capabilitiesAssertedIn(FIXTURE, "prosePromise")]).toEqual([]);
+
+    // And the real one is found, past both the inline object type in the
+    // return annotation and a `}` sitting inside a string.
+    expect([...capabilitiesAssertedIn(FIXTURE, "realGuard")]).toEqual(["VIEW_JOB_COSTS"]);
+
+    // A name the fixture does not define reads as "asserts nothing" rather
+    // than throwing, which is the same answer the real walk gives for an
+    // action that has been renamed — and is why the staleness checks above
+    // test the module first.
+    expect([...capabilitiesAssertedIn(FIXTURE, "notThere")]).toEqual([]);
+  });
+
+  it("names three guards in the app itself, so the fixture is not the only evidence", () => {
+    // A fixture proves the reader; these prove it against the real files,
+    // and each one is a different shape of the same mistake.
+
+    // An in-body comment naming `requireCapabilityForAction` sits three
+    // lines above a real returned `can(context, …)`. Both the old reader
+    // and this one find MANAGE_FIELD — the point is that it is now found
+    // for the right reason, and nothing else in that body is.
+    expect(capabilitiesAssertedBy("deleteSafetyIncident")).toEqual(new Set(["MANAGE_FIELD"]));
+
+    // THE ONE THE OLD READER COULD NOT REACH. Its return annotation is
+    // `Promise<ActionResultWith<{ pathname: string }>>`, so the brace count
+    // closed before the body, and this file recorded a guarded endpoint as
+    // an open one for as long as the action has existed.
+    expect(assertsCapability("prepareAskAttachment", "MANAGE_JOBS")).toBe(true);
+
+    // And the other direction: `importCatalogEntries`'s docstring explains
+    // at length that `/catalog` demands MANAGE_ESTIMATING and that the
+    // endpoint behind it is open anyway. Prose naming a capability is the
+    // thing this reader must never count — it is recorded as debt in
+    // OPEN_BEHIND_AN_ALREADY_GUARDED_PAGE, and it must stay there.
+    expect(assertsCapability("importCatalogEntries", "MANAGE_ESTIMATING")).toBe(false);
   });
 
   it("accounts for every page that withholds content, not only every page that refuses the route", () => {
