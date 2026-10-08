@@ -2,6 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
+import { emailSetupProblem, sendEmail } from "@prova/integrations";
+import { requireCompanyContext } from "@/lib/auth";
+import { deliveredReadFor } from "@/lib/drawing-set-read-query";
+import { deliveryBody, deliverySubjectLine } from "@/lib/takeoff-delivery";
 import {
   overCeiling,
   requestNote,
@@ -10,7 +14,12 @@ import {
   type OfferRequest,
 } from "@/lib/takeoff-offer";
 import { offerIntakeAddress } from "@/lib/takeoff-offer-config";
-import { actionFail, type ActionResult, type ActionResultWith } from "./shared";
+import {
+  actionFail,
+  ownerRefusal,
+  type ActionResult,
+  type ActionResultWith,
+} from "./shared";
 
 /**
  * THE FREE DRAWING-SET READ — the write half of `/wall-takeoff`.
@@ -290,4 +299,219 @@ export async function requestDrawingSetRead(
   revalidatePath("/sales");
 
   return { ok: true, value: { sendTo, alreadyHadIt: false } };
+}
+
+/**
+ * ──────────────────────────────────────────────────────────────────────────
+ * SENDING THE READ BACK — and this one IS authenticated, unlike everything
+ * above it in this file.
+ * ──────────────────────────────────────────────────────────────────────────
+ *
+ * The header above argues at length that `requireCompanyContext()` is absent
+ * ON PURPOSE and must not be "fixed" back in. That argument is about
+ * `requestDrawingSetRead` and only about it: a contractor who has never heard
+ * of us submits that form, so demanding a session would collect nothing.
+ *
+ * NOTHING OF THAT APPLIES HERE, and the asymmetry is the point. This action
+ * is pressed by one of OUR OWN people, from Prova's internal CRM, to mail a
+ * finished read to a prospect. The caller is known, the lead is ours, and the
+ * row it writes is an evidence record of correspondence we sent. So this half
+ * of the module opens with `requireCompanyContext()` and gates exactly as
+ * `lib/actions/sales.ts` does — operator company AND `role === "OWNER"` —
+ * because /sales is the screen this belongs to.
+ *
+ * TWO MODULES, ONE FILE, OPPOSITE RULES. Read which function you are in
+ * before copying a line out of either.
+ *
+ * ── WHY THE GATE IS RETURNED AND NOT THROWN ──
+ *
+ * `sales.ts`'s own gate is `assertSalesAccess`, which THROWS, and that is
+ * correct there: every action in that file is wrapped in `runAction`, which
+ * converts an `InputError` to a returned failure. It is NOT correct here.
+ * This action declares `ActionResultWith<…>`, production redacts a thrown
+ * Server Action message to a digest, and `ownerRefusalCensus.test.ts` fails
+ * the build on an action that promises a legible refusal and then throws one
+ * — see `shared.ts`'s documentation of the `ownerRefusal`/`assertOwner` pair,
+ * which is the authority rather than this comment. So the two checks
+ * `assertSalesAccess` makes are made here as RETURNS, in the same order and
+ * with the same two sentences:
+ *
+ *   - a non-operator company gets "Not found", because this feature does not
+ *     exist for them and an authorization message would be a stranger lie
+ *     than silence;
+ *   - a member at the operator company gets the real reason.
+ *
+ * `assertSalesAccess` itself is deliberately not imported: it is private to
+ * `sales.ts` and it throws, which is the one thing this action may not do.
+ *
+ * ── WHY A FAILED SEND STILL RETURNS `ok: true` ──
+ *
+ * The valuable half of this action is the TEXT, not the transmission. Three
+ * of the branches below cannot send — no address on the lead, no mail
+ * provider configured, the provider refused it — and in every one of them the
+ * composed subject and body are still returned so the operator can paste them
+ * into their own mail client and the prospect still gets their read.
+ *
+ * Reporting those as `{ ok: false }` would throw the body away to report that
+ * a side effect did not happen, and the screen would have nothing to show but
+ * an error. So `sent` and `problem` carry that news INSIDE a success, and the
+ * caller renders both. `ok: false` is reserved for the cases where there is
+ * no read to give back at all.
+ *
+ * ── WHY THE TEXT IS NOT COMPOSED HERE ──
+ *
+ * `deliverySubjectLine` and `deliveryBody` (`lib/takeoff-delivery.ts`) are the
+ * only place that knows what this email says, and this action must never
+ * grow a second copy of a line of it. CLAUDE.md's rule for a canonical list
+ * is both guards — that the list is complete and that it is the ONLY one —
+ * and it records a hand-rolled copy of a shared list quoting a bid $1,732.50
+ * under the screen that shared its source. The same defect against a
+ * prospective customer's first sample of the product would be worse: they
+ * would be comparing our email to our own page.
+ *
+ * That module had 44 passing tests and NOTHING CALLED IT. "Written,
+ * documented, and never called" is a shape CLAUDE.md records three live
+ * instances of in a single day, every one of them green, because nothing
+ * referenced the dead code. This action is the call site.
+ *
+ * ── WHY THE SETUP PROBLEM COMES FROM A FUNCTION, NOT FROM `process.env` ──
+ *
+ * `emailSetupProblem()` is read rather than `RESEND_API_KEY` tested here, for
+ * the reason `lib/help-config.ts`'s `helpChannelFromEnv` sets out at length:
+ * a page must never offer a path the action then refuses, and the only way
+ * two halves of a feature can agree about whether sending is available is for
+ * both to ask the same function. `sendEmail` consults it too, so an
+ * unconfigured install is reported identically whether this branch is reached
+ * or the send is attempted.
+ */
+
+/**
+ * What the operator gets back. `subject` and `body` are present on every
+ * success, including the ones that could not send — see the header.
+ */
+export type SentReadResult = {
+  /** True only when the provider accepted the message. */
+  sent: boolean;
+  subject: string;
+  body: string;
+  /** Why it did not send, in a sentence the screen renders as-is. Null on a
+   *  real send. Never a reason-code: the operator acts on this. */
+  problem: string | null;
+};
+
+export async function sendDrawingSetRead(
+  leadId: string,
+  planId: string,
+): Promise<ActionResultWith<SentReadResult>> {
+  const context = await requireCompanyContext();
+
+  // The two checks `assertSalesAccess` makes, RETURNED rather than thrown.
+  // Tenant identity first, person identity second, same order and same two
+  // sentences as `sales.ts` — a non-operator company must not be able to
+  // tell the two refusals apart.
+  if (!context.company.isProvaOperator) return fail("Not found");
+  const refusal = ownerRefusal(context, "Only the account owner can use the sales CRM");
+  if (refusal) return refusal;
+
+  // One call, both rows, both scoped to this company. `deliveredReadFor`
+  // returns null when EITHER the lead or the plan belongs to somebody else,
+  // which is deliberate and is why the sentence below does not say which:
+  // answering "that lead exists but the plan is not yours" from an action
+  // reachable with a guessed id is a membership oracle over another tenant's
+  // files. The operator reached this from their own screen, so a single
+  // sentence costs them nothing.
+  const read = await deliveredReadFor(leadId, planId, context.company.id);
+  if (!read) return fail("We could not find that lead and drawing set together.");
+
+  const subject = deliverySubjectLine(read);
+  const body = deliveryBody(read);
+
+  const lead = await prisma.salesLead.findUnique({
+    where: { id: leadId },
+    select: { email: true, contactName: true },
+  });
+  // `deliveredReadFor` already proved the lead is ours, so a null here is a
+  // row deleted between two queries rather than a scoping failure. Refused
+  // with the same sentence, because the two are indistinguishable from the
+  // caller's side and there is nothing to send either way.
+  if (!lead) return fail("We could not find that lead and drawing set together.");
+
+  // The public form requires an address, but `SalesLead.email` is nullable
+  // and a lead can be typed in by hand on /sales or edited afterwards. The
+  // read is already composed at this point and it is the thing worth having,
+  // so it is returned rather than discarded to report the gap.
+  const to = (lead.email ?? "").trim();
+  // MUTANT_A: record the EMAIL activity regardless of whether the send
+  // succeeds. Every "no activity row" test must go RED.
+  await prisma.salesActivity.create({
+    data: {
+      companyId: context.company.id,
+      leadId,
+      type: "EMAIL",
+      occurredOn: new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`),
+      summary: `Emailed the free drawing-set read of ${read.subject.fileName ?? "the drawing set they sent"} to ${to}.`,
+      loggedByUserId: context.id,
+    },
+  });
+  if (!to) {
+    return {
+      ok: true,
+      value: {
+        sent: false,
+        subject,
+        body,
+        problem:
+          "This lead has no email address on file, so there is nobody to send it to. The read is below — add an address to the lead, or copy it into your own mail.",
+      },
+    };
+  }
+
+  // Asked BEFORE attempting the send rather than inferred from its failure.
+  // `sendEmail` would return the same sentence, but an install with no
+  // provider is a state the screen should be able to state plainly rather
+  // than a refusal it discovers, and the two must agree — which they do
+  // because both read this one function.
+  const setupProblem = emailSetupProblem();
+  if (setupProblem) {
+    return { ok: true, value: { sent: false, subject, body, problem: setupProblem } };
+  }
+
+  const send = await sendEmail({ to, toName: lead.contactName, subject, text: body });
+  if (!send.ok) {
+    return {
+      ok: true,
+      value: {
+        sent: false,
+        subject,
+        body,
+        // `mayHaveSent` is the provider having ACCEPTED the message and
+        // returned no id to track it by — see `email.ts`, which sets it for
+        // exactly that case. "It did not go" and "it may already have gone"
+        // are different things to tell somebody who is about to press send
+        // again at a prospect, so the sentence says which.
+        problem: send.mayHaveSent
+          ? `${send.error}. It may already have reached them — check with them before sending it again.`
+          : send.error,
+      },
+    };
+  }
+
+  // ONLY NOW. An EMAIL activity is an evidence record that we wrote to this
+  // prospect; writing one on a send that failed is a false record of
+  // correspondence, and the next person reading the lead would see a contact
+  // that never happened. Every branch above returns before reaching here.
+  //
+  // `occurredOn` is normally ENTERED rather than stamped — nobody entered
+  // anything here, because nobody was asked: the operator pressed send. So
+  // the honest value is the day the send happened, DERIVED FROM THE SEND and
+  // stored at UTC midnight like every other date in this app, rather than a
+  // business date somebody chose.
+  // MUTANT_A_MOVED_FROM_HERE
+
+  // The lead's own page shows its activity list; /sales derives the pipeline,
+  // the follow-up queue and the last-contact column from these rows.
+  revalidatePath(`/sales/${leadId}`);
+  revalidatePath("/sales");
+
+  return { ok: true, value: { sent: true, subject, body, problem: null } };
 }

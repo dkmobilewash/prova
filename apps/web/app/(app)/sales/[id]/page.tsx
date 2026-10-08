@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
@@ -138,6 +139,19 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
           }}
         />
       </section>
+
+      {/* The ONLY way in to the drawing-set read page, and deliberately not a
+          nav entry: that screen is about one lead and one uploaded plan set, so
+          there is no useful version of it reached without a lead. Shown on every
+          lead rather than only the INBOUND ones — an operator can offer the free
+          read to somebody they met at a job walk, and hiding the door on a lead
+          we typed in ourselves would make it look broken.
+          `lib/routeInboundLinks.test.ts` is what requires it to exist at all. */}
+      <p className="mb-10 text-sm text-ink-body">
+        <Link href={`/sales/${lead.id}/drawing-read`} className="text-link hover:text-link-hover">
+          Send {lead.companyName} a free drawing-set read
+        </Link>
+      </p>
 
       <section>
         <h2 className="mb-3 text-lg font-semibold text-ink">Opportunities</h2>
