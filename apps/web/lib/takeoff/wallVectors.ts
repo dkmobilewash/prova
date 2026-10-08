@@ -610,73 +610,41 @@ export function wallsInTheBuilding(
 }
 
 /**
- * ── THE PEN SAYS WHAT THE GEOMETRY CANNOT ──
+ * ── THE PEN FILTER WAS HERE, AND IT COST MORE THAN IT SAVED ──
  *
- * A slab joint, a trench drain and a floor pattern are all genuinely two
- * parallel lines a wall-thickness apart. No test of their SHAPE can tell them
- * from a partition, and `wallsInTheBuilding` cannot help because they are
- * inside the building. Five of them ran the length of an apparatus bay on the
- * sheet this was measured against, and survived every other filter.
+ * #669 dropped every stroke at or below a sheet's commonest pen width, on the
+ * reasoning that CAD draws walls heavy and hatching thin. It worked on the
+ * sheet it was measured against: five slab joints running an apparatus bay
+ * disappeared, and the wall count went UP because thin strokes had been
+ * stealing partners from real wall faces.
  *
- * CAD draws walls heavy and patterns thin, and that survives the PDF export:
- * one real sheet carried 112,547 strokes at a handful of discrete pens, with
- * **0.24pt accounting for 86% of them** — hatching, text, dimension lines,
- * floor patterns — and the wall work drawn above it. Colouring the sheet by pen
- * showed the building's walls in the heavy band and the bay joints in the thin
- * one, which is the whole of this idea.
+ * The cost was never measured, and it is enormous. Across 13 sheets from four
+ * projects:
  *
- * ── THE THRESHOLD IS THE SHEET'S OWN, NOT A NUMBER FROM OUTSIDE IT ──
+ *   WITH the filter     919 walls
+ *   WITHOUT it        2,264 walls
  *
- * The commonest width on a drawing is whatever that office uses for hatching,
- * so anything drawn heavier is deliberate line work. Taking the MODE rather
- * than a constant means a practice that draws everything at half weight, or a
- * sheet exported at a different scale, still works — and a sheet drawn entirely
- * at one weight yields nothing to filter on, which is handled by returning it
- * unchanged rather than returning nothing.
+ * On one sheet it was 12 against 380. **It was deleting 59% of the walls on a
+ * drawing to remove a handful of wrong lines.**
  *
- * ── WHAT IT ALSO FIXED, WHICH WAS NOT THE POINT ──
+ * The premise is what fails: "the commonest pen is the hatching pen" is true of
+ * some exports and false of others. On one sheet the mode landed ABOVE the pen
+ * the walls were drawn with, so the filter kept the furniture and deleted the
+ * building. Dropping only the THINNEST band instead was tried and is better on
+ * one sheet, worse on another — neither rule wins, which is the signal that the
+ * idea needs a discriminator it does not have.
  *
- * It finds MORE walls, not fewer: 178 → 230 on the measured sheet. A thin
- * stroke lying near a wall face could claim it first — the pairing marks each
- * segment used — so the real partner was already taken by the time the other
- * face was tried. Removing the thin strokes stops them stealing partners.
+ * And the trade was the wrong way round for this product. A missing wall is a
+ * SHORT BID that nothing on screen reveals; a wrong line is drawn on the
+ * drawing and gets rejected in a glance. Precision was never the complaint —
+ * what was reported as "reading the wrong walls" was the title block and the
+ * room numbers, and both are fixed by `wallsInTheBuilding` and
+ * `wallsNotLettering`, which stay.
+ *
+ * `StrokeSegment.width` is still read and still carried, because the
+ * measurement that produced those numbers needs it and because a future rule
+ * may use the pen as one signal among several rather than as a gate.
  */
-export function heavierThanHatching(segments: readonly StrokeSegment[]): StrokeSegment[] {
-  const widths = segments.map((segment) => segment.width).filter((w): w is number => typeof w === "number" && w > 0);
-  // A sheet whose strokes carry no width at all — a synthetic fixture, or an
-  // export that omits it — is returned untouched. Filtering on a signal that is
-  // not there would silently return nothing.
-  if (widths.length < segments.length / 2) return [...segments];
-
-  const tally = new Map<number, number>();
-  for (const w of widths) {
-    const key = Math.round(w * 100) / 100;
-    tally.set(key, (tally.get(key) ?? 0) + 1);
-  }
-  let thin = 0;
-  let most = -1;
-  for (const [width, count] of tally) {
-    if (count > most) {
-      most = count;
-      thin = width;
-    }
-  }
-  const kept = segments.filter((segment) => (segment.width ?? 0) > thin * 1.01);
-  // ── THE ONE FALLBACK, AND IT IS THE ONLY ONE NEEDED ──
-  //
-  // If the heavy band is empty or nearly so, the assumption did not hold on
-  // this sheet, and handing back a drawing with no walls on it is the worst
-  // available answer: an estimator can see a wrong line and reject it, but a
-  // feature that silently finds nothing just looks broken.
-  //
-  // A SEPARATE GUARD FOR A SINGLE-WEIGHT SHEET WAS WRITTEN HERE AND DELETED,
-  // because mutation testing showed it unreachable: a sheet drawn at one pen
-  // has nothing above its own mode, so `kept` is empty and this line already
-  // catches it. An untested guard that cannot fire is the "written, documented
-  // and never called" shape, and keeping it would have meant shipping a branch
-  // no test could ever reach.
-  return kept.length < 8 ? [...segments] : kept;
-}
 
 /**
  * ── A STROKED GLYPH IS TWO PARALLEL LINES, AND THE PAIRER TAKES IT ──

@@ -270,24 +270,6 @@ describe("the ghost lines over the sheet", () => {
     expect(code).not.toMatch(/clusterByThickness\(everywhere\)/);
   });
 
-  it("the viewer drops the hatching pen BEFORE pairing", () => {
-    // Measured as a mutation: the viewer could stop calling
-    // `heavierThanHatching` and every test above stayed green, because they
-    // exercise the function directly. Without that call the slab joints and
-    // floor patterns come back as walls — which is what a person saw on a real
-    // sheet, five of them running the length of an apparatus bay.
-    //
-    // It has to happen BEFORE the pairing, not after: the pairing marks each
-    // segment used, so a thin stroke lying near a wall face can claim it and
-    // leave the real partner unmatched. Filtering first is also why this finds
-    // MORE walls, not fewer.
-    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
-    const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).toMatch(/wallsFromStrokes\(\s*heavierThanHatching\(inUnits\)/);
-    // And that the pen survives the conversion into page-width units at all.
-    expect(code).toMatch(/width:\s*segment\.width/);
-  });
-
   it("the viewer drops LETTERING, and uses the filtered set", () => {
     // Measured as a mutation: the viewer could stop calling `wallsNotLettering`
     // and every test above stayed green, because they exercise the function

@@ -30,7 +30,6 @@ import {
 } from "@/lib/takeoff-plan-view";
 import {
   clusterByThickness,
-  heavierThanHatching,
   inchLabel,
   wallsFromStrokes,
   wallsInTheBuilding,
@@ -417,10 +416,7 @@ export function TakeoffPlanViewer({
         // page-width units would be arithmetic with no meaning.
         width: segment.width,
       }));
-      // THE PEN FIRST. A slab joint is two parallel lines a wall-thickness
-      // apart and no test of its shape can refuse it — but it is drawn with the
-      // hatching pen, and a wall is not. See `heavierThanHatching`.
-      const everywhere = wallsFromStrokes(heavierThanHatching(inUnits), { feetPerPoint: feetPerUnit });
+      const everywhere = wallsFromStrokes(inUnits, { feetPerPoint: feetPerUnit });
       // ONLY THE ONES IN THE BUILDING. Without this the title block, the notes
       // column, the sheet border and any detail drawn above the plan all come
       // back as walls — see `wallsInTheBuilding`, which exists because somebody

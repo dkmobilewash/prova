@@ -7,7 +7,6 @@ import { wallFromPair, wallsFromStrokes, type StrokeSegment, type WallFinderOpti
   NOT_A_BOX,
   wallsNotLettering,
   LETTER_FEET,
-  heavierThanHatching,
   type WallCandidate,
 } from "./wallVectors";
 
@@ -370,110 +369,7 @@ describe("keeping only the walls in the building", () => {
   });
 });
 
-/**
- * THE PEN, WHICH SAYS WHAT THE GEOMETRY CANNOT.
- *
- * A slab joint and a partition are both two parallel lines a wall-thickness
- * apart; no test of their shape separates them, and they are both inside the
- * building so position cannot either. Five slab joints ran the length of an
- * apparatus bay on a real sheet and survived every other filter.
- *
- * CAD draws walls heavy and patterns thin. One real sheet carried 112,547
- * strokes at a handful of discrete pens with 0.24pt accounting for 86% of them,
- * and colouring the sheet by pen put the walls in the heavy band and the bay
- * joints in the thin one.
- */
-const pen = (width: number | undefined, x1 = 0, y1 = 0, x2 = 10, y2 = 0): StrokeSegment => ({
-  x1,
-  y1,
-  x2,
-  y2,
-  ...(width === undefined ? {} : { width }),
-});
-
-describe("dropping the hatching pen", () => {
-  it("keeps the heavy line work and drops the commonest thin pen", () => {
-    const sheet = [
-      ...Array.from({ length: 50 }, () => pen(0.24)), // hatching, text, patterns
-      ...Array.from({ length: 10 }, () => pen(1.44)), // the wall work
-    ];
-    const kept = heavierThanHatching(sheet);
-    expect(kept).toHaveLength(10);
-    expect(kept.every((s) => s.width === 1.44)).toBe(true);
-  });
-
-  it("takes the threshold from THIS sheet, not from a constant", () => {
-    // A practice that draws everything at half weight still works: here the
-    // thin pen is 0.1 and the wall pen 0.3, both far below the numbers on the
-    // sheet above.
-    const sheet = [...Array.from({ length: 40 }, () => pen(0.1)), ...Array.from({ length: 12 }, () => pen(0.3))];
-    const kept = heavierThanHatching(sheet);
-    expect(kept).toHaveLength(12);
-    expect(kept.every((s) => s.width === 0.3)).toBe(true);
-  });
-
-  it("keeps everything when MOST strokes carry no width", () => {
-    // An export that omits the pen on most of its content. Filtering on a
-    // signal that is mostly absent would throw away the drawing.
-    //
-    // THE FIRST VERSION OF THIS FIXTURE PROVED NOTHING: 20 widthless strokes
-    // and no others meant the heavy band was empty either way, so the other
-    // fallback caught it and removing this guard stayed GREEN. It needs a heavy
-    // band big enough to survive that fallback, so the guard under test is the
-    // only thing standing between the sheet and a wrong answer.
-    const sheet = [
-      ...Array.from({ length: 70 }, () => pen(undefined)),
-      ...Array.from({ length: 20 }, () => pen(0.24)),
-      ...Array.from({ length: 10 }, () => pen(1)),
-    ];
-    expect(heavierThanHatching(sheet)).toHaveLength(100);
-  });
-
-  it("keeps everything when the sheet is drawn at ONE weight", () => {
-    // Nothing is above a single pen's own mode, so this is the empty-band
-    // fallback doing the work — there is deliberately no separate guard for it.
-    const sheet = Array.from({ length: 30 }, () => pen(0.5));
-    expect(heavierThanHatching(sheet)).toHaveLength(30);
-  });
-
-  it("falls back rather than returning a drawing with no walls on it", () => {
-    // If the heavy band is nearly empty the assumption did not hold on this
-    // sheet, and handing back three strokes is worse than handing back all of
-    // them — the estimator can see a wrong line, not an absent feature.
-    const sheet = [...Array.from({ length: 60 }, () => pen(0.24)), pen(2), pen(2)];
-    expect(heavierThanHatching(sheet)).toHaveLength(62);
-  });
-
-  it("does not drop a wall drawn at the SAME weight as another heavy thing", () => {
-    // The filter is one-sided on purpose: it removes the thinnest band, not
-    // everything that is not the heaviest. A 0.84 wall survives beside 1.44
-    // line work.
-    const sheet = [
-      ...Array.from({ length: 40 }, () => pen(0.24)),
-      ...Array.from({ length: 6 }, () => pen(0.84)),
-      ...Array.from({ length: 6 }, () => pen(1.44)),
-    ];
-    expect(heavierThanHatching(sheet)).toHaveLength(12);
-  });
-
-  it("returns nothing for nothing", () => {
-    expect(heavierThanHatching([])).toEqual([]);
-  });
-});
-
-/**
- * LETTERING IS NOT A WALL, though its shape says otherwise.
- *
- * Reported from a real sheet by somebody looking at the drawing: two entire
- * groups were text. 64 runs at 14-1/2" on dimension strings — `4'-0"`, `10'-0"`
- * — and 15 at 13-1/2" entirely on room-number tags, with not one wall among
- * them. 79 of 205 runs.
- *
- * When lettering is saved as line work the two sides of a `0` are parallel, a
- * few inches apart at drawing scale, and the right length. Nothing about their
- * SHAPE says they are letters, and the pen does not help either — a title is
- * drawn heavy. The text layer says it, and this app already extracts it.
- */
+/** A text item's box, as `wallsNotLettering` reads it. */
 const label = (x: number, y: number, w = 6, h = 3) => ({ x, y, width: w, height: h });
 
 describe("telling lettering from walls", () => {
