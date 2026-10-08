@@ -1,4 +1,5 @@
-## The mock that has to name every import
+### The mock that has to name every import (Claude)
+`cyrus/sales-signals`
 
 `#601`. Five sales `.dbtest.ts` files stopped LOADING — not failing an
 assertion, failing to collect — the moment `lib/cslb/callList.ts` added
