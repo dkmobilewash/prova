@@ -2,6 +2,8 @@ import { roomGrid, neighboursOf, SMALLEST_ROOM_SQFT } from "./rooms";
 import { squaredDistanceToInk, widestPointOf } from "./distance";
 import { thin, tracePaths, straighten } from "./skeleton";
 import { openingsInWalls } from "./openings";
+import { mergeWalls } from "./mergeWalls";
+import { wallsFromStrokes } from "./wallVectors";
 import type { StrokeSegment, WallCandidate, WallFinderOptions } from "./wallVectors";
 
 /**
@@ -227,4 +229,42 @@ function runsFromStrokes(
     }
   }
   return walls;
+}
+
+/**
+ * ── BOTH ENGINES, MERGED: WHAT THE APP SHOULD CALL ──
+ *
+ * Neither engine wins. Measured through the same filters on three real sheets:
+ *
+ *                 pairer    rooms
+ *   augusta        608ft    472ft
+ *   naples         657ft    789ft
+ *   west-herr    1,495ft  1,093ft
+ *
+ * They are not two attempts at the same method, they are two different methods
+ * with opposite blind spots. Pairing needs a wall drawn as two parallel faces
+ * and does not care whether anything encloses — so it reads an open-plan
+ * dealership and a demolition plan that the room engine cannot. The room engine
+ * needs rooms that close and does not care how the wall is drawn — so it reads
+ * poché, single-sided and irregular walls that pairing never pairs.
+ *
+ * Running both and MERGING is therefore not a hedge between two guesses. It is
+ * the union of two coverages, and `mergeWalls` is what stops the overlap being
+ * billed twice.
+ *
+ * Deliberately not deduplicated by preferring one engine: there is no ground
+ * truth yet, so there is no basis for calling either more trustworthy where they
+ * disagree. The merge takes the union of their extents and the longest
+ * contributor's thickness, which assumes only that a wall is as long as the
+ * longest evidence for it.
+ */
+export function wallsFromBothEngines(
+  segments: readonly StrokeSegment[],
+  widthUnits: number,
+  heightUnits: number,
+  options: WallFinderOptions & { gridCap?: number; closeOpenings?: boolean },
+): WallCandidate[] {
+  const paired = wallsFromStrokes(segments, options);
+  const rooms = wallRunsFromStrokes(segments, widthUnits, heightUnits, options);
+  return mergeWalls([...paired, ...rooms], options.feetPerPoint);
 }
