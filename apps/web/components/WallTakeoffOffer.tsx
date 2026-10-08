@@ -1,60 +1,76 @@
 import Image from "next/image";
+import { Reveal } from "@/components/Reveal";
+import { SheetReadFigure } from "@/components/landing/SheetReadFigure";
 import { TakeoffOfferForm } from "@/components/TakeoffOfferForm";
-import { DELIVERABLES, DELIVERY, LIMITS, NEXT_STEPS, WHAT_IT_FEEDS } from "@/lib/takeoff-offer";
+import { DELIVERABLES, DELIVERY, LIMITS, NEXT_STEPS, OUTCOMES, WHAT_IT_FEEDS } from "@/lib/takeoff-offer";
 
 /**
- * The visitor-facing content of `/wall-takeoff` — the free drawing-set read,
- * handed out by hand in outreach to specialty-trade subs.
+ * `/wall-takeoff` — the free drawing-set read, for a specialty-trade sub we
+ * are trying to sell to. Handed out as a bare link in outreach, so it is
+ * public and it is often opened on a phone, standing up, between other things.
  *
- * It lives here rather than in `app/wall-takeoff/page.tsx` for the reason
- * `components/LandingPage.tsx` does: Next's page-file type checking rejects
- * any named export from a page module besides the ones it recognises, and
- * `lib/pageWidthCensus.test.ts` polices width caps in ROUTE files with an
- * exemption list that only shrinks. The column below is a width decision, so
- * it belongs in a component. The route file is `metadata` and a default
- * export, and nothing else.
+ * ── REBUILT 2026-10-08, AND THE REASON IS THE ONLY THING WORTH READING HERE ──
  *
- * ── EVERY PROMISE IS RENDERED FROM `lib/takeoff-offer.ts` ──
+ * The first version explained the offer in four card sections — every
+ * deliverable with its body and its "check it in ten seconds" line, then the
+ * limits, then how it works, then where it goes — above the form. About four
+ * hundred words before the ask. It was accurate, it was honest, and the
+ * founder's verdict on it was that a sub should know what this is by LOOKING
+ * at the page. He was right: nobody reads four hundred words off a link in a
+ * text message, and a page that has to be read before it is understood has
+ * already lost the reader it was built for.
  *
- * Not one deliverable title, body or limit is typed into this file.
- * `lib/takeoff-offer.test.ts` walks every source file under `app/`,
- * `components/` and `lib/` and fails the build on a hand-written second copy
- * of any of them, and separately asserts this component maps the real lists.
- * The reason is not tidiness: the same sentences go in the email that
- * delivers the result, and a promise that drifts between the page and the
- * email is a promise we did not keep on a page somebody handed us a bid set
- * because of. Headings and connective prose are mine; claims are the
- * module's.
+ * So the order is now: ONE claim, THE PICTURE, three outcomes, the ask — and
+ * the enumerated lists underneath, in small type, for whoever scrolls.
+ * `SheetReadFigure` carries the explanation: a drawing on the left, the list
+ * that came off it on the right, a line sweeping down as the rows fill in.
+ * The figure is the argument; the words are the footnotes.
  *
- * ── THE LIMITS ARE SET IN THE SAME TYPE SIZE AS THE PROMISES ──
+ * ── WHY THE LISTS ARE STILL ALL RENDERED, AND WHY THAT IS NOT A COMPROMISE ──
  *
- * Deliberate, and the point of the page rather than a legal footer. The
- * audience is a sub who will find out at bid time if we quietly returned four
- * rows off a scanned sheet; `lib/takeoff-offer.ts`'s own header makes the
- * argument. So "What we will not do" is `text-base`, exactly like every
- * deliverable body, and it sits ABOVE the form — read before anything is
- * handed over, not after.
+ * `takeoff-offer.test.ts` requires this component to map over DELIVERABLES,
+ * WHAT_IT_FEEDS, LIMITS and NEXT_STEPS, and the reason is in its own message:
+ * a promise that can drift between the page and the email is a promise we did
+ * not keep. The tempting move when simplifying was to drop the lists and
+ * write a short page in fresh prose. That is exactly the drift the census
+ * exists to stop — the email would still promise four things while the page
+ * promised three, and nothing would notice.
  *
- * ── THE CLOSED STATE ──
+ * So the simplification is one of ORDER AND TYPE SIZE, never of content: the
+ * same lists, the same single source, moved below the ask and set small.
+ * Nothing on this page is a hand-written restatement of anything in
+ * `lib/takeoff-offer.ts` — the duplicate-literal half of that census would
+ * fail the build if it were.
  *
- * `open` is false when there is no address to receive a drawing set
- * (`lib/takeoff-offer-config.ts`). The form is then replaced outright: a form
- * that takes a contractor's name against a promise nothing can keep is worse
- * than a page that says it is shut, because they sit waiting for an email
- * that is waiting for them. The rest of the page stays readable, so somebody
- * who was handed the link still learns what the offer is.
+ * ── THE ASK COMES BEFORE THE DETAIL ──
  *
- * No fabricated logos, testimonials or customer counts — there are no
- * customers yet, and this audience spots an invented number instantly. Same
- * discipline as `app/pilot/page.tsx`, whose header states it at length.
+ * The form used to be last, after every section that justified it. A reader
+ * convinced by the figure had to scroll past four hundred words to act, and a
+ * reader not convinced by the figure was not going to be convinced by the
+ * fourth section either. So the ask sits directly under the outcomes, and the
+ * detail is for the reader who wants it before deciding — which is a smaller
+ * group than the one that wants it after.
  *
- * Static: no database read and no auth call, so it renders fast on a phone
- * off a link in a text message.
+ * ── THE LIMITS ARE STILL SET IN THE SAME TYPE SIZE AS THE PROMISES ──
+ *
+ * Kept verbatim from the first version, because it is the rule most likely to
+ * be quietly broken by a redesign: what we will not do is set at the same
+ * size and weight as what we will. An offer whose caveats are smaller than
+ * its promises is an offer that expects not to be read carefully, and this
+ * one is going to a person who has been burned by exactly that.
+ *
+ * The column is capped here rather than in `app/wall-takeoff/page.tsx`
+ * because `lib/pageWidthCensus.test.ts` refuses a width cap in a route file.
+ * `max-w-5xl` rather than the main landing page's `max-w-6xl`: this page is
+ * one figure and a form, and at 1152 the hero reads as a sentence adrift in a
+ * field.
  */
 export function WallTakeoffOffer({ open, sendTo }: { open: boolean; sendTo: string | null }) {
   return (
-    <main className="mx-auto max-w-3xl px-4 pb-16 pt-10 sm:px-6 sm:pt-12">
-      {/* ---------------------------------------------------------- header */}
+    <main className="mx-auto max-w-5xl px-4 pb-20 pt-8 sm:px-6 sm:pt-10 lg:px-8">
+      {/* ---------------------------------------------------------- the claim
+          No <Reveal> above the fold, the same rule the main landing page
+          holds: content that fades in on load reads as lag, not polish. */}
       <header className="flex flex-col items-start gap-6">
         <Image
           src="/brand/cstream-wordmark.png"
@@ -64,151 +80,75 @@ export function WallTakeoffOffer({ open, sendTo }: { open: boolean; sendTo: stri
           className="h-8 w-auto sm:h-10"
           priority
         />
-        <h1 className="text-3xl font-semibold leading-tight text-ink sm:text-4xl">
-          Send us the set you are bidding this week. We will read it for free.
+        <h1 className="font-headline text-4xl font-semibold leading-[1.03] tracking-[-0.02em] text-ink sm:text-5xl lg:text-6xl">
+          Send your drawings.
+          <br />
+          Get back the list.
         </h1>
-        <p className="text-base leading-relaxed text-ink-body sm:text-lg">
-          You send the drawings. We send back what is in them &mdash; the sheets, the schedules and
-          the gaps &mdash; normally {DELIVERY.turnaround}. No charge, no account, and nobody calls
-          you before you have seen it.
+        <p className="text-lg leading-relaxed text-ink-body sm:text-xl">
+          Free, no account, and normally {DELIVERY.turnaround}.
         </p>
       </header>
 
-      {/* ------------------------------------------------------ what you get
-          Ordered as the module orders them: by how fast a contractor can tell
-          the answer is right, not by how impressive it sounds. */}
-      <section className="mt-12">
-        <h2 className="text-2xl font-semibold text-ink">What you get back</h2>
-        <ul className="mt-5 flex flex-col gap-4">
-          {DELIVERABLES.map((deliverable) => (
-            <li
-              key={deliverable.id}
-              className="rounded-lg border border-line-card bg-surface p-4 sm:p-5"
-            >
-              <h3 className="text-lg font-semibold text-ink-label">{deliverable.title}</h3>
-              <p className="mt-2 text-base leading-relaxed text-ink-body">{deliverable.body}</p>
-              {/* The `check` line is not a flourish. The whole offer rests on
-                  a contractor being able to tell in ten seconds whether what
-                  we sent is right — a number nobody can check is a number
-                  nobody can trust, and that is worse than no number. */}
-              <p className="mt-3 border-t border-line-row pt-3 text-base leading-relaxed text-ink-body">
-                <span className="font-semibold text-brand">Check it in ten seconds:</span>{" "}
-                {deliverable.check}
-              </p>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {/* ----------------------------------------------------- the explanation
+          This figure is the page. Everything below it is detail. */}
+      <SheetReadFigure />
 
-      {/* -------------------------------------------- what the read feeds into
-          Placed here on purpose: it answers the question a contractor has the
-          moment they have read what arrives — what any of this is FOR. The
-          claims are `WHAT_IT_FEEDS`; both halves of each entry come off the
-          module, and the heading and the lead sentence below are mine.
-
-          The two halves are rendered as two lines rather than one sentence
-          because they are two different kinds of statement: what we hand over
-          for nothing, and what the app does afterwards with a person driving
-          it. Running them together is how this section would start reading
-          like a promise that the second half happens by itself. */}
-      <section className="mt-12">
-        <h2 className="text-2xl font-semibold text-ink">Where it goes from there</h2>
-        <p className="mt-2 text-base leading-relaxed text-ink-body">
-          The read is the front half of a takeoff and an estimate &mdash; the part that is the
-          same tedious hour for everybody. This is what each piece of it is the input to once
-          you are in C Stream, and who does the rest.
-        </p>
-        <ol className="mt-5 flex flex-col gap-4">
-          {WHAT_IT_FEEDS.map((fed) => (
-            <li
-              key={fed.id}
-              className="rounded-lg border border-line-card bg-surface p-4 sm:p-5"
-            >
-              <h3 className="text-lg font-semibold text-ink-label">{fed.handed}</h3>
-              <p className="mt-2 text-base leading-relaxed text-ink-body">
-                <span className="font-semibold text-brand">Feeds:</span> {fed.feeds}
-              </p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      {/* -------------------------------------------------- what we will not
-          Same type size as the promises above. See the header. */}
-      <section className="mt-12">
-        <h2 className="text-2xl font-semibold text-ink">What we will not do</h2>
-        <p className="mt-2 text-base leading-relaxed text-ink-body">
-          Written down in the same size as the rest of it, because the drawing set is the one thing
-          you cannot un-send.
-        </p>
-        <ul className="mt-5 flex flex-col gap-3">
-          {LIMITS.map((limit) => (
-            <li key={limit} className="flex gap-3 text-base leading-relaxed text-ink-body">
-              <span aria-hidden className="mt-0.5 shrink-0 text-brand">
+      {/* -------------------------------------------------------- the outcomes
+          Three lines, bold lead and muted tail, each one tied to a deliverable
+          by `from` so a benefit cannot outlive its basis. */}
+      <section className="mt-12 border-t border-line-row pt-7 sm:mt-14">
+        <h2 className="sr-only">What it gets you</h2>
+        <ul className="flex flex-col gap-4 sm:flex-row sm:gap-8">
+          {OUTCOMES.map((outcome) => (
+            <li key={outcome.from} className="flex min-w-0 flex-1 gap-2.5 text-sm leading-relaxed">
+              <span aria-hidden className="shrink-0 font-bold text-brand">
                 &#8212;
               </span>
-              <span>{limit}</span>
+              <p className="min-w-0">
+                <strong className="font-bold text-ink">{outcome.lead}</strong>{" "}
+                <span className="text-ink-muted">{outcome.tail}</span>
+              </p>
             </li>
           ))}
         </ul>
       </section>
 
-      {/* ----------------------------------------------------- how it works */}
-      <section className="mt-12">
-        <h2 className="text-2xl font-semibold text-ink">How it works</h2>
-        <ol className="mt-5 flex flex-col gap-4">
-          {NEXT_STEPS.map((step) => (
-            <li key={step.step} className="flex gap-4">
-              <span
-                aria-hidden
-                className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-semibold text-neutral-900"
-              >
-                {step.step}
-              </span>
-              <div className="min-w-0">
-                <h3 className="font-semibold text-ink-label">{step.title}</h3>
-                <p className="mt-1 text-base leading-relaxed text-ink-body">{step.body}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-        {/* The address, on screen, before anything is filled in — so the
-            mechanism is visible rather than conditional on our email
-            arriving. Only when there is one: see the closed state below. */}
-        {sendTo && (
-          <div className="mt-5">
-            <p className="text-base leading-relaxed text-ink-body">The set goes to:</p>
-            {/* Its own line rather than mid-sentence, so the tap target can
-                clear 44px — an inline link inside a paragraph cannot. */}
-            <a
-              href={`mailto:${sendTo}`}
-              className="inline-flex min-h-[44px] items-center break-all text-base font-semibold text-link hover:text-link-hover"
-            >
-              {sendTo}
-            </a>
-          </div>
-        )}
-        {/* DELIVERY.shareable belongs here: it is what the read in step 3 is
-            good for, and it answers the question a contractor asks next —
-            whether their estimator can use it too. */}
-        <p className="mt-3 text-base leading-relaxed text-ink-body">{DELIVERY.shareable}</p>
-      </section>
-
-      {/* ------------------------------------------------------------- form */}
-      <section className="mt-12">
+      {/* ------------------------------------------------------------- the ask */}
+      <section className="mt-12 sm:mt-14">
         {open ? (
           <>
-            <h2 className="text-2xl font-semibold text-ink">Where should we send it?</h2>
+            <h2 className="font-headline text-2xl font-semibold text-ink sm:text-3xl">
+              Where should we send it?
+            </h2>
             <p className="mt-2 text-base leading-relaxed text-ink-body">
-              Three fields are needed. The rest just helps us read the set faster.
+              {/* The address is named IN the sentence rather than sitting in a
+                  box beside it: `takeoff-offer.test.ts` asserts that, because
+                  the one thing a reader must leave this page knowing is where
+                  the set goes. */}
+              {sendTo ? (
+                <>
+                  Three fields, then send the set to{" "}
+                  {/* A live mailto, not plain text: this page is opened on a
+                      phone more often than not, and a tappable address is the
+                      difference between sending the set now and meaning to
+                      later. Asserted by `WallTakeoffOffer.test.ts`. */}
+                  <a className="text-link underline hover:text-link-hover" href={`mailto:${sendTo}`}>
+                    {sendTo}
+                  </a>
+                  .
+                </>
+              ) : (
+                "Three fields are needed. The rest just helps us read the set faster."
+              )}
             </p>
             <div className="mt-5">
               <TakeoffOfferForm />
             </div>
           </>
         ) : (
-          <div className="rounded-lg border border-line-card bg-surface p-5">
-            <h2 className="text-2xl font-semibold text-ink">
+          <div className="rounded-xl border border-line-card bg-surface p-5 sm:p-6">
+            <h2 className="font-headline text-2xl font-semibold text-ink sm:text-3xl">
               The free read is not open at the moment
             </h2>
             <p className="mt-3 text-base leading-relaxed text-ink-body">
@@ -223,6 +163,78 @@ export function WallTakeoffOffer({ open, sendTo }: { open: boolean; sendTo: stri
           </div>
         )}
       </section>
+
+      {/* ============================ THE DETAIL, BELOW THE ASK ==============
+          Everything from here down is for the reader who wants the whole of it
+          before deciding. Small type, one source, no restatement. */}
+
+      <Reveal className="mt-16 border-t border-line-card pt-10 sm:mt-20">
+        <h2 className="font-headline text-2xl font-semibold text-ink sm:text-3xl">
+          What you get back
+        </h2>
+        <ul className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-2">
+          {DELIVERABLES.map((deliverable) => (
+            <li key={deliverable.id} className="min-w-0">
+              <p className="text-sm font-semibold text-ink-label">{deliverable.title}</p>
+              <p className="mt-1 text-sm leading-relaxed text-ink-body">{deliverable.body}</p>
+              <p className="mt-1.5 text-xs leading-relaxed text-tag-green-ink">
+                {deliverable.check}
+              </p>
+            </li>
+          ))}
+        </ul>
+        {/* What he can DO with it once it lands — rendered from DELIVERY so it
+            cannot drift from the email that makes the same promise. */}
+        <p className="mt-5 text-sm leading-relaxed text-ink-body">{DELIVERY.shareable}</p>
+      </Reveal>
+
+      <Reveal className="mt-12">
+        <h2 className="font-headline text-2xl font-semibold text-ink sm:text-3xl">How it works</h2>
+        <ol className="mt-5 flex flex-col gap-3">
+          {NEXT_STEPS.map((step) => (
+            <li key={step.step} className="flex gap-3 text-sm leading-relaxed">
+              <span className="shrink-0 font-mono text-xs text-ink-muted">
+                {String(step.step).padStart(2, "0")}
+              </span>
+              <p className="min-w-0">
+                <strong className="font-semibold text-ink-label">{step.title}</strong>{" "}
+                <span className="text-ink-body">{step.body}</span>
+              </p>
+            </li>
+          ))}
+        </ol>
+      </Reveal>
+
+      <Reveal className="mt-12">
+        <h2 className="font-headline text-2xl font-semibold text-ink sm:text-3xl">
+          Where it goes from there
+        </h2>
+        <ul className="mt-5 flex flex-col gap-4">
+          {WHAT_IT_FEEDS.map((fed) => (
+            <li key={fed.id} className="text-sm leading-relaxed">
+              <p className="font-semibold text-ink-label">{fed.handed}</p>
+              <p className="mt-1 text-ink-body">{fed.feeds}</p>
+            </li>
+          ))}
+        </ul>
+      </Reveal>
+
+      {/* The limits, at the promises' own size. See the header. */}
+      <Reveal className="mt-12">
+        <h2 className="font-headline text-2xl font-semibold text-ink sm:text-3xl">
+          What we will not do
+        </h2>
+        <ul className="mt-5 flex flex-col gap-3">
+          {LIMITS.map((limit) => (
+            <li key={limit} className="flex gap-3 text-sm leading-relaxed text-ink-body">
+              <span aria-hidden className="mt-0.5 shrink-0 text-brand">
+                &#8212;
+              </span>
+              <span className="min-w-0">{limit}</span>
+            </li>
+          ))}
+        </ul>
+      </Reveal>
     </main>
   );
 }

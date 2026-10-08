@@ -16,6 +16,7 @@ import {
   DEDUPE_WINDOW_HOURS,
   HOURLY_LEAD_CEILING,
   LIMITS,
+  OUTCOMES,
   NEXT_STEPS,
   OFFER_TRADES,
   OFFER_TRADE_VALUES,
@@ -332,7 +333,7 @@ describe("takeoff offer — the promises exist in exactly one place", () => {
     // pinning the canonical one passed.
     expect(existsSync(LANDING_COMPONENT)).toBe(true);
     const source = readFileSync(LANDING_COMPONENT, "utf8");
-    for (const symbol of ["DELIVERABLES", "WHAT_IT_FEEDS", "LIMITS", "NEXT_STEPS", "DELIVERY"]) {
+    for (const symbol of ["DELIVERABLES", "WHAT_IT_FEEDS", "LIMITS", "NEXT_STEPS", "DELIVERY", "OUTCOMES"]) {
       expect(source, `WallTakeoffOffer.tsx does not read ${symbol}`).toContain(symbol);
     }
     // Named, not just imported: an import with no map is the dead-code shape.
@@ -340,6 +341,53 @@ describe("takeoff offer — the promises exist in exactly one place", () => {
     expect(source).toMatch(/WHAT_IT_FEEDS\.map/);
     expect(source).toMatch(/LIMITS\.map/);
     expect(source).toMatch(/NEXT_STEPS\.map/);
+    expect(source).toMatch(/OUTCOMES\.map/);
+  });
+
+  /**
+   * THE OUTCOMES MUST POINT AT SOMETHING THAT EXISTS.
+   *
+   * `OUTCOMES` was added when the page was rebuilt around its figure: three
+   * bold lines saying what the read gets him, above the ask. A benefit is the
+   * easiest thing on a page to overstate, and the failure mode is specific —
+   * "we read your drawings" drifting into "we do your takeoff" one reassuring
+   * clause at a time, with nothing to catch it, because a benefit is not a
+   * deliverable and no `Backing` covers it.
+   *
+   * So each entry carries `from`: the id of the DELIVERABLE or WHAT_IT_FEEDS
+   * entry it is the consequence of, and this resolves every one of them. An
+   * outcome whose basis is deleted fails here; so does an outcome that never
+   * had one. Same discipline as `Backing` one step further out — those say a
+   * deliverable is produced by code that exists, these say a benefit is
+   * produced by a deliverable we promise.
+   */
+  it("resolves every outcome's basis to a real deliverable or feed", () => {
+    const ids = new Set([...DELIVERABLES.map((d) => d.id), ...WHAT_IT_FEEDS.map((f) => f.id)]);
+    // The size check first, per CLAUDE.md: a set that came back empty would
+    // make every assertion below it vacuous.
+    expect(ids.size).toBe(DELIVERABLES.length + WHAT_IT_FEEDS.length);
+    expect(OUTCOMES.length).toBeGreaterThan(0);
+
+    const unbacked = OUTCOMES.filter((o) => !ids.has(o.from)).map((o) => `"${o.lead}" -> ${o.from}`);
+    expect(
+      unbacked,
+      "These outcomes name a basis that is not a DELIVERABLES or WHAT_IT_FEEDS id, so the page " +
+        "would be claiming a benefit nothing on the offer produces: " + unbacked.join(", "),
+    ).toEqual([]);
+  });
+
+  it("keeps the outcomes scannable and free of invented figures", () => {
+    for (const outcome of OUTCOMES) {
+      // The lead is what gets scanned; past about eighty characters it is
+      // being read instead, which is the thing this rebuild removed.
+      expect(outcome.lead.length, `lead too long to scan: "${outcome.lead}"`).toBeLessThanOrEqual(80);
+      expect(outcome.lead.trim()).toMatch(/[.?!]$/);
+      // No digits in either half. There are no customers to quote, and a
+      // figure invented to make a benefit sound bigger is the one claim on
+      // this page that could not be checked against anything — the same rule
+      // FactTicker holds itself to on the main landing page.
+      expect(`${outcome.lead} ${outcome.tail}`, `a numeral in an outcome: "${outcome.lead}"`).not.toMatch(/\d/);
+    }
   });
 
   it("derives the third step from DELIVERY rather than restating it", () => {

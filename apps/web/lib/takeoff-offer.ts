@@ -446,3 +446,60 @@ export function confirmation(
     body: `Send the drawing set to ${sendTo} and we will read it. ${DELIVERY.form} Normally ${DELIVERY.turnaround} from when the set lands.`,
   };
 }
+
+/**
+ * THE OUTCOMES — three lines, and the only copy on the page that talks about
+ * what happens to HIM rather than what we do.
+ *
+ * Added 2026-10-08 when the page was rebuilt around its figure. The first
+ * version of `/wall-takeoff` explained the offer in four card sections and
+ * roughly four hundred words, and the founder's note on it was exactly right:
+ * a sub should know what this is by LOOKING at the page. So the page now
+ * leads with a picture and these three lines, and the enumerated lists sit
+ * underneath in small type for whoever scrolls.
+ *
+ * ── WHY EACH ONE POINTS AT A DELIVERABLE ──
+ *
+ * A benefit is the easiest thing on a page to overstate, and an outcome with
+ * nothing behind it is how "we read your drawings" quietly becomes "we do
+ * your takeoff". So every entry carries `from`: the id of the DELIVERABLE or
+ * the WHAT_IT_FEEDS entry it is the consequence of. `takeoff-offer.test.ts`
+ * resolves each one, so an outcome whose basis is deleted — or which never
+ * had one — fails the build rather than shipping as a claim.
+ *
+ * That is the same discipline as `Backing` on the two lists above, one step
+ * further out: those say "this deliverable is produced by code that exists",
+ * and these say "this benefit is produced by a deliverable we promise".
+ *
+ * `lead` is set in the page's bold ink and `tail` in muted — so the first
+ * clause is what gets scanned and the second is there for whoever slows down.
+ * Both are plain sentences and neither carries a number: there are no
+ * customers to quote, and a figure invented to make a benefit sound bigger is
+ * the one thing on this page that could not be checked against anything.
+ */
+export type Outcome = {
+  /** Scanned. Bold, short, a thing that happens to him. */
+  lead: string;
+  /** Read only if he slows down. The mechanism, in one clause. */
+  tail: string;
+  /** The `DELIVERABLES` or `WHAT_IT_FEEDS` id this is the consequence of. */
+  from: string;
+};
+
+export const OUTCOMES: readonly Outcome[] = [
+  {
+    lead: "Catch the scope hole before you bid it.",
+    tail: "Two sheets with the same number, named.",
+    from: "duplicate-sheets",
+  },
+  {
+    lead: "Type the partition schedule once.",
+    tail: "Your wall types build from it instead of being retyped on every bid.",
+    from: "schedule-to-wall-types",
+  },
+  {
+    lead: "Know what you cannot see.",
+    tail: "Scanned pages named, never guessed at.",
+    from: "page-inventory",
+  },
+];

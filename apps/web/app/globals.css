@@ -116,6 +116,33 @@ body {
   display: none;
 }
 
+/* ── The drawing-set read figure on /wall-takeoff, AT REST ───────────────
+   components/landing/SheetReadFigure.tsx. Read the ticker note above first:
+   the shape is identical and the ORDER matters for the same reason — these
+   at-rest rules share specificity with the motion rules in the
+   `prefers-reduced-motion: no-preference` block far below, so they must stay
+   ABOVE it or they would win and nothing would ever move.
+
+   At rest the sweep is invisible and every row is present and readable: the
+   figure shows a drawing on the left and the list that came off it on the
+   right, which is the page's whole claim, made without any motion at all.
+   The motion only re-enacts it.
+
+   `--takeoff-read-travel` is the distance the sweep covers, and it is the
+   sheet stage's own height minus the sweep's own 2px, so the line finishes
+   flush with the bottom of the drawing rather than past it. The stage is a
+   fixed height for exactly this reason — see the height rule in the motion
+   block below. */
+.takeoff-read {
+  --takeoff-read-stage: 332px;
+  --takeoff-read-travel: calc(var(--takeoff-read-stage) - 2px);
+  --takeoff-read-sweep-duration: 2200ms;
+  --takeoff-read-row-step: 260ms;
+}
+.takeoff-read__sweep {
+  opacity: 0;
+}
+
 /* ── The two animated figures on the landing page, AT REST ───────────────
    components/landing/SubmittalStamp.tsx and
    components/landing/RetainageCountUp.tsx. Read the ticker note above
@@ -333,6 +360,60 @@ body {
     }
     to {
       transform: scaleX(1);
+    }
+  }
+
+  /* The drawing-set read (components/landing/SheetReadFigure.tsx), which is
+     the whole explanation on /wall-takeoff: a line sweeps down the sheet and
+     the sheet list fills in beside it as it passes. The figure is the page's
+     argument, so it is the one thing on it that moves.
+
+     SAME TWO GATES as the stamp and the count-up, and the same rest state:
+     FINISHED. At rest the sweep is `opacity: 0` (its base rule, outside this
+     query) and every row is simply present, which is what a server render,
+     a browser with JS off and a reader who asked for less motion all get.
+     Nothing here is parked invisible waiting for an observer.
+
+     NO HEIGHT CHANGES AND NOTHING BELOW MOVES: the sweep is absolutely
+     positioned inside a fixed-height, clipped stage, and the rows are always
+     in the layout — only their opacity and a 6px lift animate. Transform and
+     opacity only, in both keyframes.
+
+     The row delay is per-row, so the list assembles rather than appearing.
+     That stagger is deliberately NOT what `[data-reveal]` does: a revealed
+     section lifts as one block, and this figure is the one place on either
+     public page where a sequence is the point. */
+  [data-motion-play="playing"] .takeoff-read__sweep {
+    animation: takeoff-read-sweep var(--takeoff-read-sweep-duration) var(--ease-landing) both;
+  }
+  [data-motion-play="playing"] .takeoff-read__row {
+    animation: takeoff-read-row var(--speed-slow) var(--ease-landing) both;
+    /* `--takeoff-read-index` is set per row, inline, because it is a live
+       per-item value rather than a theme token. */
+    animation-delay: calc(var(--takeoff-read-row-step) * var(--takeoff-read-index, 0));
+  }
+  @keyframes takeoff-read-sweep {
+    0% {
+      opacity: 0;
+      transform: translateY(0);
+    }
+    8%,
+    88% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(var(--takeoff-read-travel));
+    }
+  }
+  @keyframes takeoff-read-row {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
     }
   }
 }
