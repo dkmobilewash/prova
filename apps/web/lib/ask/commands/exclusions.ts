@@ -47,6 +47,15 @@ export const notYetRegistered: Exclusion[] = [
   // click away on every page and the words have to be theirs.
   { action: "help.*", reason: "Reaching a person is the one thing the assistant must not do on their behalf: the question has to be in their words, and a model-composed one arrives claiming to be. Never a command." },
 
+  // THE ONE ACTION IN THIS APP WITH NO SIGNED-IN CALLER. /wall-takeoff is a
+  // public intake form: a prospective customer, not a tenant, asks for a free
+  // read of the drawing set they are bidding. There is no principal for a
+  // command to run as, the target company is resolved server-side from
+  // `isProvaOperator` and never from input, and the rows land in Prova's own
+  // internal CRM. So there is nothing for the assistant to propose and nobody
+  // it could propose it to.
+  { action: "takeoffOffer.*", reason: "A public, unauthenticated intake form on /wall-takeoff, writing to Prova's own operating company. No signed-in principal exists for a command to run as, and nothing the assistant could offer a tenant. Never a command." },
+
   // Diego's lane, later phases.
   { action: "changeOrders.*", reason: "Change orders move contract value a sent pay application may depend on (T5 decisions, T3 drafts); a later phase." },
   { action: "backcharges.*", reason: MONEY },

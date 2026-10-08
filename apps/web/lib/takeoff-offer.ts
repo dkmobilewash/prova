@@ -145,11 +145,25 @@ export const DELIVERY = {
   intake: "You send the drawing set as a PDF — the bid set, whatever the GC sent you.",
   /** How long it takes, stated as a ceiling we can hold rather than a boast. */
   turnaround: "within one business day",
-  /** How it comes back. */
+  /** How it comes back.
+   *
+   * CORRECTED BEFORE IT SHIPPED, and the correction is the reason this
+   * comment exists. This field said "a plain email with one link… a page with
+   * everything we read" — written while a share-link was still the plan. The
+   * link was then dropped (it needed a token column, a migration and an
+   * objection window, and `lib/takeoff-delivery.ts` renders the whole read
+   * into the mail body instead), and this sentence survived the decision that
+   * killed it. So the public page promised a link that nothing mints.
+   *
+   * Caught by the agent building the delivery module reading this file and
+   * saying the two disagreed — not by any test here, because no test can know
+   * which of two honest sentences is the true one. The lesson for the next
+   * edit: this object is what a contractor is agreeing to, so it changes in
+   * the same commit as the thing that delivers it, never before. */
   form:
-    "A plain email with one link. The link is a page with everything we read, laid out so you can put it beside the drawing. No attachment, no login, no account.",
+    "A plain email. Everything we read is in the body of it — no attachment to open, no link to click, no login, no account.",
   /** What they can do with it. */
-  shareable: "Forward the link to your estimator or your PM. It keeps working.",
+  shareable: "Forward it to your estimator or your PM. It is all text, and nothing in it expires.",
 } as const;
 
 /**
@@ -308,11 +322,22 @@ export function requestNote(request: OfferRequest): string {
  * separate state rather than a toast. Nothing happens until they send the
  * set, and a confirmation that only says "thanks, we will be in touch" leaves
  * a contractor waiting for an email that is waiting for them.
+ *
+ * TAKES THE ADDRESS RATHER THAN POINTING AT THE SCREEN. The first version of
+ * this said "reply to the email we just sent" — and `requestDrawingSetRead`
+ * sends no email at all, by design: an install with no mail provider
+ * configured must still be able to take a request. So the on-screen address
+ * IS the mechanism, not a convenience beside one, and the sentence has to
+ * carry it. A confirmation reading "the address below" would be true only for
+ * as long as nobody moves the box.
  */
-export function confirmation(request: OfferRequest): { heading: string; body: string } {
+export function confirmation(
+  request: OfferRequest,
+  sendTo: string,
+): { heading: string; body: string } {
   const name = request.contactName.trim().split(/\s+/)[0] || "Thanks";
   return {
     heading: `${name} — we have your details.`,
-    body: `Reply to the email we just sent and attach the drawing set, or send it to the address in it. ${DELIVERY.form} Normally ${DELIVERY.turnaround} from when the set lands.`,
+    body: `Send the drawing set to ${sendTo} and we will read it. ${DELIVERY.form} Normally ${DELIVERY.turnaround} from when the set lands.`,
   };
 }

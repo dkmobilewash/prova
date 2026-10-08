@@ -356,16 +356,41 @@ describe("takeoff offer — the request form", () => {
   });
 
   it("tells them the next move is theirs", () => {
-    const { heading, body } = confirmation(good);
+    const { heading, body } = confirmation(good, "office@example.com");
     expect(heading).toContain("Rafael");
     // The failure this guards is a confirmation that says "we'll be in touch"
     // while nothing can happen until they send the set.
-    expect(body.toLowerCase()).toMatch(/attach|send/);
+    expect(body.toLowerCase()).toMatch(/send/);
     expect(body).toContain(DELIVERY.turnaround);
   });
 
+  it("names the address IN the sentence, not somewhere else on the page", () => {
+    // THIS IS A REGRESSION TEST FOR A BUG THAT REACHED NO FURTHER THAN THIS
+    // BRANCH, and it is worth a test rather than a comment because the broken
+    // version read perfectly. It said "reply to the email we just sent" —
+    // and `requestDrawingSetRead` sends no email, deliberately, so that an
+    // install with no mail provider can still take a request. The on-screen
+    // address is therefore the whole mechanism.
+    //
+    // A sentence that points at the layout instead ("the address below") is
+    // true until somebody moves the box, and a sentence that names a channel
+    // we do not use is never true. So the address has to be in the words.
+    const body = confirmation(good, "drawings@cstream.example").body;
+    expect(body).toContain("drawings@cstream.example");
+    // The pattern names the FALSE CHANNEL and the LAYOUT POINTER, not the
+    // word "link" — which the honest sentence legitimately contains, in "no
+    // link to click". The first version of this assertion matched /link/ and
+    // went red against the correct copy, which is its own small lesson: a
+    // negative assertion has to name the defect, not a word near it.
+    expect(body.toLowerCase()).not.toMatch(
+      /we just sent|email we sent|reply to the email|address below|address at the bottom/,
+    );
+  });
+
   it("does not render an empty name into the heading", () => {
-    expect(confirmation({ ...good, contactName: "" }).heading).not.toMatch(/^\s*—/);
+    expect(confirmation({ ...good, contactName: "" }, "office@example.com").heading).not.toMatch(
+      /^\s*—/,
+    );
   });
 });
 
