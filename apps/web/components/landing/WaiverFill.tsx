@@ -5,7 +5,7 @@ import { motionPlayState, useMotionCue } from "./useMotionCue";
 import "./waiverFill.css";
 
 /**
- * A California conditional progress waiver filling itself in, then marked
+ * A conditional progress waiver filling itself in, then marked
  * ready to sign — the hero of the public /lien-waiver page.
  *
  * Same motion contract as SubmittalStamp.tsx: at rest the document is
@@ -33,7 +33,7 @@ export function WaiverFill({ className = "" }: { className?: string }) {
       className={`landing-waiver w-full min-w-0 max-w-[34rem] overflow-hidden rounded-xl border border-line-card bg-surface text-left ${className}`}
     >
       <div className="flex items-center gap-2 border-b border-line-row px-4 py-2">
-        <span className="rounded bg-brand px-1.5 py-0.5 font-mono text-xs font-bold text-neutral-900">CA</span>
+        <span className="rounded bg-brand px-1.5 py-0.5 font-mono text-xs font-bold text-neutral-900">PDF</span>
         <span className="text-sm text-ink">Conditional waiver · progress payment</span>
       </div>
 
@@ -83,7 +83,7 @@ export function WaiverFill({ className = "" }: { className?: string }) {
 
       <figcaption className="border-t border-line-row px-4 py-2">
         <span className="block text-sm text-ink">
-          Conditional progress waiver for California, filled from four answers.
+          Conditional progress waiver, filled from four answers.
         </span>
         <span className="block text-[11px] text-ink-body">Illustrative.</span>
       </figcaption>

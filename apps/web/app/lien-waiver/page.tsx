@@ -6,7 +6,7 @@ import { LienWaiverLanding } from "@/components/LienWaiverLanding";
 export const metadata: Metadata = {
   title: "Free lien waiver generator — C Stream",
   description:
-    "The state's own lien waiver form, filled in. Free for specialty-trade subcontractors in Arizona, California, Nevada and Texas.",
+    "Pick the right lien waiver, answer a few questions and download a clean PDF for the GC. Free for specialty-trade subcontractors.",
 };
 
 export default function LienWaiverLandingPage() {
