@@ -1,6 +1,7 @@
 import { roomGrid, neighboursOf, SMALLEST_ROOM_SQFT } from "./rooms";
 import { squaredDistanceToInk, widestPointOf } from "./distance";
 import { thin, tracePaths, straighten } from "./skeleton";
+import { openingsInWalls } from "./openings";
 import type { StrokeSegment, WallCandidate, WallFinderOptions } from "./wallVectors";
 
 /**
@@ -88,7 +89,67 @@ function thicknessAlong(
  * contract `wallsFromStrokes` takes, so a caller swapping one for the other
  * changes nothing but the call.
  */
+/**
+ * ── DOORWAYS, AND WHY THIS TRIES IT BOTH WAYS ──
+ *
+ * A wall is the space between two ROOMS, so a doorway is fatal to that
+ * definition: a gap in a wall joins the rooms either side into ONE region, and
+ * the walls inside it then separate that region from itself. Measured on West
+ * Herr, 32,256 of the sheet's 49,162 sq ft of room was a single merged space,
+ * and 1,062 wall-width regions were found and almost all discarded.
+ *
+ * `openings.ts` closes those gaps, and on that sheet it works: the biggest
+ * region halves and the walls go from 377ft to 1,093ft.
+ *
+ * ON A SHEET WHOSE ROOMS ALREADY CLOSE IT DOES HARM. Augusta's biggest region
+ * did not move by one square foot — nothing needed splitting — while its walls
+ * fell from 472ft to 323ft, because every closure adds ink and ink cuts wall
+ * cavities into pieces too short to report.
+ *
+ * A rule to tell the two cases apart was tried and FAILED, and it is recorded
+ * because it looked obviously right: only close a gap in a line that has a
+ * parallel partner a wall's thickness away — a wall face rather than a
+ * furniture edge. It discriminates perfectly on clean fixtures and did NOTHING
+ * on real sheets: the opening counts came back 199, 160 and 256, identical to
+ * the digit. On a dense CAD drawing almost every line has SOME parallel
+ * neighbour within 2½ to 18 inches, so the test is satisfied everywhere. (It is
+ * kept, because it costs nothing and is right about what a wall face is.)
+ *
+ * So rather than predict which kind of sheet this is, BOTH ARE RUN AND THE
+ * BETTER IS KEPT. Doorways either split the plan into more wall or they do not,
+ * and the sheet answers in half a second. It cannot regress by construction,
+ * which is the property that matters here: the alternative is a guess that was
+ * measured to be wrong on one of three sheets.
+ *
+ * The honest limit: more footage is not the same as more TRUE footage. This
+ * maximises a quantity rather than testing a fact, and a sheet where closing
+ * doors invents more wall than it finds would be chosen wrongly. No such sheet
+ * has been seen, and when one is, the tie-break needs to become something
+ * better than total length.
+ */
 export function wallRunsFromStrokes(
+  segments: readonly StrokeSegment[],
+  widthUnits: number,
+  heightUnits: number,
+  options: WallFinderOptions & { gridCap?: number; closeOpenings?: boolean },
+): WallCandidate[] {
+  if (options.closeOpenings === false) {
+    return runsFromStrokes(segments, widthUnits, heightUnits, options);
+  }
+  const asDrawn = runsFromStrokes(segments, widthUnits, heightUnits, options);
+  const openings = openingsInWalls(segments, options.feetPerPoint);
+  if (openings.length === 0) return asDrawn;
+  const sealed = runsFromStrokes(
+    [...segments, ...openings.map((o) => ({ x1: o.x1, y1: o.y1, x2: o.x2, y2: o.y2 }))],
+    widthUnits,
+    heightUnits,
+    options,
+  );
+  const feet = (ws: WallCandidate[]) => ws.reduce((t, w) => t + w.lengthFeet, 0);
+  return feet(sealed) > feet(asDrawn) ? sealed : asDrawn;
+}
+
+function runsFromStrokes(
   segments: readonly StrokeSegment[],
   widthUnits: number,
   heightUnits: number,
