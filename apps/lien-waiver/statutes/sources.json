@@ -1,20 +1,95 @@
 {
   "$comment": "Every official page a statutory form is copied from. scripts/capture-statutes.mjs fetches each URL and writes the bytes the server sent, untouched, to statutes/raw/<id>.html beside a <id>.meta.json naming the final URL, the status, the retrieval time and the SHA-256 of those bytes. Nothing in this app reads a statute from anywhere else. Official legislature sites only -- never a vendor blog.",
   "sources": [
-    { "id": "az-33-1008", "state": "AZ", "citation": "A.R.S. § 33-1008", "url": "https://www.azleg.gov/ars/33/01008.htm" },
-    { "id": "ca-8120", "state": "CA", "citation": "Cal. Civ. Code § 8120", "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8120" },
-    { "id": "ca-8122", "state": "CA", "citation": "Cal. Civ. Code § 8122", "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8122" },
-    { "id": "ca-8124", "state": "CA", "citation": "Cal. Civ. Code § 8124", "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8124" },
-    { "id": "ca-8126", "state": "CA", "citation": "Cal. Civ. Code § 8126", "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8126" },
-    { "id": "ca-8128", "state": "CA", "citation": "Cal. Civ. Code § 8128", "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8128" },
-    { "id": "ca-8130", "state": "CA", "citation": "Cal. Civ. Code § 8130", "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8130" },
-    { "id": "ca-8132", "state": "CA", "citation": "Cal. Civ. Code § 8132", "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8132" },
-    { "id": "ca-8134", "state": "CA", "citation": "Cal. Civ. Code § 8134", "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8134" },
-    { "id": "ca-8136", "state": "CA", "citation": "Cal. Civ. Code § 8136", "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8136" },
-    { "id": "ca-8138", "state": "CA", "citation": "Cal. Civ. Code § 8138", "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8138" },
-    { "id": "nv-108", "state": "NV", "citation": "NRS Chapter 108 (incl. 108.2457)", "url": "https://www.leg.state.nv.us/NRS/NRS-108.html" },
-    { "id": "tx-53-htm", "state": "TX", "citation": "Tex. Prop. Code ch. 53 (incl. § 53.284)", "url": "https://statutes.capitol.texas.gov/Docs/PR/htm/PR.53.htm" },
-    { "id": "tx-53-pdf", "state": "TX", "citation": "Tex. Prop. Code ch. 53 (incl. § 53.284)", "url": "https://statutes.capitol.texas.gov/Docs/PR/pdf/PR.53.pdf" },
-    { "id": "nm-48-2", "state": "NM", "citation": "NMSA 1978 ch. 48 art. 2", "url": "https://nmonesource.com/nmos/nmsa/en/nav_date.do" }
+    {
+      "id": "az-33-1008",
+      "state": "AZ",
+      "citation": "A.R.S. § 33-1008",
+      "url": "https://www.azleg.gov/ars/33/01008.htm"
+    },
+    {
+      "id": "ca-8120",
+      "state": "CA",
+      "citation": "Cal. Civ. Code § 8120",
+      "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8120"
+    },
+    {
+      "id": "ca-8122",
+      "state": "CA",
+      "citation": "Cal. Civ. Code § 8122",
+      "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8122"
+    },
+    {
+      "id": "ca-8124",
+      "state": "CA",
+      "citation": "Cal. Civ. Code § 8124",
+      "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8124"
+    },
+    {
+      "id": "ca-8126",
+      "state": "CA",
+      "citation": "Cal. Civ. Code § 8126",
+      "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8126"
+    },
+    {
+      "id": "ca-8128",
+      "state": "CA",
+      "citation": "Cal. Civ. Code § 8128",
+      "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8128"
+    },
+    {
+      "id": "ca-8130",
+      "state": "CA",
+      "citation": "Cal. Civ. Code § 8130",
+      "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8130"
+    },
+    {
+      "id": "ca-8132",
+      "state": "CA",
+      "citation": "Cal. Civ. Code § 8132",
+      "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8132"
+    },
+    {
+      "id": "ca-8134",
+      "state": "CA",
+      "citation": "Cal. Civ. Code § 8134",
+      "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8134"
+    },
+    {
+      "id": "ca-8136",
+      "state": "CA",
+      "citation": "Cal. Civ. Code § 8136",
+      "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8136"
+    },
+    {
+      "id": "ca-8138",
+      "state": "CA",
+      "citation": "Cal. Civ. Code § 8138",
+      "url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=CIV&sectionNum=8138"
+    },
+    {
+      "id": "nv-108",
+      "state": "NV",
+      "citation": "NRS Chapter 108 (incl. 108.2457)",
+      "url": "https://www.leg.state.nv.us/NRS/NRS-108.html"
+    },
+    {
+      "id": "tx-53-htm",
+      "state": "TX",
+      "citation": "Tex. Prop. Code ch. 53 (incl. § 53.284)",
+      "url": "https://statutes.capitol.texas.gov/Docs/PR/htm/PR.53.htm"
+    },
+    {
+      "id": "nm-48-2",
+      "state": "NM",
+      "citation": "NMSA 1978 ch. 48 (art. 2, Mechanics' and Materialmen's Liens)",
+      "url": "https://nmonesource.com/nmos/nmsa/en/4413/1/document.do"
+    },
+    {
+      "id": "discover-tx-main",
+      "state": "TX",
+      "citation": "(discovery only: the statutes site's app bundle, to find where it loads text from; delete once found)",
+      "url": "https://statutes.capitol.texas.gov/main-6BSFENBJ.js"
+    }
   ]
 }

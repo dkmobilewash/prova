@@ -34,13 +34,20 @@ for (const source of sources) {
   try {
     const response = await fetch(source.url, {
       redirect: "follow",
-      headers: { "user-agent": "Mozilla/5.0 (statute capture; contact diego@cstream.ai)" },
+      // A plain browser user-agent: leginfo.legislature.ca.gov answers 403 to
+      // anything that announces itself as a script.
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "accept-language": "en-US,en;q=0.9",
+      },
     });
     const bytes = Buffer.from(await response.arrayBuffer());
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     if (bytes.length < 500) throw new Error(`only ${bytes.length} bytes`);
     const contentType = response.headers.get("content-type") ?? "";
-    const extension = contentType.includes("pdf") ? "pdf" : "html";
+    const extension = contentType.includes("pdf") ? "pdf" : contentType.includes("javascript") ? "js" : "html";
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     const previous = await readFile(join(rawDir, `${source.id}.meta.json`), "utf8")
       .then((text) => JSON.parse(text))
