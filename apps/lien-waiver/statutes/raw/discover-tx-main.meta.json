@@ -1,0 +1,12 @@
+{
+  "id": "discover-tx-main",
+  "state": "TX",
+  "citation": "(discovery only: the statutes site's app bundle, to find where it loads text from; delete once found)",
+  "requestedUrl": "https://statutes.capitol.texas.gov/main-6BSFENBJ.js",
+  "finalUrl": "https://statutes.capitol.texas.gov/main-6BSFENBJ.js",
+  "status": 200,
+  "contentType": "application/javascript",
+  "retrievedAt": "2026-10-08T21:14:36.633Z",
+  "bytes": 37476,
+  "sha256": "ae8c426f38e975b5e7114d18bb8e29e76c6848badbeedbc94f550c5588615b25"
+}
