@@ -5,7 +5,7 @@ New public page at `/lien-waiver`, in the main landing page's own theme,
 type and motion, and deliberately naming no state so every sub reads it as
 theirs. A waiver that fills itself in (the hero), what a lien waiver is in
 three cards, the four waiver types with a risk meter and when to use each,
-three steps, the retainage warning, four common questions, and sign-up
+three steps, the retainage warning, nine "before you sign" questions with full answers, and sign-up
 repeated down the page with "Sign in" as a quiet link. Every button goes to
 sign-up until Diego's generator is live; `CTA_HREF` in
 `components/LienWaiverLanding.tsx` is the one line to change.

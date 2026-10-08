@@ -123,22 +123,79 @@ const STEPS = [
   },
 ];
 
-const FAQ = [
+/**
+ * The questions a sub actually has to answer before signing, in the order
+ * they come up. General on purpose: no state is named and no rule is stated
+ * that holds in one state and not another — where the answer depends on the
+ * state, the answer says so. Each answer is a few short paragraphs.
+ */
+const FAQ: { q: string; a: string[] }[] = [
   {
-    q: "What is the difference between conditional and unconditional?",
-    a: "A conditional waiver only counts once the payment actually reaches you. An unconditional one counts the moment you sign. If the check has not cleared, sign conditional.",
+    q: "Why does my GC want a lien waiver before they pay me?",
+    a: [
+      "Because everyone above you needs proof that the people below them are being paid. If you are not paid, you can file a lien against the property — and a lien is the owner's problem and the lender's problem, not only the GC's.",
+      "So the lender will not release the next draw until the owner shows waivers, the owner will not pay the GC without them, and the GC will not pay you without yours. Your waiver is what keeps the money moving down the chain. A late or wrong one holds up your own check.",
+    ],
   },
   {
-    q: "What is the difference between progress and final?",
-    a: "A progress waiver covers one payment — usually a monthly pay application. A final waiver covers the whole job and is meant for the last payment.",
+    q: "Conditional or unconditional — which one do I sign?",
+    a: [
+      "Sign conditional whenever the money has not reached you yet. A conditional waiver only takes effect once the payment it names actually clears, so if the check bounces, is short, or never comes, you have given nothing up.",
+      "Sign unconditional only for money that is already in your account. It takes effect the moment you sign, whether or not you were paid. A check in hand is not paid — it can still bounce or be held — and a joint check is not paid until it has been endorsed and cleared.",
+      "The normal rhythm: send a conditional waiver with your pay application, and swap it for an unconditional one once the funds clear, if the GC asks for it.",
+    ],
   },
   {
-    q: "What goes in the exceptions?",
-    a: "Anything you are still owed that this waiver should not give up: retainage still being held, change orders not yet paid, disputed extras. If it is not written there, the waiver can give it away.",
+    q: "When is it safe to sign a final waiver?",
+    a: [
+      "Only for the last payment on the job, and only once you know what that payment covers. A final waiver closes out your rights on the whole job, not just one month.",
+      "The trap is retainage. GCs often ask for a final waiver at substantial completion, while the retainage they have held all job is still sitting with them. Sign a final waiver then without listing the retainage as an exception, and you may have just signed it away.",
+      "If anything is still owed — retainage, approved change orders not yet paid, extras in dispute — either wait, or write each one into the exceptions before you sign.",
+    ],
+  },
+  {
+    q: "What goes in the exceptions — and what if I leave it blank?",
+    a: [
+      "The exceptions are where you list what this waiver does NOT give up. A blank exceptions section means you are excepting nothing, so everything the waiver covers is gone.",
+      "List each item separately, with an amount and enough description that nobody can argue about what it means: retainage held to date, each unpaid change order by number, extras you have claimed but not been paid for, disputed backcharges, and any delay or impact claims you have put the GC on notice of.",
+      "If you are not sure whether something belongs there, list it. An exception you did not need costs nothing; one you left off can cost you the money.",
+    ],
+  },
+  {
+    q: "I was paid less than I billed. What do I sign?",
+    a: [
+      "A waiver for the amount you actually received — never for the amount you billed. If the GC cut your pay application, the waiver should name the reduced number, and the difference should be listed as an exception so it is clear you are still claiming it.",
+      "Signing for the full billed amount when you were short-paid tells everyone up the chain that you have been paid in full for that work. That is very hard to walk back later.",
+    ],
+  },
+  {
+    q: "What is the through date, and why does it matter?",
+    a: [
+      "Many waivers cover work \u201cthrough\u201d a date. Everything you did up to that date is covered by the waiver; work after it is not.",
+      "Match it to the period the payment actually covers — usually the end of the pay application period. If the payment covers work through the end of last month but the waiver says through today, you have waived the work in between without being paid for it.",
+      "Not every waiver uses a through date — some forms tie the release to an invoice or a payment instead. Either way, the question is the same: does this waiver cover exactly the work this payment paid for, and nothing more?",
+    ],
+  },
+  {
+    q: "My GC sent me their own waiver form. Can I just sign that?",
+    a: [
+      "Read it first, carefully. A GC's own form is often broader than it needs to be: it may waive \u201call claims\u201d rather than lien rights for one payment, give up payment bond rights too, cover work you have not been paid for, or bury a release of delay claims in the fine print.",
+      "In several states, a waiver has to follow the form written into the law, and a form that strays from it can be unenforceable — or can be enforced only as the law's version. That cuts both ways, so do not rely on it. Compare their form against what you are actually being paid for, and push back on anything that waives more.",
+    ],
   },
   {
     q: "Does it need to be notarized?",
-    a: "It depends on where the job is and what your GC asks for. Check before you send it.",
+    a: [
+      "It depends on where the job is, when the contract was signed, and what your GC or the lender asks for. Some states have required notarized waivers; most do not. Some GCs and title companies ask for a notary even when the law does not.",
+      "Check before you send it. A waiver that comes back for a missing notary stamp is a payment that sits for another week.",
+    ],
+  },
+  {
+    q: "Is this legal advice?",
+    a: [
+      "No. The generator helps you pick the right waiver and fills in the form with what you tell it. It does not know your contract, and it cannot tell you whether a particular payment, claim or dispute is safe to waive.",
+      "If there is real money in question — a large retainage balance, a disputed change order, a GC who is not paying — talk to a construction attorney before you sign anything.",
+    ],
   },
 ];
 
@@ -294,7 +351,8 @@ export function LienWaiverLanding() {
 
       {/* Questions. Native <details>, so it works with no JavaScript. */}
       <Reveal className={sectionSpace}>
-        <h2 className={h2}>Common questions</h2>
+        <h2 className={h2}>Before you sign</h2>
+        <p className={lead}>The questions that decide whether a waiver costs you money.</p>
         <div className="mt-8 flex flex-col gap-3">
           {FAQ.map((item, i) => (
             <details key={item.q} className="lw-rise group rounded-xl border border-line-card bg-surface" style={at(i)}>
@@ -304,7 +362,11 @@ export function LienWaiverLanding() {
                   +
                 </span>
               </summary>
-              <p className="px-5 pb-5 text-sm leading-relaxed text-ink-body">{item.a}</p>
+              <div className="flex max-w-3xl flex-col gap-3 px-5 pb-5 text-sm leading-relaxed text-ink-body sm:text-base">
+                {item.a.map((para) => (
+                  <p key={para}>{para}</p>
+                ))}
+              </div>
             </details>
           ))}
         </div>
