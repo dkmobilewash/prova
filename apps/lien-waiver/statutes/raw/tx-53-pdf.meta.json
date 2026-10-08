@@ -1,0 +1,12 @@
+{
+  "id": "tx-53-pdf",
+  "state": "TX",
+  "citation": "Tex. Prop. Code ch. 53 (incl. § 53.284)",
+  "requestedUrl": "https://statutes.capitol.texas.gov/Docs/PR/pdf/PR.53.pdf",
+  "finalUrl": "https://statutes.capitol.texas.gov/Docs/PR/pdf/PR.53.pdf",
+  "status": 200,
+  "contentType": "text/html",
+  "retrievedAt": "2026-10-08T21:11:07.012Z",
+  "bytes": 250874,
+  "sha256": "dbfba8a96dc3cd584157ca66aaafdf67e0ed15dd5a0c8a58f3d4bd0f109fc646"
+}
