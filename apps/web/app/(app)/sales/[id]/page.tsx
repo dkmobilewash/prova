@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
@@ -5,6 +6,8 @@ import { SalesLeadEditForm } from "@/components/SalesLeadEditForm";
 import { SalesOpportunityForm } from "@/components/SalesOpportunityForm";
 import { SalesOpportunityRow } from "@/components/SalesOpportunityRow";
 import { SalesActivityForm } from "@/components/SalesActivityForm";
+import { CallLogButtons } from "@/components/CallLogButtons";
+import { doNotCallFrom } from "@/lib/call-dispositions";
 import { SalesActivityRow } from "@/components/SalesActivityRow";
 import { SalesLeadSignals } from "@/components/SalesLeadSignals";
 import { SalesLeadRegistry } from "@/components/SalesLeadRegistry";
@@ -196,6 +199,15 @@ export default async function SalesLeadPage({
         }}
       />
 
+      {/* The artifact every touch in the calling playbook points to: this
+          firm's name on a WH-347 built the way the product builds a real one,
+          stamped SAMPLE. One link, because the page it opens explains itself. */}
+      <p className="mt-3 text-sm">
+        <Link href={`/sales/${lead.id}/sample-wh347`} className="text-ink-label hover:underline">
+          Sample WH-347 for {lead.companyName} →
+        </Link>
+      </p>
+
       <section className="mt-10">
         <h2 className="mb-3 text-lg font-semibold text-ink">Opportunities</h2>
         {lead.opportunities.length === 0 ? (
@@ -238,6 +250,18 @@ export default async function SalesLeadPage({
           entry&apos;s follow-up was superseded when the next activity was
           logged.
         </p>
+        {/* DERIVED from the latest CALL's tag, stored nowhere — the column is
+            announced but not landed, and a flag that could disagree with the
+            row it came from is the thing this repo refuses to store. */}
+        {doNotCallFrom(lead.activities) ? (
+          <p className="mb-3 rounded-md border border-tag-rose-ink px-3 py-2 text-sm font-semibold text-tag-rose-ink">
+            {lead.companyName} asked not to be called. Do not dial this lead
+            again; log a conversation only if they reach out.
+          </p>
+        ) : null}
+        <div className="mb-4">
+          <CallLogButtons leadId={lead.id} />
+        </div>
         {activityRows.length === 0 ? (
           <p className="mb-4 text-sm text-ink-body">
             Nothing logged with {lead.companyName} yet. Until something is, this

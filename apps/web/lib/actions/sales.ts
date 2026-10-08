@@ -21,6 +21,13 @@ import { looksCutOff, parseSubListing } from "@/lib/sub-listing/parse";
 // second.
 import { licenceNumberFrom, readTypedLicence } from "@/lib/sales-licence";
 import { CslbHeaderError, MASTER_FILE_URL, cslbRowsForLicences, textChunks } from "@/lib/cslb/masterFile";
+import { loadCallList } from "@/lib/cslb/callList";
+import {
+  CALL_DISPOSITIONS,
+  CALL_FOLLOW_UP_DAYS,
+  callSummary,
+  type CallDisposition,
+} from "@/lib/call-dispositions";
 import {
   PRIME_OUTCOMES,
   listedByGcFor,
@@ -1729,4 +1736,107 @@ export async function fillPhonesFromCslb(): Promise<ActionResultWith<CslbPhoneFi
     if (err instanceof InputError) return { ok: false, error: err.message };
     throw err;
   }
+}
+
+/* ── ONE BUTTON PER CALL ─────────────────────────────────────────────────── */
+
+/**
+ * LOG A CALL AS A TAGGED `SalesActivity`, dated today, with the follow-up the
+ * playbook's cadence says that disposition owes. See `lib/call-dispositions.ts`
+ * for why the disposition lives in the summary rather than in a column.
+ *
+ * Dated TODAY, the viewer's today, because this is the button pressed while
+ * the phone is still warm — it exists for the fifty calls a day nobody would
+ * open a form for. A call being logged after the fact goes through the
+ * activity form, which asks for the date.
+ */
+export async function logCall(
+  leadId: string,
+  disposition: CallDisposition,
+  note: string,
+): Promise<ActionResult> {
+  const { company, ...user } = await requireCompanyContext();
+  return runAction(async () => {
+    assertSalesAccess({ company, role: user.role });
+    if (!CALL_DISPOSITIONS.includes(disposition)) {
+      throw new InputError("That is not a call outcome this app knows");
+    }
+    const lead = await findLead(leadId, company.id);
+    if (!lead) return fail("Lead not found");
+
+    const todayIso = await viewerToday();
+    const occurredOn = new Date(`${todayIso}T00:00:00.000Z`);
+    const days = CALL_FOLLOW_UP_DAYS[disposition];
+    let followUpOn: Date | null = null;
+    if (days !== null) {
+      followUpOn = new Date(occurredOn);
+      followUpOn.setUTCDate(followUpOn.getUTCDate() + days);
+    }
+
+    await prisma.salesActivity.create({
+      data: {
+        companyId: company.id,
+        leadId,
+        type: "CALL",
+        occurredOn,
+        summary: callSummary(disposition, note),
+        followUpOn,
+        loggedByUserId: user.id,
+      },
+    });
+
+    revalidatePath(`/sales/${leadId}`);
+    revalidatePath("/sales");
+    return ok;
+  });
+}
+
+/* ── A FIRM FROM THE CALL LIST BECOMES A LEAD ───────────────────────────── */
+
+/**
+ * Creates the `SalesLead` for one firm on the CSLB call list, carrying what
+ * the two files say — business name, the person to ask for (into
+ * `contactName`, the column the hand-typed form already uses), phone, city,
+ * licence — and nothing inferred. Source is OUTBOUND because that is what it
+ * is.
+ *
+ * IDEMPOTENT ON THE LICENCE. The list is filtered by licence against existing
+ * leads before the button renders, but two tabs or a double submit can both
+ * reach here, and the licence index is deliberately non-unique (see the
+ * schema), so this checks rather than trusting the screen. A second press
+ * returns ok and creates nothing.
+ */
+export async function addCslbLead(licence: string): Promise<ActionResult> {
+  const { company, ...user } = await requireCompanyContext();
+  return runAction(async () => {
+    assertSalesAccess({ company, role: user.role });
+    const key = licenceNumberFrom(licence);
+    if (key === null) throw new InputError("That is not a CSLB licence number");
+
+    const already = await prisma.salesLead.findFirst({
+      where: { companyId: company.id, licenceNumber: key },
+      select: { id: true },
+    });
+    if (already) return ok;
+
+    const list = await loadCallList();
+    const row = list.rows.find((r) => r.licence === key);
+    if (!row) throw new InputError("That licence is not on today's call list");
+
+    await prisma.salesLead.create({
+      data: {
+        companyId: company.id,
+        companyName: row.name,
+        contactName: row.owner,
+        phone: row.phone,
+        city: row.city,
+        licenceNumber: row.licence,
+        source: "OUTBOUND",
+      },
+    });
+
+    revalidatePath("/sales");
+    revalidatePath("/sales/call-list");
+    return ok;
+  });
 }

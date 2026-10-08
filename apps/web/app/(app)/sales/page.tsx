@@ -25,6 +25,7 @@ import {
   type RecordedStageChange,
 } from "@/lib/sales-stage-history";
 import { qualify } from "@/lib/sales-qualification";
+import { callScoreboard } from "@/lib/call-dispositions";
 
 /**
  * Prova's own sales pipeline -- for selling Prova itself, not a tenant's
@@ -177,6 +178,21 @@ export default async function SalesPage() {
   // was computed over instead of presenting it as a claim about everyone.
   const sittingLongestTrackedCount = trackedOpenCount(pipelineOpportunities);
 
+  /* TODAY'S CALLS, by tag, for the scoreboard. A second small query rather
+     than widening the per-lead select above to carry every summary ever
+     written: the list needs dates and types for all history, the scoreboard
+     needs summaries for one day. Dated on the viewer's today, like the
+     follow-up queue. */
+  const todaysCalls = await prisma.salesActivity.findMany({
+    where: {
+      companyId: company.id,
+      type: "CALL",
+      occurredOn: new Date(`${today}T00:00:00.000Z`),
+    },
+    select: { summary: true },
+  });
+  const board = callScoreboard(todaysCalls.map((call) => call.summary));
+
   const queue = followUpQueue(activitySources, today);
   const overdueCount = countOverdue(queue);
   const summaries = new Map(
@@ -235,6 +251,41 @@ export default async function SalesPage() {
         sittingLongest={sittingLongest}
         sittingLongestTrackedCount={sittingLongestTrackedCount}
       />
+
+      {/* The day's dialing, derived from today's tagged CALL rows and stored
+          nowhere. Dials / connects / conversations / meetings is the exact
+          scoreboard the calling playbook asks for at the end of each day;
+          "untagged" is a call somebody logged by hand without a disposition,
+          counted as a dial and nothing else rather than guessed at. */}
+      <section className="mb-6 rounded-lg border border-line-card bg-surface p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold text-ink">Today&apos;s calls</h2>
+          <Link href="/sales/call-list" className="text-xs text-ink-label hover:underline">
+            Open the call list (CSLB) →
+          </Link>
+        </div>
+        <dl className="mt-2 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+          {(
+            [
+              ["Dials", board.dials],
+              ["Connects", board.connects],
+              ["Conversations", board.conversations],
+              ["Meetings booked", board.meetings],
+            ] as const
+          ).map(([label, value]) => (
+            <div key={label}>
+              <dt className="text-xs text-ink-muted">{label}</dt>
+              <dd className="text-lg font-semibold tabular-nums text-ink">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        {board.untagged > 0 ? (
+          <p className="mt-2 text-xs text-ink-muted">
+            {board.untagged} call{board.untagged === 1 ? "" : "s"} logged without an
+            outcome — counted as dials only.
+          </p>
+        ) : null}
+      </section>
 
       {queue.length > 0 && (
         <section className="mb-6 rounded-lg border border-line-card bg-surface p-4">

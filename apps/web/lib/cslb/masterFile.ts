@@ -55,6 +55,8 @@ const COLUMNS = {
   phone: "BusinessPhone",
   status: "PrimaryStatus",
   classes: "Classifications(s)",
+  city: "City",
+  county: "County",
 } as const;
 
 export type CslbRow = {
@@ -66,6 +68,8 @@ export type CslbRow = {
   status: string;
   /** Classification codes, both spellings collapsed to the bare form: `C9`, `C35`. */
   classes: string[];
+  city: string | null;
+  county: string | null;
 };
 
 /**
@@ -112,6 +116,14 @@ export function displayPhone(raw: string): string | null {
   const digits = trimmed.replace(/\D/g, "");
   if (digits.length === 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
   return trimmed;
+}
+
+/** `SAN DIEGO` as the file prints it → `San Diego` as a person reads it. */
+export function titleCase(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/(^|[\s-])([a-z])/g, (_, sep: string, ch: string) => sep + ch.toUpperCase());
 }
 
 /** Thrown when the header row is not the file this module was written against. */
@@ -185,6 +197,8 @@ export async function* cslbRows(
       phone: displayPhone(fields[at.phone] ?? ""),
       status: (fields[at.status] ?? "").trim().toUpperCase(),
       classes: classCodes(fields[at.classes] ?? ""),
+      city: titleCase(fields[at.city] ?? "") || null,
+      county: titleCase(fields[at.county] ?? "") || null,
     };
   }
   if (at === null) throw new CslbHeaderError("The CSLB file was empty");

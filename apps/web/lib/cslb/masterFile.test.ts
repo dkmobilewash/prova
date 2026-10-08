@@ -76,6 +76,8 @@ describe("reading the master file", () => {
       phone: "916-555-0100",
       status: "CLEAR",
       classes: ["C9", "C35"],
+      city: "Sacramento",
+      county: "Sacramento",
     });
     expect(rows[2]!.phone).toBeNull();
     expect(rows[3]!.status).toBe("SUSPENDED");
