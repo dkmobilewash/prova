@@ -106,10 +106,20 @@ export function SheetReadFigure() {
             </div>
           </div>
           {/* The sweep. Absolutely positioned in the clipped stage so it
-              cannot affect the figure's height. */}
+              cannot affect the figure's height.
+              A BORDER RATHER THAN A FILL, and not for looks. `bg-brand` here
+              failed `theme-contrast.test.ts`, which requires every brand FILL
+              to carry a `text-neutral-900` label — white on this yellow is
+              1.53:1, and that census exists because `packages/ui/Button.tsx`
+              once shipped exactly that past a green check. This line carries
+              no label at all, so the census's premise does not hold for it;
+              the honest answer is to stop calling a 2px rule a fill rather
+              than to bolt a text colour onto a div with no text, or to carve
+              an exemption into a guard with that scar attached. A rule line
+              IS a border. */}
           <div
             aria-hidden
-            className="takeoff-read__sweep absolute inset-x-4 top-4 h-0.5 bg-brand"
+            className="takeoff-read__sweep absolute inset-x-4 top-4 border-t-2 border-brand"
           />
         </div>
       </div>
