@@ -644,10 +644,15 @@ function purityGraph(): { files: string[]; unresolved: string[] } {
 
 const scannedAll = walked.map((file) => {
   const source = readFileSync(file, "utf8");
+  const sites = deliveryCallSites(source, file, (spec) => resolveSpecifier(spec, file));
   return {
     abs: file,
     path: relative(REPO_ROOT, file).split(sep).join("/"),
-    sites: deliveryCallSites(source, file, (spec) => resolveSpecifier(spec, file)),
+    sites,
+    // Only classified where it could matter. A file with no call site has no
+    // send-path question to answer, and parsing 600 files twice to find that
+    // out would make this census slow for nothing.
+    sendPath: sites.length > 0 && isSendPath(file, source),
   };
 });
 
@@ -657,7 +662,15 @@ const sitesAnywhere = scannedAll.flatMap((f) => f.sites.map((s) => ({ ...s, path
 
 /** The verdict's set: outside the module, outside every test file. */
 const productionFiles = scannedAll.filter((f) => f.abs !== MODULE_PATH && !isTestFile(f.abs));
-const productionSites = productionFiles.flatMap((f) => f.sites.map((s) => ({ ...s, path: f.path })));
+const productionSites = productionFiles.flatMap((f) =>
+  f.sites.map((s) => ({ ...s, path: f.path, abs: f.abs, sendPath: f.sendPath })),
+);
+
+/** The sender's own calls, and everything else that renders the mail. A
+ *  PARTITION, asserted as one below so the two tests cannot collapse into
+ *  one question answered twice. */
+const sendPathSites = productionSites.filter((s) => s.sendPath);
+const otherProductionSites = productionSites.filter((s) => !s.sendPath);
 
 const graph = purityGraph();
 const graphImpurities = graph.files.flatMap((file) =>
@@ -846,6 +859,31 @@ describe("vacuity — whether the finders can still find", () => {
     expect(impurities("// process.env.FOO was read here once\nexport const x = 1;", MODULE_PATH)).toEqual([]);
   });
 
+  it("reads a `use server` directive off the file, not out of a comment", () => {
+    expect(hasUseServerDirective('"use server";\nexport const a = 1;', "a.ts")).toBe(true);
+    // A licence header or a doc block above the directive is still a directive.
+    expect(hasUseServerDirective('/** Why. */\n"use server";\nexport const a = 1;', "a.ts")).toBe(true);
+    // The #185 shape again: `lib/actions/index.ts` DISCUSSES the directive in
+    // its header and deliberately does not carry one.
+    expect(hasUseServerDirective('// "use server" — deliberately not one.\nexport const a = 1;', "a.ts")).toBe(false);
+    expect(hasUseServerDirective('const s = "use server";\n', "a.ts")).toBe(false);
+    // ...and not one buried inside a function, which is a different feature.
+    expect(hasUseServerDirective('export async function f() {\n  "use server";\n}\n', "a.ts")).toBe(false);
+  });
+
+  it("classifies a server action as the send path and a page as not", () => {
+    // THE ASSERTION THAT KEEPS THE TWO HALVES APART, stated on fixtures so it
+    // holds whatever the app currently contains: a page under `app/` cannot
+    // be read as the sender even when it calls exactly the same functions.
+    expect(isSendPath(join(ACTIONS_DIR, "takeoffOffer.ts"), '"use server";\nexport const a = 1;')).toBe(true);
+    // The barrel, which carries no directive, still counts — by directory.
+    expect(isSendPath(ACTIONS_BARREL, "export * from './x';\n")).toBe(true);
+    const previewLike = join(PAGES_DIR, "(app)", "sales", "[id]", "drawing-read", "page.tsx");
+    expect(isSendPath(previewLike, "export default function Page() { return null; }\n")).toBe(false);
+    // Nor does a plain library module, however much it looks like a composer.
+    expect(isSendPath(join(WEB_ROOT, "lib", "mail-compose.ts"), "export const a = 1;\n")).toBe(false);
+  });
+
   it("counts an import statement whether or not it is wrapped", () => {
     expect(importStatementLines('import { a } from "x";\n')).toBe(1);
     expect(importStatementLines('import {\n  a,\n  b,\n} from "x";\n')).toBe(1);
@@ -902,6 +940,60 @@ describe("the delivery email has a caller", () => {
         "under `app/(app)/sales/[id]/`.\n" +
         `Call sites found outside tests: ${productionSites.length}\n`,
     ).not.toEqual([]);
+  });
+
+  it.each(GUARDED)("the code that SENDS the email composes %s, not only the preview", (symbol) => {
+    const senders = sendPathSites
+      .filter((s) => s.symbol === symbol)
+      .map((s) => `${s.path}:${s.line}  ${s.text}`)
+      .sort();
+    expect(
+      senders,
+      `NOTHING ON THE SEND PATH COMPOSES ${symbol}. Some file calls it — the ` +
+        "test above is green — but no server action does, so nothing that " +
+        "actually puts this mail in front of a prospect is building it. The " +
+        "failure this catches looks like a working feature from the inside: " +
+        "the operator opens the drawing-read screen, reads the right subject " +
+        "and the right body, presses send, and the prospect receives nothing " +
+        "or receives something else. A preview is not a sender, and the two " +
+        "live in different files on purpose.\n" +
+        `Call sites on the send path: ${sendPathSites.length}; ` +
+        `elsewhere outside tests: ${otherProductionSites.length}\n`,
+    ).not.toEqual([]);
+  });
+
+  it("cannot be satisfied by the preview, so the two questions stay two", () => {
+    // A PARTITION, asserted rather than assumed. If `sendPath` were true of
+    // everything, the test above would be the one before it wearing a
+    // different name — which is the collapse this file exists to prevent one
+    // level up.
+    expect(sendPathSites.length + otherProductionSites.length).toBe(productionSites.length);
+    expect(sendPathSites.filter((s) => otherProductionSites.includes(s))).toEqual([]);
+
+    // No send-path site is a page. This is what stops the preview satisfying
+    // the send-path test, and it is asserted unconditionally: it holds
+    // whether or not the preview currently calls anything, so removing the
+    // preview's call cannot turn this red.
+    const pagesClaimingToSend = sendPathSites
+      .filter((s) => s.abs.startsWith(PAGES_DIR + sep))
+      .map((s) => `${s.path}:${s.line}`);
+    expect(
+      pagesClaimingToSend,
+      "a file under app/ was classified as the send path — a page renders, it " +
+        "does not send, and letting one count here collapses the two tests " +
+        "above into one",
+    ).toEqual([]);
+
+    // And the directory half of the classifier still points at something, so
+    // a rename fails here rather than silently emptying the send-path set.
+    expect(existsSync(ACTIONS_DIR), `${ACTIONS_DIR_REL} does not exist`).toBe(true);
+    expect(statSync(ACTIONS_DIR).isDirectory()).toBe(true);
+    expect(
+      existsSync(ACTIONS_BARREL),
+      `${ACTIONS_DIR_REL}/index.ts is gone — the actions directory has moved, ` +
+        "and this census is looking for the sender in the wrong place",
+    ).toBe(true);
+    expect(existsSync(PAGES_DIR) && statSync(PAGES_DIR).isDirectory()).toBe(true);
   });
 });
 
