@@ -243,11 +243,24 @@ export async function requestDrawingSetRead(
   // The day the request arrived, at UTC midnight like every other date in
   // this app. `SalesActivity.occurredOn` is normally ENTERED rather than
   // stamped — nobody entered anything here, so the honest value is the day
-  // the form was submitted, derived from the same `now` the dedupe window
-  // was measured against so the two cannot disagree. `createdAt` on all
-  // three rows stays Prisma's stamp, which is correct: it records when a
-  // request arrived, not a business date somebody chose.
-  const arrivedOn = new Date(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`);
+  // the form was submitted. `createdAt` on all three rows stays Prisma's
+  // stamp, which is correct: it records when a request arrived, not a
+  // business date somebody chose.
+  //
+  // `viewerAsOf()` RATHER THAN THE SERVER'S OWN DAY, and the first version of
+  // this line got it wrong: it read `now.toISOString().slice(0, 10)`, which is
+  // UTC's calendar date. A contractor in Hawaii filling this in at 9pm local
+  // is already tomorrow in UTC, so their request would be logged on a date
+  // that had not happened where they were sitting. `viewerAsOf` reads the
+  // viewer's zone and floors to UTC when there is no request scope, so it is
+  // never worse than what it replaced.
+  //
+  // It survived `viewerDayCensus.test.ts` only because that census matches the
+  // one-expression form and this was written in two steps — the same defect
+  // its sibling `sendDrawingSetRead` was caught committing in ONE step and
+  // fixed. Worth knowing before trusting that census's scope: the pattern it
+  // reads for is narrower than the mistake it is about.
+  const arrivedOn = await viewerAsOf();
 
   // One transaction, because a lead with no note is a lead nobody can act
   // on: `SalesLead` has no trade, project or GC column, so everything the

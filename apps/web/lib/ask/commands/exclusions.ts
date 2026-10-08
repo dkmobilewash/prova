@@ -47,14 +47,27 @@ export const notYetRegistered: Exclusion[] = [
   // click away on every page and the words have to be theirs.
   { action: "help.*", reason: "Reaching a person is the one thing the assistant must not do on their behalf: the question has to be in their words, and a model-composed one arrives claiming to be. Never a command." },
 
-  // THE ONE ACTION IN THIS APP WITH NO SIGNED-IN CALLER. /wall-takeoff is a
-  // public intake form: a prospective customer, not a tenant, asks for a free
-  // read of the drawing set they are bidding. There is no principal for a
-  // command to run as, the target company is resolved server-side from
-  // `isProvaOperator` and never from input, and the rows land in Prova's own
-  // internal CRM. So there is nothing for the assistant to propose and nobody
-  // it could propose it to.
-  { action: "takeoffOffer.*", reason: "A public, unauthenticated intake form on /wall-takeoff, writing to Prova's own operating company. No signed-in principal exists for a command to run as, and nothing the assistant could offer a tenant. Never a command." },
+  // PROVA'S OWN CUSTOMER ACQUISITION, from both ends of this module, and the
+  // exclusion is one line because the wildcard covers both.
+  //
+  // `requestDrawingSetRead` is the public /wall-takeoff intake: a prospective
+  // customer, not a tenant, asking for a free read of the drawing set they are
+  // bidding. It is the one action in this app with NO SIGNED-IN CALLER, so
+  // there is no principal for a command to run as. `sendDrawingSetRead` is the
+  // other end — owner-gated and authenticated — mailing that read back.
+  //
+  // CORRECTED: this comment claimed the whole module had no signed-in caller,
+  // which was true when it was written and stopped being true the moment the
+  // sender landed beside the intake. The exclusion was right either way, for a
+  // reason the text had stopped giving — exactly the shape CLAUDE.md keeps
+  // recording, where a correct conclusion outlives its stated premise and the
+  // next reader inherits the premise.
+  //
+  // What holds for both: the target company is resolved server-side from
+  // `isProvaOperator`, never from input, and the rows land in Prova's own
+  // internal CRM. A tenant has nothing here for the assistant to offer, and an
+  // owner mailing a prospect is not something a model should propose.
+  { action: "takeoffOffer.*", reason: "Prova's own customer acquisition — the public /wall-takeoff intake, which has no signed-in principal at all, and the owner-gated action that mails the finished read back. The target company is resolved from isProvaOperator server-side, never from input, and the rows land in Prova's internal CRM. Nothing here for the assistant to offer a tenant. Never a command." },
 
   // Diego's lane, later phases.
   { action: "changeOrders.*", reason: "Change orders move contract value a sent pay application may depend on (T5 decisions, T3 drafts); a later phase." },

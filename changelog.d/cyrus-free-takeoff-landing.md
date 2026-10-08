@@ -80,3 +80,78 @@ proving.
 
 Not yet clicked by a person. The `e2e-public` suite walks the page at 320,
 375 and 1280, which is the only instrument in this repo that can see layout.
+
+**And the other half: the read gets sent.** `/sales/[id]/drawing-read` —
+reachable only from the lead's own page, since a screen about one lead and one
+plan set has no useful version without a lead — lists the operator company's
+ingested sets, renders the exact email beside the one it would send, and sends
+it. `sendDrawingSetRead` composes from `takeoff-delivery.ts` and never by hand.
+
+**The renderer had no call site and I flagged that on myself before any test
+could.** 44 tests passed on a module nothing in the app called — CLAUDE.md's
+"written, documented, and never called", three live instances found in one day,
+every one green. `takeoffDeliveryCensus.test.ts` now fails the build if it
+reopens, and the interesting half is a gap found inside its own green result:
+with a PREVIEW and a SENDER both calling the renderer, removing either alone
+left it green, so the action could lose its call — nothing sends — while the
+page's preview kept the guard satisfied. It carries a second, separate
+assertion that the SEND path composes the mail, identifying that path by the
+`"use server"` directive read off `statements[0]` through the parser rather
+than by directory, because a page cannot acquire one and a rename cannot remove
+one. Mutation-verified in both directions: remove only the action's calls and
+the new tests red while the old ones stay green.
+
+That is CLAUDE.md's expo-router entry one step earlier. "A census can tell you
+the code is THERE; it can never tell you a framework HONOURS it" becomes: a
+census can tell you SOMETHING calls it, and not that the thing which has to
+call it does. **A question asked of the union of two sets is not asked of
+either one.**
+
+**An EMAIL activity is written only on a successful send.** Unconfigured mail,
+no address on the lead, or a provider rejection each return the composed text
+for the operator to copy and record nothing — an activity row saying we emailed
+a prospect when we did not is a false evidence record. A provider failure
+carrying `mayHaveSent` says so, because "it may already have gone" and "it did
+not go" are different things to tell somebody about to hit resend.
+
+**I SHIPPED A LIVE MUTATION TWICE AND EVERYTHING I RAN WAS GREEN.** `52bedd62`
+and `3fc19f13` both carried a mutation-test leftover that wrote that EMAIL row
+UNCONDITIONALLY, before the no-address check and before any send — so every
+call recorded correspondence that had not happened. `52bedd62`'s own message
+says the opposite.
+
+The guard for it existed, was correct, and was in a suite I never ran.
+`.dbtest.ts` files run under `vitest.db.config.mts` against a local Postgres,
+not under `vitest run`. I ran typecheck and ten unit files, 153 tests, reported
+them as green, and none of them could see it: typecheck cannot (the mutation is
+valid TypeScript), the censuses cannot (it is not a missing call site or a
+drifted list — it is correct-looking code in the wrong ORDER), and the one
+assertion written for it lived behind a different command. Proved afterwards by
+re-applying it: the db suite reds five ways, four on the row count
+(`expected 2 to be +0`) and one on `length 1 but got 2`.
+
+So: when a feature's guard is a dbtest, running the unit suite is not verifying
+the feature. Both suites now run green on this branch — 9,463 unit tests and
+**704 dbtests across all 71 files**, the latter never having been run here
+before. CLAUDE.md's "absence of a failure is not a pass" is about a verifier
+that cannot tell "refuted" from "never ran"; this was the same error one level
+out, where I could not tell "passed" from "not in the suite I ran".
+
+**A second one of mine, caught by an agent reading my file rather than by a
+check.** The public intake stamped `occurredOn` from `now.toISOString()
+.slice(0, 10)` — UTC's calendar date — so a contractor in Hawaii submitting at
+9pm local would have their request logged on a date that had not happened where
+they were sitting. Now `viewerAsOf()`. It survived `viewerDayCensus.test.ts`
+only because that census matches the one-expression form and this was written
+in two steps; its sibling made the same mistake in one expression and was
+caught instantly. The pattern that census reads for is narrower than the
+mistake it is about — worth knowing before trusting its scope.
+
+Cross-tenant leakage is proved by mutation rather than argued: drop the plan's
+company comparison in `deliveredReadFor` and the page test reds with the rival
+tenant's job name, file name and door schedule rendered on our own lead's page.
+`/sales/[id]/drawing-read` is registered in `permissions.test.ts`'s
+`OPEN_ROUTES` — gated on `isProvaOperator` AND role OWNER, two things a
+Capability cannot express, so mapping it to one would LOOSEN it.
+
+Not clicked by a person. The click-list is in the PR.

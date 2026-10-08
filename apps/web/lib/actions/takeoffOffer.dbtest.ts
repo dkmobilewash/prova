@@ -785,6 +785,16 @@ describe("sendDrawingSetRead — mailing the finished read back", () => {
     expect(activities[0].type).toBe("EMAIL");
     // Derived from the send rather than entered, and stored at UTC midnight
     // like every other date in this app.
+    //
+    // The action takes that day from `viewerAsOf()` — the OPERATOR'S calendar
+    // day, not the server's, which `viewerDayCensus.test.ts` fails the build
+    // over and which caught the first version of this line. The two agree
+    // here for a reason worth stating rather than relying on: a dbtest runs
+    // with no request around it, `viewerTimeZone()` catches the throw from
+    // `cookies()`, and its documented floor is UTC. So this comparison
+    // against today's UTC date is still an INDEPENDENT check of the value —
+    // deliberately not re-derived from `viewerAsOf()`, which would agree with
+    // a wrong answer as readily as a right one.
     expect(activities[0].occurredOn.toISOString()).toMatch(/T00:00:00\.000Z$/);
     expect(activities[0].occurredOn.toISOString().slice(0, 10)).toBe(
       new Date().toISOString().slice(0, 10),
