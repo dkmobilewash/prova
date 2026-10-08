@@ -54,7 +54,7 @@ const context = {
   role: "OWNER" as string,
 };
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
-vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("next/cache", () => ({ revalidatePath: () => {}, unstable_cache: (fn: unknown) => fn }));
 
 const { importSubListing } = await import("./sales");
 

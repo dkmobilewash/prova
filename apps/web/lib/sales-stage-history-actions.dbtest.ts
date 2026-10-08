@@ -25,7 +25,7 @@ const context = {
 
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 const revalidatePath = vi.fn();
-vi.mock("next/cache", () => ({ revalidatePath: (path: string) => revalidatePath(path) }));
+vi.mock("next/cache", () => ({ revalidatePath: (path: string) => revalidatePath(path), unstable_cache: (fn: unknown) => fn }));
 
 const {
   createSalesLead,
