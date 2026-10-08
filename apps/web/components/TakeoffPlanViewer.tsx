@@ -37,12 +37,12 @@ import {
 import {
   clusterByThickness,
   inchLabel,
-  wallsFromStrokes,
   wallsInTheBuilding,
   wallsNotLettering,
   wallsNotTheSheetBorder,
   type WallCluster,
 } from "@/lib/takeoff/wallVectors";
+import { wallsFromBothEngines } from "@/lib/takeoff/wallRuns";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 
 /**
@@ -429,7 +429,17 @@ export function TakeoffPlanViewer({
         // page-width units would be arithmetic with no meaning.
         width: segment.width,
       }));
-      const everywhere = wallsFromStrokes(inUnits, { feetPerPoint: feetPerUnit });
+      // BOTH ENGINES, MERGED. Pairing asks "are these two lines a wall" and
+      // needs no room to close; the room engine asks which enclosed regions are
+      // thin AND separate two different spaces, and does not care how the wall
+      // was drawn. Opposite blind spots, so neither wins alone -- measured
+      // through the filters below on three real sheets, the union beats both on
+      // every one of them (augusta 608/472 -> 707ft, naples 657/789 -> 1,302ft,
+      // west-herr 1,495/1,093 -> 1,679ft). `mergeWalls` is what stops the
+      // overlap being billed twice; see `wallRuns.ts`.
+      const everywhere = wallsFromBothEngines(inUnits, 1, pageSize.heightPt / pageSize.widthPt, {
+        feetPerPoint: feetPerUnit,
+      });
       // ONLY THE ONES IN THE BUILDING. Without this the title block, the notes
       // column, the sheet border and any detail drawn above the plan all come
       // back as walls — see `wallsInTheBuilding`, which exists because somebody
