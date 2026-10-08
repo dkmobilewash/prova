@@ -245,7 +245,7 @@ export function LienWaiverLanding() {
         <div className="min-w-0">
           <p className="text-sm font-semibold uppercase tracking-[0.12em] text-brand">Free lien waiver generator</p>
           <h1 className="mt-4 font-headline text-[clamp(2.25rem,8vw,5rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink">
-            The right waiver. Filled in.
+            Make your lien waiver. Get paid.
           </h1>
           <p className="mt-6 max-w-lg text-lg leading-relaxed text-ink-body">
             Your GC wants a lien waiver before every payment. Pick the right one, answer a few questions, and
