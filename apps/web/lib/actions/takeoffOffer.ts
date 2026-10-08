@@ -6,6 +6,7 @@ import { emailSetupProblem, sendEmail } from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
 import { deliveredReadFor } from "@/lib/drawing-set-read-query";
 import { deliveryBody, deliverySubjectLine } from "@/lib/takeoff-delivery";
+import { viewerAsOf } from "@/lib/viewerToday";
 import {
   overCeiling,
   requestNote,
@@ -372,7 +373,14 @@ export async function requestDrawingSetRead(
  * That module had 44 passing tests and NOTHING CALLED IT. "Written,
  * documented, and never called" is a shape CLAUDE.md records three live
  * instances of in a single day, every one of them green, because nothing
- * referenced the dead code. This action is the call site.
+ * referenced the dead code. This action is the call site that SENDS it.
+ *
+ * It is not the only one, and the distinction is load-bearing rather than
+ * pedantic: `/sales/[id]/drawing-read` renders the same two functions as a
+ * PREVIEW on the screen, which is the whole reason the operator can see what
+ * the prospect will get before pressing send. Two callers of one renderer is
+ * the point — a preview composed differently from the thing that goes out is
+ * the drift this section is about, wearing a reassuring shape.
  *
  * ── WHY THE SETUP PROBLEM COMES FROM A FUNCTION, NOT FROM `process.env` ──
  *
@@ -441,18 +449,6 @@ export async function sendDrawingSetRead(
   // read is already composed at this point and it is the thing worth having,
   // so it is returned rather than discarded to report the gap.
   const to = (lead.email ?? "").trim();
-  // MUTANT_A: record the EMAIL activity regardless of whether the send
-  // succeeds. Every "no activity row" test must go RED.
-  await prisma.salesActivity.create({
-    data: {
-      companyId: context.company.id,
-      leadId,
-      type: "EMAIL",
-      occurredOn: new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`),
-      summary: `Emailed the free drawing-set read of ${read.subject.fileName ?? "the drawing set they sent"} to ${to}.`,
-      loggedByUserId: context.id,
-    },
-  });
   if (!to) {
     return {
       ok: true,
@@ -506,7 +502,41 @@ export async function sendDrawingSetRead(
   // the honest value is the day the send happened, DERIVED FROM THE SEND and
   // stored at UTC midnight like every other date in this app, rather than a
   // business date somebody chose.
-  // MUTANT_A_MOVED_FROM_HERE
+  //
+  // `viewerAsOf()` RATHER THAN `new Date()`, and this is a correction rather
+  // than a flourish: the first version of this line read
+  // `new Date().toISOString().slice(0, 10)`, which is the SERVER'S day.
+  // `viewerDayCensus.test.ts` failed the build naming this exact
+  // expression, and its header says why it is worth a census — west of UTC
+  // the server's day rolls over in the afternoon, so for seven hours of
+  // every day an operator sending a read at 5pm in Los Angeles would have
+  // it logged as TOMORROW on their own lead, and the activity list they
+  // read it back from is sorted by that column.
+  //
+  // It is the one date in this action, and `viewerAsOf` is the exact shape
+  // needed: the reader's calendar day, as the UTC-midnight instant every
+  // dated record here is stored at. It inherits that helper's UTC floor and
+  // never throws, which matters because this action is also called from a
+  // database test with no request around it.
+  const sentOn = await viewerAsOf();
+  await prisma.salesActivity.create({
+    data: {
+      companyId: context.company.id,
+      leadId,
+      type: "EMAIL",
+      occurredOn: sentOn,
+      // Names what was sent AND which file it was about: a lead can be sent
+      // more than one read, and "we emailed them the read" on its own does
+      // not say which set.
+      summary: `Emailed the free drawing-set read of ${read.subject.fileName ?? "the drawing set they sent"} to ${to}.`,
+      // Who pressed send is audit, not content — same as `createSalesActivity`
+      // and `ContactInteraction`. Unlike the public intake above, there IS a
+      // user here, so the column is filled.
+      loggedByUserId: context.id,
+      // followUpOn null: sending the read owes nothing by itself. The
+      // operator logs a follow-up when they decide to chase it.
+    },
+  });
 
   // The lead's own page shows its activity list; /sales derives the pipeline,
   // the follow-up queue and the last-contact column from these rows.

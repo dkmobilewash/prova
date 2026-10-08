@@ -351,6 +351,8 @@ const OPEN_ROUTES: Record<string, string> = {
   "/sales":
     "Prova's OWN sales pipeline, not a tenant's. Guarded HARDER than any capability, on two things a Capability cannot express: the page refuses unless Company.isProvaOperator AND the person's role is OWNER. Mapping it to a capability would loosen it, since every owner holds all seven and a non-operator company holds isProvaOperator on nothing.",
   "/sales/[id]": "Same page, same two checks — isProvaOperator, then OWNER — with notFound() for a non-operator company.",
+  "/sales/[id]/drawing-read":
+    "The operator-facing page that turns a finished drawing-set read into the email we send a prospect. Guarded the same two ways as /sales/[id] above it and for the same reason — isProvaOperator then OWNER, notFound() for a non-operator — and a capability would LOOSEN it. Both ids it reads from the URL are re-proved against the company by deliveredReadFor (lib/drawing-set-read-query.ts), which returns null rather than naming which of the two was not ours, and sendDrawingSetRead repeats the whole gate because the action is reachable without this page having rendered.",
   "/internal/usage":
     "Prova's OWN usage instrument — who is still logging in, across every company. Guarded HARDER than any capability, on the same two things /sales is: Company.isProvaOperator AND role OWNER. A capability would LOOSEN it, since every owner holds all seven, and this is the one page in the app that reads across tenants. Listed open here only in the sense that ROUTE_CAPABILITY is the wrong home for it; the page refuses.",
   "/vendors":
