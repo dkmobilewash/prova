@@ -1,5 +1,28 @@
 # Handoff — the lien waiver generator
 
+> ## CORRECTION, 2026-10-08, before you read any of this
+>
+> **The lien waiver feature ALREADY EXISTS in this repo.** This handoff was
+> written assuming greenfield and that assumption was wrong. What is already
+> on `main`:
+>
+> - `packages/db/prisma/schema/lien-waivers.prisma` + migration
+>   `20260926024323_add_lien_waivers`
+> - `apps/web/lib/lien-waiver.ts` — `WaiverCondition` × `WaiverStage` (the
+>   four types), `WAIVER_FORM_LABELS`, `candidateExceptions`,
+>   `candidateExceptionTotal`, `waiverWarnings`
+> - `apps/web/lib/lien-waiver-query.ts`, `apps/web/lib/actions/lienWaivers.ts`,
+>   `apps/web/components/LienWaivers.tsx`
+> - a whole lien-DEADLINES feature beside it
+>
+> So the exceptions interview and the warnings in the "still to build" list
+> below are **already built**. Read that module before writing anything, and
+> derive from it rather than restating it.
+>
+> **What is genuinely missing is still the same one thing:** the verbatim
+> statutory form text for the 16 forms, which no agent container can fetch.
+> That part of this document stands.
+
 Paste this whole file into a new chat **that has web access**. It is written
 to be self-contained: it names what exists, what is missing, exactly what to
 fetch, and where it goes.

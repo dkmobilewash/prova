@@ -116,6 +116,20 @@ body {
   display: none;
 }
 
+/* ── The lien waiver picker figure, AT REST ──────────────────────────────
+   components/landing/WaiverPickFigure.tsx. Same placement rule as the ticker
+   above: these at-rest rules share specificity with the motion rules in the
+   `prefers-reduced-motion: no-preference` block far below, so they must stay
+   ABOVE it or they would win and nothing would ever move.
+
+   At rest the safe type is already chosen and every line of the form is
+   already filled — the page's whole claim, made with no motion at all. The
+   motion only re-enacts it. */
+.waiver-pick {
+  --waiver-pick-stage: 324px;
+  --waiver-pick-row-step: 150ms;
+}
+
 /* ── The two animated figures on the landing page, AT REST ───────────────
    components/landing/SubmittalStamp.tsx and
    components/landing/RetainageCountUp.tsx. Read the ticker note above
@@ -333,6 +347,53 @@ body {
     }
     to {
       transform: scaleX(1);
+    }
+  }
+
+  /* The lien waiver picker (components/landing/WaiverPickFigure.tsx).
+     The three types NOT chosen fade back up from dim; the chosen one settles
+     on the overshoot curve, because the choice is the moment this page is
+     about. Then the form's lines arrive in order behind it.
+
+     Transform and opacity only, in every keyframe. Both stages are
+     fixed-height and clipped, so nothing changes its own height as this
+     plays and nothing below it moves. */
+  [data-motion-play="playing"] .waiver-pick__other {
+    animation: waiver-pick-dim var(--speed-slow) var(--ease-landing) both;
+  }
+  [data-motion-play="playing"] .waiver-pick__chosen {
+    animation: waiver-pick-settle 420ms cubic-bezier(0.3, 1.5, 0.5, 1) 160ms both;
+  }
+  [data-motion-play="playing"] .waiver-pick__line {
+    animation: waiver-pick-line var(--speed-slow) var(--ease-landing) both;
+    animation-delay: calc(var(--waiver-pick-row-step) * var(--waiver-pick-index, 0) + 420ms);
+  }
+  @keyframes waiver-pick-dim {
+    from {
+      opacity: 0.45;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes waiver-pick-settle {
+    from {
+      opacity: 0.4;
+      transform: scale(1.03);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes waiver-pick-line {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
     }
   }
 }

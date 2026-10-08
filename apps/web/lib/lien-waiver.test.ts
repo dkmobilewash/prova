@@ -1,140 +1,176 @@
 import { describe, expect, it } from "vitest";
-
 import {
-  EXCEPTIONS_QUESTIONS,
-  FORM_FIELDS,
-  INTAKE_QUESTIONS,
-  STATE_RULES,
-  STATUTORY_TEXT,
-  TYPE_GUIDE,
-  WAIVER_STATES,
-  WAIVER_TYPES,
-  noticeIsLargest,
-  renderable,
-  transcribedCount,
+  WAIVER_FORM_LABELS,
+  candidateExceptionTotal,
+  candidateExceptions,
+  waiverFormLabel,
+  waiverWarnings,
+  type WarningInput,
 } from "./lien-waiver";
 
 /**
- * The lien waiver generator's guard rail.
+ * The expensive failure this file guards is not picking the wrong form.
+ * It is an UNCONDITIONAL waiver with the exceptions left blank, which
+ * gives up retainage and every pending change order along with the
+ * payment actually being made — a document that reads as routine
+ * paperwork and costs the held percentage of the job.
  *
- * A lien waiver is a statutory document and a sub's lien rights hang from it,
- * so the failure this file is built to prevent is not a bug — it is the tool
- * emitting a PDF whose wording nobody checked against the statute. Everything
- * below exists to make that impossible to do by accident.
+ * So most of what is asserted here is the SENTENCES. A warning nobody can
+ * act on is decoration, and a warning that reassures is worse than none.
  */
-describe("the lien waiver generator", () => {
-  it("covers four states and four types, with a guide entry for each type", () => {
-    expect(WAIVER_STATES).toEqual(["AZ", "CA", "NV", "TX"]);
-    expect(WAIVER_TYPES).toHaveLength(4);
-    for (const type of WAIVER_TYPES) {
-      const guide = TYPE_GUIDE[type];
-      expect(guide, type).toBeDefined();
-      // Every type says WHEN to use it and WHAT IT COSTS. A picker that
-      // names the four without saying which one is dangerous is the thing
-      // this product is supposed to replace.
-      expect(guide.when.length, type).toBeGreaterThan(20);
-      expect(guide.risk.length, type).toBeGreaterThan(20);
-    }
+
+const base: WarningInput = {
+  condition: "CONDITIONAL",
+  stage: "PROGRESS",
+  exceptedAmount: 0,
+  amountPaid: null,
+  retainageBalance: 0,
+  pendingChangeOrderTotal: 0,
+};
+
+describe("the four forms", () => {
+  it("names all four, and they are distinct", () => {
+    const labels = Object.values(WAIVER_FORM_LABELS);
+    expect(labels).toHaveLength(4);
+    expect(new Set(labels).size, "two forms share a label").toBe(4);
   });
 
-  it("gives every state a citation, a compliance standard and a notice rule", () => {
-    for (const state of WAIVER_STATES) {
-      const rule = STATE_RULES[state];
-      expect(rule.cite, state).toMatch(/\d/);
-      expect(["strict", "substantial"]).toContain(rule.compliance);
-      expect(rule.penalty.length, state).toBeGreaterThan(20);
-      expect(rule.noticeRule.length, state).toBeGreaterThan(20);
-    }
-  });
-
-  it("keeps Nevada marked strict, because it is what the whole design is pinned to", () => {
-    // NRS 108.2457 says the waiver "must be in the following form" — the
-    // word "substantially" that the other three carry is absent. Design to
-    // Nevada and the other three are satisfied; relax this and the floor
-    // moves without anyone deciding to move it.
-    expect(STATE_RULES.NV.compliance).toBe("strict");
-    expect(
-      WAIVER_STATES.filter((s) => STATE_RULES[s].compliance === "strict"),
-      "if a second state becomes strict, the shared floor needs rethinking rather than extending",
-    ).toEqual(["NV"]);
-  });
-
-  it("does not assume one form with four skins", () => {
-    // Nevada keys its release to a pay application; California's FINAL forms
-    // have no through-date at all. A model that put `throughDate` on all
-    // sixteen would be wrong in five of them.
-    expect(FORM_FIELDS.NV["conditional-progress"]).toContain("payAppNumber");
-    expect(FORM_FIELDS.NV["conditional-progress"]).not.toContain("throughDate");
-    expect(FORM_FIELDS.CA["conditional-final"]).not.toContain("throughDate");
-    expect(FORM_FIELDS.CA["unconditional-final"]).not.toContain("throughDate");
-    expect(FORM_FIELDS.CA["conditional-progress"]).toContain("throughDate");
-  });
-
-  it("asks for exceptions on every form, in every state", () => {
-    // No state protects a blank exceptions block, and the dangerous
-    // combination — a FINAL waiver signed while retainage is outstanding —
-    // is only caught here.
-    for (const state of WAIVER_STATES) {
-      for (const type of WAIVER_TYPES) {
-        expect(FORM_FIELDS[state][type], `${state} ${type}`).toContain("exceptions");
-      }
-    }
-    expect(EXCEPTIONS_QUESTIONS.length).toBeGreaterThanOrEqual(5);
-    expect(EXCEPTIONS_QUESTIONS.map((q) => q.id)).toContain("retainage");
-    for (const q of EXCEPTIONS_QUESTIONS) expect(q.why.length, q.id).toBeGreaterThan(30);
-  });
-
-  it("asks Texas for the ORIGINAL contract date, not today's", () => {
-    // Notarization was dropped only for prime contracts entered on or after
-    // 1 January 2022. A sub signing in 2026 on a 2021 job still needs a
-    // notary block, so the answer changes the document rather than the
-    // advice — which is why it is an intake question.
-    const tx = INTAKE_QUESTIONS.find((q) => q.id === "tx-prime-contract-date");
-    expect(tx, "the Texas notarization question is missing").toBeDefined();
-    expect(tx?.appliesTo).toContain("TX");
-    expect(STATE_RULES.TX.notarization).toMatch(/2022/);
-  });
-
-  /**
-   * THE GATE. While a form's statutory wording is null, nothing may render
-   * it. This test is expected to be RED in the sense that `transcribedCount`
-   * is zero — that is the honest state of the product, not a defect — and it
-   * pins the gate shut so no PDF path can quietly skip it.
-   */
-  it("refuses to render any form whose statutory text has not been transcribed", () => {
-    for (const state of WAIVER_STATES) {
-      for (const type of WAIVER_TYPES) {
-        const text = STATUTORY_TEXT[state][type];
-        if (text === null) {
-          expect(renderable(state, type), `${state} ${type} must not be renderable while its text is null`).toBe(false);
-        } else {
-          // Once transcribed: both halves present, and neither a placeholder.
-          expect(text.notice.length, `${state} ${type} notice`).toBeGreaterThan(40);
-          expect(text.body.length, `${state} ${type} body`).toBeGreaterThan(200);
-          expect(`${text.notice} ${text.body}`).not.toMatch(/TODO|PLACEHOLDER|lorem/i);
-          expect(renderable(state, type)).toBe(true);
-        }
+  it("maps every combination of the two axes", () => {
+    // The reason this is two enums and not one four-valued one: every
+    // pairing is a real document, so there is nothing to rule out.
+    for (const condition of ["CONDITIONAL", "UNCONDITIONAL"] as const) {
+      for (const stage of ["PROGRESS", "FINAL"] as const) {
+        expect(waiverFormLabel(condition, stage), `${condition}/${stage}`).toBeTruthy();
       }
     }
   });
 
-  it("reports how many of the sixteen are transcribed, so the gap is visible", () => {
-    const n = transcribedCount();
-    expect(n).toBeGreaterThanOrEqual(0);
-    expect(n).toBeLessThanOrEqual(WAIVER_STATES.length * WAIVER_TYPES.length);
-    // Deliberately NOT asserted to be 16. This test exists to make the
-    // number readable, not to block the branch while the statutes are being
-    // fetched — the `renderable` gate above is what protects the user.
+  it("says conditional or unconditional in the name, since that is the whole distinction", () => {
+    expect(waiverFormLabel("CONDITIONAL", "PROGRESS").toLowerCase()).toContain("conditional");
+    expect(waiverFormLabel("UNCONDITIONAL", "FINAL").toLowerCase()).toContain("unconditional");
+  });
+});
+
+describe("candidate exceptions are offered, never applied", () => {
+  it("finds retainage and pending change orders", () => {
+    const found = candidateExceptions({ retainageBalance: 5000, pendingChangeOrderTotal: 1200 });
+    expect(found.map((c) => c.key)).toEqual(["retainage", "pending-change-orders"]);
+    expect(candidateExceptionTotal({ retainageBalance: 5000, pendingChangeOrderTotal: 1200 })).toBe(6200);
   });
 
-  it("holds the notice to the largest type on the page", () => {
-    // Three of four states pin the statutory notice to the largest type used
-    // anywhere else, so this is a constraint on the whole renderer. A logo or
-    // an enlarged heading breaks three states at once, silently.
-    expect(noticeIsLargest(12, [10, 11, 12])).toBe(true);
-    expect(noticeIsLargest(12, [10, 14])).toBe(false);
-    // Texas's 10pt floor applies even when nothing else is bigger.
-    expect(noticeIsLargest(9, [8])).toBe(false);
-    expect(noticeIsLargest(10, [10])).toBe(true);
+  it("omits a zero candidate rather than listing it at $0.00", () => {
+    // "Retainage: $0.00" beside the field is noise, and noise beside a
+    // money field trains people to stop reading it.
+    expect(candidateExceptions({ retainageBalance: 0, pendingChangeOrderTotal: 900 }).map((c) => c.key)).toEqual([
+      "pending-change-orders",
+    ]);
+    expect(candidateExceptions({ retainageBalance: 0, pendingChangeOrderTotal: 0 })).toEqual([]);
+  });
+});
+
+describe("warnings", () => {
+  it("says nothing when there is nothing to say", () => {
+    expect(waiverWarnings(base)).toEqual([]);
+  });
+
+  it("NEVER REASSURES — silence is not an all-clear", () => {
+    // The load-bearing test of this module. A waiver can be catastrophic
+    // for reasons this app cannot see: a side agreement, a second-tier
+    // claim, a statute wanting a form nobody here has heard of. If a
+    // message ever tells somebody it is fine to sign, that sentence is
+    // the app giving legal comfort it has no basis for.
+    const everyMessage = [
+      ...waiverWarnings(base),
+      ...waiverWarnings({ ...base, condition: "UNCONDITIONAL", amountPaid: 0 }),
+      ...waiverWarnings({ ...base, stage: "FINAL", retainageBalance: 100 }),
+      ...waiverWarnings({ ...base, retainageBalance: 100, pendingChangeOrderTotal: 50 }),
+    ].map((w) => w.message.toLowerCase());
+
+    for (const message of everyMessage) {
+      for (const reassurance of ["safe to sign", "looks good", "no issues", "you're covered", "all clear", "ok to sign"]) {
+        expect(message, `a warning must never reassure: "${reassurance}"`).not.toContain(reassurance);
+      }
+    }
+  });
+
+  it("flags an unconditional waiver with no payment recorded", () => {
+    const [warning] = waiverWarnings({ ...base, condition: "UNCONDITIONAL", amountPaid: 0 });
+    expect(warning.key).toBe("unconditional-without-payment");
+    // It has to offer the alternative, or it is just a scold.
+    expect(warning.message).toContain("conditional waiver");
+  });
+
+  it("stays silent about payment when no invoice is attached", () => {
+    // `null` means the app has nothing to check. Warning about an absence
+    // it cannot interpret would be noise on every closeout waiver.
+    expect(waiverWarnings({ ...base, condition: "UNCONDITIONAL", amountPaid: null })).toEqual([]);
+  });
+
+  it("does not flag an unconditional waiver that has been paid", () => {
+    expect(waiverWarnings({ ...base, condition: "UNCONDITIONAL", amountPaid: 12_500 })).toEqual([]);
+  });
+
+  it("flags a FINAL waiver while retainage is outstanding", () => {
+    const warnings = waiverWarnings({ ...base, stage: "FINAL", retainageBalance: 8_000, exceptedAmount: 8_000 });
+    const final = warnings.find((w) => w.key === "final-with-retainage");
+    expect(final, "a final waiver with retainage held must say so").toBeDefined();
+    expect(final!.message).toContain("$8,000.00");
+  });
+
+  it("flags a FINAL waiver with retainage EVEN WHEN the exceptions cover it", () => {
+    // Deliberate. The excepted figure is a number typed today; the
+    // retainage balance moves, and the waiver does not. Covering it is
+    // not the same as it being safe.
+    const warnings = waiverWarnings({ ...base, stage: "FINAL", retainageBalance: 8_000, exceptedAmount: 99_000 });
+    expect(warnings.map((w) => w.key)).toContain("final-with-retainage");
+  });
+
+  it("flags exceptions that fall short, and names what is missing and by how much", () => {
+    const warnings = waiverWarnings({ ...base, retainageBalance: 5_000, pendingChangeOrderTotal: 1_200, exceptedAmount: 0 });
+    const short = warnings.find((w) => w.key === "exceptions-short");
+    expect(short).toBeDefined();
+    // Both sources named, with their amounts — "your exceptions are too
+    // low" is not something anybody can act on.
+    expect(short!.message).toContain("$5,000.00");
+    expect(short!.message).toContain("$1,200.00");
+    expect(short!.message.toLowerCase()).toContain("retainage");
+    expect(short!.message.toLowerCase()).toContain("change orders");
+  });
+
+  it("is satisfied once the exceptions cover the candidates", () => {
+    const warnings = waiverWarnings({ ...base, retainageBalance: 5_000, pendingChangeOrderTotal: 1_200, exceptedAmount: 6_200 });
+    expect(warnings.map((w) => w.key)).not.toContain("exceptions-short");
+  });
+
+  it("puts the worst first, because the first line is the one that gets read", () => {
+    const warnings = waiverWarnings({
+      ...base,
+      condition: "UNCONDITIONAL",
+      stage: "FINAL",
+      amountPaid: 0,
+      retainageBalance: 5_000,
+      exceptedAmount: 0,
+    });
+    expect(warnings.map((w) => w.key)).toEqual([
+      "final-with-retainage",
+      "unconditional-without-payment",
+      "exceptions-short",
+    ]);
+  });
+
+  it("never blocks — it returns sentences, and a caller can always proceed", () => {
+    // Encoded as a type-level and shape-level fact: the worst case still
+    // returns an array of messages, never a refusal, never a throw.
+    const worst = () =>
+      waiverWarnings({
+        condition: "UNCONDITIONAL",
+        stage: "FINAL",
+        amountPaid: 0,
+        exceptedAmount: 0,
+        retainageBalance: 50_000,
+        pendingChangeOrderTotal: 9_000,
+      });
+    expect(worst).not.toThrow();
+    expect(worst()).toHaveLength(3);
   });
 });

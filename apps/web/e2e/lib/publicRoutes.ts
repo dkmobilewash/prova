@@ -68,6 +68,17 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
   // the shared PublicDocument chrome links to both pages by name from every
   // page, so "Privacy" and "Terms" are on screen whether or not the document
   // itself rendered.
+  {
+    path: "/lien-waiver",
+    label: "free lien waiver generator",
+    pattern: "/lien-waiver",
+    // A heading from the part of the page that renders unconditionally. NOT
+    // the call to action and NOT a waiver type name: the types are copy that
+    // will be reworded as we learn how subs talk about them, and a `mustShow`
+    // that tracks changing copy gets deleted by whoever debugs it rather
+    // than fixed.
+    mustShow: "What we do not do",
+  },
   { path: "/privacy", label: "privacy policy", pattern: "/privacy", mustShow: "What we keep" },
   { path: "/terms", label: "terms of service", pattern: "/terms", mustShow: "Your account" },
   {
