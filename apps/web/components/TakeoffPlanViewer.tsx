@@ -677,8 +677,25 @@ export function TakeoffPlanViewer({
           honest than "it does your takeoff": the biggest wall types come for
           free. Accepting one group on one real sheet replaced ninety-nine hand
           traces. Whatever it missed is still traced the way it always was. */}
+      {/* ── THE SHEET IS THE INSTRUMENT, SO IT GETS THE ROOM ──
+          Found walls used to stack ABOVE the drawing, and the frame reserved a
+          fixed 22rem for them whether they were there or not. With six groups
+          showing, the panel took the top half of the screen and the sheet was
+          left a short strip — and because Fit fits BOTH dimensions, a short
+          frame makes a small sheet, so the width beside it went empty. A real
+          click-through landed at 11% zoom with a third of the screen black.
+
+          That is backwards for a feature whose entire verification step is
+          LOOKING at the drawing: the found walls are a claim, and the sheet is
+          the only thing that can check it. So on a wide screen they sit side by
+          side and the drawing takes what is left, which is most of it. Narrow
+          screens keep the stack, where a column each would make both unusable. */}
+      <div className="flex flex-col gap-3 xl:flex-row-reverse xl:items-start">
       {found !== null && (
-        <div className="mt-2 rounded-md border border-line-card bg-surface p-3" data-takeoff="found-walls">
+        <div
+          className="rounded-md border border-line-card bg-surface p-3 xl:w-[23rem] xl:shrink-0 xl:overflow-auto xl:max-h-[calc(var(--shell-port)-11rem)]"
+          data-takeoff="found-walls"
+        >
           {found.length === 0 ? (
             /* ── TWO KINDS OF EMPTY, AND THIS SAID THE WRONG ONE ──
 
@@ -753,9 +770,19 @@ export function TakeoffPlanViewer({
       )}
 
       {/* ── The sheet ─────────────────────────────────────────────── */}
+      {/* The height reserve shrinks to 11rem once the panel is beside rather
+          than above; that reserve is the toolbar and the page's own padding,
+          and nothing else.
+
+          NO `min-w-0` HERE, though a flex child's default min-width would
+          normally demand it: this frame is `overflow-auto`, which establishes a
+          scroll container and resets the min-content floor by itself. It was
+          written in first, on the usual reasoning, and measured out — identical
+          boxes at 1512, 1280, 1024 and 768 with and without it. Unreachable
+          code shaped like a safeguard is worse than none. */}
       <div
         ref={frameRef}
-        className="relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-neutral-900"
+        className="relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-neutral-900 xl:flex-1 xl:max-h-[calc(var(--shell-port)-11rem)]"
         data-testid="takeoff-plan-port"
       >
         {loadError ? (
@@ -806,6 +833,8 @@ export function TakeoffPlanViewer({
         {isRendering && !loadError && (
           <p className="absolute right-3 top-3 rounded bg-neutral-800 px-2 py-1 text-xs text-ink-muted">Drawing…</p>
         )}
+      </div>
+
       </div>
 
       {/* ── What the draft reads, and what to do with it ──────────── */}

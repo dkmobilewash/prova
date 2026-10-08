@@ -418,3 +418,43 @@ describe("the Fit control", () => {
     expect(fit?.className).toContain("tag-amber-ink");
   });
 });
+
+describe("the sheet and the found walls share a row", () => {
+  /**
+   * WHAT THIS CAN AND CANNOT PROVE.
+   *
+   * It cannot see layout. happy-dom does no layout and returns zeros from
+   * getBoundingClientRect, which is why every number in the commit that added
+   * this came from real Chromium instead: at 1512px the drawing's fit zoom goes
+   * from 25% to 34%, because the frame stops being 1480x548 — aspect 2.7
+   * against a sheet of aspect 1.4 — and becomes 1100x724.
+   *
+   * What it CAN prove is the structure those numbers depend on: that the panel
+   * and the sheet are SIBLINGS in one container rather than stacked in the
+   * page. Un-nest them and the measurement above stops describing the app,
+   * silently, because nothing else in this repo would notice.
+   */
+  it("puts the found panel and the plan port in the SAME parent", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        createElement(TakeoffPlanViewer, {
+          jobId: "job_1",
+          sheets: [sheet()],
+          canEdit: true,
+        } as never),
+      );
+    });
+    const port = host.querySelector('[data-testid="takeoff-plan-port"]');
+    expect(port, "the plan port must render").not.toBeNull();
+    // The row exists whether or not walls have been found — the sheet lives in
+    // it either way, so the panel has somewhere to arrive.
+    const row = port?.parentElement;
+    expect(row, "the plan port must sit inside a row container").not.toBeNull();
+    expect(row?.className ?? "").toContain("flex-row-reverse");
+    await act(async () => root.unmount());
+    host.remove();
+  });
+});
