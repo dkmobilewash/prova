@@ -1,0 +1,21 @@
+-- Which pricing package a measured quantity belongs to. NULL is the base bid.
+--
+-- A GC's bid form asks for a base number, then alternates it may or may not
+-- take. The estimator measures all of it off the same sheets and had nowhere to
+-- say which was which, so posting put every foot into the number sent to the GC.
+-- A base bid carrying an alternate's quantities is high by exactly that
+-- alternate, which loses the job with nothing on screen to say why.
+--
+-- ADDITIVE AND NULLABLE, with no default and no backfill, so the running build
+-- cannot see it and every existing row keeps the meaning it already had. That
+-- meaning is correct rather than merely preserved: every measurement traced
+-- before this column existed went into the base bid, and NULL is the base.
+--
+-- The nullable-with-no-default shape is also what makes NULL mean something. A
+-- default of '' would make "nobody has thought about this" and "somebody
+-- decided this is the base" indistinguishable, and this app's rule is that
+-- those are different facts.
+--
+-- No index. The column is read by grouping a single page's measurements in
+-- memory, which is tens of rows, and never queried across jobs.
+ALTER TABLE "TakeoffMeasurement" ADD COLUMN "packageLabel" TEXT;

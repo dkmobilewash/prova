@@ -1554,6 +1554,29 @@ function MeasurementForm({
             className="w-56 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
           />
         </label>
+        {/* ── WHICH PRICING PACKAGE THIS QUANTITY IS IN ──
+
+            Blank is the BASE BID, and the placeholder says so rather than
+            leaving it to be inferred from an empty box. That default is the
+            safety argument: an estimator who does not think about this puts the
+            quantity in the number sent to the GC, which is the recoverable
+            error. The opposite default bids LOW, and a low bid is work won at a
+            loss and then built.
+
+            `bg-surface` rather than `bg-surface-input` like its neighbour, and
+            not a style choice: `surface-input` resolves to nothing on this
+            near-black canvas (issue #573) and `colorTokenCensus.test.ts` pins
+            the family at exactly 39 uses so it fails when it GROWS. A fortieth
+            would red CI. */}
+        <label className="flex flex-col gap-1 text-xs text-ink-label">
+          Pricing package
+          <input
+            name="packageLabel"
+            placeholder="Base bid"
+            data-takeoff="package-label"
+            className="w-48 rounded-md border border-line-card bg-surface px-2 py-1 text-sm text-ink-body"
+          />
+        </label>
         <SubmitButton
           type="submit"
           disabled={Boolean(problem) || crosses}

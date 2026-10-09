@@ -245,6 +245,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
       xs: m.xs,
       ys: m.ys,
       label: m.label,
+      packageLabel: m.packageLabel,
       postedAt: m.postedAt ? m.postedAt.toISOString() : null,
       calibration: {
         x1: m.calibration.x1,
