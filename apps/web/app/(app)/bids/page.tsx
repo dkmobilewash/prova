@@ -404,6 +404,27 @@ export default async function BidsPage({
                   <p className="text-sm font-medium text-ink">{money(Number(bid.bidAmount))}</p>
                 )}
               </Link>
+              {/* ── THE REGRET LETTER, ON A DECLINED BID ONLY ──
+
+                  A page nothing links to is a page nobody uses — #665's lesson,
+                  and the reason this link exists at all rather than the route
+                  being reachable only by typing it.
+
+                  Shown only on DECLINED. The letter renders for any bid, on
+                  purpose, because somebody may write it before changing the
+                  status — but a "decline to bid" link on a bid being actively
+                  priced is an invitation to misread the row. */}
+              {bid.status === "DECLINED" && (
+                <div className="px-4 pb-3">
+                  <Link
+                    href={`/bids/${bid.id}/regret`}
+                    data-bids="regret-link"
+                    className="text-xs text-link hover:underline"
+                  >
+                    Write the regret letter →
+                  </Link>
+                </div>
+              )}
               <BidLines
                 bidInvitationId={bid.id}
                 base={bid.bidAmount === null ? null : Number(bid.bidAmount)}
