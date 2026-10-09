@@ -86,7 +86,11 @@ const COLOR_UTILITIES = [
  */
 const KNOWN_UNDEFINED: Record<string, { count: number; why: string }> = {
   "surface-input": { count: 39, why: "issue #573 — form fields with no ground on a near-black canvas" },
-  "surface-card": { count: 16, why: "issue #573 — panels with no ground" },
+  // 16 -> 15: the duplicate-sheet-number warning in `PlanSheetReview` was
+  // retokened to `bg-surface` while the drawing-index check was built beside
+  // it. One row of #573 fixed in passing rather than left because it was not
+  // what somebody set out to do.
+  "surface-card": { count: 15, why: "issue #573 — panels with no ground" },
   "surface-muted": { count: 3, why: "issue #573" },
   "surface-sunken": { count: 1, why: "issue #573" },
   "ink-strong": { count: 1, why: "issue #573 — meant to be emphasis, renders as inherited" },
