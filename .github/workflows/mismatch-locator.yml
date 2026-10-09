@@ -158,12 +158,29 @@ jobs:
       # The probe asserts only its own instrument — that every load hydrated,
       # and that it caught and NAMED a mismatch it injected itself. The
       # measurement is printed: read the `LOC` lines in this step's log.
+      # ── THROUGH `pnpm test:e2e`, NOT playwright DIRECTLY, AND THAT IS THE
+      #    WHOLE DIFFERENCE FROM `hydration-probe.yml` ──
+      #
+      # The first version of this workflow called playwright straight, copied
+      # from the dev-mode probe, and the run died before the probe started:
+      #
+      #   Could not find a production build in the '.next' directory.
+      #
+      # `next dev` compiles on demand, so the dev probe needs no build and gets
+      # away with it. `next start` — which this config's `webServer` runs
+      # without `E2E_DEV_SERVER` — does not. Taking the flag out without adding
+      # the build left a workflow that could only ever fail.
+      #
+      # `run.mjs` does the build, and `ci.yml`'s own `e2e` job reaches the same
+      # suite the same way. It also respects `E2E_DATABASE_URL`, which this job
+      # sets, so it uses the postgres SERVICE above rather than booting a second
+      # one beside it.
       - name: Locate the mismatched element in a production build
         id: probe
         run: |
           set -e
           set -o pipefail
-          pnpm --filter @prova/web exec playwright test \
+          pnpm test:e2e -- \
             --config e2e/playwright.probe.config.ts --reporter=list mismatch-locator
 
       - name: What the numbers mean
