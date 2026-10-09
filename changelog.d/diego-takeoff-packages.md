@@ -91,3 +91,34 @@ wrong number nobody can see.
 4. Select only the alternate and add it. Its estimate lines must read
    `[Add Alternate 1] …`.
 5. Select only the base row and add it. Its lines must carry **no** prefix.
+
+#### Clicked through on production, and what it found
+
+Steps 1–5 all behaved, including the one that matters: selecting a base run and
+an alternate together and pressing add returned, verbatim —
+
+> This selection spans 2 pricing packages — Add Alternate 1, Base bid. Posting
+> them together would put the alternates' quantities into the base bid, which
+> sends it out high by exactly that much. Add one package at a time.
+
+Posting the alternate alone produced four lines all prefixed
+`[Add Alternate 1] `; posting the base alone produced four with no prefix.
+
+**Three things the click-through found that are NOT this change**, recorded
+because each cost somebody a question:
+
+- **`tag-blue` is yellow.** `tailwind.config.ts` defines `"tag-blue": "#facc15"`
+  — the brand yellow — with `tag-blue-ink` a dark brown. So the package chip
+  renders yellow, as do the **39 other uses of that token across ten files**.
+  The token is MISNAMED rather than broken: the pair is legible and
+  `theme-contrast.test.ts` passes it, because that census checks a ground/ink
+  pair's contrast and has no opinion on whether a name matches a hue. Left as
+  it is here — one chip should not quietly diverge from thirty-nine others —
+  and worth its own rename.
+- **A deleted wall-schedule line comes back on reload.** Removing the posted
+  lines and reloading restored one. That is `refreshWallSchedule` doing its job:
+  a `WallRun` owns its lines and re-syncs them, so a line cannot be deleted
+  while its run exists. Correct, and it reads as a bug.
+- **A measurement still says "already on the estimate" after its lines are
+  deleted.** `postedAt` records that it WAS posted and nothing clears it. Also
+  defensible, also confusing.
