@@ -97,7 +97,7 @@ const PASSES = 2;
  * uncaught error on ONE clock.
  */
 const INSTRUMENT = () => {
-  type Mut = { t: number; path: string; removed: number; added: number; boundary: boolean };
+  type Mut = { t: number; path: string; removed: number; added: number; boundary: boolean; gone: string; came: string };
   const w = window as Window & { __mut?: Mut[]; __err?: { t: number; msg: string }[] };
   w.__mut = [];
   w.__err = [];
@@ -105,6 +105,35 @@ const INSTRUMENT = () => {
   window.addEventListener("error", (event: ErrorEvent) => {
     w.__err?.push({ t: performance.now(), msg: String(event.message ?? event) });
   });
+
+  /**
+   * ── WHAT A NODE IS, IN ONE SHORT STRING ──
+   *
+   * The first two versions of this probe recorded the CONTAINER a node was
+   * removed from and never the node. Six mismatches came back naming
+   * `body.min-h-screen.bg-canvas` and `-1/+0`, which narrowed #510 to a direct
+   * child of `<body>` and then stopped — reading the layout showed three
+   * children, and both banners render `null` on the server AND on the client's
+   * first render, so neither can be it.
+   *
+   * "Something left body" is not an answer. This makes it one.
+   */
+  const describeNode = (node: Node): string => {
+    if (node.nodeType === 3) return `#text(${(node.textContent ?? "").trim().slice(0, 24)})`;
+    if (node.nodeType === 8) return `<!--${(node as Comment).data.slice(0, 12)}-->`;
+    if (node.nodeType !== 1) return `node(${node.nodeType})`;
+    const el = node as Element;
+    let out = el.tagName.toLowerCase();
+    if (el.id) out += `#${el.id}`;
+    if (el.hasAttribute("hidden")) out += "[hidden]";
+    for (const attr of ["data-clerk-component", "data-testid", "data-nextjs-router", "src", "rel"]) {
+      const v = el.getAttribute(attr);
+      if (v) out += `[${attr}="${v.slice(0, 40)}"]`;
+    }
+    const cls = el.getAttribute("class");
+    if (cls && !el.id) out += `.${cls.split(/\s+/).slice(0, 3).join(".")}`;
+    return out;
+  };
 
   /** A readable path: the chain of tag#id[data-*] up to body. This is the
    *  output of the whole probe — the thing the error refuses to say. */
@@ -199,6 +228,8 @@ const INSTRUMENT = () => {
         removed: record.removedNodes.length,
         added: record.addedNodes.length,
         boundary: isBoundaryMove(record),
+        gone: Array.from(record.removedNodes).map(describeNode).join(" , ").slice(0, 160),
+        came: Array.from(record.addedNodes).map(describeNode).join(" , ").slice(0, 160),
       });
     }
   }).observe(document, { childList: true, subtree: true });
@@ -206,7 +237,7 @@ const INSTRUMENT = () => {
 
 type Readout = {
   errors: { t: number; msg: string }[];
-  muts: { t: number; path: string; removed: number; added: number; boundary: boolean }[];
+  muts: { t: number; path: string; removed: number; added: number; boundary: boolean; gone: string; came: string }[];
   hydrated: boolean;
 };
 
@@ -287,18 +318,38 @@ test.describe("#510: name the mismatched element", () => {
           const real = near
             .filter((m) => !m.boundary && m.removed > 0)
             .sort((a, b) => b.removed - a.removed || Math.abs(a.t - error.t) - Math.abs(b.t - error.t));
+          // ── DID A THIRD PARTY PUT A CHILD IN <body> AROUND THE ERROR? ──
+          //
+          // `body-children.probe.spec.ts` measured what body holds: the server
+          // sends `div[hidden]` and the shell `div`, and the CLIENT appends
+          // `div#clerk-components` and a `[data-floating-ui-portal]` div. A
+          // third party appending a direct child of body before React finishes
+          // hydrating it is an element-level mismatch at exactly the container
+          // this probe keeps naming — the same mechanism as the ColorZilla
+          // scar in CLAUDE.md's #61 entry, from a library rather than an
+          // extension. This line is what turns that from plausible to timed.
+          const injected = near
+            .filter((m) => /clerk-components|floating-ui-portal/.test(m.came))
+            .map((m) => `${m.came.slice(0, 60)} at ${(m.t - error.t).toFixed(1)}ms`);
           const line =
             `MISMATCH on ${route} (load ${i + 1}): ${near.length} mutations within ${WINDOW_MS}ms, ` +
-            `${real.length} of them NOT a Suspense boundary move`;
+            `${real.length} of them NOT a Suspense boundary move` +
+            (injected.length > 0 ? ` — THIRD-PARTY INJECTION NEARBY: ${injected.join(" ; ")}` : "");
           hits.push(line);
           console.log(`LOC ${line}`);
           // The suspects first, then the boundary noise, so the answer is not
           // buried in the thing #501 mistook for it.
           for (const m of real.slice(0, 6)) {
-            console.log(`LOC    SUSPECT  +${(m.t - error.t).toFixed(1)}ms  -${m.removed}/+${m.added}  ${m.path}`);
+            console.log(
+              `LOC    SUSPECT  +${(m.t - error.t).toFixed(1)}ms  -${m.removed}/+${m.added}  in ${m.path}` +
+                `\nLOC             GONE: ${m.gone || "(none)"}` +
+                (m.came ? `\nLOC             CAME: ${m.came}` : ""),
+            );
           }
           for (const m of near.filter((x) => x.boundary).slice(0, 3)) {
-            console.log(`LOC    boundary +${(m.t - error.t).toFixed(1)}ms  -${m.removed}/+${m.added}  ${m.path}`);
+            console.log(
+              `LOC    boundary +${(m.t - error.t).toFixed(1)}ms  -${m.removed}/+${m.added}  ${m.gone || m.came}`,
+            );
           }
         }
       }
@@ -350,7 +401,9 @@ test.describe("#510: name the mismatched element", () => {
         .sort((a, b) => b.removed - a.removed || Math.abs(a.t - error.t) - Math.abs(b.t - error.t));
       console.log(`LOC CONTROL load ${i + 1}: caught #418, ${near.length} non-boundary mutations`);
       for (const m of near.slice(0, 4)) {
-        console.log(`LOC    +${(m.t - error.t).toFixed(1)}ms  -${m.removed}/+${m.added}  ${m.path}`);
+        console.log(
+          `LOC    +${(m.t - error.t).toFixed(1)}ms  -${m.removed}/+${m.added}  in ${m.path}  GONE: ${m.gone || "(none)"}`,
+        );
       }
       // The container React regenerates for a body-level mismatch is body
       // itself. Naming it is what proves the locator works.
