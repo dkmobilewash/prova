@@ -83,6 +83,60 @@ export type WallFinderOptions = {
   minLengthFeet?: number;
 };
 
+/**
+ * ── THE WORK BUDGET, AND THE PAGE THAT HUNG WITHOUT ONE ──
+ *
+ * This pairer is O(n²) with `inAHatchSeries` scanning inside the inner loop.
+ * Measured on page 7 of a real airport concourse set:
+ *
+ *   | page | raw segments | usable (>=2 ft) | pair tests |
+ *   | --- | --- | --- | --- |
+ *   | **Houston p7** | 152,189 | **30,825** | **475,000,000** |
+ *   | Houston p11 | 387,891 | 16,288 | 133,000,000 |
+ *   | a school set's floor plan | ~2,000 | hundreds | ~1,000,000 |
+ *
+ * p7 never returned. Timed stage by stage, every other stage on that page is
+ * fast — `pageStrokes` is 600ms at worst across all 16 pages — and the pipeline
+ * enters `wallsFromBothEngines` with 152,189 segments and stops. The page is
+ * 240x the work of one that finishes.
+ *
+ * ── A BUDGET ON THE WORK, NOT A CEILING ON THE INPUT ──
+ *
+ * A segment-count limit would be a proxy for the thing that actually matters
+ * and would be wrong in both directions: a page with many SHORT segments costs
+ * nothing after the length filter, and one with fewer long ones can cost more.
+ * Counting the pair tests bounds the real cost, so any sheet that fits finishes
+ * exactly as it does today and only a sheet that cannot is refused.
+ *
+ * 40 million, which sits in a gap rather than on a line: the working pages
+ * measure around one million and the two that hang are 133 and 475. At roughly
+ * 20M tests a second that is about two seconds of work before giving up, which
+ * is inside what somebody waits for after pressing a button.
+ *
+ * ── AND IT THROWS RATHER THAN RETURNING WHAT IT HAD ──
+ *
+ * Returning the walls found so far is the tempting option and it is the one
+ * this repo has a name for: a result that LOOKS like an answer. An estimator
+ * would get a plausible, silently incomplete set of runs off a sheet the app
+ * could not actually read, and nothing on screen would say which. The caller
+ * already has a `try`/`catch` that tells them to trace by hand, which is the
+ * true answer for this sheet.
+ */
+const MAX_PAIR_TESTS = 40_000_000;
+
+/** Thrown when a sheet is too dense to pair within the budget. Its own class so
+ *  a caller can tell "this sheet is too dense" from "pdfjs threw", which want
+ *  different sentences on screen. */
+export class SheetTooDenseError extends Error {
+  constructor(readonly usableSegments: number) {
+    super(
+      `This sheet has ${usableSegments.toLocaleString()} lines long enough to be walls, which is more than ` +
+        `the wall finder can pair. Trace the walls by hand on this one.`,
+    );
+    this.name = "SheetTooDenseError";
+  }
+}
+
 const DEFAULTS = {
   minThicknessFeet: 0.2,
   /**
@@ -384,6 +438,13 @@ export function wallsFromStrokes(
   const order = [...usable].sort((a, b) => lengthOf(b) - lengthOf(a));
   const used = new Set<number>();
   const walls: WallCandidate[] = [];
+
+  // REFUSED BEFORE ANY WORK, not part-way through. The pair count is known from
+  // the input alone, so a sheet that cannot be paired says so immediately
+  // rather than after two seconds of spinning — and the estimator gets the same
+  // sentence either way. See `MAX_PAIR_TESTS`.
+  const pairTests = (order.length * (order.length - 1)) / 2;
+  if (pairTests > MAX_PAIR_TESTS) throw new SheetTooDenseError(order.length);
 
   for (let i = 0; i < order.length; i += 1) {
     if (used.has(i)) continue;
