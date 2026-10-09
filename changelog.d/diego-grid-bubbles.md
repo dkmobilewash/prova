@@ -1,10 +1,12 @@
-## The wall thickness cap, and a bubble detector that turned out not to be needed
+### The 12.4in band was the exterior wall, not a grid line (Diego)
+`diego/grid-bubbles`
+
 
 **This entry is mostly a correction of my own diagnosis, so the shape matters
 more than the fix.** Everything here was built to remove a column grid line
 that does not exist.
 
-### What I thought, and where it came from
+#### What I thought, and where it came from
 
 After #690 taught the pairer to take the outermost of several parallel faces,
 1,849 ft came back in a **12.4in band matching no assembly on the drawing**. A
@@ -12,7 +14,7 @@ probe of a two-foot window on one page printed a face at +12.48in, 115 ft long,
 and I labelled it `COLUMN GRID LINE` in my own notes. **That label was never a
 measurement**, and two days of work followed from it as though it were.
 
-### The grid bubble detector, which works
+#### The grid bubble detector, which works
 
 Built on the one thing always true of a grid line: it ends in a BUBBLE. Sized in
 PAPER inches, not feet of building — a bubble holds a character so it is drawn
@@ -36,7 +38,7 @@ The propagation tolerance is a fraction of a point on purpose: **walls are
 routinely CENTRED on a grid line**, and a loose version deletes the wall it was
 meant to leave. The grid line is the centreline and the faces sit either side.
 
-### And then the band, looked at directly
+#### And then the band, looked at directly
 
 ```
 B11: 2 walls in the 12.2-12.7in band, 188ft total
@@ -49,7 +51,7 @@ The envelope was being FOUND and measured half again too thick — which prices 
 as an assembly that does not exist, and is the worse failure of the two because
 the footage looks right.
 
-### The fix: the cap, swept rather than chosen
+#### The fix: the cap, swept rather than chosen
 
 The key names every assembly on the drawing and the widest is **EXT-1 at
 8-7/8in**. That argues for a 9.2in cap. The sweep argues otherwise:
@@ -69,7 +71,7 @@ not FIX an over-measured wall, it REJECTS it, and the footage leaves with it.
 
 Phantom falling 2,027 ft was not predicted and is the largest single number here.
 
-### What it gives up, which is not nothing
+#### What it gives up, which is not nothing
 
 `wallVectors.test.ts` asserts an 18in shaft wall is "the thickest thing still a
 wall" — a deliberate claim, and true: a CMU or double-stud shaft is that thick.
@@ -83,7 +85,7 @@ serves the common case because the sweep says the common case is worth more — 
 18in cap misprices 1,849 ft every time, against a shaft wall that is occasional
 and one argument away.
 
-### The bound to state plainly
+#### The bound to state plainly
 
 **12 is measured on ONE answer key.** What would settle it is a second key with a
 shaft wall in it, which is also what would say whether the 0.8 points of recall
@@ -93,7 +95,7 @@ The bubble detector ships unwired and nothing calls it. It is kept rather than
 deleted because the detection is proven on real CAD and grid lines may yet
 matter — but it is not the fix for this, and the entry above is the reason.
 
-### Checks
+#### Checks
 
 - The cap mutation-tested both ways: restored to 1.5 the new default-refusal
   test reds and names itself.
@@ -102,7 +104,7 @@ matter — but it is not the fix for this, and the entry above is the reason.
   kept as its own test rather than tuned away.
 - 470 takeoff tests. Preflight green. No migrations.
 
-### Click-list
+#### Click-list
 
 1. Open a calibrated floor plan and press **Find the walls**.
 2. The thickness groups should no longer show anything at or above 12in.
