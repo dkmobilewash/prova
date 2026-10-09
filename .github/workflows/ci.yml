@@ -83,27 +83,19 @@ jobs:
   dbtest:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: prova
-          POSTGRES_PASSWORD: prova
-          POSTGRES_DB: prova_dbtest
-        ports: ["5432:5432"]
-        # Without this the job races the container and fails on connect.
-        options: >-
-          --health-cmd "pg_isready -U prova"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
-    env:
-      # A scratch database that exists only for this job. The suite creates
-      # and deletes companies, which is why its own docstring says never to
-      # point it at a real one.
-      DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_dbtest"
-      DIRECT_URL: "postgresql://prova:prova@localhost:5432/prova_dbtest"
+    # NO SERVICE CONTAINER, AND NO DOCKER AT ALL — see
+    # `apps/web/e2e/scratch-postgres.mjs`, which boots the scratch database
+    # instead. On 2026-10-09 every job here that pulled `postgres:16` failed on
+    # Docker Hub's anonymous pull cap ("toomanyrequests"), a re-run hit the same
+    # wall, and the cap is on GitHub's shared runner IPs rather than on anything
+    # this repo controls — so it blocked every PR and waiting it out was not a
+    # plan. `embedded-postgres` was already a dependency and already how the e2e
+    # runner boots its own database; this job was the last one reaching for a
+    # registry it did not need.
+    #
+    # DATABASE_URL is deliberately NOT set here: the script generates it, with a
+    # free port and a throwaway password, and hands it to each command. A job
+    # level value would be a second source of truth for the same thing.
 
     steps:
       - uses: actions/checkout@v4
@@ -124,11 +116,16 @@ jobs:
       # `migrate deploy`, not `db push`: this asserts the committed
       # migrations actually build the schema the tests expect, which is a
       # second thing worth knowing on every PR.
-      - name: Apply migrations to the scratch database
-        run: pnpm --filter @prova/db exec prisma migrate deploy --schema prisma/schema
-
-      - name: Database tests
-        run: pnpm test:db
+      #
+      # BOTH COMMANDS RUN INSIDE ONE SCRATCH DATABASE, because it lives and dies
+      # with the process that owns it. The script stops at the first failure and
+      # exits with its code, so a broken migration still fails this job at the
+      # migration rather than later and less clearly.
+      - name: Apply migrations, then the database tests, on a throwaway Postgres
+        run: |
+          node apps/web/e2e/scratch-postgres.mjs \
+            "pnpm --filter @prova/db exec prisma migrate deploy --schema prisma/schema" \
+            "pnpm test:db"
 
   # ==========================================================================
   # THE FLOOR UNDER EVERYTHING ELSE: a real browser walks the product.
@@ -186,35 +183,29 @@ jobs:
     # default. Measured budget: install ~1m, build ~5m, 24 tests ~1m.
     timeout-minutes: 30
 
-    services:
-      # Same shape as `dbtest` above, including the health check, because
-      # without it the job races the container and fails on connect.
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: prova
-          POSTGRES_PASSWORD: prova
-          # The name is load-bearing, not decoration. `scratchProblem()` in
-          # packages/db/scripts/connection-target.mjs — run by the runner, by
-          # playwright.config.ts at load, and again in global setup — accepts
-          # only a loopback host and a database ending `_test`/`_dbtest`.
-          # There is deliberately no env-var escape hatch, so a database not
-          # named like this one cannot be driven by this suite at all.
-          POSTGRES_DB: prova_e2e_test
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U prova"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+    # NO SERVICE CONTAINER — `run.mjs` boots its own throwaway Postgres through
+    # `embedded-postgres`, which is what it does by DEFAULT and what every local
+    # `pnpm test:e2e` has always used. Providing one was the optional path.
+    #
+    # It is removed because on 2026-10-09 the `postgres:16` pull failed on
+    # Docker Hub's anonymous rate limit on every job that did it, and a re-run
+    # hit the same wall. Nothing about the suite changes: the runner still
+    # applies every committed migration to the database it creates, still
+    # refuses a host that is not loopback, and still refuses a name that does
+    # not end `_test`.
 
     env:
-      # E2E_DATABASE_URL is the runner's documented way to use a Postgres that
-      # already exists instead of booting its embedded one — through the same
-      # guard, so it still has to be loopback and still has to end in _test.
-      # DATABASE_URL/DIRECT_URL are the same string because the `--list` step
-      # below loads playwright.config.ts, which asserts both at config load.
-      E2E_DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      # E2E_DATABASE_URL IS DELIBERATELY NOT SET: unset is what makes `run.mjs`
+      # boot its own throwaway Postgres, which is the whole point of removing
+      # the service container above.
+      #
+      # DATABASE_URL/DIRECT_URL stay, and are NOT a database anybody connects
+      # to. `playwright.config.ts` asserts both at config load — through
+      # `scratchProblem()`, so they have to be loopback and have to end `_test`
+      # — and the `--list` step below loads that config before the runner has
+      # created anything. The runner overrides both with the real URL for every
+      # process it spawns, so this value is read by the guard and by nothing
+      # else.
       DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
       DIRECT_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
       # The `ci` job's comment explains this one: Next's build-traces step
@@ -339,22 +330,15 @@ jobs:
     # this leaves room for a cold cache and Playwright's one CI retry.
     timeout-minutes: 45
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: prova
-          POSTGRES_PASSWORD: prova
-          POSTGRES_DB: prova_e2e_test
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U prova"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+    # NO SERVICE CONTAINER, for the same reason as the job above: `run.mjs`
+    # boots its own throwaway Postgres by default, and pulling `postgres:16`
+    # failed on Docker Hub's anonymous rate limit on 2026-10-09.
 
     env:
-      E2E_DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      # E2E_DATABASE_URL unset, so the runner creates its own. DATABASE_URL and
+      # DIRECT_URL are read by `playwright.config.ts`'s scratch guard at config
+      # load and by nothing else — the runner overrides both for every process
+      # it spawns.
       DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
       DIRECT_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
