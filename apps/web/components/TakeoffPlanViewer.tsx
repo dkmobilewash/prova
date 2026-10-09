@@ -1084,7 +1084,21 @@ function Shape({
  * without somebody having looked at the line, which matters because a scale
  * error multiplies through every wall on the sheet.
  */
-function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => void }) {
+/**
+ * EXPORTED FOR A RENDER TEST, and the reason is a limit rather than a
+ * preference. The panel this returns lives inside `CalibrationForm`'s DRAFT
+ * branch, which needs a line drawn on the sheet — and the sheet is pdf.js on a
+ * canvas, which never renders in happy-dom (`getBoundingClientRect` returns
+ * zeros, so no click can become a point). Mounting the whole viewer therefore
+ * cannot reach this panel at all, measured rather than assumed: a probe clicked
+ * Set scale, then the port, then the SVG, and the sheet read "Drawing…"
+ * throughout.
+ *
+ * So `reducedPrintCaution.test.tsx` renders this directly. That proves the
+ * branch and its wording, and it deliberately does NOT claim the panel is
+ * navigable — see that file's own note on what it is and is not evidence for.
+ */
+export function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => void }) {
   // Both of these are PURE and live in `takeoff-plan-view.ts`, where they are
   // tested — the wording of a measured error and the order of the evidence are
   // decisions, and a decision written inline in JSX is one no test can reach.
@@ -1103,8 +1117,30 @@ function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => vo
   if (prefill.unconfirmed) {
     return (
       <div className="rounded-md border border-line-card bg-surface p-2">
+        {/* ── A REDUCED PRINT GOES FIRST, AND IN THE WARNING COLOUR ──
+            It is not a footnote to the scale, it is a correction OF the scale:
+            the number above it has already been changed, and an estimator who
+            reads only the first line has to be the one who learns that. The
+            key's page 50 measured every length at half without this. */}
+        {prefill.reducedPrintCaution !== undefined && (
+          <p
+            className="mb-2 rounded bg-tag-amber px-2 py-1 text-[11px] font-medium text-tag-amber-ink"
+            data-takeoff="reduced-print-caution"
+          >
+            {prefill.reducedPrintCaution}
+          </p>
+        )}
         <p className="text-xs text-ink-body">
-          The title block on this sheet says <span className="font-semibold text-ink">{prefill.scaleName}</span>.
+          {prefill.reducedPrintCaution === undefined ? (
+            <>
+              The title block on this sheet says <span className="font-semibold text-ink">{prefill.scaleName}</span>.
+            </>
+          ) : (
+            <>
+              Corrected for the reduction, this sheet measures{" "}
+              <span className="font-semibold text-ink">{prefill.scaleName}</span>.
+            </>
+          )}
         </p>
         <p className="mt-1 text-[11px] text-ink-muted">
           {/* Said plainly rather than softened. The estimator is accepting a
