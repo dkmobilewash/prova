@@ -345,7 +345,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           all times rather than behind a condition: an empty index says so in one
           sentence, which is more useful than a section that appears from nowhere
           the first time a run finishes. */}
-      {isEstimateStage && <PlanSheetReview rows={sheetRows} />}
+      {isEstimateStage && <PlanSheetReview rows={sheetRows} planId={plan.id} />}
 
       {/* BELOW the sheet review, because the page types it shows are what decide
           which sheets have schedules at all. Silent until something has been

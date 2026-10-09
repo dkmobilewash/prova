@@ -4,6 +4,14 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { actionFail, actionOk, type ActionResult } from "./shared";
+import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
+import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
+import {
+  indexCheck,
+  readDrawingIndex,
+  INDEX_PAGES_TO_SCAN,
+  type IndexCheckResult,
+} from "@/lib/plan-ingest/drawingIndex";
 
 /**
  * Accepting and rejecting what a title-block reading proposed.
@@ -161,4 +169,71 @@ export async function rejectPlanSheet(proposalId: string): Promise<ActionResult>
     return actionFail("That sheet reading was either already settled or is no longer there.");
   }
   return actionOk;
+}
+
+/**
+ * ── WHAT THE SET SAYS IT CONTAINS, AGAINST WHAT ARRIVED ──
+ *
+ * `sheetIndex.ts` knows what pages are HERE and spots a number used twice.
+ * Nothing has ever checked the other direction: that the set's own printed
+ * index lists a sheet nobody uploaded a page for. A bid priced off an
+ * incomplete set is not a bid that comes in low — it is one that wins and then
+ * meets a drawing nobody read.
+ *
+ * ── READ TIME, ASKED FOR, NOT STORED ──
+ *
+ * `sheetIndex.ts` says it in its own header: "review order is computed at read
+ * time and must never become a stored rank", and `PlanIngestStage.SHEET_INDEX`
+ * is deliberately null in `STAGE_WORK` for the same reason. This follows that,
+ * for an extra one: a person pressing a button is the moment the answer is
+ * wanted, and an ingest stage would have to re-run to be worth anything after
+ * somebody corrected a sheet number by hand.
+ *
+ * It parses at most the first six pages — the index is on page 1 or 2 on every
+ * real set measured — so it is a small read of a file already in the store.
+ */
+export type IndexCheck = ({ ok: true } & IndexCheckResult) | { ok: false; error: string };
+
+export async function checkDrawingIndex(planId: string): Promise<IndexCheck> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return { ok: false, error: NOT_YOURS };
+
+  const plan = await prisma.takeoffPlan.findFirst({
+    where: { id: planId, companyId: context.company.id },
+    select: { id: true },
+  });
+  if (!plan) return { ok: false, error: "That plan set is no longer on this job. Reload the page." };
+
+  // THE ACCEPTED NUMBER WINS, exactly as `effectiveSheetNumber` reads it on
+  // the screen: a person who corrected a misread title block has said what the
+  // sheet is, and comparing against the machine's original guess would report
+  // their own correction as a missing sheet.
+  const sheets = await prisma.planSheetProposal.findMany({
+    where: { planId: plan.id },
+    select: { proposedSheetNumber: true, acceptedSheetNumber: true },
+  });
+
+  const bytes = await readPlanBytes(plan.id, context.company.id);
+  if (!bytes.ok) return { ok: false, error: bytes.error };
+
+  let pdf: Awaited<ReturnType<typeof openPlanPdf>> | null = null;
+  try {
+    pdf = await openPlanPdf(bytes.bytes);
+    const pages = [];
+    for (let n = 1; n <= Math.min(INDEX_PAGES_TO_SCAN, pdf.pageCount); n += 1) {
+      pages.push(await pdf.pageText(n));
+    }
+    // THE DECISION IS PURE AND LIVES IN `drawingIndex.ts`. Two mutations of
+    // it came back green against every screen test — this action is where a
+    // person's correction gets ignored, and where "could not read" quietly
+    // becomes "nothing missing", so neither judgement is made here.
+    const result = indexCheck(readDrawingIndex(pages), sheets);
+    return { ok: true, ...result };
+  } catch {
+    // The screen stays usable and the sheet list is still there, so this says
+    // what failed and stops rather than taking the page down.
+    return { ok: false, error: "That plan file couldn't be read just now. Try again, or check the index by eye." };
+  } finally {
+    await pdf?.close();
+  }
 }
