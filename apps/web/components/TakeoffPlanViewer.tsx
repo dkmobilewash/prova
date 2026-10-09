@@ -118,6 +118,7 @@ export function TakeoffPlanViewer({
   planId,
   sheets,
   printedScaleByPage,
+  levelByPage,
   scalePrefillByPage,
   scaleDeclineByPage,
   duplicateWallsByPage = {},
@@ -134,6 +135,10 @@ export function TakeoffPlanViewer({
    * `takeoff-plan-view.ts`.
    */
   printedScaleByPage: PrintedScaleByPage;
+  /** Which floor each sheet draws, read off its own title — see
+   *  `sheetLevel.ts`. Absent for a sheet whose title names no floor, which is
+   *  most of them on a single-storey job. */
+  levelByPage?: Record<number, string>;
   /** What each sheet said about its own scale, read off the dimensions
    *  printed on it. A PREFILL and never a calibration — see `ScalePrefill`. */
   scalePrefillByPage: ScalePrefillByPage;
@@ -827,6 +832,21 @@ export function TakeoffPlanViewer({
         >
           {boxing ? "Drag a box round the plan" : "Find the rooms"}
         </button>
+
+        {/* WHICH FLOOR THIS SHEET DRAWS, beside the scale because that is the
+            other thing about a sheet an estimator has to know before tracing
+            it. Silent when the title names no floor — a single-storey job has
+            no levels and a label saying "no level" would be noise on every
+            sheet of it. See `sheetLevel.ts` for why a sheet naming TWO floors
+            is also silent. */}
+        {levelByPage?.[pageNumber] !== undefined && (
+          <span
+            data-takeoff="sheet-level"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body"
+          >
+            {levelByPage[pageNumber]}
+          </span>
+        )}
 
         <span className="ml-auto text-xs text-ink-muted">
           {calibration ? (

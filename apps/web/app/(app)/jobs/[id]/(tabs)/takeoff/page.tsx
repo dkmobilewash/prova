@@ -9,6 +9,7 @@ import { PlanIngestPanel } from "@/components/PlanIngestPanel";
 import { ScheduleProposals } from "@/components/ScheduleProposals";
 import { loadScheduleProposals, scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery";
 import { PlanSheetReview } from "@/components/PlanSheetReview";
+import { levelsByPage } from "@/lib/plan-ingest/sheetLevel";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
 import { sheetSuitability, duplicateWallsCaution } from "@/lib/takeoff/sheetSuitability";
@@ -112,6 +113,27 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         }),
       )
     : {};
+
+  // WHICH FLOOR EACH SHEET DRAWS, read off its own title. Keyed by page number
+  // for the same reason the printed scale above is — a `PlanSheet` row only
+  // exists once somebody has calibrated — and newest-first for the same reason
+  // too: `levelsByPage` keeps the first row it sees per page.
+  const levelByPage: Record<number, string> = {};
+  if (plan) {
+    const levels = levelsByPage(
+      await prisma.planSheetProposal.findMany({
+        where: { planId: plan.id },
+        orderBy: { createdAt: "desc" },
+        select: {
+          pageNumber: true,
+          proposedTitle: true,
+          acceptedTitle: true,
+          proposedPageType: true,
+        },
+      }),
+    );
+    for (const [pageNumber, level] of levels) levelByPage[pageNumber] = level.label;
+  }
 
   // WHAT EACH SHEET SAID ABOUT ITS OWN SCALE, read off the dimensions printed on
   // it by `PAGE_INVENTORY`. Keyed by page number for the same reason the printed
@@ -360,6 +382,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         printedScaleByPage={printedScaleByPage}
         scalePrefillByPage={scalePrefillByPage}
         scaleDeclineByPage={scaleDeclineByPage}
+        levelByPage={levelByPage}
       />
 
       {sheets.map((sheet) => (
