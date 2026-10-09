@@ -604,6 +604,17 @@ export async function saveTakeoffMeasurements(jobId: string, formData: FormData)
 
   // One `shape` field per wall, each a JSON `{xs, ys}`. A flat pair of arrays
   // could not say where one run ends and the next begins.
+  // LINEAR unless asked otherwise. The wall finder sends runs and says
+  // nothing; the room finder sends rings and says AREA. COUNT is deliberately
+  // not accepted — nothing produces a batch of them, and a kind nothing sends
+  // is a branch nothing tests.
+  const askedKind = String(formData.get("kind") ?? "LINEAR");
+  if (askedKind !== "LINEAR" && askedKind !== "AREA") {
+    return actionFail("Those measurements didn't come through. Find them again.");
+  }
+  const kind = askedKind;
+  const noun = kind === "AREA" ? "Room" : "Wall";
+
   const raw = formData.getAll("shape").map(String);
   if (raw.length === 0) return actionFail("Nothing was selected to add.");
 
@@ -626,8 +637,15 @@ export async function saveTakeoffMeasurements(jobId: string, formData: FormData)
     }
     // NAMED, not counted. "Wall 14 of 47 didn't come through" tells somebody
     // which one to look at; "one of these is wrong" tells them to start again.
-    const problem = verticesProblem("LINEAR", xs, ys);
-    if (problem) return actionFail(`Wall ${i + 1} of ${raw.length} couldn't be added: ${problem}`);
+    const problem = verticesProblem(kind, xs, ys);
+    if (problem) return actionFail(`${noun} ${i + 1} of ${raw.length} couldn't be added: ${problem}`);
+    // The same guard the single save applies, for the same reason: a ring
+    // that crosses itself has no area anybody can price. It matters more here
+    // because these rings are TRACED rather than drawn — nobody watched this
+    // one being made, so nothing else would notice.
+    if (kind === "AREA" && ringSelfIntersects(xs, ys)) {
+      return actionFail(`${noun} ${i + 1} of ${raw.length} couldn't be added: that outline crosses itself.`);
+    }
     shapes.push({ xs, ys });
   }
 
@@ -635,7 +653,7 @@ export async function saveTakeoffMeasurements(jobId: string, formData: FormData)
     data: shapes.map((shape) => ({
       pageId: page.id,
       calibrationId: calibration.id,
-      kind: "LINEAR" as const,
+      kind,
       xs: shape.xs,
       ys: shape.ys,
       label: label || null,
