@@ -139,7 +139,28 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         },
       })
     : [];
-  const scalePrefillByPage: ScalePrefillByPage = scalePrefillsFromReadings(scaleReadingRows);
+  // ── EVERY SHEET'S OWN SIZE, SO A REDUCED PRINT CAN BE CAUGHT ──
+  //
+  // A half-size print carries the FULL-SIZE scale name in its title block, and
+  // taking that name at face value measures every length at half. The answer
+  // key's page 50 is exactly that — an 18in sheet in a 36in set with no
+  // dimensions of its own to catch it — and it scored 32%, worst of sixty.
+  //
+  // A sheet cannot tell on its own: a half-size ARCH D is exactly an ARCH B, a
+  // size drawings are genuinely issued at. The SET is what tells, so the widths
+  // of all its pages are needed together. `widthPt` has been stored per page
+  // since the inventory stage was written, so this is a second select on a table
+  // already being written, not new extraction. See `takeoff/reducedPrint.ts`.
+  const sheetWidthByPage: Record<number, number> = {};
+  if (plan) {
+    for (const sheet of await prisma.planSheetText.findMany({
+      where: { planId: plan.id },
+      select: { pageNumber: true, widthPt: true },
+    })) {
+      sheetWidthByPage[sheet.pageNumber] = sheet.widthPt;
+    }
+  }
+  const scalePrefillByPage: ScalePrefillByPage = scalePrefillsFromReadings(scaleReadingRows, sheetWidthByPage);
   // THE SAME ROWS, ASKED THE OTHER QUESTION: why a sheet offered nothing. One
   // query, two derivations — the reason is already on the row, and re-querying
   // for it would be a second trip for data we are holding.

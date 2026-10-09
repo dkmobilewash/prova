@@ -13,6 +13,7 @@
 
 import type { MeasurementKind, StoredCalibration } from "@/lib/takeoff-plan";
 import type { ZoneNotice } from "@/lib/takeoff-zones";
+import { reducedPrint, setSheetWidth, printedScaleForSheet } from "./takeoff/reducedPrint";
 
 /** A calibration as the viewer needs it: the drawn line plus the distance it
  * was declared to be, with the Decimal already turned into a number by the
@@ -135,6 +136,20 @@ export type ScalePrefill = {
   /** How many dimensions were found on the page at all. */
   considered: number;
   /**
+   * SET WHEN THIS SHEET IS A REDUCED PRINT AND THE SCALE HAS BEEN CORRECTED FOR
+   * IT — the sentence to put on screen, naming both widths and what would have
+   * gone wrong.
+   *
+   * A reduced print carries the FULL-SIZE scale name in its title block, so
+   * taking that name at face value measures every length at a fraction of its
+   * real size. The answer key's page 50 is exactly this: an 18in sheet in a 36in
+   * set, no dimensions of its own to catch it, scored 32% — the worst of all
+   * sixty pages. See `takeoff/reducedPrint.ts`.
+   *
+   * Undefined on every ordinary sheet, which is almost all of them.
+   */
+  reducedPrintCaution?: string;
+  /**
    * WHETHER ANYTHING ON THE SHEET CONFIRMS THIS, and it changes what the screen
    * says rather than being metadata.
    *
@@ -185,28 +200,76 @@ export type ScaleReadingRowForView = {
  * behaves as it does today. Every field is checked rather than assumed present,
  * because a half-written row must not produce a line with one end.
  */
-export function scalePrefillsFromReadings(rows: readonly ScaleReadingRowForView[]): ScalePrefillByPage {
+export function scalePrefillsFromReadings(
+  rows: readonly ScaleReadingRowForView[],
+  /**
+   * Every page's sheet width, from `PlanSheetText`. Given it, a sheet that is a
+   * clean fraction of the size the set is issued at has its PRINTED scale
+   * corrected for the reduction — see `reducedPrintCaution`. Omitted, nothing
+   * is corrected and the behaviour is exactly as before.
+   */
+  widthByPage: Readonly<Record<number, number>> = {},
+): ScalePrefillByPage {
   const byPage: ScalePrefillByPage = {};
+  // The size the office issues at, over whatever widths the caller supplied.
+  const setWidth = setSheetWidth(Object.values(widthByPage));
   for (const row of rows) {
     if (byPage[row.pageNumber] !== undefined) continue;
     if (row.scaleName === null) continue;
     if (row.x1 === null || row.y1 === null || row.x2 === null || row.y2 === null) continue;
     const feet = Number(row.declaredDistanceFeet);
     if (!Number.isFinite(feet) || feet <= 0) continue;
+
+    // Anything that is not an explicit `DIMENSIONS` reading is unconfirmed.
+    // Defaulting the UNKNOWN case to "unconfirmed" is deliberate: a row written
+    // by a build that did not have this column, or by one that grows a third
+    // source later, must not quietly claim to be checkable.
+    const unconfirmed = row.source !== "DIMENSIONS";
+
+    // ── THE REDUCED-PRINT CORRECTION, AND ONLY ON AN UNCONFIRMED ROW ──
+    //
+    // A DIMENSIONS row was measured off the drawing, and a dimension cannot be
+    // fooled by a reduction — reduce the sheet and both the line and its own
+    // stated length come down together. So a measured scale is never touched
+    // here, and the correction only ever improves a reading taken from a title
+    // block with nothing checking it.
+    let scaleName = row.scaleName;
+    let declaredFeet = feet;
+    let reducedPrintCaution: string | undefined;
+    if (unconfirmed) {
+      const print = reducedPrint(widthByPage[row.pageNumber] ?? 0, setWidth);
+      if (print.factor !== 1) {
+        // The printed row's own line IS the sheet width and its distance is the
+        // feet across it, so the reduction multiplies the distance and leaves
+        // the line alone. Recovering feet-per-inch from those two is what lets
+        // the check work on a scale NAME without re-reading the page.
+        const widthPt = widthByPage[row.pageNumber] ?? 0;
+        const printedFeetPerInch = widthPt > 0 ? (feet / widthPt) * 72 : 0;
+        const checked = printedScaleForSheet(printedFeetPerInch, print);
+        if (checked.ok && checked.corrected) {
+          scaleName = checked.scaleName;
+          declaredFeet = feet * checked.factor;
+          reducedPrintCaution = checked.caution;
+        } else if (!checked.ok) {
+          // The paper says reduced and the arithmetic lands on no real scale.
+          // Neither reading is offered — a wrong scale is worse than none, and
+          // the estimator is told to click a known distance.
+          continue;
+        }
+      }
+    }
+
     byPage[row.pageNumber] = {
-      scaleName: row.scaleName,
+      scaleName,
       xs: [row.x1, row.x2],
       ys: [row.y1, row.y2],
-      declaredFeet: feet,
+      declaredFeet,
       declaredText: row.declaredText ?? "",
       agreed: row.agreedText ? row.agreedText.split("\n").filter((line) => line.trim().length > 0) : [],
       considered: row.consideredCount,
       inheritedError: row.inheritedError ?? 0,
-      // Anything that is not an explicit `DIMENSIONS` reading is unconfirmed.
-      // Defaulting the UNKNOWN case to "unconfirmed" is deliberate: a row
-      // written by a build that did not have this column, or by one that grows a
-      // third source later, must not quietly claim to be checkable.
-      unconfirmed: row.source !== "DIMENSIONS",
+      unconfirmed,
+      ...(reducedPrintCaution === undefined ? {} : { reducedPrintCaution }),
     };
   }
   return byPage;
