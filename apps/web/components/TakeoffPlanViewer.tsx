@@ -44,6 +44,7 @@ import {
 } from "@/lib/takeoff/wallVectors";
 import { wallsFromBothEngines } from "@/lib/takeoff/wallRuns";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
+import { wallTypeTags, namesForClusters, tagSentence } from "@/lib/takeoff/wallTags";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -165,6 +166,14 @@ export function TakeoffPlanViewer({
   // somebody chose. That also means switching sheets or reloading simply
   // forgets them, which is the correct behaviour for a proposal nobody acted on.
   const [found, setFound] = useState<WallCluster[] | null>(null);
+  /**
+   * The assembly names the drawing gives each group, parallel to `found`.
+   *
+   * An empty list for a group means the drawing did not say, which is the USUAL
+   * case — only 25-43% of footage carries a tag, because an architect tags
+   * representative walls rather than every wall. See `wallTags.ts`.
+   */
+  const [tagNames, setTagNames] = useState<string[][]>([]);
   /** How many strokes the sheet held when it was last read, so an empty result
    *  can say which kind of empty it is. See the message below. */
   const [strokesSeen, setStrokesSeen] = useState(0);
@@ -403,6 +412,7 @@ export function TakeoffPlanViewer({
     setFinding(true);
     setFindError(null);
     setFound(null);
+    setTagNames([]);
     try {
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
       const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
@@ -421,20 +431,24 @@ export function TakeoffPlanViewer({
       const content = (await (page as { getTextContent: () => Promise<{ items: unknown[] }> }).getTextContent()) ?? {
         items: [],
       };
-      const textBoxes = content.items.flatMap((raw) => {
+      // ONE PASS, TWO CONSUMERS. `wallsNotLettering` wants boxes in page-width
+      // units and `wallTypeTags` wants the STRING with its box in points, so
+      // the text is read once and both are derived from it. A second
+      // `getTextContent()` pass would be a second decode of every glyph on a
+      // sheet that can carry tens of thousands.
+      const textItems = content.items.flatMap((raw) => {
         const item = raw as { str?: string; transform?: number[]; width?: number; height?: number };
         if (typeof item.str !== "string" || item.str.trim() === "" || !Array.isArray(item.transform)) return [];
         const m = pdfjs.Util.transform(viewport.transform, item.transform);
         const h = item.height ?? 0;
-        return [
-          {
-            x: m[4] / pageSize.widthPt,
-            y: (m[5] - h) / pageSize.widthPt,
-            width: (item.width ?? 0) / pageSize.widthPt,
-            height: h / pageSize.widthPt,
-          },
-        ];
+        return [{ str: item.str, x: m[4], y: m[5] - h, width: item.width ?? 0, height: h }];
       });
+      const textBoxes = textItems.map((item) => ({
+        x: item.x / pageSize.widthPt,
+        y: item.y / pageSize.widthPt,
+        width: item.width / pageSize.widthPt,
+        height: item.height / pageSize.widthPt,
+      }));
       const inUnits = segments.map((segment) => ({
         x1: segment.x1 / pageSize.widthPt,
         y1: segment.y1 / pageSize.widthPt,
@@ -469,7 +483,15 @@ export function TakeoffPlanViewer({
       // wall — the longest single run in the panel and entirely false. The
       // height is in page-width units, hence the aspect rather than 1.
       const walls = wallsNotTheSheetBorder(notLettering, 1, pageSize.heightPt / pageSize.widthPt);
-      setFound(clusterByThickness(walls));
+      const clusters = clusterByThickness(walls);
+      setFound(clusters);
+      // ── WHAT THE DRAWING CALLS THESE, where it says so ──
+      //
+      // The panel otherwise names a group by a NUMBER, and an estimator still
+      // has to work out which of their own assemblies a 4-7/8in wall is. The
+      // drawing already answers that: it tags walls `EXT-1`, `A1`, `B1` beside
+      // the runs they label, and a name is what a catalogue is keyed on.
+      setTagNames(namesForClusters(clusters, walls, wallTypeTags(textItems, pageSize.widthPt), feetPerUnit));
     } catch {
       // The sheet is still on screen and the manual tools still work, so this
       // says what failed and stops — it does not take the page down.
@@ -763,6 +785,7 @@ export function TakeoffPlanViewer({
                       style={{ backgroundColor: CLUSTER_COLOURS[index % CLUSTER_COLOURS.length] }}
                     />
                     <span className="text-sm font-medium text-ink">{inchLabel(cluster.inches)}</span>
+                    <ClusterTag names={tagNames[index] ?? []} />
                     <span className="text-sm text-ink-body">
                       {cluster.runs.length} {cluster.runs.length === 1 ? "run" : "runs"} ·{" "}
                       {Math.round(cluster.feet).toLocaleString()} ft
@@ -979,6 +1002,43 @@ const CLUSTER_COLOURS = ["#38bdf8", "#f472b6", "#a78bfa", "#34d399", "#fbbf24", 
  * Dashed, and painted under the saved measurements, so a proposal never looks
  * like something already counted.
  */
+/**
+ * ── THE NAME THE DRAWING GIVES A THICKNESS GROUP ──
+ *
+ * A thickness is what was MEASURED; a name is what gets mapped to a wall type
+ * and priced. Shown beside the thickness rather than instead of it, because the
+ * thickness is what an estimator checks against the drawing and the name is
+ * what they act on.
+ *
+ * Renders NOTHING for a group the drawing did not tag, and that is the usual
+ * case: only 25-43% of footage carries a tag, because an architect tags
+ * representative walls and not every wall. A reassuring phrase on every
+ * untagged group would bury the real names.
+ *
+ * ── EXPORTED BECAUSE THE PANEL CANNOT BE MOUNTED IN A TEST ──
+ *
+ * The group list only exists after Find-the-walls has run, which needs pdf.js
+ * on a canvas — and that never renders in happy-dom, where
+ * `getBoundingClientRect` returns zeros. Measured rather than assumed: a probe
+ * pressed Set scale, then the port, then the SVG, and the sheet read
+ * "Drawing…" throughout. So this is a component so that `wallTags.test.ts`
+ * can render it, which is the #665 lesson — a census proves the code is there,
+ * only rendering proves somebody can see it.
+ */
+export function ClusterTag({ names }: { names: readonly string[] }) {
+  const sentence = tagSentence(names);
+  if (sentence === null) return null;
+  return (
+    <span
+      className="rounded bg-tag-slate px-1.5 py-0.5 text-xs font-medium text-tag-slate-ink"
+      data-takeoff="cluster-tag"
+      title={sentence}
+    >
+      {names.join(" / ")}
+    </span>
+  );
+}
+
 export function FoundWalls({
   clusters,
   hovered,
