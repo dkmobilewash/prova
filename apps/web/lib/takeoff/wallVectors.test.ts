@@ -53,10 +53,33 @@ describe("two faces a wall-thickness apart are a wall", () => {
     expect(wall?.lengthFeet).toBeCloseTo(20, 1);
   });
 
-  it("finds an 18in shaft wall, the thickest thing still a wall", () => {
-    const wall = wallFromPair(h(100, 500, 180), h(100, 500 + 1.5 * 9, 180), EIGHTH);
+  it("finds an 18in shaft wall when ASKED for one — it is no longer the default", () => {
+    // A CMU or double-stud shaft really is this thick, so this case is real and
+    // stays. What changed is that it must be asked for.
+    //
+    // The default cap came down to 12in because against a 60-page answer key an
+    // 18in cap left 188 ft of one page's exterior walls reading 12.44in — the
+    // envelope found, and priced as an assembly on no drawing. The 12.4in band
+    // is empty by 12in and the tighter caps the key would argue for (9.2in,
+    // its widest real assembly) cost three times the recall for a quarter more
+    // of the gain. Swept, not reasoned; the table is in `wallVectors.ts`.
+    const asked = wallFromPair(h(100, 500, 180), h(100, 500 + 1.5 * 9, 180), {
+      ...EIGHTH,
+      maxThicknessFeet: 1.5,
+    });
+    expect(asked).not.toBeNull();
+    expect(asked?.thicknessFeet).toBeCloseTo(1.5, 1);
+  });
+
+  it("REFUSES 18in by default, which is the change", () => {
+    // The mutation that matters: put the cap back to 1.5 and this reds.
+    expect(wallFromPair(h(100, 500, 180), h(100, 500 + 1.5 * 9, 180), EIGHTH)).toBeNull();
+  });
+
+  it("still finds a 12in wall, the widest the default admits", () => {
+    const wall = wallFromPair(h(100, 500, 180), h(100, 500 + 1.0 * 9, 180), EIGHTH);
     expect(wall).not.toBeNull();
-    expect(wall?.thicknessFeet).toBeCloseTo(1.5, 1);
+    expect(wall?.thicknessFeet).toBeCloseTo(1.0, 1);
   });
 });
 
