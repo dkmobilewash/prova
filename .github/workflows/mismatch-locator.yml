@@ -1,0 +1,187 @@
+# The #510 MISMATCH LOCATOR. MANUAL ONLY.
+#
+# `workflow_dispatch` is the entire trigger list, and the probe lives in
+# `e2e/probes/` where the `e2e` job's `testDir: "./specs"` cannot see it. A
+# diagnostic that can turn CI red is not a diagnostic.
+#
+# ── WHY THIS EXISTS BESIDE `hydration-probe.yml` ──
+#
+# That one runs `next dev` to get React's own hydration diff, which names the
+# element. It answered, and the answer was that THE DEFECT DOES NOT REPRODUCE
+# THERE — 24 loads in CI and 96 on a laptop, both zero, both with a working
+# positive control. A development build can only name an element it actually
+# sees disagree, so that route is closed rather than pending.
+#
+# This one runs a PRODUCTION build, where the defect does fire, and gets the
+# element a different way: React's message says the mismatched tree "will be
+# regenerated on the client", and a `MutationObserver` installed before the
+# page's first script watches that happen. See the probe's own header.
+#
+# ── AND WHY IT HAS TO RUN HERE RATHER THAN ON A LAPTOP ──
+#
+# Measured 2026-10-08, after this probe was written: on a laptop, production
+# build, signed in, 24 of 24 loads hydrated and ZERO mismatches — the same
+# result as dev mode. At the rate CI reports (3 to 9 pages a run) that is
+# p ~ 0.0001, so it is a real difference and not a quiet sample.
+#
+#   |              | production | dev |
+#   | ------------ | ---------- | --- |
+#   | a CI runner  | 3-9 pages  | 0   |
+#   | this laptop  | **0**      | 0   |
+#
+# CLAUDE.md's #418 entry currently concludes "the defect is the BUILD, not the
+# machine". That was the best reading of the evidence available then and this
+# table is narrower: the build is necessary and NOT sufficient. A runner differs
+# from a laptop most obviously in being slower, which is exactly what makes a
+# race land differently — and the surviving mechanism, Flight's 3,200-byte
+# deferral, is a race between a deferred row arriving and hydration reaching it.
+#
+# So the locator only has something to look at on a runner. That is the whole
+# reason this is a workflow rather than a command somebody runs.
+#
+# ── HOW TO READ IT ──
+#
+# The job's colour says whether the INSTRUMENT worked, never whether the app is
+# healthy. Read the `LOC` lines. The one that matters looks like
+#
+#   LOC    SUSPECT  +0.8ms  -1/+0  body.min-h-screen.bg-canvas
+#
+# — a container, how long after the error its children changed, and how many
+# were torn out. That is the sentence #510 has been missing.
+
+name: Mismatch locator (#510)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or SHA to probe (defaults to the branch you launch it from)"
+        required: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    # 4 routes x 6 loads plus a 3-load control, each with a settle, against a
+    # production build that has to be built first. Generous rather than tight: a
+    # diagnostic cut short by its own timeout reports a zero that means nothing.
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: prova
+          POSTGRES_PASSWORD: prova
+          POSTGRES_DB: prova_e2e_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U prova"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      E2E_DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      DATABASE_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      DIRECT_URL: "postgresql://prova:prova@localhost:5432/prova_e2e_test"
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY }}
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: "/sign-in"
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: "/sign-up"
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL: "/dashboard"
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL: "/dashboard"
+      # `E2E_DEV_SERVER` IS DELIBERATELY NOT SET. That is the single difference
+      # from `hydration-probe.yml` and the reason this job exists: a dev build
+      # does not reproduce the defect, so a dev run here would repeat a
+      # measurement that has already answered twice.
+
+    steps:
+      - name: Fail loudly if the Clerk test secrets are missing
+        run: |
+          set -e
+          set -o pipefail
+          missing=""
+          if [ -z "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" ]; then
+            missing="$missing E2E_CLERK_PUBLISHABLE_KEY"
+          fi
+          if [ -z "$CLERK_SECRET_KEY" ]; then
+            missing="$missing E2E_CLERK_SECRET_KEY"
+          fi
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing — this probe signs a real Clerk test user in and cannot run without them."
+            exit 1
+          fi
+          case "$CLERK_SECRET_KEY" in
+            sk_live_*)
+              echo "::error::E2E_CLERK_SECRET_KEY is a PRODUCTION (sk_live_) key. This harness MINTS users; refusing."
+              exit 1
+              ;;
+          esac
+          case "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" in
+            pk_live_*)
+              echo "::error::E2E_CLERK_PUBLISHABLE_KEY is a PRODUCTION (pk_live_) key. Refusing."
+              exit 1
+              ;;
+          esac
+          echo "Clerk test keys present, and both are development (_test_) keys."
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Apply migrations to the scratch database
+        run: pnpm --filter @prova/db exec prisma migrate deploy --schema prisma/schema
+
+      - name: Cache the Chromium build
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ runner.os }}-
+
+      - name: Install Chromium
+        run: pnpm --filter @prova/web exec playwright install --with-deps chromium
+
+      # The probe asserts only its own instrument — that every load hydrated,
+      # and that it caught and NAMED a mismatch it injected itself. The
+      # measurement is printed: read the `LOC` lines in this step's log.
+      - name: Locate the mismatched element in a production build
+        id: probe
+        run: |
+          set -e
+          set -o pipefail
+          pnpm --filter @prova/web exec playwright test \
+            --config e2e/playwright.probe.config.ts --reporter=list mismatch-locator
+
+      - name: What the numbers mean
+        if: always() && steps.probe.conclusion != 'skipped'
+        run: |
+          echo "Read the 'LOC' lines above, not this job's colour."
+          echo ""
+          echo "  LOC ... SUSPECT +0.8ms -1/+0 body.min-h-screen.bg-canvas"
+          echo "    ^ the container, how long after the error its children"
+          echo "      changed, and how many were torn out. This is the answer."
+          echo ""
+          echo "  loads vs hydrated — if these differ the run proves nothing:"
+          echo "  a page React never hydrated cannot mismatch."
+          echo ""
+          echo "  CONTROL caught n/3, named the container on n — if either is 0"
+          echo "  the harness is broken and the mismatch count means nothing."
+          echo "  The probe fails on that rather than reporting a clean zero."
+          echo ""
+          echo "  'boundary' lines are React completing a large outlined"
+          echo "  Suspense boundary. That happens on EVERY authenticated page"
+          echo "  and is NOT evidence — #501 mistook it for the defect."
