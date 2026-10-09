@@ -65,12 +65,32 @@ import { signInAs } from "../lib/signIn";
  * to read; its assertions are about the INSTRUMENT, never about the app.
  */
 
-/** The pages #510's four recorded lists name. `/dashboard` recurs most. */
-const ROUTES = ["/dashboard", "/safety", "/settings", "/backcharges"] as const;
-
-/** Loads per route. The rate is about one in three, so six gives a good chance
- *  of at least one hit per route without making the run unbearable. */
-const LOADS = 6;
+/**
+ * ── EVERY NAV DESTINATION, TWICE, RATHER THAN FOUR PAGES SIX TIMES ──
+ *
+ * The first version of this probe reloaded `/dashboard`, `/safety`, `/settings`
+ * and `/backcharges` six times each and found ZERO — on a GitHub runner, in a
+ * production build, with the control firing 3/3. The gating suite kept finding
+ * mismatches on the same branch, so the probe was looking in the wrong place.
+ *
+ * Two reasons, and the second is the one that matters:
+ *
+ *   - **"one load in three" is STALE.** CLAUDE.md measured 12 mismatches in 40
+ *     reloads over those exact pages — `/safety` 5 of 10, `/settings` 5 of 10 —
+ *     and that measurement PREDATES the two fixes that have since shipped. Step
+ *     11 went from 14-19 pages to 6 to 1 after them. Sizing a probe from the
+ *     old rate is sizing it for a defect that was partly fixed.
+ *   - **the journey walks about THIRTY destinations, not four.** It opens every
+ *     nav group, reads every `a[href^="/"]`, and `goto`s each one. Five recorded
+ *     page lists are nearly disjoint and only `/dashboard` ever recurs, which is
+ *     what a low-rate race over a wide route set looks like — and is exactly
+ *     what four pages cannot sample.
+ *
+ * So this enumerates the nav the same way `journey.spec.ts` does rather than
+ * naming routes, which also means it cannot drift from the product: a page
+ * added to the sidebar is probed without editing this file.
+ */
+const PASSES = 2;
 
 /**
  * Installed before any page script. Records every DOM mutation and every
@@ -220,15 +240,38 @@ test.describe("#510: name the mismatched element", () => {
     await page.addInitScript(INSTRUMENT);
     await signInAs(page, PERSONAS.main.email);
 
+    // The nav's own destinations, collected exactly as the journey collects
+    // them — groups opened first, because a closed group hides its links.
+    await page.goto("/dashboard", { waitUntil: "load" });
+    const nav = page.getByRole("navigation", { name: "Main" });
+    for (let guard = 0; guard < 20; guard += 1) {
+      const closed = nav.locator('button[aria-expanded="false"]');
+      if ((await closed.count()) === 0) break;
+      await closed.first().click();
+    }
+    const hrefs = await nav.locator('a[href^="/"]').evaluateAll((anchors) =>
+      anchors.map((a) => (a as HTMLAnchorElement).getAttribute("href") ?? ""),
+    );
+    const routes = [...new Set(hrefs)].filter((h) => h.length > 1);
+    console.log(`LOC walking ${routes.length} nav destinations x ${PASSES} passes`);
+    // A HANDFUL OF LINKS IS A NAV THAT LOST ITS GROUPS, and a probe over four
+    // routes is the thing this version exists to stop being. Same floor the
+    // journey asserts.
+    expect(routes.length, "the nav should offer a real set of destinations").toBeGreaterThanOrEqual(20);
+
     let loadsHydrated = 0;
     let loadsTotal = 0;
     const hits: string[] = [];
 
-    for (const route of ROUTES) {
-      for (let i = 0; i < LOADS; i += 1) {
+    for (let pass = 0; pass < PASSES; pass += 1) {
+      for (const route of routes) {
+        const i = pass;
         await page.goto(route, { waitUntil: "load" });
-        // Let hydration finish and any regeneration land.
-        await page.waitForTimeout(1200);
+        // Let hydration finish and any regeneration land. Shorter than the
+        // first version's 1200ms because there are now ~60 loads rather than
+        // 24, and the control measures the regeneration landing within a
+        // millisecond of the error — 600ms is many times that margin.
+        await page.waitForTimeout(600);
         const data = await readout(page);
         loadsTotal += 1;
         if (data.hydrated) loadsHydrated += 1;
