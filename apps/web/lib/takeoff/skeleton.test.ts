@@ -191,53 +191,54 @@ describe("thinning costs what the ink costs, not what the grid costs", () => {
    */
   const BAR = (x: number, y: number) => x >= 2 && x <= 22 && y >= 2 && y <= 8;
 
-  it("is not slowed by empty space around the ink", () => {
-    // ── CALIBRATED AGAINST THE SAME WORK ON THE SAME MACHINE, RIGHT NOW ──
-    //
-    // The first version of this compared the vast grid against the snug one and
-    // asserted a ratio under 200. It passed alone and FAILED under preflight,
-    // which runs the build beside the tests: the snug case is microseconds, so
-    // under load its own noise moved the denominator and the ratio blew up. A
-    // guard that fails when the machine is busy is a flake, and this repo
-    // already has one spec that answered differently twice in an hour.
-    //
-    // The stable question is not "how does this compare to a tiny run" but
-    // "how does it compare to the work the defect would have done". A
-    // grid-swept thinner reads every cell of the grid once per sweep, so one
-    // pass over an array of that size is the unit — and measuring that pass
-    // here, now, absorbs whatever else the machine is doing.
+  /**
+   * ── THE TIMING GUARD IS GONE, AFTER FLAKING TWICE. READ THIS BEFORE WRITING
+   * A THIRD ONE. ──
+   *
+   * #688 made `thin` sweep only LIVE CELLS instead of the whole grid each
+   * round, which is a 51x speedup on a real sheet and the difference between
+   * the wall finder answering and appearing to hang. Two attempts were made to
+   * guard that property and both were FLAKES:
+   *
+   *   1. a ratio against a tiny grid's run. It passed alone and failed under
+   *      `preflight.sh`, which runs the build beside the tests: the baseline is
+   *      microseconds, so its own noise moved the denominator.
+   *   2. a ratio against one measured pass over an array of the same size,
+   *      taken in the same process so load would move both sides together.
+   *      **It failed under preflight too** — a GC pause inside the measured
+   *      region is enough, and nothing about the arithmetic can see that.
+   *
+   * A guard that fails when the machine is busy is noise, and noise gets a
+   * suite ignored. So the property is NOT tested, and that is recorded rather
+   * than papered over:
+   *
+   *   - what IS tested, immediately below and throughout this file, is that the
+   *     same ink thins to the same skeleton. The correctness of the change is
+   *     covered; only its SPEED is not.
+   *   - the speed is the kind of regression somebody notices in one click,
+   *     because the button visibly stops answering. That is a poor check and it
+   *     is the honest one.
+   *   - the measurement, for anyone re-deriving it by hand: on a 2000x1000 grid
+   *     holding 147 cells of ink, the live-cell version costs a fraction of one
+   *     pass over the grid and a grid-swept one costs about eight.
+   *
+   * A third attempt needs a signal that is not a clock. Counting the cells
+   * EXAMINED would be one, and it means `thin` reporting its own work — an API
+   * change for a test, which is a trade worth making deliberately rather than
+   * reaching for another stopwatch.
+   */
+  it("thins the same ink to the same skeleton whatever the grid around it", () => {
+    // What survives of the timing test: the two runs must agree. This is what
+    // actually broke when the sweep changed, and it needs no clock.
     const WIDE = 2000;
     const TALL = 1000;
-    const at = () => Number(process.hrtime.bigint() / 1000n);
-
-    const scratch = new Uint8Array(WIDE * TALL);
-    let t = at();
-    let seen = 0;
-    for (let i = 0; i < scratch.length; i += 1) seen += scratch[i];
-    const onePass = Math.max(at() - t, 1);
-    expect(seen, "the calibration must actually read the array").toBe(0);
-
-    const vast = block(WIDE, TALL, BAR);
-    t = at();
-    const b = thin(vast, WIDE, TALL);
-    const vastCost = at() - t;
-
+    const vast = thin(block(WIDE, TALL, BAR), WIDE, TALL);
     const snug = thin(block(25, 11, BAR), 25, 11);
-    let litA = 0;
-    let litB = 0;
-    for (let i = 0; i < snug.length; i += 1) litA += snug[i];
-    for (let i = 0; i < b.length; i += 1) litB += b[i];
-    expect(litB, "the same ink must thin to the same skeleton").toBe(litA);
-
-    // The ink here is 147 cells and thins in a handful of rounds, so the
-    // live-cell version does a tiny fraction of one pass. A grid-swept one does
-    // two passes per round — about eight. Four sits well above the first and
-    // well below the second, and both sides scale with the machine.
-    expect(
-      vastCost,
-      `thinning 147 cells on a ${WIDE}x${TALL} grid took ${vastCost}us, against ${onePass}us ` +
-        `for a single read of that grid — a grid-swept thinner costs several passes`,
-    ).toBeLessThan(onePass * 4);
+    let litVast = 0;
+    let litSnug = 0;
+    for (let i = 0; i < vast.length; i += 1) litVast += vast[i];
+    for (let i = 0; i < snug.length; i += 1) litSnug += snug[i];
+    expect(litVast, "empty space around the ink must not change the skeleton").toBe(litSnug);
   });
 
   it("leaves ink on the border alone, exactly as the grid-swept version did", () => {
