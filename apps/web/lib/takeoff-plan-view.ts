@@ -35,6 +35,15 @@ export type PlanMeasurementRow = {
   xs: number[];
   ys: number[];
   label: string | null;
+  /**
+   * Which pricing package this quantity is in — null is the BASE BID.
+   *
+   * On the row because an estimator selecting measurements to post has to see
+   * it there: posting a mixed selection is refused, and a refusal is only fair
+   * if the thing being refused was visible before the press. See
+   * `takeoff/packages.ts`.
+   */
+  packageLabel: string | null;
   postedAt: string | null;
   /** The calibration THIS shape was drawn to, which is not always the
    * sheet's current one — that is the whole point of the FK. */

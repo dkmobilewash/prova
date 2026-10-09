@@ -34,6 +34,7 @@ import {
 } from "./shared";
 import { optionalDateFromString } from "@/lib/bid-pursuits";
 import { deleteDocument } from "@/lib/blob";
+import { onePackageOnly, describeForPackage } from "@/lib/takeoff/packages";
 
 /**
  * The Estimate tab's refusal, in the house voice. The estimate tab and the
@@ -117,6 +118,16 @@ function createLineItemRows(
   label: string,
   lines: TakeoffLine[],
   costCategory: ReturnType<typeof recipeCostCategory>,
+  /**
+   * The pricing package these quantities came from, or null for the base bid.
+   *
+   * NAMED ON THE DESCRIPTION and nothing more, which is the honest half of this
+   * feature: the estimate is not keyed by package, because `BidLine` hangs off
+   * `BidInvitation` and a takeoff hangs off a `Job` with no link between them
+   * before award. So an alternate's lines are findable and movable by a person,
+   * and nothing here claims the estimate knows. See `lib/takeoff/packages.ts`.
+   */
+  packageLabel: string | null = null,
 ) {
   return lines.map((line) =>
     prisma.jobLineItem.create({
@@ -125,7 +136,7 @@ function createLineItemRows(
         // The label names WHERE it was measured. Without it a bid with four
         // takeoffs on it has four lines called "Paint" and no way to tell
         // which room any of them came from.
-        description: label ? `${label} — ${line.label}` : line.label,
+        description: describeForPackage(label ? `${label} — ${line.label}` : line.label, packageLabel),
         unit: line.unit,
         quantity: line.quantity,
         costCategory,
@@ -512,6 +523,12 @@ export async function saveTakeoffMeasurement(jobId: string, formData: FormData):
   if (kind === "COUNT" && !label) {
     return actionFail("Name what you're counting — that name becomes the line item.");
   }
+  // WHICH PRICING PACKAGE THIS BELONGS TO. Empty is the BASE BID — the safe
+  // default both ways round, since a form that omits the field and an estimator
+  // who did not think about it both put the quantity in the number sent to the
+  // GC. The opposite default would bid LOW, and a low bid is work won at a loss
+  // and then built. See `lib/takeoff/packages.ts`.
+  const packageLabel = String(formData.get("packageLabel") ?? "").trim();
 
   // A ring that crosses itself has no area, and saying so now beats letting it
   // sit in the list looking like a measurement until posting time.
@@ -527,6 +544,7 @@ export async function saveTakeoffMeasurement(jobId: string, formData: FormData):
       xs: points.xs,
       ys: points.ys,
       label: label || null,
+      packageLabel: packageLabel || null,
       createdByUserId: userId,
     },
   });
@@ -577,6 +595,12 @@ export async function saveTakeoffMeasurements(jobId: string, formData: FormData)
   if (!calibration) return actionFail("Set the scale on this sheet before measuring it.");
 
   const label = String(formData.get("label") ?? "").trim();
+  // WHICH PRICING PACKAGE THESE BELONG TO. Empty is the BASE BID, which is the
+  // safe default both ways round: a form that omits the field, and an estimator
+  // who did not think about it, both put the quantities in the number sent to
+  // the GC. The opposite default would bid LOW, and a low bid is work won at a
+  // loss and then built. See `lib/takeoff/packages.ts`.
+  const packageLabel = String(formData.get("packageLabel") ?? "").trim();
 
   // One `shape` field per wall, each a JSON `{xs, ys}`. A flat pair of arrays
   // could not say where one run ends and the next begins.
@@ -615,6 +639,7 @@ export async function saveTakeoffMeasurements(jobId: string, formData: FormData)
       xs: shape.xs,
       ys: shape.ys,
       label: label || null,
+      packageLabel: packageLabel || null,
       createdByUserId: userId,
     })),
   });
@@ -741,6 +766,18 @@ export async function postTakeoffMeasurements(jobId: string, formData: FormData)
     );
   }
 
+  // ── ONE PRICING PACKAGE AT A TIME, AND THIS ONE REFUSES ──
+  //
+  // Nearly every other check in this product names a problem and lets the
+  // estimator proceed. This one refuses, and the difference is what happens
+  // after the press: a mixed post produces line items that are individually
+  // correct and collectively a base bid with an alternate folded into it, and
+  // nothing on a posted line says which package it came from — so it cannot be
+  // undone by looking. A refusal costs one press; the alternative costs the
+  // job. See `lib/takeoff/packages.ts`.
+  const onePackage = onePackageOnly(rows.map((row) => ({ id: row.id, packageLabel: row.packageLabel })));
+  if (!onePackage.ok) return actionFail(onePackage.reason);
+
   return runAction(async () => {
     const recipeId = String(formData.get("recipe") ?? "");
     const label = String(formData.get("label") ?? "").trim();
@@ -791,7 +828,7 @@ export async function postTakeoffMeasurements(jobId: string, formData: FormData)
     }
 
     await prisma.$transaction([
-      ...createLineItemRows(jobId, label, lines, recipeCostCategory(recipeId)),
+      ...createLineItemRows(jobId, label, lines, recipeCostCategory(recipeId), onePackage.label),
       prisma.takeoffMeasurement.updateMany({ where: { id: { in: ids } }, data: { postedAt: new Date() } }),
     ]);
 
