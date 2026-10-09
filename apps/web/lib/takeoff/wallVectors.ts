@@ -85,7 +85,53 @@ export type WallFinderOptions = {
 
 const DEFAULTS = {
   minThicknessFeet: 0.2,
-  maxThicknessFeet: 1.5,
+  /**
+   * ── 12 INCHES, AND THE NUMBER WAS SWEPT RATHER THAN REASONED ──
+   *
+   * This was 18in, which admitted a pair reading 12.44in. Against a 60-page
+   * answer key that pair was 188 ft of one page's EAST AND WEST EXTERIOR WALLS,
+   * measured half again too thick — so the envelope was being found and priced
+   * as an assembly that is not on the drawing. The key names every assembly it
+   * has and **the widest is EXT-1 at 8-7/8in**, so nothing above about 9in is a
+   * wall here whatever its geometry.
+   *
+   * That argues for a cap at 9.2in, and the sweep argues otherwise:
+   *
+   * | cap | recall | phantom | EXT band | 12.4in band |
+   * | --- | --- | --- | --- | --- |
+   * | 18 | 95.3% | 17,401 | 22.8% | 1,849 |
+   * | **12** | **94.5%** | **15,374** | **23.2%** | **0** |
+   * | 11 | 93.9% | 15,197 | 23.5% | 0 |
+   * | 10 | 91.7% | 15,160 | 25.4% | 0 |
+   * | 9.2 | 91.6% | 14,766 | 25.4% | 0 |
+   *
+   * **The 12.4in band is gone by 12in**, so the defect does not need a tighter
+   * cap than this. Below 12 the cost rises faster than the gain: 9.2 buys
+   * another 608 ft of phantom reduction and gives up 3.7 points of recall,
+   * about 1,560 ft of real wall. A tight cap does not FIX an over-measured wall,
+   * it REJECTS it, and the footage leaves with it.
+   *
+   * ── WHAT THIS GIVES UP, AND IT IS NOT NOTHING ──
+   *
+   * `wallVectors.test.ts` asserts an 18in shaft wall is "the thickest thing
+   * still a wall", and that was a deliberate claim rather than an accident: a
+   * CMU or double-stud shaft IS that thick. The first version of this comment
+   * said no assembly in this trade is a foot thick. **That is false, and the
+   * test sitting beside this file said so** — which is this repo's own rule
+   * about reading the test before believing an inference about the code.
+   *
+   * So an 18in wall is now OPT-IN: pass `maxThicknessFeet: 1.5` for a sheet
+   * that has one. The default serves the common case, and the sweep is the
+   * reason the common case wins — a cap of 18 leaves 1,849 ft priced as an
+   * assembly that is on no drawing, every time, against a shaft wall that is
+   * occasional and now one argument away.
+   *
+   * The honest state of the number: 12 is measured on ONE answer key. What
+   * would settle it properly is a second key with a shaft wall in it, which is
+   * also what would say whether the 0.8 points of recall this costs were real
+   * wall or more over-measured envelope. Nobody knows yet.
+   */
+  maxThicknessFeet: 1,
   minLengthFeet: 2,
 };
 

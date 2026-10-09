@@ -40,7 +40,7 @@ export type GridBubble = { x: number; y: number; radius: number };
 /** The smallest and largest a grid bubble is drawn, across the sheet, in PAPER
  *  inches of diameter. Below 1/4in nothing readable fits inside; above 3/4in it
  *  is a detail callout or a north arrow rather than a grid head. */
-export const BUBBLE_INCHES_MIN = 0.1;
+export const BUBBLE_INCHES_MIN = 0.06;
 export const BUBBLE_INCHES_MAX = 0.75;
 
 /*
@@ -59,8 +59,12 @@ export const BUBBLE_INCHES_MAX = 0.75;
  * 0.164in is about 12 points, which is small for a grid head that has to hold a
  * character; a hand-drafted sheet would use nearer 3/8in. This bound is
  * therefore fitted to ONE generator and is the first thing to re-measure on
- * another set. It is set at 0.1 rather than 0.15 so a slightly smaller symbol
- * is not missed the same way again.
+ * another set.
+ *
+ * It sits at 0.06 rather than 0.1 because of the HALF-SIZE sheets. The same
+ * drawing issued at half scale carries the same bubble at 0.082in, and a 0.1
+ * floor found none at all on those pages — the identical failure one size
+ * down. 0.06 clears 0.082 with room for a sheet reduced further still.
  */
 
 /** How far a flattened arc's points may stray from a common radius, as a
@@ -182,6 +186,91 @@ export function linesIntoBubbles(
       const endsHere =
         Math.hypot(s.x1 - b.x, s.y1 - b.y) <= reach || Math.hypot(s.x2 - b.x, s.y2 - b.y) <= reach;
       if (endsHere) {
+        out.add(i);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** How far off a seed's line a segment may sit and still be the same line, in
+ *  PAPER inches. Deliberately tight — about three quarters of a point — and the
+ *  reason is in `gridLineSegments` below. */
+const SAME_LINE_INCHES = 0.01;
+
+/** How far two directions may differ and still be the same line, in radians. */
+const SAME_ANGLE = 0.02;
+
+/**
+ * Every segment of the column grid — the lines that run into a bubble AND the
+ * rest of each of those lines.
+ *
+ * ── WHY THE TERMINAL PIECE IS NOT ENOUGH ──
+ *
+ * `linesIntoBubbles` alone changed nothing measurable: dropping 296 segments on
+ * one page and 195 on another left the 12.4in band at 84 ft and 188 ft exactly.
+ * A grid line is not one segment. CAD writes it as a run of pieces and only the
+ * last of them touches the bubble, so the rest survive and still pair against a
+ * wall face. The bubble identifies the LINE; the drop has to follow it.
+ *
+ * ── AND WHY THE TOLERANCE IS TIGHT RATHER THAN GENEROUS ──
+ *
+ * Walls are routinely CENTRED on a column grid line, which makes a loose
+ * version of this actively dangerous: widen the band and it deletes the wall it
+ * was meant to leave behind. The geometry is what saves it — the grid line is
+ * the centreline and the wall's two faces sit offset to either side of it, so
+ * they are parallel to the line and not ON it. A tolerance of a fraction of a
+ * point takes the centreline and leaves both faces.
+ *
+ * The exception this cannot separate is a wall face that lands exactly on a
+ * grid line. Nothing in the geometry distinguishes that from the grid line
+ * itself, and a tight band is what keeps the case rare rather than solved.
+ */
+export function gridLineSegments(
+  segments: readonly StrokeSegment[],
+  bubbles: readonly GridBubble[],
+  unitsPerPaperInch: number,
+): Set<number> {
+  const seeds = linesIntoBubbles(segments, bubbles);
+  if (seeds.size === 0) return seeds;
+  const slack = SAME_LINE_INCHES * unitsPerPaperInch;
+
+  /** A line as (direction, distance from the origin along its normal). The
+   *  direction is folded into half a turn so a segment drawn either way round
+   *  gives the same answer. */
+  const lineOf = (s: StrokeSegment): { angle: number; offset: number } | null => {
+    const dx = s.x2 - s.x1;
+    const dy = s.y2 - s.y1;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) return null;
+    let angle = Math.atan2(dy, dx);
+    if (angle < 0) angle += Math.PI;
+    if (angle >= Math.PI) angle -= Math.PI;
+    // Normal of the folded direction, so two collinear segments agree.
+    return { angle, offset: s.x1 * -Math.sin(angle) + s.y1 * Math.cos(angle) };
+  };
+
+  const lines: { angle: number; offset: number }[] = [];
+  for (const i of seeds) {
+    const line = lineOf(segments[i]);
+    if (line === null) continue;
+    const already = lines.some(
+      (l) => Math.abs(l.angle - line.angle) <= SAME_ANGLE && Math.abs(l.offset - line.offset) <= slack,
+    );
+    if (!already) lines.push(line);
+  }
+
+  const out = new Set<number>(seeds);
+  for (let i = 0; i < segments.length; i += 1) {
+    if (out.has(i)) continue;
+    const line = lineOf(segments[i]);
+    if (line === null) continue;
+    for (const l of lines) {
+      // Fold the angle comparison too: 0 and pi are the same direction.
+      const d = Math.abs(l.angle - line.angle);
+      const apart = Math.min(d, Math.PI - d);
+      if (apart <= SAME_ANGLE && Math.abs(l.offset - line.offset) <= slack) {
         out.add(i);
         break;
       }

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { gridBubbles, linesIntoBubbles, BUBBLE_INCHES_MIN, BUBBLE_INCHES_MAX } from "./gridBubbles";
+import {
+  gridBubbles,
+  linesIntoBubbles,
+  gridLineSegments,
+  BUBBLE_INCHES_MIN,
+  BUBBLE_INCHES_MAX,
+} from "./gridBubbles";
 import type { StrokeSegment } from "./wallVectors";
 
 /**
@@ -136,5 +142,97 @@ describe("the lines that run into them", () => {
   it("returns an empty set when there are no bubbles at all", () => {
     const anything: StrokeSegment = { x1: 0, y1: 0, x2: 1, y2: 1 };
     expect(linesIntoBubbles([anything], []).size).toBe(0);
+  });
+});
+
+describe("following the line the bubble found", () => {
+  const bubble = { x: 0.1, y: 0.5, radius: HALF_INCH };
+
+  /** CAD writes a long line as a run of pieces. Only the last touches the
+   *  bubble, which is why the terminal test alone changed nothing measurable. */
+  function brokenLine(y: number, from: number, to: number, pieces = 6): StrokeSegment[] {
+    const out: StrokeSegment[] = [];
+    for (let i = 0; i < pieces; i += 1) {
+      const a = from + ((to - from) * i) / pieces;
+      const b = from + ((to - from) * (i + 1)) / pieces;
+      out.push({ x1: a, y1: y, x2: b, y2: y });
+    }
+    return out;
+  }
+
+  it("TAKES THE WHOLE GRID LINE, not just the piece touching the bubble", () => {
+    const segs = brokenLine(0.5, 0.1, 0.9);
+    // The defect in numbers: the terminal test catches ONE of six pieces, so
+    // five survive and still pair against a wall face.
+    expect(linesIntoBubbles(segs, [bubble]).size).toBe(1);
+    expect(gridLineSegments(segs, [bubble], PAPER).size).toBe(6);
+  });
+
+  it("takes it in both directions from the bubble", () => {
+    const segs = [...brokenLine(0.5, 0.1, 0.9, 4), ...brokenLine(0.5, 0.1, 0.02, 2)];
+    expect(gridLineSegments(segs, [bubble], PAPER).size).toBe(6);
+  });
+
+  it("LEAVES A WALL CENTRED ON THE GRID LINE, which is the dangerous case", () => {
+    // Walls are routinely centred on a column grid. The grid line is the
+    // CENTRELINE and the wall's faces sit offset either side, so a tight band
+    // takes the line and leaves both faces. A loose one deletes the wall.
+    //
+    // The faces start at 0.25, inside the building: a grid bubble sits OUTSIDE
+    // the outline with the line running in to meet it, so nothing structural
+    // begins at the bubble. The first version of this fixture started them at
+    // the bubble itself and failed — see the test below, which keeps what that
+    // found rather than quietly correcting the fixture.
+    const halfWall = (4.875 / 2 / 12 / 8) * PAPER; // half a 4-7/8in wall at 1/8in scale
+    const segs: StrokeSegment[] = [
+      ...brokenLine(0.5, 0.1, 0.9), // the grid line itself, 6 pieces
+      { x1: 0.25, y1: 0.5 - halfWall, x2: 0.9, y2: 0.5 - halfWall },
+      { x1: 0.25, y1: 0.5 + halfWall, x2: 0.9, y2: 0.5 + halfWall },
+    ];
+    const dropped = gridLineSegments(segs, [bubble], PAPER);
+    expect(dropped.size).toBe(6);
+    expect(dropped.has(6), "the near face must survive").toBe(false);
+    expect(dropped.has(7), "the far face must survive").toBe(false);
+  });
+
+  it("CATCHES A WALL THAT ENDS INSIDE A BUBBLE — a real limit, recorded", () => {
+    // Found by the fixture above being wrong, and kept because the finding is
+    // worth more than the fixture was. The seed test asks only whether an END
+    // lands within two radii of a bubble's centre, so anything ending there
+    // reads as the grid line arriving — including a wall.
+    //
+    // On a drawing the bubble sits clear of the outline, so this needs a wall
+    // ending within about a paper inch of a grid head. Left as a known limit
+    // rather than tuned away: tightening the reach would start missing grid
+    // lines that stop at the circle's edge, which is the worse failure. What
+    // settles whether it costs anything is the real sheets, not this fixture.
+    const endsAtTheBubble: StrokeSegment = { x1: 0.1, y1: 0.5, x2: 0.5, y2: 0.5 };
+    expect(gridLineSegments([endsAtTheBubble], [bubble], PAPER).has(0)).toBe(true);
+  });
+
+  it("leaves a line parallel to the grid but somewhere else entirely", () => {
+    const segs = [...brokenLine(0.5, 0.1, 0.9), ...brokenLine(0.3, 0.1, 0.9)];
+    const dropped = gridLineSegments(segs, [bubble], PAPER);
+    expect(dropped.size).toBe(6);
+  });
+
+  it("leaves a wall that crosses the grid line at right angles", () => {
+    const segs: StrokeSegment[] = [
+      ...brokenLine(0.5, 0.1, 0.9),
+      { x1: 0.5, y1: 0.2, x2: 0.5, y2: 0.8 },
+    ];
+    expect(gridLineSegments(segs, [bubble], PAPER).has(6)).toBe(false);
+  });
+
+  it("returns nothing when no line reaches a bubble", () => {
+    expect(gridLineSegments(brokenLine(0.3, 0.4, 0.9), [bubble], PAPER).size).toBe(0);
+  });
+
+  it("COVERS THE HALF-SIZE SHEET, where the same bubble is 0.082in", () => {
+    // The 0.1in floor found zero bubbles on those pages — the identical failure
+    // one size down from the 0.25in one.
+    const small = gridBubbles(circle(0.3, 0.3, (0.082 / 2) * PAPER), PAPER);
+    expect(small).toHaveLength(1);
+    expect(BUBBLE_INCHES_MIN).toBeLessThan(0.082);
   });
 });
