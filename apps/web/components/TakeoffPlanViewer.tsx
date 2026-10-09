@@ -43,6 +43,7 @@ import {
   type WallCluster,
 } from "@/lib/takeoff/wallVectors";
 import { wallsFromBothEngines } from "@/lib/takeoff/wallRuns";
+import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 import { wallTypeTags, namesForClusters, tagSentence } from "@/lib/takeoff/wallTags";
 
@@ -492,10 +493,22 @@ export function TakeoffPlanViewer({
       // drawing already answers that: it tags walls `EXT-1`, `A1`, `B1` beside
       // the runs they label, and a name is what a catalogue is keyed on.
       setTagNames(namesForClusters(clusters, walls, wallTypeTags(textItems, pageSize.widthPt), feetPerUnit));
-    } catch {
+    } catch (problem) {
       // The sheet is still on screen and the manual tools still work, so this
       // says what failed and stops — it does not take the page down.
-      setFindError("The lines on this sheet couldn't be read. Trace the walls by hand as usual.");
+      //
+      // A SHEET THAT IS SIMPLY TOO DENSE GETS ITS OWN SENTENCE, because the
+      // generic one sends somebody looking for a broken file. Page 7 of a real
+      // airport concourse set carries 30,822 lines long enough to be walls —
+      // 475 million pairs to test, against about a million on a sheet that
+      // works — and before `SheetTooDenseError` the finder simply never
+      // returned. "Couldn't be read" would be false: it was read fine and there
+      // is too much of it.
+      setFindError(
+        problem instanceof SheetTooDenseError
+          ? problem.message
+          : "The lines on this sheet couldn't be read. Trace the walls by hand as usual.",
+      );
     } finally {
       setFinding(false);
     }
