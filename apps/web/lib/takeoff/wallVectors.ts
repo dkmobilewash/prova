@@ -945,6 +945,21 @@ export function wallsNotLettering(
 export const MOST_OF_THE_SHEET = 0.9;
 
 /**
+ * How close to the paper's edge counts as the border's own strip, as a fraction
+ * of the SHORTER sheet dimension. Tight on purpose — see the reasoning inside
+ * `wallsNotTheSheetBorder`, and do not widen it to reach a title block.
+ */
+export const ALONG_THE_EDGE = 0.04;
+
+/**
+ * How much of the sheet a run in that strip must cover before it is the frame
+ * rather than a wall. A quarter: Augusta's border is four segments, so each is
+ * roughly a sheet-side long, and a quarter leaves room for one broken into
+ * halves without reaching down to ordinary partitions.
+ */
+export const BORDER_SEGMENT = 0.25;
+
+/**
  * Walls that are not the sheet's own border.
  *
  * `pageHeight` is in the same units as the coordinates — the viewer's box has x
@@ -960,9 +975,55 @@ export function wallsNotTheSheetBorder(
   mostOfTheSheet = MOST_OF_THE_SHEET,
 ): WallCandidate[] {
   if (!(pageWidth > 0) || !(pageHeight > 0)) return [...walls];
+
+  // ── THE EDGE RULE NEEDS THE GEOMETRY TO BE INSIDE THE PAGE IT IS GIVEN ──
+  //
+  // "Along the bottom edge" is meaningless if the walls extend past the stated
+  // page, and the failure mode is the worst kind: every run would read as
+  // edge-hugging and the filter would return NOTHING, which on screen is
+  // indistinguishable from a sheet with no walls on it rather than from a bug.
+  // A caller handing over a stale or unresolved `pageSize` gets the span rule
+  // alone instead of an empty panel.
+  const fits = walls.every(
+    (wall) =>
+      Math.max(wall.x1, wall.x2) <= pageWidth * 1.01 && Math.max(wall.y1, wall.y2) <= pageHeight * 1.01,
+  );
+  // A FLAG, NOT A SENTINEL BAND. The first attempt used `band = -1` to mean
+  // "off", which INVERTED the rule instead of disabling it: `pageHeight - (-1)`
+  // is larger than the page, so every run read as hugging the bottom. A
+  // negative distance is not a disabled distance.
+  const band = Math.min(pageWidth, pageHeight) * ALONG_THE_EDGE;
   return walls.filter((wall) => {
     const dx = Math.abs(wall.x2 - wall.x1);
     const dy = Math.abs(wall.y2 - wall.y1);
+
+    // ── A SEGMENTED BORDER, WHICH THE SPAN RULE BELOW CANNOT SEE ──
+    //
+    // This filter was written for a border drawn as one full-width line, and a
+    // browser run on Augusta A1.11 (2026-10-10) found one that is not: an
+    // architectural border is four runs INSET from the paper that stop short of
+    // the corners, plus the title-block frame just inside it. Each piece is well
+    // under `mostOfTheSheet`, so every one of them passed — the panel offered a
+    // "6-inch, 237 ft" group that was the drawing frame, and the group's own
+    // total looked plausible, which is what makes it dangerous.
+    //
+    // THE SECOND RULE IS THE *AND* OF LENGTH AND POSITION, deliberately, and
+    // mutation says why neither half is safe alone. Length alone is the rule
+    // below, and it drops a real exterior wall on a sheet scaled to its
+    // building. Position alone drops the outermost partitions of any plan drawn
+    // close to the frame.
+    //
+    // The band is TIGHT (4%) because nothing of the building is in it: the
+    // border itself occupies that strip, and the plan is inside the border. That
+    // is also why the band must not be widened — a band wide enough to cover a
+    // title block is the corner guess this module has no measurement for, and
+    // `borderSegments` pins it.
+    const alongTop = Math.min(wall.y1, wall.y2) <= band;
+    const alongBottom = Math.max(wall.y1, wall.y2) >= pageHeight - band;
+    const alongLeft = Math.min(wall.x1, wall.x2) <= band;
+    const alongRight = Math.max(wall.x1, wall.x2) >= pageWidth - band;
+    if (fits && dx > dy && (alongTop || alongBottom) && dx >= pageWidth * BORDER_SEGMENT) return false;
+    if (fits && dy > dx && (alongLeft || alongRight) && dy >= pageHeight * BORDER_SEGMENT) return false;
     // The page's extent along whichever axis this run mostly follows.
     const extent = dx >= dy ? pageWidth : pageHeight;
     const span = Math.max(dx, dy);
