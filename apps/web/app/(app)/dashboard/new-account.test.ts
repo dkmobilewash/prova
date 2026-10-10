@@ -20,6 +20,8 @@ const state = vi.hoisted(() => ({
   jobs: [] as unknown[],
   renewals: [] as unknown[],
   today: {} as Record<string, unknown>,
+  /** The getting-started hide cookie's value; "co-1" hides the checklist. */
+  cookie: undefined as string | undefined,
   context: {
     company: { id: "co-1", name: "Ithy Drywall & Acoustics", businessScopeAskedAt: new Date("2026-09-01") },
     id: "user-1",
@@ -63,7 +65,10 @@ vi.mock("@/lib/compliance-expiry", () => ({
   renewalTiming: vi.fn(() => "Expires in 9 days"),
 }));
 vi.mock("next/headers", () => ({
-  cookies: vi.fn(async () => ({ get: () => undefined })),
+  cookies: vi.fn(async () => ({
+    get: (name: string) =>
+      name === "prova_getting_started_hidden" && state.cookie !== undefined ? { name, value: state.cookie } : undefined,
+  })),
   headers: vi.fn(async () => new Headers()),
 }));
 vi.mock("next/navigation", () => ({
@@ -125,6 +130,8 @@ const JOB = {
 
 /** Every section the page has for a company in use, in page order. */
 const POPULATED_ORDER = [
+  'data-tour="dashboard-new-job"',
+  'placeholder="Search job or client"',
   'data-tour="dashboard-ask"',
   'data-tour="dashboard-needs-attention"',
   'data-tour="dashboard-field"',
@@ -144,18 +151,34 @@ beforeEach(() => {
   state.jobs = [];
   state.renewals = [];
   state.today = EMPTY_TODAY;
+  state.cookie = undefined;
   state.context.role = "OWNER";
   state.context.jobFunction = null;
 });
 
 describe("/dashboard on a company with no jobs", () => {
-  it("leads with the jobs empty state, then the checklist, and nothing with nothing to say", async () => {
+  it("shows the getting-started checklist as the ONE start — no empty state, no Ask box", async () => {
+    const html = await render();
+    expect(html, "the real page rendered").toContain("What needs a decision");
+    expect(html).toContain("getting-started-heading");
+    for (const competing of [
+      'data-tour="dashboard-jobs-empty"',
+      'data-tour="dashboard-ask"',
+      'data-tour="dashboard-new-job"',
+      'data-tour="dashboard-needs-attention"',
+      "$0.00",
+    ]) {
+      expect(html, `a new account should not also see ${competing}`).not.toContain(competing);
+    }
+  });
+
+  it("once the checklist is hidden, leads with the jobs empty state and nothing with nothing to say", async () => {
+    state.cookie = "co-1";
     const html = await render();
     expect(html, "the real page rendered").toContain("What needs a decision");
 
-    const emptyAt = html.indexOf('data-tour="dashboard-jobs-empty"');
-    expect(emptyAt).toBeGreaterThan(-1);
-    expect(emptyAt).toBeLessThan(html.indexOf("getting-started-heading"));
+    expect(html).toContain('data-tour="dashboard-jobs-empty"');
+    expect(html).not.toContain("getting-started-heading");
 
     for (const gone of [
       'data-tour="dashboard-needs-attention"',
@@ -172,6 +195,7 @@ describe("/dashboard on a company with no jobs", () => {
   });
 
   it("offers the first job as the primary action, with an example that says it is one", async () => {
+    state.cookie = "co-1";
     const html = await render();
     const empty = html.match(/data-tour="dashboard-jobs-empty"[\s\S]*?<\/section>/)?.[0] ?? "";
     expect(empty).toContain("No jobs yet");
@@ -198,6 +222,7 @@ describe("/dashboard on a company with no jobs", () => {
   it("leaves money out of the example for a viewer who cannot see job money", async () => {
     state.context.role = "MEMBER";
     state.context.jobFunction = "FIELD";
+    state.cookie = "co-1";
     const html = await render();
     expect(html).toContain("Oak Ave Medical");
     expect(html).not.toContain("$412,000");
@@ -247,6 +272,28 @@ describe("/dashboard on a company with jobs — unchanged", () => {
     expect(section.match(/text-\[10px\]/g)?.length, "exactly one tile for this viewer").toBe(1);
     expect(section).toContain('class="grid grid-cols-1 gap-3"');
     expect(section).not.toContain("grid-cols-4");
+  });
+
+  it("makes every Needs-attention tile a link to the list it counts", async () => {
+    const section = needsAttention(await render());
+    for (const href of ["/cash-flow#aging", "/compliance", "/wip", "/cash-flow#retainage"]) {
+      expect(section, `no tile links to ${href}`).toContain(`href="${href}"`);
+    }
+  });
+
+  it("links no tile to a page this viewer cannot open", async () => {
+    state.context.role = "MEMBER";
+    state.context.jobFunction = "FIELD";
+    const section = needsAttention(await render());
+    expect(section).not.toContain("/cash-flow");
+    expect(section).not.toContain('href="/wip"');
+  });
+
+  it("never sends anyone to /jobs, which only redirects back here", async () => {
+    state.today = { ...BUSY_TODAY, gcReliability: [] };
+    const html = await render();
+    expect(html).toContain("Open a job below");
+    expect(html).not.toContain('href="/jobs"');
   });
 
   it("is a working-width page", async () => {

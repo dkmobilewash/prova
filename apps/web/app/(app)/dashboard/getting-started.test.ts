@@ -124,16 +124,15 @@ describe("/dashboard getting-started card", () => {
     expect(section).toContain("Hide this");
   });
 
-  it("on a company with no jobs, follows the jobs empty state and sits above the Ask box", async () => {
+  it("on a company with no jobs, is the only start: no jobs empty state and no Ask box beside it", async () => {
     // This fake database has no jobs, so this is the brand-new-account
-    // layout; the order with jobs is pinned in new-account.test.ts.
+    // layout; the order with jobs is pinned in new-account.test.ts. The
+    // checklist's first step links /jobs/new and it links /ask itself, so
+    // the empty state and the Ask box were the same doors twice.
     const html = await render();
-    const emptyAt = html.indexOf('data-tour="dashboard-jobs-empty"');
-    const cardAt = html.indexOf("getting-started-heading");
-    const askAt = html.indexOf('data-tour="dashboard-ask"');
-    expect(emptyAt).toBeGreaterThan(-1);
-    expect(emptyAt).toBeLessThan(cardAt);
-    expect(cardAt).toBeLessThan(askAt);
+    expect(html.indexOf("getting-started-heading")).toBeGreaterThan(-1);
+    expect(html).not.toContain('data-tour="dashboard-jobs-empty"');
+    expect(html).not.toContain('data-tour="dashboard-ask"');
   });
 
   it("ticks steps from the counts", async () => {

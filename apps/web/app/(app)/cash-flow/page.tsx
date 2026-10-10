@@ -182,7 +182,7 @@ export default async function CashFlowPage() {
         </a>
       </section>
 
-      <section className="mb-10" data-tour="cash-flow-aging">
+      <section id="aging" className="mb-10 scroll-mt-4" data-tour="cash-flow-aging">
         <h2 className="mb-3 text-lg font-semibold text-ink">Accounts receivable aging</h2>
         {/* The grid and the total only appear when something is outstanding.
             An account that has been paid in full does not need five zeros
@@ -266,7 +266,7 @@ export default async function CashFlowPage() {
         )}
       </section>
 
-      <section className="mb-10" data-tour="cash-flow-retainage">
+      <section id="retainage" className="mb-10 scroll-mt-4" data-tour="cash-flow-retainage">
         <h2 className="mb-3 text-lg font-semibold text-ink">Retainage receivable</h2>
         {/* Same rule as the aging total above: a zero total is stated once,
             by the sentence, instead of twice. */}

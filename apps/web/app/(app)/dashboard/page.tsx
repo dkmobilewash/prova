@@ -5,7 +5,7 @@ import { JobStatus, Prisma, prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { redirectToOnboardingIfUnasked } from "@/lib/onboarding-gate";
 import { estimateStage } from "@/lib/estimate-stage";
-import { can } from "@/lib/permissions";
+import { can, canReach } from "@/lib/permissions";
 import { money } from "@/lib/money";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { renewalAlerts, renewalTiming } from "@/lib/compliance-expiry";
@@ -110,7 +110,9 @@ function filterHref(status: JobStatus | "ALL", q?: string) {
   if (status !== "ALL") params.set("status", status);
   if (q) params.set("q", q);
   const query = params.toString();
-  return query ? `/dashboard?${query}` : "/dashboard";
+  // #jobs: a filter is clicked at the jobs list, so it lands back there
+  // rather than at the top of the page.
+  return query ? `/dashboard?${query}#jobs` : "/dashboard#jobs";
 }
 
 export default async function TodayPage({
@@ -192,6 +194,19 @@ export default async function TodayPage({
   // something in it. Presentation only: every figure above is computed
   // exactly as before, and a company with a job renders the same page.
   const isNewAccount = allJobs.length === 0;
+  // A brand-new account gets ONE place to start. The checklist's first step
+  // is "start your first job" and it links Ask, so while it shows, the jobs
+  // empty state, the tour offer and the Ask box are three more doors to the
+  // same room. Once someone hides the checklist, those come back.
+  const checklistShowing = gettingStarted !== null && !gettingStarted.complete;
+  const onlyChecklist = isNewAccount && checklistShowing;
+
+  // Every tile is a door to the list it counts — a number you cannot click
+  // through is a question with the answer withheld. Only a door this viewer
+  // can open: billing rights do not imply company-financials rights.
+  const overdueHref = canReach(principal, "/cash-flow") ? "/cash-flow#aging" : undefined;
+  const retainageHref = canReach(principal, "/cash-flow") ? "/cash-flow#retainage" : undefined;
+  const overBudgetHref = canReach(principal, "/wip") ? "/wip" : undefined;
 
   // Written once and placed in one of two spots below: beside "Crews
   // today" for a company with jobs (where it always was), or alone for a
@@ -265,14 +280,48 @@ export default async function TodayPage({
               What needs a decision, before you go looking for it.
             </p>
 
-            {/* The full tour, offered once to an account with no jobs yet —
-                a brand-new one. Dismissed per browser; see FullTourOffer. */}
-            {isNewAccount && <FullTourOffer />}
+            {/* The two things people come to this page to do — start a job,
+                find a job — first, not under four sections of figures. The
+                search lands on the list at the bottom (#jobs). */}
+            {!isNewAccount && (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Link
+                  href="/jobs/new"
+                  data-tour="dashboard-new-job"
+                  className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
+                >
+                  New job
+                </Link>
+                <form action="#jobs" className="flex flex-wrap items-center gap-2">
+                  {activeStatus && <input type="hidden" name="status" value={activeStatus} />}
+                  <input
+                    type="search"
+                    name="q"
+                    defaultValue={q}
+                    placeholder="Search job or client"
+                    aria-label="Search jobs by job or client name"
+                    className="w-52 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-md border border-line-card bg-surface px-3 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+                  >
+                    Search
+                  </button>
+                </form>
+              </div>
+            )}
 
-            {/* A brand-new company's first screen leads with the one thing
-                it can do. The example rows are static markup, labelled as
-                an example by EmptyState itself — never data. */}
-            {isNewAccount && (
+            {/* The full tour, offered once to an account with no jobs yet —
+                a brand-new one — but not while the checklist is the one
+                start on screen. Dismissed per browser; see FullTourOffer.
+                Always reachable from Help as well. */}
+            {isNewAccount && !onlyChecklist && <FullTourOffer />}
+
+            {/* A brand-new company that has hidden the checklist still gets
+                the one thing it can do. The example rows are static markup,
+                labelled as an example by EmptyState itself — never data. */}
+            {isNewAccount && !onlyChecklist && (
               <EmptyState
                 data-tour="dashboard-jobs-empty"
                 className="mt-6"
@@ -316,7 +365,7 @@ export default async function TodayPage({
 
             {/* First, and only until the required steps are done or someone
                 hides it on this browser. Everything below keeps its order. */}
-            {gettingStarted && !gettingStarted.complete && (
+            {gettingStarted && checklistShowing && (
               <div className="mt-6" data-tour="dashboard-getting-started">
                 <GettingStartedCard checklist={gettingStarted} />
               </div>
@@ -324,10 +373,13 @@ export default async function TodayPage({
 
             {/* Above the tiles on purpose. The tiles answer the four
                 questions we guessed at; this answers the one they actually
-                have. */}
-            <div className="mt-6" data-tour="dashboard-ask">
-              <AskPanel />
-            </div>
+                have. Not on a brand-new account's checklist-only screen:
+                the checklist links to Ask itself. */}
+            {!onlyChecklist && (
+              <div className="mt-6" data-tour="dashboard-ask">
+                <AskPanel />
+              </div>
+            )}
 
             {/* Before the first job, the one section with something to say. */}
             {isNewAccount && expiringSoon.length > 0 && (
@@ -358,6 +410,7 @@ export default async function TodayPage({
                         ? "Nothing past its due date."
                         : `${today.overdue.length} ${today.overdue.length === 1 ? "invoice" : "invoices"} past due`
                     }
+                    href={overdueHref}
                   />
                 )}
                 <StatCard
@@ -381,6 +434,7 @@ export default async function TodayPage({
                         ? "No active job is forecast past its contract value."
                         : "Forecast cost above contract value"
                     }
+                    href={overBudgetHref}
                   />
                 )}
                 {showsBilling && (
@@ -389,6 +443,7 @@ export default async function TodayPage({
                     label="Retainage held"
                     value={money(today.retainageHeld)}
                     detail="Withheld and not yet released"
+                    href={retainageHref}
                   />
                 )}
               </div>
@@ -452,10 +507,10 @@ export default async function TodayPage({
                   {today.gcReliability.length === 0 ? (
                     <p className="mt-2 text-sm text-ink-body">
                       No invoices raised yet, so there is nothing to judge.{" "}
-                      <Link href="/jobs" className="text-link hover:underline">
-                        Open a job
-                      </Link>{" "}
-                      and bill it under Billing — this fills in once a GC has paid one.
+                      <a href="#jobs" className="text-link hover:underline">
+                        Open a job below
+                      </a>{" "}
+                      and use its Billing tab — this fills in once a GC has paid one.
                     </p>
                   ) : (
                     <ul className="mt-3 divide-y divide-line-row">
@@ -538,7 +593,7 @@ export default async function TodayPage({
             {/* --------------------------------------- browse all jobs - */}
             {/* A new account's jobs empty state is at the top of the page. */}
             {!isNewAccount && (
-            <section className="mt-10 border-t border-line-card pt-6">
+            <section id="jobs" className="mt-10 scroll-mt-4 border-t border-line-card pt-6">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="text-sm font-semibold text-ink">Browse all jobs</h2>
                 <p className="text-xs text-ink-body">
@@ -548,39 +603,14 @@ export default async function TodayPage({
                 </p>
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <Link
-                    href="/jobs/new"
-                    data-tour="dashboard-new-job"
-                    className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
-                  >
-                    New job
-                  </Link>
-                  <Link href="/catalog" className="text-sm text-link hover:underline">
-                    Line item catalog
-                  </Link>
-                  <Link href="/bids" className="text-sm text-link hover:underline">
-                    Bid history
-                  </Link>
-                </div>
-
-                <form className="flex flex-wrap items-center gap-2">
-                  {activeStatus && <input type="hidden" name="status" value={activeStatus} />}
-                  <input
-                    type="search"
-                    name="q"
-                    defaultValue={q}
-                    placeholder="Search job or client"
-                    className="w-52 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-md border border-line-card bg-surface px-3 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
-                  >
-                    Search
-                  </button>
-                </form>
+              {/* "New job" and the search moved to the top of the page. */}
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Link href="/catalog" className="text-sm text-link hover:underline">
+                  Line item catalog
+                </Link>
+                <Link href="/bids" className="text-sm text-link hover:underline">
+                  Bid history
+                </Link>
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2 border-b border-line-card pb-4" data-tour="dashboard-job-filters">
