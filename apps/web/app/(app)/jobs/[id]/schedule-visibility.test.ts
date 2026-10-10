@@ -139,6 +139,7 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("@/lib/viewerToday", () => ({ viewerTimeZone: vi.fn(async () => "UTC"), viewerToday: vi.fn(async () => "2026-09-20") }));
 vi.mock("@/lib/docusign/views", () => ({ loadJobDocuSign: vi.fn(async () => null) }));
+vi.mock("@/lib/jobs/job-paperwork", () => ({ jobPaperworkLinks: vi.fn(() => []), loadJobPaperworkCounts: vi.fn(async () => ({})) }));
 vi.mock("@/lib/push", () => ({ pushToUser: vi.fn() }));
 
 /** The page binds these; it never calls them during a render. Mocking the

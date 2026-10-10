@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { headers } from "next/headers";
+import { jobPaperworkLinks, loadJobPaperworkCounts } from "@/lib/jobs/job-paperwork";
 import { prisma } from "@prova/db";
 import { PrintButton } from "@/components/PrintButton";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
@@ -110,6 +112,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
   const isContractExecuted = contractIsExecuted(contractExecution);
 
   const docuSign = showsJobMoney ? await loadJobDocuSign(company.id, job.id, timeZone) : null;
+  const paperwork = jobPaperworkLinks(principal, job.id, await loadJobPaperworkCounts(company.id, job.id));
   const docuSignSigner = { name: job.contact.name, email: job.contact.email ?? "" };
 
   const updateScheduleWithId = updateJobSchedule.bind(null, job.id);
@@ -120,6 +123,26 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
 
   return (
     <>
+      {/* This job's paperwork, one click away and already filtered to it.
+          First on the Overview so the job is the hub, not the rail. */}
+      {paperwork.length > 0 && (
+        <nav aria-label="This job's paperwork" className="mb-8 print:hidden">
+          <ul className="flex flex-wrap gap-2">
+            {paperwork.map((link) => (
+              <li key={link.href}>
+                <Link
+                  href={link.href}
+                  className="inline-flex items-baseline gap-2 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink hover:border-brand"
+                >
+                  <span className="font-medium">{link.label}</span>
+                  <span className="tabular-nums text-ink-muted">{link.detail}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
+
       {/* Contract-style summary — the same JobLineItem rows used as the
           estimate are rendered here as contract content, via the shared
           ContractSummary component also used by the public /esign/[token]
