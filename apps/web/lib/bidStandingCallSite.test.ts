@@ -60,13 +60,26 @@ describe("the pipeline page's standing lines", () => {
     // somebody has turned off. `/pipeline` is in the click-list for the rest,
     // and `expo-router-header-options` is the entry about why that gap
     // matters: a census proves code is present, never that it appears.
-    expect(text).toContain("{lines.length > 0 && (");
+    // BOTH SOURCES, since #711 added the crowding lines to the same list.
+    // This assertion caught that change when it was made, which is the census
+    // doing its job: a gate that grows a second input should be a deliberate
+    // edit, not a silent one.
+    expect(text).toContain("{lines.length + crowding.length > 0 && (");
   });
 
   it("keeps the red badge for the one state that is actually wrong", () => {
     // A bid past its deadline that was never sent. That is the claim the old
     // badge was making and almost never true of; it is true of this.
     expect(source()).toContain("past the deadline and never sent");
+  });
+
+  it("renders the crowding lines in the same list, not a second one", () => {
+    // One list, because they are all answers to "what wants doing" and two
+    // boxes stacked on a page is two things to skip rather than one to read.
+    const text = source();
+    expect(text).toContain("bidCrowds(live, today)");
+    expect(text).toContain("crowdingLines(");
+    expect(text).toContain("[...lines, ...crowding].map(");
   });
 
   it("colours a row's date only when the colour means something", () => {

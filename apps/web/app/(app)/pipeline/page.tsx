@@ -3,6 +3,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { bidStandings, standingLines } from "@/lib/bid-standing";
+import { bidCrowds, crowdingLines } from "@/lib/bid-crowding";
 import { loadBidPipeline } from "@/lib/bid-pipeline-query";
 import { valueIsPartial, winRateLabel } from "@/lib/bid-pipeline";
 import { money } from "@/lib/money";
@@ -64,6 +65,14 @@ export default async function PipelinePage() {
   // apart, because they want different people.
   const standings = bidStandings(live, today);
   const lines = standingLines(standings);
+  // ── AND THE WEEKS WITH TOO MUCH IN THEM ──
+  //
+  // `standingLines` is about bids that are already late or already cold. This
+  // is the one that arrives EARLY ENOUGH TO ACT ON: the app knows what to do
+  // once capacity has gone wrong (`CAPACITY` is a decline reason, and a regret
+  // letter can name it) and has never said it was about to. See
+  // `bid-crowding.ts` — it reports crowding and deliberately judges nothing.
+  const crowding = crowdingLines(bidCrowds(live, today));
   // Keyed for the rows below, so a date is only coloured when its colour
   // carries a meaning somebody can act on.
   const byId = new Map(
@@ -147,9 +156,9 @@ export default async function PipelinePage() {
 
             {/* ONE LINE PER THING THAT WANTS DOING, above the list rather than
                 beside a row: each is about the desk, not about one bid. */}
-            {lines.length > 0 && (
+            {lines.length + crowding.length > 0 && (
               <ul data-pipeline="standings" className="mb-3 flex flex-col gap-1">
-                {lines.map((line) => (
+                {[...lines, ...crowding].map((line) => (
                   <li
                     key={line}
                     className="rounded-md border border-line-card bg-surface p-2 text-xs text-ink-body"
