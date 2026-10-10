@@ -8,7 +8,7 @@
  */
 const STYLES: Record<string, string> = {
   ESTIMATE: "bg-tag-slate text-tag-slate-ink",
-  CONTRACTED: "bg-tag-blue text-tag-blue-ink",
+  CONTRACTED: "bg-tag-brand text-tag-brand-ink",
   IN_PROGRESS: "bg-tag-amber text-tag-amber-ink",
   COMPLETE: "bg-tag-green text-tag-green-ink",
   // Not a JobStatus: the client's signed view of a contract. Signing does

@@ -38,8 +38,8 @@ export type SalesOpportunityHistory = {
 const STAGE_STYLE: Record<string, string> = {
   NEW: "bg-neutral-800 text-ink-label",
   CONTACTED: "bg-neutral-800 text-ink-label",
-  DEMO_SCHEDULED: "bg-tag-blue text-tag-blue-ink",
-  TRIAL: "bg-tag-blue text-tag-blue-ink",
+  DEMO_SCHEDULED: "bg-tag-brand text-tag-brand-ink",
+  TRIAL: "bg-tag-brand text-tag-brand-ink",
   WON: "bg-tag-green text-tag-green-ink",
   LOST: "bg-tag-rose text-red-400",
 };

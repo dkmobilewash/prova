@@ -63,7 +63,7 @@ const BID_STATUS_OPTIONS = [
 
 const BID_STATUS_STYLE: Record<string, string> = {
   INVITED: "bg-neutral-800 text-ink-label",
-  SUBMITTED: "bg-tag-blue text-tag-blue-ink",
+  SUBMITTED: "bg-tag-brand text-tag-brand-ink",
   WON: "bg-tag-green text-tag-green-ink",
   LOST: "bg-tag-rose text-red-400",
   DECLINED: "bg-neutral-800 text-ink-muted",

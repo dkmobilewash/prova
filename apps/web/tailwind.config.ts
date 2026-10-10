@@ -92,10 +92,24 @@ const config: Config = {
 
         // Tag pairs: dark grounds under light inks — the dark-ground
         // versions of the same hues, so semantic MEANINGS are unchanged
-        // (error red, success green, warning amber). tag-blue is the
+        // (error red, success green, warning amber). tag-brand is the
         // brand/status-positive chip ("In progress") and is the one pair
         // that keeps a LIGHT ground: #facc15 fill, #422006 ink, 9.5:1 —
-        // yellow fills keep dark text everywhere. tag-slate is the
+        // yellow fills keep dark text everywhere.
+        //
+        // IT WAS CALLED `tag-blue` UNTIL 2026-10-10 AND IT HAS NEVER BEEN
+        // BLUE. The hue was deliberate and documented; the NAME was the
+        // defect, and a name that contradicts its own value three lines
+        // below it is the cheapest kind of trap this repo keeps paying for.
+        // Renamed to pair with `tag-brand-soft` further down, which is the
+        // dark-ground version of the same chip — so the `-soft` suffix now
+        // means something relative to something.
+        //
+        // A missed call site would have rendered UNSTYLED rather than
+        // wrong-coloured, since a Tailwind class naming no token resolves to
+        // nothing. `colorTokenCensus.test.ts` is what makes that loud: it
+        // fails on any class pointing at a token this file does not define.
+        // tag-slate is the
         // neutral/info chip on the mockups' info-blue pair; callers add
         // the 1px border-line-card outline that keeps it visible.
         "tag-rose": "#3a1518",
@@ -104,8 +118,8 @@ const config: Config = {
         "tag-amber-ink": "#f0c464",
         "tag-green": "#143a26",
         "tag-green-ink": "#7ee2a8",
-        "tag-blue": "#facc15",
-        "tag-blue-ink": "#422006",
+        "tag-brand": "#facc15",
+        "tag-brand-ink": "#422006",
         "tag-slate": "#23282f",
         "tag-slate-ink": "#9fb6c9",
 
