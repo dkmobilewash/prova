@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ringSelfIntersects } from "../sheet-geometry";
-import { dropCollinear, roomsInBox, traceRing, type Box } from "./roomAreas";
+import { dropCollinear, roomsInBox, strokesNotLettering, traceRing, type Box } from "./roomAreas";
 import type { StrokeSegment } from "./wallVectors";
 
 /**
@@ -275,5 +275,71 @@ describe("roomsInBox", () => {
     expect(roomsInBox(plan, widthPt, heightPt, feetPerPoint, { x0: 0.5, y0: 0.5, x1: 0.5, y1: 0.9 })).toEqual([]);
     expect(roomsInBox([], widthPt, heightPt, feetPerPoint, whole)).toEqual([]);
     expect(roomsInBox(plan, widthPt, heightPt, 0, whole)).toEqual([]);
+  });
+});
+
+describe("strokesNotLettering", () => {
+  // A page-width unit is the sheet; at 300 ft across, a foot is 1/300.
+  const feetPerUnit = 300;
+  const ft = (feet: number) => feet / feetPerUnit;
+  const seg = (x1: number, y1: number, x2: number, y2: number) => ({
+    x1: ft(x1),
+    y1: ft(y1),
+    x2: ft(x2),
+    y2: ft(y2),
+  });
+  const textBox = (x: number, y: number, w: number, h: number) => ({
+    x: ft(x),
+    y: ft(y),
+    width: ft(w),
+    height: ft(h),
+  });
+
+  it("drops the short strokes inside a text box", () => {
+    // A glyph outline: a few inches long, sitting in the tag's own box.
+    const glyph = seg(10.1, 10.1, 10.2, 10.3);
+    expect(strokesNotLettering([glyph], [textBox(10, 10, 3, 1)], feetPerUnit)).toEqual([]);
+  });
+
+  it("KEEPS A WALL RUNNING BEHIND A ROOM TAG", () => {
+    // The filter would take the room with the label otherwise — a wall does
+    // not stop being a wall because somebody wrote CONFERENCE on top of it.
+    //
+    // THE MIDPOINT HAS TO BE INSIDE THE BOX or this proves nothing: the first
+    // version ran the wall from x=0 to x=40, whose midpoint at x=20 is
+    // nowhere near a box spanning 10 to 13. It passed with the length check
+    // deleted, which is how mutation found it.
+    const wall = seg(5, 10.5, 18, 10.5); // midpoint x=11.5, inside the box
+    expect(strokesNotLettering([wall], [textBox(10, 10, 3, 1)], feetPerUnit)).toHaveLength(1);
+  });
+
+  it("keeps a short stroke that is nowhere near any text", () => {
+    expect(strokesNotLettering([seg(50, 50, 50.2, 50.2)], [textBox(10, 10, 3, 1)], feetPerUnit)).toHaveLength(1);
+  });
+
+  it("does nothing at all when the sheet has no text layer", () => {
+    // A scanned sheet. Returning an empty set here would delete the drawing.
+    const strokes = [seg(10.1, 10.1, 10.2, 10.3), seg(0, 10.5, 40, 10.5)];
+    expect(strokesNotLettering(strokes, [], feetPerUnit)).toHaveLength(2);
+  });
+
+  it("REFUSES TO WORK IN THE WRONG UNITS rather than deleting the sheet", () => {
+    // `wallsNotLettering` records the scar: a bare pad is two points to the
+    // server reader and TWO PAGE WIDTHS to the viewer, which would put every
+    // stroke inside a text box. A zero or missing scale must not do that.
+    const strokes = [seg(10.1, 10.1, 10.2, 10.3), seg(0, 10.5, 40, 10.5)];
+    expect(strokesNotLettering(strokes, [textBox(10, 10, 3, 1)], 0)).toHaveLength(2);
+  });
+
+  it("USES THE MIDPOINT, not an endpoint", () => {
+    // The box spans 10..13 with half a foot of pad, so 9.5..13.5. This stroke
+    // STARTS at 9.0 — outside — and its midpoint is 9.7, inside. Testing an
+    // endpoint keeps it; testing the midpoint drops it.
+    //
+    // The first version of this used 12.9 to 13.3, which is inside the padded
+    // box at both the endpoint and the midpoint, so it could not tell the two
+    // rules apart. Mutation found that.
+    const half = seg(9.0, 10.5, 10.4, 10.5);
+    expect(strokesNotLettering([half], [textBox(10, 10, 3, 1)], feetPerUnit)).toEqual([]);
   });
 });

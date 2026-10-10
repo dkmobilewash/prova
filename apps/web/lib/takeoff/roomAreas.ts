@@ -103,6 +103,78 @@ import type { StrokeSegment } from "./wallVectors";
  * than silently over-measured.
  */
 
+/** A text item's box, in the same page-width units as the strokes. */
+export type TextBox = { x: number; y: number; width: number; height: number };
+
+/**
+ * Half a foot of slack round a text box, in page-width units.
+ *
+ * In FEET, converted — never a bare number. `wallsNotLettering` records why:
+ * a literal `2` is two points to the server reader and TWO PAGE WIDTHS to the
+ * viewer, which would put the whole drawing inside a text box and filter the
+ * sheet away.
+ */
+const LETTER_PAD_FEET = 0.5;
+
+/** Longer than this and it is not a glyph, whatever it sits on top of. */
+const LETTER_FEET = 2;
+
+/**
+ * Strokes with the stroked LETTERING removed.
+ *
+ * ── WHY THIS EXISTS, AND THE NUMBER THAT JUSTIFIES IT ──
+ *
+ * A sheet whose glyphs are saved as line work carries an enormous number of
+ * tiny strokes: West Herr p21 has **197,620**, against 23,351 on Augusta. Every
+ * one of those outlines is ink on the grid, and ink carves regions — so a room
+ * with a note in it comes back as a dozen slivers around the letters rather
+ * than as a room.
+ *
+ * Measured against room tags printed on the sheet, with the name-and-number
+ * test that makes a tag a room rather than a legend entry:
+ *
+ * | sheet | every stroke | lettering dropped |
+ * | --- | --- | --- |
+ * | **Augusta p11** (33 real room tags) | 64% | **79%** |
+ * | West Herr p21 | 49% | 49% |
+ *
+ * Augusta is the sheet whose ground truth is clean — `JUDGE BIAS`,
+ * `MECHANICAL`, `CONFERENCE`, `COUNSELOR` — and fifteen points there is worth
+ * having. West Herr is unchanged, and its denominator is half equipment labels
+ * (`FEC`, `SPACE`), so it is the weaker of the two readings rather than a
+ * contradiction.
+ *
+ * ── AND WHAT IT IS NOT ──
+ *
+ * This is NOT the fix that makes room detection fit to use: 79% on one sheet is
+ * not a number anybody should bid from, and the button stays off
+ * (`takeoffRoomFinder.test.tsx`). It is one filter the wall finder has had all
+ * along, measured and moved across.
+ */
+export function strokesNotLettering(
+  segments: readonly StrokeSegment[],
+  text: readonly TextBox[],
+  feetPerUnit: number,
+): StrokeSegment[] {
+  if (text.length === 0 || !(feetPerUnit > 0)) return [...segments];
+  const pad = LETTER_PAD_FEET / feetPerUnit;
+  return segments.filter((segment) => {
+    const feet = Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1) * feetPerUnit;
+    // A LONG STROKE IS NEVER A GLYPH. A wall running behind a room tag must
+    // survive, or the filter takes the room with the label.
+    if (feet > LETTER_FEET) return true;
+    const midX = (segment.x1 + segment.x2) / 2;
+    const midY = (segment.y1 + segment.y2) / 2;
+    return !text.some(
+      (box) =>
+        midX >= box.x - pad &&
+        midX <= box.x + box.width + pad &&
+        midY >= box.y - pad &&
+        midY <= box.y + box.height + pad,
+    );
+  });
+}
+
 /** A room found inside the box, ready to become an AREA measurement. */
 export type DetectedRoom = {
   /** Stable only within one detection run. */
