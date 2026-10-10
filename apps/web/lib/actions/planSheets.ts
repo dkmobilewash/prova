@@ -211,7 +211,7 @@ export async function checkDrawingIndex(planId: string): Promise<IndexCheck> {
   // their own correction as a missing sheet.
   const sheets = await prisma.planSheetProposal.findMany({
     where: { planId: plan.id },
-    select: { proposedSheetNumber: true, acceptedSheetNumber: true },
+    select: { pageNumber: true, proposedSheetNumber: true, acceptedSheetNumber: true },
   });
 
   // HOW MANY PAGES HAVE NO NUMBER YET. `PlanSheetText` is one row per PAGE —
@@ -219,8 +219,8 @@ export async function checkDrawingIndex(planId: string): Promise<IndexCheck> {
   // proposals exist only for pages `TITLE_BLOCK` has reached. The difference
   // is pages nobody has read, and reporting the index's entries for those as
   // MISSING is what this check did on its first day in production.
-  const pages = await prisma.planSheetText.count({ where: { planId: plan.id } });
-  const unreadPages = unreadPageCount(pages, sheets);
+  const pageRows = await prisma.planSheetText.count({ where: { planId: plan.id } });
+  const unreadPages = unreadPageCount(pageRows, sheets);
 
   const bytes = await readPlanBytes(plan.id, context.company.id);
   if (!bytes.ok) return { ok: false, error: bytes.error };
