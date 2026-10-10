@@ -29,7 +29,10 @@ describe("WaiverFill at rest is the finished waiver", () => {
     for (const v of ["Ridgeline Drywall Inc.", "Apex Builders", "1200 Harbor Blvd", "$48,250.00"]) {
       expect(html).toContain(v);
     }
-    expect(html).toContain("READY TO SIGN");
+    expect(html).toContain("March 31");
+    expect(html).toContain("PDF READY");
+    // Banned wording: the tool never says a waiver is ready or safe to sign.
+    expect(html).not.toMatch(/ready to sign/i);
   });
 
   it("is idle at rest", () => {

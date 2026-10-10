@@ -62,4 +62,31 @@ describe("/lien-waiver", () => {
       for (const prop of props) expect(["transform", "opacity"]).toContain(prop);
     }
   });
+
+  it("never shows a dead tool link: unset means 'opening soon', no <a> to the tool", () => {
+    expect(html).toContain('data-lien-waiver-tool="soon"');
+    expect(html).not.toContain('data-lien-waiver-tool="live"');
+    expect(html).not.toContain("/lien-waiver/start");
+    expect(html).toContain("opening soon");
+  });
+
+  it("links every tool line to LIEN_WAIVER_TOOL_URL when it is set, and keeps the yellow buttons on sign-up", () => {
+    const url = "https://tool.example.test";
+    process.env.LIEN_WAIVER_TOOL_URL = `  ${url}  `;
+    try {
+      const live = renderToStaticMarkup(createElement(Page));
+      const toolLinks = live.match(/<a[^>]*href="https:\/\/tool\.example\.test"[^>]*>/g) ?? [];
+      expect(toolLinks).toHaveLength(3);
+      for (const link of toolLinks) expect(link).not.toContain("bg-brand");
+      expect(live).not.toContain("opening soon");
+      const yellow = live.match(/<a[^>]*bg-brand[^>]*>/g) ?? [];
+      expect(new Set(yellow.map((b) => b.match(/href="([^"]+)"/)?.[1]))).toEqual(new Set(["/sign-up"]));
+    } finally {
+      delete process.env.LIEN_WAIVER_TOOL_URL;
+    }
+  });
+
+  it("makes no legal assurances (the tool's own build bans the same wording)", () => {
+    expect(text).not.toMatch(/\b(safe|guaranteed?|done right|risk-free|all set|ready to sign)\b/i);
+  });
 });

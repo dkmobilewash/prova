@@ -50,7 +50,7 @@ const cta =
 const ctaNav =
   "inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 transition-colors duration-[var(--speed-fast)] ease-[var(--ease-landing-snap)] hover:bg-yellow-500";
 const quietLink = "text-sm font-medium text-ink-body transition-colors hover:text-ink";
-const sectionSpace = "mt-16 sm:mt-24 lg:mt-[120px]";
+const sectionSpace = "mt-16 sm:mt-24";
 const h2 = "font-headline text-3xl font-semibold leading-tight text-ink sm:text-4xl";
 const lead = "mt-4 max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg";
 const card = "rounded-xl border border-line-card bg-surface p-5";
@@ -67,16 +67,16 @@ const SAVES = [
     points: [
       "No hunting for the right form or guessing which one the GC wants",
       "No retyping your company, the GC and the job every month",
-      "Ready before the GC asks, so it never holds up the pay app",
+      "Have it ready to send with the pay app",
     ],
   },
   {
     title: "Save money",
     icon: <path d="M12 3v18 M16.5 7.5c0-1.7-2-3-4.5-3s-4.5 1.3-4.5 3 2 2.7 4.5 3 4.5 1.3 4.5 3-2 3-4.5 3-4.5-1.3-4.5-3" />,
     points: [
-      "Retainage and unpaid change orders written into the exceptions, not waived by accident",
-      "The right waiver for the payment, so you never release money you have not received",
-      "A correct waiver the first time means the check is not sent back and held up",
+      "Conditional or unconditional, progress or final — picked from two questions",
+      "Preview the whole form before you download it, so you see exactly what you are signing",
+      "The state's own wording, copied from the law, not rewritten",
     ],
   },
 ];
@@ -104,7 +104,7 @@ const TYPES = [
   {
     name: "Conditional progress",
     when: "Monthly billing, before the check clears",
-    body: "Only takes effect once the payment it names actually reaches you. The safe default for a progress payment.",
+    body: "Only takes effect once the payment it names actually reaches you. The one most subs send with a monthly pay app.",
     risk: 1,
   },
   {
@@ -116,17 +116,41 @@ const TYPES = [
   {
     name: "Conditional final",
     when: "Last payment on the job, before it clears",
-    body: "Releases the whole job once final payment reaches you. Anything still owed has to be listed as an exception.",
+    body: "Releases the whole job once final payment reaches you. Read what the form lets you hold back before you sign.",
     risk: 3,
   },
   {
     name: "Unconditional final",
     when: "Job closed, every dollar in",
-    body: "Releases everything, immediately. After this there is nothing left to claim on the job.",
+    body: "Releases your lien rights on the whole job the moment you sign.",
     risk: 4,
   },
 ];
 const RISK_BAR = ["bg-bar-green", "bg-bar-amber", "bg-bar-amber", "bg-bar-rose"];
+
+/** The trades this page is for, mirrored from LandingPage.tsx's TRADES. */
+const TRADES = ["Framing & drywall", "Plaster", "EIFS", "Ceilings", "Fireproofing"];
+
+/**
+ * The contrast. The right column is held to what the generator actually
+ * does — two questions to one of four forms, the blanks, a preview before
+ * any email, details remembered in that browser, the law's own wording.
+ * It has no retainage, change-order or free-text exceptions field, so
+ * nothing here says it writes those in.
+ */
+const USUAL_WAY = [
+  "Digging through old emails for the GC's form, or reusing one from the last job",
+  "Retyping your company, the GC, the owner and the job every pay period",
+  "Guessing which of the four waivers this payment calls for",
+  "A downloaded template, with no way to tell where its wording came from",
+];
+const WITH_US = [
+  "Two questions — progress or final, and has the money cleared — point to one of four forms",
+  "Fill in the blanks: company, GC, owner, job, amount, through date",
+  "Your details are remembered in that browser for the next pay period",
+  "The legal wording is copied from the law itself",
+  "Preview the whole form first; an email is needed only to download, and the PDF is emailed to you too",
+];
 
 const STEPS = [
   {
@@ -136,12 +160,12 @@ const STEPS = [
   },
   {
     title: "Fill in the blanks",
-    body: "Your company, the GC, the job, the amount — and anything you are still owed, so it is not waived by accident.",
+    body: "Your company, the GC, the owner, the job, the amount and the through date.",
     icon: <path d="M4 20h4L19 9l-4-4L4 16v4Z M13.5 6.5l4 4" />,
   },
   {
     title: "Download the PDF",
-    body: "A clean PDF, ready to sign and send to the GC.",
+    body: "See the whole form first. Enter your email once to download, and we send you the PDF too.",
     icon: <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14" />,
   },
 ];
@@ -163,17 +187,17 @@ const FAQ: { q: string; a: string[] }[] = [
   {
     q: "Conditional or unconditional — which one do I sign?",
     a: [
-      "Sign conditional whenever the money has not reached you yet. A conditional waiver only takes effect once the payment it names actually clears, so if the check bounces, is short, or never comes, you have given nothing up.",
+      "Sign conditional whenever the money has not reached you yet. A conditional waiver only takes effect once the payment it names actually clears.",
       "Sign unconditional only for money that is already in your account. It takes effect the moment you sign, whether or not you were paid. A check in hand is not paid — it can still bounce or be held — and a joint check is not paid until it has been endorsed and cleared.",
       "The normal rhythm: send a conditional waiver with your pay application, and swap it for an unconditional one once the funds clear, if the GC asks for it.",
     ],
   },
   {
-    q: "When is it safe to sign a final waiver?",
+    q: "When do I sign a final waiver?",
     a: [
       "Only for the last payment on the job, and only once you know what that payment covers. A final waiver closes out your rights on the whole job, not just one month.",
       "The trap is retainage. GCs often ask for a final waiver at substantial completion, while the retainage they have held all job is still sitting with them. Sign a final waiver then without listing the retainage as an exception, and you may have just signed it away.",
-      "If anything is still owed — retainage, approved change orders not yet paid, extras in dispute — either wait, or write each one into the exceptions before you sign.",
+      "If anything is still owed — retainage, approved change orders not yet paid, extras in dispute — check whether the form has room to hold it back. Many state forms only have a blank for disputed claims. If it does not fit, talk to the GC or an attorney before you sign.",
     ],
   },
   {
@@ -181,13 +205,13 @@ const FAQ: { q: string; a: string[] }[] = [
     a: [
       "The exceptions are where you list what this waiver does NOT give up. A blank exceptions section means you are excepting nothing, so everything the waiver covers is gone.",
       "List each item separately, with an amount and enough description that nobody can argue about what it means: retainage held to date, each unpaid change order by number, extras you have claimed but not been paid for, disputed backcharges, and any delay or impact claims you have put the GC on notice of.",
-      "If you are not sure whether something belongs there, list it. An exception you did not need costs nothing; one you left off can cost you the money.",
+      "Not every form has room for exceptions — many only have a blank for disputed claims. If you are not sure whether something belongs there, ask before you sign.",
     ],
   },
   {
     q: "I was paid less than I billed. What do I sign?",
     a: [
-      "A waiver for the amount you actually received — never for the amount you billed. If the GC cut your pay application, the waiver should name the reduced number, and the difference should be listed as an exception so it is clear you are still claiming it.",
+      "A waiver for the amount you actually received, not the amount you billed. If the GC cut your pay application, the waiver should name the reduced number, and the difference should be listed as an exception so it is clear you are still claiming it.",
       "Signing for the full billed amount when you were short-paid tells everyone up the chain that you have been paid in full for that work. That is very hard to walk back later.",
     ],
   },
@@ -195,7 +219,7 @@ const FAQ: { q: string; a: string[] }[] = [
     q: "What is the through date, and why does it matter?",
     a: [
       "Many waivers cover work \u201cthrough\u201d a date. Everything you did up to that date is covered by the waiver; work after it is not.",
-      "Match it to the period the payment actually covers — usually the end of the pay application period. If the payment covers work through the end of last month but the waiver says through today, you have waived the work in between without being paid for it.",
+      "Match it to the period the payment actually covers — usually the end of the pay application period. If the payment covers work through the end of last month but the waiver says through today, you may have waived the work in between without being paid for it.",
       "Not every waiver uses a through date — some forms tie the release to an invoice or a payment instead. Either way, the question is the same: does this waiver cover exactly the work this payment paid for, and nothing more?",
     ],
   },
@@ -216,7 +240,7 @@ const FAQ: { q: string; a: string[] }[] = [
   {
     q: "Is this legal advice?",
     a: [
-      "No. The generator helps you pick the right waiver and fills in the form with what you tell it. It does not know your contract, and it cannot tell you whether a particular payment, claim or dispute is safe to waive.",
+      "No. The generator helps you pick between the four forms and fills them in with what you tell it. It does not know your contract, and it cannot tell you whether you should waive a particular payment, claim or dispute.",
       "If there is real money in question — a large retainage balance, a disputed change order, a GC who is not paying — talk to a construction attorney before you sign anything.",
     ],
   },
@@ -227,6 +251,31 @@ function Icon({ children, className = "h-7 w-7" }: { children: ReactNode; classN
     <svg aria-hidden viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
       {children}
     </svg>
+  );
+}
+
+/**
+ * The free generator is Diego's separate app (apps/lien-waiver), on its own
+ * domain. Its address comes from LIEN_WAIVER_TOOL_URL, read in the route and
+ * passed down. Unset means "not launched yet": render a plain line, never a
+ * link that could 404. It is the SECOND action on purpose — the yellow
+ * buttons stay Sign up, because this page is a lead magnet (Cyrus,
+ * 2026-10-10).
+ */
+function ToolLink({ toolUrl, center = false }: { toolUrl?: string; center?: boolean }) {
+  return (
+    <p className={`mt-4 text-sm text-ink-body ${center ? "text-center" : ""}`} data-lien-waiver-tool={toolUrl ? "live" : "soon"}>
+      {toolUrl ? (
+        <a href={toolUrl} className="inline-flex min-h-[44px] items-center font-medium text-link hover:text-link-hover">
+          Or try the free waiver tool &rarr;
+        </a>
+      ) : (
+        <>
+          <span className="font-medium text-ink-label">Free waiver tool: opening soon.</span> The state forms are with
+          a construction attorney for review.
+        </>
+      )}
+    </p>
   );
 }
 
@@ -246,7 +295,7 @@ function SignUpRow({ center = false }: { center?: boolean }) {
   );
 }
 
-export function LienWaiverLanding() {
+export function LienWaiverLanding({ toolUrl }: { toolUrl?: string }) {
   return (
     <main className="mx-auto max-w-6xl px-4 pb-24 pt-6 sm:px-6 sm:pt-8 lg:px-8">
       <header className="flex items-center justify-between gap-4">
@@ -264,7 +313,7 @@ export function LienWaiverLanding() {
       </header>
 
       {/* Hero. Never in <Reveal>: the first screen is there at once. */}
-      <section className="grid items-center gap-10 py-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,34rem)] lg:gap-14 lg:py-20">
+      <section className="grid items-center gap-10 py-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,34rem)] lg:gap-14 lg:pb-4 lg:pt-16">
         <div className="min-w-0">
           <p className="text-sm font-semibold uppercase tracking-[0.12em] text-brand">Free lien waiver generator</p>
           <h1 className="mt-4 font-headline text-[clamp(2.25rem,8vw,5rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink">
@@ -272,9 +321,19 @@ export function LienWaiverLanding() {
           </h1>
           <p className="mt-6 max-w-lg text-lg leading-relaxed text-ink-body">
             Stop hunting for the right form and retyping the same job details every month. Answer a few
-            questions, download a clean PDF, and never sign away money you are still owed.
+            questions, preview the whole form, and download a clean PDF for the GC.
           </p>
           <SignUpRow />
+        <ToolLink toolUrl={toolUrl} />
+          <ToolLink toolUrl={toolUrl} />
+          <p className="mt-10 text-xs font-semibold uppercase tracking-[0.12em] text-ink-muted">Built for</p>
+          <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Trades this is built for">
+            {TRADES.map((trade) => (
+              <li key={trade} className="rounded-full border border-line-card bg-surface px-2.5 py-1 text-sm font-medium text-ink-label">
+                {trade}
+              </li>
+            ))}
+          </ul>
         </div>
         <div className="flex min-w-0 justify-center lg:justify-end">
           <WaiverFill />
@@ -353,10 +412,39 @@ export function LienWaiverLanding() {
         <SignUpRow />
       </Reveal>
 
+      {/* The usual way against this one. */}
+      <Reveal className={sectionSpace}>
+        <h2 className={h2}>The usual way, and with C&nbsp;Stream</h2>
+        <div className="mt-8 grid gap-3 sm:grid-cols-2 sm:gap-4">
+          <div className={`lw-rise ${card} p-6 sm:p-8`} style={at(0)}>
+            <p className="text-sm font-semibold uppercase tracking-[0.08em] text-ink-muted">The usual way</p>
+            <ul className="mt-5 flex flex-col gap-4">
+              {USUAL_WAY.map((line) => (
+                <li key={line} className="flex gap-3 text-sm leading-relaxed text-ink-muted sm:text-base">
+                  <span aria-hidden className="shrink-0 text-bar-rose">&#10005;</span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="lw-rise rounded-xl border border-brand/40 bg-surface p-6 sm:p-8" style={at(1)}>
+            <p className="text-sm font-semibold uppercase tracking-[0.08em] text-brand">With C Stream</p>
+            <ul className="mt-5 flex flex-col gap-4">
+              {WITH_US.map((line) => (
+                <li key={line} className="flex gap-3 text-sm leading-relaxed text-ink-body sm:text-base">
+                  <span aria-hidden className="shrink-0 text-brand">&#10003;</span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </Reveal>
+
       {/* Three steps. */}
       <Reveal className={sectionSpace}>
         <h2 className={h2}>Three steps.</h2>
-        <p className={lead}>No legal language to write. You answer plain questions; the form fills itself in.</p>
+        <p className={lead}>No legal language to write. You answer two questions and fill in the blanks. The legal wording is the state&rsquo;s own.</p>
         <ol className="mt-8 grid gap-3 sm:grid-cols-3 sm:gap-4">
           {STEPS.map((step, i) => (
             <li key={step.title} className={`lw-rise ${card}`} style={at(i)}>
@@ -386,9 +474,9 @@ export function LienWaiverLanding() {
           <div>
             <p className="font-headline text-2xl font-semibold text-ink sm:text-3xl">Final waiver, retainage still held?</p>
             <p className="mt-2 max-w-3xl leading-relaxed text-ink-body">
-              This is the one that costs subs real money. A final waiver closes out the job, and anything not
-              written into the exceptions goes with it — retainage included. List what you are still owed
-              before you sign.
+              This is the one that costs subs real money. A final waiver closes out the job, and retainage still
+              held can go with it. If retainage is still held, read the form closely — and if real money is at
+              stake, ask a construction attorney before you sign.
             </p>
           </div>
         </div>
@@ -420,9 +508,10 @@ export function LienWaiverLanding() {
       {/* Close. */}
       <Reveal className={`${sectionSpace} text-center`}>
         <div className="lw-rise rounded-2xl border border-line-card bg-surface px-6 py-12 sm:py-16">
-          <h2 className={h2}>Your next waiver, done right.</h2>
+          <h2 className={h2}>Your next waiver, filled in.</h2>
           <p className={`${lead} mx-auto`}>Sign up and have the next one ready before the GC asks for it.</p>
           <SignUpRow center />
+          <ToolLink toolUrl={toolUrl} center />
         </div>
       </Reveal>
     </main>
