@@ -1,0 +1,19 @@
+{
+ "caseId": "G-001__revit",
+ "sheetId": "G-001",
+ "variant": "revit",
+ "producer": "raw",
+ "title": "COVER SHEET",
+ "targets": "wallsFromStrokes: each face used once (duplicates pair with each other's partners), overlap >= 50% of the shorter face, 2ft input floor on pieces",
+ "displayWidthPt": 2592,
+ "displayHeightPt": 1728,
+ "expectWalls": false,
+ "traps": [
+  "vicinity-map streets drawn as double lines",
+  "key plan outline drawn double"
+ ],
+ "scales": [],
+ "scaleBehaviour": "decline",
+ "expectedRefusal": null,
+ "walls": []
+}
