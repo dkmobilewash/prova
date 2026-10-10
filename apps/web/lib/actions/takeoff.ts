@@ -927,7 +927,7 @@ async function postMeasuredWallRun(args: {
   }
 
   await prisma.$transaction(async (tx) => {
-    await tx.wallRun.create({
+    const run = await tx.wallRun.create({
       data: {
         companyId,
         jobId,
@@ -945,7 +945,13 @@ async function postMeasuredWallRun(args: {
     await syncWallScheduleLines(tx, companyId, jobId);
     await tx.takeoffMeasurement.updateMany({
       where: { id: { in: measurementIds } },
-      data: { postedAt: new Date() },
+      // WHICH RUN, not just that it went somewhere. `postedAt` alone is a
+      // one-way door: delete this run and its estimate line goes with it while
+      // the measurement still reads "already on the estimate" and this action
+      // still refuses it — nothing on the estimate and no way to put it back.
+      // `deleteWallRun` undoes both fields together; without the id it has
+      // nothing to find.
+      data: { postedAt: new Date(), wallRunId: run.id },
     });
   });
 

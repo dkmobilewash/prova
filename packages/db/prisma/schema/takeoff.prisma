@@ -331,10 +331,28 @@ model TakeoffMeasurement {
   /// four runs twice silently doubles a bid and nothing on screen says so.
   postedAt DateTime?
 
+  /// WHAT IT WAS POSTED INTO, so deleting that can let go of it again.
+  ///
+  /// `postedAt` on its own is a one-way door. Delete the wall run a
+  /// measurement was posted into and its estimate line goes with it, while the
+  /// measurement still reads "already on the estimate" and `postMeasuredWallRun`
+  /// still refuses it — nothing on the estimate, and no way to put it back.
+  /// Nothing recorded which run it went into, so nothing could clear the flag.
+  ///
+  /// SetNull rather than Cascade: the MEASUREMENT is the survey and outlives
+  /// any pricing decision made from it. Cascade would delete somebody's traced
+  /// walls because they changed their mind about a wall type. It is also
+  /// deliberately not a blocking FK — a RESTRICT here would be a new child of
+  /// `WallRun` that both cleanup scripts would have to learn about, which is
+  /// the `InvoiceCounter` trap in CLAUDE.md.
+  wallRunId String?
+  wallRun   WallRun? @relation(fields: [wallRunId], references: [id], onDelete: SetNull)
+
   createdByUserId String?
   createdBy       User?    @relation("TakeoffMeasurementBy", fields: [createdByUserId], references: [id])
   createdAt       DateTime @default(now())
 
   @@index([pageId, createdAt])
   @@index([calibrationId])
+  @@index([wallRunId])
 }

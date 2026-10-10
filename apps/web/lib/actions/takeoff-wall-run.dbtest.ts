@@ -37,6 +37,7 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 const { postTakeoffMeasurements } = await import("./takeoff");
 const { syncWallScheduleLines } = await import("@/lib/estimating/wall-schedule");
+const { deleteWallRun } = await import("./wallTypes");
 
 let companyId = "";
 let jobId = "";
@@ -292,6 +293,84 @@ describe("posting a measured run against a wall type", () => {
       await prisma.jobLineItem.count({ where: { jobId, isDeleted: false } }),
       "the deletion was forgotten when the run came back",
     ).toBe(0);
+  });
+
+  // ── DELETING THE RUN LETS ITS MEASUREMENTS GO ────────────────────────
+  //
+  // `postedAt` on its own was a one-way door. Delete the run a measurement was
+  // posted into and its estimate line went with it, while the measurement
+  // still read "already on the estimate" and `postMeasuredWallRun` still
+  // refused it — a traced wall nobody could price and nothing on the estimate
+  // to show for it. Nothing recorded WHICH run it went into, so nothing could
+  // clear the flag. `wallRunId` is that record.
+
+  it("RECORDS WHICH RUN a measurement was posted into", async () => {
+    await freshJob();
+    await postTakeoffMeasurements(jobId, form({ wallTypeId, label: "Run A" }, [measurementId]));
+    const [run] = await prisma.wallRun.findMany({ where: { jobId } });
+    const posted = await prisma.takeoffMeasurement.findUnique({ where: { id: measurementId } });
+    expect(posted?.postedAt, "still has to be marked posted").not.toBeNull();
+    expect(posted?.wallRunId, "and has to say which run").toBe(run.id);
+  });
+
+  it("CLEARS postedAt WHEN THAT RUN IS DELETED, so it can be priced again", async () => {
+    await freshJob();
+    await postTakeoffMeasurements(jobId, form({ wallTypeId, label: "Run A" }, [measurementId]));
+    const [run] = await prisma.wallRun.findMany({ where: { jobId } });
+
+    const result = await deleteWallRun(jobId, run.id);
+    expect(result.ok, result.ok === false ? result.error : "").toBe(true);
+
+    const freed = await prisma.takeoffMeasurement.findUnique({ where: { id: measurementId } });
+    expect(freed, "the survey outlives the pricing decision — never deleted").not.toBeNull();
+    expect(freed?.postedAt, "left posted with no line to show for it").toBeNull();
+    expect(freed?.wallRunId).toBeNull();
+  });
+
+  it("AND THE RE-POST ACTUALLY WORKS, which is the whole point", async () => {
+    // The assertion that matters. Clearing the flag is worth nothing if the
+    // action still refuses the measurement, and `postMeasuredWallRun` reads
+    // `postedAt` itself rather than being told.
+    await freshJob();
+    await postTakeoffMeasurements(jobId, form({ wallTypeId, label: "Run A" }, [measurementId]));
+    const [run] = await prisma.wallRun.findMany({ where: { jobId } });
+    await deleteWallRun(jobId, run.id);
+
+    const again = await postTakeoffMeasurements(jobId, form({ wallTypeId, label: "Run A again" }, [measurementId]));
+    expect(again.ok, again.ok === false ? again.error : "").toBe(true);
+    expect(await prisma.wallRun.count({ where: { jobId } }), "a fresh run").toBe(1);
+    expect(
+      await prisma.jobLineItem.count({ where: { jobId, isDeleted: false } }),
+      "and it is back on the estimate",
+    ).toBe(1);
+  });
+
+  it("DOES NOT DELETE THE MEASUREMENT with the run", async () => {
+    // SetNull, not Cascade. Cascade would delete somebody's traced walls
+    // because they changed their mind about a wall type.
+    await freshJob();
+    await postTakeoffMeasurements(jobId, form({ wallTypeId, label: "Run A" }, [measurementId]));
+    const [run] = await prisma.wallRun.findMany({ where: { jobId } });
+    await deleteWallRun(jobId, run.id);
+    const survivor = await prisma.takeoffMeasurement.findUnique({ where: { id: measurementId } });
+    expect(survivor?.xs.length, "the traced geometry is untouched").toBeGreaterThan(0);
+  });
+
+  it("leaves a measurement posted into a DIFFERENT run alone", async () => {
+    // The `where: { wallRunId: runId }` has to be scoped. Clearing every
+    // measurement on the job would un-post work nobody deleted.
+    await freshJob();
+    await postTakeoffMeasurements(jobId, form({ wallTypeId, label: "Run A" }, [measurementId]));
+    const [posted] = await prisma.wallRun.findMany({ where: { jobId } });
+
+    const other = await prisma.wallRun.create({
+      data: { jobId, companyId, wallTypeId, label: "Someone else's run", lengthFt: "10", heightFt: "9" },
+    });
+    await deleteWallRun(jobId, other.id);
+
+    const untouched = await prisma.takeoffMeasurement.findUnique({ where: { id: measurementId } });
+    expect(untouched?.postedAt, "deleting another run un-posted this one").not.toBeNull();
+    expect(untouched?.wallRunId).toBe(posted.id);
   });
 
   it("CONTROL: without a wall type the old path still posts bare quantities", async () => {
