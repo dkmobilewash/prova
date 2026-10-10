@@ -11,6 +11,8 @@ import { capabilityCount, jobFunctionLabel } from "@/components/permissionLabels
 import { can } from "@/lib/permissions";
 import { crewMemberName } from "@/lib/worker-name";
 
+export const metadata = { title: "Team" };
+
 export default async function TeamPage() {
   const context = await requireCompanyContext();
   const { company, ...currentUser } = context;

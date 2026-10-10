@@ -13,6 +13,8 @@ import { viewerToday } from "@/lib/viewerToday";
 import { ProcoreFeedSection, loadProcoreFeed } from "@/components/ProcoreFeedSection";
 import { ACCFeedSection, loadAccFeed } from "@/components/ACCFeedSection";
 
+export const metadata = { title: "Submittals" };
+
 /** Stored at UTC midnight, rendered in UTC — same rule as RFIs, the
  * safety log and daily field reports. */
 function isoDate(date: Date | null) {

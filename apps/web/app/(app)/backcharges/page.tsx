@@ -10,6 +10,8 @@ import { money } from "@/lib/money";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { viewerToday } from "@/lib/viewerToday";
 
+export const metadata = { title: "Backcharges" };
+
 /** Stored at UTC midnight, rendered in UTC — same rule as the RFI log and
  * the safety log. Rendering locally shows the previous day to anyone west
  * of UTC, which only ever shows up in production. */

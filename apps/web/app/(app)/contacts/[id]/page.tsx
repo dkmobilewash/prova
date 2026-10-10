@@ -28,6 +28,8 @@ import { serverToday } from "@/lib/serverToday";
 import { ActionForm } from "@/components/ActionForm";
 import { DECLINE_REASONS } from "@/lib/bid-decline";
 
+export const metadata = { title: "Edit contact" };
+
 /**
  * The decline reasons, in the order they are offered.
  *

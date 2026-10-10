@@ -295,7 +295,7 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/closeout",
-    label: "Closeout",
+    label: "Closeout & warranty",
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
         <path
@@ -310,7 +310,7 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/union-compliance",
-    label: "Union & fringe",
+    label: "Fringe & apprentices",
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
         <circle cx="7" cy="7" r="2.4" stroke="currentColor" strokeWidth="1.4" />

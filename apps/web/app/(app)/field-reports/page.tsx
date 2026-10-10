@@ -22,6 +22,8 @@ import {
   resolveFieldReportJobFilter,
 } from "@/lib/field-report-jobs";
 
+export const metadata = { title: "Field reports" };
+
 export const dynamic = "force-dynamic";
 
 /** How many reports this page renders. The query asks for one more, so the

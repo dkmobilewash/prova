@@ -79,7 +79,8 @@ export const metadata: Metadata = {
   // Absolute base for the link-preview image (app/opengraph-image.png) and
   // the icons, which Next turns into full URLs. The live app's own address.
   metadataBase: new URL("https://app.cstream.ai"),
-  title: "C Stream",
+  // Every page names itself; the tab reads "Safety · C Stream", not "C Stream" x 67.
+  title: { template: "%s · C Stream", default: "C Stream" },
   description: "Contractor operating system",
   openGraph: { siteName: "C Stream", title: "C Stream", description: "Contractor operating system" },
 };

@@ -16,6 +16,8 @@ import {
 } from "@/lib/certifications";
 import { viewerToday } from "@/lib/viewerToday";
 
+export const metadata = { title: "Certifications" };
+
 /** Stored at UTC midnight, rendered in UTC — the same rule as every other
  * dated record in this app. Rendering local would show yesterday's date to
  * everyone west of UTC, and on an expiry that is the difference between

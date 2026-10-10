@@ -22,7 +22,7 @@ import Link from "next/link";
  */
 
 export const metadata: Metadata = {
-  title: "Try C Stream — early tester program",
+  title: { absolute: "Try C Stream — early tester program" },
   description:
     "One place for a union specialty sub's whole job — estimate, contract, crew, certified payroll evidence, billing. Sign up and try it.",
 };

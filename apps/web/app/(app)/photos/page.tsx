@@ -13,6 +13,8 @@ import { JobMediaTagDatalist } from "@/components/JobMediaTagDatalist";
 import { JobMediaTagManager } from "@/components/JobMediaTagManager";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 
+export const metadata = { title: "Site photos" };
+
 /**
  * Every site photo the company has, newest first, filterable by job, by
  * tag, and by whether the client can see it.

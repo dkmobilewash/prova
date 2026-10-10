@@ -80,7 +80,8 @@ describe("/pilot stays public and static", () => {
   });
 
   it("has a title and description for the link preview", () => {
-    expect(metadata.title).toContain("C Stream");
+    // `absolute`, so the root layout's "%s · C Stream" template does not add the name twice.
+    expect((metadata.title as { absolute: string }).absolute).toContain("C Stream");
     expect(String(metadata.description)).toContain("union");
   });
 });

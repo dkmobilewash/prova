@@ -15,6 +15,8 @@ import { viewerToday } from "@/lib/viewerToday";
 import { ProcoreFeedSection, loadProcoreFeed } from "@/components/ProcoreFeedSection";
 import { ACCFeedSection, loadAccFeed } from "@/components/ACCFeedSection";
 
+export const metadata = { title: "RFIs" };
+
 /** Stored at UTC midnight, rendered in UTC — same rule as the safety log
  * and daily field reports. Local rendering shows the previous day to
  * anyone west of UTC, which only shows up in production. */

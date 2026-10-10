@@ -29,6 +29,8 @@ import { BluebeamControls } from "@/components/BluebeamControls";
 import { BluebeamLinks } from "@/components/BluebeamLinks";
 import { bluebeamCardState, bluebeamCallbackMessage, bluebeamSetup } from "@/lib/bluebeam/setup";
 
+export const metadata = { title: "Integrations" };
+
 /**
  * Settings → Integrations.
  *

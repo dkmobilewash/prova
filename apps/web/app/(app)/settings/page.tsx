@@ -43,6 +43,8 @@ import { serverToday } from "@/lib/serverToday";
 import { quickBooksConnectCardState, quickBooksSetup } from "@/lib/quickbooks-setup";
 import { ActionForm } from "@/components/ActionForm";
 
+export const metadata = { title: "Settings" };
+
 const QB_ERROR_MESSAGES: Record<string, string> = {
   access_denied: "You declined the QuickBooks connection request.",
   state_mismatch: "That connection attempt couldn't be verified — please try again.",

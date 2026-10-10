@@ -13,6 +13,8 @@ import { toJobOption } from "@/components/jobLabels";
 import { EmptyState } from "@/components/EmptyState";
 import { viewerToday } from "@/lib/viewerToday";
 
+export const metadata = { title: "Messages" };
+
 /** Stored at UTC midnight, rendered in UTC — same rule as every other date
  * in this app. */
 function isoDate(date: Date | null) {

@@ -15,6 +15,8 @@ import { CrewScheduleBoard, type ScheduleDay } from "@/components/CrewScheduleBo
 import { CalendarSubscribe } from "@/components/CalendarSubscribe";
 import { toJobOption } from "@/components/jobLabels";
 
+export const metadata = { title: "Schedule" };
+
 function formatDate(date: Date) {
   return formatCalendarDate(date);
 }

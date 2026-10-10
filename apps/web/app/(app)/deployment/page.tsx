@@ -9,6 +9,8 @@ import {
 } from "@/components/equipmentDeployment";
 import { viewerToday } from "@/lib/viewerToday";
 
+export const metadata = { title: "Deployment" };
+
 export const dynamic = "force-dynamic";
 
 /**

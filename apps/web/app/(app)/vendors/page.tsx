@@ -9,6 +9,8 @@ import { coiStandingFor, coiStandingLine, governingCois } from "@/lib/coi-standi
 import { serverToday } from "@/lib/serverToday";
 import { EmptyState } from "@/components/EmptyState";
 
+export const metadata = { title: "Vendors" };
+
 export default async function VendorsPage() {
   const context = await requireCompanyContext();
   const { company, ...currentUser } = context;

@@ -14,6 +14,8 @@ import {
   type UsageStatus,
 } from "@/lib/last-seen";
 
+export const metadata = { title: "Usage" };
+
 /**
  * Who is still logging in — Prova's own instrument, not a tenant's.
  *
@@ -160,7 +162,7 @@ export default async function InternalUsagePage() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Usage — who is still logging in</h1>
+      <h1 className="mb-2 text-xl font-semibold text-slate-100">Usage</h1>
       <p className="mb-4 text-sm text-slate-400">
         C Stream&apos;s own instrument, across every company on this database. One recorded fact per
         person — the last time their browser made a signed-in request, written at most once every 15
