@@ -125,6 +125,17 @@ describe("the panel's own use of it", () => {
 
   it("and the detection fills those names", () => {
     // The other end of the wire: without this the array is empty for ever.
-    expect(source).toMatch(/setTagNames\(namesForClusters\(/);
+    //
+    // UPDATED when the wall-type match landed. This asserted
+    // `setTagNames(namesForClusters(` and the panel now derives both the names
+    // and the match from ONE pass over the runs — `taggedFeetForClusters`,
+    // which returns the footage per tag that `matchClusterToWallType` needs to
+    // tell "mostly W1" from "half W1, half W2". `namesForClusters` is still the
+    // reader for everything that only wants names.
+    //
+    // The INTENT is unchanged and is what this case is for: the names on
+    // screen come from the detection rather than from a constant.
+    expect(source).toMatch(/setTagNames\(taggedFeet\.map\(/);
+    expect(source).toMatch(/taggedFeetForClusters\(/);
   });
 });

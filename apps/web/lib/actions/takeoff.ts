@@ -649,7 +649,10 @@ export async function saveTakeoffMeasurements(jobId: string, formData: FormData)
     shapes.push({ xs, ys });
   }
 
-  await prisma.takeoffMeasurement.createMany({
+  // `createManyAndReturn` rather than `createMany`, because an optional
+  // `wallTypeId` turns this into the priced path and that needs the ids. The
+  // ordinary path ignores them, so nothing is paid for it.
+  const created = await prisma.takeoffMeasurement.createManyAndReturn({
     data: shapes.map((shape) => ({
       pageId: page.id,
       calibrationId: calibration.id,
@@ -660,7 +663,62 @@ export async function saveTakeoffMeasurements(jobId: string, formData: FormData)
       packageLabel: packageLabel || null,
       createdByUserId: userId,
     })),
+    select: { id: true, kind: true, xs: true, ys: true, label: true },
   });
+
+  // ── AND IF THE DRAWING SAID WHICH WALL TYPE, POST IT PRICED ──
+  //
+  // THE LAST LINK, and the reason the rest of this feature was worth anything.
+  // Before this, accepting a detected group wrote plain measurements and the
+  // estimator then selected them, chose a wall type and a height, and posted a
+  // run — for every group, on every sheet, having already been shown that the
+  // drawing tags the group W1. `wallTypeMatch.ts` makes that match and it is
+  // the CALLER's, because this action must not decide what a wall is.
+  //
+  // It reuses `postMeasuredWallRun`, which carries every refusal
+  // `planMeasuredWallRun` can produce — a type with no layers, a run with no
+  // height, a contracted job. Writing a second path here would be a second
+  // authority on what a priced wall run is, which is the trap this file's
+  // neighbours keep recording.
+  const wallTypeId = String(formData.get("wallTypeId") ?? "").trim();
+  if (wallTypeId !== "") {
+    const stored: StoredMeasurement[] = created.map((row) => ({
+      kind: row.kind,
+      xs: row.xs,
+      ys: row.ys,
+      label: row.label,
+      // THE SAME calibration every one of these was just created against, so
+      // the geometry is read back at the scale it was drawn to — the
+      // append-only rule `takeoff.prisma` argues for, applied here by using the
+      // row rather than re-reading "the newest".
+      calibration: {
+        x1: calibration.x1,
+        y1: calibration.y1,
+        x2: calibration.x2,
+        y2: calibration.y2,
+        declaredDistanceFeet: calibration.declaredDistanceFeet.toNumber(),
+      },
+    }));
+    const posted = await postMeasuredWallRun({
+      companyId: company.id,
+      jobId,
+      label,
+      wallTypeId,
+      stored,
+      measurementIds: created.map((row) => row.id),
+      formData,
+    });
+    // THE MEASUREMENTS STAY IF THE RUN REFUSES, and they are not orphaned by
+    // it: they are on the sheet, in the list, and postable by hand — which is
+    // exactly where the old flow left every accepted group. The refusal names
+    // what went wrong, so this is a step back to the previous behaviour rather
+    // than a half-written state nobody can see.
+    if (!posted.ok) {
+      revalidatePath(`/jobs/${jobId}/takeoff`);
+      return posted;
+    }
+    return posted;
+  }
 
   revalidatePath(`/jobs/${jobId}/takeoff`);
   return actionOk;

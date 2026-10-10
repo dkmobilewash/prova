@@ -47,7 +47,9 @@ import { wallsFromBothEngines } from "@/lib/takeoff/wallRuns";
 import { pagesToSample, templateFromSheets, withoutTemplate } from "@/lib/takeoff/sheetTemplate";
 import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
-import { wallTypeTags, namesForClusters, tagSentence } from "@/lib/takeoff/wallTags";
+import { wallTypeTags, namesForClusters, taggedFeetForClusters, tagSentence } from "@/lib/takeoff/wallTags";
+import { matchClusterToWallType, matchSentence } from "@/lib/takeoff/wallTypeMatch";
+import type { PostableWallType, WallTypeMatch } from "@/lib/takeoff/wallTypeMatch";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -120,6 +122,7 @@ export function TakeoffPlanViewer({
   sheets,
   printedScaleByPage,
   levelByPage,
+  wallTypes,
   scalePrefillByPage,
   scaleDeclineByPage,
   duplicateWallsByPage = {},
@@ -127,6 +130,10 @@ export function TakeoffPlanViewer({
   jobId: string;
   planId: string;
   sheets: PlanSheet[];
+  /** The company's wall types that have layers, so they produce line items.
+   *  Used only to MATCH the drawing's own tags against — the viewer never
+   *  chooses a type, it reports which one the drawing named. */
+  wallTypes: PostableWallType[];
   /**
    * The title-block scale per PAGE NUMBER, deliberately not per sheet.
    *
@@ -185,6 +192,9 @@ export function TakeoffPlanViewer({
    * representative walls rather than every wall. See `wallTags.ts`.
    */
   const [tagNames, setTagNames] = useState<string[][]>([]);
+  /** Per group, which of the company's wall types the DRAWING named in it — or
+   *  why none could be identified. Parallel to `found`, same as `tagNames`. */
+  const [typeMatches, setTypeMatches] = useState<WallTypeMatch[]>([]);
   /** How many strokes the sheet held when it was last read, so an empty result
    *  can say which kind of empty it is. See the message below. */
   const [strokesSeen, setStrokesSeen] = useState(0);
@@ -424,6 +434,7 @@ export function TakeoffPlanViewer({
     setFindError(null);
     setFound(null);
     setTagNames([]);
+    setTypeMatches([]);
     try {
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
       const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
@@ -552,7 +563,13 @@ export function TakeoffPlanViewer({
       // has to work out which of their own assemblies a 4-7/8in wall is. The
       // drawing already answers that: it tags walls `EXT-1`, `A1`, `B1` beside
       // the runs they label, and a name is what a catalogue is keyed on.
-      setTagNames(namesForClusters(clusters, walls, wallTypeTags(textItems, pageSize.widthPt), feetPerUnit));
+      // ONE PASS FOR BOTH. `namesForClusters` is derived from
+      // `taggedFeetForClusters`, so reading the feet here costs nothing extra
+      // and the names on screen cannot disagree with the match beside them.
+      const tags = wallTypeTags(textItems, pageSize.widthPt);
+      const taggedFeet = taggedFeetForClusters(clusters, walls, tags, feetPerUnit);
+      setTagNames(taggedFeet.map((one) => one.map((part) => part.name)));
+      setTypeMatches(taggedFeet.map((one) => matchClusterToWallType(one, wallTypes)));
     } catch (problem) {
       // The sheet is still on screen and the manual tools still work, so this
       // says what failed and stops — it does not take the page down.
@@ -581,9 +598,23 @@ export function TakeoffPlanViewer({
   async function onAcceptCluster(index: number) {
     const cluster = found?.[index];
     if (!cluster || !sheet) return;
+    const match = typeMatches[index];
     const body = new FormData();
     body.set("pageId", sheet.id);
-    body.set("label", `${inchLabel(cluster.inches)} wall`);
+    // ── THE LABEL CARRIES THE DRAWING'S OWN WORD WHERE THERE IS ONE ──
+    //
+    // `4⅞" wall` is what the app measured; `W1 wall` is what the drawing calls
+    // it, and it is what the estimator will be looking for in the list and on
+    // the recap. The thickness stays alongside it, because that is the evidence
+    // the match was right.
+    body.set(
+      "label",
+      match?.state === "MATCH" ? `${match.tag} wall — ${inchLabel(cluster.inches)}` : `${inchLabel(cluster.inches)} wall`,
+    );
+    // AND THE TYPE, so the action posts a priced run instead of bare
+    // quantities. Only on a MATCH: every other state is a refusal this
+    // component must not overrule.
+    if (match?.state === "MATCH") body.set("wallTypeId", match.type.id);
     for (const run of cluster.runs) {
       body.append("shape", JSON.stringify({ xs: [run.x1, run.x2], ys: [run.y1, run.y2] }));
     }
@@ -915,13 +946,39 @@ export function TakeoffPlanViewer({
                       {cluster.runs.length} {cluster.runs.length === 1 ? "run" : "runs"} ·{" "}
                       {Math.round(cluster.feet).toLocaleString()} ft
                     </span>
+                    {/* ── WHAT THE BUTTON PROMISES IS WHAT IT DOES ──
+                        A matched group goes straight onto the estimate PRICED,
+                        so the button says so. An unmatched one still writes
+                        plain measurements, exactly as before, and says that
+                        instead — the difference matters because one of them is
+                        finished work and the other is a step. */}
                     <button
                       type="button"
                       onClick={() => void onAcceptCluster(index)}
-                      className="ml-auto min-h-[36px] rounded-md border border-line-card px-3 text-xs font-medium text-ink-body hover:bg-rail-hover"
+                      className={`ml-auto min-h-[36px] rounded-md border px-3 text-xs font-medium ${
+                        typeMatches[index]?.state === "MATCH"
+                          ? "border-brand bg-tag-brand text-tag-brand-ink hover:opacity-90"
+                          : "border-line-card text-ink-body hover:bg-rail-hover"
+                      }`}
                     >
-                      Add these
+                      {typeMatches[index]?.state === "MATCH"
+                        ? `Add as ${(typeMatches[index] as { tag: string }).tag} — priced`
+                        : "Add these"}
                     </button>
+                    {/* ── AND WHY, UNDERNEATH ──
+                        `matchSentence` returns null for an untagged group on
+                        purpose: a line reading "no tag found" on every one of
+                        them is the permanent notice this file's own rule calls
+                        noise that teaches people to stop reading notices. The
+                        two refusals DO get a sentence, because an estimator
+                        acts on them differently — a missing wall type is
+                        something to go and create, a mixed group is something
+                        to trace separately. */}
+                    {matchSentence(typeMatches[index] ?? { state: "NO_TAG" }) !== null && (
+                      <p className="w-full text-xs text-ink-muted">
+                        {matchSentence(typeMatches[index] ?? { state: "NO_TAG" })}
+                      </p>
+                    )}
                   </li>
                 ))}
               </ul>
