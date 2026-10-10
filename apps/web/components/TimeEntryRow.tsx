@@ -43,7 +43,7 @@ export type TimeEntryRowData = {
 };
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-ink-muted disabled:opacity-50";
 
 /**
  * One logged day's hours, with the two things issue #63 found missing.
@@ -94,7 +94,7 @@ export function TimeEntryRow({
 
   if (editing) {
     return (
-      <li className="flex flex-col gap-2 rounded-lg border border-blue-900 bg-slate-900 p-3 text-sm">
+      <li className="flex flex-col gap-2 rounded-lg border border-link bg-surface p-3 text-sm">
         <form
           // A refusal is about the values that were submitted, so it goes the
           // moment one of them changes — otherwise "Hours has to be a
@@ -123,7 +123,7 @@ export function TimeEntryRow({
           }}
           className="flex flex-col gap-2"
         >
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
             Correcting a logged hour
           </p>
           <div className="flex flex-wrap items-end gap-2">
@@ -143,7 +143,7 @@ export function TimeEntryRow({
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? (
                 <span className="inline-flex items-center gap-1.5">
@@ -172,12 +172,12 @@ export function TimeEntryRow({
   }
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm">
+    <li className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line-card bg-surface p-3 text-sm">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="text-slate-100">{entry.dateLabel}</span>
-        <span className="text-slate-300">{entry.employeeLabel}</span>
-        <span className="text-slate-400">{entry.hours}h</span>
-        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+        <span className="text-ink">{entry.dateLabel}</span>
+        <span className="text-ink-body">{entry.employeeLabel}</span>
+        <span className="text-ink-body">{entry.hours}h</span>
+        <span className="rounded bg-tag-slate px-1.5 py-0.5 text-xs text-tag-slate-ink">
           {timeEntryPayTypeLabel(entry.payType)}
         </span>
         {entry.craftLabel && <span className="text-xs text-ink-muted">{entry.craftLabel}</span>}
