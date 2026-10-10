@@ -16,11 +16,11 @@ import { Spinner } from "@/components/Spinner";
 // a time. `inline-flex` + `items-center` is what makes min-h centre the label
 // instead of pinning it to the top.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-danger disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-danger hover:bg-tag-rose disabled:opacity-50";
 
 /** One day in the company-wide log. Reading, editing, or confirming a
  * delete — the same three states every row in this app has.
@@ -77,7 +77,7 @@ export function FieldReportEntry({
           </p>
           <FormDraftNotice draft={draft} />
           <FieldReportFields report={asFields} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
@@ -100,7 +100,7 @@ export function FieldReportEntry({
                 setIsEditing(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               Cancel
             </button>
@@ -138,11 +138,11 @@ export function FieldReportEntry({
           {report.weather && (
             <p className="mt-1 text-sm text-ink-body">Weather: {report.weather}</p>
           )}
-          {report.delays && <p className="text-sm text-amber-400">Delays: {report.delays}</p>}
+          {report.delays && <p className="text-sm text-warn">Delays: {report.delays}</p>}
           {report.filedByName && (
             <p className="mt-1 text-xs text-ink-body">filed by {report.filedByName}</p>
           )}
-          {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+          {error && <p className="mt-1 text-sm text-danger">{error}</p>}
         </div>
 
         {/* Arming "Remove" empties this row: "Edit" is a child of RowActions

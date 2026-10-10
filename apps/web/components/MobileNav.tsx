@@ -8,6 +8,7 @@ import { activeFooterHref, activeItemHref, navFooterFor, navGroupsFor } from "@/
 import { useNavAccordion } from "@/components/useNavAccordion";
 import type { Principal } from "@/lib/permissions";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
+import { ThemeSwitch } from "@/components/ThemeSwitch";
 
 /**
  * Navigation on a phone.
@@ -80,7 +81,7 @@ export function MobileNav({
         // edge where it was against the topbar's px-4. Light icon: the
         // topbar is the dark chrome (#171717) now, so the hamburger
         // inverted back from the text-neutral-900 the white bar needed.
-        className="-ml-3 rounded-md p-3 text-neutral-100 hover:bg-rail-hover"
+        className="-ml-3 rounded-md p-3 text-ink hover:bg-rail-hover"
       >
         <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
           <path d="M3 5.5h14M3 10h14M3 14.5h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -97,9 +98,9 @@ export function MobileNav({
           />
           <div
             id="mobile-nav"
-            className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-neutral-800 bg-rail"
+            className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-line-row bg-rail"
           >
-            <div className="flex items-start justify-between gap-2 border-b border-neutral-800 px-5 py-4">
+            <div className="flex items-start justify-between gap-2 border-b border-line-row px-5 py-4">
               <div className="flex min-w-0 flex-col gap-0.5">
                 <Link href="/dashboard" aria-label="C Stream — go to the dashboard" className="w-fit">
                   <Image
@@ -107,16 +108,16 @@ export function MobileNav({
                     alt=""
                     width={120}
                     height={24}
-                    className="h-5 w-auto"
+                    className="logo-on-theme h-5 w-auto"
                   />
                 </Link>
-                <span className="truncate text-xs text-neutral-400">{companyName}</span>
+                <span className="truncate text-xs text-ink-muted">{companyName}</span>
               </div>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Close navigation"
-                className="-mr-3 -mt-2 rounded-md p-3 text-neutral-400 hover:bg-rail-hover hover:text-white"
+                className="-mr-3 -mt-2 rounded-md p-3 text-ink-muted hover:bg-rail-hover hover:text-ink"
               >
                 <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true">
                   <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -170,7 +171,7 @@ export function MobileNav({
                       // under the 4.5 floor on this ground, and at 10-11px
                       // it is the first thing sunlight takes away.
                       className={`flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider ${
-                        isOpen || holdsPage ? "text-white" : "text-neutral-400 hover:bg-rail-hover hover:text-white"
+                        isOpen || holdsPage ? "text-ink" : "text-ink-muted hover:bg-rail-hover hover:text-ink"
                       }`}
                     >
                       <span className="shrink-0">{group.icon}</span>
@@ -224,8 +225,8 @@ export function MobileNav({
                             // is exactly where a gloved thumb lands on the wrong one.
                             className={`flex min-h-11 items-center gap-3 rounded-md px-3 py-3 text-sm font-medium transition-colors ${
                               isActive
-                                ? "bg-brand/15 text-brand"
-                                : "text-neutral-300 hover:bg-rail-hover hover:text-white"
+                                ? "bg-brand/15 text-link-hover"
+                                : "text-ink-body hover:bg-rail-hover hover:text-ink"
                             }`}
                           >
                             {item.icon}
@@ -250,7 +251,7 @@ export function MobileNav({
                       href={entry.href}
                       aria-current={isActive ? "page" : undefined}
                       className={`flex min-h-11 items-center gap-3 rounded-md px-3 py-3 text-sm font-medium transition-colors ${
-                        isActive ? "bg-brand/15 text-brand" : "text-neutral-300 hover:bg-rail-hover hover:text-white"
+                        isActive ? "bg-brand/15 text-link-hover" : "text-ink-body hover:bg-rail-hover hover:text-ink"
                       }`}
                     >
                       {entry.icon}
@@ -260,6 +261,9 @@ export function MobileNav({
                 })}
               </div>
             ) : null}
+            <div className="shrink-0 border-t border-line-row px-3 py-2">
+              <ThemeSwitch />
+            </div>
           </div>
         </>
       )}

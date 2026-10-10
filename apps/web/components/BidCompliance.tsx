@@ -148,21 +148,21 @@ export function BidCompliance({
         <button
           type="button"
           onClick={() => setAdding("addendum")}
-          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Log an addendum
         </button>
         <button
           type="button"
           onClick={() => setAdding("requirement")}
-          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Add a bid-form requirement
         </button>
         <button
           type="button"
           onClick={() => setAdding("spec")}
-          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Log a spec section
         </button>
@@ -309,14 +309,14 @@ export function BidCompliance({
                       type="button"
                       disabled={isPending}
                       onClick={() => stamp(row.id, acknowledgeBidAddendum, "acknowledgedOn", row.acknowledgedOn ? "" : today)}
-                      className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-60"
+                      className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-60"
                     >
                       {row.acknowledgedOn ? "Un-acknowledge" : "Acknowledge"}
                     </button>
                     <button
                       type="button"
                       onClick={() => setEditing(row.id)}
-                      className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+                      className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
                     >
                       Edit
                     </button>
@@ -426,14 +426,14 @@ export function BidCompliance({
                       type="button"
                       disabled={isPending}
                       onClick={() => stamp(row.id, satisfyBidRequirement, "satisfiedOn", row.satisfiedOn ? "" : today)}
-                      className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-60"
+                      className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-60"
                     >
                       {row.satisfiedOn ? "Not done after all" : "Mark done"}
                     </button>
                     <button
                       type="button"
                       onClick={() => setEditing(row.id)}
-                      className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+                      className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
                     >
                       Edit
                     </button>
@@ -468,21 +468,21 @@ export function BidCompliance({
           <button
             type="button"
             onClick={() => setAdding("addendum")}
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
           >
             Log an addendum
           </button>
           <button
             type="button"
             onClick={() => setAdding("requirement")}
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
           >
             Add a bid-form requirement
           </button>
           <button
             type="button"
             onClick={() => setAdding("spec")}
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
           >
             Log a spec section
           </button>
@@ -568,7 +568,7 @@ function AddendumForm({
       <button
         type="button"
         onClick={onDone}
-        className="mt-4 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+        className="mt-4 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
       >
         Cancel
       </button>
@@ -631,7 +631,7 @@ function SpecSectionForm({
       <button
         type="button"
         onClick={onDone}
-        className="mt-5 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+        className="mt-5 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
       >
         Cancel
       </button>
@@ -704,7 +704,7 @@ function RequirementForm({
       <button
         type="button"
         onClick={onDone}
-        className="mt-4 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+        className="mt-4 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
       >
         Cancel
       </button>

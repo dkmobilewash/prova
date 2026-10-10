@@ -12,7 +12,7 @@ import { Spinner } from "@/components/Spinner";
 import { money } from "@/lib/money";
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 /** One alert, with the two things a person can do about it that this app
  * can honestly record: go and fix it, or say they have seen it.
@@ -55,7 +55,7 @@ export function AlertRow({ alert, silenced }: { alert: Alert; silenced: boolean 
           <span className={`rounded px-1.5 py-0.5 text-xs ${severityBadgeClass(alert.severity)}`}>
             {severityLabel(alert.severity)}
           </span>
-          <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
+          <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">
             {kindLabel(alert.kind)}
           </span>
           <span className="text-ink">{alert.title}</span>
@@ -66,7 +66,7 @@ export function AlertRow({ alert, silenced }: { alert: Alert; silenced: boolean 
 
         <p className="mt-1 text-sm text-ink-body">{alert.detail}</p>
 
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && <p className="mt-1 text-sm text-danger">{error}</p>}
 
         {isSnoozing && (
           <form

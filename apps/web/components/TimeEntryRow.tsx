@@ -144,7 +144,7 @@ export function TimeEntryRow({
             The person and the day worked can&rsquo;t be corrected — an hour logged against the wrong
             name or the wrong day is a different record. Remove this entry and log the right one.
           </p>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
@@ -202,7 +202,7 @@ export function TimeEntryRow({
           /* The trace the issue asks for: that a correction happened, when,
              and by whom. It deliberately does not claim to say what the
              figure used to be — see labor.prisma. */
-          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-xs text-amber-300">
+          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-xs text-warn">
             {entry.lastCorrectedLabel}
           </span>
         )}
@@ -210,7 +210,7 @@ export function TimeEntryRow({
 
       {entry.lockedLabel ? (
         <span
-          className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs text-emerald-300"
+          className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs text-ok"
           title="This day is signed, so its hours are locked. Reopen the day under Timesheet sign-off to change them."
         >
           {entry.lockedLabel} · locked
@@ -234,9 +234,9 @@ export function TimeEntryRow({
                ever running on the two together; `main` has been red on this
                one assertion since. */
             describe="Takes these hours off the job for good, so they come off certified payroll for that week. To fix a wrong number, use Edit instead — a correction is recorded, a removal is not."
-            deleteClassName="text-xs text-red-400 hover:underline disabled:opacity-50"
+            deleteClassName="text-xs text-danger hover:underline disabled:opacity-50"
             cancelClassName={btn}
-            confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-danger hover:bg-red-500/10 disabled:opacity-50"
             /* No `hint` and no `prompt`, deliberately. Both render as extra
                flex items inside this cluster, and the cluster is `shrink-0` —
                a sentence in there widens the row rather than wrapping inside

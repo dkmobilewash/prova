@@ -304,7 +304,7 @@ export default async function TodayPage({
                   />
                   <button
                     type="submit"
-                    className="rounded-md border border-line-card bg-surface px-3 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+                    className="rounded-md border border-line-card bg-surface px-3 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
                   >
                     Search
                   </button>

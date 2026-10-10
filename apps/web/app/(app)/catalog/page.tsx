@@ -242,7 +242,7 @@ function QuoteLine({
           </label>
           <SubmitButton
             type="submit"
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
           >
             Set default cost from this quote
           </SubmitButton>

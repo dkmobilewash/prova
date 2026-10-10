@@ -10,6 +10,7 @@ import { money } from "@/lib/money";
 import type { Principal } from "@/lib/permissions";
 import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
+import { ThemeSwitch } from "@/components/ThemeSwitch";
 
 /**
  * The Money Rail: a 240px nav column whose group headings carry the five
@@ -154,10 +155,10 @@ function figureSub(stage: MoneyRailStage): string {
 function StageFigure({ stage }: { stage: MoneyRailStage }) {
   return (
     <span className="block px-4 pb-1" title={stage.detail}>
-      <span className="block truncate text-lg font-semibold leading-tight tabular-nums text-brand">
+      <span className="block truncate text-lg font-semibold leading-tight tabular-nums text-link-hover">
         {figureMain(stage.figure)}
       </span>
-      <span className="block truncate text-xs font-medium leading-5 text-neutral-300">
+      <span className="block truncate text-xs font-medium leading-5 text-ink-body">
         {figureSub(stage)}
       </span>
     </span>
@@ -181,7 +182,7 @@ function Chevron({ open }: { open: boolean }) {
       viewBox="0 0 20 20"
       fill="none"
       aria-hidden="true"
-      className={`h-3.5 w-3.5 shrink-0 text-neutral-400 transition-transform ${
+      className={`h-3.5 w-3.5 shrink-0 text-ink-muted transition-transform ${
         open ? "rotate-90" : ""
       }`}
     >
@@ -307,8 +308,8 @@ export function Sidebar({
           aria-label={`${companyName} — go to the dashboard`}
           className="flex h-14 shrink-0 items-center gap-3 px-4 hover:bg-rail-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
         >
-          <Image src="/brand/cstream-mark.png" alt="" width={32} height={32} className="h-8 w-8 shrink-0 object-contain" priority />
-          <span className="truncate whitespace-nowrap text-[15px] font-semibold text-white">
+          <Image src="/brand/cstream-mark.png" alt="" width={32} height={32} className="logo-on-theme h-8 w-8 shrink-0 object-contain" priority />
+          <span className="truncate whitespace-nowrap text-[15px] font-semibold text-ink">
             {companyName}
           </span>
         </Link>
@@ -438,7 +439,7 @@ export function Sidebar({
                     className="sticky top-0 z-10 flex w-full min-h-11 shrink-0 cursor-pointer flex-col justify-center bg-rail py-2 text-left hover:bg-rail-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
                   >
                     <span className="flex items-center gap-1.5 px-4">
-                      <span className="min-w-0 flex-1 truncate whitespace-nowrap text-xs font-bold uppercase tracking-wider text-neutral-300">
+                      <span className="min-w-0 flex-1 truncate whitespace-nowrap text-xs font-bold uppercase tracking-wider text-ink-body">
                         {group.heading}
                       </span>
                       <Chevron open={isOpen} />
@@ -499,8 +500,8 @@ export function Sidebar({
                               title={item.label}
                               className={`flex h-11 shrink-0 items-center gap-3 px-4 text-[15px] font-semibold transition-colors ${
                                 isActive
-                                  ? "bg-rail-hover text-brand shadow-[inset_3px_0_0_#facc15]"
-                                  : "text-neutral-300 hover:bg-rail-hover hover:text-white"
+                                  ? "bg-rail-hover text-link-hover shadow-[inset_3px_0_0_#facc15]"
+                                  : "text-ink-body hover:bg-rail-hover hover:text-ink"
                               }`}
                             >
                               <span className="shrink-0">{item.icon}</span>
@@ -514,7 +515,7 @@ export function Sidebar({
 
                 {provingStage && group.heading === provingAfterHeading ? (
                   <div className="flex shrink-0 flex-col gap-0.5">
-                    <p className="truncate whitespace-nowrap px-4 text-xs font-bold uppercase tracking-wider text-neutral-300">
+                    <p className="truncate whitespace-nowrap px-4 text-xs font-bold uppercase tracking-wider text-ink-body">
                       {provingStage.label}
                     </p>
                     <StageFigure stage={provingStage} />
@@ -539,8 +540,8 @@ export function Sidebar({
                   aria-current={isActive ? "page" : undefined}
                   className={`flex h-11 items-center gap-3 rounded-md px-2 text-[15px] font-semibold transition-colors ${
                     isActive
-                      ? "bg-rail-hover text-brand shadow-[inset_3px_0_0_#facc15]"
-                      : "text-neutral-300 hover:bg-rail-hover hover:text-white"
+                      ? "bg-rail-hover text-link-hover shadow-[inset_3px_0_0_#facc15]"
+                      : "text-ink-body hover:bg-rail-hover hover:text-ink"
                   }`}
                 >
                   <span className="shrink-0">{entry.icon}</span>
@@ -550,6 +551,9 @@ export function Sidebar({
             })}
           </div>
         ) : null}
+        <div className="shrink-0 border-t border-line-row px-2 py-2">
+          <ThemeSwitch />
+        </div>
       </nav>
     </div>
   );

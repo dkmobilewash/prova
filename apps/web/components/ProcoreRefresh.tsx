@@ -55,12 +55,12 @@ export function ProcoreRefresh({ jobId, stale }: { jobId: string | null; stale: 
         onClick={() => run(false)}
         disabled={pending}
         data-tour="procore-refresh"
-        className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:cursor-not-allowed disabled:opacity-60"
       >
         {pending ? "Reading Procore…" : "Refresh from Procore"}
       </button>
       {message && (
-        <p role={failed ? "alert" : "status"} className={`max-w-xs text-right text-xs ${failed ? "text-red-400" : "text-ink-muted"}`}>
+        <p role={failed ? "alert" : "status"} className={`max-w-xs text-right text-xs ${failed ? "text-danger" : "text-ink-muted"}`}>
           {message}
         </p>
       )}

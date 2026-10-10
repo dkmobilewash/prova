@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { ClerkProvider } from "@clerk/nextjs";
 import { StaleDeployBanner } from "@/components/StaleDeployBanner";
 import { RscFailureBanner } from "@/components/RscFailureBanner";
+import { THEME_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 /**
@@ -132,7 +133,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         },
       }}
     >
-      <html lang="en" className={headline.variable}>
+      {/* suppressHydrationWarning: the script below sets data-theme on
+          this element before React hydrates, on purpose (no dark flash). */}
+      <html lang="en" className={headline.variable} suppressHydrationWarning>
+        <head>
+          <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        </head>
         <body className="min-h-screen bg-canvas text-ink">
           {/* #118: covers every route group, including the public portal
               and esign pages, which are just as likely to be left open

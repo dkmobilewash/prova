@@ -20,11 +20,11 @@ import { LienWaivers } from "@/components/LienWaivers";
 import { loadLienWaiverSection } from "@/lib/lien-waiver-query";
 import { ActionForm } from "@/components/ActionForm";
 
-const rowDeleteClass = "text-xs text-red-400 hover:underline";
+const rowDeleteClass = "text-xs text-danger hover:underline";
 const rowCancelClass =
-  "rounded-md border border-slate-700 px-2 py-1 text-xs text-ink-label hover:border-slate-500";
+  "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:border-line-card";
 const rowConfirmClass =
-  "rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10";
+  "rounded-md border border-red-500 px-2 py-1 text-xs text-danger hover:bg-red-500/10";
 
 /**
  * Billing — invoices, payments and pay applications. Withheld on
@@ -235,7 +235,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                                 cancelClassName={rowCancelClass}
                                 confirmClassName={rowConfirmClass}
                                 hint={
-                                  <span className="max-w-[16rem] text-right text-amber-300">
+                                  <span className="max-w-[16rem] text-right text-warn">
                                     {money(Number(payment.amount))} received comes off this invoice, and the balance
                                     goes back up.
                                   </span>

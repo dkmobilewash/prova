@@ -144,7 +144,7 @@ export default async function DeploymentPage() {
                         </span>
                       ))}
                       {on.length > 1 && (
-                        <span className="ml-2 text-xs text-amber-400">
+                        <span className="ml-2 text-xs text-warn">
                           split across {on.length} jobs
                         </span>
                       )}
@@ -168,7 +168,7 @@ export default async function DeploymentPage() {
                 and whatever equipment is signed out to it — the Monday-morning question of where
                 everybody is, answered without ringing round. Crew is assigned on the job itself;
                 equipment is signed out from{" "}
-                <Link href="/equipment" className="text-link hover:text-brand">
+                <Link href="/equipment" className="text-link hover:text-link-hover">
                   the equipment list
                 </Link>
                 .
@@ -184,7 +184,7 @@ export default async function DeploymentPage() {
             <p className="text-ink-body" data-tour="deploy-none-running">
               No contracted or in-progress jobs. Deployment only covers work that is actually running
               — an estimate has nobody on it yet.{" "}
-              <Link href="/jobs" className="text-link hover:text-brand">
+              <Link href="/jobs" className="text-link hover:text-link-hover">
                 See every job
               </Link>
               .

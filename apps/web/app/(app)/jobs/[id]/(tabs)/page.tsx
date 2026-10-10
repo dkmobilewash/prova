@@ -34,11 +34,11 @@ import {
   updateJobSchedule,
 } from "@/lib/actions";
 
-const rowDeleteClass = "text-xs text-red-400 hover:underline";
+const rowDeleteClass = "text-xs text-danger hover:underline";
 const rowCancelClass =
-  "rounded-md border border-slate-700 px-2 py-1 text-xs text-ink-label hover:border-slate-500";
+  "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:border-line-card";
 const rowConfirmClass =
-  "rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10";
+  "rounded-md border border-red-500 px-2 py-1 text-xs text-danger hover:bg-red-500/10";
 
 /**
  * Overview — job details, status, schedule & crew, and the contract's own
@@ -173,7 +173,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
       <div className="print:hidden">
         {showsJobManagement && (
           <section className="mb-10" data-tour="job-details">
-            <h2 className="mb-3 text-lg font-semibold text-slate-100">Job details</h2>
+            <h2 className="mb-3 text-lg font-semibold text-ink">Job details</h2>
             <JobDetailsForm
               jobId={job.id}
               name={job.name}
@@ -272,7 +272,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                 </label>
                 <SubmitButton
                   type="submit"
-                  className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
+                  className="rounded-md bg-rail-hover px-3 py-2 text-sm font-medium text-ink hover:bg-lift"
                 >
                   Save dates
                 </SubmitButton>
@@ -356,7 +356,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                   </label>
                   <SubmitButton
                     type="submit"
-                    className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
+                    className="rounded-md bg-rail-hover px-3 py-2 text-sm font-medium text-ink hover:bg-lift"
                   >
                     Assign
                   </SubmitButton>
@@ -402,17 +402,17 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
 
             <div className="rounded-lg border border-line-card bg-surface p-4">
               {signedSignature ? (
-                <p className="text-sm text-green-400">
+                <p className="text-sm text-ok">
                   Signed by {signedSignature.signerName} on{" "}
                   {signedSignature.signedAt && formatSignedDate(signedSignature.signedAt, timeZone)}.
                 </p>
               ) : pendingSignature && pendingSignature.revokedAt ? (
                 <div className="text-sm">
-                  <p className="mb-3 text-amber-400">This signing link was revoked and no longer works.</p>
+                  <p className="mb-3 text-warn">This signing link was revoked and no longer works.</p>
                   <form action={createSignatureRequestWithId}>
                     <SubmitButton
                       type="submit"
-                      className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
+                      className="rounded-md bg-rail-hover px-3 py-2 text-sm font-medium text-ink hover:bg-lift"
                     >
                       Create a new signing link
                     </SubmitButton>
@@ -446,7 +446,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                   <form action={createSignatureRequestWithId}>
                     <SubmitButton
                       type="submit"
-                      className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
+                      className="rounded-md bg-rail-hover px-3 py-2 text-sm font-medium text-ink hover:bg-lift"
                     >
                       Create signing link
                     </SubmitButton>
@@ -537,7 +537,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                             confirmClassName={rowConfirmClass}
                             hint={
                               doc.executedSignedDate ? (
-                                <span className="max-w-[16rem] text-right text-amber-300">
+                                <span className="max-w-[16rem] text-right text-warn">
                                   This is the EXECUTED subcontract — the evidence that made this job billable.
                                   Deleting it removes the file and the signed date.
                                 </span>

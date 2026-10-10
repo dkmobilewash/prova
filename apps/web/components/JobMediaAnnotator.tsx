@@ -256,7 +256,7 @@ export function JobMediaAnnotator({
             className={`min-h-11 rounded-md border px-3 text-sm ${
               tool === kind
                 ? "border-brand text-link"
-                : "border-line-card text-ink-label hover:bg-neutral-800"
+                : "border-line-card text-ink-label hover:bg-rail-hover"
             }`}
           >
             {TOOL_LABEL[kind]}
@@ -309,7 +309,7 @@ export function JobMediaAnnotator({
         </div>
       )}
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       <p className="text-sm text-ink-body">
         {drafts.length} of {JOB_MEDIA_ANNOTATIONS_MAX} marks.{" "}

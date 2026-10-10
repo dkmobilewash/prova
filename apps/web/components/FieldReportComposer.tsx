@@ -186,7 +186,7 @@ export function FieldReportComposer({
 
       <FieldReportFields />
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       <div className="flex gap-2">
         {/* Disabled in flight: this create is not idempotent, and a second
@@ -213,7 +213,7 @@ export function FieldReportComposer({
             setIsOpen(false);
             setError(null);
           }}
-          className="rounded-md border border-line-card px-5 py-3 text-base text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+          className="rounded-md border border-line-card px-5 py-3 text-base text-ink-label hover:bg-rail-hover disabled:opacity-50"
         >
           Cancel
         </button>

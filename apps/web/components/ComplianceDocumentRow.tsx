@@ -51,8 +51,8 @@ function expirationStatus(date: Date | null, todayIso: string) {
   const iso = toIsoDate(date);
   if (!iso) return null;
   const days = daysUntil(iso, todayIso);
-  if (days < 0) return { text: "Expired", className: "text-red-400" };
-  if (days <= 30) return { text: `Expires in ${days}d`, className: "text-amber-400" };
+  if (days < 0) return { text: "Expired", className: "text-danger" };
+  if (days <= 30) return { text: `Expires in ${days}d`, className: "text-warn" };
   return null;
 }
 
@@ -202,7 +202,7 @@ export function ComplianceDocumentRow({
             >
               Cancel
             </button>
-            {error && <p className="text-xs text-red-400">{error}</p>}
+            {error && <p className="text-xs text-danger">{error}</p>}
           </div>
         </form>
       </li>
@@ -230,7 +230,7 @@ export function ComplianceDocumentRow({
             </p>
             <span
               className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                doc.status === "RECEIVED" ? "bg-tag-green text-tag-green-ink" : "bg-neutral-800 text-ink-label"
+                doc.status === "RECEIVED" ? "bg-tag-green text-tag-green-ink" : "bg-rail-hover text-ink-label"
               }`}
             >
               {doc.status === "RECEIVED" ? "Received" : "Pending"}
@@ -290,7 +290,7 @@ export function ComplianceDocumentRow({
           <button
             type="button"
             onClick={() => setIsEditing(true)}
-            className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-rail-hover"
           >
             Edit
           </button>
@@ -298,7 +298,7 @@ export function ComplianceDocumentRow({
             <form action={markComplianceDocumentReceived.bind(null, doc.id)}>
               <button
                 type="submit"
-                className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-800"
+                className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-rail-hover"
               >
                 Mark received
               </button>

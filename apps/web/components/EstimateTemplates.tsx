@@ -42,7 +42,7 @@ const TRADE_OPTIONS = [
 const inputClass = "rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body";
 const labelClass = "flex flex-col gap-1 text-xs text-ink-label";
 const ghostButton =
-  "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800";
+  "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover";
 
 export function EstimateTemplates({
   templates,

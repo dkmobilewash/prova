@@ -132,7 +132,7 @@ export default async function MaterialOrdersPage({
 
   const chip = (active: boolean) =>
     `rounded-md border px-3 py-1.5 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
   return (

@@ -31,15 +31,15 @@ export type SalesActivityRowData = {
 };
 
 const TYPE_STYLE: Record<string, string> = {
-  CALL: "bg-neutral-800 text-ink-label",
-  EMAIL: "bg-neutral-800 text-ink-label",
+  CALL: "bg-rail-hover text-ink-label",
+  EMAIL: "bg-rail-hover text-ink-label",
   DEMO: "bg-tag-brand text-tag-brand-ink",
   MEETING: "bg-tag-brand text-tag-brand-ink",
-  NOTE: "bg-neutral-800 text-ink-muted",
+  NOTE: "bg-rail-hover text-ink-muted",
 };
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 export function SalesActivityRow({
   activity,
@@ -84,7 +84,7 @@ export function SalesActivityRow({
           className="flex flex-col gap-3"
         >
           <SalesActivityFields defaults={activity} opportunityOptions={opportunityOptions} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
@@ -125,12 +125,12 @@ export function SalesActivityRow({
             </span>
             <span className="text-sm text-ink-label">{activity.occurredOn}</span>
             {dealLabel && (
-              <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-ink-body">
+              <span className="rounded-full bg-rail-hover px-2 py-0.5 text-xs font-medium text-ink-body">
                 Re: {dealLabel}
               </span>
             )}
             {!activity.hasOccurred && (
-              <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-ink-body">
+              <span className="rounded-full bg-rail-hover px-2 py-0.5 text-xs font-medium text-ink-body">
                 dated in the future — not counted yet
               </span>
             )}
@@ -153,7 +153,7 @@ export function SalesActivityRow({
           {activity.loggedByName && (
             <p className="mt-1 text-xs text-ink-muted">Logged by {activity.loggedByName}</p>
           )}
-          {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+          {error && <p className="mt-1 text-sm text-danger">{error}</p>}
         </div>
 
         {/* Issue #152, both rules, in the shared component rather than by

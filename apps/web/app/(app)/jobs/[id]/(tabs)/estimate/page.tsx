@@ -72,11 +72,11 @@ import {
   updateLineItemForecast,
 } from "@/lib/actions";
 
-const rowDeleteClass = "text-xs text-red-400 hover:underline";
+const rowDeleteClass = "text-xs text-danger hover:underline";
 const rowCancelClass =
-  "rounded-md border border-slate-700 px-2 py-1 text-xs text-ink-label hover:border-slate-500";
+  "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:border-line-card";
 const rowConfirmClass =
-  "rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10";
+  "rounded-md border border-red-500 px-2 py-1 text-xs text-danger hover:bg-red-500/10";
 
 /**
  * Estimate — pricing and job costing. Withheld on VIEW_JOB_COSTS exactly
@@ -583,7 +583,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
             <p className="text-xs text-ink-muted">Actual cost to date</p>
             <p className="text-ink">{money(jobWip.actualCostToDate)}</p>
             {jobWip.unpricedLaborHours > 0 && (
-              <p className="mt-1 text-xs text-amber-400">
+              <p className="mt-1 text-xs text-warn">
                 {formatLoggedHours(jobWip.unpricedLaborHours)} of{" "}
                 {formatLoggedHours(jobWip.pricedLaborHours + jobWip.unpricedLaborHours)} logged hours have no craft
                 tag or no effective fringe rate schedule, so they are in this figure at $0 of wages (
@@ -595,7 +595,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
             <p className="text-xs text-ink-muted">% complete</p>
             <p className="text-ink">{formatPercentComplete(jobWip.percentComplete) ?? "—"}</p>
             {jobWip.percentComplete != null && (jobWip.estimatedCoverage < 1 || jobWip.costCoverage < 1) && (
-              <p className="mt-1 text-xs text-amber-400">
+              <p className="mt-1 text-xs text-warn">
                 Over the {formatCoveragePercent(jobWip.estimatedCoverage)} of contract value that carries a cost
                 forecast
                 {jobWip.costCoverage < 1 ? `, and ${formatCoveragePercent(jobWip.costCoverage)} of cost to date` : ""}
@@ -619,7 +619,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                 figure, so a billing position would be guesswork. Budget the rest to see where it lands.
               </p>
             ) : (
-              <p className={billingPosition > 0 ? "text-amber-400" : "text-green-400"}>
+              <p className={billingPosition > 0 ? "text-warn" : "text-ok"}>
                 {billingPosition > 0
                   ? `Overbilled ${money(billingPosition)}`
                   : billingPosition < 0
@@ -641,7 +641,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                   <p className="font-medium text-ink">
                     {item.description}
                     {tradeLabel && (
-                      <span className="ml-2 rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
+                      <span className="ml-2 rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">
                         {tradeLabel}
                       </span>
                     )}
@@ -727,7 +727,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                   </label>
                   <SubmitButton
                     type="submit"
-                    className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700"
+                    className="rounded-md bg-rail-hover px-3 py-1.5 text-sm font-medium text-ink hover:bg-lift"
                   >
                     Save forecast
                   </SubmitButton>
@@ -773,7 +773,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                       {item.aiDrafted && <PriceBasisBadge basis={item.priceBasis} />}
                       {item.wallTypeComponentId && (
                         <span
-                          className="inline-flex items-center rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-ink-label"
+                          className="inline-flex items-center rounded-full bg-rail-hover px-2 py-0.5 text-xs font-medium text-ink-label"
                           title="Worked out from the wall schedule above. Its quantity follows the runs; the price is yours to change."
                         >
                           From wall schedule
@@ -902,7 +902,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                       <SubmitButton
                         type="submit"
                         title="Save"
-                        className="rounded-md bg-neutral-800 px-2 py-1 text-xs font-medium text-ink hover:bg-neutral-700"
+                        className="rounded-md bg-rail-hover px-2 py-1 text-xs font-medium text-ink hover:bg-lift"
                       >
                         Save
                       </SubmitButton>
@@ -917,7 +917,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                         describe="Removes the line and its cost history from the estimate. The contract value drops by its amount. A line already billed on a pay application cannot be removed."
                         label="Remove"
                         confirmLabel="Confirm remove"
-                        deleteClassName="rounded-md bg-red-950 px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-900"
+                        deleteClassName="rounded-md bg-red-950 px-2 py-1 text-xs font-medium text-danger hover:bg-red-900"
                         cancelClassName={rowCancelClass}
                         confirmClassName={rowConfirmClass}
                         hint={
@@ -1010,7 +1010,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
               <PhaseCodeField phaseCodes={phaseCodes} />
               <SubmitButton
                 type="submit"
-                className="inline-flex items-center justify-center rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
+                className="inline-flex items-center justify-center rounded-md bg-rail-hover px-4 py-2 text-sm font-medium text-ink hover:bg-lift"
               >
                 Add line item
               </SubmitButton>
@@ -1075,7 +1075,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                 </label>
                 <SubmitButton
                   type="submit"
-                  className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+                  className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
                 >
                   Add from catalog
                 </SubmitButton>
@@ -1176,7 +1176,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
               </label>
               <SubmitButton
                 type="submit"
-                className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+                className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
               >
                 Save version
               </SubmitButton>
@@ -1192,7 +1192,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
             {isContractExecuted ? (
               <MarkContractedButton markContracted={markContractedWithId} />
             ) : (
-              <p className="text-sm text-amber-400">
+              <p className="text-sm text-warn">
                 This job has no executed contract yet. Either send the GC a signing link on the Overview tab and
                 wait for them to sign it in C Stream, or — if they already sent you the executed subcontract —
                 record it there under Contract signature.

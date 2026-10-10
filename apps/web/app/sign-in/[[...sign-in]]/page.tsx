@@ -12,7 +12,7 @@ export default async function SignInPage() {
   if (userId) redirect("/dashboard");
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-4 py-10">
-      <Image src="/brand/cstream-wordmark.png" alt="C Stream" width={240} height={48} className="h-10 w-auto" priority />
+      <Image src="/brand/cstream-wordmark.png" alt="C Stream" width={240} height={48} className="logo-on-theme h-10 w-auto" priority />
       <SignIn fallbackRedirectUrl="/dashboard" />
     </main>
   );

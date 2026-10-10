@@ -65,7 +65,7 @@ export function BidJobLink({
             <input type="hidden" name="jobId" value="" />
             <SubmitButton
               type="submit"
-              className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+              className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
             >
               Unlink
             </SubmitButton>
@@ -122,7 +122,7 @@ export function BidJobLink({
       <button
         type="button"
         onClick={() => setPicking(true)}
-        className="mt-2 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+        className="mt-2 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
       >
         Link the job this bid is for
       </button>
@@ -160,7 +160,7 @@ export function BidJobLink({
       <button
         type="button"
         onClick={() => setPicking(false)}
-        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
       >
         Cancel
       </button>

@@ -140,7 +140,7 @@ export function QuickBooksImport() {
           type="button"
           data-tour="qbo-import"
           onClick={preview}
-          className="min-h-11 rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+          className="min-h-11 rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
         >
           Import from QuickBooks
         </button>

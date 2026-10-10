@@ -13,7 +13,7 @@ import { Spinner } from "@/components/Spinner";
 const field =
   "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 export function ApprenticeshipRowActions({
   enrollmentId,
@@ -154,7 +154,7 @@ export function ApprenticeshipRowActions({
         </p>
 
         {error && (
-          <p role="alert" className="text-sm text-red-400">
+          <p role="alert" className="text-sm text-danger">
             {error}
           </p>
         )}
@@ -238,7 +238,7 @@ export function ApprenticeshipRowActions({
         </p>
 
         {error && (
-          <p role="alert" className="text-sm text-red-400">
+          <p role="alert" className="text-sm text-danger">
             {error}
           </p>
         )}
@@ -305,7 +305,7 @@ export function ApprenticeshipRowActions({
               hint="Removes the registration and its periods. No timesheet is touched."
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }
@@ -332,7 +332,7 @@ export function ApprenticeshipRowActions({
       {/* Outside RowActions on purpose: an error hidden by arming a delete
           would be a new bug. */}
       {error && (
-        <p role="alert" className="mt-2 text-sm text-red-400">
+        <p role="alert" className="mt-2 text-sm text-danger">
           {error}
         </p>
       )}

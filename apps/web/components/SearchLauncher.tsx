@@ -295,7 +295,7 @@ export function SearchLauncher() {
             ) : loading ? (
               <p className="px-2 py-3 text-sm text-ink-muted">Searching…</p>
             ) : error ? (
-              <p className="px-2 py-3 text-sm text-red-400">{error}</p>
+              <p className="px-2 py-3 text-sm text-danger">{error}</p>
             ) : showEmpty ? (
               <p className="px-2 py-3 text-sm text-ink-muted">Nothing found for &ldquo;{trimmedQuery}&rdquo;.</p>
             ) : (

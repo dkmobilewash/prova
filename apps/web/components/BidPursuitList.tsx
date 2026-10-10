@@ -82,11 +82,11 @@ type ShowInFlight = (change: PursuitChange) => void;
 export type LinkableInvitation = { id: string; label: string };
 
 const STAGE_STYLE: Record<BidPursuitStage, string> = {
-  WATCHING: "bg-neutral-800 text-ink-label",
+  WATCHING: "bg-rail-hover text-ink-label",
   CONTACTED: "bg-tag-brand text-tag-brand-ink",
   EXPECTING_INVITE: "bg-tag-amber text-tag-amber-ink",
   INVITED: "bg-tag-green text-tag-green-ink",
-  DROPPED: "bg-neutral-800 text-ink-muted",
+  DROPPED: "bg-rail-hover text-ink-muted",
 };
 
 const inputClass =
@@ -355,7 +355,7 @@ function PursuitRowView({
                 setMode("view");
                 setError(null);
               }}
-              className="min-h-11 rounded-md border border-line-card px-4 text-sm text-ink-label hover:bg-neutral-800"
+              className="min-h-11 rounded-md border border-line-card px-4 text-sm text-ink-label hover:bg-rail-hover"
             >
               Cancel
             </button>
@@ -394,7 +394,7 @@ function PursuitRowView({
             <span className="rounded bg-tag-amber px-1.5 py-0.5 text-xs text-tag-amber-ink">bid date soon</span>
           )}
           {pursuit.goneQuiet && (
-            <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-muted">
+            <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-muted">
               untouched {pursuit.daysSinceUpdate} days
             </span>
           )}
@@ -461,7 +461,7 @@ function PursuitRowView({
                 setMode("view");
                 setError(null);
               }}
-              className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-neutral-800"
+              className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-rail-hover"
             >
               Cancel
             </button>
@@ -560,7 +560,7 @@ function PursuitRowView({
               setMode("edit");
               setError(null);
             }}
-            className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover"
           >
             Edit
           </button>
@@ -570,7 +570,7 @@ function PursuitRowView({
               setMode(mode === "link" ? "view" : "link");
               setError(null);
             }}
-            className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover"
           >
             {pursuit.invitation ? "Change link" : "Link invite"}
           </button>

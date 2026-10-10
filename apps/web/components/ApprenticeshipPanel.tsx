@@ -67,7 +67,7 @@ export function ApprenticeshipPanel({
         <div key={row.enrollmentId} className="rounded-lg border border-line-card bg-surface p-4">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="font-medium text-ink">{row.apprenticeName}</span>
-            <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-label">
+            <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-label">
               Period {row.period}
             </span>
             {row.state === "COMPLETED" && (
@@ -76,7 +76,7 @@ export function ApprenticeshipPanel({
               </span>
             )}
             {row.state === "CANCELLED" && (
-              <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
+              <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">
                 Cancelled
               </span>
             )}

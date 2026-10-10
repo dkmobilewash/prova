@@ -151,7 +151,7 @@ describe("/cash-flow on an account with no invoices", () => {
   it("does not colour an empty account as though it were overdue", async () => {
     const html = await load();
     // The amber used for past-due money, and the bucket labels it was on.
-    expect(html).not.toContain("text-amber-400");
+    expect(html).not.toContain("text-warn"); // was text-amber-400 before the light-theme tokens
     expect(html).not.toContain("90+ days");
   });
 

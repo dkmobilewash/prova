@@ -149,7 +149,7 @@ export function TakeoffForm({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="mb-4 rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800"
+        className="mb-4 rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover"
       >
         Add from a takeoff
       </button>
@@ -419,7 +419,7 @@ export function TakeoffForm({
               <button
                 type="button"
                 onClick={() => setOpenings((prev) => prev.filter((_, i) => i !== index))}
-                className="text-xs text-red-400 hover:underline"
+                className="text-xs text-danger hover:underline"
               >
                 Remove
               </button>
@@ -472,7 +472,7 @@ export function TakeoffForm({
               <button
                 type="button"
                 onClick={() => setFixtures((prev) => prev.filter((_, i) => i !== index))}
-                className="text-xs text-red-400 hover:underline"
+                className="text-xs text-danger hover:underline"
               >
                 Remove
               </button>
@@ -534,7 +534,7 @@ export function TakeoffForm({
         <button
           type="button"
           onClick={() => setIsOpen(false)}
-          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800"
+          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover"
         >
           Cancel
         </button>

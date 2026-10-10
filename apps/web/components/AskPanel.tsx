@@ -1285,7 +1285,7 @@ export function AskPanel() {
             title={listening ? "Stop dictating" : "Dictate your question"}
             className={`shrink-0 rounded-md border px-3 py-2 ${
               listening
-                ? "border-brand bg-brand/10 text-brand"
+                ? "border-brand bg-brand/10 text-link-hover"
                 : "border-line-card bg-surface text-ink-body hover:text-ink"
             }`}
           >

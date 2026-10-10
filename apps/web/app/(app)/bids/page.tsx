@@ -40,11 +40,11 @@ const STATUS_OPTIONS = [
 ] as const;
 
 const STATUS_STYLE: Record<string, string> = {
-  INVITED: "bg-neutral-800 text-ink-label",
+  INVITED: "bg-rail-hover text-ink-label",
   SUBMITTED: "bg-tag-brand text-tag-brand-ink",
   WON: "bg-tag-green text-tag-green-ink",
-  LOST: "bg-tag-rose text-red-400",
-  DECLINED: "bg-neutral-800 text-ink-muted",
+  LOST: "bg-tag-rose text-danger",
+  DECLINED: "bg-rail-hover text-ink-muted",
 };
 
 function labelFor(options: readonly { value: string; label: string }[], value: string | null) {
@@ -275,7 +275,7 @@ export default async function BidsPage({
         </label>
         <button
           type="submit"
-          className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+          className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
         >
           Filter
         </button>
@@ -343,7 +343,7 @@ export default async function BidsPage({
         isFiltered ? (
           <p className="text-ink-body">
             No bids match this filter.{" "}
-            <Link href="/bids" className="text-link hover:text-brand">
+            <Link href="/bids" className="text-link hover:text-link-hover">
               Show them all
             </Link>
             .

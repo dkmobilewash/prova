@@ -200,7 +200,7 @@ export default async function SchedulePage() {
         {unscheduled.length === 0 ? (
           <p className="text-ink-body">Every job has a start date.</p>
         ) : (
-          <ul className="divide-y divide-slate-800 rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
             {unscheduled.map((job) => (
               <li key={job.id} className="p-4">
                 {/* Name + status pill + GC name forced onto one ~295px

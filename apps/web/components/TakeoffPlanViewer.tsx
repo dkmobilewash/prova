@@ -582,7 +582,7 @@ export function TakeoffPlanViewer({
                 className={`rounded-md px-2 py-1 text-xs ${
                   tool === entry.id
                     ? "bg-brand text-neutral-900"
-                    : "border border-line-card text-ink-label hover:bg-neutral-800"
+                    : "border border-line-card text-ink-label hover:bg-rail-hover"
                 } disabled:cursor-not-allowed disabled:opacity-40`}
               >
                 {entry.label}
@@ -605,7 +605,7 @@ export function TakeoffPlanViewer({
             onClick={() => setZoom(stepZoom(zoomFactor, -1))}
             disabled={zoomFactor <= ZOOM_STEPS[0]}
             aria-label="Zoom out"
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-40"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-40"
           >
             −
           </button>
@@ -617,7 +617,7 @@ export function TakeoffPlanViewer({
             onClick={() => setZoom(stepZoom(zoomFactor, 1))}
             disabled={zoomFactor >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
             aria-label="Zoom in"
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-40"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-40"
           >
             +
           </button>
@@ -628,7 +628,7 @@ export function TakeoffPlanViewer({
             className={`ml-1 rounded-md border px-2 py-1 text-xs ${
               zoom === FIT
                 ? "border-tag-amber-ink text-tag-amber-ink"
-                : "border-line-card text-ink-label hover:bg-neutral-800"
+                : "border-line-card text-ink-label hover:bg-rail-hover"
             }`}
           >
             Fit
@@ -643,7 +643,7 @@ export function TakeoffPlanViewer({
                 type="button"
                 onClick={() => setPageNumber((n) => Math.max(1, n - 1))}
                 disabled={pageNumber <= 1}
-                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-40"
+                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-40"
               >
                 Prev
               </button>
@@ -654,7 +654,7 @@ export function TakeoffPlanViewer({
                 type="button"
                 onClick={() => setPageNumber((n) => Math.min(pageCount, n + 1))}
                 disabled={pageNumber >= pageCount}
-                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-40"
+                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-40"
               >
                 Next
               </button>
@@ -890,7 +890,7 @@ export function TakeoffPlanViewer({
           code shaped like a safeguard is worse than none. */}
       <div
         ref={frameRef}
-        className="relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-neutral-900 xl:flex-1 xl:max-h-[calc(var(--shell-port)-11rem)]"
+        className="relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-rail xl:flex-1 xl:max-h-[calc(var(--shell-port)-11rem)]"
         data-testid="takeoff-plan-port"
       >
         {loadError ? (
@@ -939,7 +939,7 @@ export function TakeoffPlanViewer({
           </div>
         )}
         {isRendering && !loadError && (
-          <p className="absolute right-3 top-3 rounded bg-neutral-800 px-2 py-1 text-xs text-ink-muted">Drawing…</p>
+          <p className="absolute right-3 top-3 rounded bg-rail-hover px-2 py-1 text-xs text-ink-muted">Drawing…</p>
         )}
       </div>
 
@@ -958,7 +958,7 @@ export function TakeoffPlanViewer({
               <button
                 type="button"
                 onClick={undoPoint}
-                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
               >
                 Undo point
               </button>
@@ -967,7 +967,7 @@ export function TakeoffPlanViewer({
               <button
                 type="button"
                 onClick={() => setDraft(EMPTY)}
-                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
               >
                 Clear
               </button>

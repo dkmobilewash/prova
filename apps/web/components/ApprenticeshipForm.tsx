@@ -35,7 +35,7 @@ export function ApprenticeshipForm({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800"
+        className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover"
       >
         Register an apprenticeship
       </button>
@@ -140,7 +140,7 @@ export function ApprenticeshipForm({
       <input name="note" placeholder="Note (optional)" className={field} />
 
       {error && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}
@@ -167,7 +167,7 @@ export function ApprenticeshipForm({
             setOpen(false);
             setError(null);
           }}
-          className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800"
+          className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover"
         >
           Cancel
         </button>

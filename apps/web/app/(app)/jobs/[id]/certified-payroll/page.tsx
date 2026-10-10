@@ -237,7 +237,7 @@ export default async function CertifiedPayrollPage({
               <p className="font-medium text-ink">
                 {employee.employeeName}
                 {missingName.has(employee.employeeUserId) && (
-                  <span className="ml-2 text-xs font-normal text-amber-400">
+                  <span className="ml-2 text-xs font-normal text-warn">
                     — no name on {missingName.get(employee.employeeUserId)}
                   </span>
                 )}
@@ -268,7 +268,7 @@ export default async function CertifiedPayrollPage({
                         <td className="py-1 pr-3 text-right text-ink">{formatHours(row.totalHours)}</td>
                         <td className="py-1 text-right text-ink">
                           {row.wageCost != null ? money(row.wageCost) : "—"}
-                          {row.hasUncomputedHours && <span className="ml-1 text-amber-400">*</span>}
+                          {row.hasUncomputedHours && <span className="ml-1 text-warn">*</span>}
                         </td>
                       </tr>
                     ))}
@@ -297,7 +297,7 @@ export default async function CertifiedPayrollPage({
               ))}
             </div>
             {anyUncomputed && (
-              <p className="mt-1 text-xs text-amber-400">
+              <p className="mt-1 text-xs text-warn">
                 * Some hours have no craft tag or no effective fringe rate schedule and aren&rsquo;t priced above.
               </p>
             )}
