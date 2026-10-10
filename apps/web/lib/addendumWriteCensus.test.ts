@@ -52,11 +52,46 @@ const FEATURE_FILES = [
   "lib/actions/addendumRead.ts",
   "lib/addenda-overlap.ts",
   "lib/ask/addendumSpend.ts",
+  "lib/addenda-acknowledgement.ts",
   "components/AddendumFindings.tsx",
 ];
 
 /** Columns this feature must never assign. */
 const FORBIDDEN = ["affectsPricedScope", "acknowledgedOn", "issuedOn", "dueDate"];
+
+/**
+ * A `type` or `interface` body, removed.
+ *
+ * A FIELD IN A TYPE IS A SHAPE, NOT A WRITE. `addenda-acknowledgement.ts` reads
+ * `acknowledgedOn` and `affectsPricedScope` and assigns neither — but it has to
+ * DECLARE them to take a row, and `acknowledgedOn: string | null` inside a type
+ * matches a pattern looking for `field:`.
+ *
+ * This is the narrowing the census itself asks for: *"the right response is to
+ * narrow this pattern on purpose rather than to widen the list of exempt
+ * files"*. Same move as stripping comments one level along, and it is held by
+ * the mutation below — an assignment put back into any of these files still
+ * fails, type declarations or not.
+ */
+function withoutTypeBodies(text: string): string {
+  let out = "";
+  let at = 0;
+  const declaration = /\b(?:export\s+)?(?:type\s+\w+\s*=\s*\{|interface\s+\w+\s*\{)/g;
+  let match: RegExpExecArray | null;
+  while ((match = declaration.exec(text)) !== null) {
+    out += text.slice(at, match.index);
+    let depth = 1;
+    let i = match.index + match[0].length;
+    while (i < text.length && depth > 0) {
+      if (text[i] === "{") depth += 1;
+      else if (text[i] === "}") depth -= 1;
+      i += 1;
+    }
+    at = i;
+    declaration.lastIndex = i;
+  }
+  return out + text.slice(at);
+}
 
 function source(rel: string): string {
   const text = readFileSync(join(ROOT, rel), "utf8");
@@ -65,7 +100,7 @@ function source(rel: string): string {
   // why they are not written. A raw-text census would fail on the very comments
   // that document the rule — #185's scar, a census disarmed by a comment
   // quoting its own pattern, arriving from the opposite direction.
-  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  return withoutTypeBodies(text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""));
 }
 
 group("the addendum reader writes nothing another module reads", () => {

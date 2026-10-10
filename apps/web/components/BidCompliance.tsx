@@ -7,6 +7,7 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { AddendumFindings, type AddendumReadingView } from "@/components/AddendumFindings";
 import { SpecFindings, type SpecReadingView } from "@/components/SpecFindings";
 import type { AddendumDecision, AddendumItem } from "@/lib/addenda-overlap";
+import { addendaProblem, addendaStanding } from "@/lib/addenda-acknowledgement";
 import { SubmitButton } from "@/components/SubmitButton";
 import {
   acknowledgeBidAddendum,
@@ -206,6 +207,39 @@ export function BidCompliance({
       {addenda.length > 0 && (
         <section className="mt-3">
           <h4 className="text-sm font-semibold text-ink">Addenda</h4>
+
+          {/* ── THE LINE THE BID FORM ASKS FOR, AND THE GAP IT CANNOT SEE ──
+              Nearly every GC bid form has a box for acknowledged addenda, and
+              an unacknowledged one gets a bid thrown out on a technicality
+              rather than on price.
+
+              The sentence appears only when the set is SOUND. A bid form
+              saying "Includes Addenda 1 through 4" over a set missing number 3
+              is worse than no line at all — it is a written claim to have read
+              something nobody has. See `addenda-acknowledgement.ts`. */}
+          {(() => {
+            const standing = addendaStanding(addenda);
+            const problem = addendaProblem(standing, addenda.length);
+            if (standing.sentence) {
+              return (
+                <p
+                  data-bid="addenda-line"
+                  className="mt-1 rounded-md border border-line-card bg-surface p-2 text-xs text-ink-body"
+                >
+                  <span className="font-medium text-ink-label">For the bid form: </span>
+                  {standing.sentence}
+                </p>
+              );
+            }
+            return problem ? (
+              <p
+                data-bid="addenda-problem"
+                className="mt-1 rounded-md border border-tag-rose-ink bg-surface p-2 text-xs text-ink-body"
+              >
+                {problem}
+              </p>
+            ) : null;
+          })()}
           <ul className="mt-1 flex flex-col divide-y divide-line-row">
             {addenda.map((row) =>
               editing === row.id ? (
