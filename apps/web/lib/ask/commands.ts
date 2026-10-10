@@ -65,6 +65,7 @@ export type CommandName =
   | "release_retainage"
   | "log_time_entry"
   | "send_email"
+  | "ask_who_would_know"
   | "reschedule_job"
   | "log_bid_invitation"
   | "add_bid_pursuit"

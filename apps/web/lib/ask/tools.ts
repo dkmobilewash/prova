@@ -126,6 +126,9 @@ export type ToolResult = {
 export type ToolName =
   | "crew_assignments"
   | "crew_schedule"
+  // Who the ROWS name for a job and a day, when the question is one nothing
+  // here records — see the tool's own description and the attendance gap.
+  | "who_would_know"
   | "open_punch_list"
   | "compliance_status"
   | "drawing_currency"
@@ -456,6 +459,40 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "Jobs currently in progress, who is ASSIGNED to each, the job's scheduled start and end, and the GC contact. An assignment is a ROSTER and carries no date at all — it is everyone attached to the job, not who is there on a given day. For a question about a DAY, use crew_schedule; this tool cannot answer one and must never state or imply that somebody is on site today. It is still not an attendance record either: nothing here records who actually showed up. It does not return the job's SITE ADDRESS and no tool here does — the address is on the job's own page. Nothing in this app measures travel time or distance, and nothing records what to load for a job; never estimate either.",
     input_schema: noInput,
+  },
+  {
+    name: "who_would_know",
+    // /field-reports (MANAGE_FIELD) and /schedule (open). Takes the stricter
+    // of its two citations, per the rule every row here follows: it names
+    // who FILED a day's report, which is what that page shows.
+    //
+    // THIS TOOL IS THE SECOND HALF OF A REFUSAL, NOT AN ANSWER TO IT.
+    // "Who actually showed up" is in KNOWN_GAPS and stays there: nothing in
+    // this app records attendance, and this tool records none either. What
+    // it does is read the three rows that NAME somebody for a job and a day
+    // — the daily report's filer, the crew schedule, the assignment roster —
+    // so that "I don't know" can be followed by "here is who the data says
+    // to ask", with every name traceable to its row. A name it does not
+    // return does not exist for this purpose; the model may not supply one.
+    //
+    // Cyrus, 2026-09-27: "when it doesn't know an answer it helps you get the
+    // answer with what it knows and where it can find it". The general form
+    // of that — a declared next step on EVERY known gap — is deferred; see
+    // the note on KNOWN_GAPS below. This is the one case, built properly.
+    capability: "MANAGE_FIELD",
+    description:
+      "For one job and one day, WHO THE RECORDS NAME as having something to do with that day — never who was there. Returns five lists, each from its own row: who FILED that day's daily field report (they wrote it up, so they would know), who was on the CREW SCHEDULE for that day (planned, not attended), who LOGGED HOURS on the job that day (paperwork, not a register), who is ASSIGNED to the job (the roster, no date), and the GC's own PEOPLE on this job with their titles (a superintendent walks the site). Use it right after refusing a question about who actually showed up, so the refusal can say who to ask. It does NOT record attendance and nothing it returns means a person was on site; say each name with where it came from and never as having been there. `canBeEmailed` is false for a crew member with no login and for anyone with no email on file — say that plainly and do not offer to message them; `isYou` marks the asker. If it names nobody who can be emailed, say so and offer nothing.",
+    input_schema: {
+      type: "object",
+      properties: {
+        jobName: jobFilter.properties.jobName,
+        day: {
+          type: "string",
+          description:
+            "The day, in the person's own words — 'last Tuesday', 'yesterday', 'September 22', '9/22'. Passed through as said; the app works out the date. Omit if they named no day, and the most recent report's filer is returned instead.",
+        },
+      },
+    },
   },
   {
     name: "open_punch_list",
@@ -953,8 +990,28 @@ export const KNOWN_GAPS: { topic: string; why: string }[] = [
   },
   {
     topic: "who ACTUALLY showed up on a day, as opposed to who was planned",
-    why: "attendance is not recorded anywhere. crew_schedule holds who was PLANNED and TimeEntry holds hours somebody logged; neither is a register. A planned day with no hours means nobody logged it — never that the person was absent, which is a claim about a man rather than about paperwork.",
+    why: "attendance is not recorded anywhere. crew_schedule holds who was PLANNED and TimeEntry holds hours somebody logged; neither is a register. A planned day with no hours means nobody logged it — never that the person was absent, which is a claim about a man rather than about paperwork. After refusing, who_would_know says who the rows name for that job and day — the report's filer, the schedule, the hours, the roster, the GC's people — which is who to ask; ask_who_would_know drafts the message to one of them, for the person to send.",
   },
+  /* THE NEXT STEP ABOVE IS ON ONE GAP, BY DECISION, NOT ON ALL OF THEM.
+   *
+   * Cyrus asked (2026-09-27) for every "I don't know" to end with what the
+   * box does know and where the answer can be found, and that is the right
+   * product. It is also not one thing: a gap the rows name a PERSON for
+   * (attendance) wants an offer to message them; a field nobody filled in
+   * wants the screen named; a bank balance is outside the product and
+   * wants nothing offered; a refusal that exists because a HUMAN must
+   * judge (quantities off a superseded sheet) must never grow an action,
+   * or the refusal stops being the trustworthy part. The general design is
+   * a declared `next` on every entry here — kind plus step, chosen from a
+   * closed set so the model picks a recorded remedy rather than inventing
+   * one, with a census that fails the build when a gap has none.
+   *
+   * DEFERRED on the day, to ship the one case the launch video needs, and
+   * deferred rather than half-built: a general field with two entries
+   * filled in is the "written, documented, and never called" shape this
+   * repo keeps paying for. Whoever builds it: the kinds above are the
+   * starting list, `judgement` is the one to get right first, and the
+   * attendance entry is the worked example of `ask_a_person`. */
   {
     topic: "where a machine physically is",
     why: "equipment is assigned to a job, not tracked. There is no GPS or telematics feed.",
