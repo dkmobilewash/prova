@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { updateTimeEntry } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
+import { clearFieldErrors, reportFieldErrors } from "@/components/formFieldErrors";
 import {
   TimeEntryFields,
   type TimeEntryCraftOption,
@@ -99,14 +100,19 @@ export function TimeEntryRow({
           // A refusal is about the values that were submitted, so it goes the
           // moment one of them changes — otherwise "Hours has to be a
           // positive number" sits under a field that by then reads 8.
-          onInput={() => setError(null)}
+          onInput={(event) => {
+            setError(null);
+            clearFieldErrors(event.currentTarget);
+          }}
           onSubmit={(event) => {
             event.preventDefault();
-            const formData = new FormData(event.currentTarget);
+            const form = event.currentTarget;
+            const formData = new FormData(form);
             setError(null);
             startTransition(async () => {
               try {
                 const result = await updateTimeEntry(entry.id, formData);
+                reportFieldErrors(form, result);
                 if (!result.ok) {
                   setError(result.error);
                   return;

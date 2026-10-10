@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import type { JobLineItem } from "@prova/db";
 import { logTimeEntry } from "@/lib/actions";
+import { reportFieldErrors } from "@/components/formFieldErrors";
 import {
   TimeEntryFields,
   type TimeEntryCraftOption,
@@ -89,6 +90,7 @@ export function LogTimeEntryForm({
         startTransition(async () => {
           try {
             const result = await logTimeEntry(jobId, formData);
+            reportFieldErrors(formRef.current, result);
             if (!result.ok) {
               setError(result.error);
               return;

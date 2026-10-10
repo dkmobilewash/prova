@@ -175,7 +175,7 @@ export async function logTimeEntry(jobId: string, formData: FormData): Promise<A
   // sentence written for it.
   const figures = parseTimeEntryFigures(formData);
   if (!figures.ok) {
-    return actionFail(figures.error);
+    return actionFail(figures.error, { [figures.field]: figures.error });
   }
   const { hours: hoursRaw, payType, note, perDiemAmount, travelPayAmount } = figures.value;
 
@@ -318,7 +318,7 @@ export async function updateTimeEntry(timeEntryId: string, formData: FormData): 
 
   const figures = parseTimeEntryFigures(formData);
   if (!figures.ok) {
-    return actionFail(figures.error);
+    return actionFail(figures.error, { [figures.field]: figures.error });
   }
 
   // Both re-checked against this job and this company on every save. A form

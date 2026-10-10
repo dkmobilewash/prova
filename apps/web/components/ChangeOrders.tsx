@@ -31,6 +31,7 @@ import {
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { DocuSignPanel, type DocuSignEnvelopeView } from "@/components/DocuSignPanel";
 import { Spinner } from "@/components/Spinner";
+import { reportFieldErrors } from "@/components/formFieldErrors";
 import type { DocuSignCardState } from "@/lib/docusign/setup";
 
 /** "Send with DocuSign" on a submitted change order — optional, and absent
@@ -67,10 +68,11 @@ function useActionRunner() {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function run(fn: () => Promise<ActionResult>, onOk?: () => void) {
+  function run(fn: () => Promise<ActionResult>, onOk?: () => void, form?: HTMLFormElement) {
     setError(null);
     startTransition(async () => {
       const result = await fn();
+      reportFieldErrors(form, result);
       if (result.ok) onOk?.();
       else setError(result.error);
     });
@@ -181,7 +183,7 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
     // to be taken now rather than read off `event` again inside the callback.
     const form = event.currentTarget;
     const formData = new FormData(form);
-    run(() => action(formData), () => form.reset());
+    run(() => action(formData), () => form.reset(), form);
   }
 
   return (
@@ -754,7 +756,7 @@ export function ChangeOrders({
           event.preventDefault();
           const form = event.currentTarget;
           const formData = new FormData(form);
-          create.run(() => createChangeOrder(jobId, formData), () => form.reset());
+          create.run(() => createChangeOrder(jobId, formData), () => form.reset(), form);
         }}
         className="mb-4 flex flex-wrap items-end gap-3 rounded-md border border-line-card bg-surface p-3"
       >
