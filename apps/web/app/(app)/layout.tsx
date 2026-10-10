@@ -8,6 +8,7 @@ import { helpChannelFromEnv } from "@/lib/help-config";
 import {
   FullTourRegion,
   MetricBarRegion,
+  NavigationProgressRegion,
   SidebarRegion,
   TimeZoneCookieRegion,
   TopbarRegion,
@@ -147,6 +148,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* Renders nothing. Parks the browser's IANA zone in a cookie so
           the server can work out what day it is where the reader is. */}
       <TimeZoneCookieRegion />
+      <NavigationProgressRegion />
       {/* "Take the full tour": renders nothing until someone starts it.
           Here rather than on a page because it moves between pages. */}
       <FullTourRegion principal={principal} />

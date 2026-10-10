@@ -2,6 +2,7 @@
 
 import { FullTour } from "@/components/FullTour";
 import { MetricBar } from "@/components/MetricBar";
+import { NavigationProgress } from "@/components/NavigationProgress";
 import { ShellRegion } from "@/components/ShellRegion";
 import { Sidebar } from "@/components/Sidebar";
 import { TimeZoneCookie } from "@/components/TimeZoneCookie";
@@ -68,6 +69,14 @@ export function TimeZoneCookieRegion() {
   return (
     <ShellRegion region="helper">
       <TimeZoneCookie />
+    </ShellRegion>
+  );
+}
+
+export function NavigationProgressRegion() {
+  return (
+    <ShellRegion region="helper">
+      <NavigationProgress />
     </ShellRegion>
   );
 }
