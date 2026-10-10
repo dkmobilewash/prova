@@ -50,7 +50,12 @@ export default async function JobTabsLayout({
   // absent section.
   const tabs: JobSectionTab[] = [
     { href: `/jobs/${id}`, label: "Overview" },
-    ...(showsJobMoney ? [{ href: `/jobs/${id}/estimate`, label: "Estimate" }] : []),
+    // Same route either side of the contract, but after it the tab holds
+    // change orders (estimate/page.tsx renders <ChangeOrders> once the job
+    // leaves ESTIMATE), and nobody looks for change orders under "Estimate".
+    ...(showsJobMoney
+      ? [{ href: `/jobs/${id}/estimate`, label: isEstimateStage ? "Estimate" : "Change orders" }]
+      : []),
     ...(showsJobMoney ? [{ href: `/jobs/${id}/takeoff`, label: "Takeoff" }] : []),
     { href: `/jobs/${id}/crew`, label: "Crew & time" },
     { href: `/jobs/${id}/compliance`, label: "Compliance" },

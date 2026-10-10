@@ -167,6 +167,9 @@ function linkHrefs(): string[] {
 }
 
 const HEADINGS = navGroupsFor(principal).map((group) => group.heading);
+/** The always-open daily-work group (NavGroup.primary), and the rest. */
+const PRIMARY = navGroupsFor(principal).find((group) => group.primary)!.heading;
+const SECONDARY = HEADINGS.filter((h) => h !== PRIMARY);
 
 describe("the Money Rail's groups collapse", () => {
   it("renders a toggle for every group, and nothing but groups is a toggle", () => {
@@ -186,36 +189,61 @@ describe("the Money Rail's groups collapse", () => {
   });
 
   it("opens the group holding the current page, and only that one", () => {
-    nav.pathname = "/cash-flow"; // Financials
+    nav.pathname = "/wip"; // Financials
     renderRail();
 
     expect(isExpanded("Financials")).toBe(true);
-    for (const heading of HEADINGS.filter((h) => h !== "Financials")) {
+    // ...plus the daily-work group, which is open everywhere.
+    expect(isExpanded(PRIMARY)).toBe(true);
+    for (const heading of SECONDARY.filter((h) => h !== "Financials")) {
       expect(isExpanded(heading)).toBe(false);
     }
     // And its items are the ones on screen.
-    expect(linkHrefs()).toContain("/cash-flow");
+    expect(linkHrefs()).toContain("/wip");
     expect(linkHrefs()).not.toContain("/bids");
   });
 
-  it("starts everything closed on a page that is in no group", () => {
-    nav.pathname = "/jobs/abc123";
+  it("starts only the daily-work group open on a page that is in no group", () => {
+    nav.pathname = "/settings/assistant";
     renderRail();
 
-    for (const heading of HEADINGS) expect(isExpanded(heading)).toBe(false);
-    // The logo row links home (/dashboard, 2026-09-18). Besides it, links live outside the groups, present whether anything is
-    // expanded or not: "/ask" pinned above them, and "/settings" pinned at
-    // the bottom (NAV_FOOTER) — Cyrus could not find it inside Financials.
-    expect(linkHrefs()).toEqual(["/dashboard", "/ask", "/settings/integrations", "/settings"]);
+    expect(isExpanded(PRIMARY)).toBe(true);
+    for (const heading of SECONDARY) expect(isExpanded(heading)).toBe(false);
+    // The logo row links home (/dashboard, 2026-09-18), "/ask" is pinned
+    // above the groups and "/settings" at the bottom (NAV_FOOTER) — Cyrus
+    // could not find it inside Financials. Between them, the daily pages.
+    const primaryHrefs = navGroupsFor(principal).find((g) => g.primary)!.items.map((i) => i.href);
+    expect(linkHrefs()).toEqual(["/dashboard", "/ask", ...primaryHrefs, "/settings/integrations", "/settings"]);
+  });
+
+  it('labels everything after the daily-work group "More"', () => {
+    renderRail();
+    const text = container.textContent ?? "";
+    const more = container.querySelector("[data-nav-more]");
+    expect(more?.textContent).toBe("More");
+    expect(text.indexOf(PRIMARY)).toBeLessThan(text.indexOf("More"));
+    expect(text.indexOf("More")).toBeLessThan(text.indexOf(SECONDARY[0]));
+  });
+
+  it("keeps its place on a job page: the jobs list's group open and the jobs item highlighted", () => {
+    // A job page used to be "a page in no group" — every group collapsed and
+    // nothing lit, on the page people spend the most time on.
+    nav.pathname = "/jobs/abc123/estimate";
+    renderRail();
+
+    const jobsGroup = navGroupsFor(principal).find((g) => g.items.some((i) => i.href === "/dashboard"))!.heading;
+    expect(isExpanded(jobsGroup)).toBe(true);
+    const current = Array.from(container.querySelectorAll('a[aria-current="page"]')).map((a) => a.getAttribute("href"));
+    expect(current).toEqual(["/dashboard"]);
   });
 
   it("keeps a closed group's links OUT of the document, not merely invisible", () => {
-    nav.pathname = "/jobs/abc123";
+    nav.pathname = "/settings/assistant";
     renderRail();
 
-    // Nothing tabbable inside any panel, and the panel element still exists
-    // so the heading's aria-controls points at something real.
-    for (const heading of HEADINGS) {
+    // Nothing tabbable inside any closed panel, and the panel element still
+    // exists so the heading's aria-controls points at something real.
+    for (const heading of SECONDARY) {
       const panel = container.querySelector(`#${navGroupPanelId(heading)}`)!;
       expect(panel.querySelectorAll("a, button").length).toBe(0);
       expect(panel.hasAttribute("hidden")).toBe(true);
@@ -224,7 +252,7 @@ describe("the Money Rail's groups collapse", () => {
   });
 
   it("TOGGLES ARE INDEPENDENT — opening one does not close another", () => {
-    nav.pathname = "/cash-flow"; // Financials starts open
+    nav.pathname = "/wip"; // Financials starts open
     renderRail();
     expect(isExpanded("Financials")).toBe(true);
 
@@ -240,12 +268,12 @@ describe("the Money Rail's groups collapse", () => {
     // Three groups' worth of links, all reachable at once.
     const hrefs = linkHrefs();
     expect(hrefs).toContain("/bids"); // Pre-construction
-    expect(hrefs).toContain("/schedule"); // Operations
-    expect(hrefs).toContain("/cash-flow"); // Financials
+    expect(hrefs).toContain("/punch-lists"); // Operations
+    expect(hrefs).toContain("/wip"); // Financials
   });
 
   it("closes only the group whose heading is clicked twice", () => {
-    nav.pathname = "/cash-flow";
+    nav.pathname = "/wip";
     renderRail();
     clickHeading("Pre-construction");
     expect(linkHrefs()).toContain("/bids");
@@ -255,13 +283,13 @@ describe("the Money Rail's groups collapse", () => {
     expect(linkHrefs()).not.toContain("/bids");
     // The one that was already open is untouched.
     expect(isExpanded("Financials")).toBe(true);
-    expect(linkHrefs()).toContain("/cash-flow");
+    expect(linkHrefs()).toContain("/wip");
   });
 });
 
 describe("the five figures are never what collapses", () => {
   it("draws every heading and every figure with every group closed", () => {
-    nav.pathname = "/jobs/abc123"; // nothing starts open
+    nav.pathname = "/settings/assistant"; // nothing starts open
     renderRail();
 
     const text = container.textContent ?? "";
@@ -289,7 +317,7 @@ describe("the five figures are never what collapses", () => {
 
   it("draws Proving right after Compliance & safety, before Paper trail", () => {
     // Cyrus's call, 2026-09-18: Proving sits below Compliance & safety.
-    nav.pathname = "/jobs/abc123";
+    nav.pathname = "/settings/assistant";
     renderRail();
     const text = container.textContent ?? "";
     const compliance = text.indexOf("Compliance & safety");

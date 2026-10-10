@@ -13,6 +13,12 @@ export const dashboardWalkthrough: Walkthrough = {
         "These are the few things to set up first. Each line has a link that takes you to the right page, and the tick fills in by itself once it is done. When you are finished, press Hide this.",
     },
     {
+      anchor: "dashboard-new-job",
+      title: "Start a new job",
+      body:
+        "Every estimate starts as a job. Press New job, give it a name and say who it is for — then you can price it.",
+    },
+    {
       anchor: "dashboard-ask",
       title: "Ask in plain words",
       body:
@@ -41,12 +47,6 @@ export const dashboardWalkthrough: Walkthrough = {
       title: "Is each job on budget?",
       body:
         "One line per active job, saying whether it looks like finishing over or under what the client is paying. Tap a line to see the job.",
-    },
-    {
-      anchor: "dashboard-new-job",
-      title: "Start a new job",
-      body:
-        "Every estimate starts as a job. Press New job, give it a name and say who it is for — then you can price it.",
     },
     {
       anchor: "dashboard-job-filters",

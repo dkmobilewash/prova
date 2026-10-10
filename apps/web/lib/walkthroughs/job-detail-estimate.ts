@@ -11,18 +11,6 @@ export const jobDetailEstimateWalkthrough: Walkthrough = {
   title: "A job — estimate",
   steps: [
     {
-      anchor: "job-wall-schedule",
-      title: "Enter the walls",
-      body:
-        "Add each run of wall by its type, length and height — the tag from the drawings, like W1. The studs, track and board are worked out and added to the lines below, and change when you change a run.",
-    },
-    {
-      anchor: "job-bid-recap",
-      title: "Turn the cost into a bid",
-      body:
-        "This marks up each line's budgeted COST — not its price — into what you sell it for: markup by cost type, then overhead, profit, tax and bond. Give every line a cost and a cost type; one missing either is named here and marked up at nothing. Press Apply once the number is settled.",
-    },
-    {
       anchor: "job-line-items",
       title: "Price the job",
       body:
@@ -33,6 +21,18 @@ export const jobDetailEstimateWalkthrough: Walkthrough = {
       title: "Add a line yourself",
       body:
         "Type what it is, how many, the unit and the price, then press Add line item. If you have saved prices in your catalog, you can pick one under Add from catalog.",
+    },
+    {
+      anchor: "job-wall-schedule",
+      title: "Enter the walls",
+      body:
+        "Add each run of wall by its type, length and height — the tag from the drawings, like W1. The studs, track and board are worked out and added to the lines above, and change when you change a run.",
+    },
+    {
+      anchor: "job-bid-recap",
+      title: "Turn the cost into a bid",
+      body:
+        "This marks up each line's budgeted COST — not its price — into what you sell it for: markup by cost type, then overhead, profit, tax and bond. Give every line a cost and a cost type; one missing either is named here and marked up at nothing. Press Apply once the number is settled.",
     },
     {
       anchor: "job-lock-in",

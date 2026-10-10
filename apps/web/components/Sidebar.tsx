@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Hint } from "@/components/Hint";
-import { activeGroupHeading, activeFooterHref, navFooterFor, navGroupsFor } from "@/components/navItems";
+import { activeGroupHeading, activeFooterHref, activeItemHref, navFooterFor, navGroupsFor } from "@/components/navItems";
 import { money } from "@/lib/money";
 import type { Principal } from "@/lib/permissions";
 import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
@@ -226,13 +226,19 @@ export function Sidebar({
   const pathname = usePathname();
   const activeFooter = activeFooterHref(footer, pathname);
   const activeHeading = activeGroupHeading(groups, pathname);
+  const activeHref = activeItemHref(groups, pathname);
 
   // One boolean per heading, and the only writer flips exactly one key.
-  // Absent means closed, so the initial state is literally "the active
-  // group, and nothing else".
-  const [open, setOpen] = useState<Record<string, boolean>>(() =>
-    activeHeading ? { [activeHeading]: true } : {},
-  );
+  // Absent means closed, so the initial state is literally "the primary
+  // group (Daily work), the active group, and nothing else".
+  const [open, setOpen] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    for (const group of groups) if (group.primary) initial[group.heading] = true;
+    if (activeHeading) initial[activeHeading] = true;
+    return initial;
+  });
+  // Where "More" starts: the first group after the primary one.
+  const firstSecondaryHeading = groups.find((group) => !group.primary)?.heading;
 
   // Arriving at a page from somewhere other than this rail — a topbar link,
   // a card on the dashboard, a pasted URL — opens the group that holds it,
@@ -369,6 +375,15 @@ export function Sidebar({
               // keeps its place in pipeline order without inheriting
               // Operations' collapse.
               <Fragment key={group.heading}>
+                {/* Everything below the daily pages, in the groups it has
+                    always had, each collapsed until opened. A label rather
+                    than one more disclosure: a heading that hides headings
+                    would be two clicks to every page under it. */}
+                {group.heading === firstSecondaryHeading && groups.some((g) => g.primary) ? (
+                  <p data-nav-more className="px-4 pt-2 text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                    More
+                  </p>
+                ) : null}
                 {/* REPLACED 2026-09-13. This used to carry a min-height floor
                     so an open group could SHRINK, giving up item height to
                     keep its figure on screen. It worked, and it was wrong in
@@ -445,8 +460,7 @@ export function Sidebar({
                   >
                     {isOpen
                       ? group.items.map((item) => {
-                          const isActive =
-                            pathname === item.href || pathname.startsWith(`${item.href}/`);
+                          const isActive = activeHref === item.href;
 
                           // A disabled item is not a link and not focusable. As
                           // of 3 Sep 2026, /safety and /material-orders render

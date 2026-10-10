@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { JOB_STATUS_LABELS, isJobStatus } from "@/lib/job-status-transitions";
 import { formatCalendarDate } from "@/lib/render-date";
 import { money } from "@/lib/money";
@@ -31,6 +32,12 @@ export function JobSummaryHeader({
 
   return (
     <div className="mb-4 rounded-lg border border-line-card bg-surface p-4 print:hidden">
+      {/* The way back to the jobs list. That list is the dashboard (`/jobs`
+          only redirects there), so link it directly rather than through a
+          redirect. */}
+      <Link href="/dashboard" className="text-sm text-link hover:underline">
+        ← Jobs
+      </Link>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-xl font-semibold text-ink">{summary.name}</h1>
         <span className="inline-flex items-center rounded-full bg-neutral-800 px-2.5 py-0.5 text-xs font-medium text-ink-label">

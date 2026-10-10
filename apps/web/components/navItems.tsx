@@ -629,6 +629,11 @@ export type NavGroup = {
    * not as a restatement of the heading. */
   description: string;
   items: (NavItem & { disabled?: boolean })[];
+  /** The always-open group at the top of the rail: the handful of pages a
+   * contractor reaches for every day, named for the task. It starts open on
+   * every page; every other group starts closed unless it holds the current
+   * page. Exactly one group carries it (navItems.test.ts). */
+  primary?: true;
 };
 
 import { canReach, type Principal } from "@/lib/permissions";
@@ -648,17 +653,43 @@ const groupIcon = (d: string) => (
 );
 
 export const NAV_GROUPS: NavGroup[] = [
+  // ADDED 2026-10-10 (the "too hard to use" round). The rail was 34 entries
+  // filed by department, and the jobs list — where every job lives — sat
+  // under "Pre-construction", a heading that by its own description means
+  // work you have NOT won. Contractors think by job, not by department.
+  // So the pages reached for daily lead, always open, and everything else
+  // follows below a "More" label in the groups it always had, collapsed.
+  // Job-scoped lists (RFIs, submittals, punch, drawings, material orders)
+  // are now one click from the job's own Overview, so they need not be here.
+  {
+    heading: "Daily work",
+    description: "Your jobs, who is where this week, what the crew wrote down, the bids you are chasing, money coming in, and the people you work with.",
+    // A house with a door: home base.
+    icon: groupIcon("M3.5 9 10 3.5 16.5 9M5 8v8.5h10V8M8.5 16.5v-4h3v4"),
+    primary: true,
+    items: [
+      item("/dashboard"),
+      item("/schedule"),
+      // Next to the schedule on purpose. The schedule answers WHEN jobs
+      // run; deployment answers WHERE everybody and everything is right
+      // now, and the page says so in its own first paragraph. A page in
+      // NAV_ITEMS but in no group renders nowhere: both the rail and the
+      // mobile drawer draw from navGroupsFor().
+      item("/deployment"),
+      item("/field-reports"),
+      item("/pipeline"),
+      item("/cash-flow"),
+      item("/contacts"),
+    ],
+  },
   {
     heading: "Pre-construction",
-    description: "Work you are chasing and have not won yet: leads, bid invitations, the people you bid to, and your price book.",
+    description: "Bidding and pricing set-up: bid invitations and their history, messages, alerts, and your price book, proposal clauses and wall types.",
     // A flag: the work you are chasing.
     icon: groupIcon("M5 16.5v-13M5 4h9.5l-2.5 3.25 2.5 3.25H5"),
     items: [
-      item("/dashboard"),
       item("/alerts"),
       item("/bids"),
-      item("/pipeline"),
-      item("/contacts"),
       item("/messages"),
       item("/catalog"),
       item("/proposals"),
@@ -667,43 +698,30 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Operations",
-    description: "The jobs under way — who and what is where this week, what the crew wrote down, and what is left to fix.",
+    description: "The rest of the field: what is left to fix and the site photos.",
     // A hard hat: the work under way.
     icon: groupIcon("M3.5 14h13M5 14v-1.5a5 5 0 0 1 10 0V14M10 7.5V4M8 4h4"),
     items: [
-      item("/schedule"),
-      // Next to the schedule on purpose. The schedule answers WHEN jobs
-      // run; deployment answers WHERE everybody and everything is right
-      // now, and the page says so in its own first paragraph. Grouping is
-      // by when in a job's life you reach for the thing, not by which
-      // table it reads — which is the argument for filing it under
-      // Logistics beside Equipment, and the thing this rail deliberately
-      // does not do. A page in NAV_ITEMS but in no group renders nowhere:
-      // both the rail and the mobile drawer draw from navGroupsFor().
-      item("/deployment"),
       item("/punch-lists"),
-      item("/field-reports"),
-      // Beside field reports, because it answers the same question on the
-      // same day — the report says what happened, the photos show it. Both
-      // are reached from a phone on site rather than from a desk, which is
-      // what this group is.
+      // The report says what happened, the photos show it — Field reports
+      // moved up to Daily work; photos are also on every job's Photos tab.
       item("/photos"),
     ],
   },
   {
     heading: "Financials",
-    description: "Money in, money held back, and what the work is costing: cash coming in, backcharges you are claiming, the lien deadlines that protect getting paid, budget against actual by phase code, and the company settings behind them.",
+    description: "Money held back and what the work is costing: work in progress, backcharges you are claiming, the lien deadlines that protect getting paid, budget against actual by phase code, and the company settings behind them.",
     // A bank note.
     icon: groupIcon("M3.5 6.5h13v7h-13zM10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM6 10h.01M14 10h.01"),
-    // Phase codes next to cash flow: both are company-wide money read
-    // across the whole book rather than one job, and both answer to
-    // VIEW_COMPANY_FINANCIALS.
+    // Cash flow moved up to Daily work (2026-10-10). WIP and phase codes
+    // lead: company-wide money read across the whole book rather than one
+    // job, both answering to VIEW_COMPANY_FINANCIALS.
     // Lien deadlines beside backcharges: both are the sub defending money
     // the GC is holding, one by objecting and one by preserving the right
     // to lien.
     // Settings USED to be last in this group and is not in any group now:
     // see NAV_FOOTER below.
-    items: [item("/cash-flow"), item("/wip"), item("/phase-codes"), item("/backcharges"), item("/lien-deadlines")],
+    items: [item("/wip"), item("/phase-codes"), item("/backcharges"), item("/lien-deadlines")],
   },
   {
     heading: "Compliance & safety",
@@ -795,19 +813,44 @@ export function activeFooterHref(items: NavItem[], pathname: string): string | n
  * `/vendors/pricing` and `/settings/assistant` land in the group of the
  * page they hang off rather than the first prefix that happens to match.
  * Pure, so navItems.test.ts can pin it; both nav surfaces read it through
- * useNavAccordion.
+ * useNavAccordion. Follows activeItemHref (below), so the group that opens
+ * is always the one holding the highlighted item — job pages included.
  */
 export function activeGroupHeading(groups: NavGroup[], pathname: string): string | null {
-  let best: { heading: string; length: number } | null = null;
+  const href = activeItemHref(groups, pathname);
+  if (!href) return null;
+  return groups.find((g) => g.items.some((i) => i.href === href))?.heading ?? null;
+}
+
+/**
+ * Routes with no nav entry of their own that belong to one that has.
+ * `/jobs/*` is every job page — where most of the work happens — and it has
+ * no rail item because the jobs list IS the dashboard (`/jobs` redirects
+ * there). Without this a job page matched nothing: every group collapsed
+ * and nothing was highlighted, on the page people spend the most time on.
+ */
+const NAV_ALIASES: Record<string, string> = { "/jobs": "/dashboard" };
+
+/**
+ * The href of the nav item that is the current page, or null. Longest
+ * matching href wins, so `/vendors/pricing` lights Vendor pricing and not
+ * Vendors as well; an alias prefix (NAV_ALIASES) counts as its target.
+ * Both nav surfaces highlight exactly this one item.
+ */
+export function activeItemHref(groups: NavGroup[], pathname: string): string | null {
+  const under = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
+  const candidates: { href: string; length: number }[] = [];
   for (const group of groups) {
     for (const entry of group.items) {
-      const matches = pathname === entry.href || pathname.startsWith(`${entry.href}/`);
-      if (matches && (!best || entry.href.length > best.length)) {
-        best = { heading: group.heading, length: entry.href.length };
-      }
+      if (under(entry.href)) candidates.push({ href: entry.href, length: entry.href.length });
     }
   }
-  return best?.heading ?? null;
+  for (const [prefix, target] of Object.entries(NAV_ALIASES)) {
+    const present = groups.some((g) => g.items.some((i) => i.href === target));
+    if (present && under(prefix)) candidates.push({ href: target, length: prefix.length });
+  }
+  candidates.sort((a, b) => b.length - a.length);
+  return candidates[0]?.href ?? null;
 }
 
 /** Prova's own pages -- selling Prova itself, and who is still logging in

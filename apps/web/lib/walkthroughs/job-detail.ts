@@ -35,7 +35,7 @@ export const jobDetailWalkthrough: Walkthrough = {
       anchor: "job-status",
       title: "Where the job is",
       body:
-        "Estimate, contracted, in progress or complete. An estimate becomes contracted further down this page, once it is signed. After that, press the button here when the work starts, and again when it is finished.",
+        "Estimate, contracted, in progress or complete. An estimate becomes contracted with Mark contracted at the bottom of the Estimate tab — the link here takes you there — once it is signed. After that, press the button here when the work starts, and again when it is finished.",
     },
     {
       anchor: "job-schedule",

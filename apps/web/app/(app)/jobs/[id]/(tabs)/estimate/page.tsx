@@ -525,18 +525,27 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
   );
   const isContractExecuted = contractIsExecuted(contractExecution);
 
-  return (
-    <div>
+  // The GC-facing bid document built from these lines, with its inclusions
+  // and exclusions. Its own route asserts MANAGE_ESTIMATING; this tab only
+  // needs VIEW_JOB_COSTS, so a member with one and not the other gets
+  // NoAccess there.
+  const proposalLink = (
+    <Link href={`/jobs/${job.id}/proposal`} className="text-sm text-link hover:underline">
+      Proposal &amp; exclusions →
+    </Link>
+  );
+
+  // Job costing & WIP. After contract it leads the tab, as it always has.
+  // On an ESTIMATE it is folded away at the bottom: an estimator came to
+  // type line items, and cost-to-cost percent complete, earned revenue and
+  // over/under billing on a job that has not started were 250 lines of
+  // accounting to scroll past first.
+  const costingSection = (
       <section className="mb-10">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold text-ink">Job costing &amp; WIP</h2>
-          {/* The GC-facing bid document built from these lines, with its
-              inclusions and exclusions. Its own route asserts
-              MANAGE_ESTIMATING; this tab only needs VIEW_JOB_COSTS, so a
-              member with one and not the other gets NoAccess there. */}
-          <Link href={`/jobs/${job.id}/proposal`} className="text-sm text-link hover:underline">
-            Proposal &amp; exclusions →
-          </Link>
+          {!isEstimateStage && <h2 className="text-lg font-semibold text-ink">Job costing &amp; WIP</h2>}
+          {/* On an estimate the proposal link sits above the line items. */}
+          {!isEstimateStage && proposalLink}
         </div>
         {/* WHAT THE LABOR IN THESE FIGURES IS MADE OF, SAID OUT LOUD AND
             DRIVEN BY THE DATA. This screen used to describe logged hours as
@@ -728,57 +737,15 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
           })}
         </div>
       </section>
+  );
+
+  return (
+    <div>
+      {!isEstimateStage && costingSection}
 
       {isEstimateStage ? (
         <>
-          <section className="mb-10" data-tour="job-wall-schedule">
-            <h2 className="mb-3 text-lg font-semibold text-ink">Wall schedule</h2>
-            <WallSchedule jobId={job.id} types={wallTypeInputs} runs={wallRunViews} unpricedRunLabels={unpricedWallRuns} />
-          </section>
-
-          <section className="mb-10" data-tour="job-bid-recap">
-            <h2 className="mb-1 text-lg font-semibold text-ink">Bid recap</h2>
-            <p className="mb-3 text-sm text-ink-body">
-              Built from each line&apos;s <span className="text-ink-label">budgeted cost</span>, not its price — markup
-              is per cost type, so material and subcontracted work need not carry the same rate as your own crew. A line
-              with no cost recorded is named below and marked up at nothing.
-              {bidRecapRow == null && bidDefaults != null
-                ? " These are your company defaults — saving them here keeps them on this job."
-                : ""}
-            </p>
-            <BidRecapPanel
-              jobId={job.id}
-              lines={bidRecapLines}
-              rates={bidRecapRates}
-              applied={
-                bidRecapRow?.appliedAt != null
-                  ? {
-                      at: formatInstant(bidRecapRow.appliedAt, timeZone, "numeric"),
-                      total: Number(bidRecapRow.appliedTotal ?? 0),
-                    }
-                  : null
-              }
-            />
-            {/* BELOW THE RECAP, because it is a question about the cost base the
-                recap marks up, and above the line list, because the answer is a
-                new line. Nothing is checked or stored — `missingIndirects` is
-                derived on every read. */}
-            <MissingIndirects jobId={job.id} missing={missingIndirectLines} />
-            {/* DIRECTLY BELOW `MissingIndirects`, because they are the same
-                kind of finding read at two ranges: that one asks whether a
-                FIXED LIST of general conditions is represented, this one asks
-                whether a quantity that exists somewhere else reached a line.
-                Both are muted, neither blocks, and putting them together is
-                what stops a reader treating one as more serious than the
-                other. */}
-            <EstimateCrossChecks checks={crossChecks} />
-            {/* BESIDE the cross-checks, because they answer adjacent halves of
-                the same question before a bid goes out: #630 asks what was
-                measured or carried and never priced, and this asks whether what
-                WAS priced looks like what the work has cost. Both advisory,
-                both silent when there is nothing to say. */}
-            <PriceAnomalies report={priceAnomalyReport} />
-          </section>
+          <div className="mb-6 flex justify-end">{proposalLink}</div>
 
           <section className="mb-10" data-tour="job-line-items">
             <h2 className="mb-3 text-lg font-semibold text-ink">Line items (estimate)</h2>
@@ -1116,6 +1083,55 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
             )}
           </section>
 
+          <section className="mb-10" data-tour="job-wall-schedule">
+            <h2 className="mb-3 text-lg font-semibold text-ink">Wall schedule</h2>
+            <WallSchedule jobId={job.id} types={wallTypeInputs} runs={wallRunViews} unpricedRunLabels={unpricedWallRuns} />
+          </section>
+
+          <section className="mb-10" data-tour="job-bid-recap">
+            <h2 className="mb-1 text-lg font-semibold text-ink">Bid recap</h2>
+            <p className="mb-3 text-sm text-ink-body">
+              Built from each line&apos;s <span className="text-ink-label">budgeted cost</span>, not its price — markup
+              is per cost type, so material and subcontracted work need not carry the same rate as your own crew. A line
+              with no cost recorded is named below and marked up at nothing.
+              {bidRecapRow == null && bidDefaults != null
+                ? " These are your company defaults — saving them here keeps them on this job."
+                : ""}
+            </p>
+            <BidRecapPanel
+              jobId={job.id}
+              lines={bidRecapLines}
+              rates={bidRecapRates}
+              applied={
+                bidRecapRow?.appliedAt != null
+                  ? {
+                      at: formatInstant(bidRecapRow.appliedAt, timeZone, "numeric"),
+                      total: Number(bidRecapRow.appliedTotal ?? 0),
+                    }
+                  : null
+              }
+            />
+            {/* BELOW THE RECAP, because it is a question about the cost base the
+                recap marks up, and above the line list, because the answer is a
+                new line. Nothing is checked or stored — `missingIndirects` is
+                derived on every read. */}
+            <MissingIndirects jobId={job.id} missing={missingIndirectLines} />
+            {/* DIRECTLY BELOW `MissingIndirects`, because they are the same
+                kind of finding read at two ranges: that one asks whether a
+                FIXED LIST of general conditions is represented, this one asks
+                whether a quantity that exists somewhere else reached a line.
+                Both are muted, neither blocks, and putting them together is
+                what stops a reader treating one as more serious than the
+                other. */}
+            <EstimateCrossChecks checks={crossChecks} />
+            {/* BESIDE the cross-checks, because they answer adjacent halves of
+                the same question before a bid goes out: #630 asks what was
+                measured or carried and never priced, and this asks whether what
+                WAS priced looks like what the work has cost. Both advisory,
+                both silent when there is nothing to say. */}
+            <PriceAnomalies report={priceAnomalyReport} />
+          </section>
+
           <section className="mb-10">
             <h2 className="mb-1 text-lg font-semibold text-ink">Estimate versions</h2>
             <p className="mb-3 text-sm text-ink-body">
@@ -1167,7 +1183,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
             </form>
           </section>
 
-          <section className="mb-10 rounded-lg border border-line-card bg-surface p-4" data-tour="job-lock-in">
+          <section id="job-lock-in" className="mb-10 scroll-mt-4 rounded-lg border border-line-card bg-surface p-4" data-tour="job-lock-in">
             <h2 className="mb-2 text-lg font-semibold text-ink">Ready to lock this in?</h2>
             <p className="mb-3 text-sm text-ink-body">
               Once contracted, line items can only change through a change order — this keeps an audit trail of
@@ -1183,6 +1199,13 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
               </p>
             )}
           </section>
+
+          <details className="mb-10 rounded-lg border border-line-card p-4">
+            <summary className="cursor-pointer text-lg font-semibold text-ink">
+              Job costing &amp; WIP <span className="text-sm font-normal text-ink-muted">— for once the work starts</span>
+            </summary>
+            <div className="mt-4">{costingSection}</div>
+          </details>
         </>
       ) : (
         <ChangeOrders
