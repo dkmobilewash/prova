@@ -385,6 +385,26 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         levelByPage={levelByPage}
       />
 
+      {/* ── WHOSE SHEET IS THIS, AND WHY THERE IS A HEADING ABOVE THE LIST ──
+          A browser run reported "Measured on sheet 21" as a stale caption,
+          seen while sheet 1 was open. It was not stale and nothing here was
+          wrong: there ARE measurements on sheet 21, and each measured sheet
+          gets its own section below the viewer.
+
+          It read as a caption because it sits directly under the drawing with
+          nothing saying these are ALL the measured sheets rather than the one
+          on screen. The heading costs a line and makes the next person's
+          reading the right one — which is cheaper than the report that comes
+          back a second time. */}
+      {sheets.length > 0 && (
+        <h2 className="text-sm font-semibold text-ink-label">
+          Measurements by sheet
+          <span className="ml-2 font-normal text-ink-muted">
+            every sheet with measurements on it, not just the one open above
+          </span>
+        </h2>
+      )}
+
       {sheets.map((sheet) => (
         <div key={sheet.id} className="flex flex-col gap-2">
           <h3 className="text-sm font-semibold text-ink-label">
