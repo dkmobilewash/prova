@@ -62,7 +62,7 @@ export function UseLaborCostButton({
             if (!result.ok) setError(result.error);
           });
         }}
-        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
       >
         {isPending ? "Setting…" : `Use ${money(decision.unitCost)}/unit as the cost`}
       </button>

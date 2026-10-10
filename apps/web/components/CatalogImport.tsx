@@ -145,7 +145,7 @@ export function CatalogImport({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+        className="rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
       >
         Import a price list
       </button>
@@ -193,7 +193,7 @@ export function CatalogImport({
           type="file"
           accept=".csv,.tsv,.txt,text/csv,text/plain"
           onChange={(event) => onFile(event.target.files?.[0])}
-          className="text-xs text-ink-body file:mr-3 file:rounded-md file:border file:border-line-card file:bg-neutral-800 file:px-3 file:py-1.5 file:text-xs file:text-ink-label"
+          className="text-xs text-ink-body file:mr-3 file:rounded-md file:border file:border-line-card file:bg-rail-hover file:px-3 file:py-1.5 file:text-xs file:text-ink-label"
         />
         <button
           type="button"
@@ -222,12 +222,12 @@ export function CatalogImport({
               {split.fresh.length} to add
             </span>
             {split.duplicatesOfExisting.length > 0 && (
-              <span className="rounded-full border border-neutral-400 bg-neutral-800 px-2 py-0.5 text-ink-label">
+              <span className="rounded-full border border-neutral-400 bg-rail-hover px-2 py-0.5 text-ink-label">
                 {split.duplicatesOfExisting.length} already in the catalog — skipped
               </span>
             )}
             {split.duplicatesWithinFile.length > 0 && (
-              <span className="rounded-full border border-neutral-400 bg-neutral-800 px-2 py-0.5 text-ink-label">
+              <span className="rounded-full border border-neutral-400 bg-rail-hover px-2 py-0.5 text-ink-label">
                 {split.duplicatesWithinFile.length} repeated in the file — skipped
               </span>
             )}
@@ -288,7 +288,7 @@ export function CatalogImport({
                 {labor.consequences.map((option) => (
                   <label
                     key={option.reading}
-                    className="flex cursor-pointer items-baseline gap-2 rounded px-1 py-1 text-xs hover:bg-neutral-800"
+                    className="flex cursor-pointer items-baseline gap-2 rounded px-1 py-1 text-xs hover:bg-rail-hover"
                   >
                     {/* `laborColumnChoice`, not `laborColumn` — these radios
                         sit OUTSIDE the `<ActionForm>` below, exactly as the

@@ -87,19 +87,19 @@ export default async function RevisionPage({ params }: { params: Promise<{ revis
   return (
     <PageShell width="working">
       <div className="space-y-6">
-      <nav className="text-sm text-slate-400">
-        <Link href="/drawings" className="hover:text-slate-200">
+      <nav className="text-sm text-ink-muted">
+        <Link href="/drawings" className="hover:text-ink-label">
           Drawings
         </Link>
         <span className="px-2">/</span>
-        <span className="text-slate-200">
+        <span className="text-ink-label">
           {revision.set.name} — {revision.label}
         </span>
       </nav>
 
       <header className="space-y-1">
-        <h1 className="text-xl font-semibold text-slate-100">{revision.set.name}</h1>
-        <p className="text-sm text-slate-400">
+        <h1 className="text-xl font-semibold text-ink">{revision.set.name}</h1>
+        <p className="text-sm text-ink-muted">
           Revision {revision.label}
           {revision.set.job ? ` · ${revision.set.job.name}` : ""}
         </p>

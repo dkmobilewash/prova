@@ -30,7 +30,7 @@ export type RfiRowData = RfiDefaults & {
 // 44px, from 34px.  +  is what makes min-h centre
 // the label rather than pin it to the top.
 const btn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 export function RfiRow({
   rfi,
@@ -98,7 +98,7 @@ export function RfiRow({
           <FormDraftNotice draft={editDraft} />
           <RfiFields defaults={rfi} />
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
@@ -236,7 +236,7 @@ export function RfiRow({
           </p>
 
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
@@ -284,7 +284,7 @@ export function RfiRow({
               Overdue
             </span>
           ) : (
-            <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
+            <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">
               {statusLabel(rfi.status)}
             </span>
           )}
@@ -328,7 +328,7 @@ export function RfiRow({
         </p>
 
         {error && (
-          <p role="alert" className="mt-1 text-sm text-red-400">
+          <p role="alert" className="mt-1 text-sm text-danger">
             {error}
           </p>
         )}
@@ -366,7 +366,7 @@ export function RfiRow({
               onConfirm={() => run(() => deleteRfi(rfi.id))}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }

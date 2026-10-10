@@ -62,7 +62,7 @@ export function BidLines({
       <button
         type="button"
         onClick={() => setAdding(true)}
-        className="mt-2 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+        className="mt-2 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
       >
         Add an alternate, unit price or allowance
       </button>
@@ -138,7 +138,7 @@ export function BidLines({
                       <button
                         type="button"
                         onClick={() => setEditing(line.id)}
-                        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+                        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
                       >
                         Edit
                       </button>
@@ -203,7 +203,7 @@ export function BidLines({
         <button
           type="button"
           onClick={() => setAdding(true)}
-          className="mt-3 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+          className="mt-3 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Add another
         </button>
@@ -232,7 +232,7 @@ function AcceptedControl({ line }: { line: BidLineRow }) {
       </label>
       <SubmitButton
         type="submit"
-        className="rounded-md border border-line-card px-2 py-0.5 text-xs text-ink-label hover:bg-neutral-800"
+        className="rounded-md border border-line-card px-2 py-0.5 text-xs text-ink-label hover:bg-rail-hover"
       >
         Save
       </SubmitButton>
@@ -339,7 +339,7 @@ function LineForm({
       <button
         type="button"
         onClick={onDone}
-        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
       >
         Cancel
       </button>

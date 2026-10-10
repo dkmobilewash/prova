@@ -79,7 +79,7 @@ export function EquipmentDeploymentControls({
           <button
             type="button"
             onClick={() => setMode("send")}
-            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover"
           >
             Send out to a job
           </button>
@@ -88,7 +88,7 @@ export function EquipmentDeploymentControls({
           <button
             type="button"
             onClick={() => setMode("return")}
-            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover"
           >
             Bring it back
           </button>
@@ -97,7 +97,7 @@ export function EquipmentDeploymentControls({
           <button
             type="button"
             onClick={() => setShowHistory((v) => !v)}
-            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover"
           >
             {showHistory ? "Hide history" : `History (${history.length})`}
           </button>
@@ -153,7 +153,7 @@ export function EquipmentDeploymentControls({
             Note
             <input type="text" name="notes" placeholder="optional" className={inputClass} />
           </label>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
@@ -213,7 +213,7 @@ export function EquipmentDeploymentControls({
               It went out to {open.jobName} on {dayLabel(open.sentOutOn)}.
             </span>
           </label>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
@@ -244,7 +244,7 @@ export function EquipmentDeploymentControls({
         </form>
       )}
 
-      {error && mode === "idle" && <p className="mt-2 text-sm text-red-400">{error}</p>}
+      {error && mode === "idle" && <p className="mt-2 text-sm text-danger">{error}</p>}
 
       {showHistory && (
         <ul className="mt-2 flex flex-col gap-1 rounded-md border border-line-row bg-canvas p-3">
@@ -310,7 +310,7 @@ export function EquipmentDeploymentControls({
                       className={inputClass}
                     />
                   </label>
-                  {error && <p className="text-sm text-red-400">{error}</p>}
+                  {error && <p className="text-sm text-danger">{error}</p>}
                   <div className="flex gap-2">
                     <button
                       type="submit"
@@ -375,9 +375,9 @@ export function EquipmentDeploymentControls({
                           else router.refresh();
                         });
                       }}
-                      deleteClassName="shrink-0 rounded border border-line-card px-2 py-1 text-xs text-ink-body hover:border-red-500 hover:text-red-400"
+                      deleteClassName="shrink-0 rounded border border-line-card px-2 py-1 text-xs text-ink-body hover:border-red-500 hover:text-danger"
                       cancelClassName="rounded border border-line-card px-2 py-1 text-xs text-ink-label"
-                      confirmClassName="rounded border border-red-500 px-2 py-1 text-xs text-red-400"
+                      confirmClassName="rounded border border-red-500 px-2 py-1 text-xs text-danger"
                     />
                   ) : null
                 }
@@ -389,7 +389,7 @@ export function EquipmentDeploymentControls({
                     setEditingId(stay.id);
                     setError(null);
                   }}
-                  className="rounded border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-neutral-800"
+                  className="rounded border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail-hover"
                 >
                   Edit
                 </button>

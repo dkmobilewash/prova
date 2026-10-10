@@ -35,7 +35,7 @@ export type SubmittalRowData = SubmittalDefaults & {
 };
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 const primaryBtn =
   "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50";
 
@@ -100,7 +100,7 @@ export function SubmittalRow({
           </p>
           <FormDraftNotice draft={editDraft} />
           <SubmittalFields defaults={submittal} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
               {isPending ? (
@@ -161,7 +161,7 @@ export function SubmittalRow({
             </label>
           </div>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
 
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
@@ -272,7 +272,7 @@ export function SubmittalRow({
             </label>
           </div>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
 
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
@@ -301,7 +301,7 @@ export function SubmittalRow({
         ? "bg-tag-amber text-tag-amber-ink"
         : state === "WITH_GC"
           ? "bg-tag-brand text-tag-brand-ink"
-          : "bg-neutral-800 text-ink-body";
+          : "bg-rail-hover text-ink-body";
 
   return (
     <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
@@ -315,7 +315,7 @@ export function SubmittalRow({
             <span className={`rounded px-1.5 py-0.5 text-xs ${stateChip}`}>{stateLabel(state)}</span>
           )}
           {state === "APPROVED" && latest && (
-            <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
+            <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">
               Build from revision {latest.revisionNumber}
             </span>
           )}
@@ -369,7 +369,7 @@ export function SubmittalRow({
             `${submittal.specSection || submittal.drawingReference ? " · " : ""}logged by ${submittal.submittedByName}`}
         </p>
 
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && <p className="mt-1 text-sm text-danger">{error}</p>}
       </div>
 
       {/* Arming the delete empties this row. "Record as sent" is gated on
@@ -390,7 +390,7 @@ export function SubmittalRow({
               onConfirm={() => run(() => deleteSubmittal(submittal.id))}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }

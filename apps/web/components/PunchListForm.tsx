@@ -134,7 +134,7 @@ export function PunchListForm({
           the person who just submitted is usually still looking at the
           field they think is wrong, not at this line. */}
       {error && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}

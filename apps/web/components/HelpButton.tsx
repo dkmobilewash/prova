@@ -173,7 +173,7 @@ export function HelpButton({
         // matches the bell beside it. Same call MobileNav made about its
         // hamburger: half a subcontractor's people are in the field, and the
         // control for "I am stuck" is a poor place to save eight pixels.
-        className="flex items-center gap-1.5 rounded-md p-3 text-slate-400 hover:bg-slate-800 hover:text-slate-200 sm:p-2"
+        className="flex items-center gap-1.5 rounded-md p-3 text-ink-muted hover:bg-rail-hover hover:text-ink-label sm:p-2"
       >
         <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5 shrink-0" aria-hidden="true">
           <circle cx="10" cy="10" r="7.25" stroke="currentColor" strokeWidth="1.4" />
@@ -201,19 +201,19 @@ export function HelpButton({
             type="button"
             aria-label="Close help"
             onClick={() => setIsOpen(false)}
-            className="fixed inset-0 z-40 cursor-default bg-slate-950/40"
+            className="fixed inset-0 z-40 cursor-default bg-canvas/40"
           />
           <div
             role="dialog"
             aria-label="Help"
-            className="fixed right-2 top-14 z-50 max-h-[calc(100dvh-4.5rem)] w-[min(26rem,calc(100vw-1rem))] overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl sm:right-4"
+            className="fixed right-2 top-14 z-50 max-h-[calc(100dvh-4.5rem)] w-[min(26rem,calc(100vw-1rem))] overflow-y-auto rounded-lg border border-line-card bg-surface p-4 shadow-xl sm:right-4"
           >
             <div className="mb-3 flex items-start justify-between gap-3">
-              <h2 className="text-sm font-semibold text-slate-100">Help</h2>
+              <h2 className="text-sm font-semibold text-ink">Help</h2>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="-mr-1 -mt-1 rounded-md p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                className="-mr-1 -mt-1 rounded-md p-1 text-ink-muted hover:bg-rail-hover hover:text-ink-label"
                 aria-label="Close"
               >
                 <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
@@ -265,7 +265,7 @@ export function HelpButton({
                 after. Two people build this and one is not an engineer;
                 "instant support" would be a lie and a support widget that
                 implies it is worse than a quiet email address. */}
-            <p className="mb-3 text-sm text-slate-400">
+            <p className="mb-3 text-sm text-ink-muted">
               A real person reads this — there are two of us. We answer within one business day,
               usually sooner. Nobody is watching a queue at 2 AM, so if it is stopping you filing
               something today, say so in the first line.
@@ -273,7 +273,7 @@ export function HelpButton({
 
             {sentTo ? (
               <div className="flex flex-col gap-3">
-                <p className="text-sm text-slate-200">
+                <p className="text-sm text-ink-label">
                   Sent to <span className="font-mono text-xs">{sentTo}</span>. It is in{" "}
                   <Link href="/messages" className="text-blue-400 underline">
                     Messages
@@ -284,7 +284,7 @@ export function HelpButton({
                 <button
                   type="button"
                   onClick={() => setIsOpen(false)}
-                  className="self-start rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500"
+                  className="self-start rounded-md border border-line-card px-4 py-2 text-sm text-ink-body hover:border-line-card"
                 >
                   Close
                 </button>
@@ -312,7 +312,7 @@ export function HelpButton({
                 {/* Shown rather than prefilled into the URL. A mailto body
                     would put whatever they typed into a URL, which is the
                     one place this app will not put user content. */}
-                <pre className="overflow-x-auto rounded-md border border-slate-800 bg-slate-950 p-2 text-xs text-slate-400">
+                <pre className="overflow-x-auto rounded-md border border-line-row bg-canvas p-2 text-xs text-ink-muted">
                   {[`Company: ${companyName}`, `Page: ${openedOn ?? "not recorded"}`].join("\n")}
                 </pre>
               </div>
@@ -341,7 +341,7 @@ export function HelpButton({
                     as untrusted regardless of what this sends. */}
                 <input type="hidden" name="pagePath" value={openedOn ?? ""} />
 
-                <label className="flex flex-col gap-1 text-sm text-slate-300">
+                <label className="flex flex-col gap-1 text-sm text-ink-body">
                   What do you need?
                   <textarea
                     ref={textarea}
@@ -356,8 +356,8 @@ export function HelpButton({
                   />
                 </label>
 
-                <div className="rounded-md border border-slate-800 bg-slate-950 p-3">
-                  <p className="text-xs font-medium text-slate-400">We will send with it:</p>
+                <div className="rounded-md border border-line-row bg-canvas p-3">
+                  <p className="text-xs font-medium text-ink-muted">We will send with it:</p>
                   <ul className="mt-1 list-disc pl-4 text-xs text-ink-muted">
                     {discloses.map((line) => (
                       <li key={line}>{line}</li>
@@ -369,7 +369,7 @@ export function HelpButton({
                   </p>
                 </div>
 
-                {error && <p className="text-sm text-red-400">{error}</p>}
+                {error && <p className="text-sm text-danger">{error}</p>}
 
                 <div className="flex gap-2">
                   {/* Disabled in flight. Two clicks would be two emails
@@ -394,7 +394,7 @@ export function HelpButton({
                     type="button"
                     disabled={isPending}
                     onClick={() => setIsOpen(false)}
-                    className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 disabled:opacity-50"
+                    className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-body hover:border-line-card disabled:opacity-50"
                   >
                     Cancel
                   </button>

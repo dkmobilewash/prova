@@ -233,7 +233,7 @@ export default async function AssistantAuditPage() {
             )}
           </>
         ) : (
-          <p className="mb-3 text-sm text-red-300" data-ask="allowance-unreadable">
+          <p className="mb-3 text-sm text-danger" data-ask="allowance-unreadable">
             This month&apos;s allowance can&apos;t be read on this deployment — the{" "}
             <code>AskAllowancePeriod</code> table is missing or unreadable, which means this database is behind
             the code. <strong>The assistant is refusing every question</strong> until it is fixed: this cap fails
@@ -305,7 +305,7 @@ export default async function AssistantAuditPage() {
           </p>
           </>
         ) : (
-          <p className="mb-3 text-sm text-red-300" data-ask="usage-unreadable">
+          <p className="mb-3 text-sm text-danger" data-ask="usage-unreadable">
             Usage can&apos;t be read on this deployment — the <code>AskUsage</code> table is missing or unreadable,
             which means this database is behind the code. The box still answers, but the{" "}
             {ASK_LIMITS.perPersonPerHour}-per-person-per-hour and {ASK_LIMITS.perCompanyPerDay}-per-company-per-day

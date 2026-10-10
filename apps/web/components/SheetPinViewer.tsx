@@ -255,7 +255,7 @@ export function SheetPinViewer({ fileUrl, page, pins, photos, punchItems }: Prop
             className={`rounded-md border px-3 py-2 text-sm ${
               placing === kind
                 ? "border-sky-400 bg-sky-400/15 text-sky-100"
-                : "border-slate-700 text-slate-300 hover:border-slate-500"
+                : "border-line-card text-ink-body hover:border-line-card"
             }`}
           >
             {placing === kind ? `Tap the sheet to place a ${kind.toLowerCase()} pin` : `Pin a ${kind.toLowerCase()}`}
@@ -267,7 +267,7 @@ export function SheetPinViewer({ fileUrl, page, pins, photos, punchItems }: Prop
         ref={boxRef}
         onClick={onSheetClick}
         data-testid="sheet-surface"
-        className={`relative w-full overflow-hidden rounded-md border border-slate-700 ${
+        className={`relative w-full overflow-hidden rounded-md border border-line-card ${
           placing ? "cursor-crosshair" : ""
         }`}
         style={{ aspectRatio: `${page.widthPt} / ${page.heightPt}` }}
@@ -324,9 +324,9 @@ export function SheetPinViewer({ fileUrl, page, pins, photos, punchItems }: Prop
           once about a thing that may never be placed. */}
       {draft && placing === "PHOTO" && (
         <div className="space-y-2">
-          <p className="text-sm text-slate-300">Which photo is this?</p>
+          <p className="text-sm text-ink-body">Which photo is this?</p>
           {photos.length === 0 ? (
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-ink-muted">
               No photos on this job yet. Take one on the phone, or add one from the job&apos;s Photos tab, and it
               will be here.
             </p>
@@ -340,7 +340,7 @@ export function SheetPinViewer({ fileUrl, page, pins, photos, punchItems }: Prop
                   aria-pressed={targetId === photo.id}
                   title={photo.caption ?? undefined}
                   className={`overflow-hidden rounded-md border ${
-                    targetId === photo.id ? "border-sky-400 ring-2 ring-sky-400/40" : "border-slate-700"
+                    targetId === photo.id ? "border-sky-400 ring-2 ring-sky-400/40" : "border-line-card"
                   }`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element --
@@ -355,7 +355,7 @@ export function SheetPinViewer({ fileUrl, page, pins, photos, punchItems }: Prop
 
       {draft && placing === "PUNCH" && (
         <div className="space-y-2">
-          <p className="text-sm text-slate-300">Which item is this?</p>
+          <p className="text-sm text-ink-body">Which item is this?</p>
           {punchItems.length > 0 && (
             <div className="max-h-48 space-y-1 overflow-y-auto">
               {punchItems.map((item) => (
@@ -370,19 +370,19 @@ export function SheetPinViewer({ fileUrl, page, pins, photos, punchItems }: Prop
                   className={`block w-full rounded-md border px-3 py-2 text-left text-sm ${
                     targetId === item.id
                       ? "border-sky-400 bg-sky-400/15 text-sky-100"
-                      : "border-slate-700 text-slate-300 hover:border-slate-500"
+                      : "border-line-card text-ink-body hover:border-line-card"
                   }`}
                 >
                   {item.description}
                   {/* `area` is the free text this pin is replacing. Shown while
                       it still exists, so a person can see the two agree. */}
-                  {item.area && <span className="ml-2 text-xs text-slate-400">{item.area}</span>}
-                  {item.dueOn && <span className="ml-2 text-xs text-slate-400">due {item.dueOn}</span>}
+                  {item.area && <span className="ml-2 text-xs text-ink-muted">{item.area}</span>}
+                  {item.dueOn && <span className="ml-2 text-xs text-ink-muted">due {item.dueOn}</span>}
                 </button>
               ))}
             </div>
           )}
-          <label className="block text-sm text-slate-300">
+          <label className="block text-sm text-ink-body">
             {punchItems.length > 0 ? "Or raise a new one here" : "Raise a new item here"}
             <input
               name="newPunch"
@@ -391,7 +391,7 @@ export function SheetPinViewer({ fileUrl, page, pins, photos, punchItems }: Prop
                 setNewPunch(e.target.value);
                 if (e.target.value) setTargetId(null);
               }}
-              className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100"
+              className="mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-ink"
               placeholder="Ceiling grid out of level"
             />
           </label>
@@ -399,13 +399,13 @@ export function SheetPinViewer({ fileUrl, page, pins, photos, punchItems }: Prop
       )}
 
       {draft && placing === "NOTE" && (
-        <label className="block text-sm text-slate-300">
+        <label className="block text-sm text-ink-body">
           What should this note say?
           <input
             name="note"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100"
+            className="mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-ink"
             inputMode="text"
             placeholder="Hold this wall for the owner's millwork"
           />
@@ -420,7 +420,7 @@ export function SheetPinViewer({ fileUrl, page, pins, photos, punchItems }: Prop
               setDraft(null);
               setError(null);
             }}
-            className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300"
+            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body"
           >
             Cancel
           </button>
@@ -442,17 +442,17 @@ export function SheetPinViewer({ fileUrl, page, pins, photos, punchItems }: Prop
         </div>
       )}
 
-      {error && <p className="text-sm text-rose-300">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {pins.length === 0 ? (
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-ink-muted">
           Nothing is pinned on this sheet yet. Pick what to pin, then tap the drawing.
         </p>
       ) : (
-        <ul className="divide-y divide-slate-800 rounded-md border border-slate-800">
+        <ul className="divide-y divide-line-row rounded-md border border-line-row">
           {pins.map((pin) => (
             <li key={pin.id} className="flex items-center justify-between gap-3 p-3 text-sm">
-              <span className="text-slate-200">
+              <span className="text-ink-label">
                 <span
                   className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
                   style={{ backgroundColor: PIN_COLOUR[pin.kind] }}
@@ -461,7 +461,7 @@ export function SheetPinViewer({ fileUrl, page, pins, photos, punchItems }: Prop
                 {/* The kind is a WORD as well as a colour. A status carried by
                     colour alone is unreadable to a third of the people holding
                     the phone, and unreadable to everyone in direct sun. */}
-                <span className="text-slate-400">{pin.kind.toLowerCase()}</span> — {describePin(pin)}
+                <span className="text-ink-muted">{pin.kind.toLowerCase()}</span> — {describePin(pin)}
               </span>
               {/* The shared control rather than a hand-rolled pair: it owns
                   the armed geometry, including the full-width COLUMN with

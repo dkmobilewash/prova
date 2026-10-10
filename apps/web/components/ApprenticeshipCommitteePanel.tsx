@@ -30,7 +30,7 @@ import type { CommitteeRow } from "@/lib/das-query";
  */
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -143,7 +143,7 @@ function CommitteeRowCard({
                 }
                 deleteClassName={btn}
                 cancelClassName={btn}
-                confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+                confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
               />
             ) : null
           }
@@ -193,7 +193,7 @@ function CommitteeRowCard({
       )}
 
       {error && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}
@@ -265,7 +265,7 @@ export function ApprenticeshipCommitteePanel({
         >
           <ApprenticeshipCommitteeFields values={EMPTY_COMMITTEE} crafts={crafts} />
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}

@@ -140,7 +140,7 @@ export default async function CashFlowPage() {
           ) : (
             <p className="mt-4 text-sm text-ink-body">
               Invoices are raised on the job they bill, in its Invoices section.{" "}
-              <Link href="/jobs" className="text-link hover:text-brand">
+              <Link href="/jobs" className="text-link hover:text-link-hover">
                 Open a job
               </Link>
               .
@@ -161,9 +161,9 @@ export default async function CashFlowPage() {
         one.
       </p>
 
-      <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4" data-tour="cash-flow-wip">
-        <h2 className="mb-1 text-sm font-semibold text-slate-100">WIP schedule</h2>
-        <p className="mb-3 max-w-2xl text-sm text-slate-400">
+      <section className="mb-6 rounded-lg border border-line-row bg-surface p-4" data-tour="cash-flow-wip">
+        <h2 className="mb-1 text-sm font-semibold text-ink">WIP schedule</h2>
+        <p className="mb-3 max-w-2xl text-sm text-ink-muted">
           Percentage of completion by the cost-to-cost method, one row per contracted or in-progress job, with
           over- and under-billings split into the two columns a surety or CPA reads them as. Opens in a
           spreadsheet. A figure whose estimates are mostly missing is left <strong>blank rather than guessed</strong>,
@@ -201,7 +201,7 @@ export default async function CashFlowPage() {
                     className={
                       bucket === "CURRENT" || agingSummary.byBucket[bucket] === 0
                         ? "text-ink"
-                        : "text-amber-400"
+                        : "text-warn"
                     }
                   >
                     {money(agingSummary.byBucket[bucket])}
@@ -254,7 +254,7 @@ export default async function CashFlowPage() {
                       {row.effectiveDueDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
                     </td>
                     <td className="py-1 text-right">
-                      <span className={row.bucket === "CURRENT" ? "text-ink-body" : "text-amber-400"}>
+                      <span className={row.bucket === "CURRENT" ? "text-ink-body" : "text-warn"}>
                         {row.bucket === "CURRENT" ? "Current" : `${row.daysPastDue}d overdue`}
                       </span>
                     </td>
@@ -333,7 +333,7 @@ export default async function CashFlowPage() {
             <tbody>
               {forecast.months.map((month) => (
                 <tr key={month.key} className="border-t border-line-row">
-                  <td className={`py-1 pr-3 ${month.key === "OVERDUE" ? "text-amber-400" : "text-ink-label"}`}>
+                  <td className={`py-1 pr-3 ${month.key === "OVERDUE" ? "text-warn" : "text-ink-label"}`}>
                     {month.label}
                   </td>
                   <td className="py-1 pr-3 text-right text-ink-body">{money(month.arExpected)}</td>

@@ -119,7 +119,7 @@ export function IntakeForwardBox({ address, isOwner }: { address: string; isOwne
                 }
                 deleteClassName="rounded border border-line-card px-3 py-1 text-sm text-ink-muted hover:bg-surface-muted disabled:opacity-50"
                 cancelClassName="rounded border border-line-card px-3 py-1 text-sm text-ink hover:bg-surface"
-                confirmClassName="rounded border border-red-500 px-3 py-1 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+                confirmClassName="rounded border border-red-500 px-3 py-1 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
               />
             ) : undefined
           }
@@ -134,7 +134,7 @@ export function IntakeForwardBox({ address, isOwner }: { address: string; isOwne
         </RowActions>
       </div>
       {note && <p className="mt-2 text-sm text-ink-body">{note}</p>}
-      {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
     </section>
   );
 }

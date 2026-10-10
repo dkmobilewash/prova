@@ -33,7 +33,7 @@ export function JobSummaryHeader({
     <div className="mb-4 rounded-lg border border-line-card bg-surface p-4 print:hidden">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-xl font-semibold text-ink">{summary.name}</h1>
-        <span className="inline-flex items-center rounded-full bg-neutral-800 px-2.5 py-0.5 text-xs font-medium text-ink-label">
+        <span className="inline-flex items-center rounded-full bg-rail-hover px-2.5 py-0.5 text-xs font-medium text-ink-label">
           {statusLabel}
         </span>
       </div>

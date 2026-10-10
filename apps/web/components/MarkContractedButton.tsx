@@ -37,7 +37,7 @@ export function MarkContractedButton({
       >
         {isPending ? "Marking as contracted…" : "Mark as contracted"}
       </button>
-      {error && <p className="mt-2 text-sm text-amber-400">{error}</p>}
+      {error && <p className="mt-2 text-sm text-warn">{error}</p>}
     </div>
   );
 }

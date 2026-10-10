@@ -150,7 +150,7 @@ export default async function PhotosPage({
   // on site taps to get to their own job.
   const chip = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
   // A tag with no photos on it is a dead chip: tapping it empties the
@@ -383,7 +383,7 @@ export default async function PhotosPage({
                   filters travel with the link, except that an unfiltered
                   gallery lands on the SAFE selection rather than on
                   "everything": see `selectionFromSharedFilter`. */}
-              <p className="mt-3 text-sm text-slate-400">
+              <p className="mt-3 text-sm text-ink-muted">
                 <Link
                   href={photoReportHref(activeJob, {
                     selection: selectionFromSharedFilter(activeShared),

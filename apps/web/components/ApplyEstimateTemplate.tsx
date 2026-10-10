@@ -63,7 +63,7 @@ export function ApplyEstimateTemplate({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
       >
         Start from a template
       </button>
@@ -152,7 +152,7 @@ export function ApplyEstimateTemplate({
             setPicked("");
             setError(null);
           }}
-          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Cancel
         </button>

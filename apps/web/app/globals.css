@@ -25,10 +25,9 @@
    then `dark`, and a plain text field, which our CSS paints entirely, was
    byte-identical in both arms.
 
-   UNCONDITIONAL, and that is a fact about this app rather than a
-   shortcut. There is no `darkMode` in tailwind.config.ts and no
-   `data-theme` anywhere: the palette flipped to dark in full on
-   2026-09-11. The five printable documents that DO sit on white paper —
+   THE DEFAULT, and dark is the default theme: the palette flipped to dark
+   in full on 2026-09-11, and the light theme (2026-10-10, block below) is
+   opt-in. The five printable documents that DO sit on white paper —
    WH-347, DAS-140, DAS-142, the photo report, the union remittance, the
    pay application — are white CARDS inside this dark shell, not white
    pages, and each has zero native controls, so nothing on them is painted
@@ -39,6 +38,25 @@
    document. */
 :root {
   color-scheme: dark;
+}
+
+/* THE LIGHT THEME (2026-10-10) is the one place a second value is right:
+   `data-theme="light"` on <html> is set before first paint by the script in
+   app/layout.tsx, from the theme switch or the OS preference. On that ground
+   a dark-painted date glyph would be the 1.1:1 defect above in reverse, so
+   the browser is told to paint its controls for a light page. Dark stays
+   the default at :root — no script, no attribute, the dark app. */
+[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* The logo files are WHITE artwork with yellow stripes, drawn for the dark
+   ground — on the light rail the white half vanishes. Inverting lightness
+   while rotating the hue back keeps the stripes gold and turns the white
+   near-black. A second set of image files would be the purer fix; this is
+   one rule instead of two assets to keep in step. */
+[data-theme="light"] .logo-on-theme {
+  filter: invert(1) hue-rotate(180deg);
 }
 
 body {

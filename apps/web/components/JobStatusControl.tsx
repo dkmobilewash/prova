@@ -61,7 +61,7 @@ export function JobStatusControl({
                 }
               });
             }}
-            className="rounded-md border border-line-card px-3 py-1.5 text-sm font-medium text-ink-label hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-md border border-line-card px-3 py-1.5 text-sm font-medium text-ink-label hover:bg-rail-hover disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isPending ? (
               <span className="inline-flex items-center gap-1.5">

@@ -13,11 +13,11 @@ import { updateJobRetainageTerms, createRetainageRelease, deleteRetainageRelease
 import { ActionForm } from "@/components/ActionForm";
 import { PercentField } from "@/components/PercentField";
 
-const rowDeleteClass = "text-xs text-red-400 hover:underline";
+const rowDeleteClass = "text-xs text-danger hover:underline";
 const rowCancelClass =
-  "rounded-md border border-slate-700 px-2 py-1 text-xs text-ink-label hover:border-slate-500";
+  "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:border-line-card";
 const rowConfirmClass =
-  "rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10";
+  "rounded-md border border-red-500 px-2 py-1 text-xs text-danger hover:bg-red-500/10";
 
 /**
  * Retainage — its own tab, its own fixed slot in the old monolith's
@@ -119,7 +119,7 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
             className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
           />
         </label>
-        <SubmitButton type="submit" className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700">
+        <SubmitButton type="submit" className="rounded-md bg-rail-hover px-3 py-1.5 text-sm font-medium text-ink hover:bg-lift">
           Save
         </SubmitButton>
       </ActionForm>
@@ -145,7 +145,7 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
         </div>
         <div>
           <p className="text-xs text-ink-muted">Outstanding balance</p>
-          <p className={retainageSummary.balance > 0 ? "text-amber-400" : "text-green-400"}>{money(retainageSummary.balance)}</p>
+          <p className={retainageSummary.balance > 0 ? "text-warn" : "text-ok"}>{money(retainageSummary.balance)}</p>
         </div>
       </div>
 
@@ -185,7 +185,7 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
                     cancelClassName={rowCancelClass}
                     confirmClassName={rowConfirmClass}
                     hint={
-                      <span className="max-w-[16rem] text-right text-amber-300">
+                      <span className="max-w-[16rem] text-right text-warn">
                         {money(Number(release.amount))} goes back into the outstanding retainage balance.
                       </span>
                     }
@@ -222,7 +222,7 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
           placeholder="Note (optional)"
           className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
         />
-        <SubmitButton type="submit" className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700">
+        <SubmitButton type="submit" className="rounded-md bg-rail-hover px-3 py-1.5 text-sm font-medium text-ink hover:bg-lift">
           Log release
         </SubmitButton>
       </ActionForm>

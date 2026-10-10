@@ -61,7 +61,7 @@ export default async function PayApplicationPage({
         This is a G702/G703-style summary and continuation sheet built from this job&rsquo;s schedule of values — it is
         not formatted as the AIA G702/G703 forms themselves.
       </p>
-      <p className="mt-2 max-w-2xl text-xs text-amber-300 print:hidden">
+      <p className="mt-2 max-w-2xl text-xs text-warn print:hidden">
         No PERIOD TO date. A G702 states the period this application covers, and C Stream does not yet record one — so
         this document prints the application date and nothing that could be mistaken for the period. Write the period
         ending date on whatever cover sheet this GC wants before you send it.
@@ -98,7 +98,7 @@ export default async function PayApplicationPage({
             </div>
             <div>
               <p className="text-xs text-ink-muted">Current payment due</p>
-              <p className="font-medium text-green-400">{money(summary.currentPaymentDue)}</p>
+              <p className="font-medium text-ok">{money(summary.currentPaymentDue)}</p>
             </div>
             <div className="col-span-2 sm:col-span-3">
               <p className="text-xs text-ink-muted">Balance to finish, including retainage</p>

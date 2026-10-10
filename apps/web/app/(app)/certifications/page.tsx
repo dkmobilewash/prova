@@ -173,7 +173,7 @@ export default async function CertificationsPage({
           </h2>
           <Link
             href={showEverything ? "/certifications" : "/certifications?show=all"}
-            className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover"
           >
             {showEverything ? "Only what needs acting on" : "Show everyone, including current"}
           </Link>

@@ -130,7 +130,7 @@ export default async function FieldReportsPage({
   // site taps to get to their own job.
   const chip = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
   return (
@@ -229,7 +229,7 @@ export default async function FieldReportsPage({
                       <span>{week.coveragePercent}% of finished weekdays covered</span>
                     )}
                     {week.delayDays.length > 0 && (
-                      <span className="text-amber-400">
+                      <span className="text-warn">
                         {week.delayDays.length}{" "}
                         {week.delayDays.length === 1 ? "day" : "days"} with delays
                       </span>
@@ -254,7 +254,7 @@ export default async function FieldReportsPage({
                       grouped as days nobody filed — reports that exist, on
                       the page a schedule dispute gets argued from. */}
                   {week.partial && (
-                    <p className="mt-2 rounded bg-neutral-800 px-2 py-1.5 text-xs text-ink-body">
+                    <p className="mt-2 rounded bg-rail-hover px-2 py-1.5 text-xs text-ink-body">
                       Only part of this week is loaded — this page shows the most recent{" "}
                       {REPORT_LIMIT} reports. Nothing is claimed about the days before it, and no
                       coverage figure is shown for this week for the same reason.

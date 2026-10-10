@@ -46,17 +46,17 @@ import {
 function NothingHere() {
   return (
     <div className="mx-auto max-w-2xl px-6 py-16">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Not part of your access</h1>
-      <p className="text-sm text-slate-400">Nothing here for this account.</p>
+      <h1 className="mb-2 text-xl font-semibold text-ink">Not part of your access</h1>
+      <p className="text-sm text-ink-muted">Nothing here for this account.</p>
     </div>
   );
 }
 
 const BADGE: Record<UsageStatus, string> = {
-  ACTIVE: "border-emerald-800 bg-emerald-950 text-emerald-300",
-  SLIPPING: "border-amber-800 bg-amber-950 text-amber-300",
-  QUIET: "border-red-900 bg-red-950 text-red-300",
-  NEVER: "border-slate-700 bg-slate-900 text-slate-400",
+  ACTIVE: "border-emerald-800 bg-emerald-950 text-ok",
+  SLIPPING: "border-amber-800 bg-amber-950 text-warn",
+  QUIET: "border-red-900 bg-red-950 text-danger",
+  NEVER: "border-line-card bg-surface text-ink-muted",
 };
 
 function StatusBadge({ status }: { status: UsageStatus }) {
@@ -79,8 +79,8 @@ export default async function InternalUsagePage() {
   if (currentUser.role !== "OWNER") {
     return (
       <div className="mx-auto max-w-2xl px-6 py-16">
-        <h1 className="mb-2 text-xl font-semibold text-slate-100">Owner only</h1>
-        <p className="text-sm text-slate-400">
+        <h1 className="mb-2 text-xl font-semibold text-ink">Owner only</h1>
+        <p className="text-sm text-ink-muted">
           Usage across companies is restricted to the account owner, same as the sales CRM.
         </p>
       </div>
@@ -160,19 +160,19 @@ export default async function InternalUsagePage() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-slate-100">Usage — who is still logging in</h1>
-      <p className="mb-4 text-sm text-slate-400">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Usage — who is still logging in</h1>
+      <p className="mb-4 text-sm text-ink-muted">
         C Stream&apos;s own instrument, across every company on this database. One recorded fact per
         person — the last time their browser made a signed-in request, written at most once every 15
         minutes. Everything else on this page is worked out from that timestamp and the clock when
         the page loads.
       </p>
       <p className="mb-6 text-xs text-ink-muted">
-        <span className="text-slate-400">Active</span> = seen in the last {ACTIVE_WITHIN_DAYS} days.{" "}
-        <span className="text-slate-400">Going quiet</span> = {ACTIVE_WITHIN_DAYS}–
-        {QUIET_AFTER_DAYS - 1} days. <span className="text-slate-400">Quiet</span> ={" "}
+        <span className="text-ink-muted">Active</span> = seen in the last {ACTIVE_WITHIN_DAYS} days.{" "}
+        <span className="text-ink-muted">Going quiet</span> = {ACTIVE_WITHIN_DAYS}–
+        {QUIET_AFTER_DAYS - 1} days. <span className="text-ink-muted">Quiet</span> ={" "}
         {QUIET_AFTER_DAYS} days or more.{" "}
-        <span className="text-slate-400">Never seen</span> means nothing has been recorded for them
+        <span className="text-ink-muted">Never seen</span> means nothing has been recorded for them
         since this page shipped — which is not the same as never having used the product, and for
         anyone who signed up before it shipped it says nothing at all yet.
       </p>
@@ -181,26 +181,26 @@ export default async function InternalUsagePage() {
         {tally.map(({ status, count }) => (
           <div
             key={status}
-            className="min-w-[7rem] flex-1 rounded-lg border border-slate-800 bg-slate-900 px-4 py-3"
+            className="min-w-[7rem] flex-1 rounded-lg border border-line-row bg-surface px-4 py-3"
           >
-            <p className="text-2xl font-semibold text-slate-100">{count}</p>
-            <p className="text-xs text-slate-400">{USAGE_STATUS_LABEL[status]}</p>
+            <p className="text-2xl font-semibold text-ink">{count}</p>
+            <p className="text-xs text-ink-muted">{USAGE_STATUS_LABEL[status]}</p>
           </div>
         ))}
       </section>
 
       {companies.length === 0 ? (
-        <p className="rounded-lg border border-slate-800 bg-slate-900 p-6 text-sm text-slate-400">
+        <p className="rounded-lg border border-line-row bg-surface p-6 text-sm text-ink-muted">
           No companies on this database yet. If you are reading this on a preview, it is talking to
-          the demo project — run the <span className="text-slate-300">Seed demo data</span> workflow.
+          the demo project — run the <span className="text-ink-body">Seed demo data</span> workflow.
         </p>
       ) : (
         <ul className="space-y-4">
           {companies.map((row) => (
-            <li key={row.id} className="rounded-lg border border-slate-800 bg-slate-900">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-4 py-3">
+            <li key={row.id} className="rounded-lg border border-line-row bg-surface">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-row px-4 py-3">
                 <div className="min-w-0">
-                  <p className="font-medium text-slate-100">
+                  <p className="font-medium text-ink">
                     {row.name}
                     {row.isProvaOperator && (
                       <span className="ml-2 text-xs font-normal text-ink-muted">(us)</span>
@@ -212,7 +212,7 @@ export default async function InternalUsagePage() {
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-ink-muted">
                     {row.seenAt
                       ? `Last activity ${describeSeenAge(daysSinceSeen(row.seenAt, now))}`
                       : "No activity recorded"}
@@ -226,14 +226,14 @@ export default async function InternalUsagePage() {
                   No logins on this company at all — nobody has ever signed in to create one.
                 </p>
               ) : (
-                <ul className="divide-y divide-slate-800">
+                <ul className="divide-y divide-line-row">
                   {row.people.map((person) => (
                     <li
                       key={person.id}
                       className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-sm text-slate-100">
+                        <p className="truncate text-sm text-ink">
                           {person.name ?? person.email}
                         </p>
                         <p className="truncate text-xs text-ink-muted">
@@ -246,7 +246,7 @@ export default async function InternalUsagePage() {
                             yesterday, not used yet" and "created three
                             weeks ago, never used" are the same badge and
                             two completely different conversations. */}
-                        <span className="text-xs text-slate-400">
+                        <span className="text-xs text-ink-muted">
                           {person.lastSeenAt
                             ? `${formatInstant(person.lastSeenAt, timeZone)} · ${describeSeenAge(
                                 daysSinceSeen(person.lastSeenAt, now),

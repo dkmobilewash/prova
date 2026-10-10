@@ -376,7 +376,7 @@ function Decision({ changeOrder, today }: { changeOrder: ChangeOrderView } & Tod
           <button
             type="submit"
             disabled={void_.isPending}
-            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-rail-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {void_.isPending ? "Withdrawing…" : "Withdraw"}
           </button>
@@ -500,7 +500,7 @@ function ProposalRow({ proposal, canRemove }: { proposal: ProposalView; canRemov
                 onConfirm={() => run(() => removeProposal(proposal.id))}
                 deleteClassName="text-xs text-ink-muted hover:text-rose-600 disabled:opacity-50"
                 cancelClassName="text-xs text-ink-label underline hover:text-ink-body disabled:opacity-50"
-                confirmClassName="text-xs text-red-400 underline disabled:opacity-50"
+                confirmClassName="text-xs text-danger underline disabled:opacity-50"
               />
             }
           />
@@ -540,9 +540,9 @@ function DraftActions({ changeOrder, today }: { changeOrder: ChangeOrderView } &
             pending={discard.isPending}
             onConfirm={() => discard.run(() => deleteChangeOrderDraft(changeOrder.id))}
             armedClassName="flex flex-wrap items-center gap-2"
-            deleteClassName="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
-            cancelClassName="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-800 disabled:opacity-50"
-            confirmClassName="rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+            deleteClassName="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-rail-hover disabled:cursor-not-allowed disabled:opacity-50"
+            cancelClassName="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-rail-hover disabled:opacity-50"
+            confirmClassName="rounded-md border border-red-500 px-3 py-2 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
           />
         }
       >

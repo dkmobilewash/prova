@@ -16,11 +16,11 @@ import { NAME_NOT_RECORDED, crewMemberName, timeEntryWorkerName } from "@/lib/wo
 import { workerOptions } from "@/lib/worker-select";
 import { deleteDispatchSlip, deleteTimeEntry } from "@/lib/actions";
 
-const rowDeleteClass = "text-xs text-red-400 hover:underline";
+const rowDeleteClass = "text-xs text-danger hover:underline";
 const rowCancelClass =
-  "rounded-md border border-slate-700 px-2 py-1 text-xs text-ink-label hover:border-slate-500";
+  "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:border-line-card";
 const rowConfirmClass =
-  "rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10";
+  "rounded-md border border-red-500 px-2 py-1 text-xs text-danger hover:bg-red-500/10";
 
 /**
  * Crew & time — field time entries, timesheet sign-off, T&M tickets and
@@ -248,14 +248,14 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
               {tmTickets.map((ticket) => (
                 <li
                   key={ticket.id}
-                  className="flex flex-wrap items-start gap-3 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
+                  className="flex flex-wrap items-start gap-3 rounded-lg border border-line-row bg-surface p-3 text-sm"
                 >
                   {ticket.signaturePath ? (
                     <SignatureImage path={ticket.signaturePath} label={`Signature of ${ticket.signerName}`} />
                   ) : null}
                   <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span className="text-slate-100">{formatCalendarDate(ticket.workDate)}</span>
-                    <span className="text-slate-300">{ticket.workDescription}</span>
+                    <span className="text-ink">{formatCalendarDate(ticket.workDate)}</span>
+                    <span className="text-ink-body">{ticket.workDescription}</span>
                     <span className="text-xs text-ink-muted">
                       Signed by {ticket.signerName}, {formatInstant(ticket.signedAt, timeZone)}
                       {ticket.signaturePath ? "" : " (typed name — signed before the phone took drawn signatures)"}
@@ -287,7 +287,7 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
                   <span className="text-ink-label">{dispatchSlipWorkerLabel(slip)}</span>
                   {slip.craftClassification && <span className="text-xs text-ink-muted">{slip.craftClassification.name}</span>}
                   {slip.dispatchNumber && (
-                    <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">#{slip.dispatchNumber}</span>
+                    <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">#{slip.dispatchNumber}</span>
                   )}
                   {slip.fileUrl && (
                     <a href={slip.fileUrl} target="_blank" rel="noreferrer" className="text-xs text-link hover:underline">

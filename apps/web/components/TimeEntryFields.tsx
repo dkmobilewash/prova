@@ -40,11 +40,11 @@ export type TimeEntryFieldDefaults = {
  * still see whose day it is. */
 export type TimeEntryLockedIdentity = { employeeLabel: string; dateLabel: string };
 
-const labelClass = "flex flex-col gap-1 text-xs text-slate-400";
+const labelClass = "flex flex-col gap-1 text-xs text-ink-muted";
 const fieldClass =
-  "rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
+  "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 const lockedClass =
-  "rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1 text-sm text-slate-300";
+  "rounded-md border border-line-row bg-canvas/60 px-2 py-1 text-sm text-ink-body";
 
 /**
  * The fields of one field time entry, shared by logging a new one and

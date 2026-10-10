@@ -58,8 +58,8 @@ import type { PhaseCodeRollupRow } from "@/lib/phase-code-rollup";
  * pages. Found by that test, which is the behaviour it is for. */
 
 function varianceClass(variance: number) {
-  if (variance < 0) return "text-red-400";
-  if (variance > 0) return "text-green-400";
+  if (variance < 0) return "text-danger";
+  if (variance > 0) return "text-ok";
   return "text-ink-body";
 }
 

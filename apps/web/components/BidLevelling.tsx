@@ -104,14 +104,14 @@ export function BidLevelling({
         <button
           type="button"
           onClick={() => setAdding("request")}
-          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Ask a supplier for a quote
         </button>
         <button
           type="button"
           onClick={() => setAdding("quote")}
-          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Log a quote you received
         </button>
@@ -273,7 +273,7 @@ export function BidLevelling({
                         className={
                           quote.carriedAt
                             ? "rounded-md border border-link px-2 py-1 text-xs text-link disabled:opacity-50"
-                            : "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+                            : "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
                         }
                       >
                         {quote.carriedAt ? "Carrying this" : "Carry this"}
@@ -288,7 +288,7 @@ export function BidLevelling({
                           disabled={isPending}
                           title="Adds this as a subcontractor cost line on the linked job's estimate."
                           onClick={() => run(() => addCarriedQuoteToEstimate(quote.id))}
-                          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+                          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
                         >
                           Put on the estimate
                         </button>
@@ -296,7 +296,7 @@ export function BidLevelling({
                       <button
                         type="button"
                         onClick={() => setEditing(quote.id)}
-                        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+                        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
                       >
                         Edit
                       </button>
@@ -358,7 +358,7 @@ export function BidLevelling({
                         <button
                           type="button"
                           onClick={() => setEditing(row.id)}
-                          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+                          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
                         >
                           Enter their price
                         </button>
@@ -432,14 +432,14 @@ export function BidLevelling({
           <button
             type="button"
             onClick={() => setAdding("request")}
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
           >
             Ask another supplier
           </button>
           <button
             type="button"
             onClick={() => setAdding("quote")}
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
           >
             Log another quote
           </button>
@@ -478,7 +478,7 @@ function DeclineButton({
         formData.set("declinedAt", today);
         onRun(() => recordBidQuoteDecline(id, formData));
       }}
-      className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-60"
+      className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-60"
     >
       {label}
     </button>
@@ -712,7 +712,7 @@ export function QuoteForm({
       <button
         type="button"
         onClick={onDone}
-        className="mt-4 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+        className="mt-4 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
       >
         Cancel
       </button>
