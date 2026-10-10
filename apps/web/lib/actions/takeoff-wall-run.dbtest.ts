@@ -36,6 +36,7 @@ vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 const { postTakeoffMeasurements } = await import("./takeoff");
+const { syncWallScheduleLines } = await import("@/lib/estimating/wall-schedule");
 
 let companyId = "";
 let jobId = "";
@@ -164,6 +165,133 @@ describe("posting a measured run against a wall type", () => {
 
     const posted = await prisma.takeoffMeasurement.findUnique({ where: { id: measurementId } });
     expect(posted?.postedAt, "not marked posted, so it can be added twice").not.toBeNull();
+  });
+
+
+  // ── A LINE SOMEBODY DELETED STAYS DELETED ────────────────────────────
+  //
+  // These four each start from nothing. The suite above deliberately
+  // accumulates, and `postTakeoffMeasurements` marks a measurement posted so
+  // it cannot be added twice — so without this they post nothing and read an
+  // empty list, which looks like a passing assertion about the wrong thing.
+  const freshJob = async () => {
+    await prisma.jobLineItem.deleteMany({ where: { jobId } });
+    await prisma.wallRun.deleteMany({ where: { jobId } });
+    await prisma.takeoffMeasurement.updateMany({ where: { id: measurementId }, data: { postedAt: null } });
+  };
+
+  //
+  // Reported from the app: delete a wall-schedule line and it comes back. It
+  // came back because `syncWallScheduleLines` read only `isDeleted: false`, so
+  // a removed line was invisible to it and it built a fresh one — at catalog
+  // prices, losing whatever had been typed on the old one.
+
+  it("DOES NOT PUT BACK A LINE SOMEBODY DELETED", async () => {
+    await freshJob();
+    await postTakeoffMeasurements(jobId, form({ wallTypeId, label: "Run A" }, [measurementId]));
+    const before = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false } });
+    expect(before).toHaveLength(1);
+
+    await prisma.jobLineItem.update({ where: { id: before[0].id }, data: { isDeleted: true } });
+
+    // Any re-sync: this is what a recalibration, another posting or
+    // `refreshWallSchedule` all end in.
+    await prisma.$transaction(async (tx) => {
+      await syncWallScheduleLines(tx as never, companyId, jobId);
+    });
+
+    const after = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false } });
+    expect(after, "the deleted line was rebuilt — this is the bug").toHaveLength(0);
+  });
+
+  it("keeps the component link on a line a person deleted, which is how it is recognised", async () => {
+    await freshJob();
+    await postTakeoffMeasurements(jobId, form({ wallTypeId, label: "Run A" }, [measurementId]));
+    const [line] = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false } });
+    await prisma.jobLineItem.update({ where: { id: line.id }, data: { isDeleted: true } });
+    await prisma.$transaction(async (tx) => {
+      await syncWallScheduleLines(tx as never, companyId, jobId);
+    });
+    const kept = await prisma.jobLineItem.findUnique({ where: { id: line.id } });
+    expect(kept?.isDeleted).toBe(true);
+    expect(kept?.wallTypeComponentId, "the link is what says a PERSON removed it").not.toBeNull();
+  });
+
+  it("RELEASES THE LINK when the sync itself retires a line, so the component can come back", async () => {
+    await freshJob();
+    await postTakeoffMeasurements(jobId, form({ wallTypeId, label: "Run A" }, [measurementId]));
+    const [line] = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false } });
+
+    // Take the run away: the component is no longer in the schedule, so the
+    // sync retires its line. That is ITS deletion, not a person's.
+    await prisma.wallRun.deleteMany({ where: { jobId } });
+    await prisma.$transaction(async (tx) => {
+      await syncWallScheduleLines(tx as never, companyId, jobId);
+    });
+
+    const retired = await prisma.jobLineItem.findUnique({ where: { id: line.id } });
+    expect(retired?.isDeleted).toBe(true);
+    expect(retired?.wallTypeComponentId, "released, so a re-add is not mistaken for a person's delete").toBeNull();
+  });
+
+  it("BUILDS THE LINE AGAIN when the run comes back after the sync retired it", async () => {
+    await freshJob();
+    // The case the released link exists for. Without it, a component that
+    // leaves the schedule and returns would be treated as something somebody
+    // deleted, and the line would never come back.
+    await postTakeoffMeasurements(jobId, form({ wallTypeId, label: "Run A" }, [measurementId]));
+    await prisma.wallRun.deleteMany({ where: { jobId } });
+    await prisma.$transaction(async (tx) => {
+      await syncWallScheduleLines(tx as never, companyId, jobId);
+    });
+    expect(await prisma.jobLineItem.count({ where: { jobId, isDeleted: false } })).toBe(0);
+
+    await prisma.wallRun.create({
+      // No `sides` here: that lives on the WALL TYPE, not the run.
+      data: { jobId, companyId, wallTypeId, label: "Run A again", lengthFt: "20", heightFt: "9" },
+    });
+    await prisma.$transaction(async (tx) => {
+      await syncWallScheduleLines(tx as never, companyId, jobId);
+    });
+    expect(
+      await prisma.jobLineItem.count({ where: { jobId, isDeleted: false } }),
+      "a component that left and returned should bring its line back",
+    ).toBe(1);
+  });
+
+  it("A PERSON'S DELETION SURVIVES THE RUN LEAVING AND COMING BACK", async () => {
+    // Found by mutation. Without the `isDeleted` guard in the retirement loop,
+    // a line a PERSON deleted gets its link released the next time its
+    // component falls out of the schedule — and the deletion is forgotten the
+    // moment a run of that wall type reappears.
+    //
+    // The person said they do not want this component's line on this job. A
+    // new run of the same wall type does not change that; adding the line back
+    // by hand does.
+    await freshJob();
+    await postTakeoffMeasurements(jobId, form({ wallTypeId, label: "Run A" }, [measurementId]));
+    const [line] = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false } });
+    await prisma.jobLineItem.update({ where: { id: line.id }, data: { isDeleted: true } });
+
+    // The run goes...
+    await prisma.wallRun.deleteMany({ where: { jobId } });
+    await prisma.$transaction(async (tx) => {
+      await syncWallScheduleLines(tx as never, companyId, jobId);
+    });
+    const afterRemoval = await prisma.jobLineItem.findUnique({ where: { id: line.id } });
+    expect(afterRemoval?.wallTypeComponentId, "a person's deletion keeps its link through a retirement pass").not.toBeNull();
+
+    // ...and comes back.
+    await prisma.wallRun.create({
+      data: { jobId, companyId, wallTypeId, label: "Run B", lengthFt: "20", heightFt: "9" },
+    });
+    await prisma.$transaction(async (tx) => {
+      await syncWallScheduleLines(tx as never, companyId, jobId);
+    });
+    expect(
+      await prisma.jobLineItem.count({ where: { jobId, isDeleted: false } }),
+      "the deletion was forgotten when the run came back",
+    ).toBe(0);
   });
 
   it("CONTROL: without a wall type the old path still posts bare quantities", async () => {
