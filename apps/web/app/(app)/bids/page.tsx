@@ -537,6 +537,7 @@ export default async function BidsPage({
                 bidInvitationId={bid.id}
                 vendors={vendors}
                 today={today}
+                bidDueDate={day(bid.dueDate)}
                 quotes={bid.quotes.map(
                   (quote): BidQuoteRow => ({
                     id: quote.id,
