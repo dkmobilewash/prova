@@ -183,4 +183,23 @@ describe("the call site", () => {
     expect(call, "PlanSheetReview is not rendered on the takeoff page any more").not.toBeNull();
     expect(call?.[1]).toContain("planId=");
   });
+
+  it("COUNTS THE UNREAD PAGES, or the check calls them missing again", async () => {
+    // The production bug: reading paused at 21 of 55 sheets and the check
+    // named twelve real drawings as NOT IN WHAT WAS UPLOADED. `indexCheck`
+    // refuses the comparison when pages are unread — but only if the action
+    // tells it how many, and mutation showed the action could pass a constant
+    // zero with every test still green.
+    //
+    // A census, because the action is a Server Action that opens a PDF from
+    // blob storage and nothing here can run it. It can see that the counter is
+    // called with the page count; it cannot see that the page count is right.
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const action = readFileSync(resolve(process.cwd(), "lib/actions/planSheets.ts"), "utf8");
+    expect(action).toContain("unreadPageCount(pages, sheets)");
+    expect(action).toContain("planSheetText.count(");
+    // And it reaches `indexCheck`, rather than being computed and dropped.
+    expect(action).toContain("indexCheck(readDrawingIndex(pageTexts), sheets, unreadPages)");
+  });
 });

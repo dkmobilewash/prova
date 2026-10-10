@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { compareIndex, indexCheck, indexSentence, readDrawingIndex, type DrawingIndex } from "./drawingIndex";
+import {
+  compareIndex,
+  indexCheck,
+  indexSentence,
+  readDrawingIndex,
+  unreadPageCount,
+  type DrawingIndex,
+} from "./drawingIndex";
 import type { PlanPageText, PlanTextItem } from "./planPdf";
 
 /**
@@ -240,5 +247,105 @@ describe("indexCheck", () => {
 
   it("carries the page the index was found on", () => {
     expect(indexCheck(index, [sheet("A100")]).onPage).toBe(2);
+  });
+});
+
+describe("sheets nobody has read yet", () => {
+  const unreadIndex: DrawingIndex = { pageNumber: 2, listed: ["A100", "A101", "A102", "A103"] };
+  const unreadSheet = (proposed: string | null) => ({
+    proposedSheetNumber: proposed,
+    acceptedSheetNumber: null,
+  });
+
+  it("REFUSES THE COMPARISON rather than calling unread sheets missing", () => {
+    // Found on production the day this shipped. Reading had paused at 21 of 55
+    // sheets, so 34 pages had no number — and the screen named twelve real
+    // drawings as NOT IN WHAT WAS UPLOADED, plus "and 27 more". Every one was
+    // sitting in the file.
+    //
+    // It is the distinction this module was built around, applied the wrong
+    // way: careful that "the index could not be read" must never read as
+    // "nothing is missing", and then letting "the PAGES have not been read"
+    // read as "everything is missing".
+    const result = indexCheck(unreadIndex, [unreadSheet("A100")], 34);
+    expect(result.missing).toBeNull();
+    expect(result.unlisted).toBeNull();
+    expect(result.sentence).toContain("34 sheets");
+    expect(result.sentence).toContain("not been read yet");
+  });
+
+  it("does not quietly report a PARTIAL answer", () => {
+    // Half an answer is worse than none: an estimator told four sheets are
+    // missing goes to the GC, and finding them in the file is how a check
+    // stops being read at all.
+    const result = indexCheck(unreadIndex, [unreadSheet("A100")], 3);
+    expect(result.sentence).not.toContain("NOT in what was uploaded");
+    expect(result.missing).toBeNull();
+  });
+
+  it("still says WHERE the index was, which is true either way", () => {
+    expect(indexCheck(unreadIndex, [unreadSheet("A100")], 3).onPage).toBe(2);
+  });
+
+  it("gets the singular right for one unread sheet", () => {
+    expect(indexCheck(unreadIndex, [unreadSheet("A100")], 1).sentence).toContain(
+      "1 sheet in this set has not been read",
+    );
+  });
+
+  it("COMPARES NORMALLY once everything has been read", () => {
+    const result = indexCheck(unreadIndex, ["A100", "A101", "A102", "A103"].map(unreadSheet), 0);
+    expect(result.missing).toEqual([]);
+    expect(result.sentence).toContain("all 4 are here");
+  });
+
+  it("names what is missing once everything has been read", () => {
+    const result = indexCheck(unreadIndex, [unreadSheet("A100"), unreadSheet("A101")], 0);
+    expect(result.missing).toEqual(["A102", "A103"]);
+  });
+
+  it("an unreadable index still wins over an unread count", () => {
+    // Nothing can be said about a set whose index nobody could read, however
+    // many of its pages have been.
+    const result = indexCheck(null, [unreadSheet("A100")], 34);
+    expect(result.sentence).toContain("Couldn't read");
+    expect(result.onPage).toBeNull();
+  });
+});
+
+describe("unreadPageCount", () => {
+  const read = (n: string) => ({ proposedSheetNumber: n, acceptedSheetNumber: null });
+  const nameless = { proposedSheetNumber: null, acceptedSheetNumber: null };
+
+  it("counts the pages with no number against the pages in the set", () => {
+    expect(unreadPageCount(55, [read("A100"), read("A101")])).toBe(53);
+    expect(unreadPageCount(2, [read("A100"), read("A101")])).toBe(0);
+  });
+
+  it("COUNTS A PAGE THE READER COULD NOT NAME AS UNREAD", () => {
+    // Found by mutation: counting PROPOSALS rather than numbered ones passed
+    // every test, and a page the model read but could not name would count as
+    // read — so the index's entry for it comes back MISSING. That is the
+    // production bug wearing a different hat.
+    expect(unreadPageCount(3, [read("A100"), nameless, nameless])).toBe(2);
+  });
+
+  it("treats a blank number as no number", () => {
+    expect(unreadPageCount(2, [read("A100"), { proposedSheetNumber: "   ", acceptedSheetNumber: null }])).toBe(1);
+  });
+
+  it("takes an accepted number when the proposal had none", () => {
+    expect(unreadPageCount(1, [{ proposedSheetNumber: null, acceptedSheetNumber: "A100" }])).toBe(0);
+  });
+
+  it("IS NEVER NEGATIVE when a page carries two proposals", () => {
+    // A re-run of the reader leaves two rows on one page. That is not a reason
+    // to claim pages are unread, and a negative would read as "everything is
+    // read" to any caller testing `> 0`.
+    expect(unreadPageCount(2, [read("A100"), read("A100"), read("A101")])).toBe(0);
+  });
+
+  it("says every page is unread when nothing has been read", () => {
+    expect(unreadPageCount(55, [])).toBe(55);
   });
 });

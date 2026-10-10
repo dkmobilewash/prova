@@ -9,6 +9,7 @@ import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
 import {
   indexCheck,
   readDrawingIndex,
+  unreadPageCount,
   INDEX_PAGES_TO_SCAN,
   type IndexCheckResult,
 } from "@/lib/plan-ingest/drawingIndex";
@@ -213,21 +214,29 @@ export async function checkDrawingIndex(planId: string): Promise<IndexCheck> {
     select: { proposedSheetNumber: true, acceptedSheetNumber: true },
   });
 
+  // HOW MANY PAGES HAVE NO NUMBER YET. `PlanSheetText` is one row per PAGE —
+  // what `sheetIndexFor` builds the review screen's population from — while
+  // proposals exist only for pages `TITLE_BLOCK` has reached. The difference
+  // is pages nobody has read, and reporting the index's entries for those as
+  // MISSING is what this check did on its first day in production.
+  const pages = await prisma.planSheetText.count({ where: { planId: plan.id } });
+  const unreadPages = unreadPageCount(pages, sheets);
+
   const bytes = await readPlanBytes(plan.id, context.company.id);
   if (!bytes.ok) return { ok: false, error: bytes.error };
 
   let pdf: Awaited<ReturnType<typeof openPlanPdf>> | null = null;
   try {
     pdf = await openPlanPdf(bytes.bytes);
-    const pages = [];
+    const pageTexts = [];
     for (let n = 1; n <= Math.min(INDEX_PAGES_TO_SCAN, pdf.pageCount); n += 1) {
-      pages.push(await pdf.pageText(n));
+      pageTexts.push(await pdf.pageText(n));
     }
     // THE DECISION IS PURE AND LIVES IN `drawingIndex.ts`. Two mutations of
     // it came back green against every screen test — this action is where a
     // person's correction gets ignored, and where "could not read" quietly
     // becomes "nothing missing", so neither judgement is made here.
-    const result = indexCheck(readDrawingIndex(pages), sheets);
+    const result = indexCheck(readDrawingIndex(pageTexts), sheets, unreadPages);
     return { ok: true, ...result };
   } catch {
     // The screen stays usable and the sheet list is still there, so this says
