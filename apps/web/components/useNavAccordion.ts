@@ -18,11 +18,14 @@ import { activeGroupHeading, type NavGroup } from "@/components/navItems";
  */
 export function useNavAccordion(groups: NavGroup[], pathname: string) {
   const active = activeGroupHeading(groups, pathname);
-  const [open, setOpen] = useState<string | null>(active);
+  // On a page in no group (Settings, say) the daily-work group opens rather
+  // than nothing: a drawer of closed headings is a drawer with no links in it.
+  const fallback = active ?? groups.find((group) => group.primary)?.heading ?? null;
+  const [open, setOpen] = useState<string | null>(fallback);
 
   useEffect(() => {
-    setOpen(active);
-  }, [active]);
+    setOpen(fallback);
+  }, [fallback]);
 
   const toggle = (heading: string) => setOpen((current) => (current === heading ? null : heading));
 

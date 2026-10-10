@@ -152,6 +152,12 @@ export function MobileNav({
 
                 return (
                   <div key={group.heading} className="flex flex-col gap-0.5">
+                    {/* Same "More" label as the desktop rail (Sidebar.tsx). */}
+                    {group.heading === groups.find((g) => !g.primary)?.heading && groups.some((g) => g.primary) ? (
+                      <p data-nav-more className="px-3 pt-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                        More
+                      </p>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => accordion.toggle(group.heading)}
