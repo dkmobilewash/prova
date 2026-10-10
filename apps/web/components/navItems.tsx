@@ -795,19 +795,44 @@ export function activeFooterHref(items: NavItem[], pathname: string): string | n
  * `/vendors/pricing` and `/settings/assistant` land in the group of the
  * page they hang off rather than the first prefix that happens to match.
  * Pure, so navItems.test.ts can pin it; both nav surfaces read it through
- * useNavAccordion.
+ * useNavAccordion. Follows activeItemHref (below), so the group that opens
+ * is always the one holding the highlighted item — job pages included.
  */
 export function activeGroupHeading(groups: NavGroup[], pathname: string): string | null {
-  let best: { heading: string; length: number } | null = null;
+  const href = activeItemHref(groups, pathname);
+  if (!href) return null;
+  return groups.find((g) => g.items.some((i) => i.href === href))?.heading ?? null;
+}
+
+/**
+ * Routes with no nav entry of their own that belong to one that has.
+ * `/jobs/*` is every job page — where most of the work happens — and it has
+ * no rail item because the jobs list IS the dashboard (`/jobs` redirects
+ * there). Without this a job page matched nothing: every group collapsed
+ * and nothing was highlighted, on the page people spend the most time on.
+ */
+const NAV_ALIASES: Record<string, string> = { "/jobs": "/dashboard" };
+
+/**
+ * The href of the nav item that is the current page, or null. Longest
+ * matching href wins, so `/vendors/pricing` lights Vendor pricing and not
+ * Vendors as well; an alias prefix (NAV_ALIASES) counts as its target.
+ * Both nav surfaces highlight exactly this one item.
+ */
+export function activeItemHref(groups: NavGroup[], pathname: string): string | null {
+  const under = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
+  const candidates: { href: string; length: number }[] = [];
   for (const group of groups) {
     for (const entry of group.items) {
-      const matches = pathname === entry.href || pathname.startsWith(`${entry.href}/`);
-      if (matches && (!best || entry.href.length > best.length)) {
-        best = { heading: group.heading, length: entry.href.length };
-      }
+      if (under(entry.href)) candidates.push({ href: entry.href, length: entry.href.length });
     }
   }
-  return best?.heading ?? null;
+  for (const [prefix, target] of Object.entries(NAV_ALIASES)) {
+    const present = groups.some((g) => g.items.some((i) => i.href === target));
+    if (present && under(prefix)) candidates.push({ href: target, length: prefix.length });
+  }
+  candidates.sort((a, b) => b.length - a.length);
+  return candidates[0]?.href ?? null;
 }
 
 /** Prova's own pages -- selling Prova itself, and who is still logging in

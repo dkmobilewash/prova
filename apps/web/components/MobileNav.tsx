@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { activeFooterHref, navFooterFor, navGroupsFor } from "@/components/navItems";
+import { activeFooterHref, activeItemHref, navFooterFor, navGroupsFor } from "@/components/navItems";
 import { useNavAccordion } from "@/components/useNavAccordion";
 import type { Principal } from "@/lib/permissions";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
@@ -49,6 +49,7 @@ export function MobileNav({
   const pathname = usePathname();
   const activeFooter = activeFooterHref(footer, pathname);
   const accordion = useNavAccordion(groups, pathname);
+  const activeHref = activeItemHref(groups, pathname);
 
   // Navigating closes it. Without this the drawer stays over the page you
   // just asked for, which reads as the tap not having worked.
@@ -180,7 +181,7 @@ export function MobileNav({
 
                     <div id={panelId} hidden={!isOpen} className="flex flex-col gap-0.5 pb-1 pl-2">
                       {group.items.map((item) => {
-                        const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                        const isActive = activeHref === item.href;
 
                         // Same rule as the desktop rail (Sidebar.tsx) -- a disabled
                         // item is not a link. Without this branch a phone could

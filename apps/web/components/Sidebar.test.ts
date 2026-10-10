@@ -199,7 +199,7 @@ describe("the Money Rail's groups collapse", () => {
   });
 
   it("starts everything closed on a page that is in no group", () => {
-    nav.pathname = "/jobs/abc123";
+    nav.pathname = "/settings/assistant";
     renderRail();
 
     for (const heading of HEADINGS) expect(isExpanded(heading)).toBe(false);
@@ -209,8 +209,20 @@ describe("the Money Rail's groups collapse", () => {
     expect(linkHrefs()).toEqual(["/dashboard", "/ask", "/settings/integrations", "/settings"]);
   });
 
+  it("keeps its place on a job page: the jobs list's group open and the jobs item highlighted", () => {
+    // A job page used to be "a page in no group" — every group collapsed and
+    // nothing lit, on the page people spend the most time on.
+    nav.pathname = "/jobs/abc123/estimate";
+    renderRail();
+
+    const jobsGroup = navGroupsFor(principal).find((g) => g.items.some((i) => i.href === "/dashboard"))!.heading;
+    expect(isExpanded(jobsGroup)).toBe(true);
+    const current = Array.from(container.querySelectorAll('a[aria-current="page"]')).map((a) => a.getAttribute("href"));
+    expect(current).toEqual(["/dashboard"]);
+  });
+
   it("keeps a closed group's links OUT of the document, not merely invisible", () => {
-    nav.pathname = "/jobs/abc123";
+    nav.pathname = "/settings/assistant";
     renderRail();
 
     // Nothing tabbable inside any panel, and the panel element still exists
@@ -261,7 +273,7 @@ describe("the Money Rail's groups collapse", () => {
 
 describe("the five figures are never what collapses", () => {
   it("draws every heading and every figure with every group closed", () => {
-    nav.pathname = "/jobs/abc123"; // nothing starts open
+    nav.pathname = "/settings/assistant"; // nothing starts open
     renderRail();
 
     const text = container.textContent ?? "";
@@ -289,7 +301,7 @@ describe("the five figures are never what collapses", () => {
 
   it("draws Proving right after Compliance & safety, before Paper trail", () => {
     // Cyrus's call, 2026-09-18: Proving sits below Compliance & safety.
-    nav.pathname = "/jobs/abc123";
+    nav.pathname = "/settings/assistant";
     renderRail();
     const text = container.textContent ?? "";
     const compliance = text.indexOf("Compliance & safety");

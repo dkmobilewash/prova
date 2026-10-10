@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeFooterHref, activeGroupHeading, NAV_FOOTER, NAV_GROUPS, NAV_ITEMS, navFooterFor, navGroupsFor } from "./navItems";
+import { activeFooterHref, activeGroupHeading, activeItemHref, NAV_FOOTER, NAV_GROUPS, NAV_ITEMS, navFooterFor, navGroupsFor } from "./navItems";
 import { JOB_FUNCTIONS } from "@/lib/permissions";
 import { HIDEABLE_ROUTES, UNANSWERED_SCOPE, type BusinessScopeAnswers } from "@/lib/businessScope";
 
@@ -198,7 +198,12 @@ describe("the collapsible rail (#240)", () => {
 
   it("opens the group of the current page, by the longest matching href", () => {
     expect(activeGroupHeading(NAV_GROUPS, "/rfis")).toBe("Paper trail");
-    expect(activeGroupHeading(NAV_GROUPS, "/jobs/abc")).toBe(null);
+    // A job page belongs to the jobs list (the dashboard): the rail used to
+    // collapse every group here and highlight nothing.
+    expect(activeGroupHeading(NAV_GROUPS, "/jobs/abc")).toBe(
+      NAV_GROUPS.find((g) => g.items.some((i) => i.href === "/dashboard"))?.heading,
+    );
+    expect(activeGroupHeading(NAV_GROUPS, "/jobsite")).toBe(null);
     // /vendors and /vendors/pricing are both in Logistics, so either prefix
     // lands there; /settings/assistant hangs off /settings and must land in
     // the group that holds it, not on whichever prefix came first.
@@ -210,6 +215,19 @@ describe("the collapsible rail (#240)", () => {
     // a different page from /team.
     expect(activeGroupHeading(NAV_GROUPS, "/teamwork")).toBe(null);
     expect(activeGroupHeading(NAV_GROUPS, "/sign-in")).toBe(null);
+  });
+
+  it("highlights exactly one item: the longest match, with job pages lighting the jobs list", () => {
+    expect(activeItemHref(NAV_GROUPS, "/jobs/abc/estimate")).toBe("/dashboard");
+    expect(activeItemHref(NAV_GROUPS, "/jobs")).toBe("/dashboard");
+    expect(activeItemHref(NAV_GROUPS, "/dashboard")).toBe("/dashboard");
+    expect(activeItemHref(NAV_GROUPS, "/vendors/pricing")).toBe("/vendors/pricing");
+    expect(activeItemHref(NAV_GROUPS, "/vendors/abc")).toBe("/vendors");
+    expect(activeItemHref(NAV_GROUPS, "/jobsite")).toBe(null);
+    expect(activeItemHref(NAV_GROUPS, "/settings")).toBe(null);
+    // An alias only counts when its target is on this person's rail.
+    const withoutJobs = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => i.href !== "/dashboard") }));
+    expect(activeItemHref(withoutJobs, "/jobs/abc")).toBe(null);
   });
 
   it("keeps the internal sales group last, outside every tenant's pipeline", () => {

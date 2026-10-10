@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Hint } from "@/components/Hint";
-import { activeGroupHeading, activeFooterHref, navFooterFor, navGroupsFor } from "@/components/navItems";
+import { activeGroupHeading, activeFooterHref, activeItemHref, navFooterFor, navGroupsFor } from "@/components/navItems";
 import { money } from "@/lib/money";
 import type { Principal } from "@/lib/permissions";
 import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
@@ -226,6 +226,7 @@ export function Sidebar({
   const pathname = usePathname();
   const activeFooter = activeFooterHref(footer, pathname);
   const activeHeading = activeGroupHeading(groups, pathname);
+  const activeHref = activeItemHref(groups, pathname);
 
   // One boolean per heading, and the only writer flips exactly one key.
   // Absent means closed, so the initial state is literally "the active
@@ -445,8 +446,7 @@ export function Sidebar({
                   >
                     {isOpen
                       ? group.items.map((item) => {
-                          const isActive =
-                            pathname === item.href || pathname.startsWith(`${item.href}/`);
+                          const isActive = activeHref === item.href;
 
                           // A disabled item is not a link and not focusable. As
                           // of 3 Sep 2026, /safety and /material-orders render
