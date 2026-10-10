@@ -16,6 +16,8 @@ import { loadExperienceModRates } from "@/lib/emr-query";
 import { emrStanding } from "@/lib/emr";
 import { supersededCoiIds } from "@/lib/coi-standing";
 
+export const metadata = { title: "Compliance" };
+
 export default async function CompliancePage() {
   const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
   if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;

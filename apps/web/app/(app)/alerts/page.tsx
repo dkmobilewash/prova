@@ -11,6 +11,8 @@ import { viewerToday } from "@/lib/viewerToday";
 import { StatusLine } from "@/components/StatusLine";
 import { alertsStatus } from "@/lib/status-sentences";
 
+export const metadata = { title: "Alerts" };
+
 export default async function AlertsPage({
   searchParams,
 }: {

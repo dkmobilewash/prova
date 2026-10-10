@@ -10,6 +10,8 @@ import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { can } from "@/lib/permissions";
 import type { PunchListPeople } from "@/components/PunchItemFields";
 
+export const metadata = { title: "Punch lists" };
+
 export default async function PunchListsPage({
   searchParams,
 }: {

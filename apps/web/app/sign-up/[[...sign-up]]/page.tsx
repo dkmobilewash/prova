@@ -3,6 +3,8 @@ import { SignUp } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
+export const metadata = { title: "Sign up" };
+
 export default async function SignUpPage() {
   // Already signed in: this card has nothing to show, and on production it
   // rendered as a blank page after a finished sign-up. Go to the app.

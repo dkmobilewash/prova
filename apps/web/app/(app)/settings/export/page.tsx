@@ -8,6 +8,8 @@ import {
 } from "@/components/ExportCoverage";
 import { EXPORT_DATASETS } from "@/lib/export";
 
+export const metadata = { title: "Export core records" };
+
 /**
  * The page that exists so nobody ever has to ask for their data.
  *

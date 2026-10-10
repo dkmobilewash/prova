@@ -1,6 +1,6 @@
 import { AskPanel } from "@/components/AskPanel";
 
-export const metadata = { title: "Ask C Stream" };
+export const metadata = { title: { absolute: "Ask C Stream" } };
 
 /**
  * The assistant, with the room to itself.

@@ -20,6 +20,8 @@ import {
 } from "@/lib/sales-pipeline";
 import { daysInCurrentStage, type RecordedStageChange } from "@/lib/sales-stage-history";
 
+export const metadata = { title: "Sales CRM" };
+
 /**
  * Prova's own sales pipeline -- for selling Prova itself, not a tenant's
  * GC/vendor relationships (that's /contacts). Gated on two independent

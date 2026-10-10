@@ -11,6 +11,8 @@ import { materialOrdersStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { viewerToday } from "@/lib/viewerToday";
 
+export const metadata = { title: "Material orders" };
+
 /** Stored at UTC midnight, rendered in UTC — same rule as RFIs,
  * submittals, the safety log and daily field reports. */
 function isoDate(date: Date | null) {

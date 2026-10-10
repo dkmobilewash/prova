@@ -12,6 +12,8 @@ import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { viewerToday } from "@/lib/viewerToday";
 import { ProcoreFeedSection, loadProcoreFeed } from "@/components/ProcoreFeedSection";
 
+export const metadata = { title: "Drawings" };
+
 /** Stored at UTC midnight, rendered in UTC — same rule as every other
  * dated record in this app. */
 function isoDate(date: Date | null) {

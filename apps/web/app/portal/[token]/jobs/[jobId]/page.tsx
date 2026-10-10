@@ -8,6 +8,8 @@ import { countJobMedia, loadSharedJobMediaForClient } from "@/lib/job-media-quer
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { loadPortalContact, loadPortalJob } from "@/lib/portal-query";
 
+export const metadata = { title: "Job" };
+
 /** The photo cap, matching `/photos`. A GC scrolling a job's history wants
  * the same generous page the sub gets, and this section is at the bottom of
  * an already long page. */

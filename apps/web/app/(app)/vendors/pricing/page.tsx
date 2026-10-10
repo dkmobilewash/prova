@@ -15,6 +15,8 @@ import {
 } from "@/components/vendorPricing";
 import { viewerToday } from "@/lib/viewerToday";
 
+export const metadata = { title: "Vendor pricing" };
+
 export const dynamic = "force-dynamic";
 
 /** Quotes for one thing, however that thing is identified. */

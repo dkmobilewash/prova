@@ -6,6 +6,8 @@ import { NoAccess } from "@/components/NoAccess";
 import { SheetPinSurface } from "@/components/SheetPinSurface";
 import { PageShell } from "@prova/ui";
 
+export const metadata = { title: "Drawing" };
+
 /** How many photos and punch items the pickers offer.
  *
  * A cap rather than everything: this page re-renders in full after every pin,

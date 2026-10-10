@@ -14,6 +14,8 @@ import {
 import { toJobOption } from "@/components/jobLabels";
 import { viewerToday } from "@/lib/viewerToday";
 
+export const metadata = { title: "Equipment" };
+
 export const dynamic = "force-dynamic";
 
 /** How far back utilisation is measured. A quarter is long enough that one

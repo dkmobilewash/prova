@@ -12,6 +12,8 @@ import { StatusLine } from "@/components/StatusLine";
 import { safetyStatus } from "@/lib/status-sentences";
 import { toJobOption } from "@/components/jobLabels";
 
+export const metadata = { title: "Safety" };
+
 /** Dates are stored at UTC midnight and rendered in UTC, same rule as
  * daily field reports. Rendering local would show yesterday's date to
  * everyone west of UTC — a bug that only appears in production. */
