@@ -35,7 +35,7 @@ const context = { company: { id: "" }, id: "", role: "OWNER" as string, jobFunct
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
-const { postTakeoffMeasurements } = await import("./takeoff");
+const { postTakeoffMeasurements, saveTakeoffMeasurements } = await import("./takeoff");
 const { syncWallScheduleLines } = await import("@/lib/estimating/wall-schedule");
 const { deleteWallRun } = await import("./wallTypes");
 
@@ -43,12 +43,25 @@ let companyId = "";
 let jobId = "";
 let wallTypeId = "";
 let measurementId = "";
+let pageId = "";
 let bareMeasurementId = "";
 
 beforeAll(async () => {
   const company = await prisma.company.create({ data: { name: "Takeoff Wall Run Test Co" } });
   companyId = company.id;
   context.company.id = companyId;
+
+  // A REAL USER ROW, because `saveTakeoffMeasurements` records who added a
+  // measurement and `createdByUserId: ""` is a foreign-key violation. The
+  // suite ran for months without one: every earlier case creates measurements
+  // directly in this fixture, so no test had ever taken the path that stamps an
+  // author. The error it produces is a bare `PrismaClientKnownRequestError`
+  // with an empty message, which reads like a broken query rather than a
+  // missing row.
+  const user = await prisma.user.create({
+    data: { clerkId: `user_wallrun_${Date.now()}`, email: `wallrun-${Date.now()}@example.test`, companyId },
+  });
+  context.id = user.id;
 
   const contact = await prisma.contact.create({ data: { companyId, name: "Test GC" } });
   const job = await prisma.job.create({
@@ -88,6 +101,7 @@ beforeAll(async () => {
     data: { companyId, jobId, fileUrl: "https://example.test/sheet.pdf" },
   });
   const page = await prisma.takeoffPlanPage.create({ data: { planId: plan.id, pageNumber: 1 } });
+  pageId = page.id;
   // COORDINATES ARE NORMALISED 0..1 — fractions of the page, not page units.
   // `verticesProblem` refuses anything outside that box, which is what the
   // first run of this file discovered: `xs: [0, 20]` is twenty page-widths off
@@ -371,6 +385,106 @@ describe("posting a measured run against a wall type", () => {
     const untouched = await prisma.takeoffMeasurement.findUnique({ where: { id: measurementId } });
     expect(untouched?.postedAt, "deleting another run un-posted this one").not.toBeNull();
     expect(untouched?.wallRunId).toBe(posted.id);
+  });
+
+  // ── ACCEPTING A DETECTED GROUP THE DRAWING NAMED ───────────────────────
+  //
+  // The last link. Before this, accepting a detected group wrote plain
+  // measurements and the estimator then selected them, chose a wall type and a
+  // height, and posted a run — for every group, on every sheet, having already
+  // been shown that the drawing tags the group W1.
+  //
+  // These go through `saveTakeoffMeasurements` with a `wallTypeId`, which is
+  // what the viewer sends on a MATCH. A fake client cannot prove this: the
+  // whole value is that the lines arrive PRICED, and the prices come from the
+  // catalog through `syncWallScheduleLines`.
+
+  it("ARRIVES PRICED when the drawing named the wall type", async () => {
+    await freshJob();
+    const body = new FormData();
+    body.set("pageId", pageId);
+    body.set("label", "W1 wall — 4⅞\u2033");
+    body.set("wallTypeId", wallTypeId);
+    body.append("shape", JSON.stringify({ xs: [0.1, 0.3], ys: [0.2, 0.2] }));
+
+    const result = await saveTakeoffMeasurements(jobId, body);
+    expect(result.ok, result.ok === false ? result.error : "").toBe(true);
+
+    // A real run, not bare quantities.
+    const runs = await prisma.wallRun.findMany({ where: { jobId } });
+    expect(runs, "no wall run was created, so nothing is priced").toHaveLength(1);
+    expect(runs[0].wallTypeId).toBe(wallTypeId);
+
+    // AND THE LINES CARRY A PRICE, which is the entire point of the feature.
+    const lines = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false } });
+    expect(lines.length).toBeGreaterThan(0);
+    expect(
+      lines.some((line) => line.unitPrice !== null),
+      "the lines arrived unpriced — this is the hand-pricing the feature removes",
+    ).toBe(true);
+
+    // ── AND THE QUANTITY IS RIGHT, which mutation says nothing else checked ──
+    //
+    // Doubling the calibration handed to the run left every assertion green:
+    // the lines existed, they were priced, and the footage was twice the
+    // building. A wrong quantity on a priced line is the whole failure this
+    // feature could cause, so it is asserted in feet of real geometry.
+    //
+    // 0.1 → 0.3 is 0.2 of the page width; the calibration declares the full
+    // width as 100 ft, so the run is 20 ft. The wall type defaults to 9 ft and
+    // two sides: 20 × 9 × 2 = 360 SF.
+    expect(Number(runs[0].lengthFt), "the run's length is not the traced geometry").toBe(20);
+    const board = lines.find((line) => line.description.includes("Type X"));
+    expect(board, "the board line is not there at all").toBeDefined();
+    expect(Number(board?.quantity), "20ft × 9ft × 2 sides").toBe(360);
+
+    // And the measurement is marked posted, with the run recorded — so
+    // deleting that run releases it again (#719).
+    const measurements = await prisma.takeoffMeasurement.findMany({ where: { pageId } });
+    const made = measurements.find((one) => one.label?.startsWith("W1 wall"));
+    expect(made?.postedAt).not.toBeNull();
+    expect(made?.wallRunId).toBe(runs[0].id);
+  });
+
+  it("CONTROL: the SAME call without a wallTypeId writes measurements and NO run", async () => {
+    // What distinguishes the feature from the old flow. Without this, "it was
+    // priced" could be something the fixture did rather than the new path.
+    await freshJob();
+    const body = new FormData();
+    body.set("pageId", pageId);
+    body.set("label", "4⅞\u2033 wall");
+    body.append("shape", JSON.stringify({ xs: [0.1, 0.3], ys: [0.2, 0.2] }));
+
+    const result = await saveTakeoffMeasurements(jobId, body);
+    expect(result.ok, result.ok === false ? result.error : "").toBe(true);
+    expect(await prisma.wallRun.count({ where: { jobId } }), "a run was created with no type asked for").toBe(0);
+    const measurements = await prisma.takeoffMeasurement.findMany({ where: { pageId } });
+    expect(measurements.some((one) => one.label === "4⅞\u2033 wall"), "the measurement was not written").toBe(true);
+  });
+
+  it("KEEPS THE MEASUREMENTS when the wall type is refused, rather than losing the work", async () => {
+    // A type that is gone, or belongs to another company. The measurements are
+    // on the sheet, in the list and postable by hand — exactly where the old
+    // flow left every accepted group — and the refusal says what went wrong.
+    // Silently discarding a traced group because a type lookup failed would be
+    // the worst of both.
+    await freshJob();
+    const body = new FormData();
+    body.set("pageId", pageId);
+    body.set("label", "W9 wall");
+    body.set("wallTypeId", "wt_does_not_exist");
+    body.append("shape", JSON.stringify({ xs: [0.1, 0.3], ys: [0.2, 0.2] }));
+
+    const result = await saveTakeoffMeasurements(jobId, body);
+    expect(result.ok, "a missing wall type must refuse, not throw").toBe(false);
+
+    const measurements = await prisma.takeoffMeasurement.findMany({ where: { pageId } });
+    expect(measurements.some((one) => one.label === "W9 wall"), "the traced group was discarded").toBe(true);
+    expect(await prisma.wallRun.count({ where: { jobId } })).toBe(0);
+    // NOT marked posted, so it can be posted by hand without the dead end #719
+    // fixed.
+    const made = measurements.find((one) => one.label === "W9 wall");
+    expect(made?.postedAt, "left marked posted with nothing on the estimate").toBeNull();
   });
 
   it("CONTROL: without a wall type the old path still posts bare quantities", async () => {

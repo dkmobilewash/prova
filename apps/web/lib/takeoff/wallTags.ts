@@ -189,12 +189,26 @@ export function tagByRun(
  * empty list as "the drawing did not say" rather than as an error — only 25-43%
  * of footage is tagged at all.
  */
-export function namesForClusters(
+/** A name the drawing put on part of a group, with how much of it carries that
+ *  name. The FEET are what makes a match decidable: "mostly W1" and "half W1,
+ *  half W2" look identical as a list of names and must not be treated alike,
+ *  because pricing the second as W1 prices half the group wrong. */
+export type TaggedFeet = { name: string; feet: number };
+
+/**
+ * Per group, what the drawing named in it and how many feet carry each name.
+ *
+ * `namesForClusters` is derived from this rather than computing its own, which
+ * is deliberate: two functions walking the same runs would be the second list
+ * CLAUDE.md warns about, and the one that drifted would be the one nobody was
+ * reading.
+ */
+export function taggedFeetForClusters(
   clusters: readonly WallCluster[],
   walls: readonly WallCandidate[],
   tags: readonly WallTypeTag[],
   feetPerUnit: number,
-): string[][] {
+): TaggedFeet[][] {
   const byRun = tagByRun(walls, tags, feetPerUnit);
   if (byRun.size === 0) return clusters.map(() => []);
   return clusters.map((cluster) => {
@@ -206,8 +220,19 @@ export function namesForClusters(
     }
     return [...feetByName.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([name]) => name);
+      .map(([name, feet]) => ({ name, feet }));
   });
+}
+
+export function namesForClusters(
+  clusters: readonly WallCluster[],
+  walls: readonly WallCandidate[],
+  tags: readonly WallTypeTag[],
+  feetPerUnit: number,
+): string[][] {
+  return taggedFeetForClusters(clusters, walls, tags, feetPerUnit).map((tagged) =>
+    tagged.map((one) => one.name),
+  );
 }
 
 /**

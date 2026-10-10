@@ -383,6 +383,10 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         scalePrefillByPage={scalePrefillByPage}
         scaleDeclineByPage={scaleDeclineByPage}
         levelByPage={levelByPage}
+        // MATCHING ONLY. The viewer never picks a wall type — it reports which
+        // of these the DRAWING named beside a detected group. Already filtered
+        // to types with layers, so a match always produces line items.
+        wallTypes={postableWallTypes.map((type) => ({ id: type.id, code: type.code, name: type.name }))}
       />
 
       {/* ── WHOSE SHEET IS THIS, AND WHY THERE IS A HEADING ABOVE THE LIST ──
